@@ -1,0 +1,31 @@
+{
+  "name": "shapes-preview",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Local generative preview harness for the Shapes ERC721 protocol",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "verify": "tsx scripts/verifyStream.ts",
+    "fixtures": "tsx scripts/genFixtures.ts",
+    "sweep": "tsx scripts/collisionSweep.ts",
+    "standalone": "tsx scripts/buildStandalone.ts"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "playwright": "^1.62.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  }
+}

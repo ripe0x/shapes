@@ -1,0 +1,724 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.28;
+
+import {Test} from "forge-std/Test.sol";
+import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+
+import {Shapes} from "../src/Shapes.sol";
+import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {IShapes} from "../src/interfaces/IShapes.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
+
+import {
+    BadReceiver,
+    EthRejectingReceiver,
+    GoodReceiver,
+    ReentrantFeeRecipient,
+    ReentrantMinter,
+    ReentrantRedeemer,
+    RevertingFeeRecipient
+} from "./mocks/Mocks.sol";
+
+abstract contract ShapesBase is Test {
+    uint256 internal constant FEE = 0.0005 ether;
+
+    ShapeRenderer internal renderer;
+    Shapes internal shapes;
+
+    address internal feeRecipient = address(0xFEE);
+    address internal alice = address(0xA11CE);
+    address internal bob = address(0xB0B);
+
+    uint256[9] internal DENOMS = [
+        uint256(0.01 ether),
+        0.1 ether,
+        0.5 ether,
+        1 ether,
+        5 ether,
+        10 ether,
+        25 ether,
+        50 ether,
+        100 ether
+    ];
+
+    function setUp() public virtual {
+        renderer = new ShapeRenderer();
+        shapes = new Shapes(FEE, feeRecipient, address(renderer));
+        vm.deal(alice, 10_000 ether);
+        vm.deal(bob, 10_000 ether);
+    }
+
+    function _mint(address who, uint256 amount) internal returns (uint256 id) {
+        vm.prank(who);
+        id = shapes.mint{value: amount + FEE}(amount, who);
+    }
+
+    /// @dev The reserve invariant, asserted after anything interesting happens.
+    function _assertSolvent() internal view {
+        assertGe(
+            address(shapes).balance,
+            shapes.totalBacking(),
+            "contract balance fell below totalBacking"
+        );
+    }
+}
+
+/* ==================================================================== *
+ *  Minting
+ * ==================================================================== */
+
+contract MintTest is ShapesBase {
+    function test_AllNineDenominationsMint() public {
+        uint256 expectedBacking;
+        for (uint256 i = 0; i < 9; ++i) {
+            uint256 id = _mint(alice, DENOMS[i]);
+            expectedBacking += DENOMS[i];
+
+            assertEq(id, i + 1, "token ids are sequential from 1");
+            assertEq(shapes.ownerOf(id), alice);
+            assertEq(shapes.backingOf(id), DENOMS[i]);
+            assertEq(shapes.totalBacking(), expectedBacking);
+            assertEq(shapes.totalSupply(), i + 1);
+            assertEq(shapes.totalMinted(), i + 1);
+        }
+        assertEq(address(shapes).balance, expectedBacking, "balance equals backing exactly");
+        _assertSolvent();
+    }
+
+    function test_TokenIdsStartAtOne() public {
+        assertEq(shapes.totalMinted(), 0);
+        assertEq(_mint(alice, 1 ether), 1);
+    }
+
+    function test_MintToAnotherAddress() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, bob);
+        assertEq(shapes.ownerOf(id), bob);
+    }
+
+    function test_RevertsOnUnsupportedDenomination() public {
+        uint256[6] memory bad =
+            [uint256(1), 0.011 ether, 0.05 ether, 2 ether, 99 ether, 101 ether];
+        for (uint256 i = 0; i < bad.length; ++i) {
+            vm.prank(alice);
+            vm.expectRevert(
+                abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, bad[i])
+            );
+            shapes.mint{value: bad[i] + FEE}(bad[i], alice);
+        }
+    }
+
+    function test_RevertsOnZeroBacking() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, 0));
+        shapes.mint{value: FEE}(0, alice);
+    }
+
+    function testFuzz_OnlyLadderAmountsAreAccepted(uint256 amount) public {
+        amount = bound(amount, 0, 200 ether);
+        bool supported = shapes.isSupportedDenomination(amount);
+
+        vm.deal(alice, amount + FEE);
+        vm.prank(alice);
+        if (supported) {
+            shapes.mint{value: amount + FEE}(amount, alice);
+            assertEq(shapes.totalBacking(), amount);
+        } else {
+            vm.expectRevert(
+                abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, amount)
+            );
+            shapes.mint{value: amount + FEE}(amount, alice);
+            assertEq(shapes.totalBacking(), 0);
+        }
+        _assertSolvent();
+    }
+
+    function test_RequiresExactBackingPlusFee() public {
+        vm.startPrank(alice);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.IncorrectPayment.selector, 1 ether + FEE, 1 ether)
+        );
+        shapes.mint{value: 1 ether}(1 ether, alice);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShapes.IncorrectPayment.selector, 1 ether + FEE, 1 ether + FEE - 1
+            )
+        );
+        shapes.mint{value: 1 ether + FEE - 1}(1 ether, alice);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShapes.IncorrectPayment.selector, 1 ether + FEE, 1 ether + FEE + 1
+            )
+        );
+        shapes.mint{value: 1 ether + FEE + 1}(1 ether, alice);
+
+        vm.stopPrank();
+        assertEq(shapes.totalBacking(), 0);
+    }
+
+    function testFuzz_AnyIncorrectValueReverts(uint256 sent) public {
+        uint256 required = 1 ether + FEE;
+        vm.assume(sent != required);
+        sent = bound(sent, 0, 500 ether);
+        vm.assume(sent != required);
+
+        vm.deal(alice, sent);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.IncorrectPayment.selector, required, sent)
+        );
+        shapes.mint{value: sent}(1 ether, alice);
+    }
+
+    function test_BatchRequiresExactAggregate() public {
+        uint256 qty = 10;
+        uint256 required = qty * (1 ether + FEE);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.IncorrectPayment.selector, required, required - 1)
+        );
+        shapes.mintBatch{value: required - 1}(1 ether, qty, alice);
+
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: required}(1 ether, qty, alice);
+
+        assertEq(first, 1);
+        assertEq(shapes.totalMinted(), qty);
+        assertEq(shapes.totalSupply(), qty);
+        assertEq(shapes.totalBacking(), qty * 1 ether, "fees are not part of backing");
+        assertEq(address(shapes).balance, qty * 1 ether);
+        assertEq(feeRecipient.balance, qty * FEE, "aggregate fee forwarded once");
+    }
+
+    function test_BatchGivesUniqueIdsAndSeeds() public {
+        uint256 qty = 25;
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: qty * (0.1 ether + FEE)}(0.1 ether, qty, alice);
+
+        bytes32[] memory seen = new bytes32[](qty);
+        for (uint256 i = 0; i < qty; ++i) {
+            uint256 id = first + i;
+            assertEq(shapes.ownerOf(id), alice);
+            assertEq(shapes.backingOf(id), 0.1 ether);
+
+            bytes32 seed = shapes.seedOf(id);
+            for (uint256 j = 0; j < i; ++j) {
+                assertTrue(seed != seen[j], "duplicate seed within a batch");
+            }
+            seen[i] = seed;
+        }
+    }
+
+    function test_RevertsOnZeroQuantity() public {
+        vm.prank(alice);
+        vm.expectRevert(IShapes.ZeroQuantity.selector);
+        shapes.mintBatch{value: 0}(1 ether, 0, alice);
+    }
+
+    function test_MintToContractReceiver() public {
+        GoodReceiver r = new GoodReceiver();
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+        assertEq(shapes.ownerOf(id), address(r));
+    }
+
+    function test_MintToNonReceiverReverts() public {
+        BadReceiver r = new BadReceiver();
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(r))
+        );
+        shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+        assertEq(shapes.totalBacking(), 0, "failed mint leaves no accounting behind");
+    }
+
+    function test_MintToZeroAddressReverts() public {
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(0))
+        );
+        shapes.mint{value: 1 ether + FEE}(1 ether, address(0));
+    }
+}
+
+/* ==================================================================== *
+ *  Fees
+ * ==================================================================== */
+
+contract FeeTest is ShapesBase {
+    function test_FeesReachRecipientAndNeverJoinBacking() public {
+        _mint(alice, 100 ether);
+        assertEq(feeRecipient.balance, FEE);
+        assertEq(shapes.totalBacking(), 100 ether);
+        assertEq(address(shapes).balance, 100 ether);
+
+        _mint(alice, 0.01 ether);
+        assertEq(feeRecipient.balance, 2 * FEE, "fee is flat, not proportional");
+        assertEq(shapes.totalBacking(), 100.01 ether);
+        assertEq(address(shapes).balance, 100.01 ether);
+    }
+
+    function test_FeeIsFlatAcrossDenominations() public {
+        for (uint256 i = 0; i < 9; ++i) {
+            uint256 before = feeRecipient.balance;
+            _mint(alice, DENOMS[i]);
+            assertEq(feeRecipient.balance - before, FEE, "same fee at every denomination");
+        }
+    }
+
+    function test_ZeroFeeIsSupported() public {
+        Shapes free = new Shapes(0, feeRecipient, address(renderer));
+        vm.prank(alice);
+        uint256 id = free.mint{value: 1 ether}(1 ether, alice);
+        assertEq(free.backingOf(id), 1 ether);
+        assertEq(feeRecipient.balance, 0);
+    }
+
+    function test_RevertingFeeRecipientBlocksMintingButNotRedemption() public {
+        RevertingFeeRecipient bad = new RevertingFeeRecipient();
+        Shapes s = new Shapes(FEE, address(bad), address(renderer));
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShapes.MintFeeTransferFailed.selector, address(bad), FEE
+            )
+        );
+        s.mint{value: 1 ether + FEE}(1 ether, alice);
+
+        // With a zero fee there is no transfer at all, so the same recipient is harmless and
+        // redemption is provably independent of the fee path.
+        Shapes s0 = new Shapes(0, address(bad), address(renderer));
+        vm.startPrank(alice);
+        uint256 id = s0.mint{value: 1 ether}(1 ether, alice);
+        uint256 before = alice.balance;
+        s0.redeem(id);
+        vm.stopPrank();
+        assertEq(alice.balance - before, 1 ether);
+    }
+
+    function test_ConstructorRejectsZeroAddresses() public {
+        vm.expectRevert(bytes("fee recipient is zero"));
+        new Shapes(FEE, address(0), address(renderer));
+
+        vm.expectRevert(bytes("renderer is zero"));
+        new Shapes(FEE, feeRecipient, address(0));
+    }
+
+    function test_ImmutablesAreExposedAndFixed() public view {
+        assertEq(shapes.mintFee(), FEE);
+        assertEq(shapes.feeRecipient(), feeRecipient);
+        assertEq(shapes.renderer(), address(renderer));
+    }
+}
+
+/* ==================================================================== *
+ *  Transfer and redemption
+ * ==================================================================== */
+
+contract RedeemTest is ShapesBase {
+    function test_OwnerRedeemsExactBacking() public {
+        uint256 id = _mint(alice, 5 ether);
+        uint256 before = alice.balance;
+
+        vm.prank(alice);
+        shapes.redeem(id);
+
+        assertEq(alice.balance - before, 5 ether, "exactly the wrapped amount, no fee taken");
+        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.totalSupply(), 0);
+        assertEq(shapes.totalMinted(), 1, "totalMinted is monotonic");
+        assertEq(address(shapes).balance, 0);
+    }
+
+    function test_RedeemedTokenNoLongerExists() public {
+        uint256 id = _mint(alice, 1 ether);
+        vm.prank(alice);
+        shapes.redeem(id);
+
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        shapes.ownerOf(id);
+
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        shapes.backingOf(id);
+
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        shapes.seedOf(id);
+
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        shapes.tokenURI(id);
+    }
+
+    function test_TransfersPreserveRedemptionRights() public {
+        uint256 id = _mint(alice, 10 ether);
+
+        vm.prank(alice);
+        shapes.transferFrom(alice, bob, id);
+        assertEq(shapes.ownerOf(id), bob);
+        assertEq(shapes.backingOf(id), 10 ether, "backing follows the token");
+
+        // the previous owner has lost the right
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, alice));
+        shapes.redeem(id);
+
+        uint256 before = bob.balance;
+        vm.prank(bob);
+        shapes.redeem(id);
+        assertEq(bob.balance - before, 10 ether);
+    }
+
+    function test_NonOwnerCannotRedeem() public {
+        uint256 id = _mint(alice, 1 ether);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
+        shapes.redeem(id);
+        assertEq(shapes.totalBacking(), 1 ether);
+    }
+
+    /// @dev Approval grants the right to move a Shape, never the right to unwrap it.
+    function test_ApprovedSpenderCannotRedeem() public {
+        uint256 id = _mint(alice, 1 ether);
+
+        vm.prank(alice);
+        shapes.approve(bob, id);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
+        shapes.redeem(id);
+
+        vm.prank(alice);
+        shapes.setApprovalForAll(bob, true);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
+        shapes.redeem(id);
+
+        // but the approval does still allow a transfer
+        vm.prank(bob);
+        shapes.transferFrom(alice, bob, id);
+        assertEq(shapes.ownerOf(id), bob);
+    }
+
+    function test_RedeemNonexistentReverts() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 7));
+        shapes.redeem(7);
+    }
+
+    function test_RedeemBatchAccounting() public {
+        uint256[] memory ids = new uint256[](4);
+        uint256 total;
+        uint256[4] memory amounts =
+            [uint256(0.01 ether), 0.5 ether, 5 ether, 50 ether];
+        for (uint256 i = 0; i < 4; ++i) {
+            ids[i] = _mint(alice, amounts[i]);
+            total += amounts[i];
+        }
+        assertEq(shapes.totalBacking(), total);
+
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        uint256 paid = shapes.redeemBatch(ids);
+
+        assertEq(paid, total);
+        assertEq(alice.balance - before, total, "one aggregate transfer of the exact total");
+        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.totalSupply(), 0);
+        assertEq(address(shapes).balance, 0);
+    }
+
+    function test_RedeemBatchRejectsForeignToken() public {
+        uint256 a = _mint(alice, 1 ether);
+        uint256 b = _mint(bob, 1 ether);
+
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = a;
+        ids[1] = b;
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, b, alice));
+        shapes.redeemBatch(ids);
+
+        assertEq(shapes.totalBacking(), 2 ether, "nothing settled on a reverted batch");
+        assertEq(shapes.ownerOf(a), alice);
+    }
+
+    function test_RedeemBatchRejectsDuplicates() public {
+        uint256 id = _mint(alice, 1 ether);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = id;
+        ids[1] = id;
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        shapes.redeemBatch(ids);
+
+        assertEq(shapes.totalBacking(), 1 ether, "no double spend");
+        assertEq(address(shapes).balance, 1 ether);
+    }
+
+    function test_RedeemBatchRejectsEmpty() public {
+        uint256[] memory ids = new uint256[](0);
+        vm.prank(alice);
+        vm.expectRevert(IShapes.ZeroQuantity.selector);
+        shapes.redeemBatch(ids);
+    }
+
+    function test_FailedPayoutRevertsEntireRedemption() public {
+        EthRejectingReceiver r = new EthRejectingReceiver();
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(r), 1 ether)
+        );
+        r.redeem(shapes, id);
+
+        assertEq(shapes.ownerOf(id), address(r), "token survives a failed payout");
+        assertEq(shapes.backingOf(id), 1 ether);
+        assertEq(shapes.totalBacking(), 1 ether);
+        _assertSolvent();
+    }
+
+    function test_ContractOwnerCanRedeem() public {
+        GoodReceiver r = new GoodReceiver();
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 25 ether + FEE}(25 ether, address(r));
+
+        r.redeem(shapes, id);
+        assertEq(address(r).balance, 25 ether);
+        assertEq(shapes.totalBacking(), 0);
+    }
+
+    function testFuzz_RedemptionReturnsExactlyBacking(uint8 which, address to) public {
+        vm.assume(to != address(0) && to.code.length == 0 && to != address(shapes));
+        assumeNotPrecompile(to);
+        uint256 amount = DENOMS[which % 9];
+
+        vm.deal(alice, amount + FEE);
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: amount + FEE}(amount, to);
+
+        uint256 before = to.balance;
+        vm.prank(to);
+        shapes.redeem(id);
+
+        assertEq(to.balance - before, amount);
+        assertEq(shapes.totalBacking(), 0);
+        assertEq(address(shapes).balance, 0);
+    }
+}
+
+/* ==================================================================== *
+ *  Reserve security
+ * ==================================================================== */
+
+contract ReserveTest is ShapesBase {
+    function test_DirectEthTransfersRevert() public {
+        vm.deal(alice, 1 ether);
+
+        vm.prank(alice);
+        (bool ok, bytes memory ret) = address(shapes).call{value: 1 ether}("");
+        assertFalse(ok, "plain transfer must revert");
+        assertEq(bytes4(ret), IShapes.DirectDepositRejected.selector);
+
+        vm.prank(alice);
+        (ok, ret) = address(shapes).call{value: 1 ether}(hex"12345678");
+        assertFalse(ok, "unknown selector with value must revert");
+        assertEq(bytes4(ret), IShapes.DirectDepositRejected.selector);
+
+        assertEq(address(shapes).balance, 0);
+    }
+
+    function test_UnknownSelectorsRevertEvenWithoutValue() public {
+        // A representative sample of the administrative surface Shapes deliberately lacks.
+        string[10] memory absent = [
+            "owner()",
+            "transferOwnership(address)",
+            "withdraw()",
+            "withdrawAll()",
+            "emergencyWithdraw()",
+            "pause()",
+            "setRenderer(address)",
+            "setMintFee(uint256)",
+            "setFeeRecipient(address)",
+            "rescueETH(address,uint256)"
+        ];
+        for (uint256 i = 0; i < absent.length; ++i) {
+            (bool ok,) = address(shapes).call(abi.encodeWithSignature(absent[i]));
+            assertFalse(ok, absent[i]);
+        }
+    }
+
+    /// @dev Forced ETH (selfdestruct, block rewards, pre-deployment transfer) can raise the
+    ///      balance without any code running. The surplus must be inert, not withdrawable.
+    function test_ForcedEtherIsInertAndKeepsInvariant() public {
+        uint256 id = _mint(alice, 1 ether);
+
+        vm.deal(address(shapes), address(shapes).balance + 3 ether);
+        assertEq(address(shapes).balance, 4 ether);
+        assertEq(shapes.totalBacking(), 1 ether, "forced ETH does not become backing");
+        _assertSolvent();
+
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        shapes.redeem(id);
+
+        assertEq(alice.balance - before, 1 ether, "redeemer gets backing, not the surplus");
+        assertEq(address(shapes).balance, 3 ether, "surplus stays stranded");
+        assertEq(shapes.totalBacking(), 0);
+        _assertSolvent();
+    }
+
+    function test_BackingCannotLeaveWithoutBurning() public {
+        for (uint256 i = 0; i < 9; ++i) {
+            _mint(alice, DENOMS[i]);
+        }
+        uint256 lockedBefore = address(shapes).balance;
+        uint256 supplyBefore = shapes.totalSupply();
+
+        // transfers, approvals and metadata reads move nothing
+        vm.startPrank(alice);
+        shapes.transferFrom(alice, bob, 1);
+        shapes.setApprovalForAll(bob, true);
+        vm.stopPrank();
+        shapes.tokenURI(2);
+
+        assertEq(address(shapes).balance, lockedBefore);
+        assertEq(shapes.totalSupply(), supplyBefore);
+        _assertSolvent();
+    }
+
+    function test_ReentrantRedeemIsBlocked() public {
+        ReentrantRedeemer r = new ReentrantRedeemer(IShapes(address(shapes)));
+        vm.startPrank(alice);
+        uint256 a = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+        uint256 b = shapes.mint{value: 5 ether + FEE}(5 ether, address(r));
+        vm.stopPrank();
+
+        r.arm(b, false);
+        r.redeem(a);
+
+        assertTrue(r.attempted(), "the callback ran");
+        assertTrue(r.reentryReverted(), "re-entry into redeem must revert");
+        assertEq(address(r).balance, 1 ether, "only the first token settled");
+        assertEq(shapes.ownerOf(b), address(r), "the second token is untouched");
+        assertEq(shapes.totalBacking(), 5 ether);
+        assertEq(address(shapes).balance, 5 ether);
+        _assertSolvent();
+    }
+
+    function test_ReentrantRedeemBatchIsBlocked() public {
+        ReentrantRedeemer r = new ReentrantRedeemer(IShapes(address(shapes)));
+        vm.startPrank(alice);
+        uint256 a = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+        uint256 b = shapes.mint{value: 5 ether + FEE}(5 ether, address(r));
+        vm.stopPrank();
+
+        r.arm(b, true);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = a;
+        r.redeemBatch(ids);
+
+        assertTrue(r.reentryReverted(), "re-entry into redeemBatch must revert");
+        assertEq(shapes.totalBacking(), 5 ether);
+        _assertSolvent();
+    }
+
+    function test_ReentrantMintFromReceiverCallbackIsBlocked() public {
+        ReentrantMinter m = new ReentrantMinter(IShapes(address(shapes)), 1 ether);
+        vm.deal(address(m), 10 ether);
+
+        m.mint{value: 1 ether + FEE}();
+
+        assertTrue(m.attempted(), "the receiver callback ran");
+        assertTrue(m.reentryReverted(), "re-entry into mint must revert");
+        assertEq(shapes.totalSupply(), 1, "exactly one token exists");
+        assertEq(shapes.totalMinted(), 1);
+        assertEq(shapes.totalBacking(), 1 ether);
+        assertEq(address(shapes).balance, 1 ether);
+        _assertSolvent();
+    }
+
+    function test_ReentrantMintFromFeeRecipientIsBlocked() public {
+        ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
+        Shapes s = new Shapes(FEE, address(fr), address(renderer));
+        fr.configure(IShapes(address(s)), 1 ether);
+        vm.deal(address(fr), 10 ether);
+
+        vm.prank(alice);
+        s.mint{value: 1 ether + FEE}(1 ether, alice);
+
+        assertTrue(fr.attempted(), "the fee callback ran");
+        assertTrue(fr.reentryReverted(), "re-entry from the fee recipient must revert");
+        assertEq(s.totalSupply(), 1);
+        assertEq(s.totalBacking(), 1 ether);
+        assertEq(address(s).balance, 1 ether);
+        assertGe(address(s).balance, s.totalBacking());
+    }
+}
+
+/* ==================================================================== *
+ *  Views and ERC721 surface
+ * ==================================================================== */
+
+contract ViewTest is ShapesBase {
+    function test_DenominationToGridMapping() public view {
+        uint256[9] memory expectedCols = [uint256(5), 4, 4, 3, 3, 2, 2, 1, 1];
+        uint256[9] memory expectedRows = [uint256(5), 5, 4, 4, 3, 3, 2, 2, 1];
+        for (uint256 i = 0; i < 9; ++i) {
+            (uint256 c, uint256 r) = shapes.gridForAmount(DENOMS[i]);
+            assertEq(c, expectedCols[i]);
+            assertEq(r, expectedRows[i]);
+            assertEq(shapes.modulesForAmount(DENOMS[i]), c * r);
+        }
+    }
+
+    /// @dev The whole point of the ladder: value up, complexity down, strictly.
+    function test_ModuleCountStrictlyDecreasesWithValue() public view {
+        uint256 previous = type(uint256).max;
+        for (uint256 i = 0; i < 9; ++i) {
+            uint256 m = shapes.modulesForAmount(DENOMS[i]);
+            assertLt(m, previous, "modules must fall as value rises");
+            previous = m;
+        }
+        assertEq(shapes.modulesForAmount(DENOMS[0]), 25);
+        assertEq(shapes.modulesForAmount(DENOMS[8]), 1);
+    }
+
+    function test_GridForUnsupportedAmountReverts() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, 2 ether)
+        );
+        shapes.gridForAmount(2 ether);
+    }
+
+    function test_IsSupportedDenomination() public view {
+        for (uint256 i = 0; i < 9; ++i) {
+            assertTrue(shapes.isSupportedDenomination(DENOMS[i]));
+        }
+        assertFalse(shapes.isSupportedDenomination(0));
+        assertFalse(shapes.isSupportedDenomination(2 ether));
+        assertFalse(shapes.isSupportedDenomination(1 ether + 1));
+        assertFalse(shapes.isSupportedDenomination(type(uint256).max));
+    }
+
+    function test_NameSymbolAndInterfaces() public view {
+        assertEq(shapes.name(), "Shapes");
+        assertEq(shapes.symbol(), "SHAPE");
+        assertTrue(shapes.supportsInterface(type(IERC165).interfaceId));
+        assertTrue(shapes.supportsInterface(type(IERC721).interfaceId));
+        assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));
+        assertFalse(shapes.supportsInterface(0xffffffff));
+    }
+
+    function test_BackingOfNonexistentReverts() public {
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
+        shapes.backingOf(1);
+    }
+}

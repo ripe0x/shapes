@@ -1,0 +1,70 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  contracts:
+    name: contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: build
+        run: forge build --sizes
+
+      # heavier fuzzing and invariant depth than the local default
+      - name: test
+        run: FOUNDRY_PROFILE=ci forge test -vv
+
+  renderer:
+    name: renderer parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: preview/package-lock.json
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: install
+        working-directory: preview
+        run: npm ci
+
+      - name: typecheck
+        working-directory: preview
+        run: npx tsc --noEmit
+
+      # PRNG fidelity against the Round 03 source, and exact cell containment
+      - name: verify
+        working-directory: preview
+        run: npm run verify
+
+      # 500 samples per denomination; prints the composition space per band
+      - name: collision sweep
+        working-directory: preview
+        run: npm run sweep
+
+      # Regenerating the fixtures must be a no-op. If this diff is non-empty the
+      # committed corpus has drifted from the canonical TypeScript renderer.
+      - name: fixtures are current
+        working-directory: preview
+        run: |
+          npm run fixtures
+          git diff --exit-code -- ../test/fixtures/fixtures.json
+
+      # and the Solidity port must still match them byte for byte
+      - name: byte parity
+        run: forge test --mc ParityTest -vv
