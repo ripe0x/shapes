@@ -6,3 +6,9 @@ preview/dist/
 preview/shapes-preview.html
 docs/
 .env
+
+# local scratch, not part of the project
+_to_delete/
+shapes-preview.html
+shapes-demo.gif
+*.tar.gz
