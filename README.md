@@ -204,14 +204,16 @@ src/
 script/
   DeployShapes.s.sol
   e2e-anvil.sh                live end-to-end check against a local chain
+  fork-dev.sh                 forked Anvil + deploy, for the chain tester
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
   ShapeRenderer.t.sol         stream, formatter, geometry, metadata validity
   Parity.t.sol                byte-identical output vs the TypeScript fixtures
   Hardening.t.sol             regressions for the adversarial review findings
   Invariants.t.sol            stateful solvency invariants
+  Fork.t.sol                  full lifecycle against a mainnet fork (env-gated)
   fixtures/fixtures.json      generated corpus, do not hand-edit
-preview/                      the generative preview harness
+preview/                      the generative preview harness + chain tester
 SPEC.md                       implementation plan and every rendering decision
 SECURITY.md                   adversarial review
 ```
@@ -230,6 +232,24 @@ forge test --mc Parity        # byte parity with the TypeScript renderer
 forge test --mc Invariant     # reserve solvency under fuzzed sequences
 FOUNDRY_PROFILE=ci forge test # heavier fuzzing
 ```
+
+### Against a mainnet fork
+
+Shapes reads no external contract, so a fork is not needed for correctness. What it adds is a
+real block environment — chain id 1, a post-merge `prevrandao`, a real prior blockhash and
+timestamp, all of which feed the mint seed — plus realistic gas. `ForkTest` deploys through the
+actual deploy script under those conditions and drives mint, transfer, redeem and batch redeem
+end to end, asserting the reserve invariant and exact payouts. It is gated on `MAINNET_RPC_URL`
+and skipped when unset, so the default `forge test` is unaffected.
+
+```bash
+MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com forge test --mc ForkTest -vv
+```
+
+One thing the fork surfaces that a clean chain cannot: a freshly deployed address can coincide
+with a mainnet account already holding a little ETH, and many mainnet EOAs now carry an EIP-7702
+delegation. The suite treats the former as stranded surplus (`balance >= totalBacking` still
+holds) and mints only to codeless recipients, matching how the contract behaves in the wild.
 
 ## Running the preview harness
 
@@ -298,6 +318,27 @@ cd .. && forge test --mc Parity
 
 Regenerate whenever the canonical renderer changes, and expect the parity suite to fail loudly
 if the two implementations disagree by so much as one byte.
+
+## Chain tester
+
+A second preview entry talks to a deployed contract instead of the canonical renderer: deposit
+ETH, read the resulting artwork back from the chain's own `tokenURI`, and redeem. It is a
+development harness, not the launch surface — Shapes ships contracts-only — but it exercises the
+real deposit and withdraw paths and renders the actual onchain SVG rather than the TypeScript
+one.
+
+```bash
+./script/fork-dev.sh                          # forked Anvil + deploy, writes the address
+cd preview && npm run dev                      # in another shell
+open http://localhost:5173/chain.html
+```
+
+`fork-dev.sh` boots a mainnet-forked Anvil, deploys through the real deploy script, and writes
+the deployed address to `preview/public/deployment.json`, which the page reads on load. It signs
+with a local test key, so no wallet extension is involved; on load it strips any inherited
+EIP-7702 delegation from that account and funds it, so `_safeMint` treats it as an EOA. The page
+shows the reserve invariant live — contract balance against `totalBacking()` — alongside every
+Shape the account holds.
 
 ## Deploying locally
 
