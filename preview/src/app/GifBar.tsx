@@ -36,7 +36,8 @@ export function GifBar({
   clear: () => void;
   reverse: () => void;
 }) {
-  const [width, setWidth] = React.useState(500);
+  const [width, setWidth] = React.useState(700);
+  const [levels, setLevels] = React.useState(32);
   const [delayMs, setDelayMs] = React.useState(250);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<string | null>(null);
@@ -54,6 +55,8 @@ export function GifBar({
         width,
         delayCs: Math.max(1, Math.round(delayMs / 10)),
         maxBytes: MAX_BYTES,
+        levels,
+        supersample: 2,
         onProgress: (done, total) => setBusy(`rendering frame ${done} of ${total}…`),
       });
       setBusy("encoding…");
@@ -62,7 +65,7 @@ export function GifBar({
         out.blob,
       );
       setResult(
-        `${out.frames} frames · ${out.width}×${out.height} · ${humanBytes(out.bytes)}` +
+        `${out.frames} frames · ${out.width}×${out.height} · ${levels} greys · ${humanBytes(out.bytes)}` +
           (out.scaledFrom
             ? ` · scaled down from ${out.scaledFrom}px to fit the 12 MB cap`
             : ""),
@@ -104,9 +107,18 @@ export function GifBar({
           label="frame width px"
           value={width}
           min={100}
-          max={1000}
+          max={1600}
           step={50}
-          onChange={(v) => setWidth(Math.min(1000, Math.max(100, Math.round(v))))}
+          onChange={(v) => setWidth(Math.min(1600, Math.max(100, Math.round(v))))}
+        />
+        <NumberField
+          label="greys"
+          value={levels}
+          min={2}
+          max={256}
+          step={2}
+          onChange={(v) => setLevels(Math.min(256, Math.max(2, Math.round(v))))}
+          width={70}
         />
         <NumberField
           label="delay ms"
@@ -128,7 +140,8 @@ export function GifBar({
           </Button>
         </div>
         <div style={{ ...mono, fontSize: 10, color: C.dim, lineHeight: 1.5 }}>
-          loops forever · max 12 MB, scaled down automatically if a selection exceeds it
+          loops forever · max 12 MB, scaled down automatically if a selection exceeds it ·
+          rendered at 2× and resampled, greys keep the edges smooth
         </div>
       </div>
 

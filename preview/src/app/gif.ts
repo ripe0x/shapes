@@ -1,11 +1,15 @@
 /**
  * A GIF89a encoder for Shape cards.
  *
- * Written rather than imported, for one reason: the artwork is strictly two colours. A
- * general-purpose encoder carries quantisation, dithering and a 256-entry palette that this
- * needs none of. With a two-entry global colour table the LZW stream compresses enormously —
- * a 500x700 card lands in a few kilobytes rather than a few hundred — and the standalone
- * preview stays a single self-contained file with no dependency inlined into it.
+ * Written rather than imported: the artwork is black and white on a fixed canvas, so a
+ * general-purpose encoder's colour quantisation and dithering are dead weight, and inlining a
+ * dependency would bloat the single-file standalone preview.
+ *
+ * The palette is a grey ramp, not two colours. The *fills* are only ever black or white, but
+ * the *edges* are not: every curve and diagonal depends on antialiasing to read as a smooth
+ * line. Quantising to two colours throws all of that away and turns an arc into a staircase.
+ * A 32-step ramp keeps the edges intact and costs little, because the interiors are still flat
+ * runs of pure black and white that LZW eats for breakfast.
  *
  * Output is a strict GIF89a: global colour table, NETSCAPE2.0 looping extension, one graphic
  * control extension per frame carrying the delay, LZW image data in sub-blocks.
@@ -168,7 +172,7 @@ export interface GifOptions {
   delayCs: number;
   /** 0 means loop forever. */
   loopCount?: number;
-  /** Palette entries as [r,g,b]. Length must be a power of two, at least 2. */
+  /** Palette entries as [r,g,b]. Rounded up to a power of two, at least 2. */
   palette?: [number, number, number][];
 }
 
@@ -283,33 +287,81 @@ function svgToImage(svg: string): Promise<HTMLImageElement> {
   });
 }
 
+/** An evenly spaced black-to-white ramp. */
+export function grayPalette(levels: number): [number, number, number][] {
+  const n = Math.max(2, Math.min(256, levels));
+  return Array.from({ length: n }, (_, i) => {
+    const v = Math.round((i * 255) / (n - 1));
+    return [v, v, v] as [number, number, number];
+  });
+}
+
+/**
+ * The canonical SVG carries `width="250" height="350"`, which is its intrinsic size. Drawing
+ * that image scaled up makes the browser rasterise the vector at 250x350 and then enlarge the
+ * bitmap — so a "500px" frame really carries 250px of detail. Rewriting the attributes makes
+ * the vector rasterise at the size actually wanted. The viewBox is untouched, so the geometry
+ * is identical; only the raster resolution changes.
+ */
+function svgAtSize(svg: string, w: number, h: number): string {
+  return svg.replace('width="250" height="350"', `width="${w}" height="${h}"`);
+}
+
+export interface RasterOptions {
+  /** Grey levels in the palette. */
+  levels?: number;
+  /** Render this many times larger, then box down. 2 is plenty for hard-edged geometry. */
+  supersample?: number;
+}
+
 /**
  * Rasterise one card to palette indices.
  *
- * The source is pure black and white, so this is a threshold rather than a quantisation. The
- * only greys present are anti-aliased edges, and they resolve to whichever side they are
- * closer to — which is what a two-colour GIF of hard-edged geometry should do anyway.
+ * Two things matter for how this looks. The vector is rasterised at the output size rather
+ * than scaled up from its intrinsic 250x350, and it is rendered at `supersample` times that
+ * and resampled down, which gives cleaner edges than the browser's own antialiasing alone.
  */
 export async function rasterToIndices(
   svg: string,
   width: number,
   height: number,
+  opts: RasterOptions = {},
 ): Promise<Uint8Array> {
-  const img = await svgToImage(svg);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, width, height);
-  ctx.drawImage(img, 0, 0, width, height);
+  const levels = Math.max(2, Math.min(256, opts.levels ?? 32));
+  const ss = Math.max(1, Math.min(4, opts.supersample ?? 2));
 
+  const sw = width * ss;
+  const sh = height * ss;
+
+  const img = await svgToImage(svgAtSize(svg, sw, sh));
+
+  const hi = document.createElement("canvas");
+  hi.width = sw;
+  hi.height = sh;
+  const hctx = hi.getContext("2d")!;
+  hctx.fillStyle = "#000";
+  hctx.fillRect(0, 0, sw, sh);
+  hctx.drawImage(img, 0, 0, sw, sh);
+
+  let src: HTMLCanvasElement = hi;
+  if (ss !== 1) {
+    const lo = document.createElement("canvas");
+    lo.width = width;
+    lo.height = height;
+    const lctx = lo.getContext("2d", { willReadFrequently: true })!;
+    lctx.imageSmoothingEnabled = true;
+    lctx.imageSmoothingQuality = "high";
+    lctx.drawImage(hi, 0, 0, width, height);
+    src = lo;
+  }
+
+  const ctx = src.getContext("2d", { willReadFrequently: true })!;
   const { data } = ctx.getImageData(0, 0, width, height);
   const out = new Uint8Array(width * height);
+  const top = levels - 1;
   for (let i = 0, p = 0; i < out.length; i++, p += 4) {
-    // luma; the palette is [black, white] so the test is simply "closer to white?"
     const y = data[p] * 0.299 + data[p + 1] * 0.587 + data[p + 2] * 0.114;
-    out[i] = y >= 128 ? 1 : 0;
+    out[i] = Math.round((y / 255) * top);
   }
   return out;
 }
@@ -323,6 +375,10 @@ export interface BuildGifOptions {
   width?: number;
   delayCs?: number;
   maxBytes?: number;
+  /** Grey levels. More is smoother on curves; fewer is smaller. */
+  levels?: number;
+  /** Render multiple, then resample down. */
+  supersample?: number;
   onProgress?: (done: number, total: number) => void;
   /**
    * How a card becomes palette indices. Defaults to canvas rasterisation; injectable so the
@@ -356,7 +412,12 @@ export async function buildGif(
 ): Promise<BuildGifResult> {
   const delayCs = opts.delayCs ?? 25;
   const maxBytes = opts.maxBytes ?? 12 * 1024 * 1024;
-  const rasterize = opts.rasterize ?? rasterToIndices;
+  const levels = Math.max(2, Math.min(256, opts.levels ?? 32));
+  const palette = grayPalette(levels);
+  const rasterize =
+    opts.rasterize ??
+    ((svg: string, w: number, h: number) =>
+      rasterToIndices(svg, w, h, { levels, supersample: opts.supersample }));
   let width = Math.round(opts.width ?? 500);
   const requested = width;
 
@@ -368,7 +429,7 @@ export async function buildGif(
       opts.onProgress?.(i + 1, svgs.length);
     }
 
-    const bytes = encodeGif(frames, { width, height, delayCs, loopCount: 0 });
+    const bytes = encodeGif(frames, { width, height, delayCs, loopCount: 0, palette });
     if (bytes.length <= maxBytes || width <= 80) {
       return {
         blob: new Blob([bytes.slice().buffer as ArrayBuffer], { type: "image/gif" }),

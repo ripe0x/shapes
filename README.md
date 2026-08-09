@@ -259,10 +259,18 @@ each one — and the tray at the foot of the page exports them as an animated GI
 animation` in the batch view adds a whole batch at once. Frames can be removed by clicking them
 in the tray, and `reverse` flips the order.
 
-Defaults are 500px wide, 250 ms per frame, looping forever, capped at 12 MB. The encoder is
-purpose-built for two-colour artwork rather than imported: a two-entry colour table compresses
-so hard that a 500×700 card lands in about 4 KB, so 12 MB is roughly three thousand frames. If
-a selection would exceed the cap the frame size is reduced until it fits, and the tray says so.
+Defaults are 700px wide, 32 greys, 250 ms per frame, looping forever, capped at 12 MB. If a
+selection would exceed the cap the frame size is reduced until it fits, and the tray says so.
+
+Two details decide how the output looks. The vector is rasterised **at the output size** — the
+SVG's intrinsic 250×350 would otherwise be enlarged as a bitmap, halving the real resolution —
+and rendered at 2× before being resampled down. And the palette is a **grey ramp, not two
+colours**: the fills are only ever black or white, but the edges are not, and quantising to two
+colours turns every arc into a staircase. Interiors are still flat runs that compress hard, so
+a 700×980 card costs around 11 KB.
+
+The encoder is written rather than imported, so the standalone preview stays a single
+self-contained file. It emits a strict GIF89a with a NETSCAPE2.0 looping extension.
 
 ```bash
 npm run standalone      # build the single-file preview
