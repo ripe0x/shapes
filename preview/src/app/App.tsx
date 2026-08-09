@@ -4,6 +4,7 @@ import { Controls } from "./Controls";
 import { Ladder } from "./Ladder";
 import { Batch } from "./Batch";
 import { Inspect } from "./Inspect";
+import { GifBar } from "./GifBar";
 import {
   CANONICAL_NUM,
   diffFromCanonical,
@@ -29,6 +30,42 @@ export function App() {
   const [perRow, setPerRow] = React.useState(6);
   const [sel, setSel] = React.useState<Selection | null>(null);
   const [showGrid, setShowGrid] = React.useState(false);
+  const [selectMode, setSelectMode] = React.useState(false);
+  const [selection, setSelection] = React.useState<Selection[]>([]);
+
+  // Artwork no longer depends on the token id, so two entries with the same seed and
+  // denomination would be the same frame. Key on what actually determines the image.
+  const keyOf = (s: Selection) => `${s.seed}-${s.amountWei}`;
+
+  const indexOf = React.useCallback(
+    (s: Selection) => {
+      const k = keyOf(s);
+      const i = selection.findIndex((x) => keyOf(x) === k);
+      return i < 0 ? null : i + 1;
+    },
+    [selection],
+  );
+
+  const toggle = React.useCallback((s: Selection) => {
+    setSelection((cur) => {
+      const k = keyOf(s);
+      const i = cur.findIndex((x) => keyOf(x) === k);
+      return i < 0 ? [...cur, s] : cur.filter((_, j) => j !== i);
+    });
+  }, []);
+
+  const addMany = React.useCallback((items: Selection[]) => {
+    setSelection((cur) => {
+      const seen = new Set(cur.map(keyOf));
+      const add = items.filter((s) => !seen.has(keyOf(s)));
+      return [...cur, ...add];
+    });
+  }, []);
+
+  const onCard = React.useCallback(
+    (s: Selection) => (selectMode ? toggle(s) : setSel(s)),
+    [selectMode, toggle],
+  );
 
   const params = React.useMemo(() => toParams(n), [n]);
   const committed = diffFromCanonical(n).length === 0;
@@ -105,6 +142,13 @@ export function App() {
             </Button>
             <span style={{width: 14}} />
             <Button
+              active={selectMode}
+              onClick={() => setSelectMode((m) => !m)}
+              title="Click cards to add them to an animation instead of opening the inspector."
+            >
+              select frames
+            </Button>
+            <Button
               active={showGrid}
               onClick={() => setShowGrid((g) => !g)}
               title="Overlay the artwork field, the derived cell grid and the cell centres. Display only — never part of the rendered token."
@@ -138,18 +182,29 @@ export function App() {
             setSeedStart={setSeedStart}
             perRow={perRow}
             setPerRow={setPerRow}
-            onSelect={setSel}
+            onSelect={onCard}
             showGrid={showGrid}
+            badgeOf={indexOf}
           />
         ) : (
           <Batch
             params={params}
             seedMode={seedMode}
-            onSelect={setSel}
+            onSelect={onCard}
             paramsAreCommitted={committed}
             showGrid={showGrid}
+            badgeOf={indexOf}
+            addMany={addMany}
           />
         )}
+
+        <GifBar
+          selection={selection}
+          params={params}
+          remove={(i) => setSelection((cur) => cur.filter((_, j) => j !== i))}
+          clear={() => setSelection([])}
+          reverse={() => setSelection((cur) => [...cur].reverse())}
+        />
 
         {sel && (
           <Inspect sel={sel} params={params} showGrid={showGrid} onClose={() => setSel(null)} />

@@ -259,26 +259,57 @@ export function Card({
   onClick,
   caption,
   width,
+  badge,
 }: {
   svg: string;
   onClick?: () => void;
   caption?: string;
   width?: number | string;
+  /** 1-based frame number when this card is in the animation selection. */
+  badge?: number | null;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, width }}>
-      <div
-        onClick={onClick}
-        style={{
-          aspectRatio: "2.5 / 3.5",
-          background: "#000",
-          borderRadius: 5,
-          overflow: "hidden",
-          cursor: onClick ? "pointer" : "default",
-          lineHeight: 0,
-        }}
-        dangerouslySetInnerHTML={{ __html: forDisplay(svg) }}
-      />
+      <div style={{position: "relative"}}>
+        <div
+          onClick={onClick}
+          data-card=""
+          data-selected={badge != null ? "true" : "false"}
+          style={{
+            aspectRatio: "2.5 / 3.5",
+            background: "#000",
+            borderRadius: 5,
+            overflow: "hidden",
+            cursor: onClick ? "pointer" : "default",
+            lineHeight: 0,
+            outline: badge != null ? `2px solid ${C.warn}` : "none",
+            outlineOffset: 1,
+          }}
+          dangerouslySetInnerHTML={{ __html: forDisplay(svg) }}
+        />
+        {badge != null && (
+          <div
+            style={{
+              ...mono,
+              position: "absolute",
+              top: 4,
+              right: 4,
+              minWidth: 16,
+              height: 16,
+              padding: "0 4px",
+              borderRadius: 8,
+              background: C.warn,
+              color: "#fff",
+              fontSize: 9,
+              lineHeight: "16px",
+              textAlign: "center",
+              fontWeight: 700,
+            }}
+          >
+            {badge}
+          </div>
+        )}
+      </div>
       {caption !== undefined && (
         <div
           style={{

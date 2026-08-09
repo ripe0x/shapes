@@ -11,7 +11,8 @@
     "verify": "tsx scripts/verifyStream.ts",
     "fixtures": "tsx scripts/genFixtures.ts",
     "sweep": "tsx scripts/collisionSweep.ts",
-    "standalone": "tsx scripts/buildStandalone.ts"
+    "standalone": "tsx scripts/buildStandalone.ts",
+    "gif:e2e": "node scripts/e2eGif.mjs"
   },
   "dependencies": {
     "@noble/hashes": "^1.8.0",

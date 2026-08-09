@@ -252,6 +252,23 @@ stroke and miter joins included — leaves its cell. It is a display layer only 
 fixtures, exports or the chain. At the committed parameters nothing escapes: the worst case is
 89.3% of the half-cell, and the header reports the headroom live. See SPEC.md D13.
 
+### Animations
+
+Turn on `select frames`, click cards in any view to add them in order — a numbered badge marks
+each one — and the tray at the foot of the page exports them as an animated GIF. `all N to
+animation` in the batch view adds a whole batch at once. Frames can be removed by clicking them
+in the tray, and `reverse` flips the order.
+
+Defaults are 500px wide, 250 ms per frame, looping forever, capped at 12 MB. The encoder is
+purpose-built for two-colour artwork rather than imported: a two-entry colour table compresses
+so hard that a 500×700 card lands in about 4 KB, so 12 MB is roughly three thousand frames. If
+a selection would exceed the cap the frame size is reduced until it fits, and the tray says so.
+
+```bash
+npm run standalone      # build the single-file preview
+npm run gif:e2e         # drive the export in a real browser and capture the download
+```
+
 Command line equivalents:
 
 ```bash

@@ -19,6 +19,7 @@ export function Ladder({
   setPerRow,
   setSeedMode,
   showGrid,
+  badgeOf,
 }: {
   params: Params;
   seedMode: SeedMode;
@@ -29,6 +30,7 @@ export function Ladder({
   setPerRow: (v: number) => void;
   setSeedMode: (m: SeedMode) => void;
   showGrid: boolean;
+  badgeOf: (s: Selection) => number | null;
 }) {
   const [designSeeds, setDesignSeeds] = React.useState(false);
 
@@ -143,6 +145,7 @@ export function Ladder({
                             : renderShape(seed, amount, tokenId, params)
                         }
                         caption={"#" + tokenId.toString()}
+                        badge={badgeOf({ seed, amountWei: amount, tokenId })}
                         onClick={() => onSelect({ seed, amountWei: amount, tokenId })}
                       />
                     );

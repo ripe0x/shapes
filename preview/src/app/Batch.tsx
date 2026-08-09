@@ -24,12 +24,16 @@ export function Batch({
   onSelect,
   paramsAreCommitted,
   showGrid,
+  badgeOf,
+  addMany,
 }: {
   params: Params;
   seedMode: SeedMode;
   onSelect: (s: Selection) => void;
   paramsAreCommitted: boolean;
   showGrid: boolean;
+  badgeOf: (s: Selection) => number | null;
+  addMany: (items: Selection[]) => void;
 }) {
   const [di, setDi] = React.useState(3); // 1 ETH
   const [seedStart, setSeedStart] = React.useState(1n);
@@ -210,6 +214,20 @@ export function Batch({
             {busy ?? "contact sheet (.png)"}
           </Button>
           <Button onClick={exportFixtures}>fixture json</Button>
+          <Button
+            onClick={() =>
+              addMany(
+                cards.map((c, i) => ({
+                  seed: c.seed,
+                  amountWei: amount,
+                  tokenId: seedStart + BigInt(i),
+                })),
+              )
+            }
+            title="Add every card in this batch to the animation, in order."
+          >
+            all {count} to animation
+          </Button>
         </div>
       </div>
 
@@ -244,6 +262,7 @@ export function Batch({
             key={i}
             svg={displaySvgs[i]}
             caption={"#" + (seedStart + BigInt(i)).toString()}
+            badge={badgeOf({ seed: c.seed, amountWei: amount, tokenId: seedStart + BigInt(i) })}
             onClick={() =>
               onSelect({ seed: c.seed, amountWei: amount, tokenId: seedStart + BigInt(i) })
             }
