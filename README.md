@@ -354,10 +354,11 @@ You sign every mint and redeem in the wallet, against the deployed contract on t
    # open http://localhost:5173/chain.html
    ```
 
-3. **Connect.** The page detects the wallet and shows a connect button. Approve the connection,
-   then approve the network switch — it points the wallet at the local fork. If the wallet does
-   not have that network yet it is added automatically; to add it by hand instead, use RPC URL
-   `http://127.0.0.1:8545` (or your `PORT`), chain id `31337`, currency symbol `ETH`.
+3. **Connect** through the RainbowKit button. Pick the browser wallet and approve the
+   connection. If the wallet is on the wrong network the button shows a switch control; approve
+   it to move to the local fork. RainbowKit adds the network automatically; to add it by hand
+   instead, use RPC URL `http://127.0.0.1:8545` (or your `PORT`), chain id `31337`, currency
+   symbol `ETH`.
 
 4. **Mint.** Pick a denomination and mint; the wallet prompts you to sign a transaction sending
    backing plus the fee. Once it confirms, the Shape appears with its artwork fetched from the
@@ -367,11 +368,9 @@ You sign every mint and redeem in the wallet, against the deployed contract on t
    backing returns to your address. The reserve unwinds to zero (bar any stray wei), the same
    invariant the contract enforces.
 
-### Without a wallet extension
-
-With no injected wallet the page falls back to a local test key, funds it, and auto-signs, so
-the harness runs headless with no connect step. This is the path the automated checks use; it
-exercises the same deposit and withdraw code.
+Wallet connection is handled by [RainbowKit](https://www.rainbowkit.com/) over wagmi, with only
+the injected/browser wallet offered — no WalletConnect relay, since the chain is local. A
+browser wallet is required; there is no keyless path.
 
 ### Troubleshooting
 
