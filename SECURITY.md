@@ -126,12 +126,12 @@ assume `Transfer` comes first will mis-order a batch.
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
 | Reserve solvency | Only two value-bearing `CALL`s exist: `_settle` (reached only after a burn) and the fee forward (money received in the same call, never counted as backing). Proven by three stateful invariants. |
-| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. No `Ownable`, no `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
+| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. `Ownable2Step` is inherited, but its owner power reaches only `setRenderer`/`lockRenderer` — a `view`-only renderer with no value path. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
 | Denomination validation | Exact `==` comparisons, no ranges, no rounding, no fallthrough. Because the *index* is stored rather than a wei amount, an off-ladder backing value is unrepresentable in storage. |
 | Forced ETH | Surplus from `selfdestruct`, coinbase or pre-deploy funding leaves `totalBacking` untouched, cannot be extracted, and cannot corrupt accounting — no function reads `address(this).balance`. |
 | DoS against the reserve | An owner that rejects ETH causes `_settle` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
-| Renderer immutability | Pure functions only, no state, no owner, no setter. Verified stable across changes to block number, timestamp, prevrandao, base fee and chain id, and across a second deployment of the same bytecode. |
+| Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is owner-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only — never backing, redemption or ownership — and after locking it is fixed forever. |
 
 ---
 
@@ -139,10 +139,16 @@ assume `Transfer` comes first will mis-order a batch.
 
 1. **`feeRecipient` should be an EOA.** It is immutable and a reverting recipient is a
    permanent brick on minting.
-2. **The mint fee is immutable.** The deploy script's sanity ceiling is 0.01 ETH; overriding it
-   requires an explicit environment variable.
-3. **Artwork traits are grindable at one attempt per block.** If trait rarity is intended to
+2. **The mint fee is immutable.** It is `feeBps` basis points of backing (default 100 = 1%). The
+   deploy script's sanity ceiling is 1000 bps (10%); overriding it requires an explicit
+   environment variable.
+3. **The owner can replace the renderer until it is locked.** This is a cosmetic power — the
+   renderer is `view`-only and cannot touch ETH, backing, redemption or ownership — but a
+   compromised owner could point `tokenURI` at a renderer producing misleading or offensive
+   metadata until `lockRenderer` is called. Hold ownership in a multisig, and lock the renderer
+   once the artwork is settled. Locking is one-way and permanent.
+4. **Artwork traits are grindable at one attempt per block.** If trait rarity is intended to
    carry economic weight, this design is not sufficient — but for Shapes it does not, because
    redemption value is set by denomination alone.
-4. **This review is not a substitute for a professional audit** before mainnet deployment with
+5. **This review is not a substitute for a professional audit** before mainnet deployment with
    real value at risk.

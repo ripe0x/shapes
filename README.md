@@ -166,15 +166,20 @@ stateful invariant over fuzzed sequences of minting, transferring and redeeming.
 
 ## Immutability
 
-There is no owner. `Ownable` is not inherited and no administrative role exists.
+There is one administrative power, and it is cosmetic. The owner may replace the renderer
+(`setRenderer`) to fix a rendering bug, and may freeze it permanently (`lockRenderer`). The
+renderer is read only by `tokenURI`, so it can change how a Shape *looks* — never its backing,
+its redeemability, or who owns it. Once locked, even that ends. The owner may renounce ownership
+at any time (`Ownable2Step`).
 
-Deliberately absent: emergency withdrawal, treasury withdrawal, redemption pause, asset
-recovery, backing modification, token seizure, admin burn, metadata replacement, renderer
-replacement, upgradeability, proxies, allowlists, supply caps, royalties.
+`feeBps` and `feeRecipient` are `immutable`. The reserve, the denominations and the redemption
+path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
+withdrawal, redemption pause, asset recovery, backing modification, token seizure, admin burn,
+fee change, upgradeability, proxies, allowlists, supply caps, royalties.
 
-`feeBps`, `feeRecipient` and `renderer` are `immutable` and have no setters. There are exactly
-two code paths that move ETH out of the contract: the fee forward during minting, and the payout
-during redemption — and the latter burns the token first.
+There are exactly two code paths that move ETH out of the contract: the fee forward during
+minting, and the payout during redemption — and the latter burns the token first. No
+administrative function reaches either.
 
 See [`SECURITY.md`](SECURITY.md) for the adversarial review, including the findings that were
 fixed and the residual risks that were accepted deliberately.
@@ -193,7 +198,10 @@ artwork, no other colours, no gradients, no filters.
 marks. The value and the number live in the metadata. One consequence: artwork is a pure
 function of seed and denomination, so `renderSVG` does not take a token id at all.
 
-Nothing the renderer reads is mutable, so a token's artwork is fixed at mint and cannot change.
+A token's artwork is a pure function of its seed and denomination for a given renderer, and both
+are fixed at mint. The owner can replace the renderer to correct a rendering bug — which would
+re-derive every token's artwork through the new code — until `lockRenderer` makes the renderer,
+and so the artwork, permanent.
 
 ---
 

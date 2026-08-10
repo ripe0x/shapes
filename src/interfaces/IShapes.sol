@@ -20,6 +20,12 @@ interface IShapes is IERC721 {
     /// @notice Emitted once per mint call, when the aggregate fee is forwarded.
     event MintFeePaid(address indexed recipient, uint256 amountWei, uint256 quantity);
 
+    /// @notice Emitted when the owner replaces the onchain renderer.
+    event RendererUpdated(address indexed renderer);
+
+    /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
+    event RendererLocked();
+
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
     error ZeroQuantity();
@@ -31,6 +37,8 @@ interface IShapes is IERC721 {
     ///      contract can never be `msg.sender`. Both minting and transferring to it are
     ///      refused rather than allowing a token to become permanently unredeemable.
     error SelfCustodyRejected(uint256 tokenId);
+    /// @dev `setRenderer` and `lockRenderer` revert once the renderer has been locked.
+    error RendererIsLocked();
 
     /* --------------------------- immutables --------------------------- */
 
@@ -44,8 +52,22 @@ interface IShapes is IERC721 {
     /// @notice Where mint fees are forwarded. Set at construction, never changeable.
     function feeRecipient() external view returns (address);
 
-    /// @notice The onchain renderer. Set at construction, never changeable.
+    /// @notice The onchain renderer. Replaceable by the owner via `setRenderer` until locked.
     function renderer() external view returns (address);
+
+    /// @notice Whether the renderer has been permanently locked.
+    function rendererLocked() external view returns (bool);
+
+    /* ----------------------------- renderer ---------------------------- */
+
+    /// @notice Replace the onchain renderer. Owner only, and only while unlocked. The renderer
+    ///         is read only by `tokenURI`; changing it affects how a Shape looks, never its
+    ///         backing, redeemability or owner. `newRenderer` must carry code.
+    function setRenderer(address newRenderer) external;
+
+    /// @notice Permanently lock the renderer. Owner only, one way. After this the renderer can
+    ///         never change again.
+    function lockRenderer() external;
 
     /* ---------------------------- minting ----------------------------- */
 

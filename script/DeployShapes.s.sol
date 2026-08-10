@@ -93,7 +93,9 @@ contract DeployShapes is Script {
         console.log("Shapes        ", address(shapes));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
+        console.log("owner         ", shapes.owner());
         console.log("");
-        console.log("No owner, no admin, no upgrade path. These addresses are final.");
+        console.log("Fee terms and the reserve are immutable. The owner's only power is the");
+        console.log("renderer: setRenderer to fix a rendering bug, lockRenderer to freeze it.");
     }
 }

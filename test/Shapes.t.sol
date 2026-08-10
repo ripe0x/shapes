@@ -6,6 +6,8 @@ import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.s
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
@@ -552,18 +554,18 @@ contract ReserveTest is ShapesBase {
     }
 
     function test_UnknownSelectorsRevertEvenWithoutValue() public {
-        // A representative sample of the administrative surface Shapes deliberately lacks.
-        string[10] memory absent = [
-            "owner()",
-            "transferOwnership(address)",
+        // The only administrative power is the cosmetic renderer (owned, lockable). No function
+        // reaches the reserve, the fee terms, or a holder's token. This is a sample of the
+        // economic administrative surface Shapes deliberately lacks.
+        string[8] memory absent = [
             "withdraw()",
             "withdrawAll()",
             "emergencyWithdraw()",
             "pause()",
-            "setRenderer(address)",
             "setFeeBps(uint256)",
             "setFeeRecipient(address)",
-            "rescueETH(address,uint256)"
+            "rescueETH(address,uint256)",
+            "seize(uint256)"
         ];
         for (uint256 i = 0; i < absent.length; ++i) {
             (bool ok,) = address(shapes).call(abi.encodeWithSignature(absent[i]));
@@ -736,5 +738,97 @@ contract ViewTest is ShapesBase {
     function test_BackingOfNonexistentReverts() public {
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
         shapes.backingOf(1);
+    }
+}
+
+/* ==================================================================== *
+ *  Renderer replacement and lock
+ * ==================================================================== */
+
+contract RendererAdminTest is ShapesBase {
+    // ShapesBase deploys `shapes` from this test contract, so it is the owner.
+    function test_DeployerIsOwnerAndRendererStartsUnlocked() public view {
+        assertEq(shapes.owner(), address(this));
+        assertEq(shapes.renderer(), address(renderer));
+        assertFalse(shapes.rendererLocked());
+    }
+
+    function test_OwnerCanReplaceTheRenderer() public {
+        uint256 id = _mint(alice, 1 ether);
+        string memory before = shapes.tokenURI(id);
+
+        ShapeRenderer next = new ShapeRenderer();
+        vm.expectEmit(true, false, false, false, address(shapes));
+        emit IShapes.RendererUpdated(address(next));
+        shapes.setRenderer(address(next));
+
+        assertEq(shapes.renderer(), address(next));
+        // A fresh identical renderer produces identical output, so assert the wiring rather than
+        // a difference: tokenURI now routes through `next` and still renders.
+        assertEq(shapes.tokenURI(id), before, "same code, same bytes");
+        assertGt(bytes(shapes.tokenURI(id)).length, 0);
+    }
+
+    function test_SetRendererIsOwnerOnly() public {
+        ShapeRenderer next = new ShapeRenderer();
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        shapes.setRenderer(address(next));
+    }
+
+    function test_SetRendererRejectsCodelessAddress() public {
+        vm.expectRevert(bytes("renderer has no code"));
+        shapes.setRenderer(alice); // an EOA
+
+        vm.expectRevert(bytes("renderer is zero"));
+        shapes.setRenderer(address(0));
+    }
+
+    function test_LockFreezesTheRendererForever() public {
+        ShapeRenderer next = new ShapeRenderer();
+
+        vm.expectEmit(false, false, false, false, address(shapes));
+        emit IShapes.RendererLocked();
+        shapes.lockRenderer();
+        assertTrue(shapes.rendererLocked());
+
+        vm.expectRevert(IShapes.RendererIsLocked.selector);
+        shapes.setRenderer(address(next));
+
+        vm.expectRevert(IShapes.RendererIsLocked.selector);
+        shapes.lockRenderer();
+    }
+
+    function test_LockIsOwnerOnly() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        shapes.lockRenderer();
+    }
+
+    /// @notice The renderer is cosmetic: replacing it never touches backing or redemption.
+    function test_ReplacingRendererDoesNotAffectFunds() public {
+        uint256 id = _mint(alice, 5 ether);
+        assertEq(shapes.backingOf(id), 5 ether);
+
+        // Point the renderer at an EOA-free contract with no metadata path would be refused, so
+        // swap to another valid renderer, then prove redemption still pays exactly the backing.
+        shapes.setRenderer(address(new ShapeRenderer()));
+
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        shapes.redeem(id);
+        assertEq(alice.balance - before, 5 ether, "renderer swap changed the payout");
+        _assertSolvent();
+    }
+
+    function test_OwnerCanRenounce() public {
+        shapes.renounceOwnership();
+        assertEq(shapes.owner(), address(0));
+
+        // With no owner, the renderer can no longer be changed — same as locking, via a
+        // different route.
+        ShapeRenderer next = new ShapeRenderer();
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        shapes.setRenderer(address(next));
     }
 }

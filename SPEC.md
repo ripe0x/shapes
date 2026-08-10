@@ -511,14 +511,19 @@ every run, so it can never quietly drift.
 
 ### D12. Contract architecture
 
-- **No owner, no admin, no pause, no upgrade path, no proxy.** `Ownable` is not
-  inherited. There is no function that can move ETH except `redeem`/`redeemBatch`,
-  and both burn the corresponding token first.
+- **One cosmetic admin power, no economic admin.** `Ownable2Step` is inherited so
+  the owner can replace the renderer (`setRenderer`) and permanently freeze it
+  (`lockRenderer`); the renderer is read only by `tokenURI`, so it reaches no ETH,
+  backing, redemption or token ownership. No other administrative surface exists —
+  no pause, no upgrade path, no proxy, no way to move ETH except `redeem`/
+  `redeemBatch`, both of which burn the corresponding token first. The owner may
+  renounce at any time.
 - `Shapes` stores per token only a `bytes32 seed` and a `uint8` denomination
   index. Backing is derived from the index against the immutable ladder, so an
   out-of-range backing value is not representable.
-- `feeBps`, `feeRecipient` and `renderer` are `immutable`, set at construction.
-  No setters exist for any of them.
+- `feeBps` and `feeRecipient` are `immutable`, set at construction. `renderer` is
+  mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
+  codeless renderer, so `tokenURI` can never be pointed at an address without code.
 - The mint fee is `feeBps` basis points of the backing (the committed value is
   100, i.e. 1%). One percent of every denomination is a whole number of wei, so
   the fee is exact at each. Fees are forwarded to `feeRecipient` in the same

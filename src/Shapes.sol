@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 import {IShapes} from "./interfaces/IShapes.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
@@ -20,9 +21,15 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      exactly one code path that moves ETH out of the reserve — `_settle`, reached only from
 ///      `redeem` and `redeemBatch` — and it burns the corresponding token first.
 ///
-///      Deliberately absent: owner, admin, pause, emergency withdrawal, treasury, asset
-///      recovery, backing modification, token seizure, metadata or renderer replacement,
-///      upgradeability, proxy, allowlist, supply cap, royalties.
+///      The one administrative power is cosmetic: the owner may replace the renderer, and may
+///      permanently lock it. The renderer is read only by `tokenURI`; it can never touch ETH,
+///      backing, redemption or ownership. So the owner can change how a Shape looks, never what
+///      it is worth or who controls it, and once `lockRenderer` is called even that ends. The
+///      owner may renounce ownership at any time (Ownable2Step).
+///
+///      Deliberately absent: pause, emergency withdrawal, treasury, asset recovery, backing
+///      modification, token seizure, mint-fee or fee-recipient change, upgradeability, proxy,
+///      allowlist, supply cap, royalties. No admin path reaches the reserve.
 ///
 ///      Reentrancy: the four functions that move ETH or mint — `mint`, `mintBatch`, `redeem`,
 ///      `redeemBatch` — are guarded. The inherited ERC721 transfer and approval functions are
@@ -36,7 +43,7 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      outside `receive`, so the invariant is stated as an inequality; any such surplus is
 ///      permanently inaccessible, which is strictly preferable to opening a withdrawal path
 ///      that could reach the reserve.
-contract Shapes is ERC721, ReentrancyGuard, IShapes {
+contract Shapes is ERC721, ReentrancyGuard, Ownable2Step, IShapes {
     /* ------------------------------ state ------------------------------ */
 
     /// @dev Per token, the minimum possible: a visual seed and a denomination index.
@@ -56,7 +63,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes {
     /// @inheritdoc IShapes
     uint256 public totalMinted;
 
-    /* ---------------------------- immutables ---------------------------- */
+    /* --------------------------- fee and renderer --------------------------- */
 
     /// @dev Basis-point denominator: `feeBps` of 100 is 1%.
     uint256 internal constant BPS_DENOMINATOR = 10_000;
@@ -65,8 +72,15 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes {
     uint256 public immutable feeBps;
     /// @inheritdoc IShapes
     address public immutable feeRecipient;
+
     /// @inheritdoc IShapes
-    address public immutable renderer;
+    /// @dev Not immutable: the owner may replace it via `setRenderer` to fix a rendering bug,
+    ///      until `lockRenderer` freezes it permanently. It is read only by `tokenURI`, so it
+    ///      never touches ETH, backing, redemption or ownership.
+    address public renderer;
+
+    /// @inheritdoc IShapes
+    bool public rendererLocked;
 
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
     ///        May be zero. A fee above BPS_DENOMINATOR (100%) is rejected; the fee never enters
@@ -79,17 +93,16 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes {
     ///        unaffected and the reserve is never at risk, but the contract becomes
     ///        redeem-only. Prefer an EOA, or a splitter audited for a non-reverting,
     ///        low-gas `receive`. Do not pass a contract whose payable path can be disabled.
-    /// @param renderer_ The onchain renderer. Stored immutably; there is no setter, so an
-    ///        address without renderer code would break `tokenURI` for every token forever.
+    /// @param renderer_ The onchain renderer. Replaceable by the owner until locked, so a
+    ///        rendering bug is recoverable; an address with no renderer code is refused here and
+    ///        by `setRenderer`, so `tokenURI` can never be pointed at a codeless address.
     constructor(uint256 feeBps_, address feeRecipient_, address renderer_)
         ERC721("Shapes", "SHAPE")
+        Ownable(msg.sender)
     {
         require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%");
         require(feeRecipient_ != address(0), "fee recipient is zero");
-        require(renderer_ != address(0), "renderer is zero");
-        // A renderer is immutable and metadata has no fallback path, so refuse an address
-        // with no code outright rather than discovering it after the first mint.
-        require(renderer_.code.length != 0, "renderer has no code");
+        _requireRendererHasCode(renderer_);
         feeBps = feeBps_;
         feeRecipient = feeRecipient_;
         renderer = renderer_;
@@ -98,6 +111,33 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes {
     /// @inheritdoc IShapes
     function mintFeeFor(uint256 amountWei) public view returns (uint256) {
         return (amountWei * feeBps) / BPS_DENOMINATOR;
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Owner only, and only while unlocked. The new renderer must carry code, so metadata
+    ///      cannot be pointed at a codeless address. Purely cosmetic: no token's backing,
+    ///      redeemability or owner is affected.
+    function setRenderer(address newRenderer) external onlyOwner {
+        if (rendererLocked) revert RendererIsLocked();
+        _requireRendererHasCode(newRenderer);
+        renderer = newRenderer;
+        emit RendererUpdated(newRenderer);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Owner only, one way. After this the renderer can never change again, matching the
+    ///      original immutable guarantee, and the owner's only remaining power is to renounce.
+    function lockRenderer() external onlyOwner {
+        if (rendererLocked) revert RendererIsLocked();
+        rendererLocked = true;
+        emit RendererLocked();
+    }
+
+    /// @dev Metadata has no fallback path, so refuse a renderer with no code outright rather
+    ///      than discovering it after the fact, at construction and on every replacement.
+    function _requireRendererHasCode(address renderer_) private view {
+        require(renderer_ != address(0), "renderer is zero");
+        require(renderer_.code.length != 0, "renderer has no code");
     }
 
     /* ------------------------------ minting ----------------------------- */
