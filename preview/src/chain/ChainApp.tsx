@@ -126,7 +126,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
         <header style={S.header}>
           <div>
             <h1 style={S.h1}>Shapes — chain tester</h1>
-            <div style={S.dim}>deposit ETH, read the onchain artwork back, redeem it. Dev fork only.</div>
+            <div style={S.dim}>deposit ETH, read the onchain artwork back, redeem it. Local dev chain only.</div>
             <div style={{...S.mono, ...S.dim, fontSize: 12, marginTop: 6}}>
               shapes {addr(dep.shapes)} · chain {dep.chainId}
             </div>
