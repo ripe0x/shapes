@@ -13,7 +13,7 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 ///      both are `immutable` on the deployed contract and can never be changed afterwards, so
 ///      they must be chosen deliberately here.
 ///
-///        SHAPES_MINT_FEE       fee in wei per NFT minted. Defaults to 0.0005 ether.
+///        SHAPES_FEE_BPS        mint fee in basis points of backing. Defaults to 100 (1%).
 ///        SHAPES_FEE_RECIPIENT  where fees are forwarded. Must be set off local chains.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
 ///
@@ -25,16 +25,16 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 ///        SHAPES_FEE_RECIPIENT=0x... forge script script/DeployShapes.s.sol --rpc-url $RPC \
 ///          --broadcast --verify
 contract DeployShapes is Script {
-    uint256 internal constant DEFAULT_MINT_FEE = 0.0005 ether;
+    uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
     uint256 internal constant ANVIL_CHAIN_ID = 31337;
 
     /// @dev A sanity ceiling, not a protocol rule. The fee is immutable, and a fat-fingered
-    ///      one would be permanent: at 0.01 ETH backing, a fee above this exceeds the value
-    ///      of the smallest Shape. Override deliberately if you really mean it.
-    uint256 internal constant MAX_SANE_MINT_FEE = 0.01 ether;
+    ///      one would be permanent. 1000 bps is 10% of backing; anything above that is almost
+    ///      certainly a mistake. Override deliberately if you really mean it.
+    uint256 internal constant MAX_SANE_FEE_BPS = 1000;
 
     function run() external returns (ShapeRenderer renderer, Shapes shapes) {
-        uint256 mintFee = vm.envOr("SHAPES_MINT_FEE", DEFAULT_MINT_FEE);
+        uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));
 
@@ -50,8 +50,8 @@ contract DeployShapes is Script {
         }
 
         require(
-            mintFee <= MAX_SANE_MINT_FEE || vm.envOr("SHAPES_ALLOW_HIGH_FEE", false),
-            "mint fee above the sanity ceiling: set SHAPES_ALLOW_HIGH_FEE=true to confirm"
+            feeBps <= MAX_SANE_FEE_BPS || vm.envOr("SHAPES_ALLOW_HIGH_FEE", false),
+            "fee bps above the sanity ceiling: set SHAPES_ALLOW_HIGH_FEE=true to confirm"
         );
         require(feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
             "fee recipient is a contract: a reverting receive would brick minting forever. "
@@ -64,13 +64,13 @@ contract DeployShapes is Script {
             ? new ShapeRenderer()
             : ShapeRenderer(existingRenderer);
 
-        shapes = new Shapes(mintFee, feeRecipient, address(renderer));
+        shapes = new Shapes(feeBps, feeRecipient, address(renderer));
 
         vm.stopBroadcast();
 
         // Everything below is immutable from here on, so prove it landed as intended rather
         // than trusting the constructor arguments.
-        require(shapes.mintFee() == mintFee, "mint fee mismatch");
+        require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         require(address(renderer).code.length != 0, "renderer has no code");
@@ -91,7 +91,7 @@ contract DeployShapes is Script {
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));
         console.log("Shapes        ", address(shapes));
-        console.log("mint fee (wei)", mintFee);
+        console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
         console.log("");
         console.log("No owner, no admin, no upgrade path. These addresses are final.");

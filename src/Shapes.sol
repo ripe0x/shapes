@@ -58,14 +58,20 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes {
 
     /* ---------------------------- immutables ---------------------------- */
 
+    /// @dev Basis-point denominator: `feeBps` of 100 is 1%.
+    uint256 internal constant BPS_DENOMINATOR = 10_000;
+
     /// @inheritdoc IShapes
-    uint256 public immutable mintFee;
+    uint256 public immutable feeBps;
     /// @inheritdoc IShapes
     address public immutable feeRecipient;
     /// @inheritdoc IShapes
     address public immutable renderer;
 
-    /// @param mintFee_ Fixed fee per NFT minted, charged on top of backing. May be zero.
+    /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
+    ///        May be zero. A fee above BPS_DENOMINATOR (100%) is rejected; the fee never enters
+    ///        backing and redemption is unaffected regardless, but a fee exceeding the backing
+    ///        itself is a deployment mistake, not a design.
     /// @param feeRecipient_ Where fees are forwarded. It MUST be able to receive ETH.
     ///        This is the single most consequential constructor argument: because it is
     ///        immutable, a recipient that reverts on receipt — or that later starts
@@ -75,17 +81,23 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes {
     ///        low-gas `receive`. Do not pass a contract whose payable path can be disabled.
     /// @param renderer_ The onchain renderer. Stored immutably; there is no setter, so an
     ///        address without renderer code would break `tokenURI` for every token forever.
-    constructor(uint256 mintFee_, address feeRecipient_, address renderer_)
+    constructor(uint256 feeBps_, address feeRecipient_, address renderer_)
         ERC721("Shapes", "SHAPE")
     {
+        require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%");
         require(feeRecipient_ != address(0), "fee recipient is zero");
         require(renderer_ != address(0), "renderer is zero");
         // A renderer is immutable and metadata has no fallback path, so refuse an address
         // with no code outright rather than discovering it after the first mint.
         require(renderer_.code.length != 0, "renderer has no code");
-        mintFee = mintFee_;
+        feeBps = feeBps_;
         feeRecipient = feeRecipient_;
         renderer = renderer_;
+    }
+
+    /// @inheritdoc IShapes
+    function mintFeeFor(uint256 amountWei) public view returns (uint256) {
+        return (amountWei * feeBps) / BPS_DENOMINATOR;
     }
 
     /* ------------------------------ minting ----------------------------- */
@@ -124,7 +136,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes {
         }
 
         uint256 backing = amountWei * quantity;
-        uint256 fees = mintFee * quantity;
+        // Fee is a percentage of each token's backing. Computed per token, then scaled, so the
+        // aggregate matches quantity independent mints exactly. Exact in wei at every
+        // denomination for the committed 1% (each denomination is a whole number of finney).
+        uint256 fees = mintFeeFor(amountWei) * quantity;
         if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
 
         firstTokenId = totalMinted + 1;

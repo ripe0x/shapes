@@ -12,7 +12,11 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 /// @dev Each test here exists because something was once wrong, or could plausibly be made
 ///      wrong by a later edit. See SECURITY.md.
 contract HardeningTest is Test {
-    uint256 internal constant FEE = 0.0005 ether;
+    uint256 internal constant FEE_BPS = 100; // 1%
+
+    function feeOf(uint256 amount) internal pure returns (uint256) {
+        return (amount * FEE_BPS) / 10_000;
+    }
 
     ShapeRenderer internal renderer;
     Shapes internal shapes;
@@ -23,7 +27,7 @@ contract HardeningTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE, feeRecipient, address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -39,13 +43,13 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 100 ether + FEE}(100 ether, alice);
+        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, alice);
         bytes32 seedA = shapes.seedOf(id);
 
         vm.revertToState(snap);
 
         vm.prank(bob);
-        uint256 id2 = shapes.mint{value: 100 ether + FEE}(100 ether, address(0xC0FFEE));
+        uint256 id2 = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, address(0xC0FFEE));
         bytes32 seedB = shapes.seedOf(id2);
 
         assertEq(id, id2, "same token id");
@@ -57,7 +61,7 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 100 ether + FEE}(100 ether, alice);
+        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, alice);
         string memory target = shapes.tokenURI(id);
         vm.revertToState(snap);
 
@@ -65,7 +69,7 @@ contract HardeningTest is Test {
             uint256 s = vm.snapshotState();
             address candidate = address(uint160(0x1000 + i));
             vm.prank(alice);
-            uint256 got = shapes.mint{value: 100 ether + FEE}(100 ether, candidate);
+            uint256 got = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, candidate);
             assertEq(shapes.tokenURI(got), target, "recipient choice changed the artwork");
             vm.revertToState(s);
         }
@@ -76,13 +80,13 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        shapes.mintBatch{value: 1 * (1 ether + FEE)}(1 ether, 1, alice);
+        shapes.mintBatch{value: 1 * (1 ether + feeOf(1 ether))}(1 ether, 1, alice);
         bytes32 solo = shapes.seedOf(1);
 
         vm.revertToState(snap);
 
         vm.prank(alice);
-        shapes.mintBatch{value: 7 * (1 ether + FEE)}(1 ether, 7, alice);
+        shapes.mintBatch{value: 7 * (1 ether + feeOf(1 ether))}(1 ether, 7, alice);
         assertEq(shapes.seedOf(1), solo, "seed moved with batch size");
     }
 
@@ -90,8 +94,8 @@ contract HardeningTest is Test {
     ///         the same block.
     function test_SeedsRemainDistinctWithinAndAcrossBatches() public {
         vm.startPrank(alice);
-        shapes.mintBatch{value: 6 * (1 ether + FEE)}(1 ether, 6, alice);
-        shapes.mintBatch{value: 6 * (5 ether + FEE)}(5 ether, 6, alice);
+        shapes.mintBatch{value: 6 * (1 ether + feeOf(1 ether))}(1 ether, 6, alice);
+        shapes.mintBatch{value: 6 * (5 ether + feeOf(5 ether))}(5 ether, 6, alice);
         vm.stopPrank();
 
         bytes32[] memory seen = new bytes32[](12);
@@ -107,18 +111,18 @@ contract HardeningTest is Test {
 
     function test_RendererWithoutCodeIsRejected() public {
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE, feeRecipient, address(0xDEAD));
+        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD));
 
         // an EOA is equally unacceptable
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE, feeRecipient, alice);
+        new Shapes(FEE_BPS, feeRecipient, alice);
     }
 
     /* ---------------- self-custody ---------------- */
 
     function test_CannotTransferAShapeToTheContractItself() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, alice);
+        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, id));
@@ -135,7 +139,7 @@ contract HardeningTest is Test {
     function test_CannotMintDirectlyIntoTheContract() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 1));
-        shapes.mint{value: 1 ether + FEE}(1 ether, address(shapes));
+        shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(shapes));
 
         assertEq(shapes.totalBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
@@ -150,7 +154,7 @@ contract HardeningTest is Test {
         BalanceProbe probe = new BalanceProbe(shapes);
 
         vm.prank(alice);
-        shapes.mintBatch{value: 4 * (1 ether + FEE)}(1 ether, 4, address(probe));
+        shapes.mintBatch{value: 4 * (1 ether + feeOf(1 ether))}(1 ether, 4, address(probe));
 
         assertGt(probe.observations(), 0, "callback never ran");
         assertEq(

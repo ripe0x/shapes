@@ -12,7 +12,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 ///         against Shapes, tracking its own view of what the reserve should be.
 contract Handler is Test, IERC721Receiver {
     Shapes public immutable shapes;
-    uint256 public immutable fee;
+    uint256 public immutable feeBps;
 
     address[4] public actors;
 
@@ -40,7 +40,7 @@ contract Handler is Test, IERC721Receiver {
 
     constructor(Shapes shapes_) {
         shapes = shapes_;
-        fee = shapes_.mintFee();
+        feeBps = shapes_.feeBps();
         actors = [address(0xA1), address(0xA2), address(0xA3), address(0xA4)];
         for (uint256 i = 0; i < actors.length; ++i) {
             vm.deal(actors[i], 100_000 ether);
@@ -87,9 +87,9 @@ contract Handler is Test, IERC721Receiver {
         address who = _actor(actorSeed);
 
         vm.prank(who);
-        try shapes.mint{value: amount + fee}(amount, who) returns (uint256 id) {
+        try shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount, who) returns (uint256 id) {
             ghostBackingIn += amount;
-            ghostFeesPaid += fee;
+            ghostFeesPaid += shapes.mintFeeFor(amount);
             ghostMints += 1;
             _track(id);
         } catch {}
@@ -99,12 +99,12 @@ contract Handler is Test, IERC721Receiver {
         uint256 amount = DENOMS[denomSeed % 9];
         uint256 qty = bound(qtySeed, 1, 8);
         address who = _actor(actorSeed);
-        uint256 cost = qty * (amount + fee);
+        uint256 cost = qty * (amount + shapes.mintFeeFor(amount));
 
         vm.prank(who);
         try shapes.mintBatch{value: cost}(amount, qty, who) returns (uint256 first) {
             ghostBackingIn += amount * qty;
-            ghostFeesPaid += fee * qty;
+            ghostFeesPaid += shapes.mintFeeFor(amount) * qty;
             ghostMints += qty;
             for (uint256 i = 0; i < qty; ++i) {
                 _track(first + i);
@@ -194,7 +194,7 @@ contract Handler is Test, IERC721Receiver {
  * ==================================================================== */
 
 contract ShapesInvariantTest is StdInvariant, Test {
-    uint256 internal constant FEE = 0.0005 ether;
+    uint256 internal constant FEE_BPS = 100; // 1%
 
     ShapeRenderer internal renderer;
     Shapes internal shapes;
@@ -203,7 +203,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE, feeRecipient, address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
         handler = new Handler(shapes);
 
         targetContract(address(handler));
@@ -252,7 +252,11 @@ contract ShapesInvariantTest is StdInvariant, Test {
     /// @notice Fees never enter the reserve, and every minted token paid exactly one.
     function invariant_FeesAreSeparateFromBacking() public view {
         assertEq(feeRecipient.balance, handler.ghostFeesPaid(), "fee accounting drifted");
-        assertEq(handler.ghostFeesPaid(), shapes.totalMinted() * FEE, "flat fee per mint");
+        assertEq(
+            handler.ghostFeesPaid(),
+            (handler.ghostBackingIn() * handler.feeBps()) / 10_000,
+            "fees are exactly feeBps of all backing minted"
+        );
         assertGe(
             address(shapes).balance,
             shapes.totalBacking(),

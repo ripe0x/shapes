@@ -35,7 +35,10 @@ export function ChainApp({dep}: {dep: Deployment}) {
   const [tokens, setTokens] = React.useState<OwnedToken[]>([]);
   const [reserve, setReserve] = React.useState<Reserve | null>(null);
   const [acctBalance, setAcctBalance] = React.useState<bigint>(0n);
-  const [mintFee, setMintFee] = React.useState<bigint>(0n);
+  const [feeBps, setFeeBps] = React.useState<bigint>(0n);
+
+  // The fee is a percentage of backing, so it depends on the selected denomination.
+  const feePerNft = (amountWei * feeBps) / 10_000n;
 
   const refresh = React.useCallback(async () => {
     if (!publicClient || !address) return;
@@ -45,12 +48,12 @@ export function ChainApp({dep}: {dep: Deployment}) {
       publicClient.readContract({...shapes, functionName: "totalBacking"}),
       publicClient.readContract({...shapes, functionName: "totalSupply"}),
       publicClient.readContract({...shapes, functionName: "totalMinted"}),
-      publicClient.readContract({...shapes, functionName: "mintFee"}),
+      publicClient.readContract({...shapes, functionName: "feeBps"}),
       publicClient.getBalance({address: dep.shapes}),
       publicClient.getBalance({address}),
     ]);
     setReserve({totalBacking, balance, supply, minted});
-    setMintFee(fee);
+    setFeeBps(fee);
     setAcctBalance(acct);
 
     // No enumerable extension; in a dev harness the id space is tiny, so scan it and keep the
@@ -110,7 +113,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
 
   const mint = () =>
     run("mint", () => {
-      const value = (amountWei + mintFee) * BigInt(qty);
+      const value = (amountWei + feePerNft) * BigInt(qty);
       return qty === 1
         ? write("mint", [amountWei, address!], value)
         : write("mintBatch", [amountWei, BigInt(qty), address!], value);
@@ -141,7 +144,12 @@ export function ChainApp({dep}: {dep: Deployment}) {
         ) : (
           <>
             {/* Reserve invariant, live. */}
-            <ReserveCard reserve={reserve} mintFee={mintFee} acctBalance={acctBalance} />
+            <ReserveCard
+              reserve={reserve}
+              feeBps={feeBps}
+              feePerNft={feePerNft}
+              acctBalance={acctBalance}
+            />
 
             {/* Mint controls. */}
             <section style={S.card}>
@@ -172,7 +180,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
                 <button onClick={mint} disabled={!!busy} style={S.primary}>
                   {busy === "mint"
                     ? "minting…"
-                    : `mint  (send ${formatEther((amountWei + mintFee) * BigInt(qty))} ETH)`}
+                    : `mint  (send ${formatEther((amountWei + feePerNft) * BigInt(qty))} ETH)`}
                 </button>
                 {tokens.length > 0 && (
                   <button onClick={redeemAll} disabled={!!busy} style={S.secondary}>
@@ -213,15 +221,18 @@ export function ChainApp({dep}: {dep: Deployment}) {
 
 function ReserveCard({
   reserve,
-  mintFee,
+  feeBps,
+  feePerNft,
   acctBalance,
 }: {
   reserve: Reserve;
-  mintFee: bigint;
+  feeBps: bigint;
+  feePerNft: bigint;
   acctBalance: bigint;
 }) {
   const solvent = reserve.balance >= reserve.totalBacking;
   const stray = reserve.balance - reserve.totalBacking;
+  const feePct = Number(feeBps) / 100;
   return (
     <section style={{...S.card, borderColor: solvent ? "#1c5" : "#e33"}}>
       <Row k="contract balance" v={`${formatEther(reserve.balance)} ETH`} />
@@ -232,7 +243,7 @@ function ReserveCard({
         danger={!solvent}
       />
       <Row k="live / minted" v={`${reserve.supply} / ${reserve.minted}`} />
-      <Row k="mint fee" v={`${formatEther(mintFee)} ETH`} />
+      <Row k="mint fee" v={`${feePct}% · ${formatEther(feePerNft)} ETH for this denomination`} />
       <Row k="your balance" v={`${formatEther(acctBalance)} ETH`} />
     </section>
   );

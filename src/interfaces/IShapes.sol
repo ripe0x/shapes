@@ -34,8 +34,12 @@ interface IShapes is IERC721 {
 
     /* --------------------------- immutables --------------------------- */
 
-    /// @notice The fixed fee charged per NFT minted, on top of backing. Never enters backing.
-    function mintFee() external view returns (uint256);
+    /// @notice The mint fee in basis points of the backing, charged on top of it. 100 is 1%.
+    ///         Never enters backing. Set at construction, never changeable.
+    function feeBps() external view returns (uint256);
+
+    /// @notice The mint fee in wei for a given backing amount: `amountWei * feeBps / 10000`.
+    function mintFeeFor(uint256 amountWei) external view returns (uint256);
 
     /// @notice Where mint fees are forwarded. Set at construction, never changeable.
     function feeRecipient() external view returns (address);
@@ -46,12 +50,12 @@ interface IShapes is IERC721 {
     /* ---------------------------- minting ----------------------------- */
 
     /// @notice Mint one Shape backed by `amountWei`.
-    /// @dev `msg.value` must equal exactly `amountWei + mintFee()`.
+    /// @dev `msg.value` must equal exactly `amountWei + mintFeeFor(amountWei)`.
     function mint(uint256 amountWei, address to) external payable returns (uint256 tokenId);
 
     /// @notice Mint `quantity` Shapes, each backed by `amountWei`.
-    /// @dev `msg.value` must equal exactly `quantity * (amountWei + mintFee())`. Each token
-    ///      receives a distinct id and a distinct seed.
+    /// @dev `msg.value` must equal exactly `quantity * (amountWei + mintFeeFor(amountWei))`.
+    ///      Each token receives a distinct id and a distinct seed.
     function mintBatch(uint256 amountWei, uint256 quantity, address to)
         external
         payable

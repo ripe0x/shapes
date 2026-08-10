@@ -11,7 +11,7 @@ RPC=${RPC:-http://127.0.0.1:8545}
 PK0=${PK0:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
 ADDR0=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 ADDR1=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-FEE=500000000000000 # 0.0005 ETH
+FEE_BPS=100 # 1% of backing, per token
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 # bash integers are 64-bit signed; Shape denominations are not.
@@ -33,7 +33,7 @@ fi
 
 say "Rejecting an unsupported denomination (2 ETH)"
 if cast send "$SHAPES" "mint(uint256,address)" 2000000000000000000 "$ADDR0" \
-     --value "$(big "2000000000000000000 + $FEE")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
+     --value "$(big "2000000000000000000 + 2000000000000000000*$FEE_BPS//10000")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
   echo "  FAIL: 2 ETH was accepted"; exit 1
 else
   echo "  ok: reverted"
@@ -45,7 +45,7 @@ DENOMS=(10000000000000000 100000000000000000 500000000000000000 1000000000000000
         100000000000000000000)
 for d in "${DENOMS[@]}"; do
   cast send "$SHAPES" "mint(uint256,address)" "$d" "$ADDR0" \
-    --value "$(big "$d + $FEE")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+    --value "$(big "$d + $d*$FEE_BPS//10000")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null
   printf '  minted %s wei\n' "$d"
 done
 

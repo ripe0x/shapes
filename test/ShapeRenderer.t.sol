@@ -585,7 +585,7 @@ contract TokenMetadataTest is RendererTestBase {
 
     function setUp() public override {
         super.setUp();
-        shapes = new Shapes(0.0005 ether, address(0xFEE), address(renderer));
+        shapes = new Shapes(100, address(0xFEE), address(renderer));
         vm.deal(alice, 1_000 ether);
     }
 
@@ -596,7 +596,7 @@ contract TokenMetadataTest is RendererTestBase {
 
         for (uint256 i = 0; i < 9; ++i) {
             vm.prank(alice);
-            uint256 id = shapes.mint{value: DENOMS[i] + 0.0005 ether}(DENOMS[i], alice);
+            uint256 id = shapes.mint{value: DENOMS[i] + DENOMS[i] / 100}(DENOMS[i], alice);
 
             string memory json =
                 string(Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,")));
@@ -616,7 +616,7 @@ contract TokenMetadataTest is RendererTestBase {
 
     function test_TokenUriUsesTheStoredSeed() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + 0.0005 ether}(1 ether, alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether, alice);
         bytes32 seed = shapes.seedOf(id);
         assertEq(shapes.tokenURI(id), renderer.tokenURI(seed, 1 ether, id));
     }
@@ -624,7 +624,7 @@ contract TokenMetadataTest is RendererTestBase {
     /// @dev Artwork is fixed at mint. Nothing about later chain state may change it.
     function test_ArtworkIsStableForTheLifeOfTheToken() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 5 ether + 0.0005 ether}(5 ether, alice);
+        uint256 id = shapes.mint{value: 5 ether + 0.05 ether}(5 ether, alice);
         string memory atMint = shapes.tokenURI(id);
 
         vm.roll(block.number + 100_000);

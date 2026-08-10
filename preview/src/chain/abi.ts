@@ -14,7 +14,8 @@ export const shapesAbi = parseAbi([
   "function totalBacking() view returns (uint256)",
   "function totalSupply() view returns (uint256)",
   "function totalMinted() view returns (uint256)",
-  "function mintFee() view returns (uint256)",
+  "function feeBps() view returns (uint256)",
+  "function mintFeeFor(uint256 amountWei) view returns (uint256)",
   "event ShapeMinted(uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed)",
   "event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei)",
 ]);
@@ -24,7 +25,7 @@ export interface Deployment {
   chainId: number;
   shapes: `0x${string}`;
   renderer: `0x${string}`;
-  mintFee: string;
+  feeBps: string;
 }
 
 // The nine denominations, in wei, with their display labels. Mirrors src/lib/Denominations.sol.

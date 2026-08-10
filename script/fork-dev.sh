@@ -69,7 +69,7 @@ OUT=$(SHAPES_FEE_RECIPIENT="$FEE_RECIPIENT" \
   forge script script/DeployShapes.s.sol --rpc-url "$RPC" --private-key "$PK0" --broadcast 2>&1)
 SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-MINT_FEE=$(cast call "$SHAPES" "mintFee()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+FEE_BPS=$(cast call "$SHAPES" "feeBps()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
 
 [ -n "$SHAPES" ] && [ -n "$RENDERER" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
 
@@ -95,14 +95,14 @@ cat >"$DEPLOYMENT_FILE" <<JSON
   "chainId": $CHAIN_ID,
   "shapes": "$SHAPES",
   "renderer": "$RENDERER",
-  "mintFee": "$MINT_FEE"
+  "feeBps": "$FEE_BPS"
 }
 JSON
 
 say "Ready"
 echo "  Shapes        $SHAPES"
 echo "  ShapeRenderer $RENDERER"
-echo "  mint fee      $MINT_FEE wei"
+echo "  fee (bps)     $FEE_BPS"
 echo "  wrote         $DEPLOYMENT_FILE"
 echo
 echo "  cd preview && npm run dev, then open http://localhost:5173/chain.html"

@@ -86,27 +86,30 @@ mint(uint256 amountWei, address to) payable returns (uint256 tokenId)
 mintBatch(uint256 amountWei, uint256 quantity, address to) payable returns (uint256 firstTokenId)
 ```
 
-You send the backing **plus a fixed fee per NFT**:
+You send the backing **plus a mint fee that is a percentage of it**:
 
 ```
-mint a 1 ETH Shape   ->  msg.value = 1 ETH + mintFee
+mint a 1 ETH Shape   ->  msg.value = 1 ETH + 1% = 1.01 ETH
                          the NFT's redemption value = exactly 1 ETH
 
-ten 1 ETH Shapes     ->  msg.value = 10 ETH + 10 x mintFee
+ten 1 ETH Shapes     ->  msg.value = 10 x 1.01 ETH = 10.1 ETH
                          backing obligation = exactly 10 ETH
 ```
 
 The value must be exact — over and under both revert. Each token in a batch gets its own id and
 its own seed.
 
-## The fixed mint fee
+## The mint fee
 
-Shapes charges a small flat fee per NFT minted. Not a percentage. A 100 ETH Shape does not cost
-ten thousand times more to mint than a 0.01 ETH Shape merely because it holds more ETH.
+Shapes charges a mint fee of 1% of the backing, on top of it. `feeBps` (100 basis points = 1%)
+and `feeRecipient` are `immutable`, chosen at deployment. The fee scales with the amount wrapped:
+a 100 ETH Shape pays 1 ETH, a 0.01 ETH Shape pays 0.0001 ETH. One percent of every denomination
+is a whole number of wei, so the fee is exact at each — no rounding.
 
-`mintFee` and `feeRecipient` are `immutable`, chosen at deployment. Fees are forwarded to the
-recipient in the same transaction and never join the reserve. The example deployment uses
-0.0005 ETH; that is a deploy-time parameter, not a source constant.
+`mintFeeFor(amountWei)` returns the fee for a given backing. Fees are forwarded to the recipient
+in the same transaction and never join the reserve; a batch forwards its aggregate once.
+Redemption is unaffected: a 1 ETH Shape always redeems for exactly 1 ETH, fee already paid at
+mint.
 
 There is no burn fee, no transfer fee, no royalty requirement, and no recurring protocol fee.
 
@@ -163,7 +166,7 @@ Deliberately absent: emergency withdrawal, treasury withdrawal, redemption pause
 recovery, backing modification, token seizure, admin burn, metadata replacement, renderer
 replacement, upgradeability, proxies, allowlists, supply caps, royalties.
 
-`mintFee`, `feeRecipient` and `renderer` are `immutable` and have no setters. There are exactly
+`feeBps`, `feeRecipient` and `renderer` are `immutable` and have no setters. There are exactly
 two code paths that move ETH out of the contract: the fee forward during minting, and the payout
 during redemption — and the latter burns the token first.
 
@@ -348,7 +351,7 @@ You sign every mint and redeem in the wallet, against the deployed contract.
    ```
 
    Leave it running. It prints the RPC URL (`http://127.0.0.1:8545` unless `PORT` is set), the
-   chain id, the deployed addresses, and the mint fee.
+   chain id, the deployed addresses, and the fee in basis points.
 
 2. **Serve the page** in another shell, and open the chain entry. Vite falls through to the next
    free port if 5173 is taken, so use whatever it prints.
@@ -407,7 +410,7 @@ forge script script/DeployShapes.s.sol \
 For a live deployment, both parameters are permanent, so set them explicitly:
 
 ```bash
-SHAPES_MINT_FEE=500000000000000 \
+SHAPES_FEE_BPS=100 \
 SHAPES_FEE_RECIPIENT=0x... \
 forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
 ```

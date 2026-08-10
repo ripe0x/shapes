@@ -506,10 +506,12 @@ every run, so it can never quietly drift.
 - `Shapes` stores per token only a `bytes32 seed` and a `uint8` denomination
   index. Backing is derived from the index against the immutable ladder, so an
   out-of-range backing value is not representable.
-- `mintFee`, `feeRecipient` and `renderer` are `immutable`, set at construction.
+- `feeBps`, `feeRecipient` and `renderer` are `immutable`, set at construction.
   No setters exist for any of them.
-- Fees are forwarded to `feeRecipient` in the same transaction and never enter
-  the reserve. A batch forwards its aggregate fee once.
+- The mint fee is `feeBps` basis points of the backing (the committed value is
+  100, i.e. 1%). One percent of every denomination is a whole number of wei, so
+  the fee is exact at each. Fees are forwarded to `feeRecipient` in the same
+  transaction and never enter the reserve. A batch forwards its aggregate once.
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
   invariant asserted is `address(this).balance >= totalBacking`.

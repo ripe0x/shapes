@@ -22,7 +22,12 @@ import {
 } from "./mocks/Mocks.sol";
 
 abstract contract ShapesBase is Test {
-    uint256 internal constant FEE = 0.0005 ether;
+    uint256 internal constant FEE_BPS = 100; // 1%
+
+    /// @dev The mint fee for a given backing: 1% of it. Exact in wei at every denomination.
+    function feeOf(uint256 amount) internal pure returns (uint256) {
+        return (amount * FEE_BPS) / 10_000;
+    }
 
     ShapeRenderer internal renderer;
     Shapes internal shapes;
@@ -45,14 +50,14 @@ abstract contract ShapesBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE, feeRecipient, address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
 
     function _mint(address who, uint256 amount) internal returns (uint256 id) {
         vm.prank(who);
-        id = shapes.mint{value: amount + FEE}(amount, who);
+        id = shapes.mint{value: amount + feeOf(amount)}(amount, who);
     }
 
     /// @dev The reserve invariant, asserted after anything interesting happens.
@@ -94,7 +99,7 @@ contract MintTest is ShapesBase {
 
     function test_MintToAnotherAddress() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, bob);
+        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, bob);
         assertEq(shapes.ownerOf(id), bob);
     }
 
@@ -106,30 +111,30 @@ contract MintTest is ShapesBase {
             vm.expectRevert(
                 abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, bad[i])
             );
-            shapes.mint{value: bad[i] + FEE}(bad[i], alice);
+            shapes.mint{value: bad[i] + feeOf(bad[i])}(bad[i], alice);
         }
     }
 
     function test_RevertsOnZeroBacking() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, 0));
-        shapes.mint{value: FEE}(0, alice);
+        shapes.mint{value: 0}(0, alice);
     }
 
     function testFuzz_OnlyLadderAmountsAreAccepted(uint256 amount) public {
         amount = bound(amount, 0, 200 ether);
         bool supported = shapes.isSupportedDenomination(amount);
 
-        vm.deal(alice, amount + FEE);
+        vm.deal(alice, amount + feeOf(amount));
         vm.prank(alice);
         if (supported) {
-            shapes.mint{value: amount + FEE}(amount, alice);
+            shapes.mint{value: amount + feeOf(amount)}(amount, alice);
             assertEq(shapes.totalBacking(), amount);
         } else {
             vm.expectRevert(
                 abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, amount)
             );
-            shapes.mint{value: amount + FEE}(amount, alice);
+            shapes.mint{value: amount + feeOf(amount)}(amount, alice);
             assertEq(shapes.totalBacking(), 0);
         }
         _assertSolvent();
@@ -139,30 +144,30 @@ contract MintTest is ShapesBase {
         vm.startPrank(alice);
 
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.IncorrectPayment.selector, 1 ether + FEE, 1 ether)
+            abi.encodeWithSelector(IShapes.IncorrectPayment.selector, 1 ether + feeOf(1 ether), 1 ether)
         );
         shapes.mint{value: 1 ether}(1 ether, alice);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IShapes.IncorrectPayment.selector, 1 ether + FEE, 1 ether + FEE - 1
+                IShapes.IncorrectPayment.selector, 1 ether + feeOf(1 ether), 1 ether + feeOf(1 ether) - 1
             )
         );
-        shapes.mint{value: 1 ether + FEE - 1}(1 ether, alice);
+        shapes.mint{value: 1 ether + feeOf(1 ether) - 1}(1 ether, alice);
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IShapes.IncorrectPayment.selector, 1 ether + FEE, 1 ether + FEE + 1
+                IShapes.IncorrectPayment.selector, 1 ether + feeOf(1 ether), 1 ether + feeOf(1 ether) + 1
             )
         );
-        shapes.mint{value: 1 ether + FEE + 1}(1 ether, alice);
+        shapes.mint{value: 1 ether + feeOf(1 ether) + 1}(1 ether, alice);
 
         vm.stopPrank();
         assertEq(shapes.totalBacking(), 0);
     }
 
     function testFuzz_AnyIncorrectValueReverts(uint256 sent) public {
-        uint256 required = 1 ether + FEE;
+        uint256 required = 1 ether + feeOf(1 ether);
         vm.assume(sent != required);
         sent = bound(sent, 0, 500 ether);
         vm.assume(sent != required);
@@ -177,7 +182,7 @@ contract MintTest is ShapesBase {
 
     function test_BatchRequiresExactAggregate() public {
         uint256 qty = 10;
-        uint256 required = qty * (1 ether + FEE);
+        uint256 required = qty * (1 ether + feeOf(1 ether));
 
         vm.prank(alice);
         vm.expectRevert(
@@ -193,13 +198,14 @@ contract MintTest is ShapesBase {
         assertEq(shapes.totalSupply(), qty);
         assertEq(shapes.totalBacking(), qty * 1 ether, "fees are not part of backing");
         assertEq(address(shapes).balance, qty * 1 ether);
-        assertEq(feeRecipient.balance, qty * FEE, "aggregate fee forwarded once");
+        assertEq(feeRecipient.balance, qty * feeOf(1 ether), "aggregate fee forwarded once");
     }
 
     function test_BatchGivesUniqueIdsAndSeeds() public {
         uint256 qty = 25;
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: qty * (0.1 ether + FEE)}(0.1 ether, qty, alice);
+        uint256 first =
+            shapes.mintBatch{value: qty * (0.1 ether + feeOf(0.1 ether))}(0.1 ether, qty, alice);
 
         bytes32[] memory seen = new bytes32[](qty);
         for (uint256 i = 0; i < qty; ++i) {
@@ -224,7 +230,7 @@ contract MintTest is ShapesBase {
     function test_MintToContractReceiver() public {
         GoodReceiver r = new GoodReceiver();
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
         assertEq(shapes.ownerOf(id), address(r));
     }
 
@@ -234,7 +240,7 @@ contract MintTest is ShapesBase {
         vm.expectRevert(
             abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(r))
         );
-        shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+        shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
         assertEq(shapes.totalBacking(), 0, "failed mint leaves no accounting behind");
     }
 
@@ -243,7 +249,7 @@ contract MintTest is ShapesBase {
         vm.expectRevert(
             abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(0))
         );
-        shapes.mint{value: 1 ether + FEE}(1 ether, address(0));
+        shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(0));
     }
 }
 
@@ -254,21 +260,30 @@ contract MintTest is ShapesBase {
 contract FeeTest is ShapesBase {
     function test_FeesReachRecipientAndNeverJoinBacking() public {
         _mint(alice, 100 ether);
-        assertEq(feeRecipient.balance, FEE);
+        assertEq(feeRecipient.balance, feeOf(100 ether), "1% of 100 ETH");
+        assertEq(feeRecipient.balance, 1 ether);
         assertEq(shapes.totalBacking(), 100 ether);
         assertEq(address(shapes).balance, 100 ether);
 
         _mint(alice, 0.01 ether);
-        assertEq(feeRecipient.balance, 2 * FEE, "fee is flat, not proportional");
+        assertEq(
+            feeRecipient.balance,
+            feeOf(100 ether) + feeOf(0.01 ether),
+            "fee is 1% of each backing, not flat"
+        );
         assertEq(shapes.totalBacking(), 100.01 ether);
         assertEq(address(shapes).balance, 100.01 ether);
     }
 
-    function test_FeeIsFlatAcrossDenominations() public {
+    function test_FeeIsOnePercentAtEveryDenomination() public {
         for (uint256 i = 0; i < 9; ++i) {
             uint256 before = feeRecipient.balance;
             _mint(alice, DENOMS[i]);
-            assertEq(feeRecipient.balance - before, FEE, "same fee at every denomination");
+            assertEq(
+                feeRecipient.balance - before,
+                DENOMS[i] / 100,
+                "fee is exactly 1% of backing at every denomination"
+            );
         }
     }
 
@@ -282,15 +297,15 @@ contract FeeTest is ShapesBase {
 
     function test_RevertingFeeRecipientBlocksMintingButNotRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
-        Shapes s = new Shapes(FEE, address(bad), address(renderer));
+        Shapes s = new Shapes(FEE_BPS, address(bad), address(renderer));
 
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IShapes.MintFeeTransferFailed.selector, address(bad), FEE
+                IShapes.MintFeeTransferFailed.selector, address(bad), feeOf(1 ether)
             )
         );
-        s.mint{value: 1 ether + FEE}(1 ether, alice);
+        s.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
 
         // With a zero fee there is no transfer at all, so the same recipient is harmless and
         // redemption is provably independent of the fee path.
@@ -305,14 +320,15 @@ contract FeeTest is ShapesBase {
 
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(bytes("fee recipient is zero"));
-        new Shapes(FEE, address(0), address(renderer));
+        new Shapes(FEE_BPS, address(0), address(renderer));
 
         vm.expectRevert(bytes("renderer is zero"));
-        new Shapes(FEE, feeRecipient, address(0));
+        new Shapes(FEE_BPS, feeRecipient, address(0));
     }
 
     function test_ImmutablesAreExposedAndFixed() public view {
-        assertEq(shapes.mintFee(), FEE);
+        assertEq(shapes.feeBps(), FEE_BPS);
+        assertEq(shapes.mintFeeFor(1 ether), 0.01 ether);
         assertEq(shapes.feeRecipient(), feeRecipient);
         assertEq(shapes.renderer(), address(renderer));
     }
@@ -472,7 +488,7 @@ contract RedeemTest is ShapesBase {
     function test_FailedPayoutRevertsEntireRedemption() public {
         EthRejectingReceiver r = new EthRejectingReceiver();
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
+        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
 
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(r), 1 ether)
@@ -488,7 +504,7 @@ contract RedeemTest is ShapesBase {
     function test_ContractOwnerCanRedeem() public {
         GoodReceiver r = new GoodReceiver();
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 25 ether + FEE}(25 ether, address(r));
+        uint256 id = shapes.mint{value: 25 ether + feeOf(25 ether)}(25 ether, address(r));
 
         r.redeem(shapes, id);
         assertEq(address(r).balance, 25 ether);
@@ -500,9 +516,9 @@ contract RedeemTest is ShapesBase {
         assumeNotPrecompile(to);
         uint256 amount = DENOMS[which % 9];
 
-        vm.deal(alice, amount + FEE);
+        vm.deal(alice, amount + feeOf(amount));
         vm.prank(alice);
-        uint256 id = shapes.mint{value: amount + FEE}(amount, to);
+        uint256 id = shapes.mint{value: amount + feeOf(amount)}(amount, to);
 
         uint256 before = to.balance;
         vm.prank(to);
@@ -545,7 +561,7 @@ contract ReserveTest is ShapesBase {
             "emergencyWithdraw()",
             "pause()",
             "setRenderer(address)",
-            "setMintFee(uint256)",
+            "setFeeBps(uint256)",
             "setFeeRecipient(address)",
             "rescueETH(address,uint256)"
         ];
@@ -597,8 +613,8 @@ contract ReserveTest is ShapesBase {
     function test_ReentrantRedeemIsBlocked() public {
         ReentrantRedeemer r = new ReentrantRedeemer(IShapes(address(shapes)));
         vm.startPrank(alice);
-        uint256 a = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
-        uint256 b = shapes.mint{value: 5 ether + FEE}(5 ether, address(r));
+        uint256 a = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
+        uint256 b = shapes.mint{value: 5 ether + feeOf(5 ether)}(5 ether, address(r));
         vm.stopPrank();
 
         r.arm(b, false);
@@ -616,8 +632,8 @@ contract ReserveTest is ShapesBase {
     function test_ReentrantRedeemBatchIsBlocked() public {
         ReentrantRedeemer r = new ReentrantRedeemer(IShapes(address(shapes)));
         vm.startPrank(alice);
-        uint256 a = shapes.mint{value: 1 ether + FEE}(1 ether, address(r));
-        uint256 b = shapes.mint{value: 5 ether + FEE}(5 ether, address(r));
+        uint256 a = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
+        uint256 b = shapes.mint{value: 5 ether + feeOf(5 ether)}(5 ether, address(r));
         vm.stopPrank();
 
         r.arm(b, true);
@@ -634,7 +650,7 @@ contract ReserveTest is ShapesBase {
         ReentrantMinter m = new ReentrantMinter(IShapes(address(shapes)), 1 ether);
         vm.deal(address(m), 10 ether);
 
-        m.mint{value: 1 ether + FEE}();
+        m.mint{value: 1 ether + feeOf(1 ether)}();
 
         assertTrue(m.attempted(), "the receiver callback ran");
         assertTrue(m.reentryReverted(), "re-entry into mint must revert");
@@ -647,12 +663,12 @@ contract ReserveTest is ShapesBase {
 
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
-        Shapes s = new Shapes(FEE, address(fr), address(renderer));
+        Shapes s = new Shapes(FEE_BPS, address(fr), address(renderer));
         fr.configure(IShapes(address(s)), 1 ether);
         vm.deal(address(fr), 10 ether);
 
         vm.prank(alice);
-        s.mint{value: 1 ether + FEE}(1 ether, alice);
+        s.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
 
         assertTrue(fr.attempted(), "the fee callback ran");
         assertTrue(fr.reentryReverted(), "re-entry from the fee recipient must revert");

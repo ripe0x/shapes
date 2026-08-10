@@ -27,7 +27,11 @@ import {Base64Decode} from "./utils/Base64Decode.sol";
 contract ForkTest is Test {
     using Base64Decode for string;
 
-    uint256 internal constant FEE = 0.0005 ether;
+    uint256 internal constant FEE_BPS = 100; // 1%
+
+    function feeOf(uint256 amount) internal pure returns (uint256) {
+        return (amount * FEE_BPS) / 10_000;
+    }
 
     ShapeRenderer internal renderer;
     Shapes internal shapes;
@@ -68,7 +72,7 @@ contract ForkTest is Test {
 
         live = true;
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE, feeRecipient, address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
         strayWei = address(shapes).balance;
     }
 
@@ -98,7 +102,7 @@ contract ForkTest is Test {
         DeployShapes deployer = new DeployShapes();
         (ShapeRenderer r, Shapes s) = deployer.run();
 
-        assertEq(s.mintFee(), 0.0005 ether, "default fee not applied");
+        assertEq(s.feeBps(), 100, "default fee bps not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
         assertEq(s.renderer(), address(r), "renderer mismatch");
         assertGt(address(r).code.length, 0, "renderer has no code");
@@ -115,7 +119,7 @@ contract ForkTest is Test {
         for (uint256 i = 0; i < DENOMS.length; i++) {
             uint256 amount = DENOMS[i];
             vm.prank(alice);
-            ids[i] = shapes.mint{value: amount + FEE}(amount, alice);
+            ids[i] = shapes.mint{value: amount + feeOf(amount)}(amount, alice);
 
             assertEq(shapes.backingOf(ids[i]), amount, "backing wrong");
             assertTrue(shapes.seedOf(ids[i]) != bytes32(0), "seed is zero");
@@ -125,7 +129,9 @@ contract ForkTest is Test {
 
         // The fee left the contract on every mint; only backing (plus any stray wei) remains.
         assertEq(address(shapes).balance, shapes.totalBacking() + strayWei, "unexpected reserve");
-        assertEq(feeRecipient.balance, FEE * DENOMS.length, "fees not forwarded");
+        uint256 expectedFees;
+        for (uint256 i = 0; i < DENOMS.length; i++) expectedFees += feeOf(DENOMS[i]);
+        assertEq(feeRecipient.balance, expectedFees, "fees not forwarded");
 
         // Transfer the 1 ETH token (index 3) to bob; redemption rights follow the token.
         uint256 oneEth = ids[3];
@@ -167,7 +173,7 @@ contract ForkTest is Test {
 
         vm.prank(alice);
         uint256 g0 = gasleft();
-        uint256 id = shapes.mint{value: 1 ether + FEE}(1 ether, alice);
+        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
         uint256 mintGas = g0 - gasleft();
 
         vm.prank(alice);
