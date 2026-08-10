@@ -59,6 +59,30 @@ export function moduleExtent(m: Module, cellWad: bigint, p: Params = CANONICAL):
       down = h / 2 + w / 2;
       break;
     }
+    // rectangular half: flat cut edge on the centre line (like the half circle), the outer
+    // corners are 90 degrees so they add nothing past the straight edges
+    case "halfsquare":
+      x = size / 2 + w / 2;
+      up = x;
+      down = (w / 2) * Math.SQRT2;
+      break;
+    // right triangle: two 45 degree acute corners whose miter reaches (1+sqrt2)/2 * w along the
+    // axis, further than any straight edge
+    case "rtriangle": {
+      const miter = ((1 + Math.SQRT2) / 2) * w;
+      x = size / 2 + miter;
+      up = size / 2 + w / 2;
+      down = size / 2 + miter;
+      break;
+    }
+    // arc and line are open strokes reaching between opposite footprint corners; always drawn
+    // (never filled), so the stroke always applies whatever the ignored solid bit says
+    case "arc":
+    case "line": {
+      const ws = num(m.weight);
+      x = up = down = size / 2 + ws / 2;
+      break;
+    }
   }
 
   const worst = Math.max(x, up, down);

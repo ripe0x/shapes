@@ -10,7 +10,21 @@ const KIND_LABEL: Record<Kind, string> = {
   half: "half circle",
   quarter: "quarter circle",
   diamond: "diamond",
+  halfsquare: "half square",
+  rtriangle: "right triangle",
+  arc: "arc",
+  line: "diagonal line",
 };
+
+const ROTATING = new Set<Kind>([
+  "triangle",
+  "half",
+  "quarter",
+  "halfsquare",
+  "rtriangle",
+  "arc",
+  "line",
+]);
 
 function swatchForDisplay(svg: string): string {
   return svg.replace(
@@ -40,9 +54,7 @@ function Swatch({a, params}: {a: Appearance; params: Params}) {
       <div style={{...mono, fontSize: 9, letterSpacing: "0.04em", color: C.mid, textAlign: "center"}}>
         <span style={{fontSize: 11}}>{a.glyph}</span>{" "}
         {a.solid ? "solid" : "outline"}
-        {a.rot !== 0 || a.kind === "triangle" || a.kind === "half" || a.kind === "quarter"
-          ? ` · ${a.rot}°`
-          : ""}
+        {ROTATING.has(a.kind) ? ` · ${a.rot}°` : ""}
       </div>
     </div>
   );

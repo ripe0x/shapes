@@ -123,10 +123,10 @@ export function composeShape(
   for (let i = 0; i < cols * rows; i++) {
     const kind = kinds[Number(rand.nextBelow(nKinds))];
     const solid = rand.nextBelowProbability(solidProbability);
-    const rot =
-      kind === "triangle" || kind === "half" || kind === "quarter"
-        ? Number(rand.nextBelow(4n)) * 90
-        : 0;
+    // One rotation draw for any kind with more than one orientation; consumes a single stream
+    // value whatever the bound, so a 2-way kind stays aligned with the 4-way ones.
+    const rotCount = ROT_COUNT[kind];
+    const rot = rotCount > 1 ? Number(rand.nextBelow(BigInt(rotCount))) * 90 : 0;
 
     modules.push({
       index: i,
@@ -211,8 +211,15 @@ function solveSize(
   weight: bigint,
 ): bigint {
   const full = 2n * target;
+  // Open strokes are never filled; their footprint is always the outlined size.
+  if (OUTLINE_ONLY.has(kind)) return full - weight;
   if (solid) return full;
   if (kind === "triangle") return full - mulWad(SQRT3, weight);
+  // The right triangle's two acute corners are 45 degrees, sharper than the equilateral's 60,
+  // so their miter overshoots further. Pull the footprint in by 2w so the outermost miter tip
+  // still lands within the target. (Prototype value, verified against the escape overlay; the
+  // exact miter solve comes with the Solidity port.)
+  if (kind === "rtriangle") return full - 2n * weight;
   // A diamond's 90 degree corners point straight along the axes, so the miter overshoot lands
   // entirely on the extent: half-diagonal = T - (sqrt(2)/2) w, and the side is sqrt(2) times
   // that. Net: size = sqrt(2) * 2T - 2w, expressed on the half-diagonal below.
@@ -299,6 +306,46 @@ function moduleSvg(m: Module, p: Params): string {
         `${fmt(cx - r)},${fmt(cy)}`;
       return `<polygon points="${points}"` + style(m.solid, m.weight);
     }
+
+    // Half the cell, split by a straight edge: a rectangle filling the upper half of the
+    // footprint at rot 0, spun to the other three halves by rotation. The rectangular twin of
+    // the half circle.
+    case "halfsquare": {
+      return (
+        `<rect x="${fmt(cx - r)}" y="${fmt(cy - r)}" width="${fmt(size)}" height="${fmt(r)}"` +
+        transform(m.rot, cx, cy) +
+        style(m.solid, m.weight)
+      );
+    }
+
+    // The square cut on its diagonal: a right triangle filling half the footprint. Right angle
+    // at the top-left corner at rot 0, hypotenuse from top-right to bottom-left; rotation moves
+    // which corner holds the right angle.
+    case "rtriangle": {
+      const points =
+        `${fmt(cx - r)},${fmt(cy - r)} ` +
+        `${fmt(cx + r)},${fmt(cy - r)} ` +
+        `${fmt(cx - r)},${fmt(cy + r)}`;
+      return (
+        `<polygon points="${points}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight)
+      );
+    }
+
+    // The curved edge of the quarter disc on its own: an open 90 degree arc, no radii, always
+    // stroked. Radius is the full footprint, sweeping between two opposite footprint corners.
+    case "arc": {
+      const R = m.size;
+      const d =
+        `M${fmt(cx + r)},${fmt(cy + r)} ` +
+        `A${fmt(R)},${fmt(R)} 0 0 0 ${fmt(cx - r)},${fmt(cy - r)}`;
+      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight);
+    }
+
+    // A straight diagonal across the cell, corner to corner, always stroked. Two orientations.
+    case "line": {
+      const d = `M${fmt(cx - r)},${fmt(cy - r)} L${fmt(cx + r)},${fmt(cy + r)}`;
+      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight);
+    }
   }
 }
 
@@ -376,8 +423,22 @@ export function renderGeometry(
  * Vocabulary catalog
  * ------------------------------------------------------------------ */
 
-/** The kinds whose appearance changes with rotation; the rest resolve to a single form. */
-const ROTATING_KINDS: ReadonlySet<Kind> = new Set(["triangle", "half", "quarter"]);
+/** Distinct rotations each kind takes: 1 (rotation-invariant), 2 (the diagonal line), or 4. */
+const ROT_COUNT: Record<Kind, number> = {
+  circle: 1,
+  square: 1,
+  diamond: 1,
+  triangle: 4,
+  half: 4,
+  quarter: 4,
+  halfsquare: 4,
+  rtriangle: 4,
+  arc: 4,
+  line: 2,
+};
+
+/** Open-stroke kinds: drawn as an outline only, never filled — no solid form. */
+const OUTLINE_ONLY: ReadonlySet<Kind> = new Set(["arc", "line"]);
 
 export interface Appearance {
   kind: Kind;
@@ -395,8 +456,11 @@ export interface Appearance {
 export function vocabulary(kinds: readonly Kind[] = KIND_ORDER): Appearance[] {
   const out: Appearance[] = [];
   for (const kind of kinds) {
-    const rots = ROTATING_KINDS.has(kind) ? [0, 90, 180, 270] : [0];
-    for (const solid of [true, false]) {
+    const rc = ROT_COUNT[kind];
+    const rots = rc === 4 ? [0, 90, 180, 270] : rc === 2 ? [0, 90] : [0];
+    // Open strokes have no solid form, so they contribute only their outline.
+    const fills = OUTLINE_ONLY.has(kind) ? [false] : [true, false];
+    for (const solid of fills) {
       for (const rot of rots) {
         const m: Module = {index: 0, kind, solid, rot, cx: 0n, cy: 0n, size: 0n, weight: 0n};
         out.push({kind, solid, rot, glyph: moduleGlyph(m)});
@@ -474,6 +538,14 @@ export function moduleGlyph(m: Module): string {
       return m.solid ? "◔" : "◷";
     case "diamond":
       return m.solid ? "◆" : "◇";
+    case "halfsquare":
+      return ["⬒", "◨", "⬓", "◧"][m.rot / 90]; // filled half: upper/right/lower/left
+    case "rtriangle":
+      return ["◸", "◹", "◿", "◺"][m.rot / 90]; // right angle at: TL/TR/BR/BL
+    case "arc":
+      return ["◜", "◝", "◞", "◟"][m.rot / 90]; // quadrant arc
+    case "line":
+      return ["╲", "╱"][m.rot / 90]; // diagonal, two orientations
   }
 }
 

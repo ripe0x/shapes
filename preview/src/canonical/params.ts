@@ -21,7 +21,17 @@
 
 import {WAD} from "./wad";
 
-export type Kind = "circle" | "square" | "triangle" | "half" | "quarter" | "diamond";
+export type Kind =
+  | "circle"
+  | "square"
+  | "triangle"
+  | "half"
+  | "quarter"
+  | "diamond"
+  | "halfsquare"
+  | "rtriangle"
+  | "arc"
+  | "line";
 
 /**
  * Draw order for kind selection. Round 03 selects with
@@ -43,6 +53,14 @@ export const KIND_ORDER: readonly Kind[] = [
   // combining a hard right angle with an arc. `diamond` is the square on its diagonal.
   "quarter",
   "diamond",
+  // `halfsquare` is the rectangular twin of `half`: half the cell, split by a straight edge.
+  // `rtriangle` is the square cut on its diagonal — a right triangle filling half the cell.
+  "halfsquare",
+  "rtriangle",
+  // `arc` is the curved edge of the quarter disc alone, with no straight radii, and `line` is
+  // the cell diagonal. Both are open strokes: outline only, never filled.
+  "arc",
+  "line",
 ];
 
 /** The primitives the Solidity renderer implements. */
