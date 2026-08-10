@@ -439,14 +439,18 @@ per-module test from `rand() > threshold` to `rand() < p`:
 - with `< p`, a draw lies in `[0, 1)`, so `p = 0` is never true and `p = 1` is always true.
 
 `testFuzz_PureCardsAreActuallyPure` walks every module of any card that drew an extreme and
-asserts there is no exception. A `Fill` metadata trait (`Solid` / `Outline` / `Mixed`) makes the
-two rare states legible rather than something you have to notice by eye; it is derived from the
+asserts there is no exception. This is a property of the solid *bit*: the arc and the diagonal
+line are open strokes with no solid form (D15), so a pure-solid card that happens to carry one
+still paints that stroke. A `Fill` metadata trait (`Solid` / `Outline` / `Mixed`) makes the two
+rare states legible rather than something you have to notice by eye; it is derived from the
 composition, never re-rolled.
 
 ### D15. Vocabulary, and the finite composition space
 
-**Six primitives**, each solid or outlined; triangle, half circle and quarter circle also take
-one of four rotations. That is **30 distinct module appearances**:
+**Ten primitives.** Eight are fillable — solid or outlined; two, the arc and the diagonal line,
+are open strokes and are outlined only. Circle, square and diamond are rotation-invariant; the
+rest take one of four rotations, except the line, which takes one of two. That is **52 distinct
+module appearances**:
 
 | primitive | rotations | fills | states |
 |---|---|---|---|
@@ -456,33 +460,40 @@ one of four rotations. That is **30 distinct module appearances**:
 | half circle | 4 | 2 | 8 |
 | quarter circle | 4 | 2 | 8 |
 | diamond | 1 | 2 | 2 |
+| half square | 4 | 2 | 8 |
+| right triangle | 4 | 2 | 8 |
+| arc | 4 | 1 (outline) | 4 |
+| diagonal line | 2 | 1 (outline) | 2 |
 
-The quarter circle is the only form combining a hard right angle with an arc — circle is pure
-curve, square pure right angles, triangle pure diagonals, half circle a curve cut through the
-centre — and it continues the circle-division series the design source established. The diamond
-is the square on its diagonal.
+The quarter circle is the only fillable form combining a hard right angle with an arc — circle
+is pure curve, square pure right angles, triangle pure diagonals, half circle a curve cut
+through the centre — and it continues the circle-division series the design source established.
+The diamond is the square on its diagonal, the half square the rectangular twin of the half
+circle, the right triangle the square cut on its diagonal. The arc is the quarter circle's
+curved edge with the radii removed, and the line is the cell diagonal; both are open strokes, so
+they have no solid form and appear on a card whatever its fill draw.
 
 **The composition space is finite, and small at the top of the ladder.** Once size and stroke
 became collection constants (D13, at the client's direction), nothing continuous remains in the
-artwork. A card's appearance is fully determined by which of 30 states lands in each cell:
+artwork. A card's appearance is fully determined by which of 52 states lands in each cell:
 
 | band | modules | possible compositions | distinct in 500 mints |
 |---|---|---|---|
 | 0.01–5 ETH | 25–9 | astronomically many | 500 |
-| 10 ETH | 6 | 7.3 × 10⁸ | 500 |
-| 25 ETH | 4 | 810,000 | 499 |
-| 50 ETH | 2 | 900 | 303 |
-| **100 ETH** | **1** | **30** | **30** |
+| 10 ETH | 6 | 1.9 × 10¹⁰ | 500 |
+| 25 ETH | 4 | 7.3 × 10⁶ | 500 |
+| 50 ETH | 2 | 2,704 | 423 |
+| **100 ETH** | **1** | **52** | **52** |
 
-**A 100 ETH Shape is one of thirty archetypes.** The thirty-first repeats. This is accepted
+**A 100 ETH Shape is one of fifty-two archetypes.** The fifty-third repeats. This is accepted
 deliberately, not overlooked:
 
 - It is a direct consequence of making size and stroke constant across the collection, which
   is what makes the collection read as one system.
 - With type removed (D9) there is nothing on the card face to tell two same-archetype Shapes
   apart either. They are the same image.
-- No vocabulary worth looking at fixes it. Going from four primitives to six moved 100 ETH from
-  20 archetypes to 30; reaching the hundreds would need a vocabulary nobody would call
+- Expanding the vocabulary raises the count but does not remove the ceiling: six primitives gave
+  30 archetypes, ten give 52. Reaching the thousands would need a vocabulary nobody would call
   restrained.
 - The composition was never the only thing distinguishing a Shape. Each carries a unique token
   id, a unique `bytes32` seed, and its own provenance and history on chain. Two 100 ETH Shapes

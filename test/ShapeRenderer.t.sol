@@ -219,6 +219,7 @@ contract FixedPointTest is RendererTestBase {
 contract GeometryTest is RendererTestBase {
     uint256 internal constant SQRT3_2 = 866_025_403_784_438_646; // √3 / 2
     uint256 internal constant SQRT2 = 1_414_213_562_373_095_048;
+    uint256 internal constant ONE_PLUS_SQRT2 = 2_414_213_562_373_095_048;
 
     /// @dev True painted half-extents of a module: stroke and miter joins included.
     ///
@@ -232,7 +233,9 @@ contract GeometryTest is RendererTestBase {
         pure
         returns (uint256 worst)
     {
-        uint256 w = m.solid ? 0 : m.weight;
+        // Arc and line are open strokes: always drawn, so the stroke applies whatever the
+        // ignored solid bit says.
+        uint256 w = (m.solid && m.kind != 8 && m.kind != 9) ? 0 : m.weight;
         uint256 x;
         uint256 up;
         uint256 down;
@@ -248,7 +251,19 @@ contract GeometryTest is RendererTestBase {
             x = m.size / 2 + w / 2;
             up = x;
             down = FixedPoint.mulWad(w / 2, SQRT2);
+        } else if (m.kind == 7) {
+            // right triangle: two 45° acute corners, miter reaches (1+√2)/2·w along the axis
+            uint256 miter = FixedPoint.mulWad(ONE_PLUS_SQRT2 / 2, w);
+            x = m.size / 2 + miter;
+            up = m.size / 2 + w / 2;
+            down = m.size / 2 + miter;
+        } else if (m.kind == 9) {
+            // diagonal line: 45° cap projects (√2/4)·w onto each axis
+            x = m.size / 2 + FixedPoint.mulWad(SQRT2 / 4, w);
+            up = x;
+            down = x;
         } else {
+            // circle, square, quarter, diamond, half square, arc: 90° corners or none
             x = m.size / 2 + w / 2;
             up = x;
             down = x;
@@ -412,10 +427,11 @@ contract GeometryTest is RendererTestBase {
         ShapeRenderer.Card memory c = renderer.compose(seed, DENOMS[which % 9]);
         for (uint256 i = 0; i < c.modules.length; ++i) {
             ShapeRenderer.Module memory m = c.modules[i];
-            assertLt(m.kind, 6, "kind outside the vocabulary");
+            assertLt(m.kind, 10, "kind outside the vocabulary");
             assertTrue(m.rot == 0 || m.rot == 90 || m.rot == 180 || m.rot == 270);
-            if (m.kind != 2 && m.kind != 3 && m.kind != 4) {
-                assertEq(m.rot, 0, "only triangle, half and quarter rotate");
+            // circle, square and diamond are rotation-invariant.
+            if (m.kind == 0 || m.kind == 1 || m.kind == 5) {
+                assertEq(m.rot, 0, "rotation-invariant kind was rotated");
             }
         }
     }

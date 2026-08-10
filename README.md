@@ -49,17 +49,23 @@ Nothing is added to compensate for the space.
 
 Value sets the grammar; the seed writes the sentence. Each token receives an immutable
 `bytes32` seed at mint. The seed decides, for every cell in the grid, which primitive lands
-there — circle, square, triangle, half circle, quarter circle or diamond — whether it is solid
-or drawn, and how it is rotated. That is 30 distinct module appearances. Two card-level draws set a single size and a single stroke weight shared by every
-module on that token, so a card reads as one decision rather than a collection of them.
+there, whether it is solid or drawn, and how it is rotated. The vocabulary is ten primitives:
+eight fillable forms — circle, square, triangle, half circle, quarter circle, diamond, half
+square and right triangle — plus two open strokes, an arc and a diagonal line, that are always
+outlined. Circle, square and diamond are rotation-invariant; the rest take one of four
+rotations, except the line, which takes one of two. That is 52 distinct module appearances. Two
+card-level draws set a single size and a single stroke weight shared by every module on that
+token, so a card reads as one decision rather than a collection of them.
 
 How solid a card is, is drawn per card rather than fixed: about 5% of Shapes come out entirely
-outlined, about 5% entirely solid, and the rest land somewhere between. Both extremes are exact
-— an all-solid Shape contains no drawn mark at all — and are surfaced as a `Fill` trait.
+outlined, about 5% entirely solid, and the rest land somewhere between, surfaced as a `Fill`
+trait. The extremes are exact for the fillable primitives — an all-solid card has no drawn mark
+among them. The arc and the diagonal line are outline only, so a card carrying one still shows
+that stroke whatever its fill.
 
 Because size and stroke are collection constants, the composition space is finite: enormous at
-the dense denominations, but exactly 900 at 50 ETH and **30 at 100 ETH**, where a card is a
-single module. A 100 ETH Shape is one of thirty archetypes, and that is deliberate — see
+the dense denominations, but exactly 2,704 at 50 ETH and **52 at 100 ETH**, where a card is a
+single module. A 100 ETH Shape is one of fifty-two archetypes, and that is deliberate — see
 SPEC.md D15. Each Shape remains a distinct object regardless: unique token number, unique seed,
 its own provenance.
 

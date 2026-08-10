@@ -56,17 +56,22 @@ contract ShapeRenderer is IShapeRenderer {
 
     /// @dev sqrt(3), used to invert a triangle's 60 degree miter overshoot.
     uint256 private constant SQRT3 = 1_732_050_807_568_877_293;
+    /// @dev sqrt(2) and 1 + sqrt(2), for the diagonal line's 45 degree cap and the right
+    ///      triangle's 45 degree miter.
+    uint256 private constant SQRT2 = 1_414_213_562_373_095_048;
+    uint256 private constant ONE_PLUS_SQRT2 = 2_414_213_562_373_095_048;
 
-    // Vocabulary: four primitives, each solid or outlined. The order is consensus-critical,
-    // because kind selection indexes into it.
+    // Vocabulary. The order is consensus-critical, because kind selection indexes into it.
     //
-    // Six primitives, each solid or outlined; triangle, half circle and quarter circle also
-    // take one of four rotations. 30 distinct module appearances in total.
+    // Ten primitives. Circle, square and diamond are rotation-invariant and take a solid and an
+    // outlined form: two appearances each. Triangle, half circle, quarter circle, half square,
+    // right triangle and arc each take one of four rotations; the diagonal line takes one of
+    // two. Arc and line are open strokes: outlined only, no solid form. 52 distinct module
+    // appearances in total.
     //
-    // The quarter circle is the only form combining a hard right angle with an arc — circle is
-    // pure curve, square pure right angles, triangle pure diagonals — and it continues the
-    // circle-division series the design source established. The diamond is the square on its
-    // diagonal.
+    // Half square is the rectangular twin of the half circle: half the cell, split by a
+    // straight edge. Right triangle is the square cut on its diagonal. Arc is the quarter
+    // disc's curved edge alone, with no straight radii; line is the cell diagonal.
     //
     // There is deliberately no separate "ring". A ring is a circle with a heavier stroke, and
     // carrying it as its own primitive meant one mark on a card ignored the card's stroke
@@ -78,7 +83,11 @@ contract ShapeRenderer is IShapeRenderer {
     uint256 private constant KIND_HALF = 3;
     uint256 private constant KIND_QUARTER = 4;
     uint256 private constant KIND_DIAMOND = 5;
-    uint256 private constant KIND_COUNT = 6;
+    uint256 private constant KIND_HALFSQUARE = 6;
+    uint256 private constant KIND_RTRIANGLE = 7;
+    uint256 private constant KIND_ARC = 8;
+    uint256 private constant KIND_LINE = 9;
+    uint256 private constant KIND_COUNT = 10;
 
     string private constant DESCRIPTION =
         "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH; "
@@ -136,8 +145,16 @@ contract ShapeRenderer is IShapeRenderer {
         g.halfCell = g.cell / 2;
     }
 
+    /// @dev Distinct rotations a kind takes: 1 (rotation-invariant), 2 (the diagonal line), or 4.
+    function _rotCount(uint256 kind) private pure returns (uint256) {
+        if (kind == KIND_CIRCLE || kind == KIND_SQUARE || kind == KIND_DIAMOND) return 1;
+        if (kind == KIND_LINE) return 2;
+        return 4;
+    }
+
     /// @dev One cell. Draws in the order kind -> solid -> rotation, consuming `rotation` only
-    ///      for triangles and half circles.
+    ///      for kinds with more than one orientation. `nextBelow` consumes a single stream value
+    ///      whatever the bound, so a two-way kind stays aligned with the four-way ones.
     function _module(
         Round03Rand.Stream memory rnd,
         uint256 i,
@@ -148,9 +165,8 @@ contract ShapeRenderer is IShapeRenderer {
     ) private pure returns (Module memory m) {
         m.kind = rnd.nextBelow(KIND_COUNT);
         m.solid = rnd.nextBelowProbability(solidProbability);
-        m.rot = (m.kind == KIND_TRIANGLE || m.kind == KIND_HALF || m.kind == KIND_QUARTER)
-            ? rnd.nextBelow(4) * 90
-            : 0;
+        uint256 rc = _rotCount(m.kind);
+        m.rot = rc > 1 ? rnd.nextBelow(rc) * 90 : 0;
 
         m.weight = weight;
         m.size = _solveSize(m.kind, m.solid, target, weight);
@@ -211,8 +227,17 @@ contract ShapeRenderer is IShapeRenderer {
         returns (uint256)
     {
         uint256 full = 2 * target;
+        // Open strokes are never filled; their footprint is always the outlined size. The arc's
+        // endpoints reach w/2 past the footprint like a square; the diagonal line meets the axis
+        // at 45 degrees, so its cap projects only (sqrt(2)/4)*w and it is grown to compensate.
+        if (kind == KIND_ARC) return full - weight;
+        if (kind == KIND_LINE) return full - (SQRT2 / 2).mulWad(weight);
         if (solid) return full;
         if (kind == KIND_TRIANGLE) return full - SQRT3.mulWad(weight);
+        // The right triangle's two acute corners are 45 degrees, sharper than the equilateral's
+        // 60, so a miter reaches (1 + sqrt(2))/2 * w along the axis. Inset by (1 + sqrt(2)) * w
+        // so the outermost miter tip lands exactly on the target.
+        if (kind == KIND_RTRIANGLE) return full - ONE_PLUS_SQRT2.mulWad(weight);
         // Every other primitive meets its corners at 90 degrees or not at all, so the stroke
         // adds exactly w/2 on each axis. A diamond's corners point along the axes, where a
         // 90 degree miter reaches (w/2)*sqrt(2) along the bisector — axis component w/2.
@@ -229,7 +254,7 @@ contract ShapeRenderer is IShapeRenderer {
     ///      then per cell:
     ///        4. kind     — always
     ///        5. solid    — always
-    ///        5. rotation — only when kind is triangle or half
+    ///        5. rotation — only when the kind takes more than one orientation
     ///      The conditional consumption is load-bearing. Drawing unconditionally would
     ///      desynchronise the stream and change every subsequent cell on the card.
     function compose(bytes32 seed, uint256 amountWei) public pure returns (Card memory card) {
@@ -330,6 +355,53 @@ contract ShapeRenderer is IShapeRenderer {
             );
         }
 
+        if (m.kind == KIND_HALFSQUARE) {
+            // Half the cell, split by a straight edge: a rectangle filling the upper half of the
+            // footprint at rotation 0. The rectangular twin of the half circle.
+            return abi.encodePacked(
+                '<rect x="', (m.cx - r).fmt(), '" y="', (m.cy - r).fmt(),
+                '" width="', m.size.fmt(), '" height="', r.fmt(), '"',
+                _transform(m.rot, m.cx, m.cy),
+                _style(m.solid, m.weight)
+            );
+        }
+
+        if (m.kind == KIND_RTRIANGLE) {
+            // The square cut on its diagonal: right angle at the top-left footprint corner at
+            // rotation 0, hypotenuse from top-right to bottom-left.
+            return abi.encodePacked(
+                '<polygon points="',
+                (m.cx - r).fmt(), ",", (m.cy - r).fmt(), " ",
+                (m.cx + r).fmt(), ",", (m.cy - r).fmt(), " ",
+                (m.cx - r).fmt(), ",", (m.cy + r).fmt(),
+                '"',
+                _transform(m.rot, m.cx, m.cy),
+                _style(m.solid, m.weight)
+            );
+        }
+
+        if (m.kind == KIND_ARC) {
+            // The quarter disc's curved edge alone: an open 90 degree arc, no radii, always
+            // stroked. Radius is the full footprint, sweeping between two opposite corners.
+            return abi.encodePacked(
+                '<path d="M', (m.cx + r).fmt(), ",", (m.cy + r).fmt(),
+                " A", m.size.fmt(), ",", m.size.fmt(), " 0 0 0 ",
+                (m.cx - r).fmt(), ",", (m.cy - r).fmt(), '"',
+                _transform(m.rot, m.cx, m.cy),
+                _style(false, m.weight)
+            );
+        }
+
+        if (m.kind == KIND_LINE) {
+            // A straight diagonal across the cell, corner to corner, always stroked.
+            return abi.encodePacked(
+                '<path d="M', (m.cx - r).fmt(), ",", (m.cy - r).fmt(),
+                " L", (m.cx + r).fmt(), ",", (m.cy + r).fmt(), '"',
+                _transform(m.rot, m.cx, m.cy),
+                _style(false, m.weight)
+            );
+        }
+
         // half circle: flat edge through the cell centre, filled half above at rotation 0
         return abi.encodePacked(
             '<path d="M', (m.cx - r).fmt(), ",", m.cy.fmt(),
@@ -385,6 +457,27 @@ contract ShapeRenderer is IShapeRenderer {
             if (m.rot == 90) return unicode"▷";
             if (m.rot == 180) return unicode"▽";
             return unicode"◁";
+        }
+        if (m.kind == KIND_HALFSQUARE) {
+            if (m.rot == 0) return unicode"⬒";
+            if (m.rot == 90) return unicode"◨";
+            if (m.rot == 180) return unicode"⬓";
+            return unicode"◧";
+        }
+        if (m.kind == KIND_RTRIANGLE) {
+            if (m.rot == 0) return unicode"◸";
+            if (m.rot == 90) return unicode"◹";
+            if (m.rot == 180) return unicode"◿";
+            return unicode"◺";
+        }
+        if (m.kind == KIND_ARC) {
+            if (m.rot == 0) return unicode"◜";
+            if (m.rot == 90) return unicode"◝";
+            if (m.rot == 180) return unicode"◞";
+            return unicode"◟";
+        }
+        if (m.kind == KIND_LINE) {
+            return m.rot == 0 ? unicode"╲" : unicode"╱";
         }
         if (m.rot == 0) return unicode"◓";
         if (m.rot == 90) return unicode"◑";

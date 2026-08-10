@@ -122,6 +122,10 @@ export const CANONICAL: Params = Object.freeze({
 /** √3 in WAD, used to invert a triangle's 60 degree miter overshoot. */
 export const SQRT3 = 1_732_050_807_568_877_293n;
 
+/** √2 in WAD, and 1 + √2, used to invert 90 and 45 degree miter overshoots. */
+export const SQRT2 = 1_414_213_562_373_095_048n;
+export const ONE_PLUS_SQRT2 = 2_414_213_562_373_095_048n;
+
 /** Artwork field. Fixed for every denomination. */
 export const FIELD = Object.freeze({
   w: 198n * WAD,

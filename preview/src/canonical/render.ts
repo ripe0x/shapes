@@ -18,6 +18,8 @@ import {
   FIELD,
   KIND_ORDER,
   SQRT3,
+  SQRT2,
+  ONE_PLUS_SQRT2,
   type Kind,
   type Params,
 } from "./params";
@@ -211,15 +213,17 @@ function solveSize(
   weight: bigint,
 ): bigint {
   const full = 2n * target;
-  // Open strokes are never filled; their footprint is always the outlined size.
-  if (OUTLINE_ONLY.has(kind)) return full - weight;
+  // Open strokes are never filled; their footprint is always the outlined size. The arc's
+  // endpoints reach w/2 past the footprint, like a square; the diagonal line meets the axis at
+  // 45 degrees, so its cap projects only (√2/4)·w and it is grown to compensate.
+  if (kind === "arc") return full - weight;
+  if (kind === "line") return full - mulWad(SQRT2 / 2n, weight);
   if (solid) return full;
   if (kind === "triangle") return full - mulWad(SQRT3, weight);
   // The right triangle's two acute corners are 45 degrees, sharper than the equilateral's 60,
-  // so their miter overshoots further. Pull the footprint in by 2w so the outermost miter tip
-  // still lands within the target. (Prototype value, verified against the escape overlay; the
-  // exact miter solve comes with the Solidity port.)
-  if (kind === "rtriangle") return full - 2n * weight;
+  // so a miter join reaches (1+√2)/2·w along the axis. Inset the footprint by (1+√2)·w so that
+  // outermost miter tip lands exactly on the target.
+  if (kind === "rtriangle") return full - mulWad(ONE_PLUS_SQRT2, weight);
   // A diamond's 90 degree corners point straight along the axes, so the miter overshoot lands
   // entirely on the extent: half-diagonal = T - (sqrt(2)/2) w, and the side is sqrt(2) times
   // that. Net: size = sqrt(2) * 2T - 2w, expressed on the half-diagonal below.
