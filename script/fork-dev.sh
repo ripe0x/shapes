@@ -26,7 +26,11 @@ cd "$REPO_ROOT"
 
 FORK_URL=${FORK_URL:-https://ethereum-rpc.publicnode.com}
 PORT=${PORT:-8545}
-CHAIN_ID=31337 # match viem's `anvil` chain so the dev keys just work
+# A distinctive chain id, not the ubiquitous 31337. A browser wallet keys networks by chain id
+# and reuses whatever RPC it already stored for that id, so sharing 31337 with another local
+# node (e.g. a second anvil) silently routes transactions to the wrong one. A unique id forces
+# the wallet to add this fork's own RPC. Override with CHAIN_ID if it still collides.
+CHAIN_ID=${CHAIN_ID:-313370}
 RPC="http://127.0.0.1:${PORT}"
 # Anvil's first default account. Public, well-known, test-only.
 PK0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80

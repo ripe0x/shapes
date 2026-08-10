@@ -357,8 +357,13 @@ You sign every mint and redeem in the wallet, against the deployed contract on t
 3. **Connect** through the RainbowKit button. Pick the browser wallet and approve the
    connection. If the wallet is on the wrong network the button shows a switch control; approve
    it to move to the local fork. RainbowKit adds the network automatically; to add it by hand
-   instead, use RPC URL `http://127.0.0.1:8545` (or your `PORT`), chain id `31337`, currency
-   symbol `ETH`.
+   instead, use RPC URL `http://127.0.0.1:8545` (or your `PORT`) and the chain id the script
+   prints, currency symbol `ETH`.
+
+   The fork uses a distinctive chain id (`313370` by default, `CHAIN_ID` to change) rather than
+   the ubiquitous `31337`. A browser wallet keys networks by chain id and reuses whatever RPC it
+   already has for that id, so a second local node on `31337` would silently receive this fork's
+   transactions. If the id still clashes with something you run, set `CHAIN_ID` to anything free.
 
 4. **Mint.** Pick a denomination and mint; the wallet prompts you to sign a transaction sending
    backing plus the fee. Once it confirms, the Shape appears with its artwork fetched from the
