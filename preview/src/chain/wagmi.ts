@@ -10,7 +10,7 @@ import type {Deployment} from "./abi";
 export function buildConfig(dep: Deployment) {
   const chain = defineChain({
     id: dep.chainId,
-    name: "Shapes dev fork",
+    name: "Shapes dev chain",
     nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18},
     rpcUrls: {default: {http: [dep.rpc]}},
   });

@@ -325,26 +325,30 @@ A second preview entry talks to a deployed contract instead of the canonical ren
 ETH, read the resulting artwork back from the chain's own `tokenURI`, and redeem. It is a
 development harness, not the launch surface — Shapes ships contracts-only — but it exercises the
 real deposit and withdraw paths and renders the actual onchain SVG rather than the TypeScript
-one. `fork-dev.sh` boots a mainnet-forked Anvil, deploys through the real deploy script, and
-writes the deployed address to `preview/public/deployment.json`, which the page reads on load.
-The page shows the reserve invariant live — contract balance against `totalBacking()` —
-alongside every Shape the connected account holds.
+one. `fork-dev.sh` boots a local Anvil, deploys through the real deploy script, and writes the
+deployed address to `preview/public/deployment.json`, which the page reads on load. The page
+shows the reserve invariant live — contract balance against `totalBacking()` — alongside every
+Shape the connected account holds.
+
+The chain is a plain local Anvil, not a mainnet fork: Shapes reads no external contract, so a
+fork buys the frontend nothing and only drags in mainnet state (EIP-7702 delegations on the
+default accounts, inherited nonces) that trips up `_safeMint` and browser wallets. Set
+`FORK_URL` to a mainnet RPC if you want a fork anyway; mainnet-fork behaviour is otherwise
+covered by `test/Fork.t.sol`.
 
 ### With a browser wallet
 
-You sign every mint and redeem in the wallet, against the deployed contract on the fork.
+You sign every mint and redeem in the wallet, against the deployed contract.
 
-1. **Seed the address you will connect** and start the chain. The address is funded (1000 ETH by
-   default, `SEED_ETH=… ` to change) and has any inherited EIP-7702 delegation stripped so
-   `_safeMint` treats it as an EOA. Fund a throwaway key rather than a real account if you would
-   rather the wallet never touch a chain claiming id 1's history.
+1. **Seed the address you will connect** and start the chain. It is funded with 1000 ETH by
+   default (`SEED_ETH` to change).
 
    ```bash
    SEED_WALLETS=0xYourAddress ./script/fork-dev.sh
    ```
 
    Leave it running. It prints the RPC URL (`http://127.0.0.1:8545` unless `PORT` is set), the
-   deployed addresses, and the mint fee.
+   chain id, the deployed addresses, and the mint fee.
 
 2. **Serve the page** in another shell, and open the chain entry. Vite falls through to the next
    free port if 5173 is taken, so use whatever it prints.
@@ -356,14 +360,14 @@ You sign every mint and redeem in the wallet, against the deployed contract on t
 
 3. **Connect** through the RainbowKit button. Pick the browser wallet and approve the
    connection. If the wallet is on the wrong network the button shows a switch control; approve
-   it to move to the local fork. RainbowKit adds the network automatically; to add it by hand
-   instead, use RPC URL `http://127.0.0.1:8545` (or your `PORT`) and the chain id the script
-   prints, currency symbol `ETH`.
+   it to add and switch to the local chain. To add it by hand instead, use the RPC URL and chain
+   id the script printed, currency symbol `ETH`.
 
-   The fork uses a distinctive chain id (`313370` by default, `CHAIN_ID` to change) rather than
-   the ubiquitous `31337`. A browser wallet keys networks by chain id and reuses whatever RPC it
-   already has for that id, so a second local node on `31337` would silently receive this fork's
-   transactions. If the id still clashes with something you run, set `CHAIN_ID` to anything free.
+   The chain uses a distinctive id (`767676` by default, `CHAIN_ID` to change) rather than the
+   ubiquitous `31337`. A browser wallet keys networks by chain id and reuses whatever RPC it
+   already has for that id, so sharing `31337` with a second local node silently routes
+   transactions to the wrong one. If `767676` still clashes with something you run, set
+   `CHAIN_ID` to anything free (check it is unregistered on chainlist.org first).
 
 4. **Mint.** Pick a denomination and mint; the wallet prompts you to sign a transaction sending
    backing plus the fee. Once it confirms, the Shape appears with its artwork fetched from the
@@ -379,12 +383,13 @@ browser wallet is required; there is no keyless path.
 
 ### Troubleshooting
 
-- **`mint` reverts immediately for a connected account.** The address still has code — it was
-  not seeded, so its inherited 7702 delegation makes `_safeMint` run a receiver check. Re-run
-  `fork-dev.sh` with that address in `SEED_WALLETS`.
+- **Wallet shows the network as unsupported, or a mint never confirms.** Almost always a chain
+  id clash: another local node shares this chain's id, so the wallet holds a different RPC for
+  it and routes there. Restart with a `CHAIN_ID` nothing else uses, remove the stale network
+  from the wallet, and re-add the one the script prints.
 - **Nonce or balance looks wrong after restarting the chain.** The wallet cached state from a
-  previous fork. Clear the account's activity/nonce data in the wallet (MetaMask: Settings →
-  Advanced → Clear activity tab data) and reload.
+  previous run. Clear the account's activity/nonce data (MetaMask: Settings → Advanced → Clear
+  activity tab data) and reload.
 - **Port already in use.** `fork-dev.sh` takes `PORT` for Anvil; the page reads whichever RPC
   the script wrote. Vite picks its own free port for the page.
 
