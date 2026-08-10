@@ -325,30 +325,64 @@ A second preview entry talks to a deployed contract instead of the canonical ren
 ETH, read the resulting artwork back from the chain's own `tokenURI`, and redeem. It is a
 development harness, not the launch surface — Shapes ships contracts-only — but it exercises the
 real deposit and withdraw paths and renders the actual onchain SVG rather than the TypeScript
-one.
+one. `fork-dev.sh` boots a mainnet-forked Anvil, deploys through the real deploy script, and
+writes the deployed address to `preview/public/deployment.json`, which the page reads on load.
+The page shows the reserve invariant live — contract balance against `totalBacking()` —
+alongside every Shape the connected account holds.
 
-```bash
-./script/fork-dev.sh                          # forked Anvil + deploy, writes the address
-cd preview && npm run dev                      # in another shell
-open http://localhost:5173/chain.html
-```
+### With a browser wallet
 
-`fork-dev.sh` boots a mainnet-forked Anvil, deploys through the real deploy script, and writes
-the deployed address to `preview/public/deployment.json`, which the page reads on load. The page
-shows the reserve invariant live — contract balance against `totalBacking()` — alongside every
-Shape the connected account holds.
+You sign every mint and redeem in the wallet, against the deployed contract on the fork.
 
-With a browser wallet (MetaMask) present, the page prompts you to connect and you sign every
-mint and redeem yourself. Seed your address first so it has ETH on the fork, and the connect
-button will switch the wallet to the local network (chain id 31337):
+1. **Seed the address you will connect** and start the chain. The address is funded (1000 ETH by
+   default, `SEED_ETH=… ` to change) and has any inherited EIP-7702 delegation stripped so
+   `_safeMint` treats it as an EOA. Fund a throwaway key rather than a real account if you would
+   rather the wallet never touch a chain claiming id 1's history.
 
-```bash
-SEED_WALLETS=0xYourAddress ./script/fork-dev.sh
-```
+   ```bash
+   SEED_WALLETS=0xYourAddress ./script/fork-dev.sh
+   ```
 
-Each seeded address is funded (1000 ETH by default, `SEED_ETH` to change) and has any inherited
-EIP-7702 delegation stripped, so `_safeMint` treats it as an EOA. With no wallet extension the
-page falls back to a local test key it funds itself, so it still works headless.
+   Leave it running. It prints the RPC URL (`http://127.0.0.1:8545` unless `PORT` is set), the
+   deployed addresses, and the mint fee.
+
+2. **Serve the page** in another shell, and open the chain entry. Vite falls through to the next
+   free port if 5173 is taken, so use whatever it prints.
+
+   ```bash
+   cd preview && npm run dev
+   # open http://localhost:5173/chain.html
+   ```
+
+3. **Connect.** The page detects the wallet and shows a connect button. Approve the connection,
+   then approve the network switch — it points the wallet at the local fork. If the wallet does
+   not have that network yet it is added automatically; to add it by hand instead, use RPC URL
+   `http://127.0.0.1:8545` (or your `PORT`), chain id `31337`, currency symbol `ETH`.
+
+4. **Mint.** Pick a denomination and mint; the wallet prompts you to sign a transaction sending
+   backing plus the fee. Once it confirms, the Shape appears with its artwork fetched from the
+   contract's own `tokenURI`, and the reserve readout updates.
+
+5. **Redeem.** Redeem a single Shape or the whole holding; the wallet prompts again, and the
+   backing returns to your address. The reserve unwinds to zero (bar any stray wei), the same
+   invariant the contract enforces.
+
+### Without a wallet extension
+
+With no injected wallet the page falls back to a local test key, funds it, and auto-signs, so
+the harness runs headless with no connect step. This is the path the automated checks use; it
+exercises the same deposit and withdraw code.
+
+### Troubleshooting
+
+- **`mint` reverts immediately for a connected account.** The address still has code — it was
+  not seeded, so its inherited 7702 delegation makes `_safeMint` run a receiver check. Re-run
+  `fork-dev.sh` with that address in `SEED_WALLETS`.
+- **Nonce or balance looks wrong after restarting the chain.** The wallet cached state from a
+  previous fork. Clear the account's activity/nonce data in the wallet (MetaMask: Settings →
+  Advanced → Clear activity tab data) and reload.
+- **Port already in use.** `fork-dev.sh` takes `PORT` for Anvil; the page reads whichever RPC
+  the script wrote. Vite picks its own free port for the page.
 
 ## Deploying locally
 
