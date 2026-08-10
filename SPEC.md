@@ -511,7 +511,7 @@ every run, so it can never quietly drift.
 
 ### D12. Contract architecture
 
-- **One cosmetic admin power, no economic admin.** `Ownable2Step` is inherited so
+- **One cosmetic admin power, no economic admin.** `Ownable` is inherited so
   the owner can replace the renderer (`setRenderer`) and permanently freeze it
   (`lockRenderer`); the renderer is read only by `tokenURI`, so it reaches no ETH,
   backing, redemption or token ownership. No other administrative surface exists —

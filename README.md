@@ -170,7 +170,7 @@ There is one administrative power, and it is cosmetic. The owner may replace the
 (`setRenderer`) to fix a rendering bug, and may freeze it permanently (`lockRenderer`). The
 renderer is read only by `tokenURI`, so it can change how a Shape *looks* — never its backing,
 its redeemability, or who owns it. Once locked, even that ends. The owner may renounce ownership
-at any time (`Ownable2Step`).
+at any time (`Ownable`).
 
 `feeBps` and `feeRecipient` are `immutable`. The reserve, the denominations and the redemption
 path have no admin access at all. Deliberately absent: emergency withdrawal, treasury

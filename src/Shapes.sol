@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Ownable, Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IShapes} from "./interfaces/IShapes.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
@@ -25,7 +25,7 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      permanently lock it. The renderer is read only by `tokenURI`; it can never touch ETH,
 ///      backing, redemption or ownership. So the owner can change how a Shape looks, never what
 ///      it is worth or who controls it, and once `lockRenderer` is called even that ends. The
-///      owner may renounce ownership at any time (Ownable2Step).
+///      owner may renounce ownership at any time.
 ///
 ///      Deliberately absent: pause, emergency withdrawal, treasury, asset recovery, backing
 ///      modification, token seizure, mint-fee or fee-recipient change, upgradeability, proxy,
@@ -43,7 +43,7 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      outside `receive`, so the invariant is stated as an inequality; any such surplus is
 ///      permanently inaccessible, which is strictly preferable to opening a withdrawal path
 ///      that could reach the reserve.
-contract Shapes is ERC721, ReentrancyGuard, Ownable2Step, IShapes {
+contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
     /* ------------------------------ state ------------------------------ */
 
     /// @dev Per token, the minimum possible: a visual seed and a denomination index.

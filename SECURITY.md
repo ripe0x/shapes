@@ -13,9 +13,10 @@ counterparties.
 
 ## The threat model
 
-Shapes holds user ETH and has no administrator. There is exactly one thing that must never
-happen: a holder unable to redeem a live Shape for exactly the ETH it wraps. Everything else
-is secondary.
+Shapes holds user ETH and has no administrator with any power over the reserve — the only owner
+power is replacing the cosmetic renderer, which no value path touches. There is exactly one
+thing that must never happen: a holder unable to redeem a live Shape for exactly the ETH it
+wraps. Everything else is secondary.
 
 Formally, at all times:
 
@@ -126,7 +127,7 @@ assume `Transfer` comes first will mis-order a batch.
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
 | Reserve solvency | Only two value-bearing `CALL`s exist: `_settle` (reached only after a burn) and the fee forward (money received in the same call, never counted as backing). Proven by three stateful invariants. |
-| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. `Ownable2Step` is inherited, but its owner power reaches only `setRenderer`/`lockRenderer` — a `view`-only renderer with no value path. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
+| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. `Ownable` is inherited, but its owner power reaches only `setRenderer`/`lockRenderer` — a `view`-only renderer with no value path. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
 | Denomination validation | Exact `==` comparisons, no ranges, no rounding, no fallthrough. Because the *index* is stored rather than a wei amount, an off-ladder backing value is unrepresentable in storage. |
 | Forced ETH | Surplus from `selfdestruct`, coinbase or pre-deploy funding leaves `totalBacking` untouched, cannot be extracted, and cannot corrupt accounting — no function reads `address(this).balance`. |
