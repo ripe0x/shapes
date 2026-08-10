@@ -373,6 +373,75 @@ export function renderGeometry(
 }
 
 /* ------------------------------------------------------------------ *
+ * Vocabulary catalog
+ * ------------------------------------------------------------------ */
+
+/** The kinds whose appearance changes with rotation; the rest resolve to a single form. */
+const ROTATING_KINDS: ReadonlySet<Kind> = new Set(["triangle", "half", "quarter"]);
+
+export interface Appearance {
+  kind: Kind;
+  solid: boolean;
+  /** 0, 90, 180 or 270; always 0 for a non-rotating kind. */
+  rot: number;
+  glyph: string;
+}
+
+/**
+ * Every distinct module appearance the generator can produce: each kind in solid and outline,
+ * across its distinct rotations. At the committed vocabulary that is 30 forms — circle, square
+ * and diamond contribute two each; triangle, half and quarter eight each.
+ */
+export function vocabulary(kinds: readonly Kind[] = KIND_ORDER): Appearance[] {
+  const out: Appearance[] = [];
+  for (const kind of kinds) {
+    const rots = ROTATING_KINDS.has(kind) ? [0, 90, 180, 270] : [0];
+    for (const solid of [true, false]) {
+      for (const rot of rots) {
+        const m: Module = {index: 0, kind, solid, rot, cx: 0n, cy: 0n, size: 0n, weight: 0n};
+        out.push({kind, solid, rot, glyph: moduleGlyph(m)});
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Render one module appearance as a standalone SVG swatch. Uses the same geometry the artwork
+ * does — canonical fill and stroke, solved back from the painted target — centred in a square
+ * field, so a swatch reads at the exact proportion a real card's module would.
+ */
+export function renderModuleSwatch(
+  kind: Kind,
+  solid: boolean,
+  rot: number,
+  p: Params = CANONICAL,
+  side = 100,
+): string {
+  const cell = BigInt(side) * WAD;
+  const halfCell = cell / 2n;
+  const target = mulWad(halfCell, p.fill);
+  const weight = mulWad(2n * target, p.wRatio);
+  const m: Module = {
+    index: 0,
+    kind,
+    solid,
+    rot,
+    cx: halfCell,
+    cy: halfCell,
+    size: solveSize(kind, solid, target, weight),
+    weight,
+  };
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}"` +
+    ` width="${side}" height="${side}" shape-rendering="geometricPrecision">` +
+    `<rect x="0" y="0" width="${side}" height="${side}" fill="#000"/>` +
+    moduleSvg(m, p) +
+    `</svg>`
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Module glyph sequence (metadata trait)
  * ------------------------------------------------------------------ */
 

@@ -5,6 +5,7 @@ import { Ladder } from "./Ladder";
 import { Batch } from "./Batch";
 import { Inspect } from "./Inspect";
 import { GifBar } from "./GifBar";
+import { Vocabulary } from "./Vocabulary";
 import {
   CANONICAL_NUM,
   diffFromCanonical,
@@ -20,7 +21,7 @@ export interface Selection {
   tokenId: bigint;
 }
 
-type View = "ladder" | "batch";
+type View = "ladder" | "batch" | "vocabulary";
 
 export function App() {
   const [view, setView] = React.useState<View>("ladder");
@@ -140,6 +141,9 @@ export function App() {
             <Button active={view === "batch"} onClick={() => setView("batch")}>
               batch
             </Button>
+            <Button active={view === "vocabulary"} onClick={() => setView("vocabulary")}>
+              vocabulary
+            </Button>
             <span style={{width: 14}} />
             <Button
               active={selectMode}
@@ -186,7 +190,7 @@ export function App() {
             showGrid={showGrid}
             badgeOf={indexOf}
           />
-        ) : (
+        ) : view === "batch" ? (
           <Batch
             params={params}
             seedMode={seedMode}
@@ -196,6 +200,8 @@ export function App() {
             badgeOf={indexOf}
             addMany={addMany}
           />
+        ) : (
+          <Vocabulary params={params} />
         )}
 
         <GifBar
