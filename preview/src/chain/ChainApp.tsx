@@ -4,22 +4,32 @@ import {
   createWalletClient,
   createTestClient,
   http,
+  custom,
+  toHex,
   parseEther,
   formatEther,
   defineChain,
   type PublicClient,
   type WalletClient,
   type Chain,
+  type Account,
+  type Address,
+  type EIP1193Provider,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
 import {shapesAbi, DENOMINATIONS, type Deployment} from "./abi";
 
-// A fixed, arbitrary test-only key — never used off a local dev chain. It signs every mint and
-// redeem here so the harness needs no wallet extension. On a mainnet fork this address may
-// inherit an EIP-7702 delegation (many mainnet EOAs now carry one), which would make ERC721
-// `_safeMint` run a receiver check and revert. Startup strips that code and funds the account.
-const DEV_PK = "0x0123456789012345678901234567890123456789012345678901234567890123" as const;
-const account = privateKeyToAccount(DEV_PK);
+declare global {
+  interface Window {
+    ethereum?: EIP1193Provider;
+  }
+}
+
+// No-extension fallback only. When no browser wallet is present the harness signs with this
+// fixed test-only key so it still works headless. With MetaMask installed the real wallet path
+// is used instead and this is never touched.
+const BURNER_PK = "0x0123456789012345678901234567890123456789012345678901234567890123" as const;
+const burner = privateKeyToAccount(BURNER_PK);
 
 interface OwnedToken {
   id: bigint;
@@ -52,9 +62,20 @@ export function ChainApp() {
   const [acctBalance, setAcctBalance] = React.useState<bigint>(0n);
   const [mintFee, setMintFee] = React.useState<bigint>(0n);
 
-  const clients = React.useRef<{pub: PublicClient; wallet: WalletClient; chain: Chain} | null>(
-    null,
-  );
+  // Whether a browser wallet exists, and the connected account (null until connected). In the
+  // fallback path the burner is connected immediately.
+  const [hasWallet, setHasWallet] = React.useState(false);
+  const [account, setAccount] = React.useState<Address | null>(null);
+
+  const env = React.useRef<{
+    pub: PublicClient;
+    wallet: WalletClient | null;
+    // What signs a write: the burner LocalAccount (local signing over http) in the fallback, or
+    // the connected address (provider signing) with a browser wallet.
+    signer: Account | Address | null;
+    chain: Chain;
+    rpc: string;
+  } | null>(null);
 
   React.useEffect(() => {
     fetch("/deployment.json", {cache: "no-store"})
@@ -65,20 +86,25 @@ export function ChainApp() {
       .then(async (d: Deployment) => {
         const chain = defineChain({
           id: d.chainId,
-          name: "shapes-dev",
+          name: "Shapes dev fork",
           nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18},
           rpcUrls: {default: {http: [d.rpc]}},
         });
-        clients.current = {
-          pub: createPublicClient({chain, transport: http(d.rpc)}),
-          wallet: createWalletClient({account, chain, transport: http(d.rpc)}),
-          chain,
-        };
-        // Make the operating account a clean, funded EOA: strip any inherited 7702 delegation
-        // so `_safeMint` treats it as an EOA, and top it up so gas and backing are covered.
-        const test = createTestClient({chain, mode: "anvil", transport: http(d.rpc)});
-        await test.setCode({address: account.address, bytecode: "0x"});
-        await test.setBalance({address: account.address, value: parseEther("100000")});
+        const pub = createPublicClient({chain, transport: http(d.rpc)});
+        env.current = {pub, wallet: null, signer: null, chain, rpc: d.rpc};
+
+        if (window.ethereum) {
+          // Real wallet available: wait for the user to connect and sign their own txs.
+          setHasWallet(true);
+        } else {
+          // Headless fallback: fund the burner and strip any 7702 delegation, then auto-connect.
+          const test = createTestClient({chain, mode: "anvil", transport: http(d.rpc)});
+          await test.setCode({address: burner.address, bytecode: "0x"});
+          await test.setBalance({address: burner.address, value: parseEther("100000")});
+          env.current.wallet = createWalletClient({account: burner, chain, transport: http(d.rpc)});
+          env.current.signer = burner;
+          setAccount(burner.address);
+        }
         setDep(d);
       })
       .catch(() =>
@@ -88,9 +114,50 @@ export function ChainApp() {
       );
   }, []);
 
+  const connect = async () => {
+    if (!env.current || !window.ethereum || !dep) return;
+    setTxErr(null);
+    try {
+      const provider = window.ethereum;
+      const hexId = toHex(dep.chainId);
+      // Establish the connection first; a chain switch on a site the wallet has not connected
+      // yet is commonly rejected.
+      const [addr] = (await provider.request({method: "eth_requestAccounts"})) as Address[];
+      // Point the wallet at the local fork, adding the network if it does not know it yet.
+      try {
+        await provider.request({method: "wallet_switchEthereumChain", params: [{chainId: hexId}]});
+      } catch (e) {
+        if ((e as {code?: number}).code === 4902) {
+          await provider.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: hexId,
+                chainName: env.current.chain.name,
+                nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18},
+                rpcUrls: [env.current.rpc],
+              },
+            ],
+          });
+        } else {
+          throw e;
+        }
+      }
+      env.current.wallet = createWalletClient({
+        account: addr,
+        chain: env.current.chain,
+        transport: custom(provider),
+      });
+      env.current.signer = addr;
+      setAccount(addr);
+    } catch (e) {
+      setTxErr(shortError(e));
+    }
+  };
+
   const refresh = React.useCallback(async () => {
-    if (!dep || !clients.current) return;
-    const {pub} = clients.current;
+    if (!dep || !env.current || !account) return;
+    const {pub} = env.current;
     const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
     const [totalBacking, supply, minted, fee, balance, acct] = await Promise.all([
@@ -99,7 +166,7 @@ export function ChainApp() {
       pub.readContract({...shapes, functionName: "totalMinted"}),
       pub.readContract({...shapes, functionName: "mintFee"}),
       pub.getBalance({address: dep.shapes}),
-      pub.getBalance({address: account.address}),
+      pub.getBalance({address: account}),
     ]);
     setReserve({totalBacking, balance, supply, minted});
     setMintFee(fee);
@@ -115,7 +182,7 @@ export function ChainApp() {
       } catch {
         continue; // burned
       }
-      if (owner.toLowerCase() !== account.address.toLowerCase()) continue;
+      if (owner.toLowerCase() !== account.toLowerCase()) continue;
       const [backing, uri] = await Promise.all([
         pub.readContract({...shapes, functionName: "backingOf", args: [id]}),
         pub.readContract({...shapes, functionName: "tokenURI", args: [id]}),
@@ -123,19 +190,19 @@ export function ChainApp() {
       owned.push({id, backing, image: imageFromTokenURI(uri)});
     }
     setTokens(owned);
-  }, [dep]);
+  }, [dep, account]);
 
   React.useEffect(() => {
-    if (dep) void refresh();
-  }, [dep, refresh]);
+    if (dep && account) void refresh();
+  }, [dep, account, refresh]);
 
   const run = async (label: string, fn: () => Promise<`0x${string}`>) => {
-    if (!clients.current) return;
+    if (!env.current?.wallet) return;
     setBusy(label);
     setTxErr(null);
     try {
       const hash = await fn();
-      await clients.current.pub.waitForTransactionReceipt({hash});
+      await env.current.pub.waitForTransactionReceipt({hash});
       await refresh();
     } catch (e) {
       setTxErr(shortError(e));
@@ -144,60 +211,77 @@ export function ChainApp() {
     }
   };
 
+  // `signer` is the burner LocalAccount (local signing over http) in the fallback, or the
+  // connected address (provider signing) with a browser wallet. Passing the burner's address as
+  // a string would force JSON-RPC signing, which the local node cannot do for its key.
   const mint = () =>
     run("mint", async () => {
-      const {wallet, chain} = clients.current!;
+      const {wallet, chain, signer} = env.current!;
       const value = (amountWei + mintFee) * BigInt(qty);
+      const base = {address: dep!.shapes, abi: shapesAbi, chain, account: signer!} as const;
       if (qty === 1) {
-        return wallet.writeContract({
-          address: dep!.shapes,
-          abi: shapesAbi,
-          functionName: "mint",
-          args: [amountWei, account.address],
-          value,
-          chain,
-          account,
-        });
+        return wallet!.writeContract({...base, functionName: "mint", args: [amountWei, account!], value});
       }
-      return wallet.writeContract({
-        address: dep!.shapes,
-        abi: shapesAbi,
+      return wallet!.writeContract({
+        ...base,
         functionName: "mintBatch",
-        args: [amountWei, BigInt(qty), account.address],
+        args: [amountWei, BigInt(qty), account!],
         value,
-        chain,
-        account,
       });
     });
 
   const redeem = (id: bigint) =>
     run(`redeem ${id}`, () => {
-      const {wallet, chain} = clients.current!;
-      return wallet.writeContract({
+      const {wallet, chain, signer} = env.current!;
+      return wallet!.writeContract({
         address: dep!.shapes,
         abi: shapesAbi,
         functionName: "redeem",
         args: [id],
         chain,
-        account,
+        account: signer!,
       });
     });
 
   const redeemAll = () =>
     run("redeem all", () => {
-      const {wallet, chain} = clients.current!;
-      return wallet.writeContract({
+      const {wallet, chain, signer} = env.current!;
+      return wallet!.writeContract({
         address: dep!.shapes,
         abi: shapesAbi,
         functionName: "redeemBatch",
         args: [tokens.map((t) => t.id)],
         chain,
-        account,
+        account: signer!,
       });
     });
 
   if (loadErr) return <Centered>{loadErr}</Centered>;
-  if (!dep || !reserve) return <Centered>Connecting to dev chain…</Centered>;
+  if (!dep) return <Centered>Connecting to dev chain…</Centered>;
+
+  // Wallet present but not yet connected.
+  if (hasWallet && !account) {
+    return (
+      <div style={S.page}>
+        <div style={{maxWidth: 1100, margin: "0 auto"}}>
+          <Head dep={dep} account={null} />
+          <section style={{...S.card, textAlign: "center"}}>
+            <div style={{...S.dim, marginBottom: 14}}>
+              Connect your wallet to mint and redeem. It will be switched to the local fork
+              (chain {dep.chainId}); fund your address first with{" "}
+              <span style={S.mono}>SEED_WALLETS=0x… ./script/fork-dev.sh</span>.
+            </div>
+            <button onClick={connect} style={S.primary}>
+              connect wallet
+            </button>
+            {txErr && <div style={{...S.mono, color: "#f66", marginTop: 12}}>{txErr}</div>}
+          </section>
+        </div>
+      </div>
+    );
+  }
+
+  if (!reserve) return <Centered>Loading chain state…</Centered>;
 
   const solvent = reserve.balance >= reserve.totalBacking;
   const stray = reserve.balance - reserve.totalBacking;
@@ -205,19 +289,7 @@ export function ChainApp() {
   return (
     <div style={S.page}>
       <div style={{maxWidth: 1100, margin: "0 auto"}}>
-        <header style={S.header}>
-          <div>
-            <h1 style={S.h1}>Shapes — chain tester</h1>
-            <div style={S.dim}>
-              deposit ETH, read the onchain artwork back, redeem it. Dev fork only.
-            </div>
-          </div>
-          <div style={{textAlign: "right", ...S.mono, fontSize: 12}}>
-            <div>shapes {addr(dep.shapes)}</div>
-            <div style={S.dim}>renderer {addr(dep.renderer)}</div>
-            <div style={S.dim}>chain {dep.chainId}</div>
-          </div>
-        </header>
+        <Head dep={dep} account={account} />
 
         {/* Reserve invariant, live. */}
         <section style={{...S.card, borderColor: solvent ? "#1c5" : "#e33"}}>
@@ -294,6 +366,23 @@ export function ChainApp() {
         )}
       </div>
     </div>
+  );
+}
+
+function Head({dep, account}: {dep: Deployment; account: Address | null}) {
+  return (
+    <header style={S.header}>
+      <div>
+        <h1 style={S.h1}>Shapes — chain tester</h1>
+        <div style={S.dim}>deposit ETH, read the onchain artwork back, redeem it. Dev fork only.</div>
+      </div>
+      <div style={{textAlign: "right", ...S.mono, fontSize: 12}}>
+        <div>shapes {addr(dep.shapes)}</div>
+        <div style={S.dim}>renderer {addr(dep.renderer)}</div>
+        <div style={S.dim}>chain {dep.chainId}</div>
+        {account && <div style={{color: "#6c9"}}>you {addr(account)}</div>}
+      </div>
+    </header>
   );
 }
 

@@ -10,6 +10,15 @@
 #   open http://localhost:5173/chain.html
 #
 # Ctrl-C stops the chain. The deployment file is regenerated on every run.
+#
+# To use a real browser wallet (MetaMask) instead of the built-in burner key, seed your own
+# address so it has ETH to mint with:
+#
+#   SEED_WALLETS=0xYourAddress ./script/fork-dev.sh
+#
+# Each listed address is funded with SEED_ETH ether and has any inherited EIP-7702 delegation
+# stripped, so ERC721 _safeMint treats it as an EOA. Point MetaMask at the local RPC printed
+# below (chain id 31337) and connect that account.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,6 +31,9 @@ RPC="http://127.0.0.1:${PORT}"
 # Anvil's first default account. Public, well-known, test-only.
 PK0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 DEPLOYMENT_FILE="$REPO_ROOT/preview/public/deployment.json"
+# Comma-separated addresses to fund for browser-wallet use, and how much each gets.
+SEED_WALLETS=${SEED_WALLETS:-}
+SEED_ETH=${SEED_ETH:-1000}
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
@@ -49,6 +61,20 @@ RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 
 MINT_FEE=$(cast call "$SHAPES" "mintFee()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
 
 [ -n "$SHAPES" ] && [ -n "$RENDERER" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
+
+if [ -n "$SEED_WALLETS" ]; then
+  say "Seeding wallets with $SEED_ETH ETH each"
+  SEED_HEX=$(cast to-hex "$(cast to-wei "$SEED_ETH" ether)")
+  IFS=',' read -ra ADDRS <<<"$SEED_WALLETS"
+  for a in "${ADDRS[@]}"; do
+    a=$(echo "$a" | tr -d '[:space:]')
+    [ -n "$a" ] || continue
+    cast rpc anvil_setBalance "$a" "$SEED_HEX" --rpc-url "$RPC" >/dev/null
+    # Strip any EIP-7702 delegation inherited from mainnet so _safeMint sees a plain EOA.
+    cast rpc anvil_setCode "$a" 0x --rpc-url "$RPC" >/dev/null
+    echo "  $a  ->  $SEED_ETH ETH"
+  done
+fi
 
 mkdir -p "$(dirname "$DEPLOYMENT_FILE")"
 cat >"$DEPLOYMENT_FILE" <<JSON

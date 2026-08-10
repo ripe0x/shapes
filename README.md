@@ -334,11 +334,21 @@ open http://localhost:5173/chain.html
 ```
 
 `fork-dev.sh` boots a mainnet-forked Anvil, deploys through the real deploy script, and writes
-the deployed address to `preview/public/deployment.json`, which the page reads on load. It signs
-with a local test key, so no wallet extension is involved; on load it strips any inherited
-EIP-7702 delegation from that account and funds it, so `_safeMint` treats it as an EOA. The page
+the deployed address to `preview/public/deployment.json`, which the page reads on load. The page
 shows the reserve invariant live — contract balance against `totalBacking()` — alongside every
-Shape the account holds.
+Shape the connected account holds.
+
+With a browser wallet (MetaMask) present, the page prompts you to connect and you sign every
+mint and redeem yourself. Seed your address first so it has ETH on the fork, and the connect
+button will switch the wallet to the local network (chain id 31337):
+
+```bash
+SEED_WALLETS=0xYourAddress ./script/fork-dev.sh
+```
+
+Each seeded address is funded (1000 ETH by default, `SEED_ETH` to change) and has any inherited
+EIP-7702 delegation stripped, so `_safeMint` treats it as an EOA. With no wallet extension the
+page falls back to a local test key it funds itself, so it still works headless.
 
 ## Deploying locally
 
