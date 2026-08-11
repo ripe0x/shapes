@@ -31,12 +31,12 @@ export interface Deployment {
 // The nine denominations, in wei, with their display labels. Mirrors src/lib/Denominations.sol.
 export const DENOMINATIONS: {label: string; wei: bigint}[] = [
   {label: "0.01", wei: 10_000_000_000_000_000n},
+  {label: "0.05", wei: 50_000_000_000_000_000n},
   {label: "0.1", wei: 100_000_000_000_000_000n},
   {label: "0.5", wei: 500_000_000_000_000_000n},
   {label: "1", wei: 1_000_000_000_000_000_000n},
   {label: "5", wei: 5_000_000_000_000_000_000n},
   {label: "10", wei: 10_000_000_000_000_000_000n},
-  {label: "25", wei: 25_000_000_000_000_000_000n},
   {label: "50", wei: 50_000_000_000_000_000_000n},
   {label: "100", wei: 100_000_000_000_000_000_000n},
 ];

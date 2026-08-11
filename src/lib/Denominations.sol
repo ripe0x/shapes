@@ -13,18 +13,26 @@ library Denominations {
     error UnsupportedDenomination(uint256 amountWei);
     error DenominationIndexOutOfRange(uint256 index);
 
+    /// @notice The minimum denomination, in wei. Every denomination is a whole multiple of it.
+    uint256 internal constant UNIT = 0.01 ether;
+
     /// @notice Backing amount for a denomination index.
     function amountAt(uint256 index) internal pure returns (uint256) {
         if (index == 0) return 0.01 ether;
-        if (index == 1) return 0.1 ether;
-        if (index == 2) return 0.5 ether;
-        if (index == 3) return 1 ether;
-        if (index == 4) return 5 ether;
-        if (index == 5) return 10 ether;
-        if (index == 6) return 25 ether;
+        if (index == 1) return 0.05 ether;
+        if (index == 2) return 0.1 ether;
+        if (index == 3) return 0.5 ether;
+        if (index == 4) return 1 ether;
+        if (index == 5) return 5 ether;
+        if (index == 6) return 10 ether;
         if (index == 7) return 50 ether;
         if (index == 8) return 100 ether;
         revert DenominationIndexOutOfRange(index);
+    }
+
+    /// @notice Backing amount for a denomination index, in UNIT (0.01 ETH) multiples.
+    function unitsAt(uint256 index) internal pure returns (uint256) {
+        return amountAt(index) / UNIT;
     }
 
     /// @notice Index of a supported denomination.
@@ -32,12 +40,12 @@ library Denominations {
     /// @return ok Whether `amountWei` is one of the nine supported amounts.
     function indexOf(uint256 amountWei) internal pure returns (uint256 index, bool ok) {
         if (amountWei == 0.01 ether) return (0, true);
-        if (amountWei == 0.1 ether) return (1, true);
-        if (amountWei == 0.5 ether) return (2, true);
-        if (amountWei == 1 ether) return (3, true);
-        if (amountWei == 5 ether) return (4, true);
-        if (amountWei == 10 ether) return (5, true);
-        if (amountWei == 25 ether) return (6, true);
+        if (amountWei == 0.05 ether) return (1, true);
+        if (amountWei == 0.1 ether) return (2, true);
+        if (amountWei == 0.5 ether) return (3, true);
+        if (amountWei == 1 ether) return (4, true);
+        if (amountWei == 5 ether) return (5, true);
+        if (amountWei == 10 ether) return (6, true);
         if (amountWei == 50 ether) return (7, true);
         if (amountWei == 100 ether) return (8, true);
         return (0, false);
@@ -71,12 +79,12 @@ library Denominations {
     /// @notice Display string for a denomination index. No trailing zeros, by construction.
     function labelAt(uint256 index) internal pure returns (string memory) {
         if (index == 0) return "0.01";
-        if (index == 1) return "0.1";
-        if (index == 2) return "0.5";
-        if (index == 3) return "1";
-        if (index == 4) return "5";
-        if (index == 5) return "10";
-        if (index == 6) return "25";
+        if (index == 1) return "0.05";
+        if (index == 2) return "0.1";
+        if (index == 3) return "0.5";
+        if (index == 4) return "1";
+        if (index == 5) return "5";
+        if (index == 6) return "10";
         if (index == 7) return "50";
         if (index == 8) return "100";
         revert DenominationIndexOutOfRange(index);

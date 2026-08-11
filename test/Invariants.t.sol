@@ -28,12 +28,12 @@ contract Handler is Test, IERC721Receiver {
 
     uint256[9] internal DENOMS = [
         uint256(0.01 ether),
+        0.05 ether,
         0.1 ether,
         0.5 ether,
         1 ether,
         5 ether,
         10 ether,
-        25 ether,
         50 ether,
         100 ether
     ];

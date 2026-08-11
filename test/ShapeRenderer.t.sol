@@ -15,12 +15,12 @@ contract RendererTestBase is Test {
 
     uint256[9] internal DENOMS = [
         uint256(0.01 ether),
+        0.05 ether,
         0.1 ether,
         0.5 ether,
         1 ether,
         5 ether,
         10 ether,
-        25 ether,
         50 ether,
         100 ether
     ];
@@ -477,7 +477,7 @@ contract OutputTest is RendererTestBase {
     ///         longer on the card face, so this is where it has to be right.
     function test_EthLabelHasNoTrailingZeros() public view {
         string[9] memory expected =
-            ["0.01", "0.1", "0.5", "1", "5", "10", "25", "50", "100"];
+            ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
         for (uint256 i = 0; i < 9; ++i) {
             string memory json = renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1);
             assertEq(
@@ -608,7 +608,7 @@ contract TokenMetadataTest is RendererTestBase {
     /// @notice The ETH value shown in metadata must equal the ETH the token actually returns.
     function test_MetadataValueMatchesOnchainBacking() public {
         string[9] memory labels =
-            ["0.01", "0.1", "0.5", "1", "5", "10", "25", "50", "100"];
+            ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
 
         for (uint256 i = 0; i < 9; ++i) {
             vm.prank(alice);

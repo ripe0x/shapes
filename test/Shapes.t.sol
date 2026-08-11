@@ -40,12 +40,12 @@ abstract contract ShapesBase is Test {
 
     uint256[9] internal DENOMS = [
         uint256(0.01 ether),
+        0.05 ether,
         0.1 ether,
         0.5 ether,
         1 ether,
         5 ether,
         10 ether,
-        25 ether,
         50 ether,
         100 ether
     ];
@@ -107,7 +107,7 @@ contract MintTest is ShapesBase {
 
     function test_RevertsOnUnsupportedDenomination() public {
         uint256[6] memory bad =
-            [uint256(1), 0.011 ether, 0.05 ether, 2 ether, 99 ether, 101 ether];
+            [uint256(1), 0.011 ether, 25 ether, 2 ether, 99 ether, 101 ether];
         for (uint256 i = 0; i < bad.length; ++i) {
             vm.prank(alice);
             vm.expectRevert(
@@ -506,10 +506,10 @@ contract RedeemTest is ShapesBase {
     function test_ContractOwnerCanRedeem() public {
         GoodReceiver r = new GoodReceiver();
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 25 ether + feeOf(25 ether)}(25 ether, address(r));
+        uint256 id = shapes.mint{value: 50 ether + feeOf(50 ether)}(50 ether, address(r));
 
         r.redeem(shapes, id);
-        assertEq(address(r).balance, 25 ether);
+        assertEq(address(r).balance, 50 ether);
         assertEq(shapes.totalBacking(), 0);
     }
 
