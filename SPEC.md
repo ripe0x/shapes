@@ -212,6 +212,14 @@ transaction within ~51 minutes and a token that is not fully formed at mint. Tha
 amount of machinery for a primitive whose §26 mandate is to stay extremely narrow, bought
 against a property the reference implementation in this space does not have either.
 
+**Decompose child seeds are deterministic, not block-derived.** A `decompose` mints its outputs
+with `childSeed_i = keccak256(abi.encodePacked(parentSeed, i))`, where `i` is the output index.
+No block value enters. The parent seed is already fixed and free of caller control (it was set
+at the parent's own mint under the rule above), and the index is not a free parameter, so the
+full decompose tree is determined the moment the parent exists. Using block entropy here would
+instead grant one fresh re-roll per block: burn, observe the children, and if they are unwanted,
+revert and retry next block. Deriving from the parent seed removes that grind entirely.
+
 ### D4. Inset of outlined primitives — **specifications disagree**
 
 Round 03's source applies the half-stroke inset to **circle, ring and half
@@ -530,7 +538,7 @@ every run, so it can never quietly drift.
   transaction and never enter the reserve. A batch forwards its aggregate once.
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
-  invariant asserted is `address(this).balance >= totalBacking`.
+  invariant asserted is `address(this).balance >= redeemableBacking`.
 - Checks-effects-interactions, plus a reentrancy guard on the four functions that
   mint or move ETH: `mint`, `mintBatch`, `redeem`, `redeemBatch`. The inherited
   ERC721 transfer and approval functions are **not** guarded, deliberately —
@@ -540,7 +548,7 @@ every run, so it can never quietly drift.
   after a safe transfer can be griefed into reverting.
 - Minting or transferring a Shape to the `Shapes` contract itself is refused.
   The contract can never be `msg.sender`, so such a token could never be
-  redeemed, and its backing would be stranded while `totalBacking` went on
+  redeemed, and its backing would be stranded while `redeemableBacking` went on
   counting it.
 - The renderer address is checked for code at construction. It is immutable and
   metadata has no fallback path, so an EOA there would break `tokenURI` for

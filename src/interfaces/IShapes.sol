@@ -5,9 +5,11 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 /// @title IShapes
 /// @notice ETH wrapped into unique ERC721 objects at nine fixed denominations.
-/// @dev A Shape holds an exact amount of ETH. Burning it returns exactly that amount to its
-///      owner. There is no other way for ETH to leave the contract: no owner, no admin, no
-///      pause, no upgrade path, no recovery function.
+/// @dev A Shape holds an exact amount of ETH. Redeeming it burns the token and returns exactly
+///      that amount to its owner. The only other way ETH leaves the reserve is `blacken`, which
+///      sends a fixed 100 ETH to an unspendable address and is callable only by an apex Complete
+///      Shape's owner. No pause, no upgrade path, no recovery function, and no admin path reaches
+///      the reserve; the sole owner power is replacing the (value-inert) renderer until it locks.
 interface IShapes is IERC721 {
     /// @notice Emitted when a Shape is minted. `originCount` is always 1: a mint is the sole
     ///         source of new origins. A strict origin-creation signal; recomposition does not

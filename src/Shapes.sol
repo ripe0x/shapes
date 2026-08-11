@@ -18,9 +18,12 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      the token owns the right to unwrap its ETH. The token is otherwise an ordinary
 ///      transferable ERC721.
 ///
-///      The contract does not lend, stake, invest or otherwise use the ETH it holds. There is
-///      exactly one code path that moves ETH out of the reserve — `_settle`, reached only from
-///      `redeem` and `redeemBatch` — and it burns the corresponding token first.
+///      The contract does not lend, stake, invest or otherwise use the ETH it holds. Two code
+///      paths move ETH out of the reserve: `_settle` (redemption; reached from `redeem` and
+///      `redeemBatch`, burns the token first and returns its exact backing to the owner) and
+///      `blacken` (sacrifice; sends a fixed 100 ETH to an unspendable address and marks the
+///      token Black). `compose` and `decompose` reshape tokens without moving ETH, so they leave
+///      the reserve unchanged. No other path reaches the reserve.
 ///
 ///      The one administrative power is cosmetic: the owner may replace the renderer, and may
 ///      permanently lock it. The renderer is read only by `tokenURI`; it can never touch ETH,
@@ -32,9 +35,10 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      modification, token seizure, mint-fee or fee-recipient change, upgradeability, proxy,
 ///      allowlist, supply cap, royalties. No admin path reaches the reserve.
 ///
-///      Reentrancy: the four functions that move ETH or mint — `mint`, `mintBatch`, `redeem`,
-///      `redeemBatch` — are guarded. The inherited ERC721 transfer and approval functions are
-///      not, and deliberately so; they move no ETH. One consequence worth knowing: a receiver
+///      Reentrancy: the functions that move ETH, mint, or restructure tokens — `mint`,
+///      `mintBatch`, `redeem`, `redeemBatch`, `compose`, `decompose`, `blacken` — are guarded.
+///      The inherited ERC721 transfer and approval functions are not, and deliberately so; they
+///      move no ETH. One consequence worth knowing: a receiver
 ///      can redeem a Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
 ///      Accounting stays exact, but an integrator that assumes the token still exists after a
 ///      safe transfer can be griefed into reverting.
@@ -317,9 +321,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         _burn(tokenId);
     }
 
-    /// @dev The only path by which ETH leaves this contract. Reached only after the
-    ///      corresponding tokens are burned and the accounting is updated. A failed transfer
-    ///      reverts the whole redemption.
+    /// @dev The redemption payout. Reached only after the corresponding tokens are burned and the
+    ///      accounting is updated. A failed transfer reverts the whole redemption. `blacken` is the
+    ///      only other path that sends reserve ETH out, at a fixed amount to a fixed address.
     function _settle(address to, uint256 amountWei) private {
         (bool sent,) = to.call{value: amountWei}("");
         if (!sent) revert EthTransferFailed(to, amountWei);

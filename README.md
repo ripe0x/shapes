@@ -150,7 +150,7 @@ stays put.
 The invariant, always:
 
 ```
-address(this).balance >= totalBacking()
+address(this).balance >= redeemableBacking()
 ```
 
 In normal operation it is equality. It is stated as an inequality because Ethereum can force
@@ -161,7 +161,7 @@ reach the reserve.
 
 Direct ETH transfers to the contract revert. ETH arrives only through `mint`.
 
-Every wei counted by `totalBacking()` corresponds to a live Shape, and is asserted as a
+Every wei counted by `redeemableBacking()` corresponds to a live Shape, and is asserted as a
 stateful invariant over fuzzed sequences of minting, transferring and redeeming.
 
 ## Immutability
@@ -265,7 +265,7 @@ MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com forge test --mc ForkTest -vv
 
 One thing the fork surfaces that a clean chain cannot: a freshly deployed address can coincide
 with a mainnet account already holding a little ETH, and many mainnet EOAs now carry an EIP-7702
-delegation. The suite treats the former as stranded surplus (`balance >= totalBacking` still
+delegation. The suite treats the former as stranded surplus (`balance >= redeemableBacking` still
 holds) and mints only to codeless recipients, matching how the contract behaves in the wild.
 
 ## Running the preview harness
@@ -344,7 +344,7 @@ development harness, not the launch surface — Shapes ships contracts-only — 
 real deposit and withdraw paths and renders the actual onchain SVG rather than the TypeScript
 one. `fork-dev.sh` boots a local Anvil, deploys through the real deploy script, and writes the
 deployed address to `preview/public/deployment.json`, which the page reads on load. The page
-shows the reserve invariant live — contract balance against `totalBacking()` — alongside every
+shows the reserve invariant live — contract balance against `redeemableBacking()` — alongside every
 Shape the connected account holds.
 
 The chain is a plain local Anvil, not a mainnet fork: Shapes reads no external contract, so a

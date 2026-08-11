@@ -21,8 +21,8 @@ wraps. Everything else is secondary.
 Formally, at all times:
 
 ```
-address(this).balance >= totalBacking()
-totalBacking()        == sum of backingOf(t) over all live t
+address(this).balance >= redeemableBacking()
+redeemableBacking()        == sum of backingOf(t) over all live t
 ```
 
 Both are asserted as stateful invariants over fuzzed sequences of mint, batch mint, transfer,
@@ -63,7 +63,7 @@ immutable landed as intended before reporting success.
 
 *Confirmed.* `safeTransferFrom` to `address(shapes)` already failed on the receiver check, but
 plain `transferFrom` succeeded. Since the contract can never be `msg.sender`, such a token
-could never be redeemed: its backing was stranded while `totalBacking` went on counting it.
+could never be redeemed: its backing was stranded while `redeemableBacking` went on counting it.
 `_update` now rejects `to == address(this)`, closing the transfer path and the mint path.
 
 ### 4. Documentation overclaimed the reentrancy guard — fixed
@@ -80,7 +80,7 @@ solvency one. Now documented in SPEC.md D12 and in the `Shapes` contract header.
 *Confirmed.* Inside the first `onERC721Received` of a four-token batch, `totalSupply` read 4
 while one token existed, and the contract balance included fees not yet forwarded. Nothing in
 `Shapes` reads these and write reentrancy is blocked, so this is integrator-facing only. Fees
-are now forwarded **before** the mint loop, so `address(this).balance == totalBacking()` holds
+are now forwarded **before** the mint loop, so `address(this).balance == redeemableBacking()` holds
 during every callback (`test_ReserveIsConsistentInsideReceiverCallback`). The `totalSupply`
 skew is inherent to batched `_safeMint` and is documented at the call site.
 
@@ -123,14 +123,14 @@ assume `Transfer` comes first will mis-order a batch.
 
 | Axis | Result |
 |---|---|
-| Reentrancy | `mint`, `mintBatch`, `redeem`, `redeemBatch` guarded; `_settle` and the fee call execute inside the guard, after all effects. Reentry attempts from ERC721 callbacks, the payout callback and the fee callback all revert. |
+| Reentrancy | `mint`, `mintBatch`, `redeem`, `redeemBatch`, `compose`, `decompose`, `blacken` guarded; `_settle`, the fee call and the `blacken` sacrifice all execute inside the guard, after all effects. Reentry attempts from ERC721 callbacks, the payout callback and the fee callback all revert. `compose`/`decompose` make no external call. |
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
-| Reserve solvency | Only two value-bearing `CALL`s exist: `_settle` (reached only after a burn) and the fee forward (money received in the same call, never counted as backing). Proven by three stateful invariants. |
+| Reserve solvency | Three value-bearing `CALL`s exist: `_settle` (reached only after a burn), the fee forward (money received in the same call, never counted as backing), and the `blacken` sacrifice (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). Proven by stateful invariants: `balance >= redeemableBacking`, backing conservation net of sacrifice, and `sacrificedBacking == 100 ether * blackCount`. |
 | ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. `Ownable` is inherited, but its owner power reaches only `setRenderer`/`lockRenderer` — a `view`-only renderer with no value path. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
 | Denomination validation | Exact `==` comparisons, no ranges, no rounding, no fallthrough. Because the *index* is stored rather than a wei amount, an off-ladder backing value is unrepresentable in storage. |
-| Forced ETH | Surplus from `selfdestruct`, coinbase or pre-deploy funding leaves `totalBacking` untouched, cannot be extracted, and cannot corrupt accounting — no function reads `address(this).balance`. |
+| Forced ETH | Surplus from `selfdestruct`, coinbase or pre-deploy funding leaves `redeemableBacking` untouched, cannot be extracted, and cannot corrupt accounting — no function reads `address(this).balance`. |
 | DoS against the reserve | An owner that rejects ETH causes `_settle` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
 | Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is owner-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only — never backing, redemption or ownership — and after locking it is fixed forever. |
 
