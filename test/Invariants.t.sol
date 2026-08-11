@@ -193,6 +193,61 @@ contract Handler is Test, IERC721Receiver {
         (bool ok,) = address(shapes).call{value: value}(abi.encodePacked(selector));
         ok; // expected to fail; the invariants prove nothing moved
     }
+
+    /// @dev Compose a token one tier up with same-denom siblings of the same owner, when enough
+    ///      are available. Exercises composition without moving ETH.
+    function compose(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 survivor = liveTokens[seed % liveTokens.length];
+        uint256 amt = shapes.backingOf(survivor);
+        uint256 di = _denomIndex(amt);
+        if (di == 9 || di == 8) return; // unknown, or already the top tier
+        address owner = shapes.ownerOf(survivor);
+        uint256 ratio = DENOMS[di + 1] / amt; // 2 or 5
+
+        uint256[] memory burn = new uint256[](ratio - 1);
+        uint256 got;
+        for (uint256 i = 0; i < liveTokens.length && got < ratio - 1; ++i) {
+            uint256 id = liveTokens[i];
+            if (id == survivor) continue;
+            if (shapes.ownerOf(id) != owner) continue;
+            if (shapes.backingOf(id) != amt) continue;
+            burn[got++] = id;
+        }
+        if (got < ratio - 1) return;
+
+        vm.prank(owner);
+        try shapes.compose(survivor, burn) {
+            for (uint256 i = 0; i < burn.length; ++i) _untrack(burn[i]);
+        } catch {}
+    }
+
+    /// @dev Decompose a token one tier down. Exercises decomposition without moving ETH.
+    function decompose(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 id = liveTokens[seed % liveTokens.length];
+        uint256 amt = shapes.backingOf(id);
+        uint256 di = _denomIndex(amt);
+        if (di == 9 || di == 0) return; // unknown, or already the minimum tier
+        address owner = shapes.ownerOf(id);
+        uint256 ratio = amt / DENOMS[di - 1]; // 2 or 5
+
+        uint8[] memory outs = new uint8[](ratio);
+        for (uint256 i = 0; i < ratio; ++i) outs[i] = uint8(di - 1);
+
+        vm.prank(owner);
+        try shapes.decompose(id, outs) returns (uint256[] memory kids) {
+            _untrack(id);
+            for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
+        } catch {}
+    }
+
+    function _denomIndex(uint256 amt) private view returns (uint256) {
+        for (uint256 i = 0; i < 9; ++i) {
+            if (DENOMS[i] == amt) return i;
+        }
+        return 9;
+    }
 }
 
 /* ==================================================================== *
@@ -214,7 +269,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](7);
+        bytes4[] memory selectors = new bytes4[](9);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -222,6 +277,8 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[4] = Handler.redeemBatch.selector;
         selectors[5] = Handler.forceEther.selector;
         selectors[6] = Handler.pokeUnknownSelector.selector;
+        selectors[7] = Handler.compose.selector;
+        selectors[8] = Handler.decompose.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -298,15 +355,12 @@ contract ShapesInvariantTest is StdInvariant, Test {
         );
     }
 
-    /// @notice Supply counters stay consistent with each other.
+    /// @notice Supply counters stay consistent. Recomposition mints and burns tokens without
+    ///         creating origins, so totalMinted is a high-water id counter, not a mint tally;
+    ///         only its relationship to live supply is asserted here (live supply itself is
+    ///         checked against the tracked live set in invariant_BackingEqualsSumOfLiveTokens).
     function invariant_SupplyCountersAgree() public view {
-        assertEq(
-            shapes.totalSupply(),
-            handler.ghostMints() - handler.ghostRedeems(),
-            "live supply drifted"
-        );
-        assertEq(shapes.totalMinted(), handler.ghostMints(), "totalMinted drifted");
-        assertGe(shapes.totalMinted(), shapes.totalSupply(), "totalMinted must be monotonic");
+        assertGe(shapes.totalMinted(), shapes.totalSupply(), "totalMinted below live supply");
     }
 
     /// @notice Every live token carries one of the nine denominations. Nothing else is

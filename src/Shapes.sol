@@ -3,6 +3,7 @@ pragma solidity 0.8.28;
 
 import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -43,7 +44,7 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      outside `receive`, so the invariant is stated as an inequality; any such surplus is
 ///      permanently inaccessible, which is strictly preferable to opening a withdrawal path
 ///      that could reach the reserve.
-contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
+contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     /* ------------------------------ state ------------------------------ */
 
     /// @dev Per token: a visual seed, a denomination index, a provenance credit and a terminal
@@ -313,6 +314,114 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
         if (!sent) revert EthTransferFailed(to, amountWei);
     }
 
+    /* --------------------------- recomposition -------------------------- */
+
+    /// @inheritdoc IShapes
+    /// @dev Reshapes tokens without moving ETH: the summed backing is unchanged, so `totalBacking`
+    ///      stays correct with no adjustment and the reserve invariant holds by construction.
+    ///      `_burn` triggers no receiver callback, so this function makes no external calls; it is
+    ///      guarded regardless. A duplicate id in `burnIds` reverts on its second appearance,
+    ///      because the token no longer exists.
+    function compose(uint256 survivorId, uint256[] calldata burnIds)
+        external
+        nonReentrant
+        returns (uint256)
+    {
+        uint256 n = burnIds.length;
+        if (n == 0) revert EmptyRecomposition();
+
+        if (ownerOf(survivorId) != msg.sender) revert NotShapeOwner(survivorId, msg.sender);
+        ShapeData storage s = _shapes[survivorId];
+        if (s.isBlack) revert TokenIsBlack(survivorId);
+
+        uint256 total = Denominations.amountAt(s.denomIndex);
+        uint256 origins = s.originCount;
+
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 bid = burnIds[i];
+            if (bid == survivorId) revert CannotComposeWithSelf(bid);
+            if (ownerOf(bid) != msg.sender) revert NotShapeOwner(bid, msg.sender);
+            ShapeData storage b = _shapes[bid];
+            if (b.isBlack) revert TokenIsBlack(bid);
+
+            total += Denominations.amountAt(b.denomIndex);
+            origins += b.originCount;
+            delete _shapes[bid];
+            _burn(bid);
+        }
+
+        // The summed backing must land on a denomination, or the composition is rejected.
+        uint256 newIndex = Denominations.requireIndexOf(total);
+
+        totalSupply -= n;
+        s.denomIndex = uint8(newIndex);
+        s.originCount = uint32(origins); // <= total/UNIT <= 10000 by the capacity invariant
+
+        emit Composed(survivorId, burnIds, uint8(newIndex), origins);
+        emit MetadataUpdate(survivorId);
+        return survivorId;
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Burns the input and mints fresh outputs whose backing sums to the input's, so
+    ///      `totalBacking` is untouched. Child seeds derive from the parent seed deterministically,
+    ///      fixing the full decompose tree at mint. All accounting precedes the `_safeMint` loop so
+    ///      a receiver callback observes consistent state.
+    function decompose(uint256 tokenId, uint8[] calldata outDenoms)
+        external
+        nonReentrant
+        returns (uint256[] memory newIds)
+    {
+        uint256 k = outDenoms.length;
+        if (k < 2) revert EmptyRecomposition();
+
+        if (ownerOf(tokenId) != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
+        ShapeData storage p = _shapes[tokenId];
+        if (p.isBlack) revert TokenIsBlack(tokenId);
+
+        uint256 parentBacking = Denominations.amountAt(p.denomIndex);
+        bytes32 parentSeed = p.seed;
+        uint256 remaining = p.originCount;
+
+        uint256 sum;
+        for (uint256 i = 0; i < k; ++i) sum += Denominations.amountAt(outDenoms[i]);
+        if (sum != parentBacking) revert DecompositionMismatch(parentBacking, sum);
+
+        // -------- effects --------
+        delete _shapes[tokenId];
+        _burn(tokenId);
+
+        uint256 firstId = totalMinted + 1;
+        totalMinted = firstId + k - 1;
+        totalSupply += k - 1; // burned one, minting k
+
+        newIds = new uint256[](k);
+        uint32[] memory oc = new uint32[](k);
+        for (uint256 i = 0; i < k; ++i) {
+            uint256 nid = firstId + i;
+            uint256 cap = Denominations.unitsAt(outDenoms[i]);
+            uint256 give = remaining < cap ? remaining : cap;
+            remaining -= give;
+            newIds[i] = nid;
+            oc[i] = uint32(give);
+            _shapes[nid] = ShapeData({
+                seed: keccak256(abi.encodePacked(parentSeed, i)),
+                denomIndex: outDenoms[i],
+                originCount: uint32(give),
+                isBlack: false
+            });
+        }
+        // Sum of capacities == parentBacking/UNIT >= parent origin count, so the fill exhausts it.
+        assert(remaining == 0);
+
+        emit Decomposed(tokenId, newIds, outDenoms, oc);
+
+        // -------- interactions --------
+        for (uint256 i = 0; i < k; ++i) {
+            _safeMint(msg.sender, newIds[i]);
+        }
+    }
+
     /* ------------------------------- views ------------------------------ */
 
     /// @inheritdoc IShapes
@@ -331,6 +440,14 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
     function originCountOf(uint256 tokenId) public view returns (uint256) {
         _requireOwned(tokenId);
         return _shapes[tokenId].originCount;
+    }
+
+    /// @inheritdoc IShapes
+    function isComplete(uint256 tokenId) public view returns (bool) {
+        _requireOwned(tokenId);
+        ShapeData storage d = _shapes[tokenId];
+        uint256 units = Denominations.unitsAt(d.denomIndex);
+        return !d.isBlack && units > 1 && d.originCount == units;
     }
 
     /// @inheritdoc IShapes
@@ -380,7 +497,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
         override(ERC721, IERC165)
         returns (bool)
     {
-        return interfaceId == type(IShapes).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IShapes).interfaceId
+            || interfaceId == bytes4(0x49064906) // ERC-4906 metadata update
+            || super.supportsInterface(interfaceId);
     }
 
     /* ------------------------- no stray deposits ------------------------ */

@@ -28,6 +28,18 @@ interface IShapes is IERC721 {
     /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
     event RendererLocked();
 
+    /// @notice Emitted when Shapes are composed into one. The survivor keeps its id and seed and
+    ///         becomes the summed denomination; the burned inputs are consumed into it.
+    event Composed(
+        uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint256 originCount
+    );
+
+    /// @notice Emitted when a Shape is split. The input is burned and each output is a fresh id;
+    ///         `originCounts` is the per-child origin partition. Outputs do not emit ShapeMinted.
+    event Decomposed(
+        uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts
+    );
+
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
     error ZeroQuantity();
@@ -41,6 +53,14 @@ interface IShapes is IERC721 {
     error SelfCustodyRejected(uint256 tokenId);
     /// @dev `setRenderer` and `lockRenderer` revert once the renderer has been locked.
     error RendererIsLocked();
+    /// @dev A Black Shape is terminal: it cannot be redeemed, composed or decomposed.
+    error TokenIsBlack(uint256 tokenId);
+    /// @dev `compose` needs at least one token to burn; `decompose` at least two outputs.
+    error EmptyRecomposition();
+    /// @dev The survivor of a compose cannot also appear in its burn set.
+    error CannotComposeWithSelf(uint256 tokenId);
+    /// @dev A decompose's output denominations must sum to exactly the input's backing.
+    error DecompositionMismatch(uint256 inputBacking, uint256 outputSum);
 
     /* --------------------------- immutables --------------------------- */
 
@@ -94,6 +114,24 @@ interface IShapes is IERC721 {
     /// @notice Burn several Shapes owned by the caller and receive the exact total backing.
     function redeemBatch(uint256[] calldata tokenIds) external returns (uint256 totalWei);
 
+    /* -------------------------- recomposition ------------------------- */
+
+    /// @notice Compose several Shapes into one. `survivorId` keeps its id and seed and becomes the
+    ///         summed denomination; the `burnIds` are burned into it. All must be owned by the
+    ///         caller and not Black. No ETH moves and no fee is charged. The summed backing must be
+    ///         a valid denomination. Origins are summed onto the survivor.
+    function compose(uint256 survivorId, uint256[] calldata burnIds)
+        external
+        returns (uint256 outId);
+
+    /// @notice Split a Shape into the denominations in `outDenoms`, which must sum to its backing.
+    ///         The input is burned; each output is a fresh id with a seed derived from the input's
+    ///         seed. No ETH moves and no fee is charged. Origins are partitioned across the outputs,
+    ///         each output filled to capacity in listed order.
+    function decompose(uint256 tokenId, uint8[] calldata outDenoms)
+        external
+        returns (uint256[] memory newIds);
+
     /* ----------------------------- views ------------------------------ */
 
     /// @notice ETH backing a live Shape.
@@ -104,6 +142,10 @@ interface IShapes is IERC721 {
 
     /// @notice Independent direct-mint origins credited to a live Shape (one per mint, conserved).
     function originCountOf(uint256 tokenId) external view returns (uint256);
+
+    /// @notice Whether a Shape is Complete: not Black, above the minimum tier, and carrying one
+    ///         origin per 0.01 unit of backing (`originCount == backing / 0.01`).
+    function isComplete(uint256 tokenId) external view returns (bool);
 
     /// @notice Sum of the backing of every live Shape.
     function totalBacking() external view returns (uint256);

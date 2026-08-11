@@ -832,3 +832,215 @@ contract RendererAdminTest is ShapesBase {
         shapes.setRenderer(address(next));
     }
 }
+
+/* ==================================================================== *
+ *  Recomposition (compose / decompose)
+ * ==================================================================== */
+
+contract RecompositionTest is ShapesBase {
+    /// @dev Mint `qty` tokens of `amount` to alice; ids are `first .. first+qty-1`.
+    function _mintMany(uint256 amount, uint256 qty) internal returns (uint256 first) {
+        vm.prank(alice);
+        first = shapes.mintBatch{value: qty * (amount + feeOf(amount))}(amount, qty, alice);
+    }
+
+    /// @dev A genuine Complete 0.05: five 0.01 direct mints composed into one.
+    function _buildComplete005() internal returns (uint256 survivor) {
+        uint256 first = _mintMany(0.01 ether, 5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        survivor = shapes.compose(first, burn);
+    }
+
+    function test_ComposeCombinesBackingAndOrigins() public {
+        uint256 first = _mintMany(0.01 ether, 5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+
+        vm.prank(alice);
+        uint256 outId = shapes.compose(first, burn);
+
+        assertEq(outId, first, "survivor keeps its id");
+        assertEq(shapes.backingOf(first), 0.05 ether, "backing summed to 0.05");
+        assertEq(shapes.originCountOf(first), 5, "origins summed");
+        assertTrue(shapes.isComplete(first), "5 origins on 0.05 is Complete");
+        assertEq(shapes.totalSupply(), 1, "four inputs burned");
+        assertEq(shapes.totalBacking(), 0.05 ether, "reserve conserved");
+        _assertSolvent();
+        vm.expectRevert();
+        shapes.ownerOf(first + 1);
+    }
+
+    function test_ComposeKeepsSurvivorSeed() public {
+        uint256 first = _mintMany(0.01 ether, 5);
+        bytes32 seed = shapes.seedOf(first);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        shapes.compose(first, burn);
+        assertEq(shapes.seedOf(first), seed, "seed unchanged through compose");
+    }
+
+    function test_ComposeRejectsInvalidSum() public {
+        uint256 first = _mintMany(0.01 ether, 3); // 0.03 is not a denomination
+        uint256[] memory burn = new uint256[](2);
+        burn[0] = first + 1;
+        burn[1] = first + 2;
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, 0.03 ether));
+        shapes.compose(first, burn);
+    }
+
+    function test_ComposeRejectsNonOwnerInput() public {
+        uint256 a = _mint(alice, 0.01 ether);
+        vm.prank(bob);
+        uint256 b = shapes.mint{value: 0.01 ether + feeOf(0.01 ether)}(0.01 ether, bob);
+        uint256[] memory burn = new uint256[](1);
+        burn[0] = b;
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, b, alice));
+        shapes.compose(a, burn);
+    }
+
+    function test_ComposeRejectsSelf() public {
+        uint256 first = _mintMany(0.01 ether, 2);
+        uint256[] memory burn = new uint256[](2);
+        burn[0] = first + 1;
+        burn[1] = first; // survivor cannot be in its own burn set
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
+        shapes.compose(first, burn);
+    }
+
+    function test_ComposeRejectsDuplicate() public {
+        uint256 first = _mintMany(0.01 ether, 5);
+        uint256[] memory burn = new uint256[](2);
+        burn[0] = first + 1;
+        burn[1] = first + 1; // duplicate: second _burn hits a nonexistent token
+        vm.prank(alice);
+        vm.expectRevert();
+        shapes.compose(first, burn);
+    }
+
+    function test_ComposeRejectsEmpty() public {
+        uint256 a = _mint(alice, 0.01 ether);
+        uint256[] memory burn = new uint256[](0);
+        vm.prank(alice);
+        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        shapes.compose(a, burn);
+    }
+
+    function test_DecomposeSplitsAndBurnsInput() public {
+        uint256 id = _mint(alice, 0.05 ether); // direct, originCount 1
+        uint8[] memory outs = new uint8[](5); // 5 x 0.01 (index 0)
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+
+        assertEq(kids.length, 5);
+        vm.expectRevert();
+        shapes.ownerOf(id); // input burned
+
+        assertEq(shapes.originCountOf(kids[0]), 1, "survivor-first fill");
+        assertEq(shapes.originCountOf(kids[1]), 0);
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(shapes.backingOf(kids[i]), 0.01 ether);
+            assertEq(shapes.ownerOf(kids[i]), alice);
+        }
+        assertEq(shapes.totalBacking(), 0.05 ether, "reserve conserved");
+        assertEq(shapes.totalSupply(), 5);
+        _assertSolvent();
+    }
+
+    function test_DecomposeChildSeedsAreDeterministic() public {
+        uint256 id = _mint(alice, 0.05 ether);
+        bytes32 parentSeed = shapes.seedOf(id);
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+        for (uint256 i = 0; i < 5; i++) {
+            assertEq(
+                shapes.seedOf(kids[i]),
+                keccak256(abi.encodePacked(parentSeed, i)),
+                "child seed derived from parent"
+            );
+        }
+    }
+
+    function test_DecomposeRejectsBadSum() public {
+        uint256 id = _mint(alice, 0.1 ether);
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 0;
+        outs[1] = 0; // 0.02 != 0.1
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.DecompositionMismatch.selector, 0.1 ether, 0.02 ether)
+        );
+        shapes.decompose(id, outs);
+    }
+
+    function test_DecomposeRejectsSingleOutput() public {
+        uint256 id = _mint(alice, 0.05 ether);
+        uint8[] memory outs = new uint8[](1);
+        outs[0] = 1;
+        vm.prank(alice);
+        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        shapes.decompose(id, outs);
+    }
+
+    function test_ForgeryBlocked_SplitRecombinePreservesCount() public {
+        uint256 id = _mint(alice, 0.1 ether); // direct, originCount 1
+        uint8[] memory outs = new uint8[](10); // 10 x 0.01
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+
+        uint256[] memory burn = new uint256[](9);
+        for (uint256 i = 0; i < 9; i++) burn[i] = kids[i + 1];
+        vm.prank(alice);
+        uint256 outId = shapes.compose(kids[0], burn);
+
+        assertEq(shapes.backingOf(outId), 0.1 ether);
+        assertEq(shapes.originCountOf(outId), 1, "count preserved, not inflated to 10");
+        assertFalse(shapes.isComplete(outId), "split-recombine cannot forge Complete");
+    }
+
+    function test_CompletePropagatesUpward() public {
+        uint256 a = _buildComplete005();
+        uint256 b = _buildComplete005();
+        assertTrue(shapes.isComplete(a));
+        assertTrue(shapes.isComplete(b));
+
+        uint256[] memory burn = new uint256[](1);
+        burn[0] = b;
+        vm.prank(alice);
+        shapes.compose(a, burn);
+
+        assertEq(shapes.backingOf(a), 0.1 ether);
+        assertEq(shapes.originCountOf(a), 10);
+        assertTrue(shapes.isComplete(a), "composing Completes yields a Complete");
+    }
+
+    function test_LoneMinTierIsNotComplete() public {
+        uint256 id = _mint(alice, 0.01 ether); // units == 1
+        assertFalse(shapes.isComplete(id), "tier 0 is Direct, never Complete");
+    }
+
+    function test_NoFeeChargedOnRecompose() public {
+        uint256 first = _mintMany(0.01 ether, 5);
+        uint256 afterMint = feeRecipient.balance;
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        shapes.compose(first, burn);
+        assertEq(feeRecipient.balance, afterMint, "compose charged no fee");
+
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        shapes.decompose(first, outs);
+        assertEq(feeRecipient.balance, afterMint, "decompose charged no fee");
+    }
+
+    function test_SupportsErc4906() public view {
+        assertTrue(shapes.supportsInterface(0x49064906));
+    }
+}
