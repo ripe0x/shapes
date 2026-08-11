@@ -66,8 +66,8 @@ abstract contract ShapesBase is Test {
     function _assertSolvent() internal view {
         assertGe(
             address(shapes).balance,
-            shapes.totalBacking(),
-            "contract balance fell below totalBacking"
+            shapes.redeemableBacking(),
+            "contract balance fell below redeemableBacking"
         );
     }
 }
@@ -86,7 +86,7 @@ contract MintTest is ShapesBase {
             assertEq(id, i + 1, "token ids are sequential from 1");
             assertEq(shapes.ownerOf(id), alice);
             assertEq(shapes.backingOf(id), DENOMS[i]);
-            assertEq(shapes.totalBacking(), expectedBacking);
+            assertEq(shapes.redeemableBacking(), expectedBacking);
             assertEq(shapes.totalSupply(), i + 1);
             assertEq(shapes.totalMinted(), i + 1);
         }
@@ -131,13 +131,13 @@ contract MintTest is ShapesBase {
         vm.prank(alice);
         if (supported) {
             shapes.mint{value: amount + feeOf(amount)}(amount, alice);
-            assertEq(shapes.totalBacking(), amount);
+            assertEq(shapes.redeemableBacking(), amount);
         } else {
             vm.expectRevert(
                 abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, amount)
             );
             shapes.mint{value: amount + feeOf(amount)}(amount, alice);
-            assertEq(shapes.totalBacking(), 0);
+            assertEq(shapes.redeemableBacking(), 0);
         }
         _assertSolvent();
     }
@@ -165,7 +165,7 @@ contract MintTest is ShapesBase {
         shapes.mint{value: 1 ether + feeOf(1 ether) + 1}(1 ether, alice);
 
         vm.stopPrank();
-        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.redeemableBacking(), 0);
     }
 
     function testFuzz_AnyIncorrectValueReverts(uint256 sent) public {
@@ -198,7 +198,7 @@ contract MintTest is ShapesBase {
         assertEq(first, 1);
         assertEq(shapes.totalMinted(), qty);
         assertEq(shapes.totalSupply(), qty);
-        assertEq(shapes.totalBacking(), qty * 1 ether, "fees are not part of backing");
+        assertEq(shapes.redeemableBacking(), qty * 1 ether, "fees are not part of backing");
         assertEq(address(shapes).balance, qty * 1 ether);
         assertEq(feeRecipient.balance, qty * feeOf(1 ether), "aggregate fee forwarded once");
     }
@@ -243,7 +243,7 @@ contract MintTest is ShapesBase {
             abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(r))
         );
         shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
-        assertEq(shapes.totalBacking(), 0, "failed mint leaves no accounting behind");
+        assertEq(shapes.redeemableBacking(), 0, "failed mint leaves no accounting behind");
     }
 
     function test_MintToZeroAddressReverts() public {
@@ -264,7 +264,7 @@ contract FeeTest is ShapesBase {
         _mint(alice, 100 ether);
         assertEq(feeRecipient.balance, feeOf(100 ether), "1% of 100 ETH");
         assertEq(feeRecipient.balance, 1 ether);
-        assertEq(shapes.totalBacking(), 100 ether);
+        assertEq(shapes.redeemableBacking(), 100 ether);
         assertEq(address(shapes).balance, 100 ether);
 
         _mint(alice, 0.01 ether);
@@ -273,7 +273,7 @@ contract FeeTest is ShapesBase {
             feeOf(100 ether) + feeOf(0.01 ether),
             "fee is 1% of each backing, not flat"
         );
-        assertEq(shapes.totalBacking(), 100.01 ether);
+        assertEq(shapes.redeemableBacking(), 100.01 ether);
         assertEq(address(shapes).balance, 100.01 ether);
     }
 
@@ -349,7 +349,7 @@ contract RedeemTest is ShapesBase {
         shapes.redeem(id);
 
         assertEq(alice.balance - before, 5 ether, "exactly the wrapped amount, no fee taken");
-        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
         assertEq(shapes.totalMinted(), 1, "totalMinted is monotonic");
         assertEq(address(shapes).balance, 0);
@@ -397,7 +397,7 @@ contract RedeemTest is ShapesBase {
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
         shapes.redeem(id);
-        assertEq(shapes.totalBacking(), 1 ether);
+        assertEq(shapes.redeemableBacking(), 1 ether);
     }
 
     /// @dev Approval grants the right to move a Shape, never the right to unwrap it.
@@ -437,7 +437,7 @@ contract RedeemTest is ShapesBase {
             ids[i] = _mint(alice, amounts[i]);
             total += amounts[i];
         }
-        assertEq(shapes.totalBacking(), total);
+        assertEq(shapes.redeemableBacking(), total);
 
         uint256 before = alice.balance;
         vm.prank(alice);
@@ -445,7 +445,7 @@ contract RedeemTest is ShapesBase {
 
         assertEq(paid, total);
         assertEq(alice.balance - before, total, "one aggregate transfer of the exact total");
-        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
         assertEq(address(shapes).balance, 0);
     }
@@ -462,7 +462,7 @@ contract RedeemTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, b, alice));
         shapes.redeemBatch(ids);
 
-        assertEq(shapes.totalBacking(), 2 ether, "nothing settled on a reverted batch");
+        assertEq(shapes.redeemableBacking(), 2 ether, "nothing settled on a reverted batch");
         assertEq(shapes.ownerOf(a), alice);
     }
 
@@ -476,7 +476,7 @@ contract RedeemTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
         shapes.redeemBatch(ids);
 
-        assertEq(shapes.totalBacking(), 1 ether, "no double spend");
+        assertEq(shapes.redeemableBacking(), 1 ether, "no double spend");
         assertEq(address(shapes).balance, 1 ether);
     }
 
@@ -499,7 +499,7 @@ contract RedeemTest is ShapesBase {
 
         assertEq(shapes.ownerOf(id), address(r), "token survives a failed payout");
         assertEq(shapes.backingOf(id), 1 ether);
-        assertEq(shapes.totalBacking(), 1 ether);
+        assertEq(shapes.redeemableBacking(), 1 ether);
         _assertSolvent();
     }
 
@@ -510,7 +510,7 @@ contract RedeemTest is ShapesBase {
 
         r.redeem(shapes, id);
         assertEq(address(r).balance, 50 ether);
-        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.redeemableBacking(), 0);
     }
 
     function testFuzz_RedemptionReturnsExactlyBacking(uint8 which, address to) public {
@@ -527,7 +527,7 @@ contract RedeemTest is ShapesBase {
         shapes.redeem(id);
 
         assertEq(to.balance - before, amount);
-        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.redeemableBacking(), 0);
         assertEq(address(shapes).balance, 0);
     }
 }
@@ -580,7 +580,7 @@ contract ReserveTest is ShapesBase {
 
         vm.deal(address(shapes), address(shapes).balance + 3 ether);
         assertEq(address(shapes).balance, 4 ether);
-        assertEq(shapes.totalBacking(), 1 ether, "forced ETH does not become backing");
+        assertEq(shapes.redeemableBacking(), 1 ether, "forced ETH does not become backing");
         _assertSolvent();
 
         uint256 before = alice.balance;
@@ -589,7 +589,7 @@ contract ReserveTest is ShapesBase {
 
         assertEq(alice.balance - before, 1 ether, "redeemer gets backing, not the surplus");
         assertEq(address(shapes).balance, 3 ether, "surplus stays stranded");
-        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.redeemableBacking(), 0);
         _assertSolvent();
     }
 
@@ -626,7 +626,7 @@ contract ReserveTest is ShapesBase {
         assertTrue(r.reentryReverted(), "re-entry into redeem must revert");
         assertEq(address(r).balance, 1 ether, "only the first token settled");
         assertEq(shapes.ownerOf(b), address(r), "the second token is untouched");
-        assertEq(shapes.totalBacking(), 5 ether);
+        assertEq(shapes.redeemableBacking(), 5 ether);
         assertEq(address(shapes).balance, 5 ether);
         _assertSolvent();
     }
@@ -644,7 +644,7 @@ contract ReserveTest is ShapesBase {
         r.redeemBatch(ids);
 
         assertTrue(r.reentryReverted(), "re-entry into redeemBatch must revert");
-        assertEq(shapes.totalBacking(), 5 ether);
+        assertEq(shapes.redeemableBacking(), 5 ether);
         _assertSolvent();
     }
 
@@ -658,7 +658,7 @@ contract ReserveTest is ShapesBase {
         assertTrue(m.reentryReverted(), "re-entry into mint must revert");
         assertEq(shapes.totalSupply(), 1, "exactly one token exists");
         assertEq(shapes.totalMinted(), 1);
-        assertEq(shapes.totalBacking(), 1 ether);
+        assertEq(shapes.redeemableBacking(), 1 ether);
         assertEq(address(shapes).balance, 1 ether);
         _assertSolvent();
     }
@@ -675,9 +675,9 @@ contract ReserveTest is ShapesBase {
         assertTrue(fr.attempted(), "the fee callback ran");
         assertTrue(fr.reentryReverted(), "re-entry from the fee recipient must revert");
         assertEq(s.totalSupply(), 1);
-        assertEq(s.totalBacking(), 1 ether);
+        assertEq(s.redeemableBacking(), 1 ether);
         assertEq(address(s).balance, 1 ether);
-        assertGe(address(s).balance, s.totalBacking());
+        assertGe(address(s).balance, s.redeemableBacking());
     }
 }
 
@@ -866,7 +866,7 @@ contract RecompositionTest is ShapesBase {
         assertEq(shapes.originCountOf(first), 5, "origins summed");
         assertTrue(shapes.isComplete(first), "5 origins on 0.05 is Complete");
         assertEq(shapes.totalSupply(), 1, "four inputs burned");
-        assertEq(shapes.totalBacking(), 0.05 ether, "reserve conserved");
+        assertEq(shapes.redeemableBacking(), 0.05 ether, "reserve conserved");
         _assertSolvent();
         vm.expectRevert();
         shapes.ownerOf(first + 1);
@@ -947,7 +947,7 @@ contract RecompositionTest is ShapesBase {
             assertEq(shapes.backingOf(kids[i]), 0.01 ether);
             assertEq(shapes.ownerOf(kids[i]), alice);
         }
-        assertEq(shapes.totalBacking(), 0.05 ether, "reserve conserved");
+        assertEq(shapes.redeemableBacking(), 0.05 ether, "reserve conserved");
         assertEq(shapes.totalSupply(), 5);
         _assertSolvent();
     }
@@ -1042,5 +1042,118 @@ contract RecompositionTest is ShapesBase {
 
     function test_SupportsErc4906() public view {
         assertTrue(shapes.supportsInterface(0x49064906));
+    }
+}
+
+/* ==================================================================== *
+ *  Black Shape (terminal sacrifice)
+ * ==================================================================== */
+
+contract BlackShapeTest is ShapesBase {
+    address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
+
+    /// @dev A genuine apex Complete: 10,000 direct 0.01 mints composed into one 100 ETH token
+    ///      carrying 10,000 origins. The only blackenable state; nothing cheaper reaches it,
+    ///      because origins are conserved and only a direct mint creates one.
+    function _buildApexComplete() internal returns (uint256 id) {
+        vm.prank(alice);
+        uint256 first =
+            shapes.mintBatch{value: 10_000 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 10_000, alice);
+        uint256[] memory burn = new uint256[](9_999);
+        for (uint256 i = 0; i < 9_999; i++) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        id = shapes.compose(first, burn);
+        assertEq(shapes.backingOf(id), 100 ether, "apex backing");
+        assertEq(shapes.originCountOf(id), 10_000, "apex origins");
+        assertTrue(shapes.isComplete(id), "apex is Complete");
+    }
+
+    /// @dev A Complete 0.05 (five 0.01 direct mints composed): Complete but below apex.
+    function _buildComplete005() internal returns (uint256 survivor) {
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 5, alice);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        survivor = shapes.compose(first, burn);
+    }
+
+    function test_BlackenSacrificesAndInverts() public {
+        uint256 id = _buildApexComplete();
+        uint256 deadBefore = DEAD.balance;
+        uint256 balBefore = address(shapes).balance;
+        assertEq(shapes.redeemableBacking(), 100 ether, "reserve is the apex backing");
+
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.Blackened(id, 100 ether);
+        vm.prank(alice);
+        shapes.blacken(id);
+
+        assertTrue(shapes.isBlack(id), "now Black");
+        assertEq(shapes.blackCount(), 1);
+        assertEq(shapes.sacrificedBacking(), 100 ether);
+        assertEq(shapes.redeemableBacking(), 0, "backing left the reserve");
+        assertEq(DEAD.balance, deadBefore + 100 ether, "sacrificed to the burn address");
+        assertEq(address(shapes).balance, balBefore - 100 ether, "contract paid it out");
+        assertEq(shapes.backingOf(id), 0, "black backing reads zero");
+        assertEq(shapes.ownerOf(id), alice, "still owned");
+        _assertSolvent();
+
+        // Still an ERC721: transferable.
+        vm.prank(alice);
+        shapes.transferFrom(alice, bob, id);
+        assertEq(shapes.ownerOf(id), bob);
+    }
+
+    function test_BlackIsTerminal() public {
+        uint256 id = _buildApexComplete();
+        vm.prank(alice);
+        shapes.blacken(id);
+
+        // Non-redeemable.
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.redeem(id);
+
+        // Non-recomposable, as survivor...
+        uint256 extra = _mint(alice, 0.01 ether);
+        uint256[] memory burn = new uint256[](1);
+        burn[0] = extra;
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.compose(id, burn);
+
+        // ...and as a decompose input.
+        uint8[] memory outs = new uint8[](2);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.decompose(id, outs);
+
+        // One way: cannot blacken twice.
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.blacken(id);
+    }
+
+    function test_BlackenRejectsDirectApex() public {
+        uint256 id = _mint(alice, 100 ether); // 100 ETH, originCount 1, not Complete
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
+        shapes.blacken(id);
+    }
+
+    function test_BlackenRejectsCompleteBelowApex() public {
+        uint256 id = _buildComplete005();
+        assertTrue(shapes.isComplete(id));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
+        shapes.blacken(id);
+    }
+
+    function test_BlackenRejectsNonOwner() public {
+        uint256 id = _mint(alice, 1 ether);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
+        shapes.blacken(id);
     }
 }

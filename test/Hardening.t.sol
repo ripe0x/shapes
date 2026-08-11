@@ -141,7 +141,7 @@ contract HardeningTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 1));
         shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(shapes));
 
-        assertEq(shapes.totalBacking(), 0);
+        assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
     }
 
@@ -160,7 +160,7 @@ contract HardeningTest is Test {
         assertEq(
             probe.observedBalance(),
             probe.observedBacking(),
-            "balance and totalBacking disagreed inside the callback"
+            "balance and redeemableBacking disagreed inside the callback"
         );
     }
 }
@@ -184,7 +184,7 @@ contract BalanceProbe is IERC721Receiver {
     {
         if (observations == 0) {
             observedBalance = address(shapes).balance;
-            observedBacking = shapes.totalBacking();
+            observedBacking = shapes.redeemableBacking();
         }
         observations++;
         return IERC721Receiver.onERC721Received.selector;

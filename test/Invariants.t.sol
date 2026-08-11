@@ -23,6 +23,7 @@ contract Handler is Test, IERC721Receiver {
     uint256 public ghostMints;
     uint256 public ghostRedeems;
     uint256 public ghostOriginsRedeemed;
+    uint256 public ghostSacrificed;
 
     uint256[] public liveTokens;
     mapping(uint256 => uint256) private _indexOfToken;
@@ -242,6 +243,23 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
+    /// @dev Blacken a live apex Complete if one exists. Apex Completes essentially never arise
+    ///      from random fuzzing (10,000 conserved origins on one token), so this rarely fires;
+    ///      the sacrifice path is exercised directly by the unit suite. It is kept here so the
+    ///      invariant model stays exact should one ever be reached.
+    function blacken(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 id = liveTokens[seed % liveTokens.length];
+        if (shapes.isBlack(id)) return;
+        if (shapes.backingOf(id) != 100 ether || shapes.originCountOf(id) != 10_000) return;
+
+        address owner = shapes.ownerOf(id);
+        vm.prank(owner);
+        try shapes.blacken(id) {
+            ghostSacrificed += 100 ether;
+        } catch {}
+    }
+
     function _denomIndex(uint256 amt) private view returns (uint256) {
         for (uint256 i = 0; i < 9; ++i) {
             if (DENOMS[i] == amt) return i;
@@ -269,7 +287,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](10);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -279,6 +297,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[6] = Handler.pokeUnknownSelector.selector;
         selectors[7] = Handler.compose.selector;
         selectors[8] = Handler.decompose.selector;
+        selectors[9] = Handler.blacken.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -286,21 +305,28 @@ contract ShapesInvariantTest is StdInvariant, Test {
     function invariant_ReserveIsSolvent() public view {
         assertGe(
             address(shapes).balance,
-            shapes.totalBacking(),
-            "contract balance fell below totalBacking"
+            shapes.redeemableBacking(),
+            "contract balance fell below redeemableBacking"
         );
     }
 
-    /// @notice totalBacking is exactly what came in minus what was redeemed out.
+    /// @notice redeemableBacking is exactly what came in, minus what was redeemed out, minus what
+    ///         was sacrificed to Black Shapes.
     function invariant_BackingIsConservedExactly() public view {
         assertEq(
-            shapes.totalBacking(),
-            handler.ghostBackingIn() - handler.ghostBackingOut(),
+            shapes.redeemableBacking(),
+            handler.ghostBackingIn() - handler.ghostBackingOut() - handler.ghostSacrificed(),
             "backing accounting drifted"
         );
     }
 
-    /// @notice Every wei counted by totalBacking corresponds to a live Shape.
+    /// @notice Sacrificed backing is monotonic and always exactly 100 ETH per Black Shape.
+    function invariant_SacrificeAccounting() public view {
+        assertEq(shapes.sacrificedBacking(), 100 ether * shapes.blackCount(), "sacrifice per Black drifted");
+        assertEq(shapes.sacrificedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
+    }
+
+    /// @notice Every wei counted by redeemableBacking corresponds to a live Shape.
     function invariant_BackingEqualsSumOfLiveTokens() public view {
         uint256 sum;
         uint256 n = handler.liveTokenCount();
@@ -308,7 +334,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             uint256 id = handler.liveTokens(i);
             sum += shapes.backingOf(id);
         }
-        assertEq(sum, shapes.totalBacking(), "totalBacking does not match live tokens");
+        assertEq(sum, shapes.redeemableBacking(), "redeemableBacking does not match live tokens");
         assertEq(n, shapes.totalSupply(), "live supply mismatch");
     }
 
@@ -350,7 +376,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         );
         assertGe(
             address(shapes).balance,
-            shapes.totalBacking(),
+            shapes.redeemableBacking(),
             "fees leaked into or out of the reserve"
         );
     }
@@ -369,6 +395,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         uint256 n = handler.liveTokenCount();
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
+            if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
             assertTrue(
                 shapes.isSupportedDenomination(shapes.backingOf(id)),
                 "token holds an off-ladder amount"
@@ -385,6 +412,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         uint256 snapshot = vm.snapshotState();
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
+            if (shapes.isBlack(id)) continue; // Black Shapes are intentionally non-redeemable
             address owner = shapes.ownerOf(id);
             uint256 amount = shapes.backingOf(id);
             uint256 before = owner.balance;
@@ -394,7 +422,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
             assertEq(owner.balance - before, amount, "a live Shape could not pay out in full");
         }
-        assertEq(shapes.totalBacking(), 0, "reserve not fully drained by redeeming everything");
+        assertEq(shapes.redeemableBacking(), 0, "reserve not fully drained by redeeming everything");
         vm.revertToState(snapshot);
     }
 }

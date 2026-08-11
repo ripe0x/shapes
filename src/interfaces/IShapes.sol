@@ -40,6 +40,10 @@ interface IShapes is IERC721 {
         uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts
     );
 
+    /// @notice Emitted when an apex Complete Shape is blackened. `sacrificedWei` (100 ETH) is sent
+    ///         to a provably unspendable address and is never redeemable again.
+    event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
+
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
     error ZeroQuantity();
@@ -61,6 +65,8 @@ interface IShapes is IERC721 {
     error CannotComposeWithSelf(uint256 tokenId);
     /// @dev A decompose's output denominations must sum to exactly the input's backing.
     error DecompositionMismatch(uint256 inputBacking, uint256 outputSum);
+    /// @dev `blacken` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
+    error NotApexComplete(uint256 tokenId);
 
     /* --------------------------- immutables --------------------------- */
 
@@ -132,7 +138,24 @@ interface IShapes is IERC721 {
         external
         returns (uint256[] memory newIds);
 
+    /// @notice Permanently sacrifice an apex Complete Shape's 100 ETH backing, turning it Black.
+    ///         Owner only, one way. The token keeps its id, seed and geometry; its 100 ETH is sent
+    ///         to an unspendable address and it becomes non-redeemable and non-recomposable.
+    function blacken(uint256 tokenId) external;
+
     /* ----------------------------- views ------------------------------ */
+
+    /// @notice ETH available to redeem now, across every live non-Black Shape.
+    function redeemableBacking() external view returns (uint256);
+
+    /// @notice Cumulative backing sacrificed by Black Shapes. Monotonic; 100 ETH per Black Shape.
+    function sacrificedBacking() external view returns (uint256);
+
+    /// @notice Number of Black Shapes. Monotonic.
+    function blackCount() external view returns (uint256);
+
+    /// @notice Whether a token has been blackened.
+    function isBlack(uint256 tokenId) external view returns (bool);
 
     /// @notice ETH backing a live Shape.
     function backingOf(uint256 tokenId) external view returns (uint256);
@@ -146,9 +169,6 @@ interface IShapes is IERC721 {
     /// @notice Whether a Shape is Complete: not Black, above the minimum tier, and carrying one
     ///         origin per 0.01 unit of backing (`originCount == backing / 0.01`).
     function isComplete(uint256 tokenId) external view returns (bool);
-
-    /// @notice Sum of the backing of every live Shape.
-    function totalBacking() external view returns (uint256);
 
     /// @notice Number of live Shapes.
     function totalSupply() external view returns (uint256);

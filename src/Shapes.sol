@@ -39,7 +39,7 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      Accounting stays exact, but an integrator that assumes the token still exists after a
 ///      safe transfer can be griefed into reverting.
 ///
-///      Reserve invariant: `address(this).balance >= totalBacking()` always holds. Equality
+///      Reserve invariant: `address(this).balance >= redeemableBacking()` always holds. Equality
 ///      holds in normal operation. Ethereum can force ETH into any address through mechanisms
 ///      outside `receive`, so the invariant is stated as an inequality; any such surplus is
 ///      permanently inaccessible, which is strictly preferable to opening a withdrawal path
@@ -62,11 +62,21 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     mapping(uint256 tokenId => ShapeData) private _shapes;
 
     /// @inheritdoc IShapes
-    uint256 public totalBacking;
+    uint256 public redeemableBacking;
+    /// @inheritdoc IShapes
+    uint256 public sacrificedBacking;
+    /// @inheritdoc IShapes
+    uint256 public blackCount;
     /// @inheritdoc IShapes
     uint256 public totalSupply;
     /// @inheritdoc IShapes
     uint256 public totalMinted;
+
+    /// @dev The apex denomination (100 ETH) and its origin count, gating `blacken`.
+    uint256 private constant APEX_INDEX = 8;
+    uint256 private constant APEX_BACKING = 100 ether;
+    /// @dev Where sacrificed ETH is sent: an address with no known key. Provably unspendable.
+    address private constant BURN = 0x000000000000000000000000000000000000dEaD;
 
     /* --------------------------- fee and renderer --------------------------- */
 
@@ -219,7 +229,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         // -------- effects --------
         totalMinted = firstTokenId + quantity - 1;
         totalSupply += quantity;
-        totalBacking += backing;
+        redeemableBacking += backing;
 
         for (uint256 i = 0; i < quantity; ++i) {
             uint256 tokenId = firstTokenId + i;
@@ -232,7 +242,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         // -------- interactions --------
         // Fees are forwarded immediately and in aggregate; they never join the reserve.
         // Doing this before the mint loop means that by the time any ERC721 receiver callback
-        // runs, `address(this).balance` already equals `totalBacking` — an integrator reading
+        // runs, `address(this).balance` already equals `redeemableBacking` — an integrator reading
         // the reserve from inside a callback sees a consistent figure rather than one
         // inflated by fees still in transit.
         if (fees != 0) {
@@ -244,7 +254,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         // Minting after all storage writes, and behind the reentrancy guard, so a receiver
         // callback cannot corrupt accounting.
         //
-        // Note for integrators: during a batch, `totalSupply` and `totalBacking` already
+        // Note for integrators: during a batch, `totalSupply` and `redeemableBacking` already
         // reflect the whole batch while only some tokens exist. Do not read supply from
         // inside `onERC721Received`; it is a snapshot of the batch's end state, not its
         // progress. Write reentrancy is blocked regardless.
@@ -265,7 +275,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         uint256 amountWei = _burnForRedemption(tokenId);
 
         totalSupply -= 1;
-        totalBacking -= amountWei;
+        redeemableBacking -= amountWei;
 
         emit ShapeRedeemed(tokenId, msg.sender, amountWei);
         _settle(msg.sender, amountWei);
@@ -288,7 +298,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         }
 
         totalSupply -= n;
-        totalBacking -= totalWei;
+        redeemableBacking -= totalWei;
 
         _settle(msg.sender, totalWei);
     }
@@ -299,6 +309,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     function _burnForRedemption(uint256 tokenId) private returns (uint256 amountWei) {
         address owner = _requireOwned(tokenId);
         if (owner != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
+        if (_shapes[tokenId].isBlack) revert TokenIsBlack(tokenId);
 
         amountWei = Denominations.amountAt(_shapes[tokenId].denomIndex);
 
@@ -317,7 +328,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     /* --------------------------- recomposition -------------------------- */
 
     /// @inheritdoc IShapes
-    /// @dev Reshapes tokens without moving ETH: the summed backing is unchanged, so `totalBacking`
+    /// @dev Reshapes tokens without moving ETH: the summed backing is unchanged, so `redeemableBacking`
     ///      stays correct with no adjustment and the reserve invariant holds by construction.
     ///      `_burn` triggers no receiver callback, so this function makes no external calls; it is
     ///      guarded regardless. A duplicate id in `burnIds` reverts on its second appearance,
@@ -364,7 +375,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
 
     /// @inheritdoc IShapes
     /// @dev Burns the input and mints fresh outputs whose backing sums to the input's, so
-    ///      `totalBacking` is untouched. Child seeds derive from the parent seed deterministically,
+    ///      `redeemableBacking` is untouched. Child seeds derive from the parent seed deterministically,
     ///      fixing the full decompose tree at mint. All accounting precedes the `_safeMint` loop so
     ///      a receiver callback observes consistent state.
     function decompose(uint256 tokenId, uint8[] calldata outDenoms)
@@ -422,12 +433,49 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         }
     }
 
+    /* ------------------------------ sacrifice ---------------------------- */
+
+    /// @inheritdoc IShapes
+    /// @dev Third and last path that moves ETH out. The amount (100 ETH) and destination (an
+    ///      unspendable address) are fixed; unlike redemption the ETH does not return to the
+    ///      caller. Moves the backing out of the redeemable reserve into `sacrificedBacking`, so
+    ///      the reserve invariant tightens rather than breaks. CEI: the transfer is last and the
+    ///      token is already marked Black, so the (unspendable) recipient can observe no callback.
+    function blacken(uint256 tokenId) external nonReentrant {
+        if (ownerOf(tokenId) != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
+        ShapeData storage d = _shapes[tokenId];
+        if (d.isBlack) revert TokenIsBlack(tokenId);
+        if (d.denomIndex != APEX_INDEX || d.originCount != Denominations.unitsAt(APEX_INDEX)) {
+            revert NotApexComplete(tokenId);
+        }
+
+        // -------- effects --------
+        d.isBlack = true;
+        redeemableBacking -= APEX_BACKING;
+        sacrificedBacking += APEX_BACKING;
+        blackCount += 1;
+
+        emit Blackened(tokenId, APEX_BACKING);
+        emit MetadataUpdate(tokenId);
+
+        // -------- interactions --------
+        (bool sent,) = BURN.call{value: APEX_BACKING}("");
+        if (!sent) revert EthTransferFailed(BURN, APEX_BACKING);
+    }
+
     /* ------------------------------- views ------------------------------ */
 
     /// @inheritdoc IShapes
     function backingOf(uint256 tokenId) public view returns (uint256) {
         _requireOwned(tokenId);
-        return Denominations.amountAt(_shapes[tokenId].denomIndex);
+        ShapeData storage d = _shapes[tokenId];
+        return d.isBlack ? 0 : Denominations.amountAt(d.denomIndex);
+    }
+
+    /// @inheritdoc IShapes
+    function isBlack(uint256 tokenId) public view returns (bool) {
+        _requireOwned(tokenId);
+        return _shapes[tokenId].isBlack;
     }
 
     /// @inheritdoc IShapes
@@ -477,7 +525,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
 
     /// @dev Refuses to place a Shape in this contract's own custody.
     ///      `Shapes` can never be `msg.sender`, so a token held here could never be redeemed:
-    ///      its backing would be stranded while `totalBacking` went on counting it. The
+    ///      its backing would be stranded while `redeemableBacking` went on counting it. The
     ///      reserve invariant would survive, but the token's redeemability — the whole point
     ///      of the object — would not. `safeTransferFrom` already fails here because the
     ///      receiver check reverts; this closes the plain `transferFrom` path too, and the

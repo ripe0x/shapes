@@ -128,7 +128,7 @@ contract ForkTest is Test {
         }
 
         // The fee left the contract on every mint; only backing (plus any stray wei) remains.
-        assertEq(address(shapes).balance, shapes.totalBacking() + strayWei, "unexpected reserve");
+        assertEq(address(shapes).balance, shapes.redeemableBacking() + strayWei, "unexpected reserve");
         uint256 expectedFees;
         for (uint256 i = 0; i < DENOMS.length; i++) expectedFees += feeOf(DENOMS[i]);
         assertEq(feeRecipient.balance, expectedFees, "fees not forwarded");
@@ -161,7 +161,7 @@ contract ForkTest is Test {
         vm.prank(alice);
         uint256 total = shapes.redeemBatch(rest);
         assertEq(total, _sumExcept(1 ether), "batch total wrong");
-        assertEq(shapes.totalBacking(), 0, "backing remains");
+        assertEq(shapes.redeemableBacking(), 0, "backing remains");
         // Backing is fully unwound; only the pre-existing stray wei is left behind, stranded.
         assertEq(address(shapes).balance, strayWei, "reserve not unwound to stray");
         assertEq(shapes.totalSupply(), 0, "supply remains");
@@ -192,7 +192,7 @@ contract ForkTest is Test {
     /* ------------------------------- helpers ------------------------------- */
 
     function _assertSolvent() internal view {
-        assertGe(address(shapes).balance, shapes.totalBacking(), "INSOLVENT");
+        assertGe(address(shapes).balance, shapes.redeemableBacking(), "INSOLVENT");
     }
 
     function _sumExcept(uint256 excludedAmount) internal view returns (uint256 sum) {
