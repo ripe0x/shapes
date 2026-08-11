@@ -9,20 +9,32 @@ pragma solidity 0.8.28;
 interface IShapeRenderer {
     /// @notice The complete SVG document for a token.
     /// @dev Takes no token id: a Shape carries no type, so its artwork is a function of its
-    ///      seed and denomination alone.
-    function renderSVG(bytes32 seed, uint256 amountWei) external pure returns (string memory);
+    ///      seed and denomination alone. `inverted` swaps the two colors: false is a dark field
+    ///      with light marks, true is the exact inverse (the Black Shape).
+    function renderSVG(bytes32 seed, uint256 amountWei, bool inverted)
+        external
+        pure
+        returns (string memory);
 
     /// @notice The metadata JSON for a token, with the SVG inlined as a base64 data URI.
-    function metadataJSON(bytes32 seed, uint256 amountWei, uint256 tokenId)
-        external
-        pure
-        returns (string memory);
+    /// @dev `originCount` and `inverted` drive the provenance traits (Formation, Independent
+    ///      Origins, Origin Density, Complete, Black). `inverted` is the token's Black state.
+    function metadataJSON(
+        bytes32 seed,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted
+    ) external pure returns (string memory);
 
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSON`.
-    function tokenURI(bytes32 seed, uint256 amountWei, uint256 tokenId)
-        external
-        pure
-        returns (string memory);
+    function tokenURI(
+        bytes32 seed,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted
+    ) external pure returns (string memory);
 
     /// @notice The module glyph sequence used as the `Modules` trait.
     function moduleSequence(bytes32 seed, uint256 amountWei) external pure returns (string memory);

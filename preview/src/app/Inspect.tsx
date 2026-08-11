@@ -195,11 +195,15 @@ export function Inspect({
               <span style={{ ...mono, fontSize: 10, color: C.dim }}>RAW SVG</span>
               <Button onClick={() => copy("svg", svg)}>copy</Button>
               <Button
-                onClick={() => copy("metadata", tokenMetadataJson(seed, amountWei, tokenId, params))}
+                onClick={() =>
+                  copy("metadata", tokenMetadataJson(seed, amountWei, tokenId, 1n, false, params))
+                }
               >
                 copy metadata json
               </Button>
-              <Button onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, params))}>
+              <Button
+                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, false, params))}
+              >
                 copy tokenURI
               </Button>
               {copied && (

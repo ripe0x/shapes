@@ -451,7 +451,7 @@ contract GeometryTest is RendererTestBase {
 contract OutputTest is RendererTestBase {
     function testFuzz_SvgIsWellFormed(bytes32 seed, uint8 which, uint256 tokenId) public view {
         uint256 amount = DENOMS[which % 9];
-        string memory svg = renderer.renderSVG(seed, amount);
+        string memory svg = renderer.renderSVG(seed, amount, false);
 
         assertTrue(_startsWith(svg, '<svg xmlns="http://www.w3.org/2000/svg"'), "svg header");
         assertTrue(_endsWith(svg, "</svg>"), "svg closes");
@@ -463,7 +463,7 @@ contract OutputTest is RendererTestBase {
 
     /// @dev Black background, white artwork, nothing else. No gradients, filters or textures.
     function testFuzz_PaletteIsBlackAndWhiteOnly(bytes32 seed, uint8 which) public view {
-        string memory svg = renderer.renderSVG(seed, DENOMS[which % 9]);
+        string memory svg = renderer.renderSVG(seed, DENOMS[which % 9], false);
         assertFalse(_contains(svg, "Gradient"), "no gradients");
         assertFalse(_contains(svg, "<filter"), "no filters");
         assertFalse(_contains(svg, "opacity"), "no opacity");
@@ -479,7 +479,7 @@ contract OutputTest is RendererTestBase {
         string[9] memory expected =
             ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
         for (uint256 i = 0; i < 9; ++i) {
-            string memory json = renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1);
+            string memory json = renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1, 1, false);
             assertEq(
                 vm.parseJsonString(json, ".attributes[0].value"),
                 string(abi.encodePacked(expected[i], " ETH")),
@@ -490,9 +490,9 @@ contract OutputTest is RendererTestBase {
 
     /// @notice The token number lives in the metadata name, not on the card.
     function test_TokenNumberIsInMetadataOnly() public view {
-        string memory json = renderer.metadataJSON(bytes32(uint256(1)), 1 ether, 123);
+        string memory json = renderer.metadataJSON(bytes32(uint256(1)), 1 ether, 123, 1, false);
         assertEq(vm.parseJsonString(json, ".name"), "Shape #123");
-        assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), 1 ether), "123"));
+        assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), 1 ether, false), "123"));
     }
 
     /// @notice tokenURI must decode to real JSON containing a real inline SVG.
@@ -501,7 +501,7 @@ contract OutputTest is RendererTestBase {
         view
     {
         uint256 amount = DENOMS[which % 9];
-        string memory uri = renderer.tokenURI(seed, amount, tokenId);
+        string memory uri = renderer.tokenURI(seed, amount, tokenId, 1, false);
 
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "json data uri");
         string memory json =
@@ -521,13 +521,13 @@ contract OutputTest is RendererTestBase {
             string(Base64Decode.decode(_after(image, "data:image/svg+xml;base64,")));
         assertTrue(_startsWith(svg, "<svg "), "decoded image is an svg");
         assertTrue(_endsWith(svg, "</svg>"), "decoded image closes");
-        assertEq(svg, renderer.renderSVG(seed, amount), "image is the canonical svg");
+        assertEq(svg, renderer.renderSVG(seed, amount, false), "image is the canonical svg");
     }
 
     function testFuzz_AttributesDescribeTheSameToken(bytes32 seed, uint8 which) public view {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
-        string memory json = renderer.metadataJSON(seed, amount, 1);
+        string memory json = renderer.metadataJSON(seed, amount, 1, 1, false);
 
         assertEq(vm.parseJsonString(json, ".attributes[0].trait_type"), "ETH Value");
         assertEq(
@@ -542,7 +542,8 @@ contract OutputTest is RendererTestBase {
                 abi.encodePacked(FixedPoint.toString(cols), "x", FixedPoint.toString(rows))
             )
         );
-        // [0] ETH Value  [1] Grid  [2] Fill  [3] Modules  [4] Module Count  [5] Seed
+        // [0] ETH Value [1] Grid [2] Fill [3] Modules [4] Module Count [5] Formation
+        // [6] Independent Origins [7] Origin Density [8] Complete [9] Black [10] Seed
         string memory fill = vm.parseJsonString(json, ".attributes[2].value");
         assertTrue(
             keccak256(bytes(fill)) == keccak256("Solid")
@@ -551,7 +552,7 @@ contract OutputTest is RendererTestBase {
             "unexpected Fill trait"
         );
         assertEq(vm.parseJsonUint(json, ".attributes[4].value"), cols * rows);
-        assertEq(vm.parseJsonString(json, ".attributes[5].value"), vm.toString(seed));
+        assertEq(vm.parseJsonString(json, ".attributes[10].value"), vm.toString(seed));
     }
 
     /// @dev The glyph trait must come from the same stream as the artwork, so it must have
@@ -575,7 +576,7 @@ contract OutputTest is RendererTestBase {
         public
         view
     {
-        string memory svg = renderer.renderSVG(seed, DENOMS[which % 9]);
+        string memory svg = renderer.renderSVG(seed, DENOMS[which % 9], false);
         // a 100 ETH card is one solid mark on a black field, and with no type it is tiny
         assertGt(bytes(svg).length, 180);
         assertLt(bytes(svg).length, 8_000, "output larger than expected");
@@ -584,8 +585,8 @@ contract OutputTest is RendererTestBase {
     function test_DeterministicAcrossRepeatedCalls() public view {
         for (uint256 i = 0; i < 9; ++i) {
             bytes32 seed = keccak256(abi.encodePacked(i));
-            string memory a = renderer.renderSVG(seed, DENOMS[i]);
-            string memory b = renderer.renderSVG(seed, DENOMS[i]);
+            string memory a = renderer.renderSVG(seed, DENOMS[i], false);
+            string memory b = renderer.renderSVG(seed, DENOMS[i], false);
             assertEq(a, b);
         }
     }
@@ -630,11 +631,44 @@ contract TokenMetadataTest is RendererTestBase {
         }
     }
 
+    function _decodeJson(uint256 id) internal view returns (string memory) {
+        return string(
+            Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,"))
+        );
+    }
+
+    /// @notice The on-chain token drives the provenance traits from its own (originCount, isBlack),
+    ///         so a Direct mint, a composed Complete and a Black Shape read differently.
+    function test_ProvenanceTraitsReflectOnchainState() public {
+        // Direct: one 1 ETH mint. units 100, originCount 1.
+        vm.prank(alice);
+        uint256 direct = shapes.mint{value: 1 ether + 0.01 ether}(1 ether, alice);
+        string memory dj = _decodeJson(direct);
+        assertEq(vm.parseJsonString(dj, ".attributes[5].value"), "Direct", "direct formation");
+        assertEq(vm.parseJsonUint(dj, ".attributes[6].value"), 1, "direct origins");
+        assertEq(vm.parseJsonString(dj, ".attributes[7].value"), "1%", "direct density");
+        assertEq(vm.parseJsonString(dj, ".attributes[8].value"), "false", "direct not complete");
+        assertEq(vm.parseJsonString(dj, ".attributes[9].value"), "false", "direct not black");
+
+        // Complete: five 0.01 direct mints composed into one 0.05. units 5, originCount 5.
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5, alice);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        shapes.compose(first, burn);
+        string memory cj = _decodeJson(first);
+        assertEq(vm.parseJsonString(cj, ".attributes[5].value"), "Complete", "complete formation");
+        assertEq(vm.parseJsonUint(cj, ".attributes[6].value"), 5, "complete origins");
+        assertEq(vm.parseJsonString(cj, ".attributes[7].value"), "100%", "complete density");
+        assertEq(vm.parseJsonString(cj, ".attributes[8].value"), "true", "is complete");
+    }
+
     function test_TokenUriUsesTheStoredSeed() public {
         vm.prank(alice);
         uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether, alice);
         bytes32 seed = shapes.seedOf(id);
-        assertEq(shapes.tokenURI(id), renderer.tokenURI(seed, 1 ether, id));
+        assertEq(shapes.tokenURI(id), renderer.tokenURI(seed, 1 ether, id, 1, false));
     }
 
     /// @dev Artwork is fixed at mint. Nothing about later chain state may change it.

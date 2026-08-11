@@ -78,13 +78,16 @@ contract DeployShapes is Script {
         // Smoke the renderer through the interface the token will actually use. A renderer
         // that cannot produce metadata would leave every token permanently unrenderable.
         require(
-            bytes(IShapeRenderer(address(renderer)).tokenURI(bytes32(0), 0.01 ether, 1)).length
-                > 500,
+            bytes(IShapeRenderer(address(renderer)).tokenURI(bytes32(0), 0.01 ether, 1, 1, false))
+                .length > 500,
             "renderer produced no metadata"
         );
         require(
-            bytes(IShapeRenderer(address(renderer)).tokenURI(bytes32(uint256(1)), 100 ether, 1))
-                .length > 500,
+            bytes(
+                IShapeRenderer(address(renderer)).tokenURI(
+                    bytes32(uint256(1)), 100 ether, 10_000, 10_000, true
+                )
+            ).length > 500,
             "renderer produced no metadata at 100 ETH"
         );
 

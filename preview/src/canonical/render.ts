@@ -237,17 +237,17 @@ function solveSize(
 const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
-function style(solid: boolean, weight: bigint): string {
+function style(solid: boolean, weight: bigint, fg: string): string {
   return solid
-    ? ` fill="#fff"/>`
-    : ` fill="none" stroke="#fff" stroke-width="${fmt(weight)}"/>`;
+    ? ` fill="${fg}"/>`
+    : ` fill="none" stroke="${fg}" stroke-width="${fmt(weight)}"/>`;
 }
 
 function transform(rot: number, cx: bigint, cy: bigint): string {
   return rot === 0 ? "" : ` transform="rotate(${rot} ${fmt(cx)} ${fmt(cy)})"`;
 }
 
-function moduleSvg(m: Module, p: Params): string {
+function moduleSvg(m: Module, p: Params, fg: string): string {
   const { cx, cy, size } = m;
   const r = size / 2n;
 
@@ -255,13 +255,13 @@ function moduleSvg(m: Module, p: Params): string {
     case "circle":
       return (
         `<circle cx="${fmt(cx)}" cy="${fmt(cy)}" r="${fmt(r)}"` +
-        style(m.solid, m.weight)
+        style(m.solid, m.weight, fg)
       );
 
     case "square":
       return (
         `<rect x="${fmt(cx - r)}" y="${fmt(cy - r)}" width="${fmt(size)}" height="${fmt(size)}"` +
-        style(m.solid, m.weight)
+        style(m.solid, m.weight, fg)
       );
 
     case "triangle": {
@@ -274,7 +274,7 @@ function moduleSvg(m: Module, p: Params): string {
       return (
         `<polygon points="${points}"` +
         transform(m.rot, cx, cy) +
-        style(m.solid, m.weight)
+        style(m.solid, m.weight, fg)
       );
     }
 
@@ -283,7 +283,7 @@ function moduleSvg(m: Module, p: Params): string {
         `M${fmt(cx - r)},${fmt(cy)} ` +
         `A${fmt(r)},${fmt(r)} 0 0 1 ${fmt(cx + r)},${fmt(cy)} Z`;
       return (
-        `<path d="${d}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight)
+        `<path d="${d}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight, fg)
       );
     }
 
@@ -296,7 +296,7 @@ function moduleSvg(m: Module, p: Params): string {
         `L${fmt(cx + r)},${fmt(cy + r)} ` +
         `A${fmt(R)},${fmt(R)} 0 0 0 ${fmt(cx - r)},${fmt(cy - r)} Z`;
       return (
-        `<path d="${d}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight)
+        `<path d="${d}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight, fg)
       );
     }
 
@@ -308,7 +308,7 @@ function moduleSvg(m: Module, p: Params): string {
         `${fmt(cx + r)},${fmt(cy)} ` +
         `${fmt(cx)},${fmt(cy + r)} ` +
         `${fmt(cx - r)},${fmt(cy)}`;
-      return `<polygon points="${points}"` + style(m.solid, m.weight);
+      return `<polygon points="${points}"` + style(m.solid, m.weight, fg);
     }
 
     // Half the cell, split by a straight edge: a rectangle filling the upper half of the
@@ -318,7 +318,7 @@ function moduleSvg(m: Module, p: Params): string {
       return (
         `<rect x="${fmt(cx - r)}" y="${fmt(cy - r)}" width="${fmt(size)}" height="${fmt(r)}"` +
         transform(m.rot, cx, cy) +
-        style(m.solid, m.weight)
+        style(m.solid, m.weight, fg)
       );
     }
 
@@ -331,7 +331,7 @@ function moduleSvg(m: Module, p: Params): string {
         `${fmt(cx + r)},${fmt(cy - r)} ` +
         `${fmt(cx - r)},${fmt(cy + r)}`;
       return (
-        `<polygon points="${points}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight)
+        `<polygon points="${points}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight, fg)
       );
     }
 
@@ -342,13 +342,13 @@ function moduleSvg(m: Module, p: Params): string {
       const d =
         `M${fmt(cx + r)},${fmt(cy + r)} ` +
         `A${fmt(R)},${fmt(R)} 0 0 0 ${fmt(cx - r)},${fmt(cy - r)}`;
-      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight);
+      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight, fg);
     }
 
     // A straight diagonal across the cell, corner to corner, always stroked. Two orientations.
     case "line": {
       const d = `M${fmt(cx - r)},${fmt(cy - r)} L${fmt(cx + r)},${fmt(cy + r)}`;
-      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight);
+      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight, fg);
     }
   }
 }
@@ -385,15 +385,19 @@ export function renderShape(
   amountWei: bigint,
   tokenId: bigint,
   p: Params = CANONICAL,
+  inverted = false,
 ): string {
   const c = composeShape(seed, amountWei, p);
+
+  const bg = inverted ? "#fff" : "#000";
+  const fg = inverted ? "#000" : "#fff";
 
   let out =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 350"` +
     ` width="250" height="350" shape-rendering="geometricPrecision">` +
-    `<rect x="0" y="0" width="250" height="350" fill="#000"/>`;
+    `<rect x="0" y="0" width="250" height="350" fill="${bg}"/>`;
 
-  for (const m of c.modules) out += moduleSvg(m, p);
+  for (const m of c.modules) out += moduleSvg(m, p, fg);
 
   if (p.showText) {
     out += textSvg(22, 32, SANS, "8", "3.4", false, "SHAPE");
@@ -419,7 +423,7 @@ export function renderGeometry(
 ): string {
   const c = composeShape(seed, amountWei, p);
   let out = "";
-  for (const m of c.modules) out += moduleSvg(m, p);
+  for (const m of c.modules) out += moduleSvg(m, p, "#fff");
   return out;
 }
 
@@ -504,7 +508,7 @@ export function renderModuleSwatch(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${side} ${side}"` +
     ` width="${side}" height="${side}" shape-rendering="geometricPrecision">` +
     `<rect x="0" y="0" width="${side}" height="${side}" fill="#000"/>` +
-    moduleSvg(m, p) +
+    moduleSvg(m, p, "#fff") +
     `</svg>`
   );
 }
@@ -595,14 +599,56 @@ export function seedHex(seed: bigint): string {
   return "0x" + seed.toString(16).padStart(64, "0");
 }
 
+const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
+
+/** The backing's 0.01-unit count for a composition. */
+export function unitsOf(c: Composition): bigint {
+  return DENOMINATIONS[c.denomIndex] / UNIT;
+}
+
+/**
+ * Provenance label derived from `(units, originCount, isBlack)`. Black takes precedence, then
+ * Complete (an origin per unit, above the minimum tier), then Direct vs Composed. Mirrors
+ * `ShapeRenderer._formation`.
+ */
+export function formation(
+  units: bigint,
+  originCount: bigint,
+  isBlack: boolean,
+): "Black" | "Complete" | "Direct" | "Composed" {
+  if (isBlack) return "Black";
+  if (units > 1n && originCount === units) return "Complete";
+  if (originCount === 1n) return "Direct";
+  return "Composed";
+}
+
+/**
+ * `originCount / units` as a percentage string, trailing zeros trimmed: "100", "20", "1", "0.2",
+ * "0.01". Every unit count divides 10000, so the hundredths are exact. Mirrors
+ * `ShapeRenderer._densityPercent`.
+ */
+export function densityPercent(units: bigint, originCount: bigint): string {
+  const h = (originCount * 10000n) / units; // percentage in hundredths
+  const whole = h / 100n;
+  const frac = h % 100n;
+  if (frac === 0n) return whole.toString();
+  if (frac % 10n === 0n) return `${whole}.${frac / 10n}`;
+  const two = frac < 10n ? `0${frac}` : `${frac}`;
+  return `${whole}.${two}`;
+}
+
 export function tokenMetadataJson(
   seed: bigint,
   amountWei: bigint,
   tokenId: bigint,
+  originCount: bigint,
+  inverted: boolean,
   p: Params = CANONICAL,
 ): string {
   const c = composeShape(seed, amountWei, p);
-  const svg = renderShape(seed, amountWei, tokenId, p);
+  const svg = renderShape(seed, amountWei, tokenId, p, inverted);
+  const units = unitsOf(c);
+  const complete = !inverted && units > 1n && originCount === units;
   return (
     `{"name":"Shape #${tokenId.toString()}",` +
     `"description":"${DESCRIPTION}",` +
@@ -613,6 +659,11 @@ export function tokenMetadataJson(
     `{"trait_type":"Fill","value":"${fillClass(c)}"},` +
     `{"trait_type":"Modules","value":"${moduleSequence(c)}"},` +
     `{"trait_type":"Module Count","value":${c.cols * c.rows}},` +
+    `{"trait_type":"Formation","value":"${formation(units, originCount, inverted)}"},` +
+    `{"trait_type":"Independent Origins","value":${originCount.toString()}},` +
+    `{"trait_type":"Origin Density","value":"${densityPercent(units, originCount)}%"},` +
+    `{"trait_type":"Complete","value":"${complete ? "true" : "false"}"},` +
+    `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +
     `{"trait_type":"Seed","value":"${seedHex(seed)}"}` +
     `]}`
   );
@@ -622,11 +673,13 @@ export function tokenURI(
   seed: bigint,
   amountWei: bigint,
   tokenId: bigint,
+  originCount: bigint,
+  inverted: boolean,
   p: Params = CANONICAL,
 ): string {
   return (
     "data:application/json;base64," +
-    base64Utf8(tokenMetadataJson(seed, amountWei, tokenId, p))
+    base64Utf8(tokenMetadataJson(seed, amountWei, tokenId, originCount, inverted, p))
   );
 }
 

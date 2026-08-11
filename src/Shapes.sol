@@ -519,7 +519,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
         return IShapeRenderer(renderer).tokenURI(
-            d.seed, Denominations.amountAt(d.denomIndex), tokenId
+            d.seed, Denominations.amountAt(d.denomIndex), tokenId, d.originCount, d.isBlack
         );
     }
 

@@ -283,10 +283,16 @@ contract ShapeRenderer is IShapeRenderer {
      *  SVG
      * ------------------------------------------------------------------ */
 
-    function _style(bool solid, uint256 weight) private pure returns (bytes memory) {
+    function _style(bool solid, uint256 weight, string memory fg)
+        private
+        pure
+        returns (bytes memory)
+    {
         return solid
-            ? bytes(' fill="#fff"/>')
-            : abi.encodePacked(' fill="none" stroke="#fff" stroke-width="', weight.fmt(), '"/>');
+            ? abi.encodePacked(' fill="', fg, '"/>')
+            : abi.encodePacked(
+                ' fill="none" stroke="', fg, '" stroke-width="', weight.fmt(), '"/>'
+            );
     }
 
     function _transform(uint256 rot, uint256 cx, uint256 cy) private pure returns (bytes memory) {
@@ -296,13 +302,13 @@ contract ShapeRenderer is IShapeRenderer {
         );
     }
 
-    function _moduleSvg(Module memory m) private pure returns (bytes memory) {
+    function _moduleSvg(Module memory m, string memory fg) private pure returns (bytes memory) {
         uint256 r = m.size / 2;
 
         if (m.kind == KIND_CIRCLE) {
             return abi.encodePacked(
                 '<circle cx="', m.cx.fmt(), '" cy="', m.cy.fmt(), '" r="', r.fmt(), '"',
-                _style(m.solid, m.weight)
+                _style(m.solid, m.weight, fg)
             );
         }
 
@@ -310,7 +316,7 @@ contract ShapeRenderer is IShapeRenderer {
             return abi.encodePacked(
                 '<rect x="', (m.cx - r).fmt(), '" y="', (m.cy - r).fmt(),
                 '" width="', m.size.fmt(), '" height="', m.size.fmt(), '"',
-                _style(m.solid, m.weight)
+                _style(m.solid, m.weight, fg)
             );
         }
 
@@ -323,7 +329,7 @@ contract ShapeRenderer is IShapeRenderer {
                 (m.cx - r).fmt(), ",", (m.cy + half).fmt(),
                 '"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight)
+                _style(m.solid, m.weight, fg)
             );
         }
 
@@ -337,7 +343,7 @@ contract ShapeRenderer is IShapeRenderer {
                 " A", m.size.fmt(), ",", m.size.fmt(), " 0 0 0 ",
                 (m.cx - r).fmt(), ",", (m.cy - r).fmt(), ' Z"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight)
+                _style(m.solid, m.weight, fg)
             );
         }
 
@@ -351,7 +357,7 @@ contract ShapeRenderer is IShapeRenderer {
                 m.cx.fmt(), ",", (m.cy + r).fmt(), " ",
                 (m.cx - r).fmt(), ",", m.cy.fmt(),
                 '"',
-                _style(m.solid, m.weight)
+                _style(m.solid, m.weight, fg)
             );
         }
 
@@ -362,7 +368,7 @@ contract ShapeRenderer is IShapeRenderer {
                 '<rect x="', (m.cx - r).fmt(), '" y="', (m.cy - r).fmt(),
                 '" width="', m.size.fmt(), '" height="', r.fmt(), '"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight)
+                _style(m.solid, m.weight, fg)
             );
         }
 
@@ -376,7 +382,7 @@ contract ShapeRenderer is IShapeRenderer {
                 (m.cx - r).fmt(), ",", (m.cy + r).fmt(),
                 '"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight)
+                _style(m.solid, m.weight, fg)
             );
         }
 
@@ -388,7 +394,7 @@ contract ShapeRenderer is IShapeRenderer {
                 " A", m.size.fmt(), ",", m.size.fmt(), " 0 0 0 ",
                 (m.cx - r).fmt(), ",", (m.cy - r).fmt(), '"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(false, m.weight)
+                _style(false, m.weight, fg)
             );
         }
 
@@ -398,7 +404,7 @@ contract ShapeRenderer is IShapeRenderer {
                 '<path d="M', (m.cx - r).fmt(), ",", (m.cy - r).fmt(),
                 " L", (m.cx + r).fmt(), ",", (m.cy + r).fmt(), '"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(false, m.weight)
+                _style(false, m.weight, fg)
             );
         }
 
@@ -407,27 +413,38 @@ contract ShapeRenderer is IShapeRenderer {
             '<path d="M', (m.cx - r).fmt(), ",", m.cy.fmt(),
             " A", r.fmt(), ",", r.fmt(), " 0 0 1 ", (m.cx + r).fmt(), ",", m.cy.fmt(), ' Z"',
             _transform(m.rot, m.cx, m.cy),
-            _style(m.solid, m.weight)
+            _style(m.solid, m.weight, fg)
         );
     }
 
     /// @inheritdoc IShapeRenderer
-    /// @dev A Shape carries no type: black field, white marks, nothing else. The denomination
-    ///      and the token number live in the metadata, not on the card face.
-    function renderSVG(bytes32 seed, uint256 amountWei) public pure returns (string memory) {
+    /// @dev A Shape carries no type: a field, marks, nothing else. The denomination and the token
+    ///      number live in the metadata, not on the card face. `inverted` swaps the field and mark
+    ///      colors: false is a dark field with light marks, true is the exact inverse used by the
+    ///      Black Shape. Geometry and coordinates are identical between the two.
+    function renderSVG(bytes32 seed, uint256 amountWei, bool inverted)
+        public
+        pure
+        returns (string memory)
+    {
         Card memory card = compose(seed, amountWei);
+
+        string memory bg = inverted ? "#fff" : "#000";
+        string memory fg = inverted ? "#000" : "#fff";
 
         bytes memory body;
         uint256 n = card.modules.length;
         for (uint256 i = 0; i < n; ++i) {
-            body = abi.encodePacked(body, _moduleSvg(card.modules[i]));
+            body = abi.encodePacked(body, _moduleSvg(card.modules[i], fg));
         }
 
         return string(
             abi.encodePacked(
                 '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 350"'
                 ' width="250" height="350" shape-rendering="geometricPrecision">'
-                '<rect x="0" y="0" width="250" height="350" fill="#000"/>',
+                '<rect x="0" y="0" width="250" height="350" fill="',
+                bg,
+                '"/>',
                 body,
                 "</svg>"
             )
@@ -514,14 +531,53 @@ contract ShapeRenderer is IShapeRenderer {
         }
     }
 
-    /// @inheritdoc IShapeRenderer
-    function metadataJSON(bytes32 seed, uint256 amountWei, uint256 tokenId)
-        public
+    /// @dev The provenance label derived from `(units, originCount, isBlack)`. `units` is the
+    ///      backing's 0.01 count. Black takes precedence; then Complete (an origin per unit, above
+    ///      the minimum tier); then Direct (a single origin) vs Composed.
+    function _formation(uint256 units, uint256 originCount, bool isBlack)
+        private
         pure
         returns (string memory)
     {
+        if (isBlack) return "Black";
+        if (units > 1 && originCount == units) return "Complete";
+        if (originCount == 1) return "Direct";
+        return "Composed";
+    }
+
+    /// @dev `originCount / units` as a percentage string with trailing zeros trimmed, e.g. "100",
+    ///      "20", "1", "0.2", "0.01". Every unit count divides 10000, so the hundredths are exact.
+    function _densityPercent(uint256 units, uint256 originCount)
+        private
+        pure
+        returns (bytes memory)
+    {
+        uint256 h = (originCount * 10000) / units; // percentage in hundredths: 10000 == 100.00%
+        uint256 whole = h / 100;
+        uint256 frac = h % 100;
+        if (frac == 0) return bytes(FixedPoint.toString(whole));
+        if (frac % 10 == 0) {
+            return abi.encodePacked(FixedPoint.toString(whole), ".", FixedPoint.toString(frac / 10));
+        }
+        bytes memory two = frac < 10
+            ? abi.encodePacked("0", FixedPoint.toString(frac))
+            : bytes(FixedPoint.toString(frac));
+        return abi.encodePacked(FixedPoint.toString(whole), ".", two);
+    }
+
+    /// @inheritdoc IShapeRenderer
+    function metadataJSON(
+        bytes32 seed,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted
+    ) public pure returns (string memory) {
         Card memory card = compose(seed, amountWei);
-        string memory svg = renderSVG(seed, amountWei);
+        string memory svg = renderSVG(seed, amountWei, inverted);
+
+        uint256 units = Denominations.unitsAt(card.denomIndex);
+        bool complete = !inverted && units > 1 && originCount == units;
 
         return string(
             abi.encodePacked(
@@ -543,23 +599,48 @@ contract ShapeRenderer is IShapeRenderer {
                 _moduleSequence(card),
                 '"},{"trait_type":"Module Count","value":',
                 FixedPoint.toString(card.cols * card.rows),
-                '},{"trait_type":"Seed","value":"',
+                _provenanceTraits(units, originCount, complete, inverted),
+                ',{"trait_type":"Seed","value":"',
                 _hex32(seed),
                 '"}]}'
             )
         );
     }
 
-    /// @inheritdoc IShapeRenderer
-    function tokenURI(bytes32 seed, uint256 amountWei, uint256 tokenId)
-        external
+    /// @dev The provenance trait block, split out to keep `metadataJSON` under the stack limit.
+    ///      Formation, Independent Origins, Origin Density (percent), Complete and Black.
+    function _provenanceTraits(uint256 units, uint256 originCount, bool complete, bool isBlack)
+        private
         pure
-        returns (string memory)
+        returns (bytes memory)
     {
+        return abi.encodePacked(
+            '},{"trait_type":"Formation","value":"',
+            _formation(units, originCount, isBlack),
+            '"},{"trait_type":"Independent Origins","value":',
+            FixedPoint.toString(originCount),
+            '},{"trait_type":"Origin Density","value":"',
+            _densityPercent(units, originCount),
+            '%"},{"trait_type":"Complete","value":"',
+            complete ? "true" : "false",
+            '"},{"trait_type":"Black","value":"',
+            isBlack ? "true" : "false",
+            '"}'
+        );
+    }
+
+    /// @inheritdoc IShapeRenderer
+    function tokenURI(
+        bytes32 seed,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted
+    ) external pure returns (string memory) {
         return string(
             abi.encodePacked(
                 "data:application/json;base64,",
-                Base64.encode(bytes(metadataJSON(seed, amountWei, tokenId)))
+                Base64.encode(bytes(metadataJSON(seed, amountWei, tokenId, originCount, inverted)))
             )
         );
     }

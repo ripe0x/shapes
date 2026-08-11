@@ -225,7 +225,7 @@ export function buildFixture(
     moduleCount: c.cols * c.rows,
     svgHash: shortHash(renderGeometry(seed, amountWei, p)),
     svg,
-    metadata: tokenMetadataJson(seed, amountWei, tokenId, p),
+    metadata: tokenMetadataJson(seed, amountWei, tokenId, 1n, false, p),
   };
 }
 
