@@ -9,9 +9,11 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 ///      owner. There is no other way for ETH to leave the contract: no owner, no admin, no
 ///      pause, no upgrade path, no recovery function.
 interface IShapes is IERC721 {
-    /// @notice Emitted when a Shape is minted.
+    /// @notice Emitted when a Shape is minted. `originCount` is always 1: a mint is the sole
+    ///         source of new origins. A strict origin-creation signal; recomposition does not
+    ///         emit it.
     event ShapeMinted(
-        uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed
+        uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed, uint256 originCount
     );
 
     /// @notice Emitted when a Shape is burned and its backing returned.
@@ -99,6 +101,9 @@ interface IShapes is IERC721 {
 
     /// @notice The immutable visual seed of a live Shape.
     function seedOf(uint256 tokenId) external view returns (bytes32);
+
+    /// @notice Independent direct-mint origins credited to a live Shape (one per mint, conserved).
+    function originCountOf(uint256 tokenId) external view returns (uint256);
 
     /// @notice Sum of the backing of every live Shape.
     function totalBacking() external view returns (uint256);

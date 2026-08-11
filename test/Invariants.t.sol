@@ -22,6 +22,7 @@ contract Handler is Test, IERC721Receiver {
     uint256 public ghostFeesPaid;
     uint256 public ghostMints;
     uint256 public ghostRedeems;
+    uint256 public ghostOriginsRedeemed;
 
     uint256[] public liveTokens;
     mapping(uint256 => uint256) private _indexOfToken;
@@ -128,11 +129,13 @@ contract Handler is Test, IERC721Receiver {
         uint256 id = liveTokens[tokenSeed % liveTokens.length];
         address owner = shapes.ownerOf(id);
         uint256 amount = shapes.backingOf(id);
+        uint256 origins = shapes.originCountOf(id);
 
         vm.prank(owner);
         try shapes.redeem(id) {
             ghostBackingOut += amount;
             ghostRedeems += 1;
+            ghostOriginsRedeemed += origins;
             _untrack(id);
         } catch {}
     }
@@ -159,15 +162,18 @@ contract Handler is Test, IERC721Receiver {
 
         uint256[] memory ids = new uint256[](n);
         uint256 total;
+        uint256 origins;
         for (uint256 i = 0; i < n; ++i) {
             ids[i] = scratch[i];
             total += shapes.backingOf(ids[i]);
+            origins += shapes.originCountOf(ids[i]);
         }
 
         vm.prank(owner);
         try shapes.redeemBatch(ids) {
             ghostBackingOut += total;
             ghostRedeems += n;
+            ghostOriginsRedeemed += origins;
             for (uint256 i = 0; i < n; ++i) {
                 _untrack(ids[i]);
             }
@@ -247,6 +253,34 @@ contract ShapesInvariantTest is StdInvariant, Test {
         }
         assertEq(sum, shapes.totalBacking(), "totalBacking does not match live tokens");
         assertEq(n, shapes.totalSupply(), "live supply mismatch");
+    }
+
+    /// @notice Origins are created only by mint and destroyed only by redeem. The sum of live
+    ///         origin counts equals mints minus origins redeemed — no operation manufactures them.
+    function invariant_OriginsAreConserved() public view {
+        uint256 sum;
+        uint256 n = handler.liveTokenCount();
+        for (uint256 i = 0; i < n; ++i) {
+            sum += shapes.originCountOf(handler.liveTokens(i));
+        }
+        assertEq(
+            sum,
+            handler.ghostMints() - handler.ghostOriginsRedeemed(),
+            "origin count was fabricated or lost"
+        );
+    }
+
+    /// @notice No token ever holds more origins than its backing has 0.01 units.
+    function invariant_OriginsWithinCapacity() public view {
+        uint256 n = handler.liveTokenCount();
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 id = handler.liveTokens(i);
+            assertLe(
+                shapes.originCountOf(id),
+                shapes.backingOf(id) / 0.01 ether,
+                "origin count exceeds capacity"
+            );
+        }
     }
 
     /// @notice Fees never enter the reserve, and every minted token paid exactly one.

@@ -46,12 +46,16 @@ import {Denominations} from "./lib/Denominations.sol";
 contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
     /* ------------------------------ state ------------------------------ */
 
-    /// @dev Per token, the minimum possible: a visual seed and a denomination index.
-    ///      Storing the index rather than a wei amount makes an out-of-ladder backing value
-    ///      unrepresentable rather than merely rejected at the boundary.
+    /// @dev Per token: a visual seed, a denomination index, a provenance credit and a terminal
+    ///      flag. Storing the index rather than a wei amount makes an out-of-ladder backing value
+    ///      unrepresentable. `originCount` is the count of independent direct-mint events credited
+    ///      to this token (one per mint, conserved across composition and decomposition).
+    ///      `isBlack` marks a sacrificed token. The last three pack into one slot.
     struct ShapeData {
         bytes32 seed;
         uint8 denomIndex;
+        uint32 originCount;
+        bool isBlack;
     }
 
     mapping(uint256 tokenId => ShapeData) private _shapes;
@@ -219,8 +223,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
         for (uint256 i = 0; i < quantity; ++i) {
             uint256 tokenId = firstTokenId + i;
             bytes32 seed = keccak256(abi.encodePacked(batchRoot, tokenId));
-            _shapes[tokenId] = ShapeData({seed: seed, denomIndex: uint8(denomIndex)});
-            emit ShapeMinted(tokenId, to, amountWei, seed);
+            _shapes[tokenId] =
+                ShapeData({seed: seed, denomIndex: uint8(denomIndex), originCount: 1, isBlack: false});
+            emit ShapeMinted(tokenId, to, amountWei, seed, 1);
         }
 
         // -------- interactions --------
@@ -320,6 +325,12 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes {
     function seedOf(uint256 tokenId) public view returns (bytes32) {
         _requireOwned(tokenId);
         return _shapes[tokenId].seed;
+    }
+
+    /// @inheritdoc IShapes
+    function originCountOf(uint256 tokenId) public view returns (uint256) {
+        _requireOwned(tokenId);
+        return _shapes[tokenId].originCount;
     }
 
     /// @inheritdoc IShapes
