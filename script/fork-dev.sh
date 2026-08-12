@@ -37,7 +37,8 @@ RPC="http://127.0.0.1:${PORT}"
 PK0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 DEPLOYMENT_FILE="$REPO_ROOT/preview/public/deployment.json"
 # Comma-separated addresses to fund for browser-wallet use, and how much each gets.
-SEED_WALLETS=${SEED_WALLETS:-}
+# Defaults to the dev browser wallet so the UI is usable immediately after spin-up.
+SEED_WALLETS=${SEED_WALLETS:-0xCB43078C32423F5348Cab5885911C3B5faE217F9}
 SEED_ETH=${SEED_ETH:-1000}
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
