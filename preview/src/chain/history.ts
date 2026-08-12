@@ -87,7 +87,12 @@ export async function loadHistory(
   }
   for (const l of redeemed) {
     if (l.args.tokenId === id) {
-      push(l, "redeemed", `Redeemed — ${formatEther(l.args.amountWei ?? 0n)} ETH returned`);
+      const oc = l.args.originCount ?? 0n;
+      push(
+        l,
+        "redeemed",
+        `Redeemed — ${formatEther(l.args.amountWei ?? 0n)} ETH returned, ${oc} origin${oc === 1n ? "" : "s"} retired`,
+      );
     }
   }
   for (const l of transfers) {

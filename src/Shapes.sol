@@ -276,12 +276,12 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     ///      granting it redemption rights. The owner-only check narrows nothing in practice;
     ///      it keeps the payout destination unambiguous and the accounting simple.
     function redeem(uint256 tokenId) external nonReentrant {
-        uint256 amountWei = _burnForRedemption(tokenId);
+        (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId);
 
         totalSupply -= 1;
         redeemableBacking -= amountWei;
 
-        emit ShapeRedeemed(tokenId, msg.sender, amountWei);
+        emit ShapeRedeemed(tokenId, msg.sender, amountWei, originCount);
         _settle(msg.sender, amountWei);
     }
 
@@ -296,9 +296,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
 
         for (uint256 i = 0; i < n; ++i) {
             uint256 tokenId = tokenIds[i];
-            uint256 amountWei = _burnForRedemption(tokenId);
+            (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId);
             totalWei += amountWei;
-            emit ShapeRedeemed(tokenId, msg.sender, amountWei);
+            emit ShapeRedeemed(tokenId, msg.sender, amountWei, originCount);
         }
 
         totalSupply -= n;
@@ -307,15 +307,22 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         _settle(msg.sender, totalWei);
     }
 
-    /// @dev Checks and effects for a single redemption: ownership, read the backing, clear the
-    ///      token state, burn. A duplicate id in a batch fails here on its second appearance,
+    /// @dev Checks and effects for a single redemption: ownership, read the backing and origin
+    ///      count, clear the token state, burn. The origin count is returned so redemption events
+    ///      carry it, letting an event-only indexer track global origin conservation without a
+    ///      pre-burn state read. A duplicate id in a batch fails here on its second appearance,
     ///      because the token no longer exists.
-    function _burnForRedemption(uint256 tokenId) private returns (uint256 amountWei) {
+    function _burnForRedemption(uint256 tokenId)
+        private
+        returns (uint256 amountWei, uint256 originCount)
+    {
         address owner = _requireOwned(tokenId);
         if (owner != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
-        if (_shapes[tokenId].isBlack) revert TokenIsBlack(tokenId);
+        ShapeData storage d = _shapes[tokenId];
+        if (d.isBlack) revert TokenIsBlack(tokenId);
 
-        amountWei = Denominations.amountAt(_shapes[tokenId].denomIndex);
+        amountWei = Denominations.amountAt(d.denomIndex);
+        originCount = d.originCount;
 
         delete _shapes[tokenId];
         _burn(tokenId);

@@ -319,12 +319,16 @@ the renderer.
 ## 10. Events
 
 ```solidity
-event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint256 originCount);
+event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount);
 event Decomposed(uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts);
 event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
+event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 event MetadataUpdate(uint256 tokenId);          // ERC-4906
-// existing: ShapeMinted (+ originCount=1), ShapeRedeemed, MintFeePaid, RendererUpdated, RendererLocked
+// existing: ShapeMinted (+ originCount=1), MintFeePaid, RendererUpdated, RendererLocked
 ```
+`ShapeRedeemed` carries the redeemed token's `originCount` so an event-only indexer can maintain the
+global origin balance (mint origins − redeemed origins) without a pre-burn state read.
+
 `Decomposed` carries the per-child origin partition (`originCounts`) so indexers never re-implement
 the fill-in-order rule. Decompose outputs do **not** emit `ShapeMinted`: that event is a strict
 origin-creation signal, so token creation from a split is signalled by `Decomposed` alone. Advertise

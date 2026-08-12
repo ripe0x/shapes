@@ -1044,6 +1044,16 @@ contract RecompositionTest is ShapesBase {
         assertTrue(shapes.supportsInterface(0x49064906));
     }
 
+    /// @notice ShapeRedeemed carries the redeemed token's originCount, so an event-only indexer can
+    ///         track global origin conservation without a pre-burn state read.
+    function test_RedeemEmitsOriginCount() public {
+        uint256 id = _buildComplete005(); // five 0.01 direct mints composed → 0.05, originCount 5
+        vm.expectEmit(true, true, false, true, address(shapes));
+        emit IShapes.ShapeRedeemed(id, alice, 0.05 ether, 5);
+        vm.prank(alice);
+        shapes.redeem(id);
+    }
+
     /// @notice The child seeds derive from the parent seed and index alone — no block data. Mutating
     ///         the block environment before the split cannot change them, so a decompose cannot be
     ///         re-rolled by waiting for a friendlier block.

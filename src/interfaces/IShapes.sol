@@ -19,7 +19,12 @@ interface IShapes is IERC721 {
     );
 
     /// @notice Emitted when a Shape is burned and its backing returned.
-    event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei);
+    /// @notice Emitted when a Shape is redeemed for its backing. `originCount` is the redeemed
+    ///         token's origin credit, carried so an event-only indexer can track the global
+    ///         origin balance (mint origins − redeemed origins) without a pre-burn state read.
+    event ShapeRedeemed(
+        uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount
+    );
 
     /// @notice Emitted once per mint call, when the aggregate fee is forwarded.
     event MintFeePaid(address indexed recipient, uint256 amountWei, uint256 quantity);
