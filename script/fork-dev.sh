@@ -27,11 +27,11 @@ cd "$REPO_ROOT"
 # Empty by default: a plain local chain. Set FORK_URL to a mainnet RPC to fork instead.
 FORK_URL=${FORK_URL:-}
 PORT=${PORT:-8545}
-# A distinctive chain id, not the ubiquitous 31337. A browser wallet keys networks by chain id
-# and reuses whatever RPC it already stored for that id, so sharing 31337 with another local
-# node (a second anvil, a Hardhat chain) silently routes transactions to the wrong one. This id
-# is unregistered on chainlist. Override with CHAIN_ID if it still collides with something local.
-CHAIN_ID=${CHAIN_ID:-767676}
+# Anvil's default chain id, which browser wallets already have configured for localhost:8545.
+# Caveat: a wallet keys networks by chain id, so another local node also on 31337 (a second
+# anvil, a Hardhat chain) can silently receive transactions meant for this one. Override with
+# CHAIN_ID when running more than one local chain.
+CHAIN_ID=${CHAIN_ID:-31337}
 RPC="http://127.0.0.1:${PORT}"
 # Anvil's first default account. Public, well-known, test-only.
 PK0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
