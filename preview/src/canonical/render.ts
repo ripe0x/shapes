@@ -608,16 +608,18 @@ export function unitsOf(c: Composition): bigint {
 
 /**
  * Provenance label derived from `(units, originCount, isBlack)`. Black takes precedence, then
- * Complete (an origin per unit, above the minimum tier), then Direct vs Composed. Mirrors
- * `ShapeRenderer._formation`.
+ * Complete (an origin per unit, above the minimum tier), then Fragment (zero origins — a
+ * decompose remainder credited none), then Direct vs Composed. Mirrors `ShapeRenderer._formation`.
+ * Fragment is distinct so a zero-origin split remainder is not labelled "Composed".
  */
 export function formation(
   units: bigint,
   originCount: bigint,
   isBlack: boolean,
-): "Black" | "Complete" | "Direct" | "Composed" {
+): "Black" | "Complete" | "Fragment" | "Direct" | "Composed" {
   if (isBlack) return "Black";
   if (units > 1n && originCount === units) return "Complete";
+  if (originCount === 0n) return "Fragment";
   if (originCount === 1n) return "Direct";
   return "Composed";
 }

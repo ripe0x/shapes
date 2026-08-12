@@ -372,7 +372,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         s.denomIndex = uint8(newIndex);
         s.originCount = uint32(origins); // <= total/UNIT <= 10000 by the capacity invariant
 
-        emit Composed(survivorId, burnIds, uint8(newIndex), origins);
+        emit Composed(survivorId, burnIds, uint8(newIndex), uint32(origins));
         emit MetadataUpdate(survivorId);
         return survivorId;
     }

@@ -533,7 +533,9 @@ contract ShapeRenderer is IShapeRenderer {
 
     /// @dev The provenance label derived from `(units, originCount, isBlack)`. `units` is the
     ///      backing's 0.01 count. Black takes precedence; then Complete (an origin per unit, above
-    ///      the minimum tier); then Direct (a single origin) vs Composed.
+    ///      the minimum tier); then Fragment (zero origins — a decompose remainder credited none);
+    ///      then Direct (a single origin) vs Composed. Fragment is distinct so a zero-origin split
+    ///      remainder is not labelled "Composed", which would assert a history it does not have.
     function _formation(uint256 units, uint256 originCount, bool isBlack)
         private
         pure
@@ -541,6 +543,7 @@ contract ShapeRenderer is IShapeRenderer {
     {
         if (isBlack) return "Black";
         if (units > 1 && originCount == units) return "Complete";
+        if (originCount == 0) return "Fragment";
         if (originCount == 1) return "Direct";
         return "Composed";
     }

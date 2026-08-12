@@ -26,7 +26,7 @@ export const shapesAbi = parseAbi([
   "function mintFeeFor(uint256 amountWei) view returns (uint256)",
   "event ShapeMinted(uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed, uint32 originCount)",
   "event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei)",
-  "event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 newDenomIndex, uint256 originCount)",
+  "event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 newDenomIndex, uint32 originCount)",
   "event Decomposed(uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts)",
   "event Blackened(uint256 indexed tokenId, uint256 sacrificedWei)",
 ]);

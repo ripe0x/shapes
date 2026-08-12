@@ -31,11 +31,12 @@ function imageFromTokenURI(uri: string): string {
 }
 
 /// The provenance label, mirroring ShapeRenderer._formation. A Black token reports backing 0, so
-/// its formation is decided by the flag alone.
-function formationLabel(t: OwnedToken): "Black" | "Complete" | "Direct" | "Composed" {
+/// its formation is decided by the flag alone. Fragment is a zero-origin decompose remainder.
+function formationLabel(t: OwnedToken): "Black" | "Complete" | "Fragment" | "Direct" | "Composed" {
   if (t.isBlack) return "Black";
   const units = t.backing / UNIT;
   if (units > 1n && t.originCount === units) return "Complete";
+  if (t.originCount === 0n) return "Fragment";
   if (t.originCount === 1n) return "Direct";
   return "Composed";
 }
@@ -347,11 +348,12 @@ export function ChainApp({dep}: {dep: Deployment}) {
   );
 }
 
-function FormationBadge({label}: {label: "Black" | "Complete" | "Direct" | "Composed"}) {
+function FormationBadge({label}: {label: "Black" | "Complete" | "Fragment" | "Direct" | "Composed"}) {
   const color: Record<string, React.CSSProperties> = {
     Black: {background: "#fff", color: "#000", borderColor: "#fff"},
     Complete: {background: "#123", color: "#8cf", borderColor: "#2a5"},
     Composed: {background: "#111", color: "#cc9", borderColor: "#553"},
+    Fragment: {background: "#150d0d", color: "#c88", borderColor: "#633"},
     Direct: {background: "#111", color: "#999", borderColor: "#333"},
   };
   return (

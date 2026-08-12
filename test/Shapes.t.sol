@@ -1043,6 +1043,32 @@ contract RecompositionTest is ShapesBase {
     function test_SupportsErc4906() public view {
         assertTrue(shapes.supportsInterface(0x49064906));
     }
+
+    /// @notice The child seeds derive from the parent seed and index alone — no block data. Mutating
+    ///         the block environment before the split cannot change them, so a decompose cannot be
+    ///         re-rolled by waiting for a friendlier block.
+    function test_DecomposeChildSeedsIgnoreBlockEnv() public {
+        uint256 parent = _mint(alice, 0.05 ether);
+        bytes32 parentSeed = shapes.seedOf(parent);
+
+        vm.roll(block.number + 123_456);
+        vm.warp(block.timestamp + 999 days);
+        vm.prevrandao(bytes32(uint256(0xC0FFEE)));
+        vm.fee(777 gwei);
+        vm.chainId(4242);
+
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(parent, outs);
+
+        for (uint256 i = 0; i < kids.length; ++i) {
+            assertEq(
+                shapes.seedOf(kids[i]),
+                keccak256(abi.encodePacked(parentSeed, i)),
+                "block environment leaked into a child seed"
+            );
+        }
+    }
 }
 
 /* ==================================================================== *

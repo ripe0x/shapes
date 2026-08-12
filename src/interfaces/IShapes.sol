@@ -33,7 +33,7 @@ interface IShapes is IERC721 {
     /// @notice Emitted when Shapes are composed into one. The survivor keeps its id and seed and
     ///         becomes the summed denomination; the burned inputs are consumed into it.
     event Composed(
-        uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint256 originCount
+        uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount
     );
 
     /// @notice Emitted when a Shape is split. The input is burned and each output is a fresh id;

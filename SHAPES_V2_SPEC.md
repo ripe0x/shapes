@@ -68,7 +68,11 @@ increases it except a fresh mint of new ETH.
 **Everything the collectible needs derives from `(backing, originCount, isBlack)`,** with
 `units = backing / UNIT`:
 - **Formation:** `isBlack ? "Black" : (units > 1 && originCount == units) ? "Complete" :
-  originCount == 1 ? "Direct" : "Composed"`.
+  originCount == 0 ? "Fragment" : originCount == 1 ? "Direct" : "Composed"`. **Fragment** is a
+  zero-origin token: legal per §4 (a decompose can credit a child no origins — e.g. the 0-origin
+  50 ETH half of a split Direct 100). It is a distinct label because such a token was never
+  composed; labelling it "Composed" would be the one trait in the system that states something
+  false about a token's history.
 - **Independent origins:** `originCount`.
 - **Origin density** (display): `originCount / units`, expressed as a percentage.
 - **Complete** (canonical, on-chain): `!isBlack && units > 1 && originCount == units`.
@@ -250,8 +254,9 @@ to already-wrapped ETH.
 function compose(uint256 survivorId, uint256[] calldata burnIds)
     external nonReentrant returns (uint256 outId);
 ```
-- **Checks:** caller owns `survivorId` and every `burnId`; none Black; `burnIds.length >= 1`; no id
-  equals `survivorId`; `total = backing(survivor) + Σ backing(burnIds)` is a valid ladder denom.
+- **Checks:** caller owns `survivorId` and every `burnId`; none Black — the survivor included, not
+  only the burned inputs (§9.5); `burnIds.length >= 1`; no id equals `survivorId`;
+  `total = backing(survivor) + Σ backing(burnIds)` is a valid ladder denom.
 - **Effects (no external calls — `_burn` triggers no callback):** burn each `burnId` (`delete`
   state, `_burn`), `totalSupply -= burnIds.length`; set `survivor.denomIndex = indexOf(total)` and
   `survivor.originCount += Σ originCount(burnIds)` (seed unchanged); `redeemableBacking` unchanged
@@ -437,7 +442,11 @@ tokens exist anywhere.
 2. **`originCount` storage** — set `=1` on mint, add views + `ShapeMinted` provenance,
    origin-conservation invariant (trivially holds). No behavior change.
 3. **`compose` + `decompose`** — no ETH movement, conservation asserts, ERC-4906, events. Highest
-   scrutiny: CEI, `nonReentrant`, invariants + fuzz, forgery test.
+   scrutiny: CEI, `nonReentrant`, invariants + fuzz, forgery test. Decompose introduces the child
+   seed rule `childSeed_i = keccak256(abi.encodePacked(parentSeed, i))` (SPEC.md D3e); its TypeScript
+   twin (`preview/src/decomposeSeed.ts`) and a Solidity↔TS parity fixture land here too, since the
+   frontend must preview split children before their ids exist and phase 5's fixture/parity story
+   otherwise covers only the renderer.
 4. **Accounting split + `blacken`** — `redeemableBacking`/`sacrificedBacking`, 0xdEaD sacrifice,
    Black guards, updated solvency invariant + SECURITY.md.
 5. **Renderer** — inversion + provenance traits, TS lockstep, parity, metadata tests.

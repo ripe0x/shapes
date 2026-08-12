@@ -23,6 +23,7 @@ import { fmt } from "../src/canonical/wad";
 import { DENOMINATIONS, LABELS } from "../src/canonical/denominations";
 import { CANONICAL, paramsEqualCanonical } from "../src/canonical/params";
 import { productionSeed } from "../src/seeds";
+import { decomposeChildSeed } from "../src/decomposeSeed";
 
 if (!paramsEqualCanonical(CANONICAL)) {
   throw new Error("refusing to generate fixtures from non-canonical params");
@@ -96,6 +97,7 @@ const edges: Case[] = [
   { seed: productionSeed(5n), amountWei: DENOMINATIONS[4], tokenId: 14n, originCount: 100n, inverted: false, why: "Complete 1 ETH (100 origins)" },
   { seed: productionSeed(6n), amountWei: DENOMINATIONS[4], tokenId: 15n, originCount: 50n, inverted: false, why: "Composed 1 ETH (50 origins)" },
   { seed: productionSeed(7n), amountWei: DENOMINATIONS[1], tokenId: 16n, originCount: 5n, inverted: false, why: "Complete 0.05 (5 origins)" },
+  { seed: productionSeed(15n), amountWei: DENOMINATIONS[7], tokenId: 25n, originCount: 0n, inverted: false, why: "Fragment 50 ETH (0 origins, decompose remainder)" },
 
   // Provenance: density formatter branches (hundredths of a percent).
   { seed: productionSeed(8n), amountWei: DENOMINATIONS[8], tokenId: 17n, originCount: 1n, inverted: false, why: "density 0.01% (two decimals)" },
@@ -112,6 +114,19 @@ const edges: Case[] = [
 cases.push(...edges);
 
 const hex32 = (v: bigint) => "0x" + v.toString(16).padStart(64, "0");
+
+// Deterministic decompose child-seed derivation: childSeed = keccak256(abi.encodePacked(parent, i)).
+// Computed by the same TS helper the frontend preview uses; test/Parity.t.sol recomputes the
+// Solidity derivation and asserts it matches these byte for byte. Indices span the small values a
+// real split uses and larger ones to exercise the packing.
+const childParents = [productionSeed(1n), 0n, MAX_U256, productionSeed(9999n)];
+const childIndices = [0, 1, 2, 9, 255, 10000];
+const childCases: {parent: bigint; index: number; child: bigint}[] = [];
+for (const parent of childParents) {
+  for (const index of childIndices) {
+    childCases.push({parent, index, child: decomposeChildSeed(parent, index)});
+  }
+}
 
 const out = {
   _comment:
@@ -134,6 +149,9 @@ const out = {
   inverted: cases.map((c) => (c.inverted ? "true" : "false")),
   svg: cases.map((c) => renderShape(c.seed, c.amountWei, c.tokenId, CANONICAL, c.inverted)), // tokenId unused: no type
   metadata: cases.map((c) => tokenMetadataJson(c.seed, c.amountWei, c.tokenId, c.originCount, c.inverted)),
+  childParent: childCases.map((c) => hex32(c.parent)),
+  childIndex: childCases.map((c) => c.index.toString()),
+  childSeed: childCases.map((c) => hex32(c.child)),
 };
 
 const target = resolve(import.meta.dirname, "../../test/fixtures/fixtures.json");

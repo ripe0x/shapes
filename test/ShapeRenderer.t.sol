@@ -662,6 +662,23 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(vm.parseJsonUint(cj, ".attributes[6].value"), 5, "complete origins");
         assertEq(vm.parseJsonString(cj, ".attributes[7].value"), "100%", "complete density");
         assertEq(vm.parseJsonString(cj, ".attributes[8].value"), "true", "is complete");
+
+        // Fragment: split a Direct 100 ETH into two 50s. Origins partition survivor-first, so the
+        // first child takes the lone origin and the second is a zero-origin Fragment.
+        vm.prank(alice);
+        uint256 whole = shapes.mint{value: 100 ether + 1 ether}(100 ether, alice);
+        uint8[] memory halves = new uint8[](2);
+        halves[0] = 7; // 50 ETH
+        halves[1] = 7;
+        vm.prank(alice);
+        uint256[] memory parts = shapes.decompose(whole, halves);
+        assertEq(shapes.originCountOf(parts[0]), 1, "first half keeps the origin");
+        assertEq(shapes.originCountOf(parts[1]), 0, "second half is a fragment");
+        string memory fj = _decodeJson(parts[1]);
+        assertEq(vm.parseJsonString(fj, ".attributes[5].value"), "Fragment", "fragment formation");
+        assertEq(vm.parseJsonUint(fj, ".attributes[6].value"), 0, "fragment origins");
+        assertEq(vm.parseJsonString(fj, ".attributes[7].value"), "0%", "fragment density");
+        assertEq(vm.parseJsonString(fj, ".attributes[8].value"), "false", "fragment not complete");
     }
 
     function test_TokenUriUsesTheStoredSeed() public {

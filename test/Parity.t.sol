@@ -69,6 +69,24 @@ contract ParityTest is Test {
         return keccak256(bytes(s)) == keccak256(bytes("true"));
     }
 
+    /// @notice The decompose child-seed derivation the frontend previews with must equal the
+    ///         on-chain rule byte for byte. The fixtures carry TS-computed child seeds; here the
+    ///         Solidity derivation is recomputed and compared. Proves the (bytes32, uint256)
+    ///         packing agrees across the two implementations.
+    function test_ChildSeedDerivationMatchesTypeScript() public view {
+        string[] memory parents = vm.parseJsonStringArray(json, ".childParent");
+        string[] memory indices = vm.parseJsonStringArray(json, ".childIndex");
+        string[] memory children = vm.parseJsonStringArray(json, ".childSeed");
+        uint256 n = parents.length;
+        assertGt(n, 0, "no child-seed fixtures");
+        for (uint256 i = 0; i < n; ++i) {
+            bytes32 parent = vm.parseBytes32(parents[i]);
+            uint256 index = vm.parseUint(indices[i]);
+            bytes32 got = keccak256(abi.encodePacked(parent, index));
+            assertEq(got, vm.parseBytes32(children[i]), "child seed derivation drifted from TS");
+        }
+    }
+
     /// @dev A Shape carries no type, so its artwork does not depend on the token id at all.
     ///      Two tokens with the same seed and denomination render identically by design.
     function test_ArtworkIsIndependentOfTokenId() public view {
