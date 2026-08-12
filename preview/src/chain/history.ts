@@ -9,6 +9,8 @@ export type HistKind =
   | "splitInto"
   | "absorbed"
   | "mergedAway"
+  | "bornFromRestore"
+  | "restoredAway"
   | "blackened"
   | "redeemed"
   | "transfer";
@@ -36,14 +38,16 @@ export async function loadHistory(
   id: bigint,
 ): Promise<HistEvent[]> {
   const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
-  const [minted, composed, decomposed, blackened, redeemed, transfers] = await Promise.all([
-    publicClient.getContractEvents({...base, eventName: "ShapeMinted"}),
-    publicClient.getContractEvents({...base, eventName: "Composed"}),
-    publicClient.getContractEvents({...base, eventName: "Decomposed"}),
-    publicClient.getContractEvents({...base, eventName: "Blackened"}),
-    publicClient.getContractEvents({...base, eventName: "ShapeRedeemed"}),
-    publicClient.getContractEvents({...base, eventName: "Transfer"}),
-  ]);
+  const [minted, composed, decomposed, restored, blackened, redeemed, transfers] =
+    await Promise.all([
+      publicClient.getContractEvents({...base, eventName: "ShapeMinted"}),
+      publicClient.getContractEvents({...base, eventName: "Composed"}),
+      publicClient.getContractEvents({...base, eventName: "Decomposed"}),
+      publicClient.getContractEvents({...base, eventName: "Restored"}),
+      publicClient.getContractEvents({...base, eventName: "Blackened"}),
+      publicClient.getContractEvents({...base, eventName: "ShapeRedeemed"}),
+      publicClient.getContractEvents({...base, eventName: "Transfer"}),
+    ]);
 
   const out: HistEvent[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -80,6 +84,15 @@ export async function loadHistory(
       push(l, "mergedAway", `Merged into #${l.args.survivorId?.toString()}`);
     }
   }
+  for (const l of restored) {
+    if (l.args.newTokenId === id) {
+      const n = l.args.childIds?.length ?? 0;
+      push(l, "bornFromRestore", `Restored — reassembled from ${n} pieces of one split`);
+    }
+    if (l.args.childIds?.some((x) => x === id)) {
+      push(l, "restoredAway", `Reassembled into #${l.args.newTokenId?.toString()}, the original`);
+    }
+  }
   for (const l of blackened) {
     if (l.args.tokenId === id) {
       push(l, "blackened", `Blackened — ${formatEther(l.args.sacrificedWei ?? 0n)} ETH sacrificed`);
@@ -106,4 +119,41 @@ export async function loadHistory(
 
   out.sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
   return out;
+}
+
+export interface SplitBirth {
+  parentSeed: `0x${string}`;
+  parentId: bigint;
+  siblingIds: bigint[]; // every output of the split, in split (index) order
+  index: number; // this token's position in siblingIds
+}
+
+/// The split that created a token, if any: the latest Decomposed event listing it among the
+/// outputs. Latest, because a restore-then-resplit can list the same seed-derived positions in
+/// more than one event; only the newest corresponds to the live split record.
+export async function findSplitBirth(
+  publicClient: PublicClient,
+  dep: Deployment,
+  id: bigint,
+): Promise<SplitBirth | null> {
+  const events = await publicClient.getContractEvents({
+    address: dep.shapes,
+    abi: shapesAbi,
+    eventName: "Decomposed",
+    fromBlock: 0n,
+    toBlock: "latest",
+  });
+  for (let i = events.length - 1; i >= 0; i--) {
+    const l = events[i];
+    const at = l.args.newIds?.findIndex((x) => x === id) ?? -1;
+    if (at >= 0) {
+      return {
+        parentSeed: l.args.parentSeed as `0x${string}`,
+        parentId: l.args.tokenId as bigint,
+        siblingIds: [...(l.args.newIds as readonly bigint[])],
+        index: at,
+      };
+    }
+  }
+  return null;
 }

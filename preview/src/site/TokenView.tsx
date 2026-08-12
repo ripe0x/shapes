@@ -4,7 +4,8 @@ import {DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
 import {GRIDS} from "../canonical/denominations";
 import {composeShape, fillClass, seedHex} from "../canonical/render";
 import {decomposeChildSeed} from "../decomposeSeed";
-import {loadHistory, type HistEvent} from "../chain/history";
+import {shapesAbi} from "../chain/abi";
+import {loadHistory, findSplitBirth, type HistEvent, type SplitBirth} from "../chain/history";
 import {C} from "./theme";
 import {Section, Art, short, txUrl} from "./ui";
 import {localArt} from "./art";
@@ -17,6 +18,8 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   splitInto: "Split",
   absorbed: "Composed",
   mergedAway: "Merged",
+  bornFromRestore: "Restored",
+  restoredAway: "Reassembled",
   blackened: "Blackened",
   redeemed: "Redeemed",
   transfer: "Transferred",
@@ -41,6 +44,7 @@ export function TokenView({
   onConfirmRedeem,
   onDecompose,
   onCompose,
+  onRestore,
 }: {
   data: SiteData | null;
   dep: Deployment;
@@ -49,22 +53,48 @@ export function TokenView({
   tokenId: bigint;
   redeem: RedeemState;
   busy: string | null;
-  txErr: string | null;
+  txErr: {op: string; text: string} | null;
   onBack: () => void;
   onAskRedeem: () => void;
   onCancelRedeem: () => void;
   onConfirmRedeem: (t: SiteToken) => void;
   onDecompose: (t: SiteToken) => void;
   onCompose: (t: SiteToken, burnIds: bigint[]) => void;
+  onRestore: (parentSeed: `0x${string}`, childIds: bigint[]) => void;
 }) {
-  const [tab, setTab] = React.useState<"split" | "compose">("split");
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
+  const [birth, setBirth] = React.useState<SplitBirth | null>(null);
+  const [record, setRecord] = React.useState<{childCount: number; denomIndex: number} | null>(null);
 
   React.useEffect(() => {
-    setTab("split");
     setPicked(new Set());
   }, [tokenId]);
+
+  // The split this token came from, and whether its record is still restorable. Both reload
+  // after any transaction (data changes).
+  React.useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+    setBirth(null);
+    setRecord(null);
+    void (async () => {
+      const b = await findSplitBirth(publicClient, dep, tokenId);
+      if (cancelled || !b) return;
+      const [childCount, denomIndex] = await publicClient.readContract({
+        address: dep.shapes,
+        abi: shapesAbi,
+        functionName: "splitRecordOf",
+        args: [b.parentSeed],
+      });
+      if (cancelled) return;
+      setBirth(b);
+      setRecord({childCount: Number(childCount), denomIndex: Number(denomIndex)});
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient, dep, tokenId, data]);
 
   // Token history from the event log, with block timestamps resolved to dates.
   React.useEffect(() => {
@@ -202,6 +232,31 @@ export function TokenView({
   const sumIdx = denomIndexOf(sumWei);
   const composeValid = pickedIds.length >= 1 && sumIdx >= 0;
 
+  // Restore: this token came from a split whose record is still open. Restorable when every
+  // sibling is live, seed-verified for its position, still at its split denomination (the sum
+  // check), and held by this wallet.
+  const restorable = birth !== null && record !== null && record.childCount === birth.siblingIds.length;
+  const parentWei = record ? DENOMINATIONS[record.denomIndex].wei : 0n;
+  const pieces = restorable
+    ? birth!.siblingIds.map((sid, i) => {
+        const t = data?.tokens.find((x) => x.id === sid) ?? null;
+        const okSeed = t !== null && t.seed === decomposeChildSeed(BigInt(birth!.parentSeed), i);
+        const held =
+          !!t && okSeed && !!address && t.owner.toLowerCase() === address.toLowerCase();
+        return {id: sid, token: t, okSeed, held};
+      })
+    : [];
+  const heldCount = pieces.filter((p) => p.held).length;
+  const piecesBacking = pieces.reduce((a, p) => a + (p.token?.backing ?? 0n), 0n);
+  const canRestore = restorable && heldCount === pieces.length && piecesBacking === parentWei;
+
+  const errLine = (op: string) =>
+    txErr && txErr.op === op ? (
+      <p style={{margin: "18px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+        {txErr.text}
+      </p>
+    ) : null;
+
   return (
     <main>
       {back}
@@ -289,79 +344,146 @@ export function TokenView({
             )}
           </Section>
 
-          <Section
-            labelNode={
-              <div style={{display: "grid", gap: 12, fontSize: 10, letterSpacing: "0.14em"}}>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setTab("split")}
-                  style={{textAlign: "left", letterSpacing: "0.14em", fontSize: 10, color: tab === "split" ? C.ink : C.muted}}
-                >
-                  DECOMPOSE
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => setTab("compose")}
-                  style={{textAlign: "left", letterSpacing: "0.14em", fontSize: 10, color: tab === "compose" ? C.ink : C.muted}}
-                >
-                  RECOMPOSE
-                </button>
-              </div>
-            }
-            pad="26px 48px 36px 32px"
-          >
-            {tab === "split" ? (
-              <div>
-                <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-                  {canSplit
-                    ? `Split this Shape into ${ratio} Shapes of ${DENOMINATIONS[di - 1].label} ETH. The outputs sum to exactly ${lbl} ETH.`
-                    : "0.01 ETH is the smallest denomination. This Shape cannot be split."}
-                </p>
-                {canSplit && (
-                  <p style={{margin: "0 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-                    No ETH moves. No fee is charged. The seeds below are fixed already, so this is
-                    the exact result.
-                  </p>
-                )}
-                <div style={{display: "flex", flexWrap: "wrap", gap: 18}}>
-                  {splitChildren.map((c, i) => (
-                    <div key={i} style={{flex: "0 0 96px", width: 96}}>
-                      <Art src={localArt(c.seed, c.wei)} />
-                      <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
-                        {DENOMINATIONS[di - 1].label} ETH
-                      </div>
-                    </div>
-                  ))}
+          <Section title="DECOMPOSE" pad="26px 48px 36px 32px">
+            <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+              {canSplit
+                ? `Split this Shape into ${ratio} Shapes of ${DENOMINATIONS[di - 1].label} ETH. The outputs sum to exactly ${lbl} ETH.`
+                : "0.01 ETH is the smallest denomination. This Shape cannot be split."}
+            </p>
+            {canSplit && (
+              <p style={{margin: "0 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+                No ETH moves. No fee is charged. The seeds below are fixed already, so this is
+                the exact result. A split can be undone: reassemble all the pieces and the
+                original comes back.
+              </p>
+            )}
+            <div style={{display: "flex", flexWrap: "wrap", gap: 18}}>
+              {splitChildren.map((c, i) => (
+                <div key={i} style={{flex: "0 0 96px", width: 96}}>
+                  <Art src={localArt(c.seed, c.wei)} />
+                  <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
+                    {DENOMINATIONS[di - 1].label} ETH
+                  </div>
                 </div>
-                {canSplit && (
+              ))}
+            </div>
+            {canSplit && (
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => onDecompose(token)}
+                disabled={!!busy}
+                style={{marginTop: 26, padding: "10px 20px"}}
+              >
+                {busy === "decompose" ? "Waiting for confirmation" : "Decompose"}
+              </button>
+            )}
+            {errLine("decompose")}
+          </Section>
+
+          <Section title="RECOMPOSE" pad="26px 48px 36px 32px">
+            <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+              Compose Shapes of the same denomination into one larger Shape. #
+              {token.id.toString()} survives and keeps its seed.
+            </p>
+            <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+              This Shape keeps its id and its seed. The others are burned into it. No ETH
+              moves.
+            </p>
+            {candidates.map((t) => {
+              const on = picked.has(t.id.toString());
+              return (
+                <div
+                  key={t.id.toString()}
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 20,
+                    padding: "10px 0",
+                    borderBottom: `1px solid ${C.ruleInner}`,
+                  }}
+                >
+                  <Art src={t.image} width={34} />
+                  <div style={{flex: "1 1 140px", minWidth: 0, fontSize: 13}}>
+                    #{t.id.toString()} · {lbl} ETH
+                  </div>
                   <button
                     type="button"
-                    className="btn-outline"
-                    onClick={() => onDecompose(token)}
-                    disabled={!!busy}
-                    style={{marginTop: 26, padding: "10px 20px"}}
+                    onClick={() =>
+                      setPicked((prev) => {
+                        const next = new Set(prev);
+                        const k = t.id.toString();
+                        if (next.has(k)) next.delete(k);
+                        else next.add(k);
+                        return next;
+                      })
+                    }
+                    style={{
+                      flex: "0 0 auto",
+                      whiteSpace: "nowrap",
+                      border: `1px solid ${on ? C.ink : C.border}`,
+                      background: on ? C.ink : "transparent",
+                      color: on ? C.page : C.bodyDim,
+                      padding: "6px 14px",
+                      fontSize: 12,
+                      cursor: "pointer",
+                    }}
                   >
-                    {busy === "decompose" ? "Waiting for confirmation" : "Decompose"}
+                    {on ? "Selected" : "Select"}
                   </button>
-                )}
+                </div>
+              );
+            })}
+            {candidates.length === 0 && (
+              <div style={{fontSize: 13, color: C.muted}}>
+                This wallet owns no other {lbl} ETH Shapes to compose with.
               </div>
-            ) : (
-              <div>
-                <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-                  Compose Shapes of the same denomination into one larger Shape. #
-                  {token.id.toString()} survives and keeps its seed.
-                </p>
-                <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-                  This Shape keeps its id and its seed. The others are burned into it. No ETH
-                  moves.
-                </p>
-                {candidates.map((t) => {
-                  const on = picked.has(t.id.toString());
-                  return (
+            )}
+            {candidates.length > 0 && (
+              <div style={{marginTop: 22, fontSize: 13, color: C.muted}}>
+                {pickedIds.length === 0
+                  ? "Select Shapes to compose."
+                  : composeValid
+                    ? `${formatEther(sumWei)} ETH → one ${DENOMINATIONS[sumIdx].label} ETH Shape.`
+                    : `${formatEther(sumWei)} ETH is not a denomination. The sum must be exactly one of the nine.`}
+              </div>
+            )}
+            {composeValid && (
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => onCompose(token, pickedIds)}
+                disabled={!!busy}
+                style={{marginTop: 22, padding: "10px 20px"}}
+              >
+                {busy === "compose" ? "Waiting for confirmation" : "Compose"}
+              </button>
+            )}
+            {errLine("compose")}
+          </Section>
+
+          {restorable && record && birth && (
+            <Section title="RESTORE" pad="26px 48px 36px 32px">
+              <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+                This Shape is piece {birth.index + 1} of {pieces.length} from one split. Restore
+                burns all {pieces.length} pieces and brings back the original: same artwork, same
+                denomination, a new token number.
+              </p>
+              <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+                No ETH moves. No fee is charged.
+              </p>
+              <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
+                <div style={{flex: "0 0 140px", width: 140}}>
+                  <Art src={localArt(BigInt(birth.parentSeed), parentWei)} />
+                  <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
+                    {DENOMINATIONS[record.denomIndex].label} ETH · the original
+                  </div>
+                </div>
+                <div style={{flex: "1 1 320px", minWidth: 0}}>
+                  {pieces.map((p) => (
                     <div
-                      key={t.id.toString()}
+                      key={p.id.toString()}
                       style={{
                         display: "flex",
                         flexWrap: "wrap",
@@ -369,72 +491,46 @@ export function TokenView({
                         gap: 20,
                         padding: "10px 0",
                         borderBottom: `1px solid ${C.ruleInner}`,
+                        fontSize: 13,
                       }}
                     >
-                      <Art src={t.image} width={34} />
-                      <div style={{flex: "1 1 140px", minWidth: 0, fontSize: 13}}>
-                        #{t.id.toString()} · {lbl} ETH
+                      {p.token ? <Art src={p.token.image} width={34} /> : <div style={{width: 34}} />}
+                      <div style={{flex: "1 1 120px", minWidth: 0}}>
+                        #{p.id.toString()}
+                        {p.token && p.token.di >= 0 ? ` · ${DENOMINATIONS[p.token.di].label} ETH` : ""}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setPicked((prev) => {
-                            const next = new Set(prev);
-                            const k = t.id.toString();
-                            if (next.has(k)) next.delete(k);
-                            else next.add(k);
-                            return next;
-                          })
-                        }
-                        style={{
-                          flex: "0 0 auto",
-                          whiteSpace: "nowrap",
-                          border: `1px solid ${on ? C.ink : C.border}`,
-                          background: on ? C.ink : "transparent",
-                          color: on ? C.page : C.bodyDim,
-                          padding: "6px 14px",
-                          fontSize: 12,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {on ? "Selected" : "Select"}
-                      </button>
+                      <div style={{color: C.muted, fontSize: 12}}>
+                        {p.held
+                          ? p.id === token.id
+                            ? "this Shape"
+                            : "you hold this"
+                          : p.token
+                            ? `held by ${short(p.token.owner)}`
+                            : "no longer live"}
+                      </div>
                     </div>
-                  );
-                })}
-                {candidates.length === 0 && (
-                  <div style={{fontSize: 13, color: C.muted}}>
-                    This wallet owns no other {lbl} ETH Shapes to compose with.
-                  </div>
-                )}
-                {candidates.length > 0 && (
-                  <div style={{marginTop: 22, fontSize: 13, color: C.muted}}>
-                    {pickedIds.length === 0
-                      ? "Select Shapes to compose."
-                      : composeValid
-                        ? `${formatEther(sumWei)} ETH → one ${DENOMINATIONS[sumIdx].label} ETH Shape.`
-                        : `${formatEther(sumWei)} ETH is not a denomination. The sum must be exactly one of the nine.`}
-                  </div>
-                )}
-                {composeValid && (
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    onClick={() => onCompose(token, pickedIds)}
-                    disabled={!!busy}
-                    style={{marginTop: 22, padding: "10px 20px"}}
-                  >
-                    {busy === "compose" ? "Waiting for confirmation" : "Compose"}
-                  </button>
-                )}
+                  ))}
+                  {canRestore ? (
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      onClick={() => onRestore(birth.parentSeed, birth.siblingIds)}
+                      disabled={!!busy}
+                      style={{marginTop: 22, padding: "10px 20px"}}
+                    >
+                      {busy === "restore" ? "Waiting for confirmation" : "Restore"}
+                    </button>
+                  ) : (
+                    <div style={{marginTop: 22, fontSize: 13, color: C.muted}}>
+                      Restoring needs all {pieces.length} pieces, unchanged, in one wallet. You
+                      hold {heldCount} of {pieces.length}.
+                    </div>
+                  )}
+                  {errLine("restore")}
+                </div>
               </div>
-            )}
-            {txErr && (
-              <p style={{margin: "18px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-                {txErr}
-              </p>
-            )}
-          </Section>
+            </Section>
+          )}
         </>
       )}
 

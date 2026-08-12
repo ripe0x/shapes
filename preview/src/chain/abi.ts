@@ -9,6 +9,8 @@ export const shapesAbi = parseAbi([
   "function redeemBatch(uint256[] tokenIds) returns (uint256 totalWei)",
   "function compose(uint256 survivorId, uint256[] burnIds) returns (uint256)",
   "function decompose(uint256 tokenId, uint8[] outDenoms) returns (uint256[] newIds)",
+  "function restore(bytes32 parentSeed, uint256[] childIds) returns (uint256 newTokenId)",
+  "function splitRecordOf(bytes32 parentSeed) view returns (uint16 childCount, uint8 denomIndex)",
   "function blacken(uint256 tokenId)",
   "function tokenURI(uint256 tokenId) view returns (string)",
   "function backingOf(uint256 tokenId) view returns (uint256)",
@@ -27,7 +29,8 @@ export const shapesAbi = parseAbi([
   "event ShapeMinted(uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed, uint256 originCount)",
   "event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount)",
   "event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 newDenomIndex, uint32 originCount)",
-  "event Decomposed(uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts)",
+  "event Decomposed(uint256 indexed tokenId, bytes32 parentSeed, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts)",
+  "event Restored(uint256 indexed newTokenId, bytes32 indexed parentSeed, uint256[] childIds, uint8 denomIndex, uint32 originCount)",
   "event Blackened(uint256 indexed tokenId, uint256 sacrificedWei)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
@@ -45,6 +48,10 @@ export const shapesAbi = parseAbi([
   "error CannotComposeWithSelf(uint256 tokenId)",
   "error DecompositionMismatch(uint256 inputBacking, uint256 outputSum)",
   "error NotApexComplete(uint256 tokenId)",
+  "error NoSplitRecord(bytes32 parentSeed)",
+  "error RestoreCountMismatch(uint256 expected, uint256 provided)",
+  "error RestoreChildMismatch(uint256 tokenId, uint256 index)",
+  "error RestoreBackingMismatch(uint256 expected, uint256 provided)",
 ]);
 
 export interface Deployment {

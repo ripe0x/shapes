@@ -43,7 +43,7 @@ export function SiteApp({dep}: {dep: Deployment}) {
   const [mint, setMint] = React.useState<MintState>({status: "idle"});
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
-  const [txErr, setTxErr] = React.useState<string | null>(null);
+  const [txErr, setTxErr] = React.useState<{op: string; text: string} | null>(null);
 
   const refresh = React.useCallback(async () => {
     if (!publicClient) return;
@@ -112,7 +112,7 @@ export function SiteApp({dep}: {dep: Deployment}) {
       await refresh();
       setView("gallery"); // the input is burned; its children are newest in the gallery
     } catch (e) {
-      setTxErr(describeTxError(e));
+      setTxErr({op: "decompose", text: describeTxError(e)});
     } finally {
       setBusy(null);
     }
@@ -128,7 +128,25 @@ export function SiteApp({dep}: {dep: Deployment}) {
       await publicClient.waitForTransactionReceipt({hash});
       await refresh(); // the survivor keeps its id; the open detail shows the new denomination
     } catch (e) {
-      setTxErr(describeTxError(e));
+      setTxErr({op: "compose", text: describeTxError(e)});
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doRestore = async (parentSeed: `0x${string}`, childIds: bigint[]) => {
+    if (!publicClient) return;
+    setBusy("restore");
+    setTxErr(null);
+    try {
+      const hash = await write("restore", [parentSeed, childIds]);
+      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const logs = parseEventLogs({abi: shapesAbi, eventName: "Restored", logs: receipt.logs});
+      await refresh();
+      setTokenId(logs[0].args.newTokenId); // land on the restored original
+      setRedeem({status: "idle"});
+    } catch (e) {
+      setTxErr({op: "restore", text: describeTxError(e)});
     } finally {
       setBusy(null);
     }
@@ -234,6 +252,7 @@ export function SiteApp({dep}: {dep: Deployment}) {
           onConfirmRedeem={(t) => void confirmRedeem(t)}
           onDecompose={(t) => void doDecompose(t)}
           onCompose={(t, ids) => void doCompose(t, ids)}
+          onRestore={(seed, ids) => void doRestore(seed, ids)}
         />
       )}
       {view === "about" && <AboutView />}
