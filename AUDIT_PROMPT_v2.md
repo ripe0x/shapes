@@ -7,17 +7,17 @@ hold real ETH on Ethereum mainnet and that any depositor can be an attacker.
 
 ## What to audit — exact branch and commits
 
-- Repository branch: **`claude/project-review-planning-e549e5`**
+- Repository branch: **`claude/project-review-planning-e549e5`** (also on `main`)
 - v2 base (audited-against baseline, already reviewed as v1): **`0e608bb`**
-- v2 implementation range to audit: **`e0aec4e..4c22cf6`** (HEAD = `4c22cf6`)
+- Full v2 range: **`e0aec4e..d6ea9b3`** (HEAD = `d6ea9b3`)
 
 Full diff under review:
 
 ```bash
-git diff 0e608bb..4c22cf6
+git diff 0e608bb..d6ea9b3
 ```
 
-The nine commits in scope, oldest first:
+The v2 commits, oldest first:
 
 | Commit | Title |
 |---|---|
@@ -30,6 +30,32 @@ The nine commits in scope, oldest first:
 | `deda2b9` | Shapes v2 doc-sweep: reflect three ETH-out paths and the accounting split |
 | `071ce37` | Shapes v2 review fixes: Fragment label, seed-rule tests, type/wording nits |
 | `4c22cf6` | Shapes v2 frontend: local recomposition previews |
+| `b62c369` | Chain tester: grid→detail UI with provenance + on-chain history *(frontend only)* |
+| `d6ea9b3` | Audit follow-up: ShapeRedeemed carries originCount; align docs |
+
+### Re-glance delta since the first audit (audited tip was `4c22cf6`)
+
+The first audit covered `e0aec4e..4c22cf6` and found no Critical/High. Two commits
+landed after it:
+
+```bash
+git diff 4c22cf6..d6ea9b3
+```
+
+- `b62c369` — **frontend only**, no Solidity change. Rebuilds the chain-tester UI
+  (grid → token-detail with provenance + an event-log history view) and fixes the
+  first audit's **L-01**: the frontend `ShapeMinted` ABI is now `uint256 originCount`,
+  matching the contract.
+- `d6ea9b3` — **one contract change**, addressing the first audit's systemic note #2:
+  `ShapeRedeemed` gains a `uint256 originCount` field (read before the burn in
+  `_burnForRedemption`, emitted by `redeem`/`redeemBatch`). It is purely additive to
+  the event; it touches no accounting, no ETH movement, and no invariant. Confirm that
+  reading, and that origin conservation still holds with the redeemed count now
+  observable on-chain.
+
+The first audit's **M-01** (immutable fee recipient can brick minting) was accepted
+as a documented deploy-time hazard, mitigated by the constructor zero-check, the
+deploy-script contract-recipient gate, and SECURITY.md #6. No code change.
 
 ## System summary
 
