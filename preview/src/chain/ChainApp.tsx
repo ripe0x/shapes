@@ -5,6 +5,7 @@ import {ConnectButton} from "@rainbow-me/rainbowkit";
 import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "./abi";
 import {renderShape, CANONICAL} from "../canonical/render";
 import {decomposeChildSeed} from "../decomposeSeed";
+import {loadHistory, type HistEvent} from "./history";
 
 const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
 
@@ -20,6 +21,26 @@ interface OwnedToken {
 
 type Formation = "Black" | "Complete" | "Fragment" | "Direct" | "Composed";
 
+interface Reserve {
+  redeemableBacking: bigint;
+  sacrificedBacking: bigint;
+  blackCount: bigint;
+  balance: bigint;
+  supply: bigint;
+  minted: bigint;
+}
+
+interface PreviewChild {
+  index: number;
+  seed: bigint;
+  amountWei: bigint;
+  originCount: bigint;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Pure helpers
+ * ------------------------------------------------------------------ */
+
 /// Render a Shape locally from the canonical renderer — the same code the contract ports — so a
 /// recomposition's outcome can be shown before any transaction is sent. Artwork is a pure function
 /// of (seed, denomination), and a decompose fixes its children's seeds deterministically, so these
@@ -28,8 +49,13 @@ function localShapeImage(seed: bigint, amountWei: bigint, inverted = false): str
   return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n, CANONICAL, inverted))}`;
 }
 
+function imageFromTokenURI(uri: string): string {
+  const json = JSON.parse(atob(uri.replace("data:application/json;base64,", "")));
+  return json.image as string;
+}
+
 /// The provenance label for a (backing, originCount, isBlack) triple. Mirrors
-/// ShapeRenderer._formation. Used for both owned tokens and preview children.
+/// ShapeRenderer._formation. Fragment is a zero-origin decompose remainder.
 function formationOf(backing: bigint, originCount: bigint, isBlack: boolean): Formation {
   if (isBlack) return "Black";
   const units = backing / UNIT;
@@ -39,11 +65,16 @@ function formationOf(backing: bigint, originCount: bigint, isBlack: boolean): Fo
   return "Composed";
 }
 
-interface PreviewChild {
-  index: number;
-  seed: bigint;
-  amountWei: bigint;
-  originCount: bigint;
+/// `originCount / units` as a percentage string, matching ShapeRenderer._densityPercent.
+function densityPercent(backing: bigint, originCount: bigint): string {
+  const units = backing / UNIT;
+  if (units === 0n) return "0";
+  const h = (originCount * 10000n) / units;
+  const whole = h / 100n;
+  const frac = h % 100n;
+  if (frac === 0n) return whole.toString();
+  if (frac % 10n === 0n) return `${whole}.${frac / 10n}`;
+  return `${whole}.${frac < 10n ? "0" : ""}${frac}`;
 }
 
 /// The exact outputs of splitting a token one tier down: fresh seeds from `decomposeChildSeed`, and
@@ -64,25 +95,17 @@ function splitChildren(t: OwnedToken): PreviewChild[] {
   return kids;
 }
 
-interface Reserve {
-  redeemableBacking: bigint;
-  sacrificedBacking: bigint;
-  blackCount: bigint;
-  balance: bigint;
-  supply: bigint;
-  minted: bigint;
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const seedHex = (s: bigint) => "0x" + s.toString(16).padStart(64, "0");
+
+function shortError(e: unknown): string {
+  const a = e as {shortMessage?: string; message?: string};
+  return a?.shortMessage || a?.message || String(e);
 }
 
-/// Decode a Shapes tokenURI (data:application/json;base64,...) to its inline SVG image URI.
-function imageFromTokenURI(uri: string): string {
-  const json = JSON.parse(atob(uri.replace("data:application/json;base64,", "")));
-  return json.image as string;
-}
-
-/// The provenance label for an owned token. Fragment is a zero-origin decompose remainder.
-function formationLabel(t: OwnedToken): Formation {
-  return formationOf(t.backing, t.originCount, t.isBlack);
-}
+/* ------------------------------------------------------------------ *
+ *  App
+ * ------------------------------------------------------------------ */
 
 export function ChainApp({dep}: {dep: Deployment}) {
   const {address, isConnected} = useAccount();
@@ -98,9 +121,10 @@ export function ChainApp({dep}: {dep: Deployment}) {
   const [acctBalance, setAcctBalance] = React.useState<bigint>(0n);
   const [feeBps, setFeeBps] = React.useState<bigint>(0n);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [splitOf, setSplitOf] = React.useState<bigint | null>(null); // token being previewed for a split
+  const [splitPreview, setSplitPreview] = React.useState(false); // show split preview on the open detail
+  const [view, setView] = React.useState<bigint | null>(null); // null = grid; else the detail token id
+  const [history, setHistory] = React.useState<HistEvent[] | null>(null);
 
-  // The fee is a percentage of backing, so it depends on the selected denomination.
   const feePerNft = (amountWei * feeBps) / 10_000n;
 
   const refresh = React.useCallback(async () => {
@@ -152,7 +176,6 @@ export function ChainApp({dep}: {dep: Deployment}) {
       });
     }
     setTokens(owned);
-    // Drop selections that no longer exist (burned by compose/decompose).
     setSelected((prev) => {
       const live = new Set(owned.map((t) => t.id.toString()));
       const next = new Set([...prev].filter((s) => live.has(s)));
@@ -165,8 +188,25 @@ export function ChainApp({dep}: {dep: Deployment}) {
     else {
       setReserve(null);
       setTokens([]);
+      setView(null);
     }
   }, [isConnected, address, refresh]);
+
+  // Load the open token's history from the event log. Re-runs after any transaction (tokens change).
+  React.useEffect(() => {
+    if (view === null || !publicClient) {
+      setHistory(null);
+      return;
+    }
+    let cancelled = false;
+    setHistory(null);
+    void loadHistory(publicClient, dep, view).then((h) => {
+      if (!cancelled) setHistory(h);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [view, publicClient, dep, tokens]);
 
   const run = async (label: string, send: () => Promise<`0x${string}`>) => {
     if (!publicClient) return;
@@ -183,8 +223,6 @@ export function ChainApp({dep}: {dep: Deployment}) {
     }
   };
 
-  // wagmi infers the connected account and asserts the chain id, so a wrong-network wallet gets
-  // a clear error rather than a silently misrouted transaction.
   const write = (functionName: string, args: readonly unknown[], value?: bigint) =>
     writeContractAsync({
       address: dep.shapes,
@@ -203,12 +241,10 @@ export function ChainApp({dep}: {dep: Deployment}) {
         : write("mintBatch", [amountWei, BigInt(qty), address!], value);
     });
 
-  const redeem = (id: bigint) => run(`redeem ${id}`, () => write("redeem", [id]));
+  const redeem = (id: bigint) =>
+    run(`redeem ${id}`, () => write("redeem", [id])).then(() => setView(null));
 
-  const redeemAll = () => {
-    const ids = tokens.filter((t) => !t.isBlack).map((t) => t.id);
-    return run("redeem all", () => write("redeemBatch", [ids]));
-  };
+  const blacken = (id: bigint) => run(`blacken ${id}`, () => write("blacken", [id]));
 
   const toggleSelect = (id: bigint) =>
     setSelected((prev) => {
@@ -219,9 +255,8 @@ export function ChainApp({dep}: {dep: Deployment}) {
       return next;
     });
 
-  // Compose: the summed backing must land on a denomination. Survivor is the lowest selected id,
-  // so it keeps that id (and its seed — the artwork below is the survivor rendered at the new,
-  // larger denomination). One atomic transaction: no approvals, the caller owns every input.
+  // Compose: the summed backing must land on a denomination. Survivor is the lowest selected id, so
+  // it keeps that id and its seed. One atomic transaction: no approvals, the caller owns every input.
   const selectedTokens = tokens.filter((t) => selected.has(t.id.toString()) && !t.isBlack);
   const composeSum = selectedTokens.reduce((a, t) => a + t.backing, 0n);
   const composeValid = selectedTokens.length >= 2 && denomIndexOf(composeSum) >= 0;
@@ -237,249 +272,458 @@ export function ChainApp({dep}: {dep: Deployment}) {
       .filter((t) => t.id !== composeSurvivor.id)
       .map((t) => t.id)
       .sort((a, b) => (a < b ? -1 : 1));
-    return run("compose", () => write("compose", [composeSurvivor.id, burnIds]));
+    void run("compose", () => write("compose", [composeSurvivor.id, burnIds])).then(() => {
+      setSelected(new Set());
+      setView(composeSurvivor.id); // land on the survivor's detail to see the result + new history
+    });
   };
 
-  // Decompose one tier down into the ladder ratio. Confirmed from the split preview, which shows
-  // the exact children first (deterministic child seeds, survivor-first origin partition).
-  const splitToken = splitOf === null ? null : tokens.find((t) => t.id === splitOf) ?? null;
-  const splitKids = splitToken ? splitChildren(splitToken) : [];
+  // Decompose one tier down into the ladder ratio. Confirmed from the split preview.
+  const detailToken = view === null ? null : tokens.find((t) => t.id === view) ?? null;
+  const splitKids = detailToken ? splitChildren(detailToken) : [];
 
-  const confirmSplit = () => {
-    if (!splitToken) return;
-    const di = denomIndexOf(splitToken.backing);
+  const confirmSplit = (t: OwnedToken) => {
+    const di = denomIndexOf(t.backing);
     if (di <= 0) return;
-    const outDenoms = Array<number>(splitKids.length).fill(di - 1);
-    setSplitOf(null);
-    return run(`split ${splitToken.id}`, () => write("decompose", [splitToken.id, outDenoms]));
+    const outDenoms = Array<number>(splitChildren(t).length).fill(di - 1);
+    setSplitPreview(false);
+    void run(`split ${t.id}`, () => write("decompose", [t.id, outDenoms])).then(() => setView(null));
   };
 
-  const blacken = (id: bigint) => run(`blacken ${id}`, () => write("blacken", [id]));
+  const openDetail = (id: bigint) => {
+    setSplitPreview(false);
+    setView(id);
+  };
 
   return (
     <div style={S.page}>
-      <div style={{maxWidth: 1100, margin: "0 auto"}}>
+      <div style={{maxWidth: 1080, margin: "0 auto"}}>
         <header style={S.header}>
-          <div>
-            <h1 style={S.h1}>Shapes — chain tester</h1>
-            <div style={S.dim}>deposit ETH, read the onchain artwork back, recompose, redeem. Local dev chain only.</div>
-            <div style={{...S.mono, ...S.dim, fontSize: 12, marginTop: 6}}>
-              shapes {addr(dep.shapes)} · chain {dep.chainId}
+          <div
+            onClick={() => setView(null)}
+            style={{cursor: "pointer"}}
+            title="Shapes — back to your collection"
+          >
+            <div style={S.wordmark}>SHAPES</div>
+            <div style={{...S.meta, marginTop: 4}}>
+              onchain ETH-backed objects · {short(dep.shapes)} · chain {dep.chainId}
             </div>
           </div>
           <ConnectButton />
         </header>
 
         {!isConnected || !reserve ? (
-          <Centered>
-            {isConnected ? "Loading chain state…" : "Connect a wallet to mint and redeem."}
-          </Centered>
+          <Centered>{isConnected ? "Loading chain state…" : "Connect a wallet to begin."}</Centered>
+        ) : view !== null ? (
+          <Detail
+            token={detailToken}
+            id={view}
+            history={history}
+            busy={busy}
+            selected={selected.has(view.toString())}
+            splitPreview={splitPreview}
+            splitKids={splitKids}
+            onBack={() => setView(null)}
+            onRedeem={redeem}
+            onBlacken={blacken}
+            onToggleSelect={toggleSelect}
+            onToggleSplit={() => setSplitPreview((v) => !v)}
+            onConfirmSplit={confirmSplit}
+          />
         ) : (
           <>
-            {/* Reserve invariant, live. */}
-            <ReserveCard
-              reserve={reserve}
-              feeBps={feeBps}
+            <ReserveCard reserve={reserve} feeBps={feeBps} feePerNft={feePerNft} acctBalance={acctBalance} />
+            <MintPanel
+              amountWei={amountWei}
+              setAmountWei={setAmountWei}
+              qty={qty}
+              setQty={setQty}
               feePerNft={feePerNft}
-              acctBalance={acctBalance}
+              busy={busy}
+              onMint={mint}
             />
 
-            {/* Mint controls. */}
-            <section style={S.card}>
-              <div style={{...S.dim, marginBottom: 8}}>denomination (ETH)</div>
-              <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
-                {DENOMINATIONS.map((d) => (
-                  <button
-                    key={d.label}
-                    onClick={() => setAmountWei(d.wei)}
-                    style={{...S.chip, ...(d.wei === amountWei ? S.chipOn : null)}}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-              <div style={{display: "flex", alignItems: "center", gap: 12, marginTop: 14}}>
-                <label style={S.dim}>
-                  qty{" "}
-                  <input
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={qty}
-                    onChange={(e) => setQty(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
-                    style={S.num}
-                  />
-                </label>
-                <button onClick={mint} disabled={!!busy} style={S.primary}>
-                  {busy === "mint"
-                    ? "minting…"
-                    : `mint  (send ${formatEther((amountWei + feePerNft) * BigInt(qty))} ETH)`}
-                </button>
-                {tokens.some((t) => !t.isBlack) && (
-                  <button onClick={redeemAll} disabled={!!busy} style={S.secondary}>
-                    {busy === "redeem all"
-                      ? "redeeming…"
-                      : `redeem all ${tokens.filter((t) => !t.isBlack).length}`}
-                  </button>
-                )}
-              </div>
-              {txErr && <div style={{...S.mono, color: "#f66", marginTop: 10}}>{txErr}</div>}
-            </section>
-
-            {/* Compose bar — appears once two or more shapes are selected. Shows the resulting
-                shape (survivor seed at the summed denomination) before the transaction. */}
-            {selectedTokens.length >= 2 && (
-              <section style={{...S.card, borderColor: composeValid ? "#4a7" : "#844"}}>
-                <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12}}>
-                  <div style={{display: "flex", alignItems: "center", gap: 12}}>
-                    {composeValid && composeSurvivor && (
-                      <div style={{textAlign: "center"}}>
-                        <img
-                          src={localShapeImage(composeSurvivor.seed, composeSum)}
-                          alt="compose result preview"
-                          style={S.preview}
-                        />
-                        <div style={{...S.dim, ...S.mono, fontSize: 10, marginTop: 3}}>
-                          #{composeSurvivor.id.toString()} → {formatEther(composeSum)}
-                        </div>
-                      </div>
-                    )}
-                    <div style={S.dim}>
-                      {selectedTokens.length} selected · sum {formatEther(composeSum)} ETH ·{" "}
-                      {composeOrigins.toString()} origins{" "}
-                      {composeValid
-                        ? `→ one ${formationOf(composeSum, composeOrigins, false)} shape, keeping #${composeSurvivor?.id.toString()}`
-                        : "→ not a denomination; adjust the selection"}
-                    </div>
-                  </div>
-                  <div style={{display: "flex", gap: 8}}>
-                    <button onClick={() => setSelected(new Set())} style={S.secondary}>
-                      clear
-                    </button>
-                    <button onClick={compose} disabled={!!busy || !composeValid} style={S.primary}>
-                      {busy === "compose" ? "composing…" : "compose selected"}
-                    </button>
-                  </div>
-                </div>
-              </section>
-            )}
-
-            {/* Split preview — the exact children of a decompose, rendered locally before the tx. */}
-            {splitToken && (
-              <section style={{...S.card, borderColor: "#963"}}>
-                <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12}}>
-                  <div style={S.dim}>
-                    splitting #{splitToken.id.toString()} ({formatEther(splitToken.backing)} ETH,{" "}
-                    {splitToken.originCount.toString()} origins) into {splitKids.length} ×{" "}
-                    {DENOMINATIONS[denomIndexOf(splitToken.backing) - 1].label} ETH — previewed from
-                    the deterministic child seeds
-                  </div>
-                  <div style={{display: "flex", gap: 8}}>
-                    <button onClick={() => setSplitOf(null)} style={S.secondary}>
-                      cancel
-                    </button>
-                    <button onClick={confirmSplit} disabled={!!busy} style={S.primary}>
-                      {busy === `split ${splitToken.id}` ? "splitting…" : "confirm split"}
-                    </button>
-                  </div>
-                </div>
-                <div style={S.previewGrid}>
-                  {splitKids.map((k) => (
-                    <div key={k.index} style={{textAlign: "center"}}>
-                      <img src={localShapeImage(k.seed, k.amountWei)} alt={`child ${k.index}`} style={S.preview} />
-                      <div style={{marginTop: 4}}>
-                        <FormationBadge label={formationOf(k.amountWei, k.originCount, false)} />
-                      </div>
-                      <div style={{...S.dim, ...S.mono, fontSize: 10, marginTop: 3}}>
-                        {k.originCount.toString()} origin{k.originCount === 1n ? "" : "s"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Owned tokens, each rendered from its onchain tokenURI. */}
-            <div style={{...S.dim, margin: "6px 2px"}}>
-              your shapes — artwork and provenance are read from the contract
-            </div>
+            <div style={S.sectionLabel}>YOUR SHAPES</div>
             {tokens.length === 0 ? (
               <Centered>none yet — mint one above</Centered>
             ) : (
               <div style={S.grid}>
-                {tokens.map((t) => {
-                  const di = denomIndexOf(t.backing);
-                  const canSplit = !t.isBlack && di > 0;
-                  const canBlacken = !t.isBlack && t.complete && t.backing === DENOMINATIONS[8].wei;
-                  const isSel = selected.has(t.id.toString());
-                  return (
-                    <div
-                      key={t.id.toString()}
-                      style={{...S.token, ...(isSel ? S.tokenSel : null), ...(t.isBlack ? S.tokenBlack : null)}}
-                    >
-                      <img src={t.image} alt={`shape ${t.id}`} style={S.img} />
-                      <div style={{...S.mono, fontSize: 12, marginTop: 8}}>
-                        #{t.id.toString()} · {t.isBlack ? "sacrificed" : `${formatEther(t.backing)} ETH`}
-                      </div>
-                      <div style={{marginTop: 4}}>
-                        <FormationBadge label={formationLabel(t)} />
-                        <span style={{...S.dim, ...S.mono, fontSize: 11, marginLeft: 6}}>
-                          {t.originCount.toString()} origin{t.originCount === 1n ? "" : "s"}
-                        </span>
-                      </div>
-
-                      {!t.isBlack && (
-                        <label style={{...S.dim, ...S.mono, fontSize: 11, display: "flex", alignItems: "center", gap: 6, marginTop: 8, justifyContent: "center"}}>
-                          <input type="checkbox" checked={isSel} onChange={() => toggleSelect(t.id)} />
-                          select to compose
-                        </label>
-                      )}
-
-                      <div style={{display: "flex", gap: 6, marginTop: 8}}>
-                        {!t.isBlack && (
-                          <button onClick={() => redeem(t.id)} disabled={!!busy} style={S.smallBtn}>
-                            {busy === `redeem ${t.id}` ? "…" : "redeem"}
-                          </button>
-                        )}
-                        {canSplit && (
-                          <button
-                            onClick={() => setSplitOf(splitOf === t.id ? null : t.id)}
-                            disabled={!!busy}
-                            style={{...S.smallBtn, ...(splitOf === t.id ? S.smallBtnOn : null)}}
-                          >
-                            {busy === `split ${t.id}` ? "…" : `split →${DENOMINATIONS[di - 1].label}`}
-                          </button>
-                        )}
-                      </div>
-                      {canBlacken && (
-                        <button onClick={() => blacken(t.id)} disabled={!!busy} style={S.blacken}>
-                          {busy === `blacken ${t.id}` ? "sacrificing…" : "blacken (sacrifice 100 ETH)"}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                {tokens.map((t) => (
+                  <TokenCard
+                    key={t.id.toString()}
+                    t={t}
+                    selected={selected.has(t.id.toString())}
+                    onOpen={() => openDetail(t.id)}
+                    onToggleSelect={() => toggleSelect(t.id)}
+                  />
+                ))}
               </div>
             )}
           </>
         )}
+
+        {txErr && <div style={S.error}>{txErr}</div>}
+      </div>
+
+      {/* Compose tray — sticky, visible across grid and detail while a merge is being assembled. */}
+      {selectedTokens.length >= 2 && (
+        <ComposeTray
+          count={selectedTokens.length}
+          sum={composeSum}
+          origins={composeOrigins}
+          valid={composeValid}
+          survivor={composeSurvivor}
+          resultFormation={formationOf(composeSum, composeOrigins, false)}
+          busy={busy}
+          onClear={() => setSelected(new Set())}
+          onCompose={compose}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Token detail — provenance + history
+ * ------------------------------------------------------------------ */
+
+function Detail({
+  token,
+  id,
+  history,
+  busy,
+  selected,
+  splitPreview,
+  splitKids,
+  onBack,
+  onRedeem,
+  onBlacken,
+  onToggleSelect,
+  onToggleSplit,
+  onConfirmSplit,
+}: {
+  token: OwnedToken | null;
+  id: bigint;
+  history: HistEvent[] | null;
+  busy: string | null;
+  selected: boolean;
+  splitPreview: boolean;
+  splitKids: PreviewChild[];
+  onBack: () => void;
+  onRedeem: (id: bigint) => void;
+  onBlacken: (id: bigint) => void;
+  onToggleSelect: (id: bigint) => void;
+  onToggleSplit: () => void;
+  onConfirmSplit: (t: OwnedToken) => void;
+}) {
+  // The token can be gone (redeemed or merged elsewhere) while its history remains.
+  if (!token) {
+    return (
+      <div>
+        <button onClick={onBack} style={S.back}>
+          ← all shapes
+        </button>
+        <div style={{...S.card, textAlign: "center"}}>
+          <div style={S.meta}>SHAPE #{id.toString()}</div>
+          <div style={{color: "#aaa", marginTop: 8}}>
+            No longer live — it was redeemed or recomposed. Its history is below.
+          </div>
+        </div>
+        <HistorySection history={history} />
+      </div>
+    );
+  }
+
+  const di = denomIndexOf(token.backing);
+  const canSplit = !token.isBlack && di > 0;
+  const canBlacken = !token.isBlack && token.complete && token.backing === DENOMINATIONS[8].wei;
+  const formation = formationOf(token.backing, token.originCount, token.isBlack);
+
+  return (
+    <div>
+      <button onClick={onBack} style={S.back}>
+        ← all shapes
+      </button>
+
+      <div style={S.detailTop}>
+        <img src={token.image} alt={`shape ${token.id}`} style={S.detailArt} />
+
+        <div style={{flex: 1, minWidth: 260}}>
+          <div style={S.meta}>SHAPE #{token.id.toString()}</div>
+          <div style={S.detailValue}>
+            {token.isBlack ? "sacrificed" : `${formatEther(token.backing)} ETH`}
+          </div>
+          <div style={{marginTop: 10}}>
+            <FormationBadge label={formation} large />
+          </div>
+
+          <div style={S.provGrid}>
+            <Prov k="Formation" v={formation} />
+            <Prov k="Independent origins" v={token.originCount.toString()} />
+            <Prov k="Origin density" v={`${densityPercent(token.backing, token.originCount)}%`} />
+            <Prov k="Units" v={token.isBlack ? "—" : (token.backing / UNIT).toString()} />
+            <Prov k="Complete" v={token.complete ? "yes" : "no"} />
+            <Prov k="Black" v={token.isBlack ? "yes" : "no"} />
+          </div>
+          <div style={{...S.meta, marginTop: 12, wordBreak: "break-all"}}>SEED {seedHex(token.seed)}</div>
+
+          <div style={S.actionRow}>
+            {!token.isBlack && (
+              <button onClick={() => onRedeem(token.id)} disabled={!!busy} style={S.btn}>
+                {busy === `redeem ${token.id}` ? "redeeming…" : "redeem"}
+              </button>
+            )}
+            {canSplit && (
+              <button onClick={onToggleSplit} disabled={!!busy} style={{...S.btn, ...(splitPreview ? S.btnOn : null)}}>
+                {splitPreview ? "hide split" : `split → ${DENOMINATIONS[di - 1].label} ETH ×${splitKids.length}`}
+              </button>
+            )}
+            {!token.isBlack && (
+              <button
+                onClick={() => onToggleSelect(token.id)}
+                disabled={!!busy}
+                style={{...S.btn, ...(selected ? S.btnSel : null)}}
+              >
+                {selected ? "selected to compose ✓" : "select to compose"}
+              </button>
+            )}
+            {canBlacken && (
+              <button onClick={() => onBlacken(token.id)} disabled={!!busy} style={S.btnBlacken}>
+                {busy === `blacken ${token.id}` ? "sacrificing…" : "blacken (sacrifice 100 ETH)"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Split preview — exact children, rendered locally from deterministic child seeds. */}
+      {canSplit && splitPreview && (
+        <section style={{...S.card, borderColor: "#963"}}>
+          <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 12}}>
+            <div style={S.meta}>
+              SPLITS INTO {splitKids.length} × {DENOMINATIONS[di - 1].label} ETH — previewed from the
+              deterministic child seeds; origins fill survivor-first
+            </div>
+            <button onClick={() => onConfirmSplit(token)} disabled={!!busy} style={S.primary}>
+              {busy === `split ${token.id}` ? "splitting…" : "confirm split"}
+            </button>
+          </div>
+          <div style={S.previewRow}>
+            {splitKids.map((k) => (
+              <div key={k.index} style={{textAlign: "center"}}>
+                <img src={localShapeImage(k.seed, k.amountWei)} alt={`child ${k.index}`} style={S.previewArt} />
+                <div style={{marginTop: 5}}>
+                  <FormationBadge label={formationOf(k.amountWei, k.originCount, false)} />
+                </div>
+                <div style={{...S.meta, marginTop: 3}}>
+                  {k.originCount.toString()} origin{k.originCount === 1n ? "" : "s"}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <HistorySection history={history} />
+    </div>
+  );
+}
+
+const HIST_MARK: Record<HistEvent["kind"], string> = {
+  mint: "◇",
+  bornFromSplit: "⊟",
+  splitInto: "⊟",
+  absorbed: "⊞",
+  mergedAway: "⊞",
+  blackened: "◆",
+  redeemed: "↩",
+  transfer: "→",
+};
+
+function HistorySection({history}: {history: HistEvent[] | null}) {
+  return (
+    <section style={S.card}>
+      <div style={{...S.sectionLabel, margin: "0 0 12px"}}>HISTORY</div>
+      {history === null ? (
+        <div style={S.meta}>reading the event log…</div>
+      ) : history.length === 0 ? (
+        <div style={S.meta}>no events</div>
+      ) : (
+        <div>
+          {history.map((h) => (
+            <div key={h.key} style={S.histRow}>
+              <span style={S.histMark}>{HIST_MARK[h.kind]}</span>
+              <span style={{flex: 1}}>{h.text}</span>
+              <span style={S.meta}>
+                blk {h.block.toString()} · {short(h.tx)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  Grid + panels
+ * ------------------------------------------------------------------ */
+
+function TokenCard({
+  t,
+  selected,
+  onOpen,
+  onToggleSelect,
+}: {
+  t: OwnedToken;
+  selected: boolean;
+  onOpen: () => void;
+  onToggleSelect: () => void;
+}) {
+  return (
+    <div style={{...S.card, ...(selected ? S.cardSel : null), ...(t.isBlack ? S.cardBlack : null), padding: 12}}>
+      <div onClick={onOpen} style={{cursor: "pointer"}}>
+        <img src={t.image} alt={`shape ${t.id}`} style={S.cardArt} />
+        <div style={{...S.mono, fontSize: 12, marginTop: 8}}>
+          #{t.id.toString()} · {t.isBlack ? "sacrificed" : `${formatEther(t.backing)} ETH`}
+        </div>
+        <div style={{marginTop: 5}}>
+          <FormationBadge label={formationOf(t.backing, t.originCount, t.isBlack)} />
+          <span style={{...S.meta, marginLeft: 6}}>
+            {t.originCount.toString()} origin{t.originCount === 1n ? "" : "s"}
+          </span>
+        </div>
+      </div>
+      {!t.isBlack && (
+        <label style={{...S.meta, display: "flex", alignItems: "center", gap: 6, marginTop: 10, cursor: "pointer"}}>
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} />
+          compose
+        </label>
+      )}
+    </div>
+  );
+}
+
+function MintPanel({
+  amountWei,
+  setAmountWei,
+  qty,
+  setQty,
+  feePerNft,
+  busy,
+  onMint,
+}: {
+  amountWei: bigint;
+  setAmountWei: (v: bigint) => void;
+  qty: number;
+  setQty: (v: number) => void;
+  feePerNft: bigint;
+  busy: string | null;
+  onMint: () => void;
+}) {
+  return (
+    <section style={S.card}>
+      <div style={{...S.sectionLabel, margin: "0 0 10px"}}>MINT</div>
+      <div style={{display: "flex", flexWrap: "wrap", gap: 6}}>
+        {DENOMINATIONS.map((d) => (
+          <button
+            key={d.label}
+            onClick={() => setAmountWei(d.wei)}
+            style={{...S.chip, ...(d.wei === amountWei ? S.chipOn : null)}}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+      <div style={{display: "flex", alignItems: "center", gap: 12, marginTop: 14, flexWrap: "wrap"}}>
+        <label style={S.meta}>
+          qty{" "}
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={qty}
+            onChange={(e) => setQty(Math.max(1, Math.min(50, Number(e.target.value) || 1)))}
+            style={S.num}
+          />
+        </label>
+        <button onClick={onMint} disabled={!!busy} style={S.primary}>
+          {busy === "mint" ? "minting…" : `mint — send ${formatEther((amountWei + feePerNft) * BigInt(qty))} ETH`}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ComposeTray({
+  count,
+  sum,
+  origins,
+  valid,
+  survivor,
+  resultFormation,
+  busy,
+  onClear,
+  onCompose,
+}: {
+  count: number;
+  sum: bigint;
+  origins: bigint;
+  valid: boolean;
+  survivor: OwnedToken | null;
+  resultFormation: Formation;
+  busy: string | null;
+  onClear: () => void;
+  onCompose: () => void;
+}) {
+  return (
+    <div style={S.tray}>
+      <div style={{maxWidth: 1080, margin: "0 auto", display: "flex", alignItems: "center", gap: 14}}>
+        {valid && survivor && (
+          <img src={localShapeImage(survivor.seed, sum)} alt="compose result" style={S.trayArt} />
+        )}
+        <div style={{flex: 1}}>
+          <div style={{color: "#eee", fontSize: 13}}>
+            {count} selected · sum {formatEther(sum)} ETH · {origins.toString()} origins
+          </div>
+          <div style={S.meta}>
+            {valid && survivor
+              ? `→ one ${resultFormation} shape, keeping #${survivor.id.toString()} (its seed, new denomination)`
+              : "→ sum is not a denomination; adjust the selection"}
+          </div>
+        </div>
+        <button onClick={onClear} style={S.btn}>
+          clear
+        </button>
+        <button onClick={onCompose} disabled={!!busy || !valid} style={S.primary}>
+          {busy === "compose" ? "composing…" : "compose"}
+        </button>
       </div>
     </div>
   );
 }
 
-function FormationBadge({label}: {label: "Black" | "Complete" | "Fragment" | "Direct" | "Composed"}) {
-  const color: Record<string, React.CSSProperties> = {
+/* ------------------------------------------------------------------ *
+ *  Small pure bits
+ * ------------------------------------------------------------------ */
+
+function FormationBadge({label, large}: {label: Formation; large?: boolean}) {
+  const color: Record<Formation, React.CSSProperties> = {
     Black: {background: "#fff", color: "#000", borderColor: "#fff"},
-    Complete: {background: "#123", color: "#8cf", borderColor: "#2a5"},
-    Composed: {background: "#111", color: "#cc9", borderColor: "#553"},
+    Complete: {background: "#0b1a2a", color: "#8cf", borderColor: "#2a5a8a"},
+    Composed: {background: "#161206", color: "#cc9", borderColor: "#554"},
     Fragment: {background: "#150d0d", color: "#c88", borderColor: "#633"},
     Direct: {background: "#111", color: "#999", borderColor: "#333"},
   };
+  return <span style={{...S.badge, ...(large ? {fontSize: 13, padding: "4px 10px"} : null), ...color[label]}}>{label}</span>;
+}
+
+function Prov({k, v}: {k: string; v: string}) {
   return (
-    <span style={{...S.badge, ...color[label]}}>
-      {label}
-    </span>
+    <div style={S.provCell}>
+      <div style={S.meta}>{k.toUpperCase()}</div>
+      <div style={{...S.mono, fontSize: 14, marginTop: 2, color: "#eee"}}>{v}</div>
+    </div>
   );
 }
 
@@ -495,71 +739,81 @@ function ReserveCard({
   acctBalance: bigint;
 }) {
   const solvent = reserve.balance >= reserve.redeemableBacking;
-  const stray = reserve.balance - reserve.redeemableBacking;
   const feePct = Number(feeBps) / 100;
   return (
     <section style={{...S.card, borderColor: solvent ? "#1c5" : "#e33"}}>
       <Row k="contract balance" v={`${formatEther(reserve.balance)} ETH`} />
       <Row k="redeemableBacking()" v={`${formatEther(reserve.redeemableBacking)} ETH`} />
-      <Row
-        k="invariant  balance ≥ redeemable"
-        v={solvent ? `OK  (+${stray} wei stray)` : "INSOLVENT"}
-        danger={!solvent}
-      />
+      <Row k="invariant  balance ≥ redeemable" v={solvent ? "OK" : "INSOLVENT"} danger={!solvent} />
       {reserve.blackCount > 0n && (
-        <Row
-          k="sacrificed (Black)"
-          v={`${formatEther(reserve.sacrificedBacking)} ETH · ${reserve.blackCount} black`}
-        />
+        <Row k="sacrificed (Black)" v={`${formatEther(reserve.sacrificedBacking)} ETH · ${reserve.blackCount} black`} />
       )}
       <Row k="live / minted" v={`${reserve.supply} / ${reserve.minted}`} />
-      <Row k="mint fee" v={`${feePct}% · ${formatEther(feePerNft)} ETH for this denomination`} />
+      <Row k="mint fee" v={`${feePct}% · ${formatEther(feePerNft)} ETH this denomination`} />
       <Row k="your balance" v={`${formatEther(acctBalance)} ETH`} />
     </section>
   );
 }
 
-function shortError(e: unknown): string {
-  const a = e as {shortMessage?: string; message?: string};
-  return a?.shortMessage || a?.message || String(e);
-}
-
-const addr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-
 function Row({k, v, danger}: {k: string; v: string; danger?: boolean}) {
   return (
     <div style={{display: "flex", justifyContent: "space-between", padding: "3px 0"}}>
-      <span style={S.dim}>{k}</span>
+      <span style={S.meta}>{k}</span>
       <span style={{...S.mono, color: danger ? "#f66" : "#ddd"}}>{v}</span>
     </div>
   );
 }
 
 function Centered({children}: {children: React.ReactNode}) {
-  return <div style={{...S.dim, textAlign: "center", padding: "48px 0"}}>{children}</div>;
+  return <div style={{...S.meta, textAlign: "center", padding: "64px 0"}}>{children}</div>;
 }
 
+/* ------------------------------------------------------------------ *
+ *  Styles — Checks-inspired: black canvas, mono meta, generous space
+ * ------------------------------------------------------------------ */
+
+const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
+
 const S: Record<string, React.CSSProperties> = {
-  page: {minHeight: "100vh", background: "#000", color: "#eee", padding: "40px 32px 120px"},
-  header: {display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, gap: 16},
-  h1: {fontSize: 20, margin: 0, fontWeight: 600},
-  dim: {color: "#888", fontSize: 13},
-  mono: {fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace"},
-  card: {border: "1px solid #333", borderRadius: 10, padding: 16, marginBottom: 16, background: "#0b0b0b"},
-  chip: {background: "#111", color: "#ccc", border: "1px solid #333", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontFamily: "ui-monospace, monospace"},
+  page: {minHeight: "100vh", background: "#000", color: "#eee", padding: "36px 28px 140px"},
+  header: {display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, gap: 16},
+  wordmark: {fontSize: 22, fontWeight: 700, letterSpacing: 2},
+  meta: {color: "#777", fontSize: 11, fontFamily: MONO, letterSpacing: 0.4},
+  mono: {fontFamily: MONO},
+  sectionLabel: {color: "#777", fontSize: 11, fontFamily: MONO, letterSpacing: 1.5, margin: "22px 2px 10px"},
+  card: {border: "1px solid #1c1c1c", borderRadius: 12, padding: 16, marginBottom: 14, background: "#080808"},
+  cardSel: {borderColor: "#4a7", boxShadow: "0 0 0 1px #4a7 inset"},
+  cardBlack: {borderColor: "#555", background: "#040404"},
+  cardArt: {width: "100%", aspectRatio: "250 / 350", background: "#000", borderRadius: 6, border: "1px solid #151515"},
+  grid: {display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14},
+
+  back: {background: "none", border: "none", color: "#888", fontFamily: MONO, fontSize: 12, cursor: "pointer", padding: "4px 0", marginBottom: 12},
+  detailTop: {display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 8},
+  detailArt: {width: 300, maxWidth: "100%", aspectRatio: "250 / 350", background: "#000", borderRadius: 10, border: "1px solid #1c1c1c"},
+  detailValue: {fontSize: 30, fontWeight: 600, marginTop: 6},
+  provGrid: {display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10, marginTop: 18},
+  provCell: {border: "1px solid #1a1a1a", borderRadius: 8, padding: "8px 10px", background: "#0b0b0b"},
+  actionRow: {display: "flex", flexWrap: "wrap", gap: 8, marginTop: 20},
+
+  histRow: {display: "flex", alignItems: "baseline", gap: 10, padding: "7px 0", borderTop: "1px solid #151515", fontSize: 13, color: "#ddd"},
+  histMark: {fontFamily: MONO, color: "#888", width: 16, textAlign: "center"},
+
+  previewRow: {display: "flex", flexWrap: "wrap", gap: 14},
+  previewArt: {width: 84, aspectRatio: "250 / 350", background: "#000", borderRadius: 5, border: "1px solid #222"},
+
+  tray: {position: "fixed", left: 0, right: 0, bottom: 0, background: "#0b0b0bF2", borderTop: "1px solid #2a2a2a", padding: "12px 28px", backdropFilter: "blur(6px)"},
+  trayArt: {width: 44, aspectRatio: "250 / 350", background: "#000", borderRadius: 4, border: "1px solid #222"},
+
+  badge: {display: "inline-block", fontFamily: MONO, fontSize: 11, padding: "2px 8px", borderRadius: 5, border: "1px solid #333"},
+  chip: {background: "#111", color: "#ccc", border: "1px solid #2a2a2a", borderRadius: 6, padding: "6px 12px", cursor: "pointer", fontFamily: MONO},
   chipOn: {background: "#fff", color: "#000", borderColor: "#fff"},
-  num: {width: 56, background: "#111", color: "#eee", border: "1px solid #333", borderRadius: 6, padding: "5px 8px"},
+  num: {width: 56, background: "#111", color: "#eee", border: "1px solid #2a2a2a", borderRadius: 6, padding: "5px 8px"},
+
   primary: {background: "#fff", color: "#000", border: "none", borderRadius: 8, padding: "9px 16px", cursor: "pointer", fontWeight: 600},
-  secondary: {background: "#111", color: "#ccc", border: "1px solid #444", borderRadius: 8, padding: "9px 16px", cursor: "pointer"},
-  grid: {display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16},
-  token: {border: "1px solid #222", borderRadius: 10, padding: 12, background: "#0b0b0b", textAlign: "center"},
-  tokenSel: {borderColor: "#4a7", boxShadow: "0 0 0 1px #4a7 inset"},
-  tokenBlack: {borderColor: "#666", background: "#050505"},
-  badge: {display: "inline-block", fontFamily: "ui-monospace, monospace", fontSize: 11, padding: "2px 7px", borderRadius: 5, border: "1px solid #333"},
-  img: {width: "100%", aspectRatio: "250 / 350", background: "#000", borderRadius: 4},
-  smallBtn: {flex: 1, background: "#111", color: "#ccc", border: "1px solid #444", borderRadius: 6, padding: "6px 0", cursor: "pointer", fontSize: 12},
-  smallBtnOn: {background: "#3a2a12", color: "#fb8", borderColor: "#963"},
-  preview: {width: 72, aspectRatio: "250 / 350", background: "#000", borderRadius: 4, border: "1px solid #222"},
-  previewGrid: {display: "flex", flexWrap: "wrap", gap: 12},
-  blacken: {marginTop: 8, width: "100%", background: "#181818", color: "#fff", border: "1px solid #666", borderRadius: 6, padding: "7px 0", cursor: "pointer", fontSize: 12, fontWeight: 600},
+  btn: {background: "#111", color: "#ccc", border: "1px solid #333", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13},
+  btnOn: {background: "#3a2a12", color: "#fb8", borderColor: "#963"},
+  btnSel: {background: "#0f2418", color: "#8e8", borderColor: "#4a7"},
+  btnBlacken: {background: "#181818", color: "#fff", border: "1px solid #666", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600},
+
+  error: {fontFamily: MONO, color: "#f66", marginTop: 12, fontSize: 13},
 };
