@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Shapes</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; padding: 0; background: #0d0d0c; }
+      * { box-sizing: border-box; }
+      body { -webkit-font-smoothing: antialiased; }
+      a { color: #e6e4dd; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+      a:hover { color: #8f8f88; }
+      @keyframes artin { from { opacity: 0; } to { opacity: 1; } }
+      /* Hover states for the recurring button styles. Inline styles carry everything else. */
+      .btn-filled { border: 1px solid #e6e4dd; background: #e6e4dd; color: #0d0d0c; font: inherit; font-size: 13px; cursor: pointer; flex: 0 0 auto; white-space: nowrap; }
+      .btn-filled:hover { background: #ffffff; }
+      .btn-filled:disabled { cursor: default; background: #e6e4dd; }
+      .btn-outline { border: 1px solid #3a3a34; background: none; color: #e6e4dd; font: inherit; font-size: 13px; cursor: pointer; flex: 0 0 auto; white-space: nowrap; }
+      .btn-outline:hover { border-color: #e6e4dd; }
+      .btn-ghost { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
+      .row-denom:hover { background: #161613 !important; }
+      .btn-step { border: 1px solid #262622; background: none; color: #71716b; font: inherit; font-size: 12px; cursor: pointer; }
+      .btn-step:hover { border-color: #3a3a34; color: #e6e4dd; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/site/main.tsx"></script>
+  </body>
+</html>

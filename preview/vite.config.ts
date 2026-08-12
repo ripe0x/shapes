@@ -8,8 +8,9 @@ export default defineConfig({
   server: { port: 5173, host: true, strictPort: false },
   build: {
     target: "es2022",
-    // Two entries: the render harness (index.html) and the chain tester (chain.html).
-    rollupOptions: { input: { main: "index.html", chain: "chain.html" } },
+    // Three entries: the render harness (index.html), the chain tester (chain.html) and the
+    // public site (site.html).
+    rollupOptions: { input: { main: "index.html", chain: "chain.html", site: "site.html" } },
   },
   esbuild: { target: "es2022" },
 });

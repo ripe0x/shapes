@@ -30,6 +30,21 @@ export const shapesAbi = parseAbi([
   "event Decomposed(uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts)",
   "event Blackened(uint256 indexed tokenId, uint256 sacrificedWei)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+  // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
+  "error UnsupportedDenomination(uint256 amountWei)",
+  "error IncorrectPayment(uint256 expected, uint256 provided)",
+  "error ZeroQuantity()",
+  "error NotShapeOwner(uint256 tokenId, address caller)",
+  "error EthTransferFailed(address to, uint256 amountWei)",
+  "error MintFeeTransferFailed(address recipient, uint256 amountWei)",
+  "error DirectDepositRejected()",
+  "error SelfCustodyRejected(uint256 tokenId)",
+  "error RendererIsLocked()",
+  "error TokenIsBlack(uint256 tokenId)",
+  "error EmptyRecomposition()",
+  "error CannotComposeWithSelf(uint256 tokenId)",
+  "error DecompositionMismatch(uint256 inputBacking, uint256 outputSum)",
+  "error NotApexComplete(uint256 tokenId)",
 ]);
 
 export interface Deployment {
