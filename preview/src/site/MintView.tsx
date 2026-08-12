@@ -17,11 +17,9 @@ const gridText = (di: number) => `${GRIDS[di][0]} × ${GRIDS[di][1]}`;
 
 /** The nine-row denomination ladder. Interactive on the mint screen, static on how-it-works. */
 export function DenomLadder({
-  fees,
   sel,
   onSelect,
 }: {
-  fees: bigint[] | null;
   sel?: number;
   onSelect?: (i: number) => void;
 }) {
@@ -32,14 +30,14 @@ export function DenomLadder({
   const hoverBase = React.useRef(0);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Hovering a row swaps its thumbnail immediately and then cycles every 700ms. One timer at
+  // Hovering a row swaps its thumbnail immediately and then cycles every 300ms. One timer at
   // a time.
   const enter = (i: number) => {
     if (timer.current) clearInterval(timer.current);
     hoverBase.current = 1 + Math.floor(Math.random() * 4096);
     setHover(i);
     setTick(0);
-    timer.current = setInterval(() => setTick((t) => t + 1), 700);
+    timer.current = setInterval(() => setTick((t) => t + 1), 300);
   };
   const leave = () => {
     if (timer.current) clearInterval(timer.current);
@@ -63,12 +61,11 @@ export function DenomLadder({
             <div>{d.label} ETH</div>
             <div style={{color: C.muted}}>{gridText(i)}</div>
             <div style={{color: C.muted}}>{marksText(i)}</div>
-            <div style={{color: C.muted}}>{fees ? `fee ${formatEther(fees[i])} ETH` : ""}</div>
           </>
         );
         const base: React.CSSProperties = {
           display: "grid",
-          gridTemplateColumns: "34px 96px 78px 84px minmax(0, 1fr)",
+          gridTemplateColumns: "34px 96px 78px minmax(0, 1fr)",
           gap: 24,
           alignItems: "center",
           borderBottom: `1px solid ${C.ruleInner}`,
@@ -76,7 +73,7 @@ export function DenomLadder({
         };
         if (!interactive) {
           return (
-            <div key={d.label} style={{...base, padding: "9px 0"}}>
+            <div key={d.label} style={{...base, padding: "9px 12px"}}>
               {row}
             </div>
           );
@@ -93,7 +90,7 @@ export function DenomLadder({
               ...base,
               width: "100%",
               textAlign: "left",
-              padding: "9px 12px 9px 0",
+              padding: "9px 12px",
               border: 0,
               borderBottom: `1px solid ${C.ruleInner}`,
               background: sel === i ? C.row : "transparent",
@@ -156,7 +153,7 @@ export function MintView({
       </div>
 
       <Section title="DENOMINATIONS" pad="14px 48px 22px 32px">
-        <DenomLadder fees={data?.fees ?? null} sel={sel} onSelect={setSel} />
+        <DenomLadder sel={sel} onSelect={setSel} />
       </Section>
 
       <Section title="MINT" pad="26px 48px 40px 32px">

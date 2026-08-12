@@ -236,7 +236,7 @@ export function SiteApp({dep}: {dep: Deployment}) {
           onCompose={(t, ids) => void doCompose(t, ids)}
         />
       )}
-      {view === "about" && <AboutView data={data} />}
+      {view === "about" && <AboutView />}
 
       <footer style={{borderTop: `1px solid ${C.rule}`}}>
         <div

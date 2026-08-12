@@ -2,9 +2,8 @@ import {C} from "./theme";
 import {Section} from "./ui";
 import {DenomLadder} from "./MintView";
 import {ABOUT_FACTS} from "./copy";
-import type {SiteData} from "./data";
 
-export function AboutView({data}: {data: SiteData | null}) {
+export function AboutView() {
   return (
     <main>
       <div style={{padding: "64px 48px 56px", borderBottom: `1px solid ${C.rule}`}}>
@@ -20,7 +19,7 @@ export function AboutView({data}: {data: SiteData | null}) {
           Nine denominations, permanent. Every other amount is rejected. Value sets the grid: the
           more ETH a Shape holds, the fewer marks are drawn.
         </p>
-        <DenomLadder fees={data?.fees ?? null} />
+        <DenomLadder />
       </Section>
 
       {ABOUT_FACTS.map((f) => (
