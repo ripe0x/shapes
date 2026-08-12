@@ -223,7 +223,8 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-    /// @dev Decompose a token one tier down. Exercises decomposition without moving ETH.
+    /// @dev Decompose a token one tier down. Exercises decomposition without moving ETH. The
+    ///      split is remembered so `restore` can later attempt its reassembly.
     function decompose(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
@@ -236,11 +237,49 @@ contract Handler is Test, IERC721Receiver {
         uint8[] memory outs = new uint8[](ratio);
         for (uint256 i = 0; i < ratio; ++i) outs[i] = uint8(di - 1);
 
+        bytes32 parentSeed = shapes.seedOf(id);
         vm.prank(owner);
         try shapes.decompose(id, outs) returns (uint256[] memory kids) {
             _untrack(id);
             for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
+            pendingSplits.push(PendingSplit({parentSeed: parentSeed, kids: kids}));
         } catch {}
+    }
+
+    /// @dev Reassemble a remembered split. The children may have been transferred, redeemed,
+    ///      composed or re-split since; the contract rejects those states, and a rejected or
+    ///      stale entry is dropped so the list does not clog.
+    function restore(uint256 seed) public {
+        if (pendingSplits.length == 0) return;
+        uint256 at = seed % pendingSplits.length;
+        PendingSplit memory s = pendingSplits[at];
+
+        address owner;
+        try shapes.ownerOf(s.kids[0]) returns (address o) {
+            owner = o;
+        } catch {
+            _dropSplit(at); // first child burned; the record can never be restored as remembered
+            return;
+        }
+
+        vm.prank(owner);
+        try shapes.restore(s.parentSeed, s.kids) returns (uint256 nid) {
+            for (uint256 i = 0; i < s.kids.length; ++i) _untrack(s.kids[i]);
+            _track(nid);
+        } catch {}
+        _dropSplit(at);
+    }
+
+    struct PendingSplit {
+        bytes32 parentSeed;
+        uint256[] kids;
+    }
+
+    PendingSplit[] internal pendingSplits;
+
+    function _dropSplit(uint256 at) private {
+        pendingSplits[at] = pendingSplits[pendingSplits.length - 1];
+        pendingSplits.pop();
     }
 
     /// @dev Blacken a live apex Complete if one exists. Apex Completes essentially never arise
@@ -287,7 +326,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](10);
+        bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -298,6 +337,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[7] = Handler.compose.selector;
         selectors[8] = Handler.decompose.selector;
         selectors[9] = Handler.blacken.selector;
+        selectors[10] = Handler.restore.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 

@@ -65,6 +65,20 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
 
     mapping(uint256 tokenId => ShapeData) private _shapes;
 
+    /// @dev One record per split, keyed by the input's seed: how many children it produced and
+    ///      the input's denomination index. Child seeds derive from the parent seed, so given
+    ///      this record `restore` can verify a claimed child set with no per-child storage.
+    ///      Written by `decompose`, deleted by `restore`. A parent seed holds at most one live
+    ///      record: writing requires a live token carrying the seed (which a prior split would
+    ///      have burned), and rewriting after a restore replaces a record whose children were
+    ///      all burned by that restore. Packs into one slot.
+    struct SplitRecord {
+        uint16 childCount;
+        uint8 denomIndex;
+    }
+
+    mapping(bytes32 parentSeed => SplitRecord) private _splitRecords;
+
     /// @inheritdoc IShapes
     uint256 public redeemableBacking;
     /// @inheritdoc IShapes
@@ -410,8 +424,14 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         if (sum != parentBacking) revert DecompositionMismatch(parentBacking, sum);
 
         // -------- effects --------
+        uint256 parentIndex = p.denomIndex;
         delete _shapes[tokenId];
         _burn(tokenId);
+
+        // The record `restore` verifies against. Overwrites any earlier record under this seed:
+        // that record's children were burned by the restore that recreated this token.
+        _splitRecords[parentSeed] =
+            SplitRecord({childCount: uint16(k), denomIndex: uint8(parentIndex)});
 
         uint256 firstId = totalMinted + 1;
         totalMinted = firstId + k - 1;
@@ -436,12 +456,74 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         // Sum of capacities == parentBacking/UNIT >= parent origin count, so the fill exhausts it.
         assert(remaining == 0);
 
-        emit Decomposed(tokenId, newIds, outDenoms, oc);
+        emit Decomposed(tokenId, parentSeed, newIds, outDenoms, oc);
 
         // -------- interactions --------
         for (uint256 i = 0; i < k; ++i) {
             _safeMint(msg.sender, newIds[i]);
         }
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev The inverse of `decompose`, verified against the split record with no per-child
+    ///      storage: child i of a split is the unique token whose seed is
+    ///      `keccak256(abi.encodePacked(parentSeed, i))`, so seed equality proves membership and
+    ///      position. The count check rules out subsets; the backing check rules out children
+    ///      whose denomination grew via compose after the split (a denomination can only grow —
+    ///      shrinking is a decompose, which burns the token). Together they force the exact
+    ///      original multiset, so the minted token's denomination and artwork equal the split
+    ///      input's. Origins are conserved across split and restore, so the sum equals the
+    ///      input's count. Reshapes tokens without moving ETH; `redeemableBacking` is untouched.
+    ///      The record is deleted before the mint (CEI); `_burn` triggers no receiver callback
+    ///      and `_safeMint` runs last, behind the guard.
+    function restore(bytes32 parentSeed, uint256[] calldata childIds)
+        external
+        nonReentrant
+        returns (uint256 newTokenId)
+    {
+        SplitRecord memory record = _splitRecords[parentSeed];
+        if (record.childCount == 0) revert NoSplitRecord(parentSeed);
+        uint256 k = childIds.length;
+        if (k != record.childCount) revert RestoreCountMismatch(record.childCount, k);
+
+        uint256 expected = Denominations.amountAt(record.denomIndex);
+
+        uint256 sum;
+        uint256 origins;
+        for (uint256 i = 0; i < k; ++i) {
+            uint256 cid = childIds[i];
+            if (ownerOf(cid) != msg.sender) revert NotShapeOwner(cid, msg.sender);
+            ShapeData storage c = _shapes[cid];
+            if (c.isBlack) revert TokenIsBlack(cid);
+            if (c.seed != keccak256(abi.encodePacked(parentSeed, i))) {
+                revert RestoreChildMismatch(cid, i);
+            }
+
+            sum += Denominations.amountAt(c.denomIndex);
+            origins += c.originCount;
+            delete _shapes[cid];
+            _burn(cid);
+        }
+        if (sum != expected) revert RestoreBackingMismatch(expected, sum);
+
+        // -------- effects --------
+        delete _splitRecords[parentSeed];
+
+        newTokenId = totalMinted + 1;
+        totalMinted = newTokenId;
+        totalSupply -= k - 1; // burned k, minting one
+
+        _shapes[newTokenId] = ShapeData({
+            seed: parentSeed,
+            denomIndex: record.denomIndex,
+            originCount: uint32(origins), // == the split input's count, by conservation
+            isBlack: false
+        });
+
+        emit Restored(newTokenId, parentSeed, childIds, record.denomIndex, uint32(origins));
+
+        // -------- interactions --------
+        _safeMint(msg.sender, newTokenId);
     }
 
     /* ------------------------------ sacrifice ---------------------------- */
@@ -507,6 +589,16 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         ShapeData storage d = _shapes[tokenId];
         uint256 units = Denominations.unitsAt(d.denomIndex);
         return !d.isBlack && units > 1 && d.originCount == units;
+    }
+
+    /// @inheritdoc IShapes
+    function splitRecordOf(bytes32 parentSeed)
+        external
+        view
+        returns (uint16 childCount, uint8 denomIndex)
+    {
+        SplitRecord storage record = _splitRecords[parentSeed];
+        return (record.childCount, record.denomIndex);
     }
 
     /// @inheritdoc IShapes

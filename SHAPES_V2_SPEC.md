@@ -10,8 +10,9 @@ decisions, and — for the non-obvious parts — *why* the design is safe.
 
 ## 0. Goals & the guiding invariant
 
-Add composition, decomposition, collectible provenance, and a terminal Black Shape state to the
-existing Shapes primitive **without weakening the ETH backing/redemption guarantees**.
+Add composition, decomposition, split restoration, collectible provenance, and a terminal Black
+Shape state to the existing Shapes primitive **without weakening the ETH backing/redemption
+guarantees**.
 
 Priority order (from the product owner):
 1. Trustworthiness of the ETH backing and redemption system.
@@ -151,6 +152,10 @@ survives. Adapted asymmetrically:
 - **Decompose (one → many):** the input token is **fully burned**; every output is a fresh
   sequential ID with a seed derived deterministically from the parent's (§9.3). Identity **ends** —
   you shattered the object, so no fragment inherits it.
+- **Restore (many → one, exact):** the one exception to "identity ends". Reassembling a split's
+  **complete** child set (§9.4) mints a fresh ID carrying the split input's seed and denomination —
+  the exact artwork — with origins summed back. The ID is new; the artwork identity returns. Partial
+  sets and substitutes are rejected by construction.
 - **Blacken:** in-place transform, same ID/seed/geometry inverted. Identity is **terminal**.
 
 Do **not** copy Checks' on-chain composite-history storage: Checks is bounded (tiers only halve, so
@@ -255,7 +260,7 @@ function compose(uint256 survivorId, uint256[] calldata burnIds)
     external nonReentrant returns (uint256 outId);
 ```
 - **Checks:** caller owns `survivorId` and every `burnId`; none Black — the survivor included, not
-  only the burned inputs (§9.5); `burnIds.length >= 1`; no id equals `survivorId`;
+  only the burned inputs (§9.6); `burnIds.length >= 1`; no id equals `survivorId`;
   `total = backing(survivor) + Σ backing(burnIds)` is a valid ladder denom.
 - **Effects (no external calls — `_burn` triggers no callback):** burn each `burnId` (`delete`
   state, `_burn`), `totalSupply -= burnIds.length`; set `survivor.denomIndex = indexOf(total)` and
@@ -276,13 +281,16 @@ function decompose(uint256 tokenId, uint8[] calldata outDenoms)
   `Σ amountAt(outDenoms) == backing(tokenId)`. (Each output is a valid tier by construction; the
   `>= 2` + equal-sum constraints force every child strictly smaller than the parent.) Free-form:
   the breakdown is **not** tied to how the token was composed.
-- **Effects:** burn `tokenId` (`delete`, `_burn`), `totalSupply -= 1`. For each `outDenoms[i]` in
+- **Effects:** burn `tokenId` (`delete`, `_burn`), `totalSupply -= 1`. Write the split record
+  `splitRecords[parentSeed] = (childCount, parentDenomIndex)` — one slot, keyed by the input's
+  seed, consumed by `restore` (§9.4). For each `outDenoms[i]` in
   order: mint a fresh sequential id; child `i`'s seed is `keccak256(abi.encodePacked(parentSeed, i))`,
   where `parentSeed` is the burned token's seed and `i` is the index into `outDenoms` — no block
   data is read; `originCount_i = min(remaining, amountAt(i)/UNIT)`; `remaining -= originCount_i`;
   assert `remaining == 0`. `redeemableBacking` unchanged. All accounting is done **before** the
   `_safeMint` loop (receiver-callback safe, mirroring `_mintBatch`); `nonReentrant`.
-- **Emit** `Decomposed(tokenId, newIds, outDenoms, originCounts)`, carrying the per-child origin
+- **Emit** `Decomposed(tokenId, parentSeed, newIds, outDenoms, originCounts)`, carrying the parent
+  seed (so indexers can associate sibling sets for restore) and the per-child origin
   partition so indexers do not re-implement the fill-in-order rule. Decompose outputs do **not**
   emit `ShapeMinted`: `ShapeMinted` is a strict origin-creation signal, and a split creates tokens
   without creating origins. Returns `newIds`.
@@ -295,7 +303,44 @@ entropy, and the frontend can preview decompose results exactly before executing
 distinct (index-salted) yet derived from the parent, consistent with the "decompose ends identity"
 decision. Mint seed derivation is unchanged.
 
-### 9.4 blacken — apex Complete → Black, in place
+### 9.4 restore — a split's complete child set → the exact original
+```solidity
+function restore(bytes32 parentSeed, uint256[] calldata childIds)
+    external nonReentrant returns (uint256 newTokenId);
+```
+The inverse of decompose, verified against the split record with no per-child storage. Child `i`
+of a split is the unique token whose seed is `keccak256(abi.encodePacked(parentSeed, i))`, so seed
+equality proves membership and position; the record supplies the expected count and the input's
+denomination.
+
+- **Checks:** `splitRecords[parentSeed]` exists (else `NoSplitRecord`);
+  `childIds.length == childCount` (else `RestoreCountMismatch`); per child, in order: caller owns
+  it, not Black, `seedOf(childIds[i]) == keccak256(abi.encodePacked(parentSeed, i))` (else
+  `RestoreChildMismatch`). After summing: `Σ backingOf(childIds) == amountAt(recordDenomIndex)`
+  (else `RestoreBackingMismatch`).
+- **Why the checks are sufficient.** The count check rules out subsets. The seed check rules out
+  substitutes and reorderings — a child seed is only ever assigned by the split itself, and mint
+  seeds derive from a different, block-entropy construction. The backing check rules out children
+  whose denomination grew via compose after the split (seed kept, denomination raised): a
+  denomination can only grow, since shrinking is a decompose and a decompose burns the token. The
+  three together force the exact original multiset, so the restored denomination equals the
+  split input's and the artwork — a pure function of (seed, denomination) — is identical.
+- **Effects:** burn every child (`delete`, `_burn`); `delete splitRecords[parentSeed]` — the
+  record is single-use, so a restored Shape must split again before it can be restored again (the
+  new split overwrites the consumed record slot); mint a fresh sequential id carrying
+  `(parentSeed, recordDenomIndex, Σ childOrigins)`. Origins are conserved across split and
+  restore, so the sum equals the split input's count. `totalSupply -= childCount - 1`;
+  `redeemableBacking` unchanged. `_safeMint` runs last (receiver-callback safe); `nonReentrant`.
+- **The id is fresh, not revived.** Reviving a burned id is technically possible in ERC721 but
+  breaks the dead-id assumption baked into indexers and marketplaces. Artwork identity lives in
+  the seed; the event trail links the ids.
+- **Nested splits restore bottom-up:** a child that was itself split must first be restored (its
+  own record, its own children); the reassembled child then carries the right seed for its
+  position in the outer set.
+- **Emit** `Restored(newTokenId, parentSeed, childIds, denomIndex, originCount)`. No `ShapeMinted`
+  (no origin is created). Returns `newTokenId`.
+
+### 9.5 blacken — apex Complete → Black, in place
 ```solidity
 function blacken(uint256 tokenId) external nonReentrant;
 ```
@@ -305,14 +350,15 @@ function blacken(uint256 tokenId) external nonReentrant;
   `BURN.call{value: 100 ether}("")`, require success. Token keeps ID/seed/denom/originCount.
 - **Emit** `Blackened(tokenId, 100 ether)` + `MetadataUpdate(tokenId)`.
 
-### 9.5 Guards on existing paths
-`_burnForRedemption`: `require(!isBlack)`. compose/decompose reject Black inputs.
+### 9.6 Guards on existing paths
+`_burnForRedemption`: `require(!isBlack)`. compose/decompose/restore reject Black inputs.
 
-### 9.6 Views
+### 9.7 Views
 `backingOf(id)` → 0 if Black else `amountAt(denomIndex)`; `originCountOf`, `isBlack`, `isComplete`
 (`!Black && units > 1 && originCount == units`, `units = backing/UNIT`), `redeemableBacking`,
-`sacrificedBacking`, `blackCount`. `tokenURI` passes `(seed, amount, id, originCount, isBlack)` to
-the renderer.
+`sacrificedBacking`, `blackCount`, `splitRecordOf(parentSeed)` → `(childCount, denomIndex)`
+(zeros when no restorable split exists). `tokenURI` passes `(seed, amount, id, originCount,
+isBlack)` to the renderer.
 
 ---
 
@@ -320,7 +366,8 @@ the renderer.
 
 ```solidity
 event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount);
-event Decomposed(uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts);
+event Decomposed(uint256 indexed tokenId, bytes32 parentSeed, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts);
+event Restored(uint256 indexed newTokenId, bytes32 indexed parentSeed, uint256[] childIds, uint8 denomIndex, uint32 originCount);
 event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
 event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 event MetadataUpdate(uint256 tokenId);          // ERC-4906

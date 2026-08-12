@@ -43,8 +43,26 @@ interface IShapes is IERC721 {
 
     /// @notice Emitted when a Shape is split. The input is burned and each output is a fresh id;
     ///         `originCounts` is the per-child origin partition. Outputs do not emit ShapeMinted.
+    ///         `parentSeed` is the input's seed, from which every child seed derives; it keys the
+    ///         split record that `restore` later verifies against.
     event Decomposed(
-        uint256 indexed tokenId, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts
+        uint256 indexed tokenId,
+        bytes32 parentSeed,
+        uint256[] newIds,
+        uint8[] outDenoms,
+        uint32[] originCounts
+    );
+
+    /// @notice Emitted when a split's complete child set is reassembled into the original. The
+    ///         children are burned and `newTokenId` carries the parent's seed and denomination,
+    ///         so its artwork is identical to the split input's. `originCount` is the summed
+    ///         child origins, equal to the split input's count by conservation.
+    event Restored(
+        uint256 indexed newTokenId,
+        bytes32 indexed parentSeed,
+        uint256[] childIds,
+        uint8 denomIndex,
+        uint32 originCount
     );
 
     /// @notice Emitted when an apex Complete Shape is blackened. `sacrificedWei` (100 ETH) is sent
@@ -74,6 +92,16 @@ interface IShapes is IERC721 {
     error DecompositionMismatch(uint256 inputBacking, uint256 outputSum);
     /// @dev `blacken` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
     error NotApexComplete(uint256 tokenId);
+    /// @dev `restore` found no split record for the given parent seed. Either no such split
+    ///      happened, or its children were already reassembled.
+    error NoSplitRecord(bytes32 parentSeed);
+    /// @dev `restore` was given a different number of children than the split produced.
+    error RestoreCountMismatch(uint256 expected, uint256 provided);
+    /// @dev The child at `index` does not carry the seed the split assigned to that position.
+    error RestoreChildMismatch(uint256 tokenId, uint256 index);
+    /// @dev The children's summed backing no longer equals the split input's backing. A child's
+    ///      denomination can only have grown, via compose, since the split.
+    error RestoreBackingMismatch(uint256 expected, uint256 provided);
 
     /* --------------------------- immutables --------------------------- */
 
@@ -145,6 +173,17 @@ interface IShapes is IERC721 {
         external
         returns (uint256[] memory newIds);
 
+    /// @notice Reassemble a split's complete child set into the original Shape. `childIds` must
+    ///         list every output of the split of the token that carried `parentSeed`, in split
+    ///         order, all owned by the caller and all still at the denominations the split
+    ///         assigned. The children are burned and a fresh token id is minted carrying the
+    ///         parent's seed and denomination — the exact artwork of the split input. Origins are
+    ///         summed back. No ETH moves and no fee is charged. The split record is consumed, so
+    ///         a restored Shape must be split again before it can be restored again.
+    function restore(bytes32 parentSeed, uint256[] calldata childIds)
+        external
+        returns (uint256 newTokenId);
+
     /// @notice Permanently sacrifice an apex Complete Shape's 100 ETH backing, turning it Black.
     ///         Owner only, one way. The token keeps its id, seed and geometry; its 100 ETH is sent
     ///         to an unspendable address and it becomes non-redeemable and non-recomposable.
@@ -182,6 +221,15 @@ interface IShapes is IERC721 {
 
     /// @notice Number of Shapes ever minted. Also the highest token id issued.
     function totalMinted() external view returns (uint256);
+
+    /// @notice The split record keyed by a parent seed: how many children the split produced and
+    ///         the input's denomination index. `childCount` of zero means no restorable split —
+    ///         none happened, or it was already restored. Written by `decompose`, consumed by
+    ///         `restore`.
+    function splitRecordOf(bytes32 parentSeed)
+        external
+        view
+        returns (uint16 childCount, uint8 denomIndex);
 
     /// @notice Whether `amountWei` is one of the nine supported denominations.
     function isSupportedDenomination(uint256 amountWei) external pure returns (bool);
