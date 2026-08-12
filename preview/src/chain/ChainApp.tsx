@@ -3,16 +3,65 @@ import {formatEther} from "viem";
 import {useAccount, usePublicClient, useWriteContract} from "wagmi";
 import {ConnectButton} from "@rainbow-me/rainbowkit";
 import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "./abi";
+import {renderShape, CANONICAL} from "../canonical/render";
+import {decomposeChildSeed} from "../decomposeSeed";
 
 const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
 
 interface OwnedToken {
   id: bigint;
   backing: bigint; // 0 for Black
+  seed: bigint;
   originCount: bigint;
   complete: boolean;
   isBlack: boolean;
   image: string; // svg data URI decoded from tokenURI
+}
+
+type Formation = "Black" | "Complete" | "Fragment" | "Direct" | "Composed";
+
+/// Render a Shape locally from the canonical renderer — the same code the contract ports — so a
+/// recomposition's outcome can be shown before any transaction is sent. Artwork is a pure function
+/// of (seed, denomination), and a decompose fixes its children's seeds deterministically, so these
+/// previews are exact, not approximations.
+function localShapeImage(seed: bigint, amountWei: bigint, inverted = false): string {
+  return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n, CANONICAL, inverted))}`;
+}
+
+/// The provenance label for a (backing, originCount, isBlack) triple. Mirrors
+/// ShapeRenderer._formation. Used for both owned tokens and preview children.
+function formationOf(backing: bigint, originCount: bigint, isBlack: boolean): Formation {
+  if (isBlack) return "Black";
+  const units = backing / UNIT;
+  if (units > 1n && originCount === units) return "Complete";
+  if (originCount === 0n) return "Fragment";
+  if (originCount === 1n) return "Direct";
+  return "Composed";
+}
+
+interface PreviewChild {
+  index: number;
+  seed: bigint;
+  amountWei: bigint;
+  originCount: bigint;
+}
+
+/// The exact outputs of splitting a token one tier down: fresh seeds from `decomposeChildSeed`, and
+/// the survivor-first origin partition the contract applies (each child capped at its own capacity).
+function splitChildren(t: OwnedToken): PreviewChild[] {
+  const di = denomIndexOf(t.backing);
+  if (di <= 0) return [];
+  const downWei = DENOMINATIONS[di - 1].wei;
+  const ratio = Number(t.backing / downWei); // 2 or 5
+  const cap = downWei / UNIT;
+  let remaining = t.originCount;
+  const kids: PreviewChild[] = [];
+  for (let i = 0; i < ratio; i++) {
+    const give = remaining < cap ? remaining : cap;
+    remaining -= give;
+    kids.push({index: i, seed: decomposeChildSeed(t.seed, i), amountWei: downWei, originCount: give});
+  }
+  return kids;
 }
 
 interface Reserve {
@@ -30,15 +79,9 @@ function imageFromTokenURI(uri: string): string {
   return json.image as string;
 }
 
-/// The provenance label, mirroring ShapeRenderer._formation. A Black token reports backing 0, so
-/// its formation is decided by the flag alone. Fragment is a zero-origin decompose remainder.
-function formationLabel(t: OwnedToken): "Black" | "Complete" | "Fragment" | "Direct" | "Composed" {
-  if (t.isBlack) return "Black";
-  const units = t.backing / UNIT;
-  if (units > 1n && t.originCount === units) return "Complete";
-  if (t.originCount === 0n) return "Fragment";
-  if (t.originCount === 1n) return "Direct";
-  return "Composed";
+/// The provenance label for an owned token. Fragment is a zero-origin decompose remainder.
+function formationLabel(t: OwnedToken): Formation {
+  return formationOf(t.backing, t.originCount, t.isBlack);
 }
 
 export function ChainApp({dep}: {dep: Deployment}) {
@@ -55,6 +98,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
   const [acctBalance, setAcctBalance] = React.useState<bigint>(0n);
   const [feeBps, setFeeBps] = React.useState<bigint>(0n);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [splitOf, setSplitOf] = React.useState<bigint | null>(null); // token being previewed for a split
 
   // The fee is a percentage of backing, so it depends on the selected denomination.
   const feePerNft = (amountWei * feeBps) / 10_000n;
@@ -89,14 +133,23 @@ export function ChainApp({dep}: {dep: Deployment}) {
         continue; // burned
       }
       if (owner.toLowerCase() !== address.toLowerCase()) continue;
-      const [backing, originCount, complete, black, uri] = await Promise.all([
+      const [backing, seed, originCount, complete, black, uri] = await Promise.all([
         publicClient.readContract({...shapes, functionName: "backingOf", args: [id]}),
+        publicClient.readContract({...shapes, functionName: "seedOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "originCountOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "isComplete", args: [id]}),
         publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
         publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
       ]);
-      owned.push({id, backing, originCount, complete, isBlack: black, image: imageFromTokenURI(uri)});
+      owned.push({
+        id,
+        backing,
+        seed: BigInt(seed),
+        originCount,
+        complete,
+        isBlack: black,
+        image: imageFromTokenURI(uri),
+      });
     }
     setTokens(owned);
     // Drop selections that no longer exist (burned by compose/decompose).
@@ -167,26 +220,38 @@ export function ChainApp({dep}: {dep: Deployment}) {
     });
 
   // Compose: the summed backing must land on a denomination. Survivor is the lowest selected id,
-  // so it keeps that id. One atomic transaction — no approvals, the caller owns every input.
+  // so it keeps that id (and its seed — the artwork below is the survivor rendered at the new,
+  // larger denomination). One atomic transaction: no approvals, the caller owns every input.
   const selectedTokens = tokens.filter((t) => selected.has(t.id.toString()) && !t.isBlack);
   const composeSum = selectedTokens.reduce((a, t) => a + t.backing, 0n);
   const composeValid = selectedTokens.length >= 2 && denomIndexOf(composeSum) >= 0;
+  const composeSurvivor =
+    selectedTokens.length >= 1
+      ? [...selectedTokens].sort((a, b) => (a.id < b.id ? -1 : 1))[0]
+      : null;
+  const composeOrigins = selectedTokens.reduce((a, t) => a + t.originCount, 0n);
 
   const compose = () => {
-    const sorted = [...selectedTokens].sort((a, b) => (a.id < b.id ? -1 : 1));
-    const survivor = sorted[0].id;
-    const burnIds = sorted.slice(1).map((t) => t.id);
-    return run("compose", () => write("compose", [survivor, burnIds]));
+    if (!composeSurvivor) return;
+    const burnIds = selectedTokens
+      .filter((t) => t.id !== composeSurvivor.id)
+      .map((t) => t.id)
+      .sort((a, b) => (a < b ? -1 : 1));
+    return run("compose", () => write("compose", [composeSurvivor.id, burnIds]));
   };
 
-  // Decompose one tier down: split a token into the largest number of next-lower-tier pieces.
-  const decompose = (t: OwnedToken) => {
-    const di = denomIndexOf(t.backing);
+  // Decompose one tier down into the ladder ratio. Confirmed from the split preview, which shows
+  // the exact children first (deterministic child seeds, survivor-first origin partition).
+  const splitToken = splitOf === null ? null : tokens.find((t) => t.id === splitOf) ?? null;
+  const splitKids = splitToken ? splitChildren(splitToken) : [];
+
+  const confirmSplit = () => {
+    if (!splitToken) return;
+    const di = denomIndexOf(splitToken.backing);
     if (di <= 0) return;
-    const downWei = DENOMINATIONS[di - 1].wei;
-    const ratio = Number(t.backing / downWei); // 2 or 5
-    const outDenoms = Array<number>(ratio).fill(di - 1);
-    return run(`split ${t.id}`, () => write("decompose", [t.id, outDenoms]));
+    const outDenoms = Array<number>(splitKids.length).fill(di - 1);
+    setSplitOf(null);
+    return run(`split ${splitToken.id}`, () => write("decompose", [splitToken.id, outDenoms]));
   };
 
   const blacken = (id: bigint) => run(`blacken ${id}`, () => write("blacken", [id]));
@@ -261,15 +326,31 @@ export function ChainApp({dep}: {dep: Deployment}) {
               {txErr && <div style={{...S.mono, color: "#f66", marginTop: 10}}>{txErr}</div>}
             </section>
 
-            {/* Compose bar — appears once two or more shapes are selected. */}
+            {/* Compose bar — appears once two or more shapes are selected. Shows the resulting
+                shape (survivor seed at the summed denomination) before the transaction. */}
             {selectedTokens.length >= 2 && (
               <section style={{...S.card, borderColor: composeValid ? "#4a7" : "#844"}}>
                 <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12}}>
-                  <div style={S.dim}>
-                    {selectedTokens.length} selected · sum {formatEther(composeSum)} ETH{" "}
-                    {composeValid
-                      ? "→ composes into one shape"
-                      : "→ not a denomination; adjust the selection"}
+                  <div style={{display: "flex", alignItems: "center", gap: 12}}>
+                    {composeValid && composeSurvivor && (
+                      <div style={{textAlign: "center"}}>
+                        <img
+                          src={localShapeImage(composeSurvivor.seed, composeSum)}
+                          alt="compose result preview"
+                          style={S.preview}
+                        />
+                        <div style={{...S.dim, ...S.mono, fontSize: 10, marginTop: 3}}>
+                          #{composeSurvivor.id.toString()} → {formatEther(composeSum)}
+                        </div>
+                      </div>
+                    )}
+                    <div style={S.dim}>
+                      {selectedTokens.length} selected · sum {formatEther(composeSum)} ETH ·{" "}
+                      {composeOrigins.toString()} origins{" "}
+                      {composeValid
+                        ? `→ one ${formationOf(composeSum, composeOrigins, false)} shape, keeping #${composeSurvivor?.id.toString()}`
+                        : "→ not a denomination; adjust the selection"}
+                    </div>
                   </div>
                   <div style={{display: "flex", gap: 8}}>
                     <button onClick={() => setSelected(new Set())} style={S.secondary}>
@@ -279,6 +360,41 @@ export function ChainApp({dep}: {dep: Deployment}) {
                       {busy === "compose" ? "composing…" : "compose selected"}
                     </button>
                   </div>
+                </div>
+              </section>
+            )}
+
+            {/* Split preview — the exact children of a decompose, rendered locally before the tx. */}
+            {splitToken && (
+              <section style={{...S.card, borderColor: "#963"}}>
+                <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12}}>
+                  <div style={S.dim}>
+                    splitting #{splitToken.id.toString()} ({formatEther(splitToken.backing)} ETH,{" "}
+                    {splitToken.originCount.toString()} origins) into {splitKids.length} ×{" "}
+                    {DENOMINATIONS[denomIndexOf(splitToken.backing) - 1].label} ETH — previewed from
+                    the deterministic child seeds
+                  </div>
+                  <div style={{display: "flex", gap: 8}}>
+                    <button onClick={() => setSplitOf(null)} style={S.secondary}>
+                      cancel
+                    </button>
+                    <button onClick={confirmSplit} disabled={!!busy} style={S.primary}>
+                      {busy === `split ${splitToken.id}` ? "splitting…" : "confirm split"}
+                    </button>
+                  </div>
+                </div>
+                <div style={S.previewGrid}>
+                  {splitKids.map((k) => (
+                    <div key={k.index} style={{textAlign: "center"}}>
+                      <img src={localShapeImage(k.seed, k.amountWei)} alt={`child ${k.index}`} style={S.preview} />
+                      <div style={{marginTop: 4}}>
+                        <FormationBadge label={formationOf(k.amountWei, k.originCount, false)} />
+                      </div>
+                      <div style={{...S.dim, ...S.mono, fontSize: 10, marginTop: 3}}>
+                        {k.originCount.toString()} origin{k.originCount === 1n ? "" : "s"}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </section>
             )}
@@ -326,7 +442,11 @@ export function ChainApp({dep}: {dep: Deployment}) {
                           </button>
                         )}
                         {canSplit && (
-                          <button onClick={() => decompose(t)} disabled={!!busy} style={S.smallBtn}>
+                          <button
+                            onClick={() => setSplitOf(splitOf === t.id ? null : t.id)}
+                            disabled={!!busy}
+                            style={{...S.smallBtn, ...(splitOf === t.id ? S.smallBtnOn : null)}}
+                          >
                             {busy === `split ${t.id}` ? "…" : `split →${DENOMINATIONS[di - 1].label}`}
                           </button>
                         )}
@@ -438,5 +558,8 @@ const S: Record<string, React.CSSProperties> = {
   badge: {display: "inline-block", fontFamily: "ui-monospace, monospace", fontSize: 11, padding: "2px 7px", borderRadius: 5, border: "1px solid #333"},
   img: {width: "100%", aspectRatio: "250 / 350", background: "#000", borderRadius: 4},
   smallBtn: {flex: 1, background: "#111", color: "#ccc", border: "1px solid #444", borderRadius: 6, padding: "6px 0", cursor: "pointer", fontSize: 12},
+  smallBtnOn: {background: "#3a2a12", color: "#fb8", borderColor: "#963"},
+  preview: {width: 72, aspectRatio: "250 / 350", background: "#000", borderRadius: 4, border: "1px solid #222"},
+  previewGrid: {display: "flex", flexWrap: "wrap", gap: 12},
   blacken: {marginTop: 8, width: "100%", background: "#181818", color: "#fff", border: "1px solid #666", borderRadius: 6, padding: "7px 0", cursor: "pointer", fontSize: 12, fontWeight: 600},
 };
