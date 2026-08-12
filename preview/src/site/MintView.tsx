@@ -144,7 +144,7 @@ export function MintView({
         <div style={{fontSize: 24, lineHeight: 1.62, maxWidth: "54ch"}}>
           ETH in, Shape out.
           <br />
-          Shape burned, the same ETH out.
+          Shape burned, ETH returned.
         </div>
         <p style={{margin: "34px 0 0", fontSize: 14, lineHeight: 1.75, maxWidth: "62ch", color: C.bodyDim}}>
           A Shape holds an exact amount of ETH and gives back the same amount, exactly. Nine

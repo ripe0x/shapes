@@ -10,7 +10,7 @@ export function AboutView() {
         <div style={{fontSize: 22, lineHeight: 1.62, maxWidth: "54ch"}}>
           ETH in, Shape out.
           <br />
-          Shape burned, the same ETH out.
+          Shape burned, ETH returned.
         </div>
       </div>
 
