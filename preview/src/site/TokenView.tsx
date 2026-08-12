@@ -393,7 +393,6 @@ export function TokenView({
                           background: on ? C.ink : "transparent",
                           color: on ? C.page : C.bodyDim,
                           padding: "6px 14px",
-                          font: "inherit",
                           fontSize: 12,
                           cursor: "pointer",
                         }}

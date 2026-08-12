@@ -12,6 +12,11 @@
       a { color: #e6e4dd; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
       a:hover { color: #8f8f88; }
       @keyframes artin { from { opacity: 0; } to { opacity: 1; } }
+      /* Buttons inherit the page font here rather than via an inline `font` shorthand: React
+         sets style properties in object key order, so a shorthand can land after an inline
+         font-size and silently reset it to 16px. A stylesheet rule always loses to inline
+         font-size. */
+      button { font: inherit; }
       /* Hover states for the recurring button styles. Inline styles carry everything else. */
       .btn-filled { border: 1px solid #e6e4dd; background: #e6e4dd; color: #0d0d0c; font: inherit; font-size: 13px; cursor: pointer; flex: 0 0 auto; white-space: nowrap; }
       .btn-filled:hover { background: #ffffff; }

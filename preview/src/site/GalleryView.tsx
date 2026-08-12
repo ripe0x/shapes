@@ -37,7 +37,6 @@ export function GalleryView({
                   background: on ? C.ink : "transparent",
                   color: on ? C.page : C.bodyDim,
                   padding: "5px 12px",
-                  font: "inherit",
                   fontSize: 12,
                   cursor: "pointer",
                 }}

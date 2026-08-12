@@ -20,20 +20,23 @@ export function DenomLadder({
   fees,
   sel,
   onSelect,
-  hoverArt,
 }: {
   fees: bigint[] | null;
   sel?: number;
   onSelect?: (i: number) => void;
-  hoverArt?: (i: number) => string;
 }) {
   const [hover, setHover] = React.useState(-1);
   const [tick, setTick] = React.useState(0);
+  // Random per hover, so each hover shows a different sample sequence. Non-zero, so the first
+  // hovered frame already differs from the resting artwork.
+  const hoverBase = React.useRef(0);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Hovering a row cycles its thumbnail through sample outputs every 700ms. One timer at a time.
+  // Hovering a row swaps its thumbnail immediately and then cycles every 700ms. One timer at
+  // a time.
   const enter = (i: number) => {
     if (timer.current) clearInterval(timer.current);
+    hoverBase.current = 1 + Math.floor(Math.random() * 4096);
     setHover(i);
     setTick(0);
     timer.current = setInterval(() => setTick((t) => t + 1), 700);
@@ -52,7 +55,7 @@ export function DenomLadder({
   return (
     <>
       {DENOMINATIONS.map((d, i) => {
-        const t = hover === i ? tick : 0;
+        const t = hover === i ? hoverBase.current + tick : 0;
         const art = localArt(sampleSeed(1000 + i + t * 613), d.wei);
         const row = (
           <>
@@ -84,8 +87,8 @@ export function DenomLadder({
             type="button"
             className="row-denom"
             onClick={() => onSelect!(i)}
-            onMouseEnter={hoverArt ? undefined : () => enter(i)}
-            onMouseLeave={hoverArt ? undefined : leave}
+            onMouseEnter={() => enter(i)}
+            onMouseLeave={leave}
             style={{
               ...base,
               width: "100%",
@@ -94,8 +97,6 @@ export function DenomLadder({
               border: 0,
               borderBottom: `1px solid ${C.ruleInner}`,
               background: sel === i ? C.row : "transparent",
-              font: "inherit",
-              fontSize: 13,
               color: sel === i ? C.ink : C.bodyDim,
               cursor: "pointer",
             }}
