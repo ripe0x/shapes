@@ -327,7 +327,10 @@ event MetadataUpdate(uint256 tokenId);          // ERC-4906
 // existing: ShapeMinted (+ originCount=1), MintFeePaid, RendererUpdated, RendererLocked
 ```
 `ShapeRedeemed` carries the redeemed token's `originCount` so an event-only indexer can maintain the
-global origin balance (mint origins − redeemed origins) without a pre-burn state read.
+global origin balance (mint origins − redeemed origins) without a pre-burn state read. Adding this
+field changed the event's topic0 versus the three-argument form used in earlier development builds;
+this is the canonical shape for the initial (and only) deployment, so there is no on-chain predecessor
+and no indexer back-compat obligation. Integrators index the four-argument signature.
 
 `Decomposed` carries the per-child origin partition (`originCounts`) so indexers never re-implement
 the fill-in-order rule. Decompose outputs do **not** emit `ShapeMinted`: that event is a strict

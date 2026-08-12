@@ -1,5 +1,5 @@
 import React from "react";
-import {formatEther} from "viem";
+import {formatEther, parseEther} from "viem";
 import {useAccount, usePublicClient, useWriteContract} from "wagmi";
 import {ConnectButton} from "@rainbow-me/rainbowkit";
 import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "./abi";
@@ -11,7 +11,8 @@ const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
 
 interface OwnedToken {
   id: bigint;
-  backing: bigint; // 0 for Black
+  backing: bigint; // redeemable backing; 0 for Black
+  denomWei: bigint; // the stored denomination for display (Black keeps its 100 ETH apex denom)
   seed: bigint;
   originCount: bigint;
   complete: boolean;
@@ -49,9 +50,15 @@ function localShapeImage(seed: bigint, amountWei: bigint, inverted = false): str
   return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n, CANONICAL, inverted))}`;
 }
 
-function imageFromTokenURI(uri: string): string {
+/// Decode a Shapes tokenURI. Returns the inline SVG image and the token's stored denomination from
+/// the "ETH Value" trait. `backingOf()` returns 0 for a Black token, so the metadata is the correct
+/// source for a Black token's original denomination (used for the density/units display).
+function parseTokenMeta(uri: string): {image: string; denomWei: bigint} {
   const json = JSON.parse(atob(uri.replace("data:application/json;base64,", "")));
-  return json.image as string;
+  const attrs = (json.attributes ?? []) as {trait_type: string; value: string}[];
+  const ethTrait = attrs.find((a) => a.trait_type === "ETH Value");
+  const label = ethTrait ? String(ethTrait.value).split(" ")[0] : "0";
+  return {image: json.image as string, denomWei: parseEther(label)};
 }
 
 /// The provenance label for a (backing, originCount, isBlack) triple. Mirrors
@@ -165,14 +172,16 @@ export function ChainApp({dep}: {dep: Deployment}) {
         publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
         publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
       ]);
+      const {image, denomWei} = parseTokenMeta(uri);
       owned.push({
         id,
         backing,
+        denomWei,
         seed: BigInt(seed),
         originCount,
         complete,
         isBlack: black,
-        image: imageFromTokenURI(uri),
+        image,
       });
     }
     setTokens(owned);
@@ -208,16 +217,20 @@ export function ChainApp({dep}: {dep: Deployment}) {
     };
   }, [view, publicClient, dep, tokens]);
 
-  const run = async (label: string, send: () => Promise<`0x${string}`>) => {
-    if (!publicClient) return;
+  // Returns true only when the transaction was sent, mined, and state refreshed. Callers gate
+  // navigation and selection changes on this, so a reverted or rejected tx leaves the view intact.
+  const run = async (label: string, send: () => Promise<`0x${string}`>): Promise<boolean> => {
+    if (!publicClient) return false;
     setBusy(label);
     setTxErr(null);
     try {
       const hash = await send();
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
+      return true;
     } catch (e) {
       setTxErr(shortError(e));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -242,7 +255,9 @@ export function ChainApp({dep}: {dep: Deployment}) {
     });
 
   const redeem = (id: bigint) =>
-    run(`redeem ${id}`, () => write("redeem", [id])).then(() => setView(null));
+    void run(`redeem ${id}`, () => write("redeem", [id])).then((ok) => {
+      if (ok) setView(null);
+    });
 
   const blacken = (id: bigint) => run(`blacken ${id}`, () => write("blacken", [id]));
 
@@ -272,7 +287,8 @@ export function ChainApp({dep}: {dep: Deployment}) {
       .filter((t) => t.id !== composeSurvivor.id)
       .map((t) => t.id)
       .sort((a, b) => (a < b ? -1 : 1));
-    void run("compose", () => write("compose", [composeSurvivor.id, burnIds])).then(() => {
+    void run("compose", () => write("compose", [composeSurvivor.id, burnIds])).then((ok) => {
+      if (!ok) return;
       setSelected(new Set());
       setView(composeSurvivor.id); // land on the survivor's detail to see the result + new history
     });
@@ -286,8 +302,10 @@ export function ChainApp({dep}: {dep: Deployment}) {
     const di = denomIndexOf(t.backing);
     if (di <= 0) return;
     const outDenoms = Array<number>(splitChildren(t).length).fill(di - 1);
-    setSplitPreview(false);
-    void run(`split ${t.id}`, () => write("decompose", [t.id, outDenoms])).then(() => setView(null));
+    void run(`split ${t.id}`, () => write("decompose", [t.id, outDenoms])).then((ok) => {
+      if (ok) setView(null);
+      else setSplitPreview(false); // keep the token open; just collapse the preview panel
+    });
   };
 
   const openDetail = (id: bigint) => {
@@ -460,8 +478,8 @@ function Detail({
           <div style={S.provGrid}>
             <Prov k="Formation" v={formation} />
             <Prov k="Independent origins" v={token.originCount.toString()} />
-            <Prov k="Origin density" v={`${densityPercent(token.backing, token.originCount)}%`} />
-            <Prov k="Units" v={token.isBlack ? "—" : (token.backing / UNIT).toString()} />
+            <Prov k="Origin density" v={`${densityPercent(token.denomWei, token.originCount)}%`} />
+            <Prov k="Units" v={(token.denomWei / UNIT).toString()} />
             <Prov k="Complete" v={token.complete ? "yes" : "no"} />
             <Prov k="Black" v={token.isBlack ? "yes" : "no"} />
           </div>
