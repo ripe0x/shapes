@@ -221,7 +221,7 @@ src/
 script/
   DeployShapes.s.sol
   e2e-anvil.sh                live end-to-end check against a local chain
-  fork-dev.sh                 forked Anvil + deploy, for the chain tester
+  fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
   ShapeRenderer.t.sol         stream, formatter, geometry, metadata validity
@@ -267,6 +267,32 @@ One thing the fork surfaces that a clean chain cannot: a freshly deployed addres
 with a mainnet account already holding a little ETH, and many mainnet EOAs now carry an EIP-7702
 delegation. The suite treats the former as stranded surplus (`balance >= redeemableBacking` still
 holds) and mints only to codeless recipients, matching how the contract behaves in the wild.
+
+## Running the site locally
+
+The full flow — local chain, deployed contracts, funded wallet, mint frontend — is two commands
+in two shells, from the repo root:
+
+```bash
+./script/fork-dev.sh                 # anvil + deploy + fund the seed wallet; leave it running
+```
+
+```bash
+cd preview && npm run dev            # then open http://localhost:5173/site.html
+```
+
+`fork-dev.sh` boots Anvil on `:8545` (chain id `31337`), deploys Shapes and the renderer through
+the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLETS` /
+`SEED_ETH` to change), and writes `preview/public/deployment.json`, which both frontends read on
+load. Every run is a fresh chain; prior tokens are gone.
+
+The dev server serves three entries:
+
+| URL | What it is |
+| --- | --- |
+| `/site.html` | **The mint site** — mint, gallery, token detail, redeem, decompose / recompose / restore |
+| `/chain.html` | Chain tester — a development harness against the same deployment |
+| `/` | Render harness — the canonical TypeScript renderer, no chain |
 
 ## Running the preview harness
 
@@ -380,11 +406,11 @@ You sign every mint and redeem in the wallet, against the deployed contract.
    it to add and switch to the local chain. To add it by hand instead, use the RPC URL and chain
    id the script printed, currency symbol `ETH`.
 
-   The chain uses a distinctive id (`767676` by default, `CHAIN_ID` to change) rather than the
-   ubiquitous `31337`. A browser wallet keys networks by chain id and reuses whatever RPC it
-   already has for that id, so sharing `31337` with a second local node silently routes
-   transactions to the wrong one. If `767676` still clashes with something you run, set
-   `CHAIN_ID` to anything free (check it is unregistered on chainlist.org first).
+   The chain uses Anvil's standard id (`31337` by default, `CHAIN_ID` to change), which browser
+   wallets already have configured for `localhost:8545`. One caveat: a wallet keys networks by
+   chain id, so a second local node also on `31337` silently receives transactions meant for
+   this one. When running several local chains at once, give this one a free `CHAIN_ID` (check
+   chainlist.org) and add the network the script prints.
 
 4. **Mint.** Pick a denomination and mint; the wallet prompts you to sign a transaction sending
    backing plus the fee. Once it confirms, the Shape appears with its artwork fetched from the
