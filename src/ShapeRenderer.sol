@@ -440,8 +440,10 @@ contract ShapeRenderer is IShapeRenderer {
 
         return string(
             abi.encodePacked(
+                // width/height set the intrinsic raster size (8x the viewBox); geometry is in
+                // viewBox units, so the look is identical at any scale.
                 '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 350"'
-                ' width="250" height="350" shape-rendering="geometricPrecision">'
+                ' width="2000" height="2800" shape-rendering="geometricPrecision">'
                 '<rect x="0" y="0" width="250" height="350" fill="',
                 bg,
                 '"/>',

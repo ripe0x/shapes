@@ -24,7 +24,7 @@ export const FACTS: Fact[] = [
   },
   {
     k: "ARTWORK",
-    v: "Generated onchain when it is asked for. No IPFS, no server, no fonts. 250 × 350, black ground, white marks, no other colours and no type on the face.",
+    v: "Generated onchain when it is asked for. No IPFS, no server, no fonts. 2000 × 2800, black ground, white marks, no other colours and no type on the face.",
   },
 ];
 
