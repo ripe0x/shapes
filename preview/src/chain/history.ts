@@ -1,5 +1,6 @@
 import {formatEther, type PublicClient} from "viem";
-import {shapesAbi, denomLabel, type Deployment} from "./abi";
+import {shapesAbi, denomLabel, denomIndexOf, type Deployment} from "./abi";
+import {decomposeChildSeed} from "../decomposeSeed";
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 
@@ -119,6 +120,121 @@ export async function loadHistory(
 
   out.sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
   return out;
+}
+
+export interface ProvNode {
+  id: bigint;
+  seed: bigint;
+  /// Denomination index at the end of this token's life (current, for a live root).
+  di: number;
+  /// How this node relates to the node it nests under.
+  rel: "root" | "merged" | "splitSource" | "piece";
+  /// True for tokens whose life began at a mint (the tree's leaves).
+  mintBorn: boolean;
+  contributors: ProvNode[];
+  truncated?: boolean;
+  /// This ancestor already appears elsewhere in the tree; its subtree is not repeated.
+  repeat?: boolean;
+}
+
+const PROV_MAX_NODES = 150;
+const PROV_MAX_DEPTH = 12;
+
+/// A token's ancestry, reconstructed from events alone. Contributors are: the split input for
+/// a split-born token, the reassembled pieces for a restore-born token, and every token a
+/// compose burned into this id. Every ancestor's seed is recoverable — mints carry it in
+/// ShapeMinted, split children derive from the parent seed, restored tokens carry the parent
+/// seed — so burned ancestors can still be drawn. Bounded by node and depth budgets; a cut
+/// branch is marked `truncated`.
+export async function loadProvenance(
+  publicClient: PublicClient,
+  dep: Deployment,
+  id: bigint,
+): Promise<ProvNode | null> {
+  const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
+  const [minted, composed, decomposed, restored] = await Promise.all([
+    publicClient.getContractEvents({...base, eventName: "ShapeMinted"}),
+    publicClient.getContractEvents({...base, eventName: "Composed"}),
+    publicClient.getContractEvents({...base, eventName: "Decomposed"}),
+    publicClient.getContractEvents({...base, eventName: "Restored"}),
+  ]);
+
+  const mintOf = new Map<string, {seed: bigint; di: number}>();
+  for (const l of minted) {
+    mintOf.set(l.args.tokenId!.toString(), {
+      seed: BigInt(l.args.seed!),
+      di: denomIndexOf(l.args.amountWei!),
+    });
+  }
+  const splitOf = new Map<string, {parentId: bigint; parentSeed: bigint; index: number; di: number}>();
+  for (const l of decomposed) {
+    l.args.newIds!.forEach((nid, i) => {
+      splitOf.set(nid.toString(), {
+        parentId: l.args.tokenId!,
+        parentSeed: BigInt(l.args.parentSeed!),
+        index: i,
+        di: l.args.outDenoms![i],
+      });
+    });
+  }
+  const restoreOf = new Map<string, {parentSeed: bigint; childIds: bigint[]; di: number}>();
+  for (const l of restored) {
+    restoreOf.set(l.args.newTokenId!.toString(), {
+      parentSeed: BigInt(l.args.parentSeed!),
+      childIds: [...l.args.childIds!],
+      di: l.args.denomIndex!,
+    });
+  }
+  // Composed events per survivor, in block order: each contributes its burn set, and the last
+  // event's denomination is the survivor's final one.
+  const absorbedBy = new Map<string, {burnedIds: bigint[]; di: number}[]>();
+  for (const l of composed) {
+    const k = l.args.survivorId!.toString();
+    if (!absorbedBy.has(k)) absorbedBy.set(k, []);
+    absorbedBy.get(k)!.push({burnedIds: [...l.args.burnedIds!], di: l.args.newDenomIndex!});
+  }
+
+  let budget = PROV_MAX_NODES;
+  const visited = new Set<string>();
+
+  function build(nid: bigint, rel: ProvNode["rel"], depth: number): ProvNode | null {
+    const k = nid.toString();
+    const mint = mintOf.get(k);
+    const split = splitOf.get(k);
+    const restore = restoreOf.get(k);
+    if (!mint && !split && !restore) return null; // no birth event: not a token we know
+
+    const seed = mint ? mint.seed
+      : split ? decomposeChildSeed(split.parentSeed, split.index)
+      : restore!.parentSeed;
+    const birthDi = (mint ?? split ?? restore)!.di;
+    const merges = absorbedBy.get(k) ?? [];
+    const di = merges.length > 0 ? merges[merges.length - 1].di : birthDi;
+
+    budget -= 1;
+    const node: ProvNode = {id: nid, seed, di, rel, mintBorn: !!mint, contributors: []};
+    // An ancestor can contribute along more than one line (every piece of a split shares the
+    // split's input); its subtree is expanded once and referenced after that.
+    if (visited.has(k)) {
+      node.repeat = true;
+      return node;
+    }
+    visited.add(k);
+    if (budget <= 0 || depth >= PROV_MAX_DEPTH) {
+      node.truncated = !!split || !!restore || merges.length > 0;
+      return node;
+    }
+
+    const push = (child: ProvNode | null) => {
+      if (child) node.contributors.push(child);
+    };
+    if (split) push(build(split.parentId, "splitSource", depth + 1));
+    if (restore) for (const cid of restore.childIds) push(build(cid, "piece", depth + 1));
+    for (const m of merges) for (const bid of m.burnedIds) push(build(bid, "merged", depth + 1));
+    return node;
+  }
+
+  return build(id, "root", 0);
 }
 
 export interface SplitBirth {

@@ -5,7 +5,14 @@ import {GRIDS} from "../canonical/denominations";
 import {composeShape, fillClass, seedHex} from "../canonical/render";
 import {decomposeChildSeed} from "../decomposeSeed";
 import {shapesAbi} from "../chain/abi";
-import {loadHistory, findSplitBirth, type HistEvent, type SplitBirth} from "../chain/history";
+import {
+  loadHistory,
+  findSplitBirth,
+  loadProvenance,
+  type HistEvent,
+  type SplitBirth,
+  type ProvNode,
+} from "../chain/history";
 import {C} from "./theme";
 import {Section, Art, short, txUrl} from "./ui";
 import {localArt} from "./art";
@@ -66,6 +73,20 @@ export function TokenView({
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
   const [birth, setBirth] = React.useState<SplitBirth | null>(null);
   const [record, setRecord] = React.useState<{childCount: number; denomIndex: number} | null>(null);
+  const [prov, setProv] = React.useState<ProvNode | null>(null);
+
+  // Ancestry tree from the event log; shown only when the token has one beyond its own mint.
+  React.useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+    setProv(null);
+    void loadProvenance(publicClient, dep, tokenId).then((p) => {
+      if (!cancelled) setProv(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient, dep, tokenId, data]);
 
   React.useEffect(() => {
     setPicked(new Set());
@@ -292,6 +313,16 @@ export function TokenView({
       </Section>
 
       <History history={history} chainId={dep.chainId} />
+
+      {prov && prov.contributors.length > 0 && (
+        <Section title="PROVENANCE" pad="16px 48px 30px 32px">
+          <p style={{margin: "8px 0 14px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+            Every Shape this one was built from. Burned Shapes are drawn from their recorded
+            seeds.
+          </p>
+          <ProvRows node={prov} depth={0} />
+        </Section>
+      )}
 
       {owned && (
         <>
@@ -544,6 +575,54 @@ export function TokenView({
       )}
       <div style={{height: 64}} />
     </main>
+  );
+}
+
+const REL_TEXT: Record<ProvNode["rel"], string> = {
+  root: "this Shape",
+  merged: "merged in",
+  splitSource: "split source",
+  piece: "restored piece",
+};
+
+/// One ancestry row per node, contributors nested by indentation.
+function ProvRows({node, depth}: {node: ProvNode; depth: number}) {
+  const lbl = node.di >= 0 ? DENOMINATIONS[node.di].label : "?";
+  const note =
+    REL_TEXT[node.rel] +
+    (node.repeat
+      ? " · shown above"
+      : node.rel !== "root" && node.mintBorn && node.contributors.length === 0
+        ? " · minted"
+        : "");
+  return (
+    <>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 20,
+          padding: "8px 0",
+          paddingLeft: depth * 28,
+          borderBottom: `1px solid ${C.ruleInner}`,
+          fontSize: 13,
+        }}
+      >
+        <Art src={localArt(node.seed, DENOMINATIONS[node.di].wei)} width={34} />
+        <div style={{flex: "0 1 auto", minWidth: 0}}>
+          #{node.id.toString()} · {lbl} ETH
+        </div>
+        <div style={{color: C.muted, fontSize: 12}}>{note}</div>
+      </div>
+      {node.truncated && (
+        <div style={{padding: "8px 0", paddingLeft: (depth + 1) * 28, fontSize: 12, color: C.faint}}>
+          … earlier history not shown
+        </div>
+      )}
+      {node.contributors.map((c) => (
+        <ProvRows key={c.id.toString()} node={c} depth={depth + 1} />
+      ))}
+    </>
   );
 }
 
