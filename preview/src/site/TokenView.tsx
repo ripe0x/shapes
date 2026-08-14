@@ -381,14 +381,13 @@ export function TokenView({
             {errLine("decompose")}
           </Section>
 
-          <Section title="RECOMPOSE" pad="26px 48px 36px 32px">
+          <Section title="COMPOSE" pad="26px 48px 36px 32px">
             <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-              Compose Shapes of the same denomination into one larger Shape. #
-              {token.id.toString()} survives and keeps its seed.
+              Grow this Shape. Others of the same denomination are burned into it, and it
+              becomes the larger denomination.
             </p>
             <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-              This Shape keeps its id and its seed. The others are burned into it. No ETH
-              moves.
+              #{token.id.toString()} keeps its id and its seed. No ETH moves. No fee is charged.
             </p>
             {candidates.map((t) => {
               const on = picked.has(t.id.toString());
