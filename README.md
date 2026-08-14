@@ -70,9 +70,11 @@ SPEC.md D15. Each Shape remains a distinct object regardless: unique token numbe
 its own provenance.
 
 Every mark on a card paints to exactly the same distance from its cell centre — the same for
-each primitive, solid or outlined, stroke and miter joins included. Each footprint is solved
-backwards from that target rather than measured after the fact, so a mark can never overflow
-its cell and collide with its neighbour. See SPEC.md D13.
+each primitive, solid or outlined. An outlined mark with corners is drawn as a filled ring
+whose outer edge is the solid geometry itself, so the two forms of a shape share their exact
+silhouette. Each footprint is solved backwards from the target rather than measured after the
+fact, so a mark can never overflow its cell and collide with its neighbour. See SPEC.md D13
+and D16.
 
 The seed determines artwork and nothing else. It has no economic effect: redemption value comes
 from the denomination alone, so every 1 ETH Shape redeems for exactly 1 ETH regardless of what

@@ -54,12 +54,10 @@ contract ShapeRenderer is IShapeRenderer {
     uint256 private constant SOLID_BAND_MIN = 0.30e18;
     uint256 private constant SOLID_BAND_MAX = 0.90e18;
 
-    /// @dev sqrt(3), used to invert a triangle's 60 degree miter overshoot.
-    uint256 private constant SQRT3 = 1_732_050_807_568_877_293;
-    /// @dev sqrt(2) and 1 + sqrt(2), for the diagonal line's 45 degree cap and the right
-    ///      triangle's 45 degree miter.
+    /// @dev sqrt(2), for the diagonal line's 45 degree cap and the diamond's inner-ring inset.
     uint256 private constant SQRT2 = 1_414_213_562_373_095_048;
-    uint256 private constant ONE_PLUS_SQRT2 = 2_414_213_562_373_095_048;
+    /// @dev 2 - sqrt(2), the right triangle's inradius as a fraction of its leg half-length.
+    uint256 private constant TWO_MINUS_SQRT2 = 585_786_437_626_904_952;
 
     // Vocabulary. The order is consensus-critical, because kind selection indexes into it.
     //
@@ -205,43 +203,37 @@ contract ShapeRenderer is IShapeRenderer {
 
     /// @dev Solve the path footprint that paints to exactly `target` from the cell centre.
     ///
-    ///      A solid mark paints to its own edge, so its footprint is simply `2 * target`. An
-    ///      outlined mark is grown by its stroke, and by how much depends on the corners:
+    ///      A solid mark paints to its own edge, so its footprint is `2 * target`. Outlined
+    ///      marks come in two constructions:
     ///
-    ///        circle, square, half circle   the stroke straddles the edge, adding w/2 all
-    ///                                      round -> size = 2 * target - w
+    ///        circle, square, halfsquare    drawn as a stroked path. The stroke straddles the
+    ///                                      edge, adding w/2 all round, and every painted
+    ///                                      extent — 90 degree miter corners included — lands
+    ///                                      exactly on the target -> size = 2 * target - w
     ///
-    ///        triangle                      60 degree corners. A miter join at angle t extends
-    ///                                      the corner by (w/2) / sin(t/2) along the bisector;
-    ///                                      at 60 degrees that is a full w, not half of one.
-    ///                                      Offsetting outward by w/2 grows the side by
-    ///                                      sqrt(3) * w -> size = 2 * target - sqrt(3) * w
+    ///        triangle, rtriangle, diamond, drawn as an even-odd ring whose outer boundary is
+    ///        half, quarter                 the solid geometry itself, so every edge sits
+    ///                                      exactly where the solid form's does; the inner
+    ///                                      boundary is inset by the weight -> size = 2 * target
     ///
-    ///      This is what makes containment exact rather than a headroom argument: the painted
-    ///      extent is the controlled quantity, so no primitive can reach past its cell.
-    ///      With w capped at 0.17 of the painted width the triangle case stays well positive:
-    ///      2T - sqrt(3) * 0.34T = 1.41T.
+    ///        arc, line                     open strokes, never filled. The arc's endpoints
+    ///                                      reach w/2 past the footprint, like a square; the
+    ///                                      diagonal line meets the axis at 45 degrees, so its
+    ///                                      cap projects only (sqrt(2)/4)*w and it is grown to
+    ///                                      compensate.
     function _solveSize(uint256 kind, bool solid, uint256 target, uint256 weight)
         private
         pure
         returns (uint256)
     {
         uint256 full = 2 * target;
-        // Open strokes are never filled; their footprint is always the outlined size. The arc's
-        // endpoints reach w/2 past the footprint like a square; the diagonal line meets the axis
-        // at 45 degrees, so its cap projects only (sqrt(2)/4)*w and it is grown to compensate.
         if (kind == KIND_ARC) return full - weight;
         if (kind == KIND_LINE) return full - (SQRT2 / 2).mulWad(weight);
         if (solid) return full;
-        if (kind == KIND_TRIANGLE) return full - SQRT3.mulWad(weight);
-        // The right triangle's two acute corners are 45 degrees, sharper than the equilateral's
-        // 60, so a miter reaches (1 + sqrt(2))/2 * w along the axis. Inset by (1 + sqrt(2)) * w
-        // so the outermost miter tip lands exactly on the target.
-        if (kind == KIND_RTRIANGLE) return full - ONE_PLUS_SQRT2.mulWad(weight);
-        // Every other primitive meets its corners at 90 degrees or not at all, so the stroke
-        // adds exactly w/2 on each axis. A diamond's corners point along the axes, where a
-        // 90 degree miter reaches (w/2)*sqrt(2) along the bisector — axis component w/2.
-        return full - weight;
+        if (kind == KIND_CIRCLE || kind == KIND_SQUARE || kind == KIND_HALFSQUARE) {
+            return full - weight;
+        }
+        return full;
     }
 
     /// @notice Resolve a token into its full geometric description.
@@ -302,6 +294,24 @@ contract ShapeRenderer is IShapeRenderer {
         );
     }
 
+    /// @dev An outlined mark built as a filled even-odd ring: the outer subpath is the solid
+    ///      geometry itself, the inner subpath the same shape inset by the stroke weight. Every
+    ///      painted edge sits exactly where the solid form's does — no stroke, no miter join.
+    function _ring(bytes memory d, uint256 rot, uint256 cx, uint256 cy, string memory fg)
+        private
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodePacked(
+            '<path fill-rule="evenodd" d="', d, '"', _transform(rot, cx, cy), ' fill="', fg, '"/>'
+        );
+    }
+
+    /// @dev divWad(a - b, a), clamped to zero when the inset would consume the shape.
+    function _insetScale(uint256 a, uint256 b) private pure returns (uint256) {
+        return a > b ? (a - b).divWad(a) : 0;
+    }
+
     function _moduleSvg(Module memory m, string memory fg) private pure returns (bytes memory) {
         uint256 r = m.size / 2;
 
@@ -321,44 +331,95 @@ contract ShapeRenderer is IShapeRenderer {
         }
 
         if (m.kind == KIND_TRIANGLE) {
-            uint256 half = m.size.mulWad(TRI_HEIGHT) / 2;
-            return abi.encodePacked(
-                '<polygon points="',
-                m.cx.fmt(), ",", (m.cy - half).fmt(), " ",
-                (m.cx + r).fmt(), ",", (m.cy + half).fmt(), " ",
-                (m.cx - r).fmt(), ",", (m.cy + half).fmt(),
-                '"',
-                _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight, fg)
+            uint256 hh = m.size.mulWad(TRI_HEIGHT);
+            uint256 half = hh / 2;
+            bytes memory outer = abi.encodePacked(
+                "M", m.cx.fmt(), ",", (m.cy - half).fmt(),
+                " L", (m.cx + r).fmt(), ",", (m.cy + half).fmt(),
+                " L", (m.cx - r).fmt(), ",", (m.cy + half).fmt(), " Z"
             );
+            if (m.solid) {
+                return abi.encodePacked(
+                    '<polygon points="',
+                    m.cx.fmt(), ",", (m.cy - half).fmt(), " ",
+                    (m.cx + r).fmt(), ",", (m.cy + half).fmt(), " ",
+                    (m.cx - r).fmt(), ",", (m.cy + half).fmt(),
+                    '"',
+                    _transform(m.rot, m.cx, m.cy),
+                    _style(true, m.weight, fg)
+                );
+            }
+            // Inner triangle: the outer scaled about the incenter, which offsets every edge
+            // inward by the weight. Incenter sits one third of the height above the base;
+            // inradius = h/3.
+            uint256 rho = hh / 3;
+            uint256 k = _insetScale(rho, m.weight);
+            uint256 iy = m.cy + half - rho;
+            bytes memory inner = abi.encodePacked(
+                "M", m.cx.fmt(), ",", (iy - k.mulWad(hh - rho)).fmt(),
+                " L", (m.cx + k.mulWad(r)).fmt(), ",", (iy + k.mulWad(rho)).fmt(),
+                " L", (m.cx - k.mulWad(r)).fmt(), ",", (iy + k.mulWad(rho)).fmt(), " Z"
+            );
+            return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
         }
 
         if (m.kind == KIND_QUARTER) {
             // A quarter disc whose right-angle corner sits at one corner of the footprint and
             // whose arc sweeps to the opposite two: a square with one corner rounded away.
             // The arc radius is the full footprint, not half of it.
-            return abi.encodePacked(
-                '<path d="M', (m.cx - r).fmt(), ",", (m.cy + r).fmt(),
+            uint256 R = m.size;
+            bytes memory outer = abi.encodePacked(
+                "M", (m.cx - r).fmt(), ",", (m.cy + r).fmt(),
                 " L", (m.cx + r).fmt(), ",", (m.cy + r).fmt(),
-                " A", m.size.fmt(), ",", m.size.fmt(), " 0 0 0 ",
-                (m.cx - r).fmt(), ",", (m.cy - r).fmt(), ' Z"',
-                _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight, fg)
+                " A", R.fmt(), ",", R.fmt(), " 0 0 0 ",
+                (m.cx - r).fmt(), ",", (m.cy - r).fmt(), " Z"
             );
+            if (m.solid) {
+                return abi.encodePacked(
+                    '<path d="', outer, '"',
+                    _transform(m.rot, m.cx, m.cy),
+                    _style(true, m.weight, fg)
+                );
+            }
+            // Inner region: legs offset inward by the weight, arc of radius R - w about the
+            // same corner, meeting each offset leg where the circle crosses it.
+            uint256 Ri = R - m.weight;
+            uint256 q = (Ri * Ri - m.weight * m.weight).isqrt();
+            bytes memory inner = abi.encodePacked(
+                "M", (m.cx - r + m.weight).fmt(), ",", (m.cy + r - m.weight).fmt(),
+                " L", (m.cx - r + q).fmt(), ",", (m.cy + r - m.weight).fmt(),
+                " A", Ri.fmt(), ",", Ri.fmt(), " 0 0 0 ",
+                (m.cx - r + m.weight).fmt(), ",", (m.cy + r - q).fmt(), " Z"
+            );
+            return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
         }
 
         if (m.kind == KIND_DIAMOND) {
-            // The square on its diagonal, emitted as its four vertices so the geometry is
-            // explicit and the miter maths stays in one place. Never rotated.
-            return abi.encodePacked(
-                '<polygon points="',
-                m.cx.fmt(), ",", (m.cy - r).fmt(), " ",
-                (m.cx + r).fmt(), ",", m.cy.fmt(), " ",
-                m.cx.fmt(), ",", (m.cy + r).fmt(), " ",
-                (m.cx - r).fmt(), ",", m.cy.fmt(),
-                '"',
-                _style(m.solid, m.weight, fg)
+            if (m.solid) {
+                // The square on its diagonal, emitted as its four vertices so the geometry is
+                // explicit in one place. Never rotated.
+                return abi.encodePacked(
+                    '<polygon points="',
+                    m.cx.fmt(), ",", (m.cy - r).fmt(), " ",
+                    (m.cx + r).fmt(), ",", m.cy.fmt(), " ",
+                    m.cx.fmt(), ",", (m.cy + r).fmt(), " ",
+                    (m.cx - r).fmt(), ",", m.cy.fmt(),
+                    '"',
+                    _style(true, m.weight, fg)
+                );
+            }
+            // Inner diamond: edges offset inward by the weight shorten the half-diagonal by
+            // w * sqrt(2).
+            uint256 ri = r > SQRT2.mulWad(m.weight) ? r - SQRT2.mulWad(m.weight) : 0;
+            bytes memory d = abi.encodePacked(
+                "M", m.cx.fmt(), ",", (m.cy - r).fmt(), " L", (m.cx + r).fmt(), ",", m.cy.fmt(),
+                " L", m.cx.fmt(), ",", (m.cy + r).fmt(), " L", (m.cx - r).fmt(), ",", m.cy.fmt(),
+                " Z ",
+                "M", m.cx.fmt(), ",", (m.cy - ri).fmt(), " L", (m.cx + ri).fmt(), ",", m.cy.fmt(),
+                " L", m.cx.fmt(), ",", (m.cy + ri).fmt(), " L", (m.cx - ri).fmt(), ",", m.cy.fmt(),
+                " Z"
             );
+            return _ring(d, 0, m.cx, m.cy, fg);
         }
 
         if (m.kind == KIND_HALFSQUARE) {
@@ -373,17 +434,37 @@ contract ShapeRenderer is IShapeRenderer {
         }
 
         if (m.kind == KIND_RTRIANGLE) {
-            // The square cut on its diagonal: right angle at the top-left footprint corner at
-            // rotation 0, hypotenuse from top-right to bottom-left.
-            return abi.encodePacked(
-                '<polygon points="',
-                (m.cx - r).fmt(), ",", (m.cy - r).fmt(), " ",
-                (m.cx + r).fmt(), ",", (m.cy - r).fmt(), " ",
-                (m.cx - r).fmt(), ",", (m.cy + r).fmt(),
-                '"',
-                _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight, fg)
+            if (m.solid) {
+                // The square cut on its diagonal: right angle at the top-left footprint corner
+                // at rotation 0, hypotenuse from top-right to bottom-left.
+                return abi.encodePacked(
+                    '<polygon points="',
+                    (m.cx - r).fmt(), ",", (m.cy - r).fmt(), " ",
+                    (m.cx + r).fmt(), ",", (m.cy - r).fmt(), " ",
+                    (m.cx - r).fmt(), ",", (m.cy + r).fmt(),
+                    '"',
+                    _transform(m.rot, m.cx, m.cy),
+                    _style(true, m.weight, fg)
+                );
+            }
+            // Inner triangle: the outer scaled about the incenter, which offsets every edge
+            // inward by the weight. For a right isoceles triangle with legs 2r, inradius =
+            // r * (2 - sqrt(2)); the incenter sits that far from each leg.
+            uint256 rho = r.mulWad(TWO_MINUS_SQRT2);
+            uint256 k = _insetScale(rho, m.weight);
+            uint256 ix = m.cx - r + rho;
+            uint256 iy = m.cy - r + rho;
+            uint256 near = k.mulWad(rho); // incenter to the right-angle vertex, scaled
+            uint256 far = k.mulWad(2 * r - rho); // incenter to each acute vertex, scaled
+            bytes memory d = abi.encodePacked(
+                "M", (m.cx - r).fmt(), ",", (m.cy - r).fmt(),
+                " L", (m.cx + r).fmt(), ",", (m.cy - r).fmt(),
+                " L", (m.cx - r).fmt(), ",", (m.cy + r).fmt(), " Z ",
+                "M", (ix - near).fmt(), ",", (iy - near).fmt(),
+                " L", (ix + far).fmt(), ",", (iy - near).fmt(),
+                " L", (ix - near).fmt(), ",", (iy + far).fmt(), " Z"
             );
+            return _ring(d, m.rot, m.cx, m.cy, fg);
         }
 
         if (m.kind == KIND_ARC) {
@@ -409,12 +490,29 @@ contract ShapeRenderer is IShapeRenderer {
         }
 
         // half circle: flat edge through the cell centre, filled half above at rotation 0
-        return abi.encodePacked(
-            '<path d="M', (m.cx - r).fmt(), ",", m.cy.fmt(),
-            " A", r.fmt(), ",", r.fmt(), " 0 0 1 ", (m.cx + r).fmt(), ",", m.cy.fmt(), ' Z"',
-            _transform(m.rot, m.cx, m.cy),
-            _style(m.solid, m.weight, fg)
-        );
+        {
+            bytes memory outer = abi.encodePacked(
+                "M", (m.cx - r).fmt(), ",", m.cy.fmt(),
+                " A", r.fmt(), ",", r.fmt(), " 0 0 1 ", (m.cx + r).fmt(), ",", m.cy.fmt(), " Z"
+            );
+            if (m.solid) {
+                return abi.encodePacked(
+                    '<path d="', outer, '"',
+                    _transform(m.rot, m.cx, m.cy),
+                    _style(true, m.weight, fg)
+                );
+            }
+            // Inner region: the half disc's points at least `weight` from its boundary — an
+            // arc of radius r - w about the same centre, chorded where it meets the offset
+            // flat edge.
+            uint256 ri = r - m.weight;
+            uint256 q = (ri * ri - m.weight * m.weight).isqrt();
+            bytes memory inner = abi.encodePacked(
+                "M", (m.cx - q).fmt(), ",", (m.cy - m.weight).fmt(),
+                " A", ri.fmt(), ",", ri.fmt(), " 0 0 1 ", (m.cx + q).fmt(), ",", (m.cy - m.weight).fmt(), " Z"
+            );
+            return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
+        }
     }
 
     /// @inheritdoc IShapeRenderer

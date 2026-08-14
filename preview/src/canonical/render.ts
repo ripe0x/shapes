@@ -11,15 +11,14 @@
  * There is no float arithmetic anywhere in this module.
  */
 
-import { WAD, mulWad, min, fmt } from "./wad";
+import { WAD, mulWad, divWad, min, fmt, isqrt } from "./wad";
 import { Round03Rand, seed32Of } from "./rand";
 import {
   CANONICAL,
   FIELD,
   KIND_ORDER,
-  SQRT3,
   SQRT2,
-  ONE_PLUS_SQRT2,
+  TWO_MINUS_SQRT2,
   type Kind,
   type Params,
 } from "./params";
@@ -191,20 +190,23 @@ export function drawSolidProbability(r: bigint, p: Params = CANONICAL): bigint {
 /**
  * Solve the path footprint that paints to exactly `target` from the cell centre.
  *
- * A solid mark paints to its own edge, so its footprint is simply `2 * target`. An outlined
- * mark is grown by its stroke, and how much depends on the corner geometry:
+ * A solid mark paints to its own edge, so its footprint is `2 * target`. Outlined marks come
+ * in two constructions:
  *
- *   circle, square, half circle   the stroke straddles the edge, adding w/2 all round
+ *   circle, square, halfsquare    drawn as a stroked path. The stroke straddles the edge,
+ *                                 adding w/2 all round, and every painted extent — 90 degree
+ *                                 miter corners included — lands exactly on the target
  *                                 -> size = 2 * target - w
  *
- *   triangle                      60 degree corners. A miter join at angle t extends the
- *                                 corner by (w/2) / sin(t/2) along the bisector; at 60 degrees
- *                                 that is a full w, not half of one. Offsetting the outline
- *                                 outward by w/2 grows the side by sqrt(3) * w
- *                                 -> size = 2 * target - sqrt(3) * w
+ *   triangle, rtriangle, diamond, drawn as an even-odd ring whose outer boundary is the solid
+ *   half, quarter                 geometry itself, so every edge sits exactly where the solid
+ *                                 form's does; the inner boundary is inset by the weight
+ *                                 -> size = 2 * target
  *
- * With w capped at 0.17 of the painted width the triangle case stays comfortably positive:
- * `2T - sqrt(3) * 0.34T = 1.41T`.
+ *   arc, line                     open strokes, never filled. The arc's endpoints reach w/2
+ *                                 past the footprint, like a square; the diagonal line meets
+ *                                 the axis at 45 degrees, so its cap projects only (√2/4)·w
+ *                                 and it is grown to compensate.
  */
 function solveSize(
   kind: Kind,
@@ -213,21 +215,11 @@ function solveSize(
   weight: bigint,
 ): bigint {
   const full = 2n * target;
-  // Open strokes are never filled; their footprint is always the outlined size. The arc's
-  // endpoints reach w/2 past the footprint, like a square; the diagonal line meets the axis at
-  // 45 degrees, so its cap projects only (√2/4)·w and it is grown to compensate.
   if (kind === "arc") return full - weight;
   if (kind === "line") return full - mulWad(SQRT2 / 2n, weight);
   if (solid) return full;
-  if (kind === "triangle") return full - mulWad(SQRT3, weight);
-  // The right triangle's two acute corners are 45 degrees, sharper than the equilateral's 60,
-  // so a miter join reaches (1+√2)/2·w along the axis. Inset the footprint by (1+√2)·w so that
-  // outermost miter tip lands exactly on the target.
-  if (kind === "rtriangle") return full - mulWad(ONE_PLUS_SQRT2, weight);
-  // A diamond's 90 degree corners point straight along the axes, so the miter overshoot lands
-  // entirely on the extent: half-diagonal = T - (sqrt(2)/2) w, and the side is sqrt(2) times
-  // that. Net: size = sqrt(2) * 2T - 2w, expressed on the half-diagonal below.
-  return full - weight;
+  if (kind === "circle" || kind === "square" || kind === "halfsquare") return full - weight;
+  return full;
 }
 
 /* ------------------------------------------------------------------ *
@@ -245,6 +237,20 @@ function style(solid: boolean, weight: bigint, fg: string): string {
 
 function transform(rot: number, cx: bigint, cy: bigint): string {
   return rot === 0 ? "" : ` transform="rotate(${rot} ${fmt(cx)} ${fmt(cy)})"`;
+}
+
+/**
+ * An outlined mark built as a filled even-odd ring: the outer subpath is the solid geometry
+ * itself, the inner subpath the same shape inset by the stroke weight. Every painted edge
+ * therefore sits exactly where the solid form's does — no stroke, no miter arithmetic.
+ */
+function ring(d: string, rot: number, cx: bigint, cy: bigint, fg: string): string {
+  return `<path fill-rule="evenodd" d="${d}"` + transform(rot, cx, cy) + ` fill="${fg}"/>`;
+}
+
+/** divWad(a - b, a), clamped to zero when the inset would consume the shape. */
+function insetScale(a: bigint, b: bigint): bigint {
+  return a > b ? divWad(a - b, a) : 0n;
 }
 
 function moduleSvg(m: Module, p: Params, fg: string): string {
@@ -267,48 +273,89 @@ function moduleSvg(m: Module, p: Params, fg: string): string {
     case "triangle": {
       const hh = mulWad(size, p.triHeight);
       const half = hh / 2n;
-      const points =
-        `${fmt(cx)},${fmt(cy - half)} ` +
-        `${fmt(cx + r)},${fmt(cy + half)} ` +
-        `${fmt(cx - r)},${fmt(cy + half)}`;
-      return (
-        `<polygon points="${points}"` +
-        transform(m.rot, cx, cy) +
-        style(m.solid, m.weight, fg)
-      );
+      const outer =
+        `M${fmt(cx)},${fmt(cy - half)} ` +
+        `L${fmt(cx + r)},${fmt(cy + half)} ` +
+        `L${fmt(cx - r)},${fmt(cy + half)} Z`;
+      if (m.solid) {
+        const points =
+          `${fmt(cx)},${fmt(cy - half)} ` +
+          `${fmt(cx + r)},${fmt(cy + half)} ` +
+          `${fmt(cx - r)},${fmt(cy + half)}`;
+        return (
+          `<polygon points="${points}"` + transform(m.rot, cx, cy) + style(true, m.weight, fg)
+        );
+      }
+      // Inner triangle: the outer scaled about the incenter, which offsets every edge inward
+      // by the weight. Incenter sits one third of the height above the base; inradius = h/3.
+      const rho = hh / 3n;
+      const k = insetScale(rho, m.weight);
+      const iy = cy + half - rho;
+      const inner =
+        `M${fmt(cx)},${fmt(iy - mulWad(k, hh - rho))} ` +
+        `L${fmt(cx + mulWad(k, r))},${fmt(iy + mulWad(k, rho))} ` +
+        `L${fmt(cx - mulWad(k, r))},${fmt(iy + mulWad(k, rho))} Z`;
+      return ring(`${outer} ${inner}`, m.rot, cx, cy, fg);
     }
 
     case "half": {
-      const d =
+      const outer =
         `M${fmt(cx - r)},${fmt(cy)} ` +
         `A${fmt(r)},${fmt(r)} 0 0 1 ${fmt(cx + r)},${fmt(cy)} Z`;
-      return (
-        `<path d="${d}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight, fg)
-      );
+      if (m.solid) {
+        return `<path d="${outer}"` + transform(m.rot, cx, cy) + style(true, m.weight, fg);
+      }
+      // Inner region: the half disc's points at least `weight` from its boundary — an arc of
+      // radius r - w about the same centre, chorded where it meets the offset flat edge.
+      const ri = r - m.weight;
+      const q = isqrt(ri * ri - m.weight * m.weight);
+      const inner =
+        `M${fmt(cx - q)},${fmt(cy - m.weight)} ` +
+        `A${fmt(ri)},${fmt(ri)} 0 0 1 ${fmt(cx + q)},${fmt(cy - m.weight)} Z`;
+      return ring(`${outer} ${inner}`, m.rot, cx, cy, fg);
     }
 
     // A quarter disc filling the cell: right-angle corner at one corner of the footprint, the
     // arc sweeping across to the opposite two. Radius is the full footprint, not half of it.
     case "quarter": {
       const R = m.size;
-      const d =
+      const outer =
         `M${fmt(cx - r)},${fmt(cy + r)} ` +
         `L${fmt(cx + r)},${fmt(cy + r)} ` +
         `A${fmt(R)},${fmt(R)} 0 0 0 ${fmt(cx - r)},${fmt(cy - r)} Z`;
-      return (
-        `<path d="${d}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight, fg)
-      );
+      if (m.solid) {
+        return `<path d="${outer}"` + transform(m.rot, cx, cy) + style(true, m.weight, fg);
+      }
+      // Inner region: legs offset inward by the weight, arc of radius R - w about the same
+      // corner, meeting each offset leg where the circle crosses it.
+      const Ri = R - m.weight;
+      const q = isqrt(Ri * Ri - m.weight * m.weight);
+      const inner =
+        `M${fmt(cx - r + m.weight)},${fmt(cy + r - m.weight)} ` +
+        `L${fmt(cx - r + q)},${fmt(cy + r - m.weight)} ` +
+        `A${fmt(Ri)},${fmt(Ri)} 0 0 0 ${fmt(cx - r + m.weight)},${fmt(cy + r - q)} Z`;
+      return ring(`${outer} ${inner}`, m.rot, cx, cy, fg);
     }
 
     // The square on its diagonal. Emitted as its four vertices rather than a rotated rect, so
-    // the geometry is explicit and the miter maths stays in one place.
+    // the geometry is explicit in one place.
     case "diamond": {
-      const points =
-        `${fmt(cx)},${fmt(cy - r)} ` +
-        `${fmt(cx + r)},${fmt(cy)} ` +
-        `${fmt(cx)},${fmt(cy + r)} ` +
-        `${fmt(cx - r)},${fmt(cy)}`;
-      return `<polygon points="${points}"` + style(m.solid, m.weight, fg);
+      if (m.solid) {
+        const points =
+          `${fmt(cx)},${fmt(cy - r)} ` +
+          `${fmt(cx + r)},${fmt(cy)} ` +
+          `${fmt(cx)},${fmt(cy + r)} ` +
+          `${fmt(cx - r)},${fmt(cy)}`;
+        return `<polygon points="${points}"` + style(true, m.weight, fg);
+      }
+      // Inner diamond: edges offset inward by the weight shorten the half-diagonal by w·√2.
+      const ri = r > mulWad(SQRT2, m.weight) ? r - mulWad(SQRT2, m.weight) : 0n;
+      const d =
+        `M${fmt(cx)},${fmt(cy - r)} L${fmt(cx + r)},${fmt(cy)} ` +
+        `L${fmt(cx)},${fmt(cy + r)} L${fmt(cx - r)},${fmt(cy)} Z ` +
+        `M${fmt(cx)},${fmt(cy - ri)} L${fmt(cx + ri)},${fmt(cy)} ` +
+        `L${fmt(cx)},${fmt(cy + ri)} L${fmt(cx - ri)},${fmt(cy)} Z`;
+      return ring(d, 0, cx, cy, fg);
     }
 
     // Half the cell, split by a straight edge: a rectangle filling the upper half of the
@@ -326,13 +373,30 @@ function moduleSvg(m: Module, p: Params, fg: string): string {
     // at the top-left corner at rot 0, hypotenuse from top-right to bottom-left; rotation moves
     // which corner holds the right angle.
     case "rtriangle": {
-      const points =
-        `${fmt(cx - r)},${fmt(cy - r)} ` +
-        `${fmt(cx + r)},${fmt(cy - r)} ` +
-        `${fmt(cx - r)},${fmt(cy + r)}`;
-      return (
-        `<polygon points="${points}"` + transform(m.rot, cx, cy) + style(m.solid, m.weight, fg)
-      );
+      if (m.solid) {
+        const points =
+          `${fmt(cx - r)},${fmt(cy - r)} ` +
+          `${fmt(cx + r)},${fmt(cy - r)} ` +
+          `${fmt(cx - r)},${fmt(cy + r)}`;
+        return (
+          `<polygon points="${points}"` + transform(m.rot, cx, cy) + style(true, m.weight, fg)
+        );
+      }
+      // Inner triangle: the outer scaled about the incenter, which offsets every edge inward
+      // by the weight. For a right isoceles triangle with legs 2r, inradius = r·(2 - √2); the
+      // incenter sits that far from each leg.
+      const rho = mulWad(r, TWO_MINUS_SQRT2);
+      const k = insetScale(rho, m.weight);
+      const ix = cx - r + rho;
+      const iy = cy - r + rho;
+      const near = mulWad(k, rho); // incenter to the right-angle vertex, scaled
+      const far = mulWad(k, 2n * r - rho); // incenter to each acute vertex, scaled
+      const d =
+        `M${fmt(cx - r)},${fmt(cy - r)} L${fmt(cx + r)},${fmt(cy - r)} ` +
+        `L${fmt(cx - r)},${fmt(cy + r)} Z ` +
+        `M${fmt(ix - near)},${fmt(iy - near)} L${fmt(ix + far)},${fmt(iy - near)} ` +
+        `L${fmt(ix - near)},${fmt(iy + far)} Z`;
+      return ring(d, m.rot, cx, cy, fg);
     }
 
     // The curved edge of the quarter disc on its own: an open 90 degree arc, no radii, always

@@ -15,7 +15,6 @@ import { CANONICAL, type Params } from "../canonical/params";
 import { WAD } from "../canonical/wad";
 
 const num = (w: bigint) => Number(w) / Number(WAD);
-const SQRT3_2 = 0.8660254037844386;
 
 export interface Extent {
   x: number;
@@ -39,42 +38,36 @@ export function moduleExtent(m: Module, cellWad: bigint, p: Params = CANONICAL):
   switch (m.kind) {
     case "circle":
     case "square":
-    // a quarter disc's three corners are all 90 degrees, so its axis extent matches a square's
-    case "quarter":
-    // a diamond's corners point along the axes; a 90 degree miter reaches (w/2)*sqrt(2) along
-    // the bisector, whose axis component is exactly w/2
-    case "diamond":
+      // stroked outlines straddle the path by w/2; a square's 90 degree miter corners land
+      // exactly on the same axis extent
       x = up = down = size / 2 + w / 2;
       break;
+    // even-odd rings: the painted outer boundary is the solid geometry itself, so the extent
+    // is the solid extent whatever the fill bit says
+    case "quarter":
+    case "diamond":
+    case "rtriangle":
+      x = up = down = size / 2;
+      break;
     case "half":
-      // flat edge on the centre line: the arc reaches up, the stroke corners reach down
-      x = size / 2 + w / 2;
+      // flat edge on the centre line: the arc reaches up, nothing paints below it
+      x = size / 2;
       up = x;
-      down = (w / 2) * Math.SQRT2;
+      down = 0;
       break;
     case "triangle": {
       const h = num(p.triHeight) * size;
-      x = size / 2 + SQRT3_2 * w;
-      up = h / 2 + w;
-      down = h / 2 + w / 2;
+      x = size / 2;
+      up = h / 2;
+      down = h / 2;
       break;
     }
-    // rectangular half: flat cut edge on the centre line (like the half circle), the outer
-    // corners are 90 degrees so they add nothing past the straight edges
+    // rectangular half, stroked: flat cut edge on the centre line, stroke corners reach below
     case "halfsquare":
       x = size / 2 + w / 2;
       up = x;
       down = (w / 2) * Math.SQRT2;
       break;
-    // right triangle: two 45 degree acute corners whose miter reaches (1+sqrt2)/2 * w along the
-    // axis, further than any straight edge
-    case "rtriangle": {
-      const miter = ((1 + Math.SQRT2) / 2) * w;
-      x = size / 2 + miter;
-      up = size / 2 + w / 2;
-      down = size / 2 + miter;
-      break;
-    }
     // arc and line are open strokes reaching between opposite footprint corners; always drawn
     // (never filled), so the stroke always applies whatever the ignored solid bit says. The
     // arc's endpoint caps project w/2 onto the axis; the line meets it at 45 degrees, so its

@@ -33,6 +33,22 @@ export function min(a: bigint, b: bigint): bigint {
 }
 
 /**
+ * Floor integer square root (Babylonian). Applied to a product of two WAD values, the result
+ * is WAD-scaled: isqrt(a * b) with a, b in WAD gives sqrt(a*b) in WAD. Floor sqrt is unique,
+ * so any correct implementation in either language produces the identical value.
+ */
+export function isqrt(n: bigint): bigint {
+  if (n < 2n) return n;
+  let x = n;
+  let y = (x + 1n) / 2n;
+  while (y < x) {
+    x = y;
+    y = (x + n / x) / 2n;
+  }
+  return x;
+}
+
+/**
  * Canonical decimal formatter.
  *
  * Emits a WAD value with at most OUTPUT_DECIMALS fractional digits, rounding

@@ -517,7 +517,37 @@ the ladder. It is not: redemption value comes from denomination alone (D3e).
 The 500-sample sweep in `preview/scripts/collisionSweep.ts` reports this per denomination on
 every run, so it can never quietly drift.
 
-### D12. Contract architecture
+### D16. Outlined marks with corners are even-odd rings, not strokes
+
+**Amends the outlined column of D13's footprint table for triangle, right triangle, diamond,
+half circle and quarter circle.**
+
+D13 solved each outlined footprint backwards through its stroke's miter overshoot, sized for
+the worst corner. The worst corner is not every corner: the allowance that kept a right
+triangle's 45° miter tips on target left its flat legs about `0.7·w` short of it, so a solid
+and an outlined right triangle in one column had visibly different left edges. The diamond's
+90° axis-pointing miters overshot the target instead. Equal *maximum* reach never meant equal
+*edge* positions.
+
+The committed construction removes the stroke from every outlined mark with a corner. Those
+five kinds are drawn as a filled `fill-rule="evenodd"` ring: the outer subpath is the solid
+geometry itself — `size = 2T`, identical bytes to the solid form's boundary — and the inner
+subpath is the same shape offset inward by `w`. Every painted edge therefore sits exactly where
+the solid form's edge does, corners stay sharp, and no miter arithmetic exists to allow for.
+
+Inner geometry, all in flooring WAD arithmetic:
+
+- **triangle, right triangle**: the outer scaled about its incenter by `(ρ − w)/ρ`, which
+  offsets every edge of a tangential polygon inward by exactly `w`. Inradii: equilateral
+  `ρ = h/3`; right isoceles `ρ = r·(2 − √2)`.
+- **diamond**: a rhombus is tangential too; the scale shortens the half-diagonal by `w·√2`.
+- **half circle, quarter circle**: an arc of radius `R − w` about the same centre, chorded
+  where it crosses the legs offset inward by `w`; the crossing is `√((R−w)² − w²)` from the
+  centre, computed with a floor integer square root (unique, so both renderers agree exactly).
+
+Circle, square and half square keep their strokes: with no corner sharper than 90° pointing
+along an axis, a straddling stroke's painted extent already lands exactly on the target
+everywhere. Arc and line are open strokes and keep D13's solve unchanged.
 
 - **One cosmetic admin power, no economic admin.** `Ownable` is inherited so
   the owner can replace the renderer (`setRenderer`) and permanently freeze it

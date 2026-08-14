@@ -18,8 +18,28 @@ library FixedPoint {
         return (a * b) / WAD;
     }
 
+    /// @notice a * 1e18 / b, flooring.
+    function divWad(uint256 a, uint256 b) internal pure returns (uint256) {
+        return (a * WAD) / b;
+    }
+
     function min(uint256 a, uint256 b) internal pure returns (uint256) {
         return a < b ? a : b;
+    }
+
+    /// @notice Floor integer square root (Babylonian method).
+    /// @dev Applied to a product of two WAD values, the result is WAD-scaled: isqrt(a * b)
+    ///      with a, b in WAD gives sqrt(a*b) in WAD. Floor sqrt is unique, so this and the
+    ///      TypeScript implementation agree on every input.
+    function isqrt(uint256 n) internal pure returns (uint256) {
+        if (n < 2) return n;
+        uint256 x = n;
+        uint256 y = (x + 1) / 2;
+        while (y < x) {
+            x = y;
+            y = (x + n / x) / 2;
+        }
+        return x;
     }
 
     /// @notice Decimal representation of an unsigned integer.

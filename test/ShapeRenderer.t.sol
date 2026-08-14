@@ -217,25 +217,29 @@ contract FixedPointTest is RendererTestBase {
  * ==================================================================== */
 
 contract GeometryTest is RendererTestBase {
-    uint256 internal constant SQRT3_2 = 866_025_403_784_438_646; // √3 / 2
     uint256 internal constant SQRT2 = 1_414_213_562_373_095_048;
-    uint256 internal constant ONE_PLUS_SQRT2 = 2_414_213_562_373_095_048;
 
-    /// @dev True painted half-extents of a module: stroke and miter joins included.
+    /// @dev True painted half-extents of a module.
     ///
-    ///      The subtlety is the triangle. Its corners are 60°, and a miter join at angle θ
-    ///      pushes the outer corner out by `(w/2) / sin(θ/2)` along the bisector — a full
-    ///      stroke width `w` at 60°, not half of one. Measuring with `w/2`, as a naive bound
-    ///      would, understates a triangle's reach by 0.366·w and would let a real overflow
-    ///      through. Everything else paints to exactly `d/2` thanks to the inset rule.
+    ///      Triangle, right triangle, diamond, half circle and quarter circle are drawn as an
+    ///      even-odd ring whose outer boundary is the solid geometry itself, so their extent is
+    ///      the same whether the mark is solid or outlined — the stroke weight plays no part.
+    ///      Circle, square and half square are still stroked paths, where the stroke straddles
+    ///      the edge and adds w/2 all round. Arc and line are open strokes, always drawn, so the
+    ///      stroke applies whatever the ignored solid bit says.
     function _extent(ShapeRenderer.Module memory m, uint256 triHeight)
         internal
         pure
         returns (uint256 worst)
     {
-        // Arc and line are open strokes: always drawn, so the stroke applies whatever the
-        // ignored solid bit says.
-        uint256 w = (m.solid && m.kind != 8 && m.kind != 9) ? 0 : m.weight;
+        uint256 w;
+        if (m.kind == 8 || m.kind == 9) {
+            w = m.weight; // arc, line: open strokes, always applied
+        } else if (m.kind == 0 || m.kind == 1 || m.kind == 6) {
+            w = m.solid ? 0 : m.weight; // circle, square, half square: stroked paths
+        } else {
+            w = 0; // triangle, half, quarter, diamond, right triangle: even-odd rings
+        }
         uint256 x;
         uint256 up;
         uint256 down;
@@ -243,27 +247,21 @@ contract GeometryTest is RendererTestBase {
         if (m.kind == 2) {
             // triangle
             uint256 h = FixedPoint.mulWad(m.size, triHeight);
-            x = m.size / 2 + FixedPoint.mulWad(SQRT3_2, w);
-            up = h / 2 + w;
-            down = h / 2 + w / 2;
+            x = m.size / 2;
+            up = h / 2;
+            down = h / 2;
         } else if (m.kind == 3) {
-            // half circle: flat edge on the centre line, 90° stroke corners below it
-            x = m.size / 2 + w / 2;
+            // half circle: flat edge on the centre line, arc above it
+            x = m.size / 2;
             up = x;
-            down = FixedPoint.mulWad(w / 2, SQRT2);
-        } else if (m.kind == 7) {
-            // right triangle: two 45° acute corners, miter reaches (1+√2)/2·w along the axis
-            uint256 miter = FixedPoint.mulWad(ONE_PLUS_SQRT2 / 2, w);
-            x = m.size / 2 + miter;
-            up = m.size / 2 + w / 2;
-            down = m.size / 2 + miter;
+            down = 0;
         } else if (m.kind == 9) {
             // diagonal line: 45° cap projects (√2/4)·w onto each axis
             x = m.size / 2 + FixedPoint.mulWad(SQRT2 / 4, w);
             up = x;
             down = x;
         } else {
-            // circle, square, quarter, diamond, half square, arc: 90° corners or none
+            // circle, square, quarter, diamond, half square, right triangle, arc
             x = m.size / 2 + w / 2;
             up = x;
             down = x;

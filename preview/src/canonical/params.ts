@@ -125,6 +125,8 @@ export const SQRT3 = 1_732_050_807_568_877_293n;
 /** √2 in WAD, and 1 + √2, used to invert 90 and 45 degree miter overshoots. */
 export const SQRT2 = 1_414_213_562_373_095_048n;
 export const ONE_PLUS_SQRT2 = 2_414_213_562_373_095_048n;
+/** 2 - sqrt(2): the right isoceles triangle's inradius per unit leg. */
+export const TWO_MINUS_SQRT2 = 585_786_437_626_904_952n;
 
 /** Artwork field. Fixed for every denomination. */
 export const FIELD = Object.freeze({
