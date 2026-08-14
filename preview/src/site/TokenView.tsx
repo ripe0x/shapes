@@ -52,6 +52,7 @@ export function TokenView({
   onDecompose,
   onCompose,
   onRestore,
+  onOpenToken,
 }: {
   data: SiteData | null;
   dep: Deployment;
@@ -68,6 +69,7 @@ export function TokenView({
   onDecompose: (t: SiteToken) => void;
   onCompose: (t: SiteToken, burnIds: bigint[]) => void;
   onRestore: (parentSeed: `0x${string}`, childIds: bigint[]) => void;
+  onOpenToken: (id: bigint) => void;
 }) {
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
@@ -315,12 +317,16 @@ export function TokenView({
       <History history={history} chainId={dep.chainId} />
 
       {prov && prov.contributors.length > 0 && (
-        <Section title="PROVENANCE" pad="16px 48px 30px 32px">
-          <p style={{margin: "8px 0 14px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+        <Section title="PROVENANCE" pad="16px 48px 36px 32px">
+          <p style={{margin: "8px 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
             Every Shape this one was built from. Burned Shapes are drawn from their recorded
             seeds.
           </p>
-          <ProvRows node={prov} depth={0} />
+          <div style={{overflowX: "auto", paddingBottom: 8}}>
+            <div style={{display: "flex", justifyContent: "flex-start", minWidth: "min-content"}}>
+              <ProvTree node={prov} depth={0} live={data?.tokens ?? []} onOpen={onOpenToken} />
+            </div>
+          </div>
         </Section>
       )}
 
@@ -585,44 +591,84 @@ const REL_TEXT: Record<ProvNode["rel"], string> = {
   piece: "restored piece",
 };
 
-/// One ancestry row per node, contributors nested by indentation.
-function ProvRows({node, depth}: {node: ProvNode; depth: number}) {
-  const lbl = node.di >= 0 ? DENOMINATIONS[node.di].label : "?";
+/** Node card width per generation. */
+const TREE_W = [120, 76, 52, 36, 26, 20];
+const treeWidth = (depth: number) => TREE_W[Math.min(depth, TREE_W.length - 1)];
+const STUB = 18; // vertical run of each connector segment
+
+/**
+ * The ancestry as a tree: the token at the top, each generation of contributors centered
+ * beneath the shape they became, joined by 1px connectors. Cards shrink per generation. A
+ * repeated ancestor renders dimmed with no subtree; live ancestors open their detail page.
+ */
+function ProvTree({
+  node,
+  depth,
+  live,
+  onOpen,
+}: {
+  node: ProvNode;
+  depth: number;
+  live: SiteToken[];
+  onOpen: (id: bigint) => void;
+}) {
+  const w = treeWidth(depth);
+  const isLive = live.some((t) => t.id === node.id);
+  // A repeated ancestor's subtree already hangs under its first occurrence; drop the echo.
+  const kids = node.contributors.filter((c) => !c.repeat);
   const note =
+    `#${node.id.toString()} · ${DENOMINATIONS[node.di].label} ETH · ` +
     REL_TEXT[node.rel] +
-    (node.repeat
-      ? " · shown above"
-      : node.rel !== "root" && node.mintBorn && node.contributors.length === 0
-        ? " · minted"
-        : "");
-  return (
-    <>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 20,
-          padding: "8px 0",
-          paddingLeft: depth * 28,
-          borderBottom: `1px solid ${C.ruleInner}`,
-          fontSize: 13,
-        }}
-      >
-        <Art src={localArt(node.seed, DENOMINATIONS[node.di].wei)} width={34} />
-        <div style={{flex: "0 1 auto", minWidth: 0}}>
-          #{node.id.toString()} · {lbl} ETH
-        </div>
-        <div style={{color: C.muted, fontSize: 12}}>{note}</div>
-      </div>
-      {node.truncated && (
-        <div style={{padding: "8px 0", paddingLeft: (depth + 1) * 28, fontSize: 12, color: C.faint}}>
-          … earlier history not shown
+    (node.repeat ? " (shown elsewhere)" : node.mintBorn && node.contributors.length === 0 ? ", minted" : "");
+  const card = (
+    <div style={{width: w, opacity: node.repeat ? 0.35 : 1}} title={note}>
+      <Art src={localArt(node.seed, DENOMINATIONS[node.di].wei)} />
+      {w >= 26 && (
+        <div style={{marginTop: 5, fontSize: 10, color: C.muted, textAlign: "center"}}>
+          #{node.id.toString()}
         </div>
       )}
-      {node.contributors.map((c) => (
-        <ProvRows key={c.id.toString()} node={c} depth={depth + 1} />
-      ))}
-    </>
+    </div>
+  );
+  return (
+    <div style={{display: "flex", flexDirection: "column", alignItems: "center"}}>
+      {isLive ? (
+        <button type="button" className="btn-ghost" onClick={() => onOpen(node.id)} style={{display: "block"}}>
+          {card}
+        </button>
+      ) : (
+        card
+      )}
+      {node.truncated && (
+        <div style={{marginTop: 6, fontSize: 11, color: C.faint}} title="earlier history not shown">
+          …
+        </div>
+      )}
+      {kids.length > 0 && (
+        <>
+          <div style={{width: 1, height: STUB, background: C.border}} />
+          <div style={{display: "flex", alignItems: "flex-start"}}>
+            {kids.map((c, i) => {
+              const first = i === 0;
+              const last = i === kids.length - 1;
+              const solo = kids.length === 1;
+              return (
+                <div key={`${c.id.toString()}-${i}`} style={{position: "relative", padding: `${STUB}px 9px 0`}}>
+                  {!solo && !first && (
+                    <div style={{position: "absolute", top: 0, left: 0, width: "50%", height: 1, background: C.border}} />
+                  )}
+                  {!solo && !last && (
+                    <div style={{position: "absolute", top: 0, left: "50%", width: "50%", height: 1, background: C.border}} />
+                  )}
+                  <div style={{position: "absolute", top: 0, left: "50%", width: 1, height: STUB, background: C.border}} />
+                  <ProvTree node={c} depth={depth + 1} live={live} onOpen={onOpen} />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

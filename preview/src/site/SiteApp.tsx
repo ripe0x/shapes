@@ -256,6 +256,7 @@ export function SiteApp({dep}: {dep: Deployment}) {
           onDecompose={(t) => void doDecompose(t)}
           onCompose={(t, ids) => void doCompose(t, ids)}
           onRestore={(seed, ids) => void doRestore(seed, ids)}
+          onOpenToken={openToken}
         />
       )}
       {view === "about" && <AboutView />}
