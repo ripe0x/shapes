@@ -16,7 +16,7 @@ type View = "mint" | "gallery" | "token" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
-  minted?: {id: bigint; seed: bigint; di: number; tx: string};
+  minted?: {tokens: {id: bigint; seed: bigint}[]; di: number; tx: string};
   error?: string;
 }
 
@@ -76,11 +76,14 @@ export function SiteApp({dep}: {dep: Deployment}) {
           : await write("mintBatch", [wei, BigInt(qty), address], value);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs});
-      const first = logs[0];
       await refresh();
       setMint({
         status: "done",
-        minted: {id: first.args.tokenId, seed: BigInt(first.args.seed), di: sel, tx: hash},
+        minted: {
+          tokens: logs.map((l) => ({id: l.args.tokenId, seed: BigInt(l.args.seed)})),
+          di: sel,
+          tx: hash,
+        },
       });
     } catch (e) {
       setMint({status: "failed", error: describeTxError(e)});

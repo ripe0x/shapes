@@ -259,12 +259,12 @@ export function MintView({
         </div>
       </Section>
 
-      {mint.status === "done" && minted && (
+      {mint.status === "done" && minted && minted.tokens.length === 1 && (
         <Section title="MINTED" pad="32px 48px 40px 32px">
           <div style={{display: "flex", flexWrap: "wrap", gap: 40, alignItems: "flex-start"}}>
-            <Art src={localArt(minted.seed, DENOMINATIONS[minted.di].wei)} width={250} />
+            <Art src={localArt(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei)} width={250} />
             <div style={{flex: "1 1 300px", minWidth: 0}}>
-              <div style={{fontSize: 26}}>Shape #{minted.id.toString()}</div>
+              <div style={{fontSize: 26}}>Shape #{minted.tokens[0].id.toString()}</div>
               <div
                 style={{
                   marginTop: 12,
@@ -282,7 +282,7 @@ export function MintView({
                 </div>
                 <div style={{color: C.muted}}>seed</div>
                 <div style={{overflowWrap: "anywhere"}}>
-                  0x{minted.seed.toString(16).padStart(64, "0").slice(0, 16)}…
+                  0x{minted.tokens[0].seed.toString(16).padStart(64, "0").slice(0, 16)}…
                 </div>
                 <div style={{color: C.muted}}>transaction</div>
                 <div style={{overflowWrap: "anywhere"}}>
@@ -298,13 +298,62 @@ export function MintView({
               <button
                 type="button"
                 className="btn-outline"
-                onClick={() => onOpenToken(minted.id)}
+                onClick={() => onOpenToken(minted.tokens[0].id)}
                 style={{marginTop: 22, padding: "10px 20px"}}
               >
                 Open Shape
               </button>
             </div>
           </div>
+        </Section>
+      )}
+
+      {mint.status === "done" && minted && minted.tokens.length > 1 && (
+        <Section title="MINTED" pad="32px 48px 40px 32px">
+          <div style={{fontSize: 26}}>
+            {minted.tokens.length} Shapes, #{minted.tokens[0].id.toString()}–#
+            {minted.tokens[minted.tokens.length - 1].id.toString()}
+          </div>
+          <div
+            style={{
+              marginTop: 12,
+              display: "grid",
+              gridTemplateColumns: "110px minmax(0, 1fr)",
+              gap: "8px 24px",
+              fontSize: 13,
+            }}
+          >
+            <div style={{color: C.muted}}>denomination</div>
+            <div>{DENOMINATIONS[minted.di].label} ETH each</div>
+            <div style={{color: C.muted}}>grid</div>
+            <div>
+              {gridText(minted.di)} · {marksText(minted.di)}
+            </div>
+            <div style={{color: C.muted}}>transaction</div>
+            <div style={{overflowWrap: "anywhere"}}>
+              <a href={txUrl(minted.tx, chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
+                {minted.tx.slice(0, 12)}… on evm.now
+              </a>
+            </div>
+          </div>
+          <div style={{marginTop: 28, display: "flex", flexWrap: "wrap", gap: "28px 22px"}}>
+            {minted.tokens.map((m) => (
+              <button
+                key={m.id.toString()}
+                type="button"
+                className="btn-ghost"
+                onClick={() => onOpenToken(m.id)}
+                style={{display: "block", textAlign: "left", flex: "0 0 140px", width: 140}}
+              >
+                <Art src={localArt(m.seed, DENOMINATIONS[minted.di].wei)} />
+                <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>#{m.id.toString()}</div>
+              </button>
+            ))}
+          </div>
+          <p style={{margin: "24px 0 0", fontSize: 13, lineHeight: 1.7, color: C.bodyDim, maxWidth: "52ch"}}>
+            The contract holds {DENOMINATIONS[minted.di].label} ETH for each of these Shapes. Burn
+            one and you receive {DENOMINATIONS[minted.di].label} ETH.
+          </p>
         </Section>
       )}
 
