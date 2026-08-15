@@ -127,8 +127,10 @@ export interface ProvNode {
   seed: bigint;
   /// Denomination index at the end of this token's life (current, for a live root).
   di: number;
-  /// How this node relates to the node it nests under.
-  rel: "root" | "merged" | "splitSource" | "piece";
+  /// How this node relates to the node it nests under. `self` is the same token one merge
+  /// earlier: a compose keeps the survivor alive, so its prior state is drawn as a node of its
+  /// own — otherwise a five-way merge would show four children and a missing fifth.
+  rel: "root" | "merged" | "splitSource" | "piece" | "self";
   /// True for tokens whose life began at a mint (the tree's leaves).
   mintBorn: boolean;
   contributors: ProvNode[];
@@ -209,28 +211,50 @@ export async function loadProvenance(
       : restore!.parentSeed;
     const birthDi = (mint ?? split ?? restore)!.di;
     const merges = absorbedBy.get(k) ?? [];
-    const di = merges.length > 0 ? merges[merges.length - 1].di : birthDi;
+    const finalDi = merges.length > 0 ? merges[merges.length - 1].di : birthDi;
 
     budget -= 1;
-    const node: ProvNode = {id: nid, seed, di, rel, mintBorn: !!mint, contributors: []};
     // An ancestor can contribute along more than one line (every piece of a split shares the
     // split's input); its subtree is expanded once and referenced after that.
     if (visited.has(k)) {
-      node.repeat = true;
-      return node;
+      return {id: nid, seed, di: finalDi, rel, mintBorn: !!mint, contributors: [], repeat: true};
     }
     visited.add(k);
+
+    // The token at birth, with its birth contributors.
+    let node: ProvNode = {id: nid, seed, di: birthDi, rel, mintBorn: !!mint, contributors: []};
     if (budget <= 0 || depth >= PROV_MAX_DEPTH) {
+      node.di = finalDi;
       node.truncated = !!split || !!restore || merges.length > 0;
       return node;
     }
-
+    const childDepth = depth + merges.length + 1;
     const push = (child: ProvNode | null) => {
       if (child) node.contributors.push(child);
     };
-    if (split) push(build(split.parentId, "splitSource", depth + 1));
-    if (restore) for (const cid of restore.childIds) push(build(cid, "piece", depth + 1));
-    for (const m of merges) for (const bid of m.burnedIds) push(build(bid, "merged", depth + 1));
+    if (split) push(build(split.parentId, "splitSource", childDepth));
+    if (restore) for (const cid of restore.childIds) push(build(cid, "piece", childDepth));
+
+    // Each merge is a level of its own: the token one state earlier beside what it absorbed.
+    // Without this, a five-way merge would show four children and no fifth.
+    for (let e = 0; e < merges.length; e++) {
+      node.rel = "self";
+      const upper: ProvNode = {
+        id: nid,
+        seed,
+        di: merges[e].di,
+        rel,
+        mintBorn: false,
+        contributors: [node],
+      };
+      budget -= 1;
+      const d = depth + merges.length - 1 - e;
+      for (const bid of merges[e].burnedIds) {
+        const child = build(bid, "merged", d + 1);
+        if (child) upper.contributors.push(child);
+      }
+      node = upper;
+    }
     return node;
   }
 

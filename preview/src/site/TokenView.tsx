@@ -615,6 +615,7 @@ const REL_TEXT: Record<ProvNode["rel"], string> = {
   merged: "merged in",
   splitSource: "split source",
   piece: "restored piece",
+  self: "the same token, before the merge",
 };
 
 /** Node card width per generation. */
