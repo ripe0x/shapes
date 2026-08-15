@@ -203,10 +203,10 @@ export function drawSolidProbability(r: bigint, p: Params = CANONICAL): bigint {
  *                                 form's does; the inner boundary is inset by the weight
  *                                 -> size = 2 * target
  *
- *   arc, line                     open strokes, never filled. The arc's endpoints reach w/2
- *                                 past the footprint, like a square; the diagonal line meets
- *                                 the axis at 45 degrees, so its cap projects only (√2/4)·w
- *                                 and it is grown to compensate.
+ *   arc, line                     filled bands of one weight, never solid. Both span the full
+ *                                 footprint: the arc's outer curve connects two footprint
+ *                                 corners, the line's tips are clipped into the other two
+ *                                 -> size = 2 * target
  */
 function solveSize(
   kind: Kind,
@@ -215,8 +215,7 @@ function solveSize(
   weight: bigint,
 ): bigint {
   const full = 2n * target;
-  if (kind === "arc") return full - weight;
-  if (kind === "line") return full - mulWad(SQRT2 / 2n, weight);
+  if (kind === "arc" || kind === "line") return full;
   if (solid) return full;
   if (kind === "circle" || kind === "square" || kind === "halfsquare") return full - weight;
   return full;
@@ -399,20 +398,33 @@ function moduleSvg(m: Module, p: Params, fg: string): string {
       return ring(d, m.rot, cx, cy, fg);
     }
 
-    // The curved edge of the quarter disc on its own: an open 90 degree arc, no radii, always
-    // stroked. Radius is the full footprint, sweeping between two opposite footprint corners.
+    // The curved edge of the quarter disc on its own: a filled annular band one weight thick.
+    // The outer curve has the footprint for its radius and connects two footprint corners; the
+    // band's flat radial ends lie on the footprint edges.
     case "arc": {
       const R = m.size;
+      const Ri = R - m.weight;
       const d =
         `M${fmt(cx + r)},${fmt(cy + r)} ` +
-        `A${fmt(R)},${fmt(R)} 0 0 0 ${fmt(cx - r)},${fmt(cy - r)}`;
-      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight, fg);
+        `A${fmt(R)},${fmt(R)} 0 0 0 ${fmt(cx - r)},${fmt(cy - r)} ` +
+        `L${fmt(cx - r)},${fmt(cy - r + m.weight)} ` +
+        `A${fmt(Ri)},${fmt(Ri)} 0 0 1 ${fmt(cx + r - m.weight)},${fmt(cy + r)} Z`;
+      return `<path d="${d}"` + transform(m.rot, cx, cy) + ` fill="${fg}"/>`;
     }
 
-    // A straight diagonal across the cell, corner to corner, always stroked. Two orientations.
+    // A straight diagonal band across the cell, one weight thick, its centreline the footprint
+    // diagonal. The tips are clipped by the footprint square, so each ends in a point exactly
+    // on the corner. Two orientations.
     case "line": {
-      const d = `M${fmt(cx - r)},${fmt(cy - r)} L${fmt(cx + r)},${fmt(cy + r)}`;
-      return `<path d="${d}"` + transform(m.rot, cx, cy) + style(false, m.weight, fg);
+      const o = mulWad(m.weight, SQRT2) / 2n; // the clipped tip's run along each edge
+      const d =
+        `M${fmt(cx - r + o)},${fmt(cy - r)} ` +
+        `L${fmt(cx + r)},${fmt(cy + r - o)} ` +
+        `L${fmt(cx + r)},${fmt(cy + r)} ` +
+        `L${fmt(cx + r - o)},${fmt(cy + r)} ` +
+        `L${fmt(cx - r)},${fmt(cy - r + o)} ` +
+        `L${fmt(cx - r)},${fmt(cy - r)} Z`;
+      return `<path d="${d}"` + transform(m.rot, cx, cy) + ` fill="${fg}"/>`;
     }
   }
 }

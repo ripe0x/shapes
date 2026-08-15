@@ -233,12 +233,12 @@ contract GeometryTest is RendererTestBase {
         returns (uint256 worst)
     {
         uint256 w;
-        if (m.kind == 8 || m.kind == 9) {
-            w = m.weight; // arc, line: open strokes, always applied
-        } else if (m.kind == 0 || m.kind == 1 || m.kind == 6) {
+        if (m.kind == 0 || m.kind == 1 || m.kind == 6) {
             w = m.solid ? 0 : m.weight; // circle, square, half square: stroked paths
         } else {
-            w = 0; // triangle, half, quarter, diamond, right triangle: even-odd rings
+            // triangle, half, quarter, diamond, right triangle: even-odd rings whose outer
+            // boundary is the solid geometry; arc, line: filled bands clipped to the footprint
+            w = 0;
         }
         uint256 x;
         uint256 up;
@@ -255,13 +255,8 @@ contract GeometryTest is RendererTestBase {
             x = m.size / 2;
             up = x;
             down = 0;
-        } else if (m.kind == 9) {
-            // diagonal line: 45° cap projects (√2/4)·w onto each axis
-            x = m.size / 2 + FixedPoint.mulWad(SQRT2 / 4, w);
-            up = x;
-            down = x;
         } else {
-            // circle, square, quarter, diamond, half square, right triangle, arc
+            // circle, square, quarter, diamond, half square, right triangle, arc, line
             x = m.size / 2 + w / 2;
             up = x;
             down = x;

@@ -216,19 +216,17 @@ contract ShapeRenderer is IShapeRenderer {
     ///                                      exactly where the solid form's does; the inner
     ///                                      boundary is inset by the weight -> size = 2 * target
     ///
-    ///        arc, line                     open strokes, never filled. The arc's endpoints
-    ///                                      reach w/2 past the footprint, like a square; the
-    ///                                      diagonal line meets the axis at 45 degrees, so its
-    ///                                      cap projects only (sqrt(2)/4)*w and it is grown to
-    ///                                      compensate.
+    ///        arc, line                     filled bands of one weight, never solid. Both span
+    ///                                      the full footprint: the arc's outer curve connects
+    ///                                      two footprint corners, the line's tips are clipped
+    ///                                      into the other two -> size = 2 * target
     function _solveSize(uint256 kind, bool solid, uint256 target, uint256 weight)
         private
         pure
         returns (uint256)
     {
         uint256 full = 2 * target;
-        if (kind == KIND_ARC) return full - weight;
-        if (kind == KIND_LINE) return full - (SQRT2 / 2).mulWad(weight);
+        if (kind == KIND_ARC || kind == KIND_LINE) return full;
         if (solid) return full;
         if (kind == KIND_CIRCLE || kind == KIND_SQUARE || kind == KIND_HALFSQUARE) {
             return full - weight;
@@ -468,24 +466,36 @@ contract ShapeRenderer is IShapeRenderer {
         }
 
         if (m.kind == KIND_ARC) {
-            // The quarter disc's curved edge alone: an open 90 degree arc, no radii, always
-            // stroked. Radius is the full footprint, sweeping between two opposite corners.
+            // The quarter disc's curved edge alone: a filled annular band one weight thick.
+            // The outer curve has the footprint for its radius and connects two footprint
+            // corners; the band's flat radial ends lie on the footprint edges.
+            uint256 arcRi = m.size - m.weight;
             return abi.encodePacked(
                 '<path d="M', (m.cx + r).fmt(), ",", (m.cy + r).fmt(),
                 " A", m.size.fmt(), ",", m.size.fmt(), " 0 0 0 ",
-                (m.cx - r).fmt(), ",", (m.cy - r).fmt(), '"',
+                (m.cx - r).fmt(), ",", (m.cy - r).fmt(),
+                " L", (m.cx - r).fmt(), ",", (m.cy - r + m.weight).fmt(),
+                " A", arcRi.fmt(), ",", arcRi.fmt(), " 0 0 1 ",
+                (m.cx + r - m.weight).fmt(), ",", (m.cy + r).fmt(), ' Z"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(false, m.weight, fg)
+                ' fill="', fg, '"/>'
             );
         }
 
         if (m.kind == KIND_LINE) {
-            // A straight diagonal across the cell, corner to corner, always stroked.
+            // A straight diagonal band across the cell, one weight thick, its centreline the
+            // footprint diagonal. The tips are clipped by the footprint square, so each ends
+            // in a point exactly on the corner. Two orientations.
+            uint256 o = m.weight.mulWad(SQRT2) / 2;
             return abi.encodePacked(
-                '<path d="M', (m.cx - r).fmt(), ",", (m.cy - r).fmt(),
-                " L", (m.cx + r).fmt(), ",", (m.cy + r).fmt(), '"',
+                '<path d="M', (m.cx - r + o).fmt(), ",", (m.cy - r).fmt(),
+                " L", (m.cx + r).fmt(), ",", (m.cy + r - o).fmt(),
+                " L", (m.cx + r).fmt(), ",", (m.cy + r).fmt(),
+                " L", (m.cx + r - o).fmt(), ",", (m.cy + r).fmt(),
+                " L", (m.cx - r).fmt(), ",", (m.cy - r + o).fmt(),
+                " L", (m.cx - r).fmt(), ",", (m.cy - r).fmt(), ' Z"',
                 _transform(m.rot, m.cx, m.cy),
-                _style(false, m.weight, fg)
+                ' fill="', fg, '"/>'
             );
         }
 

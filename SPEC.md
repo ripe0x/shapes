@@ -547,7 +547,19 @@ Inner geometry, all in flooring WAD arithmetic:
 
 Circle, square and half square keep their strokes: with no corner sharper than 90° pointing
 along an axis, a straddling stroke's painted extent already lands exactly on the target
-everywhere. Arc and line are open strokes and keep D13's solve unchanged.
+everywhere.
+
+The two open marks stop being strokes as well — a stroked diagonal's butt cap kept its
+bounding box on target while its tips stopped `(√2/4)·w` short of the corners the neighbouring
+solid shapes reach. Both become filled bands of one weight spanning the full footprint
+(`size = 2T`):
+
+- **line**: a band whose centreline is the footprint diagonal, clipped by the footprint
+  square, so each tip ends in a point exactly on the corner with a `(√2/2)·w` run along each
+  edge.
+- **arc**: an annular band. The outer curve has the footprint for its radius and connects two
+  footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
+  flat radial ends lie on the footprint edges.
 
 - **One cosmetic admin power, no economic admin.** `Ownable` is inherited so
   the owner can replace the renderer (`setRenderer`) and permanently freeze it

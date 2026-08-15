@@ -68,20 +68,12 @@ export function moduleExtent(m: Module, cellWad: bigint, p: Params = CANONICAL):
       up = x;
       down = (w / 2) * Math.SQRT2;
       break;
-    // arc and line are open strokes reaching between opposite footprint corners; always drawn
-    // (never filled), so the stroke always applies whatever the ignored solid bit says. The
-    // arc's endpoint caps project w/2 onto the axis; the line meets it at 45 degrees, so its
-    // cap projects only (√2/4)·w.
-    case "arc": {
-      const ws = num(m.weight);
-      x = up = down = size / 2 + ws / 2;
+    // arc and line are filled bands whose boundary is clipped to the footprint; the ignored
+    // solid bit changes nothing
+    case "arc":
+    case "line":
+      x = up = down = size / 2;
       break;
-    }
-    case "line": {
-      const ws = num(m.weight);
-      x = up = down = size / 2 + (Math.SQRT2 / 4) * ws;
-      break;
-    }
   }
 
   const worst = Math.max(x, up, down);
