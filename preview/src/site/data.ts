@@ -1,6 +1,12 @@
 import type {PublicClient} from "viem";
 import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
 
+export interface TokenMeta {
+  name: string;
+  description: string;
+  attributes: {trait_type: string; value: string}[];
+}
+
 export interface SiteToken {
   id: bigint;
   backing: bigint;
@@ -8,6 +14,7 @@ export interface SiteToken {
   seed: bigint;
   owner: `0x${string}`;
   image: string; // svg data URI from tokenURI
+  meta: TokenMeta; // the rest of the tokenURI JSON, parsed
 }
 
 export interface SiteData {
@@ -17,9 +24,23 @@ export interface SiteData {
   fees: bigint[]; // mintFeeFor() per denomination index
 }
 
-function imageOf(uri: string): string {
-  const json = JSON.parse(atob(uri.replace("data:application/json;base64,", "")));
-  return json.image as string;
+function parseUri(uri: string): {image: string; meta: TokenMeta} {
+  // atob alone maps each byte to a code unit and garbles multi-byte UTF-8 (the module glyphs);
+  // decode the byte string properly.
+  const bytes = Uint8Array.from(atob(uri.replace("data:application/json;base64,", "")), (c) =>
+    c.charCodeAt(0),
+  );
+  const json = JSON.parse(new TextDecoder().decode(bytes));
+  return {
+    image: json.image as string,
+    meta: {
+      name: (json.name as string) ?? "",
+      description: (json.description as string) ?? "",
+      attributes: ((json.attributes ?? []) as {trait_type: string; value: unknown}[]).map(
+        (a) => ({trait_type: a.trait_type, value: String(a.value)}),
+      ),
+    },
+  };
 }
 
 /**
@@ -56,7 +77,8 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
       publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
     ]);
     if (black) continue;
-    tokens.push({id, backing, di: denomIndexOf(backing), seed: BigInt(seed), owner, image: imageOf(uri)});
+    const {image, meta} = parseUri(uri);
+    tokens.push({id, backing, di: denomIndexOf(backing), seed: BigInt(seed), owner, image, meta});
   }
 
   tokens.sort((a, b) => (a.id > b.id ? -1 : 1));

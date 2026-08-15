@@ -330,6 +330,32 @@ export function TokenView({
         </Section>
       )}
 
+      <Section title="METADATA" pad="16px 48px 30px 32px">
+        <p style={{margin: "8px 0 6px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+          Parsed from the token's onchain tokenURI. Nothing here is served by this site.
+        </p>
+        {[
+          {k: "name", v: token.meta.name},
+          {k: "description", v: token.meta.description},
+          ...token.meta.attributes.map((a) => ({k: a.trait_type, v: a.value})),
+        ].map((row) => (
+          <div
+            key={row.k}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "130px minmax(0, 1fr)",
+              gap: 24,
+              padding: "10px 0",
+              borderBottom: `1px solid ${C.ruleInner}`,
+              fontSize: 13,
+            }}
+          >
+            <div style={{color: C.muted}}>{row.k}</div>
+            <div style={{overflowWrap: "anywhere", maxWidth: "70ch", lineHeight: 1.6}}>{row.v}</div>
+          </div>
+        ))}
+      </Section>
+
       {owned && (
         <>
           <Section title="REDEEM" pad="26px 48px 34px 32px">
