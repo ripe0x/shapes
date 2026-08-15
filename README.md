@@ -273,14 +273,18 @@ holds) and mints only to codeless recipients, matching how the contract behaves 
 ## Running the site locally
 
 The full flow — local chain, deployed contracts, funded wallet, mint frontend — is two commands
-in two shells, from the repo root:
+in two shells, from the repo root.
+
+First shell — anvil, deploy, seed wallet funding. Leave it running:
 
 ```bash
-./script/fork-dev.sh                 # anvil + deploy + fund the seed wallet; leave it running
+./script/fork-dev.sh
 ```
 
+Second shell — the dev server; then open http://localhost:5173/site.html:
+
 ```bash
-cd preview && npm run dev            # then open http://localhost:5173/site.html
+cd preview && npm run dev
 ```
 
 `fork-dev.sh` boots Anvil on `:8545` (chain id `31337`), deploys Shapes and the renderer through
