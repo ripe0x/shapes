@@ -5,6 +5,7 @@ import {parseAbi} from "viem";
 export const shapesAbi = parseAbi([
   "function mint(uint256 amountWei, address to) payable returns (uint256 tokenId)",
   "function mintBatch(uint256 amountWei, uint256 quantity, address to) payable returns (uint256 firstTokenId)",
+  "function transferFrom(address from, address to, uint256 tokenId)",
   "function redeem(uint256 tokenId)",
   "function redeemBatch(uint256[] tokenIds) returns (uint256 totalWei)",
   "function compose(uint256 survivorId, uint256[] burnIds) returns (uint256)",

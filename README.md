@@ -292,6 +292,15 @@ the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLE
 `SEED_ETH` to change), and writes `preview/public/deployment.json`, which both frontends read on
 load. Every run is a fresh chain; prior tokens are gone.
 
+To browse the collection in a lived-in state, seed the running chain with simulated activity —
+mints across every denomination, compositions up to two 100 ETH apexes (one fully built, one
+half direct), splits, restores, transfers and redemptions. Run it from `preview/`, as many
+times as you like; each run appends another round:
+
+```bash
+npm run simulate
+```
+
 The dev server serves three entries:
 
 | URL | What it is |
