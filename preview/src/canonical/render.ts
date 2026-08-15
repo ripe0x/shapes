@@ -98,6 +98,7 @@ export function composeShape(
   seed: bigint,
   amountWei: bigint,
   p: Params = CANONICAL,
+  inkScale?: bigint,
 ): Composition {
   const di = denominationIndex(amountWei);
   if (di < 0) throw new Error(`unsupported denomination: ${amountWei}`);
@@ -115,7 +116,11 @@ export function composeShape(
   // varies is in the vocabulary, not in its scale.
   const target = mulWad(halfCell, p.fill);
   const weight = mulWad(2n * target, p.wRatio);
-  const solidProbability = drawSolidProbability(rand.next(), p);
+  // The proposed "history sets the ink" rule (prototype only, not committed): the seed's fill
+  // draw is a ceiling, scaled by origin density in WAD. The draw itself always happens, so the
+  // stream stays aligned and every other property of the card is unchanged.
+  const seedFill = drawSolidProbability(rand.next(), p);
+  const solidProbability = inkScale === undefined ? seedFill : mulWad(seedFill, inkScale);
 
   const kinds = p.kinds;
   const nKinds = BigInt(kinds.length);
@@ -462,8 +467,9 @@ export function renderShape(
   tokenId: bigint,
   p: Params = CANONICAL,
   inverted = false,
+  inkScale?: bigint,
 ): string {
-  const c = composeShape(seed, amountWei, p);
+  const c = composeShape(seed, amountWei, p, inkScale);
 
   const bg = inverted ? "#fff" : "#000";
   const fg = inverted ? "#000" : "#fff";
