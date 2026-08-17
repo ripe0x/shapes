@@ -51,6 +51,20 @@ tests `test_SeedIsIndependentOfMinterAndRecipient`, `test_SeedIsIndependentOfQua
 suits the minter. One attempt per block, gas per attempt. Art Blocks has the same residual.
 See SPEC.md D3e for why commit-reveal was rejected.
 
+**Ink Genes (SPEC.md D17) inherit this residual unchanged, with one asymmetry worth stating
+explicitly.** The gene is drawn from the same per-mint seed at mint time only (`InkGenes.
+geneAtMint`), so it is grindable exactly the way artwork traits are: one attempt per block,
+gas per attempt, no new attack surface. The asymmetry is in *reachability*, not in the grind
+itself — the four extreme genes (`Void`, `Faint`, `Rich`, `Solid`) are only ever drawn on a
+dust (0.01 ETH) mint; every other denomination draws exclusively from the narrow `{Sparse,
+Murk, Dense}` band (SPEC.md D17). A grinder chasing an extreme gene therefore must grind dust
+mints specifically — cheap per attempt, same one-attempt-per-block ceiling, no larger residual
+than the pre-existing artwork-trait grind. Composing, decomposing and restoring a Shape never
+consume fresh randomness for the gene (entropy-at-mint-only, D17), so none of those paths reopen
+grinding once a token exists. An epoch-batched commit-reveal scheme would close the residual
+across all traits, ink included; it remains deferred for the same reasons D3e gives for
+artwork.
+
 ### 2. Renderer address never checked for code — fixed
 
 *Confirmed.* Deploying with an EOA or an empty address as the renderer succeeded, producing a

@@ -14,6 +14,7 @@ import { DENOMINATIONS, GRIDS, LABELS } from "../src/canonical/denominations";
 import { CANONICAL, type Params } from "../src/canonical/params";
 import { WAD } from "../src/canonical/wad";
 import { productionSeed } from "../src/seeds";
+import { geneAtMint } from "../src/canonical/ink";
 
 const CARD_W = 210;
 
@@ -60,7 +61,7 @@ function ladderBody(perRow: number, params: Params = CANONICAL, title = "SHAPES 
     for (let i = 0; i < perRow; i++) {
       const seed = productionSeed(BigInt(di * 100 + i + 1));
       const tokenId = BigInt(di * 100 + i + 1);
-      cards += card(renderShape(seed, DENOMINATIONS[di], tokenId, params), "#" + tokenId);
+      cards += card(renderShape(seed, DENOMINATIONS[di], tokenId, geneAtMint(seed, di), params), "#" + tokenId);
     }
     body +=
       `<div class="row"><div class="h"><span class="den">${LABELS[di]} ETH</span>` +
@@ -84,7 +85,7 @@ if (mode === "ladder") {
   let cards = "";
   for (let i = 0; i < n; i++) {
     const seed = productionSeed(BigInt(i + 1));
-    cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), CANONICAL), "#" + (i + 1));
+    cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), geneAtMint(seed, di), CANONICAL), "#" + (i + 1));
   }
   const body =
     `<h1>${LABELS[di]} ETH — ${n} cards</h1>` +
@@ -103,7 +104,7 @@ if (mode === "ladder") {
       let cards = "";
       for (let i = 0; i < 6; i++) {
         const seed = productionSeed(BigInt(di * 100 + i + 1));
-        cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), p), "#" + (i + 1));
+        cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), geneAtMint(seed, di), p), "#" + (i + 1));
       }
       body +=
         `<div class="row"><div class="h"><span class="den">${LABELS[di]} ETH</span>` +
@@ -126,7 +127,7 @@ if (mode === "ladder") {
       let cards = "";
       for (let i = 0; i < 6; i++) {
         const seed = productionSeed(BigInt(di * 100 + i + 1));
-        cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), p), "#" + (i + 1));
+        cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), geneAtMint(seed, di), p), "#" + (i + 1));
       }
       body +=
         `<div class="row"><div class="h"><span class="den">${LABELS[di]} ETH</span>` +
@@ -147,7 +148,7 @@ if (mode === "ladder") {
       let cards = "";
       for (let i = 0; i < 6; i++) {
         const seed = productionSeed(BigInt(di * 100 + i + 1));
-        cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), p), "#" + (i + 1));
+        cards += card(renderShape(seed, DENOMINATIONS[di], BigInt(i + 1), geneAtMint(seed, di), p), "#" + (i + 1));
       }
       body +=
         `<div class="row"><div class="h"><span class="den">${LABELS[di]} ETH</span>` +

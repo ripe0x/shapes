@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console} from "forge-std/Test.sol";
 import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
@@ -12,6 +12,7 @@ import {Shapes} from "../src/Shapes.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
+import {InkGenes} from "../src/lib/InkGenes.sol";
 
 import {
     BadReceiver,
@@ -1416,5 +1417,394 @@ contract BlackShapeTest is ShapesBase {
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
         shapes.blacken(id);
+    }
+}
+
+/* ==================================================================== *
+ *  Ink Genes
+ * ==================================================================== */
+
+/// @notice Mint-time gene assignment: stored value matches the pure `InkGenes.geneAtMint`
+///         function of the on-chain-derived seed, the `InkGene` event fires with that value,
+///         and non-dust mints stay inside the narrow {Sparse, Murk, Dense} band.
+contract InkGeneMintTest is ShapesBase {
+    function test_MintGeneMatchesInkGenesLibrary() public {
+        uint256 id = _mint(alice, 0.01 ether);
+        bytes32 seed = shapes.seedOf(id);
+        assertEq(
+            shapes.inkGeneOf(id),
+            InkGenes.geneAtMint(seed, 0),
+            "stored gene does not match InkGenes.geneAtMint"
+        );
+    }
+
+    /// @dev Recomputes the batch-root/seed derivation `_mintBatch` uses, independently, so this
+    ///      does not just trust `seedOf` after the fact.
+    function test_MintEmitsInkGeneEvent() public {
+        uint256 firstTokenId = shapes.totalMinted() + 1;
+        bytes32 batchRoot = keccak256(
+            abi.encodePacked(
+                block.prevrandao,
+                blockhash(block.number - 1),
+                block.number,
+                block.timestamp,
+                block.chainid,
+                address(shapes),
+                firstTokenId
+            )
+        );
+        bytes32 seed = keccak256(abi.encodePacked(batchRoot, firstTokenId));
+        uint8 expectedGene = InkGenes.geneAtMint(seed, 4); // 1 ETH -> denomIndex 4
+
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.InkGene(firstTokenId, expectedGene);
+        vm.prank(alice);
+        shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
+
+        assertEq(shapes.inkGeneOf(firstTokenId), expectedGene);
+        assertEq(shapes.seedOf(firstTokenId), seed);
+    }
+
+    /// @notice Every non-dust denomination draws only from {Sparse, Murk, Dense}; the four
+    ///         extremes are reachable only through a dust (0.01 ETH) mint.
+    function testFuzz_NonDustMintsStoreOnlyTheNarrowBand(uint8 which) public {
+        uint256 amount = DENOMS[1 + (which % 8)];
+        uint256 id = _mint(alice, amount);
+        uint8 gene = shapes.inkGeneOf(id);
+        assertTrue(
+            gene == InkGenes.SPARSE || gene == InkGenes.MURK || gene == InkGenes.DENSE,
+            "non-dust mint stored a gene outside the narrow band"
+        );
+    }
+
+    /// @notice `mintBatch` assigns each token in the batch its own seed and therefore its own
+    ///         independently-drawn gene, not one gene shared by the whole batch.
+    function test_MintBatchAssignsIndependentGenes() public {
+        vm.prank(alice);
+        uint256 first =
+            shapes.mintBatch{value: 200 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 200, alice);
+        bool sawDifferentGene = false;
+        uint8 firstGene = shapes.inkGeneOf(first);
+        for (uint256 i = 1; i < 200; ++i) {
+            if (shapes.inkGeneOf(first + i) != firstGene) {
+                sawDifferentGene = true;
+                break;
+            }
+        }
+        assertTrue(sawDifferentGene, "200 independent dust mints all landed on the same gene");
+    }
+}
+
+/// @notice The compose gene walk, at the real `Shapes.sol` level: order-invariance across the
+///         same on-chain token set, homogeneous-pool fixed points at a single tier and at the
+///         maximum eight-tier jump, and a gas observation for the 10,000-dust mega-compose.
+contract InkGeneComposeTest is ShapesBase {
+    /// @dev Mint `qty` dust (0.01 ETH) tokens to alice; ids are `first .. first+qty-1`.
+    function _mintDust(uint256 qty) internal returns (uint256 first) {
+        vm.prank(alice);
+        first = shapes.mintBatch{value: qty * (0.01 ether + feeOf(0.01 ether))}(
+            0.01 ether, qty, alice
+        );
+    }
+
+    /// @notice The same five tokens (one survivor, four burns), composed in three different
+    ///         `burnIds` orders replayed against the identical starting state via
+    ///         `vm.snapshotState`/`vm.revertToState`, yield the identical gene. `burnSeedFold` is
+    ///         an XOR fold (commutative, associative), so calldata order cannot leak into
+    ///         `geneAtCompose`'s output — this is that guarantee proven against real storage and
+    ///         real `_burn`s, not just the pure library function.
+    function test_ComposeIsOrderInvariantOnChain() public {
+        uint256 first = _mintDust(5);
+        uint256 survivor = first;
+
+        uint256 snapshot = vm.snapshotState();
+
+        uint256[] memory forward = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) forward[i] = first + 1 + i;
+        vm.prank(alice);
+        shapes.compose(survivor, forward);
+        uint8 geneForward = shapes.inkGeneOf(survivor);
+
+        vm.revertToState(snapshot);
+
+        uint256[] memory reversed = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) reversed[i] = first + 1 + (3 - i);
+        vm.prank(alice);
+        shapes.compose(survivor, reversed);
+        uint8 geneReversed = shapes.inkGeneOf(survivor);
+
+        vm.revertToState(snapshot);
+
+        uint256[] memory shuffled = new uint256[](4);
+        shuffled[0] = first + 3;
+        shuffled[1] = first + 1;
+        shuffled[2] = first + 4;
+        shuffled[3] = first + 2;
+        vm.prank(alice);
+        shapes.compose(survivor, shuffled);
+        uint8 geneShuffled = shapes.inkGeneOf(survivor);
+
+        assertEq(geneForward, geneReversed, "reordering burnIds changed the on-chain gene");
+        assertEq(geneForward, geneShuffled, "reordering burnIds changed the on-chain gene");
+    }
+
+    /// @notice A genuinely homogeneous pool at a single-tier compose (T=1) is a fixed point:
+    ///         built by decomposing one dust-gened Shape into children (which `decompose` copies
+    ///         the parent's gene to verbatim) and recomposing four of them — `best == worst ==
+    ///         center == survivorGene` by construction, so the walk cannot move the gene.
+    function test_ComposeHomogeneousPoolIsFixedPointAtOneTier() public {
+        uint256 parent = _mint(alice, 0.05 ether); // denomIndex 1, 5 units
+        uint8 parentGene = shapes.inkGeneOf(parent);
+
+        uint8[] memory outs = new uint8[](5); // 5 x 0.01 (denomIndex 0)
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(parent, outs);
+        for (uint256 i = 0; i < 5; ++i) {
+            assertEq(shapes.inkGeneOf(kids[i]), parentGene, "decompose did not copy the gene verbatim");
+        }
+
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) burn[i] = kids[1 + i];
+        vm.prank(alice);
+        shapes.compose(kids[0], burn); // 5 x 0.01 -> 0.05: T = 1 - 0 = 1 tier
+
+        assertEq(shapes.inkGeneOf(kids[0]), parentGene, "a uniform pool's gene drifted at T=1");
+    }
+
+    /// @notice The maximum possible tier jump (dust to apex, T=8), still with a genuinely
+    ///         homogeneous pool: one 100 ETH Shape decomposed into 10,000 x 0.01 dust (all
+    ///         inheriting the same gene by construction) and recomposed back into one 100 ETH
+    ///         Shape. `best == worst == center == survivorGene` throughout, so eight tiers of
+    ///         rolls each target the survivor's own gene and none of them can move it.
+    function test_ComposeHomogeneousPoolIsFixedPointAtMaxJump() public {
+        uint256 parent = _mint(alice, 100 ether); // denomIndex 8, apex backing
+        uint8 parentGene = shapes.inkGeneOf(parent);
+
+        uint8[] memory outs = new uint8[](10_000); // all index 0 (0.01 ETH), defaults to 0
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(parent, outs);
+        assertEq(kids.length, 10_000);
+        assertEq(shapes.inkGeneOf(kids[0]), parentGene, "decompose did not copy the gene verbatim");
+
+        uint256[] memory burn = new uint256[](9_999);
+        for (uint256 i = 0; i < 9_999; ++i) burn[i] = kids[1 + i];
+
+        vm.prank(alice);
+        shapes.compose(kids[0], burn); // 10,000 x 0.01 -> 100 ETH: T = 8 - 0 = 8 tiers
+
+        assertEq(
+            shapes.inkGeneOf(kids[0]),
+            parentGene,
+            "a uniform pool's gene drifted at the maximum eight-tier jump"
+        );
+        // Backing round-trips exactly; origins do not re-inflate to 10,000 (the parent's real
+        // origin count, 1, is conserved through the split and the recombine, the same
+        // non-forgery guarantee `test_ForgeryBlocked_SplitRecombinePreservesCount` covers).
+        assertEq(shapes.backingOf(kids[0]), 100 ether);
+        assertEq(shapes.originCountOf(kids[0]), 1, "origin count must not re-inflate");
+    }
+
+    /// @notice Gas for the 10,000-dust mega-compose, under the same construction the coordinator
+    ///         asked about: 10,000 independent direct mints (each drawing its own gene, not a
+    ///         forced-homogeneous pool) composed into one apex Complete. Not an assertion on the
+    ///         resulting gene — with 10,000 independently-drawn genes the pool is essentially
+    ///         never homogeneous — only that the ink-gene bookkeeping added to `compose` does not
+    ///         blow past a sane gas ceiling, and a `console.log` of the true number for the
+    ///         record.
+    function test_ComposeMegaGasProfile_10000Dust() public {
+        uint256 first = _mintDust(10_000);
+        uint256[] memory burn = new uint256[](9_999);
+        for (uint256 i = 0; i < 9_999; ++i) burn[i] = first + 1 + i;
+
+        vm.prank(alice);
+        uint256 g0 = gasleft();
+        uint256 survivor = shapes.compose(first, burn);
+        uint256 composeGas = g0 - gasleft();
+
+        console.log("compose(10,000 dust -> 100 ETH) gas", composeGas);
+
+        assertEq(shapes.backingOf(survivor), 100 ether);
+        assertEq(shapes.originCountOf(survivor), 10_000);
+        assertTrue(shapes.isComplete(survivor));
+        // Loose ceiling: this test exists to catch a regression and record the true number, not
+        // to micro-optimise. 9,999 burns each touching the ink-gene fields is inherently large.
+        assertLt(composeGas, 400_000_000, "10,000-dust mega-compose gas regressed");
+    }
+}
+
+/// @notice Decompose and restore: the gene is copied verbatim to every child, and restore
+///         recovers the exact pre-split gene alongside the seed and denomination.
+contract InkGeneDecomposeRestoreTest is ShapesBase {
+    function test_DecomposeCopiesGeneToEveryChild() public {
+        uint256 id = _mint(alice, 0.05 ether);
+        uint8 parentGene = shapes.inkGeneOf(id);
+
+        uint8[] memory outs = new uint8[](5); // 5 x 0.01
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+
+        for (uint256 i = 0; i < kids.length; ++i) {
+            assertEq(shapes.inkGeneOf(kids[i]), parentGene, "child gene diverged from parent");
+        }
+    }
+
+    function test_DecomposeEmitsInkGenePerChild() public {
+        uint256 id = _mint(alice, 0.05 ether);
+        uint8 parentGene = shapes.inkGeneOf(id);
+        uint256 firstChild = shapes.totalMinted() + 1;
+
+        uint8[] memory outs = new uint8[](5);
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.InkGene(firstChild, parentGene);
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.InkGene(firstChild + 1, parentGene);
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.InkGene(firstChild + 2, parentGene);
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.InkGene(firstChild + 3, parentGene);
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.InkGene(firstChild + 4, parentGene);
+        vm.prank(alice);
+        shapes.decompose(id, outs);
+    }
+
+    /// @notice A restore recovers not just the original seed, denomination and origin count, but
+    ///         also the exact gene the pre-split token carried — despite the new token id.
+    function test_RestoreRecoversTheOriginalGene() public {
+        uint256 id = _mint(alice, 1 ether);
+        bytes32 parentSeed = shapes.seedOf(id);
+        uint8 parentGene = shapes.inkGeneOf(id);
+
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 3;
+        outs[1] = 3; // 2 x 0.5
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+        assertEq(shapes.inkGeneOf(kids[0]), parentGene);
+        assertEq(shapes.inkGeneOf(kids[1]), parentGene);
+
+        vm.prank(alice);
+        uint256 restored = shapes.restore(parentSeed, kids);
+
+        assertEq(shapes.inkGeneOf(restored), parentGene, "restore did not recover the original gene");
+    }
+
+    function test_RestoreEmitsInkGeneEvent() public {
+        uint256 id = _mint(alice, 1 ether);
+        bytes32 parentSeed = shapes.seedOf(id);
+        uint8 parentGene = shapes.inkGeneOf(id);
+
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 3;
+        outs[1] = 3;
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+
+        uint256 nextId = shapes.totalMinted() + 1;
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.InkGene(nextId, parentGene);
+        vm.prank(alice);
+        shapes.restore(parentSeed, kids);
+    }
+
+    /// @notice The gene survives nested split/restore round trips (split, split again, restore
+    ///         both levels bottom-up), the same nesting `test_RestoreNestedSplits` exercises for
+    ///         seed and denomination.
+    function test_RestoreGeneSurvivesNestedRoundTrip() public {
+        uint256 id = _mint(alice, 1 ether);
+        bytes32 parentSeed = shapes.seedOf(id);
+        uint8 gene = shapes.inkGeneOf(id);
+
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 3;
+        outs[1] = 3; // 2 x 0.5
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+        assertEq(shapes.inkGeneOf(kids[0]), gene);
+
+        bytes32 childSeed = shapes.seedOf(kids[0]);
+        uint8[] memory innerOuts = new uint8[](5); // 0.5 -> 5 x 0.1
+        for (uint256 i = 0; i < 5; ++i) innerOuts[i] = 2;
+        vm.prank(alice);
+        uint256[] memory grandkids = shapes.decompose(kids[0], innerOuts);
+        for (uint256 i = 0; i < grandkids.length; ++i) {
+            assertEq(shapes.inkGeneOf(grandkids[i]), gene, "gene diverged through the inner split");
+        }
+
+        vm.prank(alice);
+        uint256 childBack = shapes.restore(childSeed, grandkids);
+        assertEq(shapes.inkGeneOf(childBack), gene, "gene diverged through the inner restore");
+
+        uint256[] memory outer = new uint256[](2);
+        outer[0] = childBack;
+        outer[1] = kids[1];
+        vm.prank(alice);
+        uint256 restored = shapes.restore(parentSeed, outer);
+        assertEq(shapes.inkGeneOf(restored), gene, "gene diverged through the outer restore");
+    }
+}
+
+/// @notice `simulateCompose`/`simulateDecompose`: pure previews that touch no state and agree
+///         exactly with what the real mutating call would do.
+contract InkGeneSimulateTest is ShapesBase {
+    function _mintDust(uint256 qty) internal returns (uint256 first) {
+        vm.prank(alice);
+        first = shapes.mintBatch{value: qty * (0.01 ether + feeOf(0.01 ether))}(
+            0.01 ether, qty, alice
+        );
+    }
+
+    function test_SimulateComposeMatchesRealCompose() public {
+        uint256 first = _mintDust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+
+        (uint8 simGene, uint8 simDenomIndex) = shapes.simulateCompose(first, burn);
+
+        vm.prank(alice);
+        shapes.compose(first, burn);
+
+        assertEq(shapes.inkGeneOf(first), simGene, "simulateCompose gene diverged from compose");
+        assertEq(uint8(1), simDenomIndex, "simulateCompose denomIndex diverged"); // 0.05 ETH
+    }
+
+    function test_SimulateComposeTouchesNoState() public {
+        uint256 first = _mintDust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+
+        uint256 snapshot = vm.snapshotState();
+        shapes.simulateCompose(first, burn);
+        // Every burn id must still exist and be unchanged: a state-mutating simulate would have
+        // burned them, so this would revert.
+        for (uint256 i = 0; i < 4; ++i) {
+            assertEq(shapes.ownerOf(burn[i]), alice);
+        }
+        assertEq(shapes.totalSupply(), 5, "simulateCompose changed totalSupply");
+        vm.revertToState(snapshot);
+    }
+
+    function test_SimulateComposeRejectsDuplicateBurnId() public {
+        uint256 first = _mintDust(3);
+        uint256[] memory burn = new uint256[](2);
+        burn[0] = first + 1;
+        burn[1] = first + 1; // duplicate
+        vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
+        shapes.simulateCompose(first, burn);
+    }
+
+    /// @notice `simulateDecompose` is trivially `inkGeneOf`: decompose always copies the gene
+    ///         verbatim to every child, so the preview needs no pool-statistics walk at all.
+    function test_SimulateDecomposeMatchesRealDecompose() public {
+        uint256 id = _mint(alice, 0.05 ether);
+        uint8 preview = shapes.simulateDecompose(id);
+        assertEq(preview, shapes.inkGeneOf(id));
+
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory kids = shapes.decompose(id, outs);
+        for (uint256 i = 0; i < kids.length; ++i) {
+            assertEq(shapes.inkGeneOf(kids[i]), preview, "simulateDecompose diverged from decompose");
+        }
     }
 }

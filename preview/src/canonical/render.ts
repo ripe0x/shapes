@@ -28,6 +28,7 @@ import {
   LABELS,
   denominationIndex,
 } from "./denominations";
+import { GENE_PROBABILITY, GENE_NAMES } from "./ink";
 
 export interface Module {
   index: number;
@@ -65,8 +66,11 @@ export interface Composition {
   target: bigint;
   /** Stroke weight, identical for every outlined mark on this card. */
   weight: bigint;
-  /** This card's own probability that any given module comes out solid. */
+  /** This card's own probability that any given module comes out solid — `GENE_PROBABILITY[inkGene]`,
+   *  not the discarded seed-level fill draw. See `geneAtMint`/`geneAtCompose` in `./ink`. */
   solidProbability: bigint;
+  /** The token's ink gene (0..6), the value `solidProbability` is drawn from. */
+  inkGene: number;
   modules: Module[];
   /** Number of draws the composition consumed. */
   draws: number;
@@ -80,7 +84,7 @@ export interface Composition {
  * Resolve a token into its full geometric description.
  *
  * Draw order — consensus critical, transcribed from Round 03:
- *   1. solid probability (always)
+ *   1. solid probability (always — consumed and discarded, see below)
  *   then, for each cell in row-major order:
  *   2. kind              (always)
  *   3. solid             (always)
@@ -93,15 +97,22 @@ export interface Composition {
  * `rot` inside a JavaScript object literal with a ternary, so a circle or square
  * never draws for it. Consuming unconditionally would desynchronise the stream
  * and change every downstream cell.
+ *
+ * Ink genes (INK_GENES_IMPL_SPEC.md §4.1): the card-level fill draw is superseded by
+ * `inkGene`. The draw still happens — the stream must keep consuming it (SPEC.md D5) — but
+ * its value is discarded; `solidProbability` comes from `GENE_PROBABILITY[inkGene]` instead.
  */
 export function composeShape(
   seed: bigint,
   amountWei: bigint,
+  inkGene: number,
   p: Params = CANONICAL,
-  inkScale?: bigint,
 ): Composition {
   const di = denominationIndex(amountWei);
   if (di < 0) throw new Error(`unsupported denomination: ${amountWei}`);
+  if (inkGene < 0 || inkGene >= GENE_PROBABILITY.length) {
+    throw new Error(`gene out of range: ${inkGene}`);
+  }
 
   const [cols, rows] = GRIDS[di];
   const rand = new Round03Rand(seed32Of(seed));
@@ -116,11 +127,11 @@ export function composeShape(
   // varies is in the vocabulary, not in its scale.
   const target = mulWad(halfCell, p.fill);
   const weight = mulWad(2n * target, p.wRatio);
-  // The proposed "history sets the ink" rule (prototype only, not committed): the seed's fill
-  // draw is a ceiling, scaled by origin density in WAD. The draw itself always happens, so the
-  // stream stays aligned and every other property of the card is unchanged.
-  const seedFill = drawSolidProbability(rand.next(), p);
-  const solidProbability = inkScale === undefined ? seedFill : mulWad(seedFill, inkScale);
+  // The seed's card-level fill draw is consumed here so the stream stays aligned with every
+  // downstream cell, but its value is discarded: the ink gene replaces it (superseding the
+  // earlier "history sets the ink" prototype).
+  drawSolidProbability(rand.next(), p);
+  const solidProbability = GENE_PROBABILITY[inkGene];
 
   const kinds = p.kinds;
   const nKinds = BigInt(kinds.length);
@@ -160,6 +171,7 @@ export function composeShape(
     target,
     weight,
     solidProbability,
+    inkGene,
     modules,
     draws: rand.draws,
   };
@@ -465,11 +477,11 @@ export function renderShape(
   seed: bigint,
   amountWei: bigint,
   tokenId: bigint,
+  inkGene: number,
   p: Params = CANONICAL,
   inverted = false,
-  inkScale?: bigint,
 ): string {
-  const c = composeShape(seed, amountWei, p, inkScale);
+  const c = composeShape(seed, amountWei, inkGene, p);
 
   const bg = inverted ? "#fff" : "#000";
   const fg = inverted ? "#000" : "#fff";
@@ -503,9 +515,10 @@ export function renderShape(
 export function renderGeometry(
   seed: bigint,
   amountWei: bigint,
+  inkGene: number,
   p: Params = CANONICAL,
 ): string {
-  const c = composeShape(seed, amountWei, p);
+  const c = composeShape(seed, amountWei, inkGene, p);
   let out = "";
   for (const m of c.modules) out += moduleSvg(m, p, "#fff");
   return out;
@@ -729,10 +742,11 @@ export function tokenMetadataJson(
   tokenId: bigint,
   originCount: bigint,
   inverted: boolean,
+  inkGene: number,
   p: Params = CANONICAL,
 ): string {
-  const c = composeShape(seed, amountWei, p);
-  const svg = renderShape(seed, amountWei, tokenId, p, inverted);
+  const c = composeShape(seed, amountWei, inkGene, p);
+  const svg = renderShape(seed, amountWei, tokenId, inkGene, p, inverted);
   const units = unitsOf(c);
   const complete = !inverted && units > 1n && originCount === units;
   return (
@@ -743,6 +757,7 @@ export function tokenMetadataJson(
     `{"trait_type":"ETH Value","value":"${c.label} ETH"},` +
     `{"trait_type":"Grid","value":"${c.cols}x${c.rows}"},` +
     `{"trait_type":"Fill","value":"${fillClass(c)}"},` +
+    `{"trait_type":"Ink","value":"${GENE_NAMES[inkGene]}"},` +
     `{"trait_type":"Modules","value":"${moduleSequence(c)}"},` +
     `{"trait_type":"Module Count","value":${c.cols * c.rows}},` +
     `{"trait_type":"Formation","value":"${formation(units, originCount, inverted)}"},` +
@@ -761,11 +776,12 @@ export function tokenURI(
   tokenId: bigint,
   originCount: bigint,
   inverted: boolean,
+  inkGene: number,
   p: Params = CANONICAL,
 ): string {
   return (
     "data:application/json;base64," +
-    base64Utf8(tokenMetadataJson(seed, amountWei, tokenId, originCount, inverted, p))
+    base64Utf8(tokenMetadataJson(seed, amountWei, tokenId, originCount, inverted, inkGene, p))
   );
 }
 

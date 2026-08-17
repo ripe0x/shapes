@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {ShapeChildPreview, ShapeFormation, ShapeState} from "./IShapeCapabilities.sol";
 
 /// @title IShapes
 /// @notice ETH wrapped into unique ERC721 objects at nine fixed denominations.
@@ -22,9 +23,7 @@ interface IShapes is IERC721 {
     /// @notice Emitted when a Shape is redeemed for its backing. `originCount` is the redeemed
     ///         token's origin credit, carried so an event-only indexer can track the global
     ///         origin balance (mint origins − redeemed origins) without a pre-burn state read.
-    event ShapeRedeemed(
-        uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount
-    );
+    event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 
     /// @notice Emitted once per mint call, when the aggregate fee is forwarded.
     event MintFeePaid(address indexed recipient, uint256 amountWei, uint256 quantity);
@@ -37,9 +36,7 @@ interface IShapes is IERC721 {
 
     /// @notice Emitted when Shapes are composed into one. The survivor keeps its id and seed and
     ///         becomes the summed denomination; the burned inputs are consumed into it.
-    event Composed(
-        uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount
-    );
+    event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount);
 
     /// @notice Emitted when a Shape is split. The input is burned and each output is a fresh id;
     ///         `originCounts` is the per-child origin partition. Outputs do not emit ShapeMinted.
@@ -47,7 +44,7 @@ interface IShapes is IERC721 {
     ///         split record that `restore` later verifies against.
     event Decomposed(
         uint256 indexed tokenId,
-        bytes32 parentSeed,
+        bytes32 indexed parentSeed,
         uint256[] newIds,
         uint8[] outDenoms,
         uint32[] originCounts
@@ -69,6 +66,26 @@ interface IShapes is IERC721 {
     ///         to a provably unspendable address and is never redeemable again.
     event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
 
+    /// @notice Emitted whenever a token's ink gene is assigned or changes: once per mint, once
+    ///         per compose (the survivor), once per decompose child, once per restore.
+    ///         INK_GENES_IMPL_SPEC.md is the specification; gene assignment never uses fresh
+    ///         entropy beyond the participating seeds.
+    event InkGene(uint256 indexed tokenId, uint8 gene);
+
+    /// @notice Filterable compose edge. Emitted once for every burned input in addition to the
+    ///         aggregate `Composed` event.
+    event ShapeAbsorbed(uint256 indexed survivorId, uint256 indexed burnedId);
+
+    /// @notice Filterable split edge. Emitted once for every child in addition to `Decomposed`.
+    event ShapeFragmentCreated(
+        uint256 indexed parentId, uint256 indexed childId, bytes32 indexed parentSeed, uint256 childIndex
+    );
+
+    /// @notice Filterable restoration edge. Emitted once for every consumed child.
+    event ShapeReassembledFrom(
+        uint256 indexed newTokenId, uint256 indexed childId, bytes32 indexed parentSeed
+    );
+
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
     error ZeroQuantity();
@@ -82,6 +99,8 @@ interface IShapes is IERC721 {
     error SelfCustodyRejected(uint256 tokenId);
     /// @dev `setRenderer` and `lockRenderer` revert once the renderer has been locked.
     error RendererIsLocked();
+    /// @dev A renderer must explicitly support the stable `IShapeRenderer` capability.
+    error UnsupportedRenderer(address renderer);
     /// @dev A Black Shape is terminal: it cannot be redeemed, composed or decomposed.
     error TokenIsBlack(uint256 tokenId);
     /// @dev `compose` needs at least one token to burn; `decompose` at least two outputs.
@@ -102,6 +121,12 @@ interface IShapes is IERC721 {
     /// @dev The children's summed backing no longer equals the split input's backing. A child's
     ///      denomination can only have grown, via compose, since the split.
     error RestoreBackingMismatch(uint256 expected, uint256 provided);
+    /// @dev `simulateCompose` only: a burn id repeated in `burnIds`. `compose` itself needs no
+    ///      dedicated check for this — the second occurrence's `_burn` reverts, because the
+    ///      first occurrence already consumed the token — but `simulateCompose` touches no
+    ///      state, so there is nothing for a second occurrence to fail against without an
+    ///      explicit check.
+    error DuplicateComposeInput(uint256 tokenId);
 
     /* --------------------------- immutables --------------------------- */
 
@@ -155,21 +180,30 @@ interface IShapes is IERC721 {
     /// @notice Burn several Shapes owned by the caller and receive the exact total backing.
     function redeemBatch(uint256[] calldata tokenIds) external returns (uint256 totalWei);
 
+    /// @notice Redeem a caller-owned Shape and send its exact backing directly to `recipient`.
+    function redeemTo(uint256 tokenId, address payable recipient) external;
+
+    /// @notice Batch redemption with a caller-selected ETH recipient.
+    function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
+        external
+        returns (uint256 totalWei);
+
     /* -------------------------- recomposition ------------------------- */
 
     /// @notice Compose several Shapes into one. `survivorId` keeps its id and seed and becomes the
     ///         summed denomination; the `burnIds` are burned into it. All must be owned by the
     ///         caller and not Black. No ETH moves and no fee is charged. The summed backing must be
     ///         a valid denomination. Origins are summed onto the survivor.
-    function compose(uint256 survivorId, uint256[] calldata burnIds)
-        external
-        returns (uint256 outId);
+    function compose(uint256 survivorId, uint256[] calldata burnIds) external returns (uint256 outId);
 
     /// @notice Split a Shape into the denominations in `outDenoms`, which must sum to its backing.
     ///         The input is burned; each output is a fresh id with a seed derived from the input's
     ///         seed. No ETH moves and no fee is charged. Origins are partitioned across the outputs,
     ///         each output filled to capacity in listed order.
-    function decompose(uint256 tokenId, uint8[] calldata outDenoms)
+    function decompose(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
+
+    /// @notice Split a caller-owned Shape and safely mint every child to `recipient`.
+    function decomposeTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
 
@@ -180,7 +214,10 @@ interface IShapes is IERC721 {
     ///         parent's seed and denomination — the exact artwork of the split input. Origins are
     ///         summed back. No ETH moves and no fee is charged. The split record is consumed, so
     ///         a restored Shape must be split again before it can be restored again.
-    function restore(bytes32 parentSeed, uint256[] calldata childIds)
+    function restore(bytes32 parentSeed, uint256[] calldata childIds) external returns (uint256 newTokenId);
+
+    /// @notice Restore an exact split and safely mint the restored Shape to `recipient`.
+    function restoreTo(bytes32 parentSeed, uint256[] calldata childIds, address recipient)
         external
         returns (uint256 newTokenId);
 
@@ -212,6 +249,47 @@ interface IShapes is IERC721 {
     /// @notice Independent direct-mint origins credited to a live Shape (one per mint, conserved).
     function originCountOf(uint256 tokenId) external view returns (uint256);
 
+    /// @notice A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.
+    function inkGeneOf(uint256 tokenId) external view returns (uint8);
+
+    /// @notice Every protocol fact about a live Shape in one canonical read.
+    function shapeState(uint256 tokenId) external view returns (ShapeState memory);
+
+    /// @notice Stable numeric formation class; metadata strings are presentation only.
+    function formationOf(uint256 tokenId) external view returns (ShapeFormation);
+
+    /// @notice Preview the gene and denomination `compose(survivorId, burnIds)` would produce,
+    ///         without moving state or requiring caller ownership. Mirrors `compose`'s
+    ///         validation (existence, not-Black, no self-burn, no duplicate id, the summed
+    ///         backing lands on a denomination).
+    function simulateCompose(uint256 survivorId, uint256[] calldata burnIds)
+        external
+        view
+        returns (uint8 newGene, uint8 newDenomIndex);
+
+    /// @notice Preview a decompose's child gene: trivially `inkGeneOf(tokenId)`, since every
+    ///         child of a split inherits the parent's gene verbatim. Included for interface
+    ///         symmetry with `simulateCompose`.
+    function simulateDecompose(uint256 tokenId) external view returns (uint8 childGene);
+
+    /// @notice Complete deterministic state that `compose` would produce.
+    function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
+        external
+        view
+        returns (ShapeState memory result);
+
+    /// @notice Validate a split and return every deterministic child before changing state.
+    function previewDecompose(uint256 tokenId, uint8[] calldata outDenoms)
+        external
+        view
+        returns (ShapeChildPreview[] memory children);
+
+    /// @notice Validate an exact restoration and return its deterministic resulting state.
+    function previewRestore(bytes32 parentSeed, uint256[] calldata childIds)
+        external
+        view
+        returns (ShapeState memory result);
+
     /// @notice Whether a Shape is Complete: not Black, above the minimum tier, and carrying one
     ///         origin per 0.01 unit of backing (`originCount == backing / 0.01`).
     function isComplete(uint256 tokenId) external view returns (bool);
@@ -226,10 +304,19 @@ interface IShapes is IERC721 {
     ///         the input's denomination index. `childCount` of zero means no restorable split —
     ///         none happened, or it was already restored. Written by `decompose`, consumed by
     ///         `restore`.
-    function splitRecordOf(bytes32 parentSeed)
-        external
-        view
-        returns (uint16 childCount, uint8 denomIndex);
+    function splitRecordOf(bytes32 parentSeed) external view returns (uint16 childCount, uint8 denomIndex);
+
+    /// @notice Deterministic seed assigned to a split child at `childIndex`.
+    function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
+
+    /// @notice Backing amount at a denomination index.
+    function denominationAt(uint8 index) external pure returns (uint256);
+
+    /// @notice Number of permanent denominations.
+    function denominationCount() external pure returns (uint8);
+
+    /// @notice Smallest denomination and accounting unit, 0.01 ETH.
+    function unit() external pure returns (uint256);
 
     /// @notice Whether `amountWei` is one of the nine supported denominations.
     function isSupportedDenomination(uint256 amountWei) external pure returns (bool);

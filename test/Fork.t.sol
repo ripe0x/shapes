@@ -107,7 +107,7 @@ contract ForkTest is Test {
         assertEq(s.renderer(), address(r), "renderer mismatch");
         assertGt(address(r).code.length, 0, "renderer has no code");
         // Smoke the renderer through the interface the token uses; no mint needed.
-        assertGt(bytes(r.tokenURI(bytes32(0), 0.01 ether, 1, 1, false)).length, 500, "no metadata");
+        assertGt(bytes(r.tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0)).length, 500, "no metadata");
     }
 
     /// @notice Mint every denomination, prove solvency at each step, redeem it all back out.

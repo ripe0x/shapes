@@ -17,6 +17,7 @@ import { moduleExtent } from "../src/app/containment";
 import { DENOMINATIONS } from "../src/canonical/denominations";
 import { productionSeed } from "../src/seeds";
 import { CANONICAL } from "../src/canonical/params";
+import { geneAtMint } from "../src/canonical/ink";
 
 /* ---- the original, verbatim ---- */
 const originalRng = (seed: number) => {
@@ -91,7 +92,7 @@ let offTarget = 0;
 for (let di = 0; di < 9; di++) {
   for (let s = 1; s <= 600; s++) {
     const seed = productionSeed(BigInt(di * 10_000 + s));
-    const c = composeShape(seed, DENOMINATIONS[di]);
+    const c = composeShape(seed, DENOMINATIONS[di], geneAtMint(seed, di));
     const wantRatio = Number(c.fill) / 1e18;
     for (const m of c.modules) {
       modules++;

@@ -30,6 +30,7 @@ contract ParityTest is Test {
     uint256[] internal tokenIds;
     uint256[] internal originCounts;
     bool[] internal inverteds;
+    uint8[] internal genes;
     uint256 internal count;
 
     function setUp() public {
@@ -52,6 +53,7 @@ contract ParityTest is Test {
         string[] memory tokenIdStr = vm.parseJsonStringArray(json, ".tokenId");
         string[] memory originStr = vm.parseJsonStringArray(json, ".originCount");
         string[] memory invertedStr = vm.parseJsonStringArray(json, ".inverted");
+        string[] memory geneStr = vm.parseJsonStringArray(json, ".inkGene");
 
         count = seedStr.length;
         assertGt(count, 60, "fixture corpus unexpectedly small");
@@ -62,6 +64,7 @@ contract ParityTest is Test {
             tokenIds.push(vm.parseUint(tokenIdStr[i]));
             originCounts.push(vm.parseUint(originStr[i]));
             inverteds.push(_isTrue(invertedStr[i]));
+            genes.push(uint8(vm.parseUint(geneStr[i])));
         }
     }
 
@@ -92,8 +95,8 @@ contract ParityTest is Test {
     function test_ArtworkIsIndependentOfTokenId() public view {
         for (uint256 i = 0; i < 8; ++i) {
             assertEq(
-                renderer.renderSVG(seeds[i], amounts[i], false),
-                renderer.renderSVG(seeds[i], amounts[i], false),
+                renderer.renderSVG(seeds[i], amounts[i], false, genes[i]),
+                renderer.renderSVG(seeds[i], amounts[i], false, genes[i]),
                 "renderSVG is not a pure function of seed and denomination"
             );
         }
@@ -102,7 +105,7 @@ contract ParityTest is Test {
     /// @notice Every fixture's SVG must match byte for byte.
     function test_SvgIsByteIdenticalToTypeScript() public view {
         for (uint256 i = 0; i < count; ++i) {
-            string memory got = renderer.renderSVG(seeds[i], amounts[i], inverteds[i]);
+            string memory got = renderer.renderSVG(seeds[i], amounts[i], inverteds[i], genes[i]);
             assertEq(got, expectedSvg[i], why[i]);
         }
     }
@@ -110,8 +113,9 @@ contract ParityTest is Test {
     /// @notice Metadata JSON, including the inlined base64 image, must match byte for byte.
     function test_MetadataIsByteIdenticalToTypeScript() public view {
         for (uint256 i = 0; i < count; ++i) {
-            string memory got =
-                renderer.metadataJSON(seeds[i], amounts[i], tokenIds[i], originCounts[i], inverteds[i]);
+            string memory got = renderer.metadataJSON(
+                seeds[i], amounts[i], tokenIds[i], originCounts[i], inverteds[i], genes[i]
+            );
             assertEq(got, expectedMetadata[i], why[i]);
         }
     }
@@ -119,7 +123,9 @@ contract ParityTest is Test {
     /// @notice The glyph trait must come from the same stream as the artwork.
     function test_ModuleSequenceMatches() public view {
         for (uint256 i = 0; i < count; ++i) {
-            assertEq(renderer.moduleSequence(seeds[i], amounts[i]), expectedModules[i], why[i]);
+            assertEq(
+                renderer.moduleSequence(seeds[i], amounts[i], genes[i]), expectedModules[i], why[i]
+            );
         }
     }
 
@@ -127,7 +133,7 @@ contract ParityTest is Test {
     ///         a failure to the composition rather than the string assembly.
     function test_CardParametersMatch() public view {
         for (uint256 i = 0; i < count; ++i) {
-            ShapeRenderer.Card memory c = renderer.compose(seeds[i], amounts[i]);
+            ShapeRenderer.Card memory c = renderer.compose(seeds[i], amounts[i], genes[i]);
             assertEq(FixedPoint.toString(c.cols), colsStr[i], "cols");
             assertEq(FixedPoint.toString(c.rows), rowsStr[i], "rows");
             assertEq(FixedPoint.fmt(c.cell), expectedCell[i], "cell");
@@ -141,7 +147,8 @@ contract ParityTest is Test {
     function test_RenderIsStableAcrossChainState() public {
         bytes32 seed = seeds[0];
         uint256 amount = amounts[0];
-        string memory first = renderer.renderSVG(seed, amount, false);
+        uint8 gene = genes[0];
+        string memory first = renderer.renderSVG(seed, amount, false, gene);
 
         vm.roll(block.number + 5_000);
         vm.warp(block.timestamp + 400 days);
@@ -149,7 +156,9 @@ contract ParityTest is Test {
         vm.fee(999 gwei);
         vm.chainId(1234);
 
-        assertEq(renderer.renderSVG(seed, amount, false), first, "renderer read mutable state");
+        assertEq(
+            renderer.renderSVG(seed, amount, false, gene), first, "renderer read mutable state"
+        );
     }
 
     /// @notice A second deployment of the same bytecode renders identically. There is no
@@ -158,8 +167,8 @@ contract ParityTest is Test {
         ShapeRenderer other = new ShapeRenderer();
         for (uint256 i = 0; i < 12; ++i) {
             assertEq(
-                other.renderSVG(seeds[i], amounts[i], inverteds[i]),
-                renderer.renderSVG(seeds[i], amounts[i], inverteds[i])
+                other.renderSVG(seeds[i], amounts[i], inverteds[i], genes[i]),
+                renderer.renderSVG(seeds[i], amounts[i], inverteds[i], genes[i])
             );
         }
     }

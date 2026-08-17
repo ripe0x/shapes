@@ -8,6 +8,8 @@
 
 import { composeShape, fillClass, renderGeometry } from "./canonical/render";
 import { CANONICAL, KIND_ORDER, type Kind, type Params } from "./canonical/params";
+import { denominationIndex } from "./canonical/denominations";
+import { geneAtMint } from "./canonical/ink";
 import { seedAt, type SeedMode } from "./seeds";
 
 export interface CardRecord {
@@ -60,10 +62,14 @@ export function buildBatch(
   mode: SeedMode = "production",
 ): CardRecord[] {
   const out: CardRecord[] = [];
+  const denomIndex = denominationIndex(amountWei);
   for (let i = 0; i < count; i++) {
     const index = seedStart + BigInt(i);
     const seed = seedAt(index, mode);
-    const geometry = renderGeometry(seed, amountWei, p);
+    // The gene a real mint of this seed at this denomination would draw, so the sweep's
+    // distributions reflect the actual on-chain rule rather than a stand-in constant.
+    const gene = geneAtMint(seed, denomIndex);
+    const geometry = renderGeometry(seed, amountWei, gene, p);
     out.push({
       tokenId: index,
       seed,
@@ -91,8 +97,10 @@ export function analyseBatch(
   let pureSolidCards = 0;
   let pureOutlineCards = 0;
 
+  const denomIndex = denominationIndex(amountWei);
   for (const card of cards) {
-    const c = composeShape(card.seed, amountWei, p);
+    const gene = geneAtMint(card.seed, denomIndex);
+    const c = composeShape(card.seed, amountWei, gene, p);
     const cls = fillClass(c);
     if (cls === "Solid") pureSolidCards++;
     if (cls === "Outline") pureOutlineCards++;
