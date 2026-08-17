@@ -202,8 +202,11 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         return SOLID_BAND_MIN + t.mulWad(SOLID_BAND_MAX - SOLID_BAND_MIN);
     }
 
-    /// @dev How this card came out of the fill draw. Solid and Outline are the rare extremes.
+    /// @dev How this card came out of the fill draw. A single mark can only come out one way, so
+    ///      a lone module reports its actual fill rather than the card's regime (which would read
+    ///      "Mixed" while only one fill is drawn). Otherwise, Solid and Outline are the extremes.
     function _fillClass(Card memory card) private pure returns (string memory) {
+        if (card.modules.length == 1) return card.modules[0].solid ? "Solid" : "Outline";
         if (card.solidProbability == 0) return "Outline";
         if (card.solidProbability == FixedPoint.WAD) return "Solid";
         return "Mixed";

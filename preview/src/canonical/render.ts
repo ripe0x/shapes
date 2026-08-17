@@ -664,6 +664,10 @@ export function moduleSequence(c: Composition): string {
  * something you have to notice by eye.
  */
 export function fillClass(c: Composition): "Solid" | "Outline" | "Mixed" {
+  // A single mark can only come out one way, so report what it actually is rather than the
+  // card's fill regime — otherwise a lone module (the 100 ETH apex) reads "Mixed" while only
+  // one fill is ever drawn.
+  if (c.modules.length === 1) return c.modules[0].solid ? "Solid" : "Outline";
   if (c.solidProbability === 0n) return "Outline";
   if (c.solidProbability === WAD) return "Solid";
   return "Mixed";
