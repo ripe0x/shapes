@@ -723,8 +723,9 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
 
         if (m.kind == KIND_LINE) {
             // A straight diagonal band across the cell, one weight thick, its centreline the
-            // footprint diagonal. The tips are clipped by the footprint square, so each ends
-            // in a point exactly on the corner. Two orientations.
+            // footprint diagonal. Each end is cut flat perpendicular to the diagonal (a butt cap),
+            // so it reads as a bar with square-off ends rather than a point at the corner. Two
+            // orientations.
             uint256 o = m.weight.mulWad(SQRT2) / 2;
             return abi.encodePacked(
                 '<path d="M',
@@ -736,10 +737,6 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
                 ",",
                 (m.cy + r - o).fmt(),
                 " L",
-                (m.cx + r).fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                " L",
                 (m.cx + r - o).fmt(),
                 ",",
                 (m.cy + r).fmt(),
@@ -747,10 +744,6 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
                 (m.cx - r).fmt(),
                 ",",
                 (m.cy - r + o).fmt(),
-                " L",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy - r).fmt(),
                 ' Z"',
                 _transform(m.rot, m.cx, m.cy),
                 ' fill="',

@@ -430,17 +430,15 @@ function moduleSvg(m: Module, p: Params, fg: string): string {
     }
 
     // A straight diagonal band across the cell, one weight thick, its centreline the footprint
-    // diagonal. The tips are clipped by the footprint square, so each ends in a point exactly
-    // on the corner. Two orientations.
+    // diagonal. Each end is cut flat perpendicular to the diagonal (a butt cap), so it reads as a
+    // bar with square-off ends rather than tapering to a point at the corner. Two orientations.
     case "line": {
-      const o = mulWad(m.weight, SQRT2) / 2n; // the clipped tip's run along each edge
+      const o = mulWad(m.weight, SQRT2) / 2n; // the flat cap's run along each edge
       const d =
         `M${fmt(cx - r + o)},${fmt(cy - r)} ` +
         `L${fmt(cx + r)},${fmt(cy + r - o)} ` +
-        `L${fmt(cx + r)},${fmt(cy + r)} ` +
         `L${fmt(cx + r - o)},${fmt(cy + r)} ` +
-        `L${fmt(cx - r)},${fmt(cy - r + o)} ` +
-        `L${fmt(cx - r)},${fmt(cy - r)} Z`;
+        `L${fmt(cx - r)},${fmt(cy - r + o)} Z`;
       return `<path d="${d}"` + transform(m.rot, cx, cy) + ` fill="${fg}"/>`;
     }
   }
