@@ -7,6 +7,7 @@ import type { Params } from "../canonical/params";
 import { designPageSeeds, seedAt, type SeedMode } from "../seeds";
 import { analyseBatch, buildBatch, type CollisionPair } from "../analysis";
 import { withGridOverlay } from "./gridOverlay";
+import { mintGene } from "../previewGene";
 import type { Selection } from "./App";
 
 export function Ladder({
@@ -102,7 +103,9 @@ export function Ladder({
               : Array.from({ length: perRow }, (_, i) =>
                   seedAt(seedStart + BigInt(i), seedMode),
                 );
-            const cellSize = fmt(composeShape(seeds[0], amount, params).cell);
+            const cellSize = fmt(
+              composeShape(seeds[0], amount, mintGene(seeds[0], amount), params).cell,
+            );
             return (
               <div key={di} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 <div
@@ -137,12 +140,12 @@ export function Ladder({
                         svg={
                           showGrid
                             ? withGridOverlay(
-                                renderShape(seed, amount, tokenId, params),
+                                renderShape(seed, amount, tokenId, mintGene(seed, amount), params),
                                 seed,
                                 amount,
                                 params,
                               )
-                            : renderShape(seed, amount, tokenId, params)
+                            : renderShape(seed, amount, tokenId, mintGene(seed, amount), params)
                         }
                         caption={"#" + tokenId.toString()}
                         badge={badgeOf({ seed, amountWei: amount, tokenId })}
@@ -339,12 +342,24 @@ function Sweep({
                           svg={
                             showGrid
                               ? withGridOverlay(
-                                  renderShape(seed, DENOMINATIONS[r.di], BigInt(i + 1), params),
+                                  renderShape(
+                                    seed,
+                                    DENOMINATIONS[r.di],
+                                    BigInt(i + 1),
+                                    mintGene(seed, DENOMINATIONS[r.di]),
+                                    params,
+                                  ),
                                   seed,
                                   DENOMINATIONS[r.di],
                                   params,
                                 )
-                              : renderShape(seed, DENOMINATIONS[r.di], BigInt(i + 1), params)
+                              : renderShape(
+                                  seed,
+                                  DENOMINATIONS[r.di],
+                                  BigInt(i + 1),
+                                  mintGene(seed, DENOMINATIONS[r.di]),
+                                  params,
+                                )
                           }
                           caption={seed.toString().slice(0, 12)}
                           onClick={() =>

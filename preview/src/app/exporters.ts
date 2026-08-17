@@ -15,6 +15,7 @@ import { fmt } from "../canonical/wad";
 import { LABELS } from "../canonical/denominations";
 import type { Params } from "../canonical/params";
 import { shortHash } from "../analysis";
+import { mintGene } from "../previewGene";
 
 /* ---------------- download helpers ---------------- */
 
@@ -208,8 +209,8 @@ export function buildFixture(
   tokenId: bigint,
   p?: Params,
 ): Fixture {
-  const c = composeShape(seed, amountWei, p);
-  const svg = renderShape(seed, amountWei, tokenId, p);
+  const c = composeShape(seed, amountWei, mintGene(seed, amountWei), p);
+  const svg = renderShape(seed, amountWei, tokenId, mintGene(seed, amountWei), p);
   return {
     tokenId: tokenId.toString(),
     seed: "0x" + seed.toString(16).padStart(64, "0"),
@@ -223,9 +224,17 @@ export function buildFixture(
     target: fmt(c.target),
     modules: moduleSequence(c),
     moduleCount: c.cols * c.rows,
-    svgHash: shortHash(renderGeometry(seed, amountWei, p)),
+    svgHash: shortHash(renderGeometry(seed, amountWei, mintGene(seed, amountWei), p)),
     svg,
-    metadata: tokenMetadataJson(seed, amountWei, tokenId, 1n, false, p),
+    metadata: tokenMetadataJson(
+      seed,
+      amountWei,
+      tokenId,
+      1n,
+      false,
+      mintGene(seed, amountWei),
+      p,
+    ),
   };
 }
 

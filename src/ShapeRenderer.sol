@@ -202,13 +202,20 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         return SOLID_BAND_MIN + t.mulWad(SOLID_BAND_MAX - SOLID_BAND_MIN);
     }
 
-    /// @dev How this card came out of the fill draw. A single mark can only come out one way, so
-    ///      a lone module reports its actual fill rather than the card's regime (which would read
-    ///      "Mixed" while only one fill is drawn). Otherwise, Solid and Outline are the extremes.
+    /// @dev The realised fill of a card: how its marks actually painted, not the gene probability
+    ///      behind them. A mark counts as filled only when its solid draw is set AND its kind has a
+    ///      solid form; the arc and the diagonal line are open strokes with no solid form (D15), so
+    ///      they never count as filled however the draw landed. All filled -> Solid; none filled ->
+    ///      Outline; any split -> Mixed. Byte-identical to `fillClass` in ink.ts's `render.ts`.
     function _fillClass(Card memory card) private pure returns (string memory) {
-        if (card.modules.length == 1) return card.modules[0].solid ? "Solid" : "Outline";
-        if (card.solidProbability == 0) return "Outline";
-        if (card.solidProbability == FixedPoint.WAD) return "Solid";
+        uint256 n = card.modules.length;
+        uint256 filled;
+        for (uint256 i = 0; i < n; ++i) {
+            Module memory m = card.modules[i];
+            if (m.solid && m.kind != KIND_ARC && m.kind != KIND_LINE) filled++;
+        }
+        if (filled == 0) return "Outline";
+        if (filled == n) return "Solid";
         return "Mixed";
     }
 
@@ -984,8 +991,9 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
                 InkGenes.geneNameAt(inkGene),
                 '"},{"trait_type":"Modules","value":"',
                 _moduleSequence(card),
-                '"},{"trait_type":"Module Count","value":',
+                '"},{"trait_type":"Module Count","value":"',
                 FixedPoint.toString(card.cols * card.rows),
+                '"',
                 _provenanceTraits(units, originCount, complete, inverted),
                 ',{"trait_type":"Seed","value":"',
                 _hex32(seed),
@@ -1004,9 +1012,9 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         return abi.encodePacked(
             '},{"trait_type":"Formation","value":"',
             _formation(units, originCount, isBlack),
-            '"},{"trait_type":"Independent Origins","value":',
+            '"},{"trait_type":"Independent Origins","value":"',
             FixedPoint.toString(originCount),
-            '},{"trait_type":"Origin Density","value":"',
+            '"},{"trait_type":"Origin Density","value":"',
             _densityPercent(units, originCount),
             '%"},{"trait_type":"Complete","value":"',
             complete ? "true" : "false",

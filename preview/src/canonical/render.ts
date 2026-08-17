@@ -657,17 +657,20 @@ export function moduleSequence(c: Composition): string {
 }
 
 /**
- * How this card came out of the fill draw. `Solid` and `Outline` are the two rare extremes;
- * everything else is `Mixed`. Surfaced as a trait so the extremes are legible rather than
- * something you have to notice by eye.
+ * The realised fill of a card: how its marks actually painted, not the gene probability behind
+ * them. A mark counts as filled only when its solid draw is set AND its kind has a solid form;
+ * the arc and the diagonal line are open strokes with no solid form (D15), so they never count
+ * as filled however the draw landed. All marks filled -> `Solid`; none filled -> `Outline`; any
+ * split -> `Mixed`. Independent of the ink gene: a Solid-gened card carrying an open stroke reads
+ * `Mixed`, and a single-mark 100 reads the true state of its one mark.
  */
 export function fillClass(c: Composition): "Solid" | "Outline" | "Mixed" {
-  // A single mark can only come out one way, so report what it actually is rather than the
-  // card's fill regime — otherwise a lone module (the 100 ETH apex) reads "Mixed" while only
-  // one fill is ever drawn.
-  if (c.modules.length === 1) return c.modules[0].solid ? "Solid" : "Outline";
-  if (c.solidProbability === 0n) return "Outline";
-  if (c.solidProbability === WAD) return "Solid";
+  let filled = 0;
+  for (const m of c.modules) {
+    if (m.solid && !OUTLINE_ONLY.has(m.kind)) filled++;
+  }
+  if (filled === 0) return "Outline";
+  if (filled === c.modules.length) return "Solid";
   return "Mixed";
 }
 
@@ -761,9 +764,9 @@ export function tokenMetadataJson(
     `{"trait_type":"Fill","value":"${fillClass(c)}"},` +
     `{"trait_type":"Ink","value":"${GENE_NAMES[inkGene]}"},` +
     `{"trait_type":"Modules","value":"${moduleSequence(c)}"},` +
-    `{"trait_type":"Module Count","value":${c.cols * c.rows}},` +
+    `{"trait_type":"Module Count","value":"${c.cols * c.rows}"},` +
     `{"trait_type":"Formation","value":"${formation(units, originCount, inverted)}"},` +
-    `{"trait_type":"Independent Origins","value":${originCount.toString()}},` +
+    `{"trait_type":"Independent Origins","value":"${originCount.toString()}"},` +
     `{"trait_type":"Origin Density","value":"${densityPercent(units, originCount)}%"},` +
     `{"trait_type":"Complete","value":"${complete ? "true" : "false"}"},` +
     `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +

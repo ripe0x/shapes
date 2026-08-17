@@ -16,6 +16,7 @@ import {
 import {C} from "./theme";
 import {Section, Art, short, txUrl} from "./ui";
 import {localArt} from "./art";
+import {mintGene} from "../previewGene";
 import type {SiteData, SiteToken} from "./data";
 import type {RedeemState} from "./SiteApp";
 
@@ -166,7 +167,7 @@ export function TokenView({
         {back}
         <Section title="SHAPE" pad="36px 48px 44px 32px">
           <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
-            <Art src={localArt(snap.seed, DENOMINATIONS[snap.di].wei)} width={340} />
+            <Art src={localArt(snap.seed, DENOMINATIONS[snap.di].wei, snap.inkGene)} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0}}>
               <div style={{fontSize: 40, lineHeight: 1}}>{lbl} ETH</div>
               <div style={{marginTop: 20, fontSize: 13, lineHeight: 1.7}}>
@@ -214,7 +215,7 @@ export function TokenView({
   const lbl = DENOMINATIONS[di].label;
   const [cols, rows] = GRIDS[di];
   const owned = !!address && token.owner.toLowerCase() === address.toLowerCase();
-  const comp = composeShape(token.seed, token.backing);
+  const comp = composeShape(token.seed, token.backing, token.inkGene);
 
   const tokRows: {k: string; v: React.ReactNode; size?: number; wrap?: "anywhere" | "normal"}[] = [
     {k: "denomination", v: `${lbl} ETH`},
@@ -423,7 +424,8 @@ export function TokenView({
             <div style={{display: "flex", flexWrap: "wrap", gap: 18}}>
               {splitChildren.map((c, i) => (
                 <div key={i} style={{flex: "0 0 96px", width: 96}}>
-                  <Art src={localArt(c.seed, c.wei)} />
+                  {/* decompose copies the parent's gene verbatim to every child */}
+                  <Art src={localArt(c.seed, c.wei, token.inkGene)} />
                   <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
                     {DENOMINATIONS[di - 1].label} ETH
                   </div>
@@ -537,7 +539,10 @@ export function TokenView({
               </p>
               <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
                 <div style={{flex: "0 0 140px", width: 140}}>
-                  <Art src={localArt(BigInt(birth.parentSeed), parentWei)} />
+                  {/* This token was a child of that split, and decompose copies the parent's gene
+                      verbatim to each child, so the parent's gene at split equals this token's own
+                      gene (unless it has since composed). */}
+                  <Art src={localArt(BigInt(birth.parentSeed), parentWei, token.inkGene)} />
                   <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
                     {DENOMINATIONS[record.denomIndex].label} ETH · the original
                   </div>
@@ -649,7 +654,11 @@ function ProvTree({
     (node.repeat ? " (shown elsewhere)" : node.mintBorn && node.contributors.length === 0 ? ", minted" : "");
   const card = (
     <div style={{width: w, opacity: node.repeat ? 0.35 : 1}} title={note}>
-      <Art src={localArt(node.seed, DENOMINATIONS[node.di].wei)} />
+      {/* Provenance nodes carry no gene: the event log (chain/history.ts) does not yet track
+          InkGene events, so a historical node's exact ink is unknown here. mintGene is exact for a
+          direct-mint node and an approximation for a composed one. Threading real genes through the
+          provenance tree needs the indexer extended for InkGene (SPEC.md D17 / preview UX). */}
+      <Art src={localArt(node.seed, DENOMINATIONS[node.di].wei, mintGene(node.seed, DENOMINATIONS[node.di].wei))} />
       {w >= 26 && (
         <div style={{marginTop: 5, fontSize: 10, color: C.muted, textAlign: "center"}}>
           #{node.id.toString()}

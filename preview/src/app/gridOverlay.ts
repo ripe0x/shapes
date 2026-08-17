@@ -13,6 +13,7 @@ import { composeShape } from "../canonical/render";
 import { fmt } from "../canonical/wad";
 import { CANONICAL, FIELD, type Params } from "../canonical/params";
 import { moduleExtent } from "./containment";
+import { mintGene } from "../previewGene";
 
 const FIELD_COLOR = "#00e5ff";
 const GRID_COLOR = "#ff2d55";
@@ -24,7 +25,7 @@ export function gridOverlay(
   amountWei: bigint,
   p?: Params,
 ): string {
-  const c = composeShape(seed, amountWei, p);
+  const c = composeShape(seed, amountWei, mintGene(seed, amountWei), p);
   const { cols, rows, cell, x0, y0 } = c;
 
   let out = `<g id="grid-overlay" fill="none" stroke-width="0.4" opacity="0.85">`;

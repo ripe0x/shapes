@@ -277,6 +277,63 @@ const out = {
       inkSurvivorGeneB: found.geneB.toString(),
     };
   })(),
+
+  // Compose-walk vectors across every tier span T = 1..8 with heterogeneous pool statistics, so
+  // InkGenes.geneAtCompose is pinned to the TS canonical for multi-tier walks and not only the
+  // T = 1 survivor case above. Survivor seed and burn fold are derived deterministically from a
+  // counter (splitmix over 256 bits), so the corpus regenerates byte-identically.
+  ...(() => {
+    const MASK = (1n << 256n) - 1n;
+    const mix = (x: bigint): bigint => {
+      let v = (x * 0x9e3779b97f4a7c15n + 0x243f6a8885a308d3n) & MASK;
+      v ^= v >> 29n;
+      v = (v * 0xbf58476d1ce4e5b9n) & MASK;
+      v ^= v >> 32n;
+      v = (v * 0x94d049bb133111ebn) & MASK;
+      v ^= v >> 31n;
+      return v & MASK;
+    };
+    // [survivorGene, best, worst, center] spanning the low/high/mixed/homogeneous cases.
+    const combos: [number, number, number, number][] = [
+      [0, 6, 0, 3],
+      [6, 6, 0, 3],
+      [3, 5, 1, 4],
+      [2, 6, 2, 5],
+      [4, 4, 4, 4],
+    ];
+    const seed: string[] = [], fold: string[] = [], sg: string[] = [];
+    const oldI: string[] = [], newI: string[] = [], bst: string[] = [];
+    const wst: string[] = [], ctr: string[] = [], exp: string[] = [];
+    let n = 0;
+    for (let T = 1; T <= 8; T++) {
+      for (const [g0, b, w, c] of combos) {
+        const s = mix(BigInt(n) * 2n + 1n);
+        const f = mix(BigInt(n) * 2n + 2n);
+        const g = geneAtCompose(s, f, g0, 0, T, b, w, c);
+        seed.push(hex32(s));
+        fold.push(f.toString());
+        sg.push(g0.toString());
+        oldI.push("0");
+        newI.push(T.toString());
+        bst.push(b.toString());
+        wst.push(w.toString());
+        ctr.push(c.toString());
+        exp.push(g.toString());
+        n++;
+      }
+    }
+    return {
+      inkWalkSurvivorSeed: seed,
+      inkWalkBurnFold: fold,
+      inkWalkSurvivorGene: sg,
+      inkWalkOldIndex: oldI,
+      inkWalkNewIndex: newI,
+      inkWalkBest: bst,
+      inkWalkWorst: wst,
+      inkWalkCenter: ctr,
+      inkWalkExpectedGene: exp,
+    };
+  })(),
 };
 
 const target = resolve(import.meta.dirname, "../../test/fixtures/fixtures.json");

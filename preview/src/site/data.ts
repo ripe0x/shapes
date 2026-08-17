@@ -1,5 +1,6 @@
 import type {PublicClient} from "viem";
 import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
+import {geneIndexOfName} from "../previewGene";
 
 export interface TokenMeta {
   name: string;
@@ -15,6 +16,13 @@ export interface SiteToken {
   owner: `0x${string}`;
   image: string; // svg data URI from tokenURI
   meta: TokenMeta; // the rest of the tokenURI JSON, parsed
+  inkGene: number; // stored ink gene, from the tokenURI "Ink" trait
+}
+
+/** Ink gene index from a parsed tokenURI's "Ink" trait. */
+function geneOfMeta(meta: TokenMeta): number {
+  const ink = meta.attributes.find((a) => a.trait_type === "Ink");
+  return geneIndexOfName(ink?.value ?? "Murk");
 }
 
 export interface SiteData {
@@ -78,7 +86,16 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
     ]);
     if (black) continue;
     const {image, meta} = parseUri(uri);
-    tokens.push({id, backing, di: denomIndexOf(backing), seed: BigInt(seed), owner, image, meta});
+    tokens.push({
+      id,
+      backing,
+      di: denomIndexOf(backing),
+      seed: BigInt(seed),
+      owner,
+      image,
+      meta,
+      inkGene: geneOfMeta(meta),
+    });
   }
 
   tokens.sort((a, b) => (a.id > b.id ? -1 : 1));

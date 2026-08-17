@@ -16,6 +16,7 @@ import { shortHash } from "../analysis";
 import { renderGeometry } from "../canonical/render";
 import { withGridOverlay } from "./gridOverlay";
 import { moduleExtent } from "./containment";
+import { mintGene } from "../previewGene";
 import type { Selection } from "./App";
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
@@ -41,8 +42,8 @@ export function Inspect({
   onClose: () => void;
 }) {
   const { seed, amountWei, tokenId } = sel;
-  const c = composeShape(seed, amountWei, params);
-  const svg = renderShape(seed, amountWei, tokenId, params);
+  const c = composeShape(seed, amountWei, mintGene(seed, amountWei), params);
+  const svg = renderShape(seed, amountWei, tokenId, mintGene(seed, amountWei), params);
   const [copied, setCopied] = React.useState<string | null>(null);
   const [overlay, setOverlay] = React.useState(showGrid);
   // The raw SVG shown and copied below is always canonical; the overlay is a display layer.
@@ -140,7 +141,10 @@ export function Inspect({
           <Row k="wRatio" v={fmt(c.wRatio)} />
           <Row k="stroke" v={fmt(c.weight)} />
           <Row k="draws consumed" v={c.draws} />
-          <Row k="geometry hash" v={shortHash(renderGeometry(seed, amountWei, params))} />
+          <Row
+            k="geometry hash"
+            v={shortHash(renderGeometry(seed, amountWei, mintGene(seed, amountWei), params))}
+          />
           <Row
             k="modules"
             v={<span style={{ fontSize: 15, letterSpacing: "0.18em" }}>{moduleSequence(c)}</span>}
@@ -196,13 +200,24 @@ export function Inspect({
               <Button onClick={() => copy("svg", svg)}>copy</Button>
               <Button
                 onClick={() =>
-                  copy("metadata", tokenMetadataJson(seed, amountWei, tokenId, 1n, false, params))
+                  copy(
+                    "metadata",
+                    tokenMetadataJson(
+                      seed,
+                      amountWei,
+                      tokenId,
+                      1n,
+                      false,
+                      mintGene(seed, amountWei),
+                      params,
+                    ),
+                  )
                 }
               >
                 copy metadata json
               </Button>
               <Button
-                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, false, params))}
+                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, false, mintGene(seed, amountWei), params))}
               >
                 copy tokenURI
               </Button>

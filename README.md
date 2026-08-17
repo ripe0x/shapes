@@ -57,11 +57,13 @@ rotations, except the line, which takes one of two. That is 52 distinct module a
 card-level draws set a single size and a single stroke weight shared by every module on that
 token, so a card reads as one decision rather than a collection of them.
 
-How solid a card is, is drawn per card rather than fixed: about 5% of Shapes come out entirely
-outlined, about 5% entirely solid, and the rest land somewhere between, surfaced as a `Fill`
-trait. The extremes are exact for the fillable primitives — an all-solid card has no drawn mark
-among them. The arc and the diagonal line are outline only, so a card carrying one still shows
-that stroke whatever its fill.
+How solid a card is comes from its ink gene, a seven-state trait (`Void` through `Solid`) set at
+mint and carried through composition. The gene sets the probability each mark is drawn solid
+rather than outlined: 0% at `Void`, 100% at `Solid`, and a spread between. It is surfaced as the
+`Ink` trait. A separate `Fill` trait reports how the card actually painted — `Solid` if every
+mark came out filled, `Outline` if none did, `Mixed` otherwise. The arc and the diagonal line are
+outline only, so a card carrying one never reads fully `Solid`. Ink genes are detailed in
+SPEC.md D17; every trait is documented in METADATA.md.
 
 Because size and stroke are collection constants, the composition space is finite: enormous at
 the dense denominations, but exactly 2,704 at 50 ETH and **52 at 100 ETH**, where a card is a

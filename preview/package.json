@@ -12,6 +12,7 @@
     "verify": "tsx scripts/verifyStream.ts",
     "fixtures": "tsx scripts/genFixtures.ts",
     "sweep": "tsx scripts/collisionSweep.ts",
+    "ink:tune": "tsx scripts/inkTuning.ts",
     "standalone": "tsx scripts/buildStandalone.ts",
     "gif:e2e": "node scripts/e2eGif.mjs"
   },

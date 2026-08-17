@@ -13,6 +13,7 @@
 import { composeShape, type Module } from "../canonical/render";
 import { CANONICAL, type Params } from "../canonical/params";
 import { WAD } from "../canonical/wad";
+import { mintGene } from "../previewGene";
 
 const num = (w: bigint) => Number(w) / Number(WAD);
 
@@ -92,7 +93,7 @@ export function cardContainment(
   amountWei: bigint,
   p: Params = CANONICAL,
 ): CardContainment {
-  const c = composeShape(seed, amountWei, p);
+  const c = composeShape(seed, amountWei, mintGene(seed, amountWei), p);
   let worstRatio = 0;
   const escaping: number[] = [];
   for (const m of c.modules) {

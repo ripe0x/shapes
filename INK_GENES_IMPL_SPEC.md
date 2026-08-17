@@ -245,7 +245,7 @@ takes precedence exactly as today; the Ink trait is still reported.
     restore including it → reverts (existing backing check); documents the §3.4 comment.
 11. Existing suites stay green: `forge test`, `forge test --mc Parity`, and in
     `preview/`: `npm run fixtures` then `npm run sweep`. Fixture JSON gains an
-    `inkGene` field per fixture entry; 66 fixtures regenerate deterministically.
+    `inkGene` field per fixture entry; 78 fixtures regenerate deterministically.
 
 ## 6. Order of work
 

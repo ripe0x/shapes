@@ -6,6 +6,7 @@ import { denominationIndex } from "../canonical/denominations";
 import type { Params } from "../canonical/params";
 import { buildGif } from "./gif";
 import { downloadBlob } from "./exporters";
+import { mintGene } from "../previewGene";
 import type { Selection } from "./App";
 
 const MAX_BYTES = 12 * 1024 * 1024;
@@ -49,7 +50,7 @@ export function GifBar({
     setBusy("rendering frames…");
     try {
       const svgs = selection.map((s) =>
-        renderShape(s.seed, s.amountWei, s.tokenId, params),
+        renderShape(s.seed, s.amountWei, s.tokenId, mintGene(s.seed, s.amountWei), params),
       );
       const out = await buildGif(svgs, {
         width,
@@ -177,7 +178,7 @@ export function GifBar({
                 }}
                 dangerouslySetInnerHTML={{
                   __html: forDisplay(
-                    renderShape(s.seed, s.amountWei, s.tokenId, params),
+                    renderShape(s.seed, s.amountWei, s.tokenId, mintGene(s.seed, s.amountWei), params),
                   ),
                 }}
               />

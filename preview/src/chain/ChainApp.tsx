@@ -4,6 +4,8 @@ import {useAccount, usePublicClient, useWriteContract} from "wagmi";
 import {ConnectButton} from "@rainbow-me/rainbowkit";
 import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "./abi";
 import {renderShape, CANONICAL} from "../canonical/render";
+import {geneAtCompose, centerGene} from "../canonical/ink";
+import {geneIndexOfName} from "../previewGene";
 import {decomposeChildSeed} from "../decomposeSeed";
 import {loadHistory, type HistEvent} from "./history";
 
@@ -17,6 +19,7 @@ interface OwnedToken {
   originCount: bigint;
   complete: boolean;
   isBlack: boolean;
+  inkGene: number; // stored ink gene, from the tokenURI "Ink" trait
   image: string; // svg data URI decoded from tokenURI
 }
 
@@ -36,6 +39,7 @@ interface PreviewChild {
   seed: bigint;
   amountWei: bigint;
   originCount: bigint;
+  inkGene: number; // decompose copies the parent's gene verbatim to every child
 }
 
 /* ------------------------------------------------------------------ *
@@ -46,19 +50,63 @@ interface PreviewChild {
 /// recomposition's outcome can be shown before any transaction is sent. Artwork is a pure function
 /// of (seed, denomination), and a decompose fixes its children's seeds deterministically, so these
 /// previews are exact, not approximations.
-function localShapeImage(seed: bigint, amountWei: bigint, inverted = false): string {
-  return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n, CANONICAL, inverted))}`;
+function localShapeImage(
+  seed: bigint,
+  amountWei: bigint,
+  inkGene: number,
+  inverted = false,
+): string {
+  return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n, inkGene, CANONICAL, inverted))}`;
+}
+
+/// The ink gene a compose would assign the survivor, computed exactly as `Shapes.compose` /
+/// `simulateCompose` do: pool `{survivor + burns}` for the best, worst and units-weighted center,
+/// then walk the survivor's gene one tier at a time. Lets the compose-result preview show the real
+/// post-compose ink without a round trip to the chain's `simulateCompose` view.
+function composedGene(survivor: OwnedToken, burns: OwnedToken[], sumWei: bigint): number {
+  const oldIndex = denomIndexOf(survivor.denomWei);
+  const newIndex = denomIndexOf(sumWei);
+  let best = survivor.inkGene;
+  let worst = survivor.inkGene;
+  const survivorUnits = survivor.denomWei / UNIT;
+  let sumW = BigInt(survivor.inkGene) * survivorUnits;
+  let unitsTotal = survivorUnits;
+  let burnSeedFold = 0n;
+  for (const b of burns) {
+    burnSeedFold ^= b.seed;
+    if (b.inkGene > best) best = b.inkGene;
+    if (b.inkGene < worst) worst = b.inkGene;
+    const bUnits = b.denomWei / UNIT;
+    sumW += BigInt(b.inkGene) * bUnits;
+    unitsTotal += bUnits;
+  }
+  const center = centerGene(sumW, unitsTotal);
+  return geneAtCompose(
+    survivor.seed,
+    burnSeedFold,
+    survivor.inkGene,
+    oldIndex,
+    newIndex,
+    best,
+    worst,
+    center,
+  );
 }
 
 /// Decode a Shapes tokenURI. Returns the inline SVG image and the token's stored denomination from
 /// the "ETH Value" trait. `backingOf()` returns 0 for a Black token, so the metadata is the correct
 /// source for a Black token's original denomination (used for the density/units display).
-function parseTokenMeta(uri: string): {image: string; denomWei: bigint} {
+function parseTokenMeta(uri: string): {image: string; denomWei: bigint; inkGene: number} {
   const json = JSON.parse(atob(uri.replace("data:application/json;base64,", "")));
   const attrs = (json.attributes ?? []) as {trait_type: string; value: string}[];
   const ethTrait = attrs.find((a) => a.trait_type === "ETH Value");
   const label = ethTrait ? String(ethTrait.value).split(" ")[0] : "0";
-  return {image: json.image as string, denomWei: parseEther(label)};
+  const inkTrait = attrs.find((a) => a.trait_type === "Ink");
+  return {
+    image: json.image as string,
+    denomWei: parseEther(label),
+    inkGene: geneIndexOfName(String(inkTrait?.value ?? "Murk")),
+  };
 }
 
 /// The provenance label for a (backing, originCount, isBlack) triple. Mirrors
@@ -97,7 +145,13 @@ function splitChildren(t: OwnedToken): PreviewChild[] {
   for (let i = 0; i < ratio; i++) {
     const give = remaining < cap ? remaining : cap;
     remaining -= give;
-    kids.push({index: i, seed: decomposeChildSeed(t.seed, i), amountWei: downWei, originCount: give});
+    kids.push({
+      index: i,
+      seed: decomposeChildSeed(t.seed, i),
+      amountWei: downWei,
+      originCount: give,
+      inkGene: t.inkGene,
+    });
   }
   return kids;
 }
@@ -172,7 +226,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
         publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
         publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
       ]);
-      const {image, denomWei} = parseTokenMeta(uri);
+      const {image, denomWei, inkGene} = parseTokenMeta(uri);
       owned.push({
         id,
         backing,
@@ -181,6 +235,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
         originCount,
         complete,
         isBlack: black,
+        inkGene,
         image,
       });
     }
@@ -280,6 +335,14 @@ export function ChainApp({dep}: {dep: Deployment}) {
       ? [...selectedTokens].sort((a, b) => (a.id < b.id ? -1 : 1))[0]
       : null;
   const composeOrigins = selectedTokens.reduce((a, t) => a + t.originCount, 0n);
+  const composeResultGene =
+    composeValid && composeSurvivor
+      ? composedGene(
+          composeSurvivor,
+          selectedTokens.filter((t) => t.id !== composeSurvivor.id),
+          composeSum,
+        )
+      : (composeSurvivor?.inkGene ?? 0);
 
   const compose = () => {
     if (!composeSurvivor) return;
@@ -391,6 +454,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
           origins={composeOrigins}
           valid={composeValid}
           survivor={composeSurvivor}
+          resultGene={composeResultGene}
           resultFormation={formationOf(composeSum, composeOrigins, false)}
           busy={busy}
           onClear={() => setSelected(new Set())}
@@ -529,7 +593,7 @@ function Detail({
           <div style={S.previewRow}>
             {splitKids.map((k) => (
               <div key={k.index} style={{textAlign: "center"}}>
-                <img src={localShapeImage(k.seed, k.amountWei)} alt={`child ${k.index}`} style={S.previewArt} />
+                <img src={localShapeImage(k.seed, k.amountWei, k.inkGene)} alt={`child ${k.index}`} style={S.previewArt} />
                 <div style={{marginTop: 5}}>
                   <FormationBadge label={formationOf(k.amountWei, k.originCount, false)} />
                 </div>
@@ -681,6 +745,7 @@ function ComposeTray({
   origins,
   valid,
   survivor,
+  resultGene,
   resultFormation,
   busy,
   onClear,
@@ -691,6 +756,7 @@ function ComposeTray({
   origins: bigint;
   valid: boolean;
   survivor: OwnedToken | null;
+  resultGene: number;
   resultFormation: Formation;
   busy: string | null;
   onClear: () => void;
@@ -700,7 +766,7 @@ function ComposeTray({
     <div style={S.tray}>
       <div style={{maxWidth: 1080, margin: "0 auto", display: "flex", alignItems: "center", gap: 14}}>
         {valid && survivor && (
-          <img src={localShapeImage(survivor.seed, sum)} alt="compose result" style={S.trayArt} />
+          <img src={localShapeImage(survivor.seed, sum, resultGene)} alt="compose result" style={S.trayArt} />
         )}
         <div style={{flex: 1}}>
           <div style={{color: "#eee", fontSize: 13}}>

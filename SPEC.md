@@ -349,9 +349,11 @@ one bit is not represented; every other module state is distinguishable.
 
 ### D11. Metadata
 
-`attributes` carries `ETH Value`, `Grid`, `Modules` (the glyph sequence),
-`Module Count` and `Seed`. `ETH Value` is derived from the same denomination
-index as `backingOf`, so it cannot disagree with the reserve.
+`attributes` carries `ETH Value`, `Grid`, `Fill`, `Ink`, `Modules` (the glyph sequence),
+`Module Count`, `Formation`, `Independent Origins`, `Origin Density`, `Complete`, `Black` and
+`Seed`. Every `value` is a string, so no trait renders as a numeric range filter. `ETH Value` is
+derived from the same denomination index as `backingOf`, so it cannot disagree with the reserve.
+Full field-by-field reference in [METADATA.md](METADATA.md).
 
 Every string in both the SVG and the JSON comes from a fixed table or from
 `fmt`. No caller-controlled text reaches either document, so there is no
@@ -449,9 +451,11 @@ per-module test from `rand() > threshold` to `rand() < p`:
 `testFuzz_PureCardsAreActuallyPure` walks every module of any card that drew an extreme and
 asserts there is no exception. This is a property of the solid *bit*: the arc and the diagonal
 line are open strokes with no solid form (D15), so a pure-solid card that happens to carry one
-still paints that stroke. A `Fill` metadata trait (`Solid` / `Outline` / `Mixed`) makes the two
-rare states legible rather than something you have to notice by eye; it is derived from the
-composition, never re-rolled.
+still paints that stroke. The `Fill` metadata trait (`Solid` / `Outline` / `Mixed`) reports the
+card's realized fill: a mark counts as filled only when its solid draw is set and its kind has a
+solid form, so the arc and the line never count, all marks filled reads `Solid`, none reads
+`Outline`, and any split reads `Mixed`. It is derived from the composition, never re-rolled, and
+is independent of the ink gene (D17) rather than a restatement of it. See [METADATA.md](METADATA.md).
 
 ### D15. Vocabulary, and the finite composition space
 
@@ -629,6 +633,11 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 - **`simulateCompose`/`simulateDecompose`** preview the exact gene a real `compose`/`decompose`
   would produce, `view`, touching no storage — mirrors `compose`'s validation with an explicit
   duplicate-burn-id check in place of relying on `_burn` reverting.
+- **One-tx apexes are not reachable.** `compose` burns its inputs in an O(n) loop, so a single
+  transaction composing 10,000 dust straight into a 100 costs about 70.8M gas
+  (`test_ComposeMegaGasProfile_10000Dust`), well over the block gas limit. This is fine for the
+  game — a 100 is assembled by laddering through intermediate composes, not in one call — but no
+  path should assume a single-transaction dust-to-apex is possible.
 
 ---
 

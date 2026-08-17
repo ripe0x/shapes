@@ -24,7 +24,7 @@ export interface RedeemState {
   status: "idle" | "asking" | "pending" | "done" | "failed";
   tx?: string;
   error?: string;
-  snap?: {id: bigint; seed: bigint; di: number};
+  snap?: {id: bigint; seed: bigint; di: number; inkGene: number};
 }
 
 export function SiteApp({dep}: {dep: Deployment}) {
@@ -97,7 +97,7 @@ export function SiteApp({dep}: {dep: Deployment}) {
       const hash = await write("redeem", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
-      setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di}});
+      setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
     } catch (e) {
       setRedeem({status: "failed", error: describeTxError(e)});
     }

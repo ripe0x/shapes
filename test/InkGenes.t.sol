@@ -244,4 +244,35 @@ contract InkGenesParityTest is Test {
         assertEq(geneB, expectedB, "survivor B outcome drifted from TS");
         assertTrue(geneA != geneB, "the fixture no longer demonstrates survivor choice mattering");
     }
+
+    /// @notice Multi-tier compose walk pinned to the TS canonical: vectors spanning every tier
+    ///         span T = 1..8 with heterogeneous pool statistics. Closes the gap where only the
+    ///         T = 1 survivor case cross-checked `geneAtCompose` against TypeScript.
+    function test_ComposeWalkVectorsMatchTypeScript() public view {
+        string[] memory seed = vm.parseJsonStringArray(json, ".inkWalkSurvivorSeed");
+        string[] memory fold = vm.parseJsonStringArray(json, ".inkWalkBurnFold");
+        string[] memory sg = vm.parseJsonStringArray(json, ".inkWalkSurvivorGene");
+        string[] memory oldI = vm.parseJsonStringArray(json, ".inkWalkOldIndex");
+        string[] memory newI = vm.parseJsonStringArray(json, ".inkWalkNewIndex");
+        string[] memory bst = vm.parseJsonStringArray(json, ".inkWalkBest");
+        string[] memory wst = vm.parseJsonStringArray(json, ".inkWalkWorst");
+        string[] memory ctr = vm.parseJsonStringArray(json, ".inkWalkCenter");
+        string[] memory exp = vm.parseJsonStringArray(json, ".inkWalkExpectedGene");
+
+        uint256 n = seed.length;
+        assertEq(n, 40, "expected 40 compose-walk vectors");
+        for (uint256 i = 0; i < n; ++i) {
+            uint8 got = InkGenes.geneAtCompose(
+                vm.parseBytes32(seed[i]),
+                vm.parseUint(fold[i]),
+                uint8(vm.parseUint(sg[i])),
+                uint8(vm.parseUint(oldI[i])),
+                uint8(vm.parseUint(newI[i])),
+                uint8(vm.parseUint(bst[i])),
+                uint8(vm.parseUint(wst[i])),
+                uint8(vm.parseUint(ctr[i]))
+            );
+            assertEq(got, uint8(vm.parseUint(exp[i])), "compose walk drifted from TS");
+        }
+    }
 }

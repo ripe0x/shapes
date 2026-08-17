@@ -14,6 +14,7 @@ import {
   makeZip,
 } from "./exporters";
 import { withGridOverlay } from "./gridOverlay";
+import { mintGene } from "../previewGene";
 import type { Selection } from "./App";
 
 const MAX = 500;
@@ -53,7 +54,7 @@ export function Batch({
   const svgs = React.useMemo(
     () =>
       cards.map((c, i) =>
-        renderShape(c.seed, amount, seedStart + BigInt(i), params),
+        renderShape(c.seed, amount, seedStart + BigInt(i), mintGene(c.seed, amount), params),
       ),
     [cards, amount, seedStart, params],
   );

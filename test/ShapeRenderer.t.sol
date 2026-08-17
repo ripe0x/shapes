@@ -563,7 +563,7 @@ contract OutputTest is RendererTestBase {
             vm.parseJsonString(json, ".attributes[3].value"),
             InkGenes.geneNameAt(_gene(seed))
         );
-        assertEq(vm.parseJsonUint(json, ".attributes[5].value"), cols * rows);
+        assertEq(vm.parseJsonString(json, ".attributes[5].value"), FixedPoint.toString(cols * rows));
         assertEq(vm.parseJsonString(json, ".attributes[11].value"), vm.toString(seed));
     }
 
@@ -657,7 +657,7 @@ contract TokenMetadataTest is RendererTestBase {
         uint256 direct = shapes.mint{value: 1 ether + 0.01 ether}(1 ether, alice);
         string memory dj = _decodeJson(direct);
         assertEq(vm.parseJsonString(dj, ".attributes[6].value"), "Direct", "direct formation");
-        assertEq(vm.parseJsonUint(dj, ".attributes[7].value"), 1, "direct origins");
+        assertEq(vm.parseJsonString(dj, ".attributes[7].value"), "1", "direct origins");
         assertEq(vm.parseJsonString(dj, ".attributes[8].value"), "1%", "direct density");
         assertEq(vm.parseJsonString(dj, ".attributes[9].value"), "false", "direct not complete");
         assertEq(vm.parseJsonString(dj, ".attributes[10].value"), "false", "direct not black");
@@ -671,7 +671,7 @@ contract TokenMetadataTest is RendererTestBase {
         shapes.compose(first, burn);
         string memory cj = _decodeJson(first);
         assertEq(vm.parseJsonString(cj, ".attributes[6].value"), "Complete", "complete formation");
-        assertEq(vm.parseJsonUint(cj, ".attributes[7].value"), 5, "complete origins");
+        assertEq(vm.parseJsonString(cj, ".attributes[7].value"), "5", "complete origins");
         assertEq(vm.parseJsonString(cj, ".attributes[8].value"), "100%", "complete density");
         assertEq(vm.parseJsonString(cj, ".attributes[9].value"), "true", "is complete");
 
@@ -688,7 +688,7 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(shapes.originCountOf(parts[1]), 0, "second half is a fragment");
         string memory fj = _decodeJson(parts[1]);
         assertEq(vm.parseJsonString(fj, ".attributes[6].value"), "Fragment", "fragment formation");
-        assertEq(vm.parseJsonUint(fj, ".attributes[7].value"), 0, "fragment origins");
+        assertEq(vm.parseJsonString(fj, ".attributes[7].value"), "0", "fragment origins");
         assertEq(vm.parseJsonString(fj, ".attributes[8].value"), "0%", "fragment density");
         assertEq(vm.parseJsonString(fj, ".attributes[9].value"), "false", "fragment not complete");
     }

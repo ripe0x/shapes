@@ -5,6 +5,7 @@ import {GRIDS} from "../canonical/denominations";
 import {C} from "./theme";
 import {Section, Art, txUrl} from "./ui";
 import {localArt, sampleSeed} from "./art";
+import {mintGene} from "../previewGene";
 import {FACTS} from "./copy";
 import type {SiteData} from "./data";
 import type {MintState} from "./SiteApp";
@@ -54,7 +55,8 @@ export function DenomLadder({
     <>
       {DENOMINATIONS.map((d, i) => {
         const t = hover === i ? hoverBase.current + tick : 0;
-        const art = localArt(sampleSeed(1000 + i + t * 613), d.wei);
+        const sampleArtSeed = sampleSeed(1000 + i + t * 613);
+        const art = localArt(sampleArtSeed, d.wei, mintGene(sampleArtSeed, d.wei));
         const row = (
           <>
             <Art src={art} width={34} />
@@ -159,7 +161,7 @@ export function MintView({
       <Section title="MINT" pad="26px 48px 40px 32px">
         <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
           <div style={{flex: "0 0 180px", width: 180}}>
-            <Art src={localArt(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei)} />
+            <Art src={localArt(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei, mintGene(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei))} />
             <div style={{marginTop: 10, display: "flex", alignItems: "center", gap: 8}}>
               <button type="button" className="btn-step" onClick={() => setSample((s) => s - 1)} style={{width: 26, height: 24}}>
                 ‹
@@ -262,7 +264,7 @@ export function MintView({
       {mint.status === "done" && minted && minted.tokens.length === 1 && (
         <Section title="MINTED" pad="32px 48px 40px 32px">
           <div style={{display: "flex", flexWrap: "wrap", gap: 40, alignItems: "flex-start"}}>
-            <Art src={localArt(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei)} width={250} />
+            <Art src={localArt(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei, mintGene(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei))} width={250} />
             <div style={{flex: "1 1 300px", minWidth: 0}}>
               <div style={{fontSize: 26}}>Shape #{minted.tokens[0].id.toString()}</div>
               <div
@@ -345,7 +347,7 @@ export function MintView({
                 onClick={() => onOpenToken(m.id)}
                 style={{display: "block", textAlign: "left", flex: "0 0 140px", width: 140}}
               >
-                <Art src={localArt(m.seed, DENOMINATIONS[minted.di].wei)} />
+                <Art src={localArt(m.seed, DENOMINATIONS[minted.di].wei, mintGene(m.seed, DENOMINATIONS[minted.di].wei))} />
                 <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>#{m.id.toString()}</div>
               </button>
             ))}

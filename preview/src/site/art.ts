@@ -1,13 +1,14 @@
 import {renderShape} from "../canonical/render";
 
 /**
- * Render a Shape locally from the canonical renderer — the same code the contract ports — as a
- * data URI. Used for sample previews and for recomposition previews, where the token does not
- * exist yet; artwork is a pure function of (seed, denomination), so these match what the chain
- * would serve.
+ * Render a Shape locally from the canonical renderer (the code the contract ports) as a data
+ * URI. `inkGene` is the token's ink state, which the artwork depends on alongside seed and
+ * denomination; the caller supplies the exact gene the chain assigns the token being drawn
+ * (`mintGene` for a fresh mint, the parent's gene for a decompose child, the stored gene for a
+ * live token), so the preview matches what the chain serves.
  */
-export function localArt(seed: bigint, amountWei: bigint): string {
-  return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n))}`;
+export function localArt(seed: bigint, amountWei: bigint, inkGene: number): string {
+  return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n, inkGene))}`;
 }
 
 /**
