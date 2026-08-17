@@ -39,15 +39,20 @@ export async function loadHistory(
   id: bigint,
 ): Promise<HistEvent[]> {
   const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
+  // Events keyed on this token by an indexed arg are fetched targeted (mint, blacken, redeem,
+  // and transfers of this id); a token composed from thousands of ancestors would otherwise pull
+  // every ShapeMinted log and overflow the RPC response. The recomposition events name touched
+  // ids in unindexed array args, so they are still fetched whole — but there is one per
+  // compose/split/restore, far fewer than mints, so that stays cheap.
   const [minted, composed, decomposed, restored, blackened, redeemed, transfers] =
     await Promise.all([
-      publicClient.getContractEvents({...base, eventName: "ShapeMinted"}),
+      publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}}),
       publicClient.getContractEvents({...base, eventName: "Composed"}),
       publicClient.getContractEvents({...base, eventName: "Decomposed"}),
       publicClient.getContractEvents({...base, eventName: "Restored"}),
-      publicClient.getContractEvents({...base, eventName: "Blackened"}),
-      publicClient.getContractEvents({...base, eventName: "ShapeRedeemed"}),
-      publicClient.getContractEvents({...base, eventName: "Transfer"}),
+      publicClient.getContractEvents({...base, eventName: "Blackened", args: {tokenId: id}}),
+      publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}}),
+      publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}}),
     ]);
 
   const out: HistEvent[] = [];
@@ -137,10 +142,21 @@ export interface ProvNode {
   truncated?: boolean;
   /// This ancestor already appears elsewhere in the tree; its subtree is not repeated.
   repeat?: boolean;
+  /// A rollup placeholder: `more` sibling contributors were not expanded (a wide merge/split,
+  /// e.g. an apex Complete's thousands of grains). Rendered as a "+N more" chip, not a card.
+  more?: number;
 }
 
 const PROV_MAX_NODES = 150;
 const PROV_MAX_DEPTH = 12;
+// Contributors expanded per merge/split before the rest collapse into a "+N more" rollup. Keeps a
+// wide tree (a 10,000-grain apex) legible and bounds the lazy per-node mint fetches.
+const PROV_MAX_CHILDREN = 8;
+
+/// A "+N more" placeholder for un-expanded sibling contributors.
+function rollup(more: number, rel: ProvNode["rel"]): ProvNode {
+  return {id: 0n, seed: 0n, di: 0, rel, mintBorn: false, contributors: [], more};
+}
 
 /// A token's ancestry, reconstructed from events alone. Contributors are: the split input for
 /// a split-born token, the reassembled pieces for a restore-born token, and every token a
@@ -154,19 +170,30 @@ export async function loadProvenance(
   id: bigint,
 ): Promise<ProvNode | null> {
   const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
-  const [minted, composed, decomposed, restored] = await Promise.all([
-    publicClient.getContractEvents({...base, eventName: "ShapeMinted"}),
+  // Recomposition events are few (one per compose/split/restore) and give the tree its structure,
+  // so they are fetched whole. Mints are the many; an apex Complete has thousands of ancestor
+  // mints whose logs overflow the RPC response. So a node's mint is fetched lazily by its indexed
+  // tokenId, only for the bounded set of nodes the walk renders, and cached.
+  const [composed, decomposed, restored] = await Promise.all([
     publicClient.getContractEvents({...base, eventName: "Composed"}),
     publicClient.getContractEvents({...base, eventName: "Decomposed"}),
     publicClient.getContractEvents({...base, eventName: "Restored"}),
   ]);
 
-  const mintOf = new Map<string, {seed: bigint; di: number}>();
-  for (const l of minted) {
-    mintOf.set(l.args.tokenId!.toString(), {
-      seed: BigInt(l.args.seed!),
-      di: denomIndexOf(l.args.amountWei!),
+  const mintCache = new Map<string, {seed: bigint; di: number} | null>();
+  async function mintOf(nid: bigint): Promise<{seed: bigint; di: number} | null> {
+    const k = nid.toString();
+    const cached = mintCache.get(k);
+    if (cached !== undefined) return cached;
+    const logs = await publicClient.getContractEvents({
+      ...base,
+      eventName: "ShapeMinted",
+      args: {tokenId: nid},
     });
+    const l = logs[0];
+    const v = l ? {seed: BigInt(l.args.seed!), di: denomIndexOf(l.args.amountWei!)} : null;
+    mintCache.set(k, v);
+    return v;
   }
   const splitOf = new Map<string, {parentId: bigint; parentSeed: bigint; index: number; di: number}>();
   for (const l of decomposed) {
@@ -199,11 +226,13 @@ export async function loadProvenance(
   let budget = PROV_MAX_NODES;
   const visited = new Set<string>();
 
-  function build(nid: bigint, rel: ProvNode["rel"], depth: number): ProvNode | null {
+  async function build(nid: bigint, rel: ProvNode["rel"], depth: number): Promise<ProvNode | null> {
     const k = nid.toString();
-    const mint = mintOf.get(k);
     const split = splitOf.get(k);
     const restore = restoreOf.get(k);
+    // A token is born once (mint XOR split XOR restore); only fetch the mint when it is neither
+    // split- nor restore-born, so the targeted mint query runs at most once per rendered node.
+    const mint = split || restore ? null : await mintOf(nid);
     if (!mint && !split && !restore) return null; // no birth event: not a token we know
 
     const seed = mint ? mint.seed
@@ -232,8 +261,13 @@ export async function loadProvenance(
     const push = (child: ProvNode | null) => {
       if (child) node.contributors.push(child);
     };
-    if (split) push(build(split.parentId, "splitSource", childDepth));
-    if (restore) for (const cid of restore.childIds) push(build(cid, "piece", childDepth));
+    if (split) push(await build(split.parentId, "splitSource", childDepth));
+    if (restore) {
+      const shown = restore.childIds.slice(0, PROV_MAX_CHILDREN);
+      for (const cid of shown) push(await build(cid, "piece", childDepth));
+      const hidden = restore.childIds.length - shown.length;
+      if (hidden > 0) node.contributors.push(rollup(hidden, "piece"));
+    }
 
     // Each merge is a level of its own: the token one state earlier beside what it absorbed.
     // Without this, a five-way merge would show four children and no fifth.
@@ -249,16 +283,20 @@ export async function loadProvenance(
       };
       budget -= 1;
       const d = depth + merges.length - 1 - e;
-      for (const bid of merges[e].burnedIds) {
-        const child = build(bid, "merged", d + 1);
+      const burned = merges[e].burnedIds;
+      const shown = burned.slice(0, PROV_MAX_CHILDREN);
+      for (const bid of shown) {
+        const child = await build(bid, "merged", d + 1);
         if (child) upper.contributors.push(child);
       }
+      const hidden = burned.length - shown.length;
+      if (hidden > 0) upper.contributors.push(rollup(hidden, "merged"));
       node = upper;
     }
     return node;
   }
 
-  return build(id, "root", 0);
+  return await build(id, "root", 0);
 }
 
 export interface SplitBirth {
