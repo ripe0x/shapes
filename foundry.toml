@@ -13,6 +13,12 @@ bytecode_hash = "none"
 cbor_metadata = false
 fs_permissions = [{ access = "read", path = "./test/fixtures" }]
 gas_reports = ["Shapes", "ShapeRenderer"]
+# Reversible compose writes a per-input record, so building a 10,000-origin apex Complete in the
+# test fixtures (a single large compose) exceeds forge's 2^30 default. These are logic tests run in
+# an inflated-gas environment; mainnet feasibility is a client concern (batch composes to the live
+# block gas limit), not a contract limit. See DECOMPOSE_SPEC.md.
+gas_limit = "18446744073709551615"
+block_gas_limit = 30_000_000_000
 
 [profile.default.fuzz]
 runs = 512

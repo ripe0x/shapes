@@ -123,14 +123,14 @@ contract ComposabilityTest is Test {
         assertEq(keccak256(abi.encode(actual)), keccak256(abi.encode(preview)));
     }
 
-    function test_PreviewDecomposeReturnsExactChildren() public {
+    function test_PreviewSplitReturnsExactChildren() public {
         uint256 parent = _mint(alice, 0.1 ether);
         bytes32 parentSeed = shapes.seedOf(parent);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1;
         outs[1] = 1;
 
-        ShapeChildPreview[] memory preview = shapes.previewDecompose(parent, outs);
+        ShapeChildPreview[] memory preview = shapes.previewSplit(parent, outs);
         assertEq(preview.length, 2);
         assertEq(preview[0].seed, shapes.childSeed(parentSeed, 0));
         assertEq(preview[1].seed, shapes.childSeed(parentSeed, 1));
@@ -139,7 +139,7 @@ contract ComposabilityTest is Test {
         assertEq(preview[0].faceValueWei, 0.05 ether);
 
         vm.prank(alice);
-        uint256[] memory children = shapes.decompose(parent, outs);
+        uint256[] memory children = shapes.split(parent, outs);
         for (uint256 i = 0; i < children.length; ++i) {
             ShapeState memory actual = shapes.shapeState(children[i]);
             assertEq(actual.seed, preview[i].seed);
@@ -157,7 +157,7 @@ contract ComposabilityTest is Test {
         outs[1] = 1;
 
         vm.prank(alice);
-        uint256[] memory children = shapes.decompose(parent, outs);
+        uint256[] memory children = shapes.split(parent, outs);
         ShapeState memory preview = shapes.previewRestore(parentSeed, children);
 
         vm.prank(alice);
@@ -204,16 +204,71 @@ contract ComposabilityTest is Test {
         assertEq(bob.balance - before, 0.02 ether);
     }
 
-    function test_DecomposeToMintsChildrenDirectlyToRecipient() public {
+    function test_SplitToMintsChildrenDirectlyToRecipient() public {
         uint256 parent = _mint(alice, 0.1 ether);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1;
         outs[1] = 1;
 
         vm.prank(alice);
-        uint256[] memory children = shapes.decomposeTo(parent, outs, address(receiver));
+        uint256[] memory children = shapes.splitTo(parent, outs, address(receiver));
         assertEq(shapes.ownerOf(children[0]), address(receiver));
         assertEq(shapes.ownerOf(children[1]), address(receiver));
+    }
+
+    function test_DecomposeToMintsRevivedInputsToRecipient() public {
+        // Compose five 0.01 into a 0.05 survivor, then reverse it, sending the revived inputs to a
+        // different recipient. The survivor stays with its owner; only the inputs are redirected.
+        uint256 first = _mintDust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        uint256 survivor = shapes.compose(first, burn);
+
+        vm.prank(alice);
+        uint256[] memory revived = shapes.decomposeTo(survivor, address(receiver));
+
+        assertEq(shapes.ownerOf(survivor), alice, "survivor stays with its owner");
+        assertEq(revived.length, 4);
+        for (uint256 i = 0; i < 4; ++i) {
+            assertEq(shapes.ownerOf(first + 1 + i), address(receiver), "revived input to recipient");
+        }
+    }
+
+    function test_DecomposeToRejectsNonReceiverAtomically() public {
+        // A recipient that is not an ERC721 receiver makes `_safeMint` revert, rolling back the whole
+        // decompose: the survivor stays merged and its compose record is intact.
+        uint256 first = _mintDust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        uint256 survivor = shapes.compose(first, burn);
+
+        address nonReceiver = address(this); // ComposabilityTest is not an IERC721Receiver
+        vm.prank(alice);
+        vm.expectRevert();
+        shapes.decomposeTo(survivor, nonReceiver);
+
+        assertEq(shapes.backingOf(survivor), 0.05 ether, "survivor unchanged");
+        assertEq(shapes.composeDepth(survivor), 1, "record intact after atomic revert");
+    }
+
+    function test_DecomposeManyToMintsAllRevivedInputsToRecipient() public {
+        uint256 first = _mintDust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        uint256 survivor = shapes.compose(first, burn); // depth 1
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = survivor;
+        vm.prank(alice);
+        shapes.decomposeManyTo(ids, address(receiver));
+
+        for (uint256 i = 0; i < 4; ++i) {
+            assertEq(shapes.ownerOf(first + 1 + i), address(receiver));
+        }
+        assertEq(shapes.composeDepth(survivor), 0);
     }
 
     function test_RestoreToMintsRestoredShapeDirectlyToRecipient() public {
@@ -224,7 +279,7 @@ contract ComposabilityTest is Test {
         outs[1] = 1;
 
         vm.prank(alice);
-        uint256[] memory children = shapes.decompose(parent, outs);
+        uint256[] memory children = shapes.split(parent, outs);
         vm.prank(alice);
         uint256 restored = shapes.restoreTo(parentSeed, children, address(receiver));
         assertEq(shapes.ownerOf(restored), address(receiver));

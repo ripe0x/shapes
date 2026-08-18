@@ -72,7 +72,7 @@ contract ParityTest is Test {
         return keccak256(bytes(s)) == keccak256(bytes("true"));
     }
 
-    /// @notice The decompose child-seed derivation the frontend previews with must equal the
+    /// @notice The split child-seed derivation the frontend previews with must equal the
     ///         on-chain rule byte for byte. The fixtures carry TS-computed child seeds; here the
     ///         Solidity derivation is recomputed and compared. Proves the (bytes32, uint256)
     ///         packing agrees across the two implementations.

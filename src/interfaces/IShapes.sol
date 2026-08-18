@@ -38,11 +38,22 @@ interface IShapes is IERC721 {
     ///         becomes the summed denomination; the burned inputs are consumed into it.
     event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount);
 
+    /// @notice Emitted when a Shape is decomposed: the survivor's top compose is reversed. The
+    ///         survivor keeps its id and seed and reverts to `survivorDenomIndex` /
+    ///         `survivorOriginCount`; `restoredIds` are the burned inputs re-minted under their
+    ///         original ids and seeds. Re-minted inputs do not emit ShapeMinted.
+    event Decomposed(
+        uint256 indexed survivorId,
+        uint256[] restoredIds,
+        uint8 survivorDenomIndex,
+        uint32 survivorOriginCount
+    );
+
     /// @notice Emitted when a Shape is split. The input is burned and each output is a fresh id;
     ///         `originCounts` is the per-child origin partition. Outputs do not emit ShapeMinted.
     ///         `parentSeed` is the input's seed, from which every child seed derives; it keys the
     ///         split record that `restore` later verifies against.
-    event Decomposed(
+    event Split(
         uint256 indexed tokenId,
         bytes32 indexed parentSeed,
         uint256[] newIds,
@@ -67,7 +78,7 @@ interface IShapes is IERC721 {
     event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
 
     /// @notice Emitted whenever a token's ink gene is assigned or changes: once per mint, once
-    ///         per compose (the survivor), once per decompose child, once per restore.
+    ///         per compose (the survivor), once per split child, once per restore.
     ///         INK_GENES_IMPL_SPEC.md is the specification; gene assignment never uses fresh
     ///         entropy beyond the participating seeds.
     event InkGene(uint256 indexed tokenId, uint8 gene);
@@ -76,7 +87,7 @@ interface IShapes is IERC721 {
     ///         aggregate `Composed` event.
     event ShapeAbsorbed(uint256 indexed survivorId, uint256 indexed burnedId);
 
-    /// @notice Filterable split edge. Emitted once for every child in addition to `Decomposed`.
+    /// @notice Filterable split edge. Emitted once for every child in addition to `Split`.
     event ShapeFragmentCreated(
         uint256 indexed parentId, uint256 indexed childId, bytes32 indexed parentSeed, uint256 childIndex
     );
@@ -85,6 +96,10 @@ interface IShapes is IERC721 {
     event ShapeReassembledFrom(
         uint256 indexed newTokenId, uint256 indexed childId, bytes32 indexed parentSeed
     );
+
+    /// @notice Filterable decompose edge. Emitted once for every input re-minted under its original
+    ///         id when a survivor's compose is reversed, in addition to the aggregate `Decomposed`.
+    event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId);
 
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
@@ -103,14 +118,16 @@ interface IShapes is IERC721 {
     error RendererIsLocked();
     /// @dev A renderer must explicitly support the stable `IShapeRenderer` capability.
     error UnsupportedRenderer(address renderer);
-    /// @dev A Black Shape is terminal: it cannot be redeemed, composed or decomposed.
+    /// @dev A Black Shape is terminal: it cannot be redeemed, composed, decomposed or split.
     error TokenIsBlack(uint256 tokenId);
-    /// @dev `compose` needs at least one token to burn; `decompose` at least two outputs.
+    /// @dev `compose` needs at least one token to burn; `split` at least two outputs.
     error EmptyRecomposition();
     /// @dev The survivor of a compose cannot also appear in its burn set.
     error CannotComposeWithSelf(uint256 tokenId);
-    /// @dev A decompose's output denominations must sum to exactly the input's backing.
-    error DecompositionMismatch(uint256 inputBacking, uint256 outputSum);
+    /// @dev A split's output denominations must sum to exactly the input's backing.
+    error SplitMismatch(uint256 inputBacking, uint256 outputSum);
+    /// @dev `decompose` found no compose to reverse: the survivor's compose stack is empty.
+    error NoComposeRecord(uint256 survivorId);
     /// @dev `blacken` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
     error NotApexComplete(uint256 tokenId);
     /// @dev `restore` found no split record for the given parent seed. Either no such split
@@ -198,14 +215,50 @@ interface IShapes is IERC721 {
     ///         a valid denomination. Origins are summed onto the survivor.
     function compose(uint256 survivorId, uint256[] calldata burnIds) external returns (uint256 outId);
 
+    /// @notice One compose in a `composeMany` batch: a survivor and the ids burned into it.
+    struct ComposeCall {
+        uint256 survivorId;
+        uint256[] burnIds;
+    }
+
+    /// @notice Run several composes in order in one transaction, each recording its own reversible
+    ///         entry. Every id is pre-existing (compose mints nothing and keeps each survivor's id),
+    ///         so a later call may name a survivor an earlier call produced. Bounded by block gas.
+    function composeMany(ComposeCall[] calldata calls) external returns (uint256[] memory outIds);
+
+    /// @notice Reverse the survivor's most recent compose. The survivor keeps its id and seed and
+    ///         reverts to its pre-compose denomination, origin count and gene; every input burned by
+    ///         that compose is re-minted under its original id and seed, to the caller. Caller must
+    ///         own the survivor and it must not be Black. No ETH moves and no fee is charged. Stacked
+    ///         composes reverse newest first (LIFO); reverts `NoComposeRecord` if none remain.
+    function decompose(uint256 survivorId) external returns (uint256[] memory restoredIds);
+
+    /// @notice Reverse the survivor's most recent compose, safely minting the restored inputs to
+    ///         `recipient` instead of the caller.
+    function decomposeTo(uint256 survivorId, address recipient)
+        external
+        returns (uint256[] memory restoredIds);
+
+    /// @notice Decompose several survivors in order in one transaction, restored inputs to the
+    ///         caller. Repeat an id to pop stacked records; list a nested tree parent-before-child.
+    ///         Bounded by block gas.
+    function decomposeMany(uint256[] calldata survivorIds)
+        external
+        returns (uint256[][] memory restoredIds);
+
+    /// @notice Batch decompose with a caller-selected recipient for every restored input.
+    function decomposeManyTo(uint256[] calldata survivorIds, address recipient)
+        external
+        returns (uint256[][] memory restoredIds);
+
     /// @notice Split a Shape into the denominations in `outDenoms`, which must sum to its backing.
     ///         The input is burned; each output is a fresh id with a seed derived from the input's
     ///         seed. No ETH moves and no fee is charged. Origins are partitioned across the outputs,
     ///         each output filled to capacity in listed order.
-    function decompose(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
+    function split(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
 
     /// @notice Split a caller-owned Shape and safely mint every child to `recipient`.
-    function decomposeTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
+    function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
 
@@ -275,10 +328,10 @@ interface IShapes is IERC721 {
         view
         returns (uint8 newGene, uint8 newDenomIndex);
 
-    /// @notice Preview a decompose's child gene: trivially `inkGeneOf(tokenId)`, since every
+    /// @notice Preview a split's child gene: trivially `inkGeneOf(tokenId)`, since every
     ///         child of a split inherits the parent's gene verbatim. Included for interface
     ///         symmetry with `simulateCompose`.
-    function simulateDecompose(uint256 tokenId) external view returns (uint8 childGene);
+    function simulateSplit(uint256 tokenId) external view returns (uint8 childGene);
 
     /// @notice Complete deterministic state that `compose` would produce.
     function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
@@ -287,7 +340,7 @@ interface IShapes is IERC721 {
         returns (ShapeState memory result);
 
     /// @notice Validate a split and return every deterministic child before changing state.
-    function previewDecompose(uint256 tokenId, uint8[] calldata outDenoms)
+    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
         external
         view
         returns (ShapeChildPreview[] memory children);
@@ -310,9 +363,13 @@ interface IShapes is IERC721 {
 
     /// @notice The split record keyed by a parent seed: how many children the split produced and
     ///         the input's denomination index. `childCount` of zero means no restorable split —
-    ///         none happened, or it was already restored. Written by `decompose`, consumed by
+    ///         none happened, or it was already restored. Written by `split`, consumed by
     ///         `restore`.
     function splitRecordOf(bytes32 parentSeed) external view returns (uint16 childCount, uint8 denomIndex);
+
+    /// @notice The survivor's compose-stack depth: how many stacked composes `decompose` can still
+    ///         reverse, newest first. Zero means nothing to decompose.
+    function composeDepth(uint256 survivorId) external view returns (uint256);
 
     /// @notice Deterministic seed assigned to a split child at `childIndex`.
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
