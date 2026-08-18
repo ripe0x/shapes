@@ -133,8 +133,14 @@ contract ForkTest is Test {
         for (uint256 i = 0; i < DENOMS.length; i++) expectedFees += feeOf(DENOMS[i]);
         assertEq(feeRecipient.balance, expectedFees, "fees not forwarded");
 
-        // Transfer the 1 ETH token (index 3) to bob; redemption rights follow the token.
-        uint256 oneEth = ids[3];
+        // Transfer the 1 ETH token to bob; redemption rights follow the token. Found by amount
+        // rather than a hard-coded index so the ladder can change without silently miscasting
+        // which token this is.
+        uint256 oneEthIdx;
+        for (uint256 i = 0; i < DENOMS.length; i++) {
+            if (DENOMS[i] == 1 ether) oneEthIdx = i;
+        }
+        uint256 oneEth = ids[oneEthIdx];
         vm.prank(alice);
         shapes.transferFrom(alice, bob, oneEth);
         assertEq(shapes.ownerOf(oneEth), bob, "transfer failed");

@@ -126,3 +126,10 @@ These are `view` and require no ownership.
   against behaviour that cannot change under you.
 - **Black Shapes are non-redeemable by design.** `redeemableValueWei` is 0 and `isBlack` is true;
   never accept one as payment.
+- **Give value-moving calls gas headroom over the bare estimate.** Every state-changing function
+  runs behind a reentrancy guard whose storage slot is reset at the end of the call, earning a gas
+  refund. `eth_estimateGas` reports the amount net of that refund, which is slightly below the gas
+  the execution actually needs mid-flight, so a call funded with exactly the raw estimate can revert
+  out of gas at the guard cleanup. Wallets add a buffer for this automatically; a contract or script
+  that forwards a hard gas limit must add its own headroom (a small multiplier on the estimate is
+  enough).
