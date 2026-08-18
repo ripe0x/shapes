@@ -1,61 +1,29 @@
-# Audit brief — Shapes v2 (recomposition, provenance, terminal Black Shape)
+# Audit brief — Shapes (recomposition, provenance, terminal Black Shape, ink genes, composability)
 
 You are a senior smart-contract security auditor. Perform a thorough, adversarial
-security audit of the **Shapes v2** changes described below. Your mandate is to
+security audit of the **Shapes** contract described below. Your mandate is to
 construct working exploits, not to read sympathetically. Assume the contract will
 hold real ETH on Ethereum mainnet and that any depositor can be an attacker.
 
-## What to audit — exact branch and commits
+## What to audit — scope
 
-- Repository branch: **`claude/project-review-planning-e549e5`** (also on `main`)
-- v2 base (audited-against baseline, already reviewed as v1): **`0e608bb`**
-- Full v2 range: **`e0aec4e..d6ea9b3`** (HEAD = `d6ea9b3`)
+- Repository branch: **`main`** (audit the current tip). The contract is deployed once and is
+  **immutable** on mainnet — there is no upgrade path, so every finding is permanent.
+- Audit the full `Shapes.sol` + renderer surface. Two areas are the newest and have had **no
+  external audit**; treat them as the priority:
+  1. **Ink genes** — a seven-state per-token trait with a deterministic compose-time inheritance
+     walk, `simulate`/`preview` views, and an `InkGene` event.
+  2. **The composability layer** — capability-segmented interfaces, recipient-directed value flows
+     (`redeemTo` / `redeemBatchTo` / `decomposeTo` / `restoreTo`), full-state read structs, and
+     module-level geometry exposure.
 
-Full diff under review:
+The **v2 recomposition / provenance / terminal Black Shape** layer (compose/decompose/restore,
+`originCount`, `blacken`) had one prior internal adversarial pass with no Critical/High; it is
+described below and remains in scope, but the two areas above are where new surface was added.
 
-```bash
-git diff 0e608bb..d6ea9b3
-```
-
-The v2 commits, oldest first:
-
-| Commit | Title |
-|---|---|
-| `e0aec4e` | v2 Phase 1: swap the denomination ladder to the alternating ×5/×2 set |
-| `ae367f5` | v2 Phase 2: originCount provenance storage |
-| `27c080a` | v2 Phase 3: compose and decompose |
-| `6840058` | Shapes v2 Phase 4: accounting split + terminal Black Shape |
-| `85fbfd8` | Shapes v2 Phase 5: renderer inversion + provenance metadata |
-| `fb8bba8` | Shapes v2 Phase 6: chain tester UI for recomposition + Black |
-| `deda2b9` | Shapes v2 doc-sweep: reflect three ETH-out paths and the accounting split |
-| `071ce37` | Shapes v2 review fixes: Fragment label, seed-rule tests, type/wording nits |
-| `4c22cf6` | Shapes v2 frontend: local recomposition previews |
-| `b62c369` | Chain tester: grid→detail UI with provenance + on-chain history *(frontend only)* |
-| `d6ea9b3` | Audit follow-up: ShapeRedeemed carries originCount; align docs |
-
-### Re-glance delta since the first audit (audited tip was `4c22cf6`)
-
-The first audit covered `e0aec4e..4c22cf6` and found no Critical/High. Two commits
-landed after it:
-
-```bash
-git diff 4c22cf6..d6ea9b3
-```
-
-- `b62c369` — **frontend only**, no Solidity change. Rebuilds the chain-tester UI
-  (grid → token-detail with provenance + an event-log history view) and fixes the
-  first audit's **L-01**: the frontend `ShapeMinted` ABI is now `uint256 originCount`,
-  matching the contract.
-- `d6ea9b3` — **one contract change**, addressing the first audit's systemic note #2:
-  `ShapeRedeemed` gains a `uint256 originCount` field (read before the burn in
-  `_burnForRedemption`, emitted by `redeem`/`redeemBatch`). It is purely additive to
-  the event; it touches no accounting, no ETH movement, and no invariant. Confirm that
-  reading, and that origin conservation still holds with the redeemed count now
-  observable on-chain.
-
-The first audit's **M-01** (immutable fee recipient can brick minting) was accepted
-as a documented deploy-time hazard, mitigated by the constructor zero-check, the
-deploy-script contract-recipient gate, and SECURITY.md #6. No code change.
+The prior internal review's one accepted hazard stands unchanged: an immutable, reverting
+`feeRecipient` can brick minting (redemption is unaffected), mitigated by the constructor
+zero-check, the deploy-script contract-recipient gate, and SECURITY.md #6.
 
 ## System summary
 
@@ -64,7 +32,8 @@ fixed denominations (the "ladder"): `0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100` ET
 Redeeming burns the token and returns exactly its backing. The contract does not
 lend, stake, or invest; it is a pure reserve.
 
-v2 adds three things on top of the v1 mint/redeem core:
+The contract adds five areas on top of the v1 mint/redeem core (the first three are v2; the last
+two are the newest, externally unaudited surface):
 
 1. **Recomposition (no ETH movement).**
    - `compose(survivorId, burnIds[])`: burns the `burnIds`, grows the survivor to
@@ -89,6 +58,36 @@ v2 adds three things on top of the v1 mint/redeem core:
    `sacrificedBacking` (burned, monotonic). Black tokens are non-redeemable and
    non-recomposable but stay transferable.
 
+4. **Ink genes (new, `src/lib/InkGenes.sol`, SPEC.md D17).** Each token carries a `uint8 inkGene`
+   in `{Void..Solid}` (0..6), packed into the same storage slot as `denomIndex`/`originCount`/
+   `isBlack`. It is a **cosmetic** trait: it drives the rendered solid/outline probability and
+   nothing about ETH, backing, or redemption. Rules:
+   - **Entropy only at mint.** `geneAtMint(seed, denomIndex)` is a pure function of the token's
+     seed and tier. Dust (0.01) rolls the full seven-gene lottery; every larger direct mint rolls
+     only the narrow `{Sparse, Murk, Dense}` band, so the four extremes enter the population only
+     through dust.
+   - **Compose walks deterministically.** `geneAtCompose` steps the survivor's gene at most one
+     ladder position per denomination tier crossed, each step a pure roll against a
+     units-weighted `center` (70%), the pool `best` (20%), or `worst` (10%). Burn seeds are folded
+     order-invariantly by XOR, so `burnIds` order cannot affect the result; survivor choice can.
+     No fresh entropy enters any compose/decompose/restore.
+   - **decompose/restore copy the gene verbatim.** No roll. `InkGenes.sol` is a byte-exact port of
+     the TypeScript canonical `preview/src/canonical/ink.ts`, under the parity suite.
+
+5. **Composability layer (new).** The external surface is segmented into ERC165-advertised
+   capability interfaces (`IShapeValue`, `IShapeRecomposition`, `IShapeProvenance`,
+   `IShapeSimulation`, `IShapeGeometry`) with new members:
+   - **Recipient-directed value flows:** `redeemTo` / `redeemBatchTo` (burn, pay ETH to an
+     arbitrary recipient), `decomposeTo` / `restoreTo` (reshape, mint outputs to a recipient).
+     Each is a thin wrapper over the same private CEI-guarded impl its owner-directed form uses
+     (`redeem` and `redeemTo` both call `_redeemTo`, etc.); only the destination is parameterised.
+   - **Structured reads:** `shapeState` returns full state in one call (`faceValueWei` vs
+     `redeemableValueWei`, the latter 0 for Black); a `ShapeFormation` enum with stable numeric
+     values; `previewCompose`/`previewDecompose`/`previewRestore` return full result structs,
+     `view`, no ownership required.
+   - **Geometry:** `IShapeGeometry` (`cardGeometry`, `moduleAt`) exposes the renderer's
+     module-level geometry, version-pinned by `grammarHash`.
+
 There are three value-bearing `CALL`s: redemption payout (`_settle`, after burn),
 the mint-fee forward (fee is 1% of backing, received in the same tx, never counted as
 backing), and the `blacken` sacrifice (fixed 100 ETH to the burn address).
@@ -107,24 +106,38 @@ The renderer is owner-replaceable until `lockRenderer`, and is read only by `tok
 4. Capacity: every token `originCount <= backing / 0.01`.
 5. Sacrifice: `sacrificedBacking == 100 ether * blackCount`, both monotonic.
 6. Every live non-Black Shape is redeemable for exactly its backing.
+7. Ink is cosmetic and consumes no reserve: no gene path (`mint`/`compose`/`decompose`/`restore`/
+   the `simulate`/`preview` views) reads or moves ETH, backing, or ownership.
+8. Ink entropy at mint only: after a token exists, no sequence of compose/decompose/restore/
+   redeem/re-mint rerolls its gene without paying a mint fee for fresh seeds; the reachable gene
+   tree is finite and deterministic.
+9. Ink determinism and parity: `geneAtCompose`/`geneAtMint` are pure functions of on-chain state
+   (seed, gene, denomination index), byte-identical to the TypeScript canonical, and independent
+   of `burnIds` calldata order.
 
 ## Primary files (Solidity is the priority)
 
-- `src/Shapes.sol` — core: mint/redeem, compose, decompose, blacken, accounting, guards.
-- `src/ShapeRenderer.sol` — SVG + metadata, provenance traits, color inversion.
-- `src/interfaces/IShapes.sol`, `src/interfaces/IShapeRenderer.sol`
+- `src/Shapes.sol` — core: mint/redeem (+`*To`), compose/decompose/restore (+`*To`), blacken,
+  the `simulate`/`preview` views, accounting, guards.
+- `src/lib/InkGenes.sol` — the ink-gene mint lottery, compose walk, and units-weighted center.
+- `src/ShapeRenderer.sol` — SVG + metadata, provenance/ink traits, color inversion, `IShapeGeometry`.
+- `src/interfaces/IShapeCapabilities.sol` — the capability interfaces + `ShapeState`/`ShapeFormation`.
+- `src/interfaces/IShapes.sol`, `src/interfaces/IShapeRenderer.sol`, `src/interfaces/IShapeGeometry.sol`
 - `src/lib/Denominations.sol` — the ladder, `unitsAt`, index lookups.
 - `src/lib/FixedPoint.sol`, `src/lib/Round03Rand.sol`
 - `script/DeployShapes.s.sol` — constructor args, deploy-time invariant checks.
 
-Secondary (TypeScript, lower value-at-risk but in scope for provenance/preview correctness):
+Secondary (TypeScript, lower value-at-risk but in scope for parity/provenance/preview correctness):
 
 - `preview/src/canonical/render.ts` — the renderer source of truth.
+- `preview/src/canonical/ink.ts` — the ink-gene canonical `InkGenes.sol` is a byte-exact port of.
 - `preview/src/decomposeSeed.ts` — the child-seed derivation the frontend previews with.
 - `preview/src/chain/ChainApp.tsx`, `preview/src/chain/abi.ts` — the chain tester UI.
 
 Docs: `SHAPES_V2_SPEC.md` (authoritative v2 design, incl. §17 locked decisions),
-`SPEC.md`, `SECURITY.md`, `README.md`.
+`SPEC.md` (rendering decisions; D17 is the ink-gene spec), `INK_GENES_IMPL_SPEC.md` and
+`INK_GENES_DRAFT.md` (ink formulas + rationale), `METADATA.md` (every tokenURI trait),
+`BUILDING.md` (the composability surface for integrators), `SECURITY.md`, `README.md`.
 
 Toolchain: Solidity 0.8.28, Foundry, `via_ir = true`, OpenZeppelin v5.
 
@@ -143,7 +156,7 @@ parity if you change either renderer.
 
 ## What is already tested (find gaps, don't re-derive)
 
-- 130+ unit/integration tests; 10 stateful invariants at CI depth (65,536 calls each,
+- ~190 unit/integration tests; 10 stateful invariants at CI depth (65,536 calls each,
   0 reverts) covering solvency, backing/origin conservation, capacity, sacrifice.
 - Forgery: mint 100 → decompose → recompose ⇒ `originCount == 1`, not Complete.
 - Complete propagation; Complete excludes tier 0; Fragment (zero-origin) labelling.
@@ -151,7 +164,14 @@ parity if you change either renderer.
   (non-redeemable, non-recomposable, one-way), non-apex/non-owner rejections.
 - Deterministic child seeds: exact derivation, invariance across
   roll/warp/prevrandao/fee/chainid, and Solidity↔TypeScript parity.
-- Renderer byte-parity across 78 fixtures incl. inverted/Black and every density branch.
+- Renderer byte-parity across 78 fixtures incl. inverted/Black and every density branch;
+  the metadata JSON (incl. the `Ink` trait) is asserted byte-identical to the TypeScript.
+- **Ink genes:** constant-table and mint-vector parity; the compose walk cross-checked against
+  the TypeScript at every tier span T=1..8 with heterogeneous pools; compose order-invariance;
+  homogeneous-pool fixed point; survivor-choice sensitivity; center half-up rounding.
+- **Recipient-directed flows:** the `*To` variants are driven in the stateful invariant suite
+  against reverting-ETH, non-receiver, and reentrant recipients, with the reserve invariants
+  holding throughout and every live Shape still drainable.
 
 Assume these pass. Your job is what they miss.
 
@@ -200,11 +220,56 @@ removes ETH without an equal burn, forges provenance, or breaks an invariant.
     preview claims to be exact)? Any place the UI's formation/complete logic diverges from
     the contract.
 
+### Ink genes
+
+11. **Gene reroll / free entropy.** Construct any sequence (compose / decompose / restore /
+    redeem / re-mint) that changes a token's gene without paying a mint fee for fresh seeds.
+    decompose→recompose of a token's own children is a homogeneous pool and must be a fixed
+    point; confirm the reachable gene tree is finite and deterministic. Grep every gene path for
+    block data, `msg.sender`, or any input other than `(seed, gene, denomIndex)`.
+12. **Compose-walk determinism and parity.** `geneAtCompose` must be a pure function and
+    byte-identical to `ink.ts`. Check the domain strings (`"ink:mint"`, `"ink:compose"`), the
+    `abi.encodePacked` types, the thresholds, the center rounding `(2*sumW + U)/(2*U)`, the
+    per-tier `keccak(R, k)` roll, and that `newIndex > oldIndex` always holds (no underflow) and
+    the gene stays in `[0,6]`. `burnSeedFold` is an XOR fold — confirm no path lets `burnIds`
+    order, duplicates, or calldata layout affect the outcome.
+13. **`simulate` / `preview` soundness.** `simulateCompose`/`previewCompose` etc. are `view` and
+    must mirror what a real `compose` would do exactly, mutate no storage, require no ownership,
+    and reject the same inputs (esp. the explicit duplicate-burn-id check standing in for
+    `_burn` reverting). Any divergence lets a UI or an integrator be lied to.
+14. **Restore soundness with genes.** `restore` captures the gene from the first child only,
+    claiming all children of a split share it. Try to break that: transfer, nested split/restore,
+    compose-then-restore, or any state where the first child's gene differs from the others while
+    the count and backing checks still pass.
+
+### Composability layer
+
+15. **Recipient-directed value flows.** `redeemTo`/`redeemBatchTo`/`decomposeTo`/`restoreTo` send
+    ETH or mint to an arbitrary recipient. Confirm the reserve invariant holds against hostile
+    recipients (reverting on ETH, non-receiver, reentrant) — the guard, CEI, and the shared
+    private impls. Confirm they grant no authority the owner-directed forms don't (caller still
+    owns the inputs) and cannot strand a Shape or desync accounting.
+16. **Capability / ERC165 and struct correctness.** `supportsInterface` must return true for each
+    advertised capability and the `ShapeFormation` enum's numeric values are part of the API — a
+    reordering silently misreports formation to every integrator. `shapeState.redeemableValueWei`
+    must be 0 for a Black Shape and equal `faceValueWei` otherwise. Any read returning a value
+    inconsistent with the live token.
+17. **Geometry exposure.** `IShapeGeometry` (`cardGeometry`, `moduleAt`) and `grammarHash` are a
+    surface other contracts will pin to. Confirm `moduleAt` bounds-checks, the tuple returns match
+    the renderer's own `Card`/`Module`, and whether `grammarHash`/`grammarVersion` is intended to
+    be frozen for the renderer's life (it changes if the renderer is replaced before `lockRenderer`).
+18. **Gas estimation headroom (informational).** Every `nonReentrant` function's `eth_estimateGas`
+    is a lower bound: the guard's SSTORE reset earns a refund credited only at tx end, so a call
+    funded with the bare estimate reverts out of gas at the guard cleanup. Wallets buffer; confirm
+    the deploy/integration docs warn programmatic callers, and that no on-chain caller forwards a
+    bare-estimate gas limit into a Shapes call.
+
 ## Deliverable
 
 For each finding: severity (Critical / High / Medium / Low / Informational), the exact
 file and line, a concrete exploit scenario or failing input, the broken invariant, and a
 recommended fix. Include a runnable Foundry PoC test for every Critical/High. If you find
 nothing exploitable on an axis, say so explicitly and state what you checked. End with an
-overall risk assessment and any systemic concerns about the origin-conservation model or
-the accounting split.
+overall risk assessment and any systemic concerns about the origin-conservation model, the
+accounting split, the ink-gene determinism/parity model, or the composability surface added on
+top of an immutable custodial contract.

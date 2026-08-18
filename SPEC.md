@@ -491,9 +491,9 @@ artwork. A card's appearance is fully determined by which of 52 states lands in 
 
 | band | modules | possible compositions | distinct in 500 mints |
 |---|---|---|---|
-| 0.01–5 ETH | 25–9 | astronomically many | 500 |
-| 10 ETH | 6 | 1.9 × 10¹⁰ | 500 |
-| 25 ETH | 4 | 7.3 × 10⁶ | 500 |
+| 0.01–1 ETH | 25–9 | astronomically many | 500 |
+| 5 ETH | 6 | 1.9 × 10¹⁰ | 500 |
+| 10 ETH | 4 | 7.3 × 10⁶ | 500 |
 | 50 ETH | 2 | 2,704 | 423 |
 | **100 ETH** | **1** | **52** | **52** |
 
