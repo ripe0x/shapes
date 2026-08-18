@@ -20,7 +20,7 @@ anything. It holds it.
 Shapes does not accept arbitrary amounts. There are exactly nine, and they are permanent:
 
 ```
-0.01   0.1   0.5   1   5   10   25   50   100   ETH
+0.01   0.05   0.1   0.5   1   5   10   50   100   ETH
 ```
 
 Every other amount is rejected. 100 ETH is the maximum.
@@ -33,12 +33,12 @@ concentrated and more monumental the more ETH it holds:
 | ETH | Grid | Modules |
 |---|---|---|
 | 0.01 | 5 × 5 | 25 |
-| 0.1 | 4 × 5 | 20 |
-| 0.5 | 4 × 4 | 16 |
-| 1 | 3 × 4 | 12 |
-| 5 | 3 × 3 | 9 |
-| 10 | 2 × 3 | 6 |
-| 25 | 2 × 2 | 4 |
+| 0.05 | 4 × 5 | 20 |
+| 0.1 | 4 × 4 | 16 |
+| 0.5 | 3 × 4 | 12 |
+| 1 | 3 × 3 | 9 |
+| 5 | 2 × 3 | 6 |
+| 10 | 2 × 2 | 4 |
 | 50 | 1 × 2 | 2 |
 | 100 | 1 × 1 | 1 |
 
@@ -237,6 +237,8 @@ test/
 preview/                      the generative preview harness + chain tester
 SPEC.md                       implementation plan and every rendering decision
 SECURITY.md                   adversarial review
+BUILDING.md                   integrator's guide: accept, unwrap and reshape Shapes from a contract
+METADATA.md                   the tokenURI trait reference
 ```
 
 `SPEC.md` is worth reading before changing anything in the renderer. It records the decisions

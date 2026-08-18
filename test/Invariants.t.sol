@@ -8,13 +8,64 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 
-/// @notice Drives arbitrary sequences of mint / batch mint / transfer / redeem / batch redeem
-///         against Shapes, tracking its own view of what the reserve should be.
+/* ==================================================================== *
+ *  Hostile recipients for the `*To` value-flow paths (PR #1).
+ * ==================================================================== */
+
+/// @dev Accepts NFTs but reverts on ETH. A `redeemTo` paying it reverts; it can still own tokens
+///      minted by `decomposeTo`/`restoreTo`, which the suite must still be able to drain.
+contract HostileRejectETH is IERC721Receiver {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return IERC721Receiver.onERC721Received.selector;
+    }
+
+    receive() external payable {
+        revert("HostileRejectETH: no ETH");
+    }
+}
+
+/// @dev Accepts ETH but is not an ERC721 receiver, so `decomposeTo`/`restoreTo` minting to it
+///      reverts on `_safeMint`. It therefore never comes to own a Shape.
+contract HostileRejectNFT {
+    receive() external payable {}
+}
+
+/// @dev On every value receipt (an NFT via `onERC721Received`, or ETH via `receive`) it tries to
+///      reenter `Shapes`. The reentrancy guard must block every attempt; the invariants prove
+///      nothing was double-counted. Attempts are caught internally so the primary op still
+///      completes, which is the harder case to keep solvent.
+contract HostileReentrant is IERC721Receiver {
+    Shapes public immutable shapes;
+    uint256 public lastToken;
+
+    constructor(Shapes shapes_) {
+        shapes = shapes_;
+    }
+
+    function onERC721Received(address, address, uint256 tokenId, bytes calldata) external returns (bytes4) {
+        lastToken = tokenId;
+        try shapes.redeem(tokenId) {} catch {} // reentry during a mint-to-recipient
+        return IERC721Receiver.onERC721Received.selector;
+    }
+
+    receive() external payable {
+        if (lastToken != 0) {
+            try shapes.redeem(lastToken) {} catch {} // reentry during a payout
+        }
+    }
+}
+
+/// @notice Drives arbitrary sequences of mint / batch mint / transfer / redeem / batch redeem,
+///         recomposition, and the recipient-directed `*To` variants against hostile recipients,
+///         tracking its own view of what the reserve should be.
 contract Handler is Test, IERC721Receiver {
     Shapes public immutable shapes;
     uint256 public immutable feeBps;
 
     address[4] public actors;
+
+    /// @dev Hostile recipients for the recipient-directed `*To` paths: [rejectETH, rejectNFT, reentrant].
+    address[3] public hostiles;
 
     /// @dev Ghost accounting, maintained independently of the contract's own counters.
     uint256 public ghostBackingIn;
@@ -47,6 +98,11 @@ contract Handler is Test, IERC721Receiver {
         for (uint256 i = 0; i < actors.length; ++i) {
             vm.deal(actors[i], 100_000 ether);
         }
+        hostiles = [
+            address(new HostileRejectETH()),
+            address(new HostileRejectNFT()),
+            address(new HostileReentrant(shapes_))
+        ];
     }
 
     function onERC721Received(address, address, uint256, bytes calldata)
@@ -299,6 +355,115 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
+    /* -------------------- recipient-directed value flows (PR #1) -------------------- */
+
+    /// @dev Redeem to a hostile recipient. The owner still authorises it; the payout lands on a
+    ///      third party that may revert or reenter. Reserve accounting is identical to `redeem` —
+    ///      only the destination differs — so the ghosts move only if the call actually settles.
+    function redeemToHostile(uint256 tokenSeed, uint256 recipSeed) public {
+        if (liveTokens.length == 0) return;
+        uint256 id = liveTokens[tokenSeed % liveTokens.length];
+        address owner = shapes.ownerOf(id);
+        address payable recip = payable(hostiles[recipSeed % 3]);
+        uint256 amount = shapes.backingOf(id);
+        uint256 origins = shapes.originCountOf(id);
+
+        vm.prank(owner);
+        try shapes.redeemTo(id, recip) {
+            ghostBackingOut += amount;
+            ghostRedeems += 1;
+            ghostOriginsRedeemed += origins;
+            _untrack(id);
+        } catch {}
+    }
+
+    function redeemBatchToHostile(uint256 tokenSeed, uint256 countSeed, uint256 recipSeed) public {
+        if (liveTokens.length == 0) return;
+        uint256 start = tokenSeed % liveTokens.length;
+        address owner = shapes.ownerOf(liveTokens[start]);
+
+        uint256[] memory scratch = new uint256[](4);
+        uint256 n;
+        uint256 want = bound(countSeed, 1, 4);
+        for (uint256 i = 0; i < liveTokens.length && n < want; ++i) {
+            uint256 id = liveTokens[(start + i) % liveTokens.length];
+            if (shapes.ownerOf(id) != owner) continue;
+            bool dup;
+            for (uint256 j = 0; j < n; ++j) {
+                if (scratch[j] == id) dup = true;
+            }
+            if (!dup) scratch[n++] = id;
+        }
+        if (n == 0) return;
+
+        uint256[] memory ids = new uint256[](n);
+        uint256 total;
+        uint256 origins;
+        for (uint256 i = 0; i < n; ++i) {
+            ids[i] = scratch[i];
+            total += shapes.backingOf(ids[i]);
+            origins += shapes.originCountOf(ids[i]);
+        }
+        address payable recip = payable(hostiles[recipSeed % 3]);
+
+        vm.prank(owner);
+        try shapes.redeemBatchTo(ids, recip) returns (uint256) {
+            ghostBackingOut += total;
+            ghostRedeems += n;
+            ghostOriginsRedeemed += origins;
+            for (uint256 i = 0; i < n; ++i) {
+                _untrack(ids[i]);
+            }
+        } catch {}
+    }
+
+    /// @dev Decompose, minting the children to a hostile recipient. Moves no ETH; if the recipient
+    ///      rejects the mint the whole call reverts and nothing changes.
+    function decomposeToHostile(uint256 seed, uint256 recipSeed) public {
+        if (liveTokens.length == 0) return;
+        uint256 id = liveTokens[seed % liveTokens.length];
+        uint256 amt = shapes.backingOf(id);
+        uint256 di = _denomIndex(amt);
+        if (di == 9 || di == 0) return;
+        address owner = shapes.ownerOf(id);
+        address recip = hostiles[recipSeed % 3];
+        uint256 ratio = amt / DENOMS[di - 1];
+
+        uint8[] memory outs = new uint8[](ratio);
+        for (uint256 i = 0; i < ratio; ++i) outs[i] = uint8(di - 1);
+
+        bytes32 parentSeed = shapes.seedOf(id);
+        vm.prank(owner);
+        try shapes.decomposeTo(id, outs, recip) returns (uint256[] memory kids) {
+            _untrack(id);
+            for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
+            pendingSplits.push(PendingSplit({parentSeed: parentSeed, kids: kids}));
+        } catch {}
+    }
+
+    /// @dev Restore a remembered split, minting the reassembled Shape to a hostile recipient.
+    function restoreToHostile(uint256 seed, uint256 recipSeed) public {
+        if (pendingSplits.length == 0) return;
+        uint256 at = seed % pendingSplits.length;
+        PendingSplit memory s = pendingSplits[at];
+        address recip = hostiles[recipSeed % 3];
+
+        address owner;
+        try shapes.ownerOf(s.kids[0]) returns (address o) {
+            owner = o;
+        } catch {
+            _dropSplit(at);
+            return;
+        }
+
+        vm.prank(owner);
+        try shapes.restoreTo(s.parentSeed, s.kids, recip) returns (uint256 nid) {
+            for (uint256 i = 0; i < s.kids.length; ++i) _untrack(s.kids[i]);
+            _track(nid);
+        } catch {}
+        _dropSplit(at);
+    }
+
     function _denomIndex(uint256 amt) private view returns (uint256) {
         for (uint256 i = 0; i < 9; ++i) {
             if (DENOMS[i] == amt) return i;
@@ -326,7 +491,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](11);
+        bytes4[] memory selectors = new bytes4[](15);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -338,6 +503,10 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[8] = Handler.decompose.selector;
         selectors[9] = Handler.blacken.selector;
         selectors[10] = Handler.restore.selector;
+        selectors[11] = Handler.redeemToHostile.selector;
+        selectors[12] = Handler.redeemBatchToHostile.selector;
+        selectors[13] = Handler.decomposeToHostile.selector;
+        selectors[14] = Handler.restoreToHostile.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -443,25 +612,28 @@ contract ShapesInvariantTest is StdInvariant, Test {
         }
     }
 
-    /// @notice Whatever the sequence was, every live Shape can still be redeemed for exactly
-    ///         its backing. Solvency in the sense that actually matters to a holder.
+    /// @notice Whatever the sequence was, every live Shape's backing can still be extracted in
+    ///         full. Solvency in the sense that actually matters. Drained via `redeemTo` to a
+    ///         benign sink rather than `redeem`, so a Shape that a hostile recipient came to own
+    ///         (through `decomposeTo`/`restoreTo`) is still provably redeemable: the owner
+    ///         authorises the burn, and the ETH is directed somewhere that can receive it.
     function invariant_EveryLiveShapeIsStillRedeemable() public {
         uint256 n = handler.liveTokenCount();
         if (n == 0) return;
 
+        address payable sink = payable(address(0x5169));
         uint256 snapshot = vm.snapshotState();
+        uint256 expected;
+        uint256 before = sink.balance;
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
             if (shapes.isBlack(id)) continue; // Black Shapes are intentionally non-redeemable
-            address owner = shapes.ownerOf(id);
-            uint256 amount = shapes.backingOf(id);
-            uint256 before = owner.balance;
+            expected += shapes.backingOf(id);
 
-            vm.prank(owner);
-            shapes.redeem(id);
-
-            assertEq(owner.balance - before, amount, "a live Shape could not pay out in full");
+            vm.prank(shapes.ownerOf(id));
+            shapes.redeemTo(id, sink);
         }
+        assertEq(sink.balance - before, expected, "a live Shape could not pay out in full");
         assertEq(shapes.redeemableBacking(), 0, "reserve not fully drained by redeeming everything");
         vm.revertToState(snapshot);
     }
