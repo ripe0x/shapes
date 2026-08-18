@@ -5,6 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -777,6 +778,18 @@ contract RendererAdminTest is ShapesBase {
         shapes.setRenderer(address(next));
     }
 
+    /// @notice Replacing the renderer changes every token's metadata, so it must emit ERC-4906
+    ///         `BatchMetadataUpdate` over the minted range so marketplaces refresh.
+    function test_SetRendererEmitsBatchMetadataUpdate() public {
+        _mint(alice, 1 ether);
+        _mint(bob, 5 ether);
+        ShapeRenderer next = new ShapeRenderer();
+
+        vm.expectEmit(false, false, false, true, address(shapes));
+        emit IERC4906.BatchMetadataUpdate(1, shapes.totalMinted());
+        shapes.setRenderer(address(next));
+    }
+
     function test_SetRendererRejectsCodelessAddress() public {
         vm.expectRevert(bytes("renderer has no code"));
         shapes.setRenderer(alice); // an EOA
@@ -1417,6 +1430,25 @@ contract BlackShapeTest is ShapesBase {
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
         shapes.blacken(id);
+    }
+
+    /// @notice A Black Shape cannot be decomposed, so its preview must reject it too. Regression for
+    ///         the audit gap where `simulateDecompose` reported success while `decompose` reverts.
+    function test_SimulateDecomposeRejectsBlackToMatchDecompose() public {
+        uint256 id = _buildApexComplete();
+        vm.prank(alice);
+        shapes.blacken(id);
+
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 7; // 50 ETH
+        outs[1] = 7;
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.decompose(id, outs);
+
+        // The preview must agree, not report a valid child gene for an impossible operation.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.simulateDecompose(id);
     }
 }
 

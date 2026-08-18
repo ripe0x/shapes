@@ -91,6 +91,8 @@ interface IShapes is IERC721 {
     error ZeroQuantity();
     error NotShapeOwner(uint256 tokenId, address caller);
     error EthTransferFailed(address to, uint256 amountWei);
+    /// @notice A recipient-directed redemption named the zero address, which would burn the payout.
+    error InvalidRecipient(address recipient);
     error MintFeeTransferFailed(address recipient, uint256 amountWei);
     error DirectDepositRejected();
     /// @dev A Shape held by the Shapes contract itself could never be redeemed, because the

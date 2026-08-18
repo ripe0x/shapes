@@ -128,8 +128,31 @@ so nobody mistakes it for a protection it is not.
 
 ### 9. Event ordering — informational
 
-All `ShapeMinted` events for a batch are emitted before any ERC721 `Transfer`. Indexers that
-assume `Transfer` comes first will mis-order a batch.
+All `ShapeMinted` events for a batch are emitted before any ERC721 `Transfer` (and `Decomposed`/
+`Restored` are emitted before their outputs' `Transfer`s). A pure log-ordered indexer that resolves
+ownership on the lifecycle event, before the `Transfer`, sees a not-yet-existing token; a
+read-based indexer is unaffected. Kept as-is (the effects-before-interaction ordering); documented.
+
+### 10. External audit — no Critical/High; three low findings fixed
+
+An independent AI auditor ran the refreshed `AUDIT_PROMPT_v2.md` against `main`. No Critical or High
+was found; no path removes ETH without the corresponding burn, forges origins, forges Complete, or
+bypasses Black terminality. Three low findings were fixed and pinned with regression tests:
+
+- **`simulateDecompose` reported success for a Black Shape** while `decompose` reverts `TokenIsBlack`.
+  The preview now rejects Black tokens too (`test_SimulateDecomposeRejectsBlackToMatchDecompose`).
+- **`setRenderer` changed every token's metadata without an ERC-4906 signal.** It now emits
+  `BatchMetadataUpdate(1, totalMinted)` so marketplaces refresh
+  (`test_SetRendererEmitsBatchMetadataUpdate`).
+- **`redeemTo`/`redeemBatchTo` to `address(0)` burned the payout.** They now revert
+  `InvalidRecipient` (`test_RedeemToRejectsZeroRecipient`). `decomposeTo`/`restoreTo` to the zero
+  address already reverted through `_safeMint`.
+
+Accepted from the same audit: `setRenderer` validates the renderer by ERC165 claim and code
+presence but does not smoke-call it (owner-controlled; the deploy script already smoke-tests the
+renderer, and a hostile renderer is cosmetic only — see the Renderer replaceability row); the
+`grammarHash` geometry version is therefore only frozen once `lockRenderer` is called; and batch
+sizes stay uncapped (self-inflicted, per finding #7).
 
 ---
 

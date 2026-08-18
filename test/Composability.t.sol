@@ -175,6 +175,22 @@ contract ComposabilityTest is Test {
         assertEq(bob.balance - before, 1 ether);
     }
 
+    /// @notice `redeemTo`/`redeemBatchTo` reject the zero address, so the payout can never be burned
+    ///         by an accidental zero recipient. The token survives the revert.
+    function test_RedeemToRejectsZeroRecipient() public {
+        uint256 id = _mint(alice, 1 ether);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidRecipient.selector, address(0)));
+        shapes.redeemTo(id, payable(address(0)));
+        assertEq(shapes.ownerOf(id), alice, "token survives the rejected redemption");
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = id;
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidRecipient.selector, address(0)));
+        shapes.redeemBatchTo(ids, payable(address(0)));
+    }
+
     function test_RedeemBatchToPaysRecipientOnce() public {
         uint256 first = _mintDust(2);
         uint256[] memory ids = new uint256[](2);

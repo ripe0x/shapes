@@ -178,6 +178,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         _requireRendererHasCode(newRenderer);
         renderer = newRenderer;
         emit RendererUpdated(newRenderer);
+        // A new renderer changes `tokenURI` for every existing token. Signal it per ERC-4906 so
+        // marketplaces and indexers refresh rather than serving stale images and traits forever.
+        if (totalMinted != 0) emit BatchMetadataUpdate(1, totalMinted);
     }
 
     /// @inheritdoc IShapes
@@ -339,6 +342,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     }
 
     function _redeemTo(uint256 tokenId, address payable recipient) private {
+        if (recipient == address(0)) revert InvalidRecipient(recipient); // never burn the payout
         (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId);
 
         totalSupply -= 1;
@@ -352,6 +356,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         private
         returns (uint256 totalWei)
     {
+        if (recipient == address(0)) revert InvalidRecipient(recipient); // never burn the payout
         uint256 n = tokenIds.length;
         if (n == 0) revert ZeroQuantity();
 
@@ -824,7 +829,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
 
     /// @inheritdoc IShapes
     function simulateDecompose(uint256 tokenId) external view returns (uint8 childGene) {
-        return inkGeneOf(tokenId);
+        ownerOf(tokenId); // reverts if the token does not exist, the same way `decompose` would
+        if (_shapes[tokenId].isBlack) revert TokenIsBlack(tokenId); // `decompose` rejects Black; the preview must too
+        return _shapes[tokenId].inkGene;
     }
 
     /// @inheritdoc IShapes
