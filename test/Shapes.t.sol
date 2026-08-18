@@ -848,7 +848,7 @@ contract RendererAdminTest is ShapesBase {
 }
 
 /* ==================================================================== *
- *  Recomposition (compose / decompose)
+ *  Recomposition (compose / split)
  * ==================================================================== */
 
 contract RecompositionTest is ShapesBase {
@@ -945,11 +945,11 @@ contract RecompositionTest is ShapesBase {
         shapes.compose(a, burn);
     }
 
-    function test_DecomposeSplitsAndBurnsInput() public {
+    function test_SplitBurnsInputAndMintsChildren() public {
         uint256 id = _mint(alice, 0.05 ether); // direct, originCount 1
         uint8[] memory outs = new uint8[](5); // 5 x 0.01 (index 0)
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
 
         assertEq(kids.length, 5);
         vm.expectRevert();
@@ -966,12 +966,12 @@ contract RecompositionTest is ShapesBase {
         _assertSolvent();
     }
 
-    function test_DecomposeChildSeedsAreDeterministic() public {
+    function test_SplitChildSeedsAreDeterministic() public {
         uint256 id = _mint(alice, 0.05 ether);
         bytes32 parentSeed = shapes.seedOf(id);
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
         for (uint256 i = 0; i < 5; i++) {
             assertEq(
                 shapes.seedOf(kids[i]),
@@ -981,32 +981,32 @@ contract RecompositionTest is ShapesBase {
         }
     }
 
-    function test_DecomposeRejectsBadSum() public {
+    function test_SplitRejectsBadSum() public {
         uint256 id = _mint(alice, 0.1 ether);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 0;
         outs[1] = 0; // 0.02 != 0.1
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.DecompositionMismatch.selector, 0.1 ether, 0.02 ether)
+            abi.encodeWithSelector(IShapes.SplitMismatch.selector, 0.1 ether, 0.02 ether)
         );
-        shapes.decompose(id, outs);
+        shapes.split(id, outs);
     }
 
-    function test_DecomposeRejectsSingleOutput() public {
+    function test_SplitRejectsSingleOutput() public {
         uint256 id = _mint(alice, 0.05 ether);
         uint8[] memory outs = new uint8[](1);
         outs[0] = 1;
         vm.prank(alice);
         vm.expectRevert(IShapes.EmptyRecomposition.selector);
-        shapes.decompose(id, outs);
+        shapes.split(id, outs);
     }
 
     function test_ForgeryBlocked_SplitRecombinePreservesCount() public {
         uint256 id = _mint(alice, 0.1 ether); // direct, originCount 1
         uint8[] memory outs = new uint8[](10); // 10 x 0.01
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
 
         uint256[] memory burn = new uint256[](9);
         for (uint256 i = 0; i < 9; i++) burn[i] = kids[i + 1];
@@ -1050,8 +1050,8 @@ contract RecompositionTest is ShapesBase {
 
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
-        shapes.decompose(first, outs);
-        assertEq(feeRecipient.balance, afterMint, "decompose charged no fee");
+        shapes.split(first, outs);
+        assertEq(feeRecipient.balance, afterMint, "split charged no fee");
     }
 
     function test_SupportsErc4906() public view {
@@ -1069,9 +1069,9 @@ contract RecompositionTest is ShapesBase {
     }
 
     /// @notice The child seeds derive from the parent seed and index alone — no block data. Mutating
-    ///         the block environment before the split cannot change them, so a decompose cannot be
+    ///         the block environment before the split cannot change them, so a split cannot be
     ///         re-rolled by waiting for a friendlier block.
-    function test_DecomposeChildSeedsIgnoreBlockEnv() public {
+    function test_SplitChildSeedsIgnoreBlockEnv() public {
         uint256 parent = _mint(alice, 0.05 ether);
         bytes32 parentSeed = shapes.seedOf(parent);
 
@@ -1083,7 +1083,7 @@ contract RecompositionTest is ShapesBase {
 
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(parent, outs);
+        uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < kids.length; ++i) {
             assertEq(
@@ -1109,7 +1109,7 @@ contract RestoreTest is ShapesBase {
         outs[0] = 3;
         outs[1] = 3; // 2 x 0.5
         vm.prank(alice);
-        kids = shapes.decompose(id, outs);
+        kids = shapes.split(id, outs);
     }
 
     function test_RestoreReturnsOriginalSeedDenominationAndOrigins() public {
@@ -1121,7 +1121,7 @@ contract RestoreTest is ShapesBase {
         outs[0] = 3;
         outs[1] = 3;
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
 
         vm.prank(alice);
         uint256 restored = shapes.restore(parentSeed, kids);
@@ -1265,7 +1265,7 @@ contract RestoreTest is ShapesBase {
         uint8[] memory outs = new uint8[](5); // 0.5 -> 5 x 0.1
         for (uint256 i = 0; i < 5; i++) outs[i] = 2;
         vm.prank(alice);
-        uint256[] memory grandkids = shapes.decompose(kids[0], outs);
+        uint256[] memory grandkids = shapes.split(kids[0], outs);
 
         vm.prank(alice);
         uint256 childBack = shapes.restore(childSeed, grandkids);
@@ -1291,7 +1291,7 @@ contract RestoreTest is ShapesBase {
         uint8[] memory outs = new uint8[](10); // 1 ETH -> 10 x 0.1 this time
         for (uint256 i = 0; i < 10; i++) outs[i] = 2;
         vm.prank(alice);
-        uint256[] memory next = shapes.decompose(restored, outs);
+        uint256[] memory next = shapes.split(restored, outs);
 
         (uint16 count,) = shapes.splitRecordOf(parentSeed);
         assertEq(count, 10, "record overwritten by the new split");
@@ -1302,7 +1302,7 @@ contract RestoreTest is ShapesBase {
         assertEq(shapes.backingOf(again), 1 ether);
     }
 
-    function test_DecomposedEventCarriesParentSeed() public {
+    function test_SplitEventCarriesParentSeed() public {
         uint256 id = _mint(alice, 0.05 ether);
         bytes32 parentSeed = shapes.seedOf(id);
         uint256 firstChild = shapes.totalMinted() + 1;
@@ -1314,9 +1314,9 @@ contract RestoreTest is ShapesBase {
         oc[0] = 1;
 
         vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.Decomposed(id, parentSeed, newIds, outs, oc);
+        emit IShapes.Split(id, parentSeed, newIds, outs, oc);
         vm.prank(alice);
-        shapes.decompose(id, outs);
+        shapes.split(id, outs);
     }
 }
 
@@ -1398,11 +1398,11 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.compose(id, burn);
 
-        // ...and as a decompose input.
+        // ...and as a split input.
         uint8[] memory outs = new uint8[](2);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.decompose(id, outs);
+        shapes.split(id, outs);
 
         // One way: cannot blacken twice.
         vm.prank(alice);
@@ -1433,8 +1433,8 @@ contract BlackShapeTest is ShapesBase {
     }
 
     /// @notice A Black Shape cannot be decomposed, so its preview must reject it too. Regression for
-    ///         the audit gap where `simulateDecompose` reported success while `decompose` reverts.
-    function test_SimulateDecomposeRejectsBlackToMatchDecompose() public {
+    ///         the audit gap where `simulateSplit` reported success while `split` reverts.
+    function test_SimulateSplitRejectsBlackToMatchSplit() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
         shapes.blacken(id);
@@ -1444,11 +1444,11 @@ contract BlackShapeTest is ShapesBase {
         outs[1] = 7;
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.decompose(id, outs);
+        shapes.split(id, outs);
 
         // The preview must agree, not report a valid child gene for an impossible operation.
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.simulateDecompose(id);
+        shapes.simulateSplit(id);
     }
 }
 
@@ -1581,7 +1581,7 @@ contract InkGeneComposeTest is ShapesBase {
     }
 
     /// @notice A genuinely homogeneous pool at a single-tier compose (T=1) is a fixed point:
-    ///         built by decomposing one dust-gened Shape into children (which `decompose` copies
+    ///         built by decomposing one dust-gened Shape into children (which `split` copies
     ///         the parent's gene to verbatim) and recomposing four of them — `best == worst ==
     ///         center == survivorGene` by construction, so the walk cannot move the gene.
     function test_ComposeHomogeneousPoolIsFixedPointAtOneTier() public {
@@ -1590,9 +1590,9 @@ contract InkGeneComposeTest is ShapesBase {
 
         uint8[] memory outs = new uint8[](5); // 5 x 0.01 (denomIndex 0)
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(parent, outs);
+        uint256[] memory kids = shapes.split(parent, outs);
         for (uint256 i = 0; i < 5; ++i) {
-            assertEq(shapes.inkGeneOf(kids[i]), parentGene, "decompose did not copy the gene verbatim");
+            assertEq(shapes.inkGeneOf(kids[i]), parentGene, "split did not copy the gene verbatim");
         }
 
         uint256[] memory burn = new uint256[](4);
@@ -1614,9 +1614,9 @@ contract InkGeneComposeTest is ShapesBase {
 
         uint8[] memory outs = new uint8[](10_000); // all index 0 (0.01 ETH), defaults to 0
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(parent, outs);
+        uint256[] memory kids = shapes.split(parent, outs);
         assertEq(kids.length, 10_000);
-        assertEq(shapes.inkGeneOf(kids[0]), parentGene, "decompose did not copy the gene verbatim");
+        assertEq(shapes.inkGeneOf(kids[0]), parentGene, "split did not copy the gene verbatim");
 
         uint256[] memory burn = new uint256[](9_999);
         for (uint256 i = 0; i < 9_999; ++i) burn[i] = kids[1 + i];
@@ -1659,28 +1659,31 @@ contract InkGeneComposeTest is ShapesBase {
         assertEq(shapes.originCountOf(survivor), 10_000);
         assertTrue(shapes.isComplete(survivor));
         // Loose ceiling: this test exists to catch a regression and record the true number, not
-        // to micro-optimise. 9,999 burns each touching the ink-gene fields is inherently large.
-        assertLt(composeGas, 400_000_000, "10,000-dust mega-compose gas regressed");
+        // to micro-optimise. 9,999 burns each touching the ink-gene fields is inherently large, and
+        // reversible compose adds a ~52k-gas record per input (~2 storage slots). This 10,000-in-one
+        // compose is far past any block gas limit and exists only as a gas-profile datapoint; real
+        // merges of this size are built incrementally, each step independently reversible.
+        assertLt(composeGas, 650_000_000, "10,000-dust mega-compose gas regressed");
     }
 }
 
-/// @notice Decompose and restore: the gene is copied verbatim to every child, and restore
+/// @notice Split and restore: the gene is copied verbatim to every child, and restore
 ///         recovers the exact pre-split gene alongside the seed and denomination.
-contract InkGeneDecomposeRestoreTest is ShapesBase {
-    function test_DecomposeCopiesGeneToEveryChild() public {
+contract InkGeneSplitRestoreTest is ShapesBase {
+    function test_SplitCopiesGeneToEveryChild() public {
         uint256 id = _mint(alice, 0.05 ether);
         uint8 parentGene = shapes.inkGeneOf(id);
 
         uint8[] memory outs = new uint8[](5); // 5 x 0.01
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
 
         for (uint256 i = 0; i < kids.length; ++i) {
             assertEq(shapes.inkGeneOf(kids[i]), parentGene, "child gene diverged from parent");
         }
     }
 
-    function test_DecomposeEmitsInkGenePerChild() public {
+    function test_SplitEmitsInkGenePerChild() public {
         uint256 id = _mint(alice, 0.05 ether);
         uint8 parentGene = shapes.inkGeneOf(id);
         uint256 firstChild = shapes.totalMinted() + 1;
@@ -1697,7 +1700,7 @@ contract InkGeneDecomposeRestoreTest is ShapesBase {
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.InkGene(firstChild + 4, parentGene);
         vm.prank(alice);
-        shapes.decompose(id, outs);
+        shapes.split(id, outs);
     }
 
     /// @notice A restore recovers not just the original seed, denomination and origin count, but
@@ -1711,7 +1714,7 @@ contract InkGeneDecomposeRestoreTest is ShapesBase {
         outs[0] = 3;
         outs[1] = 3; // 2 x 0.5
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
         assertEq(shapes.inkGeneOf(kids[0]), parentGene);
         assertEq(shapes.inkGeneOf(kids[1]), parentGene);
 
@@ -1730,7 +1733,7 @@ contract InkGeneDecomposeRestoreTest is ShapesBase {
         outs[0] = 3;
         outs[1] = 3;
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
 
         uint256 nextId = shapes.totalMinted() + 1;
         vm.expectEmit(true, false, false, true, address(shapes));
@@ -1751,14 +1754,14 @@ contract InkGeneDecomposeRestoreTest is ShapesBase {
         outs[0] = 3;
         outs[1] = 3; // 2 x 0.5
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
         assertEq(shapes.inkGeneOf(kids[0]), gene);
 
         bytes32 childSeed = shapes.seedOf(kids[0]);
         uint8[] memory innerOuts = new uint8[](5); // 0.5 -> 5 x 0.1
         for (uint256 i = 0; i < 5; ++i) innerOuts[i] = 2;
         vm.prank(alice);
-        uint256[] memory grandkids = shapes.decompose(kids[0], innerOuts);
+        uint256[] memory grandkids = shapes.split(kids[0], innerOuts);
         for (uint256 i = 0; i < grandkids.length; ++i) {
             assertEq(shapes.inkGeneOf(grandkids[i]), gene, "gene diverged through the inner split");
         }
@@ -1776,7 +1779,7 @@ contract InkGeneDecomposeRestoreTest is ShapesBase {
     }
 }
 
-/// @notice `simulateCompose`/`simulateDecompose`: pure previews that touch no state and agree
+/// @notice `simulateCompose`/`simulateSplit`: pure previews that touch no state and agree
 ///         exactly with what the real mutating call would do.
 contract InkGeneSimulateTest is ShapesBase {
     function _mintDust(uint256 qty) internal returns (uint256 first) {
@@ -1825,18 +1828,18 @@ contract InkGeneSimulateTest is ShapesBase {
         shapes.simulateCompose(first, burn);
     }
 
-    /// @notice `simulateDecompose` is trivially `inkGeneOf`: decompose always copies the gene
+    /// @notice `simulateSplit` is trivially `inkGeneOf`: split always copies the gene
     ///         verbatim to every child, so the preview needs no pool-statistics walk at all.
-    function test_SimulateDecomposeMatchesRealDecompose() public {
+    function test_SimulateSplitMatchesRealSplit() public {
         uint256 id = _mint(alice, 0.05 ether);
-        uint8 preview = shapes.simulateDecompose(id);
+        uint8 preview = shapes.simulateSplit(id);
         assertEq(preview, shapes.inkGeneOf(id));
 
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
-        uint256[] memory kids = shapes.decompose(id, outs);
+        uint256[] memory kids = shapes.split(id, outs);
         for (uint256 i = 0; i < kids.length; ++i) {
-            assertEq(shapes.inkGeneOf(kids[i]), preview, "simulateDecompose diverged from decompose");
+            assertEq(shapes.inkGeneOf(kids[i]), preview, "simulateSplit diverged from split");
         }
     }
 }

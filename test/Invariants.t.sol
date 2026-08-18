@@ -13,7 +13,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
  * ==================================================================== */
 
 /// @dev Accepts NFTs but reverts on ETH. A `redeemTo` paying it reverts; it can still own tokens
-///      minted by `decomposeTo`/`restoreTo`, which the suite must still be able to drain.
+///      minted by `splitTo`/`restoreTo`, which the suite must still be able to drain.
 contract HostileRejectETH is IERC721Receiver {
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
@@ -24,7 +24,7 @@ contract HostileRejectETH is IERC721Receiver {
     }
 }
 
-/// @dev Accepts ETH but is not an ERC721 receiver, so `decomposeTo`/`restoreTo` minting to it
+/// @dev Accepts ETH but is not an ERC721 receiver, so `splitTo`/`restoreTo` minting to it
 ///      reverts on `_safeMint`. It therefore never comes to own a Shape.
 contract HostileRejectNFT {
     receive() external payable {}
@@ -279,9 +279,9 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-    /// @dev Decompose a token one tier down. Exercises decomposition without moving ETH. The
+    /// @dev Split a token one tier down. Exercises decomposition without moving ETH. The
     ///      split is remembered so `restore` can later attempt its reassembly.
-    function decompose(uint256 seed) public {
+    function split(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
         uint256 amt = shapes.backingOf(id);
@@ -295,7 +295,7 @@ contract Handler is Test, IERC721Receiver {
 
         bytes32 parentSeed = shapes.seedOf(id);
         vm.prank(owner);
-        try shapes.decompose(id, outs) returns (uint256[] memory kids) {
+        try shapes.split(id, outs) returns (uint256[] memory kids) {
             _untrack(id);
             for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
             pendingSplits.push(PendingSplit({parentSeed: parentSeed, kids: kids}));
@@ -417,9 +417,9 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-    /// @dev Decompose, minting the children to a hostile recipient. Moves no ETH; if the recipient
+    /// @dev Split, minting the children to a hostile recipient. Moves no ETH; if the recipient
     ///      rejects the mint the whole call reverts and nothing changes.
-    function decomposeToHostile(uint256 seed, uint256 recipSeed) public {
+    function splitToHostile(uint256 seed, uint256 recipSeed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
         uint256 amt = shapes.backingOf(id);
@@ -434,10 +434,38 @@ contract Handler is Test, IERC721Receiver {
 
         bytes32 parentSeed = shapes.seedOf(id);
         vm.prank(owner);
-        try shapes.decomposeTo(id, outs, recip) returns (uint256[] memory kids) {
+        try shapes.splitTo(id, outs, recip) returns (uint256[] memory kids) {
             _untrack(id);
             for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
             pendingSplits.push(PendingSplit({parentSeed: parentSeed, kids: kids}));
+        } catch {}
+    }
+
+    /// @dev Reverse a token's most recent compose, if it has one. Re-minted inputs come back under
+    ///      their original ids and are re-tracked, so the live set and the ETH-conservation model
+    ///      stay exact across the merge/un-merge round trip.
+    function decompose(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 survivor = liveTokens[seed % liveTokens.length];
+        if (shapes.composeDepth(survivor) == 0) return;
+        address owner = shapes.ownerOf(survivor);
+        vm.prank(owner);
+        try shapes.decompose(survivor) returns (uint256[] memory restored) {
+            for (uint256 i = 0; i < restored.length; ++i) _track(restored[i]);
+        } catch {}
+    }
+
+    /// @dev Reverse a compose, reviving the inputs to a hostile recipient. Moves no ETH; if the
+    ///      recipient rejects the mint the whole call reverts and the record stays intact.
+    function decomposeToHostile(uint256 seed, uint256 recipSeed) public {
+        if (liveTokens.length == 0) return;
+        uint256 survivor = liveTokens[seed % liveTokens.length];
+        if (shapes.composeDepth(survivor) == 0) return;
+        address owner = shapes.ownerOf(survivor);
+        address recip = hostiles[recipSeed % 3];
+        vm.prank(owner);
+        try shapes.decomposeTo(survivor, recip) returns (uint256[] memory restored) {
+            for (uint256 i = 0; i < restored.length; ++i) _track(restored[i]);
         } catch {}
     }
 
@@ -491,7 +519,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](15);
+        bytes4[] memory selectors = new bytes4[](17);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -500,13 +528,15 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[5] = Handler.forceEther.selector;
         selectors[6] = Handler.pokeUnknownSelector.selector;
         selectors[7] = Handler.compose.selector;
-        selectors[8] = Handler.decompose.selector;
+        selectors[8] = Handler.split.selector;
         selectors[9] = Handler.blacken.selector;
         selectors[10] = Handler.restore.selector;
         selectors[11] = Handler.redeemToHostile.selector;
         selectors[12] = Handler.redeemBatchToHostile.selector;
-        selectors[13] = Handler.decomposeToHostile.selector;
+        selectors[13] = Handler.splitToHostile.selector;
         selectors[14] = Handler.restoreToHostile.selector;
+        selectors[15] = Handler.decompose.selector;
+        selectors[16] = Handler.decomposeToHostile.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -615,7 +645,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
     /// @notice Whatever the sequence was, every live Shape's backing can still be extracted in
     ///         full. Solvency in the sense that actually matters. Drained via `redeemTo` to a
     ///         benign sink rather than `redeem`, so a Shape that a hostile recipient came to own
-    ///         (through `decomposeTo`/`restoreTo`) is still provably redeemable: the owner
+    ///         (through `splitTo`/`restoreTo`) is still provably redeemable: the owner
     ///         authorises the burn, and the ETH is directed somewhere that can receive it.
     function invariant_EveryLiveShapeIsStillRedeemable() public {
         uint256 n = handler.liveTokenCount();

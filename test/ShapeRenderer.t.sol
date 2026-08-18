@@ -713,7 +713,7 @@ contract TokenMetadataTest is RendererTestBase {
         halves[0] = 7; // 50 ETH
         halves[1] = 7;
         vm.prank(alice);
-        uint256[] memory parts = shapes.decompose(whole, halves);
+        uint256[] memory parts = shapes.split(whole, halves);
         assertEq(shapes.originCountOf(parts[0]), 1, "first half keeps the origin");
         assertEq(shapes.originCountOf(parts[1]), 0, "second half is a fragment");
         string memory fj = _decodeJson(parts[1]);
