@@ -7,8 +7,22 @@ hold real ETH on Ethereum mainnet and that any depositor can be an attacker.
 
 ## What to audit — scope
 
-- Repository branch: **`main`** (audit the current tip). The contract is deployed once and is
-  **immutable** on mainnet — there is no upgrade path, so every finding is permanent.
+- **Audit branch `main`, at its tip.** As of this brief the tip is commit **`fea94f9`**; audit that
+  commit or any later `main` commit, and record the exact one you audit in your report. The
+  contract is deployed once and is **immutable** on mainnet — no upgrade path, so every finding is
+  permanent.
+- **Put the working tree on `main` first.** The repository's primary checkout may be sitting on a
+  different feature branch, so do not assume the files in front of you are the audit target. From
+  the repo root:
+
+  ```bash
+  git fetch origin
+  git checkout main && git pull --ff-only
+  git log -1 --oneline            # record this commit in your report
+  git status                      # confirm a clean tree
+  ```
+
+  Audit the working tree at that commit directly (not a PR diff).
 - Audit the full `Shapes.sol` + renderer surface. Two areas are the newest and have had **no
   external audit**; treat them as the priority:
   1. **Ink genes** — a seven-state per-token trait with a deterministic compose-time inheritance
