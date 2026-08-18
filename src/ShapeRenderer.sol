@@ -900,6 +900,17 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         }
     }
 
+    /// @dev The same glyph stream as `_moduleSequence`, folded back into the denomination's
+    ///      canonical grid. There is deliberately no frame, label or trailing newline: the
+    ///      returned UTF-8 bytes describe only the Shape and remain straightforward to compose.
+    function _unicodeCard(Card memory card) private pure returns (bytes memory out) {
+        uint256 n = card.modules.length;
+        for (uint256 i = 0; i < n; ++i) {
+            if (i != 0) out = abi.encodePacked(out, i % card.cols == 0 ? "\n" : " ");
+            out = abi.encodePacked(out, _glyph(card.modules[i]));
+        }
+    }
+
     /// @inheritdoc IShapeRenderer
     function moduleSequence(bytes32 seed, uint256 amountWei, uint8 inkGene)
         external
@@ -907,6 +918,15 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         returns (string memory)
     {
         return string(_moduleSequence(compose(seed, amountWei, inkGene)));
+    }
+
+    /// @inheritdoc IShapeRenderer
+    function renderUnicode(bytes32 seed, uint256 amountWei, uint8 inkGene)
+        external
+        pure
+        returns (string memory)
+    {
+        return string(_unicodeCard(compose(seed, amountWei, inkGene)));
     }
 
     /* ------------------------------------------------------------------ *

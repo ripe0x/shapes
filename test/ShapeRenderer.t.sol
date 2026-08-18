@@ -584,6 +584,36 @@ contract OutputTest is RendererTestBase {
         assertEq(b.length, (cols * rows) * 3 + spaces, "unexpected glyph encoding");
     }
 
+    function testFuzz_UnicodeCardUsesCanonicalGrid(bytes32 seed, uint8 which) public view {
+        uint256 idx = which % 9;
+        (uint256 cols, uint256 rows) = Denominations.gridAt(idx);
+        bytes memory card = bytes(renderer.renderUnicode(seed, DENOMS[idx], _gene(seed)));
+
+        uint256 spaces;
+        uint256 newlines;
+        for (uint256 i = 0; i < card.length; ++i) {
+            if (card[i] == " ") spaces++;
+            if (card[i] == "\n") newlines++;
+        }
+
+        uint256 modules = cols * rows;
+        assertEq(spaces, rows * (cols - 1), "wrong cell separators");
+        assertEq(newlines, rows - 1, "wrong row separators");
+        assertEq(card.length, modules * 3 + modules - 1, "unexpected UTF-8 card length");
+    }
+
+    function test_UnicodeCardPreservesModuleSequence() public view {
+        for (uint256 idx = 0; idx < 9; ++idx) {
+            bytes32 seed = keccak256(abi.encodePacked("unicode-card", idx));
+            uint8 gene = _gene(seed);
+            bytes memory card = bytes(renderer.renderUnicode(seed, DENOMS[idx], gene));
+            for (uint256 i = 0; i < card.length; ++i) {
+                if (card[i] == "\n") card[i] = " ";
+            }
+            assertEq(string(card), renderer.moduleSequence(seed, DENOMS[idx], gene));
+        }
+    }
+
     function testFuzz_RenderNeverRevertsForAnySeed(bytes32 seed, uint8 which, uint256 tokenId)
         public
         view

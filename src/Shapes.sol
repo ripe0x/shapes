@@ -957,6 +957,13 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         return cols * rows;
     }
 
+    /// @inheritdoc IShapes
+    function unicodeCard(uint256 tokenId) external view returns (string memory) {
+        _requireOwned(tokenId);
+        ShapeData storage d = _shapes[tokenId];
+        return IShapeRenderer(renderer).renderUnicode(d.seed, Denominations.amountAt(d.denomIndex), d.inkGene);
+    }
+
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireOwned(tokenId);

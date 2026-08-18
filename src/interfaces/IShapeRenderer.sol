@@ -49,4 +49,13 @@ interface IShapeRenderer {
         external
         pure
         returns (string memory);
+
+    /// @notice The canonical module glyphs arranged in the Shape's denomination grid.
+    /// @dev Cells are separated by one ASCII space and rows by one `\n`, with no trailing
+    ///      separator. This is a human-readable view of the same modules returned by
+    ///      `moduleSequence`; contracts should use `IShapeGeometry.moduleAt` for structured data.
+    function renderUnicode(bytes32 seed, uint256 amountWei, uint8 inkGene)
+        external
+        pure
+        returns (string memory);
 }

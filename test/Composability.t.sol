@@ -96,6 +96,12 @@ contract ComposabilityTest is Test {
         assertEq(shapes.denominationAt(8), 100 ether);
     }
 
+    function test_TokenUnicodeCardMatchesCanonicalRenderer() public {
+        uint256 id = _mint(alice, 1 ether);
+        ShapeState memory state = shapes.shapeState(id);
+        assertEq(shapes.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene));
+    }
+
     function test_PreviewComposeReturnsCompleteResultAndMatchesExecution() public {
         uint256 first = _mintDust(5);
         uint256[] memory burnIds = new uint256[](4);

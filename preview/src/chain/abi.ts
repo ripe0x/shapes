@@ -14,6 +14,7 @@ export const shapesAbi = parseAbi([
   "function splitRecordOf(bytes32 parentSeed) view returns (uint16 childCount, uint8 denomIndex)",
   "function blacken(uint256 tokenId)",
   "function tokenURI(uint256 tokenId) view returns (string)",
+  "function unicodeCard(uint256 tokenId) view returns (string)",
   "function backingOf(uint256 tokenId) view returns (uint256)",
   "function seedOf(uint256 tokenId) view returns (bytes32)",
   "function originCountOf(uint256 tokenId) view returns (uint256)",

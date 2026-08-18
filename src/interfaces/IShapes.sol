@@ -252,6 +252,12 @@ interface IShapes is IERC721 {
     /// @notice A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
 
+    /// @notice AutoGlyph-style Unicode rendering of a live Shape's canonical module grid.
+    /// @dev Cells are separated by spaces and rows by newlines. This is intended for display;
+    ///      integrations that need machine-readable geometry should call `IShapeGeometry` on
+    ///      `renderer()` instead.
+    function unicodeCard(uint256 tokenId) external view returns (string memory);
+
     /// @notice Every protocol fact about a live Shape in one canonical read.
     function shapeState(uint256 tokenId) external view returns (ShapeState memory);
 

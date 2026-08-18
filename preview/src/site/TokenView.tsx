@@ -77,6 +77,8 @@ export function TokenView({
   const [birth, setBirth] = React.useState<SplitBirth | null>(null);
   const [record, setRecord] = React.useState<{childCount: number; denomIndex: number} | null>(null);
   const [prov, setProv] = React.useState<ProvNode | null>(null);
+  const [unicodeCard, setUnicodeCard] = React.useState<string | null>(null);
+  const [unicodeUnavailable, setUnicodeUnavailable] = React.useState(false);
 
   // Ancestry tree from the event log; shown only when the token has one beyond its own mint.
   React.useEffect(() => {
@@ -145,6 +147,34 @@ export function TokenView({
 
   const token = data?.tokens.find((t) => t.id === tokenId) ?? null;
   const snap = redeem.status === "done" && redeem.snap?.id === tokenId ? redeem.snap : null;
+
+  // Read the text rendering from the token contract itself. This intentionally does not derive
+  // the grid from tokenURI or the site's local renderer: the displayed bytes are the protocol's
+  // canonical `unicodeCard(tokenId)` response.
+  React.useEffect(() => {
+    let cancelled = false;
+    setUnicodeCard(null);
+    setUnicodeUnavailable(false);
+    if (!publicClient || !token) return;
+
+    void publicClient
+      .readContract({
+        address: dep.shapes,
+        abi: shapesAbi,
+        functionName: "unicodeCard",
+        args: [tokenId],
+      })
+      .then((card) => {
+        if (!cancelled) setUnicodeCard(card);
+      })
+      .catch(() => {
+        if (!cancelled) setUnicodeUnavailable(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient, dep.shapes, tokenId, token]);
 
   const back = (
     <div style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
@@ -313,6 +343,47 @@ export function TokenView({
             </div>
           </div>
         </div>
+      </Section>
+
+      <Section title="UNICODE CARD" pad="28px 48px 34px 32px">
+        <p style={{margin: "0 0 22px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+          Returned directly by <span style={{color: C.body}}>unicodeCard(#{token.id.toString()})</span> on the
+          Shapes contract.
+        </p>
+        {unicodeCard !== null ? (
+          <div
+            style={{
+              display: "inline-block",
+              maxWidth: "100%",
+              overflowX: "auto",
+              padding: "24px 28px",
+              border: `1px solid ${C.border}`,
+              background: C.row,
+            }}
+          >
+            <pre
+              aria-label={`Unicode card for Shape #${token.id.toString()}`}
+              style={{
+                margin: 0,
+                color: C.ink,
+                fontFamily: "inherit",
+                fontSize: "clamp(24px, 4.5vw, 52px)",
+                fontWeight: 400,
+                lineHeight: 1.28,
+                letterSpacing: "0.04em",
+                whiteSpace: "pre",
+              }}
+            >
+              {unicodeCard}
+            </pre>
+          </div>
+        ) : unicodeUnavailable ? (
+          <div style={{fontSize: 12, lineHeight: 1.7, color: C.muted}}>
+            Unicode card unavailable on this contract deployment.
+          </div>
+        ) : (
+          <div style={{fontSize: 12, color: C.muted}}>Reading token contract…</div>
+        )}
       </Section>
 
       <History history={history} chainId={dep.chainId} />
