@@ -1,0 +1,10 @@
+{
+  "name": "shapes-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Shapes: on-chain ETH-backed generative NFT. Workspace root for the Next.js site (web) and the Vite render/dev harness (preview), which share one dependency tree so the site can reuse the parity-tested renderer and site components without a second copy of React/viem/wagmi.",
+  "workspaces": [
+    "web",
+    "preview"
+  ]
+}

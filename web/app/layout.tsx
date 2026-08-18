@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-const SITE = "https://shapes-onchain.netlify.app";
+// Canonical origin for absolute OG/Twitter URLs. Env-overridable so a preview deploy can stamp its
+// own origin; defaults to the production custom domain.
+const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://shapes.ripe.wtf";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),

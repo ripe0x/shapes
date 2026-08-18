@@ -6,7 +6,6 @@ import { resolve } from "node:path";
 // the contract renders. `externalDir` lets Next compile those files from outside the app root; the
 // `@shared/*` alias (mirrored in tsconfig) points at them.
 const shared = resolve(__dirname, "../preview/src");
-
 const nextConfig: NextConfig = {
   experimental: {
     externalDir: true,
