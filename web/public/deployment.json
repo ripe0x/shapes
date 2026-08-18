@@ -1,7 +1,7 @@
 {
-  "rpc": "http://127.0.0.1:8545",
-  "chainId": 31337,
-  "shapes": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
-  "renderer": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+  "chainId": 11155111,
+  "shapes": "0xAaB0b2E3645C909A6E3869BE23D6aD484624C2E1",
+  "renderer": "0xe3D6A82cb22d82e5D71A6Ce9fF2bE0b6B4B90fa6",
   "feeBps": "100"
 }
