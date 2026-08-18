@@ -32,8 +32,8 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///      paths move ETH out of the reserve: `_settle` (redemption; reached from `redeem` and
 ///      `redeemBatch`, burns the token first and returns its exact backing to the owner) and
 ///      `blacken` (sacrifice; sends a fixed 100 ETH to an unspendable address and marks the
-///      token Black). `compose` and `decompose` reshape tokens without moving ETH, so they leave
-///      the reserve unchanged. No other path reaches the reserve.
+///      token Black). `compose`, `decompose`, `split` and `restore` reshape tokens without moving
+///      ETH, so they leave the reserve unchanged. No other path reaches the reserve.
 ///
 ///      The one administrative power is cosmetic: the owner may replace the renderer, and may
 ///      permanently lock it. The renderer is read only by `tokenURI`; it can never touch ETH,
@@ -46,7 +46,9 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///      allowlist, supply cap, royalties. No admin path reaches the reserve.
 ///
 ///      Reentrancy: the functions that move ETH, mint, or restructure tokens — `mint`,
-///      `mintBatch`, `redeem`, `redeemBatch`, `compose`, `decompose`, `blacken` — are guarded.
+///      `mintBatch`, `redeem`, `redeemBatch`, `compose`, `composeMany`, `decompose`,
+///      `decomposeMany`, `split`, `restore`, their `*To` recipient variants, and `blacken` — are
+///      guarded.
 ///      The inherited ERC721 transfer and approval functions are not, and deliberately so; they
 ///      move no ETH. One consequence worth knowing: a receiver
 ///      can redeem a Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
@@ -67,8 +69,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     ///      independent direct-mint events credited to this token (one per mint, conserved
     ///      across composition and decomposition). `isBlack` marks a sacrificed token.
     ///      `inkGene` (INK_GENES_IMPL_SPEC.md) is assigned once at mint and thereafter evolves
-    ///      only through `compose`; decompose and restore copy it verbatim. The last four pack
-    ///      into one slot.
+    ///      only through `compose`; `decompose` restores the pre-compose value, `split` and
+    ///      `restore` copy it verbatim. The last four pack into one slot.
     struct ShapeData {
         bytes32 seed;
         uint8 denomIndex;
@@ -82,7 +84,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     /// @dev One record per split, keyed by the input's seed: how many children it produced and
     ///      the input's denomination index. Child seeds derive from the parent seed, so given
     ///      this record `restore` can verify a claimed child set with no per-child storage.
-    ///      Written by `decompose`, deleted by `restore`. A parent seed holds at most one live
+    ///      Written by `split`, deleted by `restore`. A parent seed holds at most one live
     ///      record: writing requires a live token carrying the seed (which a prior split would
     ///      have burned), and rewriting after a restore replaces a record whose children were
     ///      all burned by that restore. Packs into one slot.
@@ -92,6 +94,35 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     }
 
     mapping(bytes32 parentSeed => SplitRecord) private _splitRecords;
+
+    /// @dev One burned compose input, holding everything needed to re-mint it verbatim in
+    ///      `decompose`. `id` is a uint96: the token id, narrowed to pack the whole struct into
+    ///      two slots (seed, then id+originCount+denomIndex+inkGene). Overflow needs ~8e28 mints.
+    struct ComposeInput {
+        bytes32 seed;
+        uint96 id;
+        uint32 originCount;
+        uint8 denomIndex;
+        uint8 inkGene;
+    }
+
+    /// @dev One reversible compose. `survivor*` is the survivor's pre-compose state, restored by
+    ///      `decompose`; `inputs` are the burned tokens, re-minted verbatim. Self-contained: the
+    ///      record alone suffices to reverse the compose, with no caller input and no dependence
+    ///      on event history. The survivor fields pack into one slot; `inputs` is dynamic.
+    struct ComposeRecord {
+        uint8 survivorDenomIndex;
+        uint32 survivorOriginCount;
+        uint8 survivorInkGene;
+        ComposeInput[] inputs;
+    }
+
+    /// @dev A per-survivor LIFO stack of reversible composes: `compose` pushes, `decompose` pops
+    ///      the top. Stacking lets one survivor be composed repeatedly and unwound fully, newest
+    ///      melt first. A record is abandoned (left inert, never actionable) if the survivor is
+    ///      later burned by `split`/`redeem`/compose-as-input or marked Black — `decompose`'s
+    ///      ownership and `isBlack` guards reject every such case. See DECOMPOSE_SPEC.md.
+    mapping(uint256 survivorId => ComposeRecord[]) private _composeStack;
 
     /// @dev Complete deterministic result of a compose preview before it is converted into the
     ///      public `ShapeState` representation.
@@ -408,6 +439,28 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     ///      guarded regardless. A duplicate id in `burnIds` reverts on its second appearance,
     ///      because the token no longer exists.
     function compose(uint256 survivorId, uint256[] calldata burnIds) external nonReentrant returns (uint256) {
+        return _compose(survivorId, burnIds);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Runs each `(survivorId, burnIds)` compose in order, under one reentrancy guard. All ids
+    ///      are pre-existing (compose mints nothing new and keeps each survivor's id), so a later
+    ///      call may name a survivor an earlier call in the same batch produced. Each compose pushes
+    ///      its own reversible record. Bounded by block gas; the caller sizes the batch. Atomic.
+    function composeMany(ComposeCall[] calldata calls)
+        external
+        nonReentrant
+        returns (uint256[] memory outIds)
+    {
+        uint256 n = calls.length;
+        if (n == 0) revert ZeroQuantity();
+        outIds = new uint256[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            outIds[i] = _compose(calls[i].survivorId, calls[i].burnIds);
+        }
+    }
+
+    function _compose(uint256 survivorId, uint256[] calldata burnIds) private returns (uint256) {
         uint256 n = burnIds.length;
         if (n == 0) revert EmptyRecomposition();
 
@@ -429,6 +482,13 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         uint256 unitsTotal = survivorUnits;
         uint256 burnSeedFold;
 
+        // Push the reversible record and capture the survivor's pre-compose state before the
+        // loop mutates anything. `decompose` pops this to restore exactly these values.
+        ComposeRecord storage rec = _composeStack[survivorId].push();
+        rec.survivorDenomIndex = oldIndex;
+        rec.survivorOriginCount = uint32(s.originCount);
+        rec.survivorInkGene = s.inkGene;
+
         for (uint256 i = 0; i < n; ++i) {
             uint256 bid = burnIds[i];
             if (bid == survivorId) revert CannotComposeWithSelf(bid);
@@ -446,6 +506,15 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
             uint256 bUnits = Denominations.unitsAt(b.denomIndex);
             sumW += uint256(b.inkGene) * bUnits;
             unitsTotal += bUnits;
+
+            // Snapshot the input verbatim, then burn it. Re-minted by `decompose` under this id.
+            rec.inputs.push(ComposeInput({
+                seed: b.seed,
+                id: uint96(bid),
+                originCount: b.originCount,
+                denomIndex: b.denomIndex,
+                inkGene: b.inkGene
+            }));
 
             delete _shapes[bid];
             _burn(bid);
@@ -474,26 +543,26 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     /// @inheritdoc IShapes
     /// @dev Burns the input and mints fresh outputs whose backing sums to the input's, so
     ///      `redeemableBacking` is untouched. Child seeds derive from the parent seed deterministically,
-    ///      fixing the full decompose tree at mint. All accounting precedes the `_safeMint` loop so
+    ///      fixing the full split tree at mint. All accounting precedes the `_safeMint` loop so
     ///      a receiver callback observes consistent state.
-    function decompose(uint256 tokenId, uint8[] calldata outDenoms)
+    function split(uint256 tokenId, uint8[] calldata outDenoms)
         external
         nonReentrant
         returns (uint256[] memory newIds)
     {
-        return _decomposeTo(tokenId, outDenoms, msg.sender);
+        return _splitTo(tokenId, outDenoms, msg.sender);
     }
 
     /// @inheritdoc IShapes
-    function decomposeTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
+    function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         nonReentrant
         returns (uint256[] memory newIds)
     {
-        return _decomposeTo(tokenId, outDenoms, recipient);
+        return _splitTo(tokenId, outDenoms, recipient);
     }
 
-    function _decomposeTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
+    function _splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         private
         returns (uint256[] memory newIds)
     {
@@ -513,7 +582,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         for (uint256 i = 0; i < k; ++i) {
             sum += Denominations.amountAt(outDenoms[i]);
         }
-        if (sum != parentBacking) revert DecompositionMismatch(parentBacking, sum);
+        if (sum != parentBacking) revert SplitMismatch(parentBacking, sum);
 
         // -------- effects --------
         uint256 parentIndex = p.denomIndex;
@@ -548,7 +617,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         // Sum of capacities == parentBacking/UNIT >= parent origin count, so the fill exhausts it.
         assert(remaining == 0);
 
-        emit Decomposed(tokenId, parentSeed, newIds, outDenoms, oc);
+        emit Split(tokenId, parentSeed, newIds, outDenoms, oc);
         for (uint256 i = 0; i < k; ++i) {
             emit InkGene(newIds[i], parentGene);
             emit ShapeFragmentCreated(tokenId, newIds[i], parentSeed, i);
@@ -561,12 +630,126 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev The inverse of `decompose`, verified against the split record with no per-child
+    /// @dev The inverse of `compose`. Pops the survivor's top compose record and reverses that one
+    ///      merge: the survivor reverts to its pre-compose denomination, origin count and gene (its
+    ///      id and seed never changed), and every burned input is re-minted verbatim under its
+    ///      original id and seed. `totalMinted` is not bumped — the input ids are reused, not freshly
+    ///      issued, which is collision-free because fresh mints always exceed `totalMinted` and an id
+    ///      belongs to at most one live record (DECOMPOSE_SPEC.md). LIFO: stacked composes on one
+    ///      survivor unwind newest first. Backing is conserved, so `redeemableBacking` is untouched.
+    ///      All accounting precedes the `_safeMint` loop so a receiver callback observes consistent
+    ///      state.
+    function decompose(uint256 survivorId)
+        external
+        nonReentrant
+        returns (uint256[] memory restoredIds)
+    {
+        return _decomposeTo(survivorId, msg.sender);
+    }
+
+    /// @inheritdoc IShapes
+    function decomposeTo(uint256 survivorId, address recipient)
+        external
+        nonReentrant
+        returns (uint256[] memory restoredIds)
+    {
+        return _decomposeTo(survivorId, recipient);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Decomposes each survivor in `survivorIds`, in order, under one reentrancy guard. Repeat
+    ///      an id to pop several stacked records; list ids parent-before-child to unwind a nested
+    ///      tree (a re-minted input exists by the time its own id is reached). Bounded by block gas;
+    ///      the caller sizes the batch. Atomic: any item reverting rolls back the whole call.
+    function decomposeMany(uint256[] calldata survivorIds)
+        external
+        nonReentrant
+        returns (uint256[][] memory restoredIds)
+    {
+        return _decomposeMany(survivorIds, msg.sender);
+    }
+
+    /// @inheritdoc IShapes
+    function decomposeManyTo(uint256[] calldata survivorIds, address recipient)
+        external
+        nonReentrant
+        returns (uint256[][] memory restoredIds)
+    {
+        return _decomposeMany(survivorIds, recipient);
+    }
+
+    function _decomposeMany(uint256[] calldata survivorIds, address recipient)
+        private
+        returns (uint256[][] memory restoredIds)
+    {
+        uint256 n = survivorIds.length;
+        if (n == 0) revert ZeroQuantity();
+        restoredIds = new uint256[][](n);
+        for (uint256 i = 0; i < n; ++i) {
+            restoredIds[i] = _decomposeTo(survivorIds[i], recipient);
+        }
+    }
+
+    function _decomposeTo(uint256 survivorId, address recipient)
+        private
+        returns (uint256[] memory restoredIds)
+    {
+        if (ownerOf(survivorId) != msg.sender) revert NotShapeOwner(survivorId, msg.sender);
+        ShapeData storage s = _shapes[survivorId];
+        if (s.isBlack) revert TokenIsBlack(survivorId);
+
+        ComposeRecord[] storage stack = _composeStack[survivorId];
+        uint256 depth = stack.length;
+        if (depth == 0) revert NoComposeRecord(survivorId);
+        ComposeRecord storage rec = stack[depth - 1];
+        uint256 m = rec.inputs.length;
+
+        // -------- effects --------
+        // Restore the survivor to its pre-compose state. Seed is unchanged — compose never wrote it.
+        s.denomIndex = rec.survivorDenomIndex;
+        s.originCount = rec.survivorOriginCount;
+        s.inkGene = rec.survivorInkGene;
+
+        restoredIds = new uint256[](m);
+        uint8[] memory genes = new uint8[](m);
+        for (uint256 i = 0; i < m; ++i) {
+            ComposeInput storage inp = rec.inputs[i];
+            uint256 iid = inp.id;
+            _shapes[iid] = ShapeData({
+                seed: inp.seed,
+                denomIndex: inp.denomIndex,
+                originCount: inp.originCount,
+                isBlack: false,
+                inkGene: inp.inkGene
+            });
+            restoredIds[i] = iid;
+            genes[i] = inp.inkGene;
+        }
+
+        totalSupply += m; // compose burned m inputs; decompose re-mints them, survivor stays
+        stack.pop(); // clears the record and its inputs array
+
+        emit Decomposed(survivorId, restoredIds, s.denomIndex, s.originCount);
+        emit InkGene(survivorId, s.inkGene);
+        for (uint256 i = 0; i < m; ++i) {
+            emit InkGene(restoredIds[i], genes[i]);
+            emit ShapeRevived(survivorId, restoredIds[i]);
+        }
+        emit MetadataUpdate(survivorId);
+
+        // -------- interactions --------
+        for (uint256 i = 0; i < m; ++i) {
+            _safeMint(recipient, restoredIds[i]);
+        }
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev The inverse of `split`, verified against the split record with no per-child
     ///      storage: child i of a split is the unique token whose seed is
     ///      `keccak256(abi.encodePacked(parentSeed, i))`, so seed equality proves membership and
     ///      position. The count check rules out subsets; the backing check rules out children
     ///      whose denomination grew via compose after the split (a denomination can only grow —
-    ///      shrinking is a decompose, which burns the token). Together they force the exact
+    ///      shrinking is a split, which burns the token). Together they force the exact
     ///      original multiset, so the minted token's denomination and artwork equal the split
     ///      input's. Origins are conserved across split and restore, so the sum equals the
     ///      input's count. Reshapes tokens without moving ETH; `redeemableBacking` is untouched.
@@ -611,7 +794,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
             if (c.seed != _childSeed(parentSeed, i)) {
                 revert RestoreChildMismatch(cid, i);
             }
-            // Every child of one split shares the parent's gene by construction (decompose
+            // Every child of one split shares the parent's gene by construction (split
             // copies it verbatim to each child), so it is captured once, at i == 0, before that
             // child's storage is deleted. No cross-child check is needed: a gene can only
             // change via `compose`, which either burns the token (making it fail the seed
@@ -828,9 +1011,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function simulateDecompose(uint256 tokenId) external view returns (uint8 childGene) {
-        ownerOf(tokenId); // reverts if the token does not exist, the same way `decompose` would
-        if (_shapes[tokenId].isBlack) revert TokenIsBlack(tokenId); // `decompose` rejects Black; the preview must too
+    function simulateSplit(uint256 tokenId) external view returns (uint8 childGene) {
+        ownerOf(tokenId); // reverts if the token does not exist, the same way `split` would
+        if (_shapes[tokenId].isBlack) revert TokenIsBlack(tokenId); // `split` rejects Black; the preview must too
         return _shapes[tokenId].inkGene;
     }
 
@@ -845,7 +1028,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function previewDecompose(uint256 tokenId, uint8[] calldata outDenoms)
+    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
         external
         view
         returns (ShapeChildPreview[] memory children)
@@ -862,7 +1045,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
         for (uint256 i = 0; i < k; ++i) {
             sum += Denominations.amountAt(outDenoms[i]);
         }
-        if (sum != parentBacking) revert DecompositionMismatch(parentBacking, sum);
+        if (sum != parentBacking) revert SplitMismatch(parentBacking, sum);
 
         children = new ShapeChildPreview[](k);
         uint256 remaining = p.originCount;
@@ -922,6 +1105,11 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC4906 {
     function splitRecordOf(bytes32 parentSeed) external view returns (uint16 childCount, uint8 denomIndex) {
         SplitRecord storage record = _splitRecords[parentSeed];
         return (record.childCount, record.denomIndex);
+    }
+
+    /// @inheritdoc IShapes
+    function composeDepth(uint256 survivorId) external view returns (uint256) {
+        return _composeStack[survivorId].length;
     }
 
     function _childSeed(bytes32 parentSeed, uint256 childIndex) private pure returns (bytes32) {

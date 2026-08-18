@@ -24,7 +24,7 @@ struct ShapeState {
     uint256 redeemableValueWei;
 }
 
-/// @notice One deterministic child returned by `previewDecompose`.
+/// @notice One deterministic child returned by `previewSplit`.
 struct ShapeChildPreview {
     bytes32 seed;
     uint8 denominationIndex;
@@ -51,8 +51,12 @@ interface IShapeValue {
 /// @notice Stable mutation capability for contracts that build recomposition workflows.
 interface IShapeRecomposition {
     function compose(uint256 survivorId, uint256[] calldata burnIds) external returns (uint256 outId);
-    function decompose(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
-    function decomposeTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
+    function decompose(uint256 survivorId) external returns (uint256[] memory restoredIds);
+    function decomposeTo(uint256 survivorId, address recipient)
+        external
+        returns (uint256[] memory restoredIds);
+    function split(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
+    function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
     function restore(bytes32 parentSeed, uint256[] calldata childIds) external returns (uint256 newTokenId);
@@ -82,12 +86,12 @@ interface IShapeSimulation {
         external
         view
         returns (uint8 newGene, uint8 newDenomIndex);
-    function simulateDecompose(uint256 tokenId) external view returns (uint8 childGene);
+    function simulateSplit(uint256 tokenId) external view returns (uint8 childGene);
     function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
         external
         view
         returns (ShapeState memory result);
-    function previewDecompose(uint256 tokenId, uint8[] calldata outDenoms)
+    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
         external
         view
         returns (ShapeChildPreview[] memory children);
