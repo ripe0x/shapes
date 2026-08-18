@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagm
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {short} from "./ui";
+import {short, addrUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {MintView} from "./MintView";
@@ -310,7 +310,10 @@ export function SiteApp({
         >
           <span style={{letterSpacing: "0.14em"}}>SHAPES</span>
           <span>Wrapping ETH in a Shape is not an investment and earns nothing.</span>
-          <span style={{marginLeft: "auto"}}>
+          <span style={{marginLeft: "auto", display: "flex", gap: 20}}>
+            <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 11}}>
+              Contract
+            </a>
             <a href="https://github.com/ripe0x/shapes" target="_blank" rel="noreferrer" style={{fontSize: 11}}>
               Source
             </a>
