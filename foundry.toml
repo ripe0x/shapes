@@ -29,6 +29,15 @@ runs = 4096
 runs = 512
 depth = 128
 
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+# Etherscan v2: one API key covers all chains, selected by chain id.
+[etherscan]
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
+base_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 84532 }
+
 [fmt]
 line_length = 110
 tab_width = 4

@@ -1,5 +1,6 @@
 import React from "react";
 import {formatEther} from "viem";
+import {useAccount, useBalance} from "wagmi";
 import {DENOMINATIONS} from "../chain/abi";
 import {GRIDS} from "../canonical/denominations";
 import {C} from "./theme";
@@ -140,6 +141,14 @@ export function MintView({
   const sampleNo = ((sample % 12) + 12) % 12;
   const minted = mint.minted ?? null;
 
+  // The connected account's native balance, to catch a selection that costs more than it holds
+  // before the wallet rejects it. This is the backing plus fee only; gas is left to the wallet.
+  const {address} = useAccount();
+  const {data: balance} = useBalance({address});
+  const total = fee === null ? null : (wei + fee) * q;
+  const insufficient =
+    connected && balance !== undefined && total !== null && balance.value < total;
+
   return (
     <main>
       <div style={{padding: "72px 48px 64px", borderBottom: `1px solid ${C.rule}`}}>
@@ -244,18 +253,34 @@ export function MintView({
                 type="button"
                 className="btn-filled"
                 onClick={onMint}
-                disabled={!connected || mint.status === "pending" || fee === null}
+                disabled={!connected || mint.status === "pending" || fee === null || insufficient}
                 style={{padding: "11px 30px"}}
               >
-                {mint.status === "pending" ? "Waiting for confirmation" : qty > 1 ? `Mint ${qty}` : "Mint"}
+                {mint.status === "pending"
+                  ? "Waiting for confirmation"
+                  : insufficient
+                    ? "Insufficient balance"
+                    : qty > 1
+                      ? `Mint ${qty}`
+                      : "Mint"}
               </button>
             </div>
-            <p style={{margin: "16px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "62ch"}}>
+            <p
+              style={{
+                margin: "16px 0 0",
+                fontSize: 12,
+                lineHeight: 1.7,
+                color: insufficient || (mint.status === "failed" && mint.error) ? C.ink : C.muted,
+                maxWidth: "62ch",
+              }}
+            >
               {mint.status === "failed" && mint.error
                 ? mint.error
-                : connected && fee !== null
-                  ? `You send ${formatEther((wei + fee) * q)} ETH. The redemption value is ${formatEther(wei * q)} ETH.`
-                  : "Connect a wallet to mint. Browsing needs no wallet."}
+                : insufficient && total !== null && balance !== undefined
+                  ? `Not enough ETH. This ${qty > 1 ? `${qty}× mint` : "mint"} needs ${formatEther(total)} ETH; your balance is ${formatEther(balance.value)} ETH. Choose a lower denomination or quantity.`
+                  : connected && fee !== null
+                    ? `You send ${formatEther((wei + fee) * q)} ETH. The redemption value is ${formatEther(wei * q)} ETH.`
+                    : "Connect a wallet to mint. Browsing needs no wallet."}
             </p>
           </div>
         </div>

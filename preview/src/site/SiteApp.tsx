@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagm
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {short} from "./ui";
+import {short, addrUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {MintView} from "./MintView";
@@ -12,7 +12,7 @@ import {GalleryView} from "./GalleryView";
 import {TokenView} from "./TokenView";
 import {AboutView} from "./AboutView";
 
-type View = "mint" | "gallery" | "token" | "about";
+export type View = "mint" | "gallery" | "token" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -27,15 +27,27 @@ export interface RedeemState {
   snap?: {id: bigint; seed: bigint; di: number; inkGene: number};
 }
 
-export function SiteApp({dep}: {dep: Deployment}) {
+export function SiteApp({
+  dep,
+  initialView,
+  initialTokenId,
+  onNavigate,
+}: {
+  dep: Deployment;
+  /** Starting view, and a callback fired when the view changes, so a host (the Next.js site) can
+   *  drive real URLs. Omitted by the Vite preview, which navigates purely in local state. */
+  initialView?: View;
+  initialTokenId?: bigint | null;
+  onNavigate?: (view: View, tokenId: bigint | null) => void;
+}) {
   const {address, isConnected} = useAccount();
   const {disconnect} = useDisconnect();
   const {openConnectModal} = useConnectModal();
   const publicClient = usePublicClient();
   const {writeContractAsync} = useWriteContract();
 
-  const [view, setView] = React.useState<View>("mint");
-  const [tokenId, setTokenId] = React.useState<bigint | null>(null);
+  const [view, setView] = React.useState<View>(initialView ?? "mint");
+  const [tokenId, setTokenId] = React.useState<bigint | null>(initialTokenId ?? null);
   const [data, setData] = React.useState<SiteData | null>(null);
   const [sel, setSel] = React.useState(4); // 1 ETH
   const [qty, setQty] = React.useState(1);
@@ -44,6 +56,30 @@ export function SiteApp({dep}: {dep: Deployment}) {
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
   const [txErr, setTxErr] = React.useState<{op: string; text: string} | null>(null);
+
+  // URL <-> view sync for the Next.js host. `lastNav` tracks the last applied navigation so a
+  // URL-driven change does not echo back out through `onNavigate`, and an internal navigation does
+  // not get re-applied from a stale prop.
+  const navKey = (v: View, id: bigint | null) => `${v}:${id ?? ""}`;
+  const lastNav = React.useRef(navKey(view, tokenId));
+  React.useEffect(() => {
+    if (initialView === undefined) return;
+    const target = navKey(initialView, initialTokenId ?? null);
+    if (target !== navKey(view, tokenId)) {
+      lastNav.current = target;
+      setView(initialView);
+      setTokenId(initialTokenId ?? null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialView, initialTokenId]);
+  React.useEffect(() => {
+    const cur = navKey(view, tokenId);
+    if (cur !== lastNav.current) {
+      lastNav.current = cur;
+      onNavigate?.(view, tokenId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, tokenId]);
 
   const refresh = React.useCallback(async () => {
     if (!publicClient) return;
@@ -274,7 +310,10 @@ export function SiteApp({dep}: {dep: Deployment}) {
         >
           <span style={{letterSpacing: "0.14em"}}>SHAPES</span>
           <span>Wrapping ETH in a Shape is not an investment and earns nothing.</span>
-          <span style={{marginLeft: "auto"}}>
+          <span style={{marginLeft: "auto", display: "flex", gap: 20}}>
+            <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 11}}>
+              Contract
+            </a>
             <a href="https://github.com/ripe0x/shapes" target="_blank" rel="noreferrer" style={{fontSize: 11}}>
               Source
             </a>

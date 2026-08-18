@@ -93,10 +93,9 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     uint32 private constant GRAMMAR_VERSION = 1;
     bytes32 private constant GRAMMAR_HASH = keccak256("Shapes/canonical-geometry/v1");
 
-    string private constant DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH; "
-        "burning it returns exactly that amount to its owner. Value sets the grammar, the "
-        "seed writes the sentence: higher denominations resolve into fewer, larger modules. "
-        "Artwork and metadata are generated entirely onchain.";
+    string private constant DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
 
     /* ------------------------------------------------------------------ *
      *  Composition
@@ -933,17 +932,6 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
      *  Metadata
      * ------------------------------------------------------------------ */
 
-    function _hex32(bytes32 v) private pure returns (bytes memory out) {
-        bytes memory alphabet = "0123456789abcdef";
-        out = new bytes(66);
-        out[0] = "0";
-        out[1] = "x";
-        for (uint256 i = 0; i < 32; ++i) {
-            out[2 + i * 2] = alphabet[uint8(v[i]) >> 4];
-            out[3 + i * 2] = alphabet[uint8(v[i]) & 0x0f];
-        }
-    }
-
     /// @dev The provenance label derived from `(units, originCount, isBlack)`. `units` is the
     ///      backing's 0.01 count. Black takes precedence; then Complete (an origin per unit, above
     ///      the minimum tier); then Fragment (zero origins — a decompose remainder credited none);
@@ -1015,9 +1003,7 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
                 FixedPoint.toString(card.cols * card.rows),
                 '"',
                 _provenanceTraits(units, originCount, complete, inverted),
-                ',{"trait_type":"Seed","value":"',
-                _hex32(seed),
-                '"}]}'
+                "]}"
             )
         );
     }

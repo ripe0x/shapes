@@ -58,3 +58,6 @@ export const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export const txUrl = (hash: string, chainId: number) =>
   `https://evm.now/tx/${hash}?chainId=${chainId}`;
+
+export const addrUrl = (address: string, chainId: number) =>
+  `https://evm.now/address/${address}?chainId=${chainId}`;

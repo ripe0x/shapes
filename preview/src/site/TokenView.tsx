@@ -2,7 +2,7 @@ import React from "react";
 import {formatEther, type PublicClient} from "viem";
 import {DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
 import {GRIDS} from "../canonical/denominations";
-import {composeShape, fillClass, seedHex} from "../canonical/render";
+import {composeShape, fillClass} from "../canonical/render";
 import {decomposeChildSeed} from "../decomposeSeed";
 import {shapesAbi} from "../chain/abi";
 import {
@@ -79,6 +79,7 @@ export function TokenView({
   const [prov, setProv] = React.useState<ProvNode | null>(null);
   const [unicodeCard, setUnicodeCard] = React.useState<string | null>(null);
   const [unicodeUnavailable, setUnicodeUnavailable] = React.useState(false);
+  const [showRawUnicode, setShowRawUnicode] = React.useState(false);
 
   // Ancestry tree from the event log; shown only when the token has one beyond its own mint.
   React.useEffect(() => {
@@ -253,7 +254,6 @@ export function TokenView({
     {k: "grid", v: `${cols} × ${rows} · ${cols * rows === 1 ? "1 mark" : `${cols * rows} marks`}`},
     {k: "fill", v: fillClass(comp)},
     {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
-    {k: "seed", v: seedHex(token.seed), size: 12, wrap: "anywhere"},
     {k: "backing, exact", v: `${token.backing.toString()} wei`, size: 11},
   ];
 
@@ -383,6 +383,51 @@ export function TokenView({
           </div>
         ) : (
           <div style={{fontSize: 12, color: C.muted}}>Reading token contract…</div>
+        )}
+        {unicodeCard !== null && (
+          <div style={{marginTop: 18}}>
+            <button
+              type="button"
+              onClick={() => setShowRawUnicode((v) => !v)}
+              style={{
+                background: "none",
+                border: `1px solid ${C.border}`,
+                color: C.muted,
+                fontFamily: "inherit",
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                padding: "7px 12px",
+                cursor: "pointer",
+              }}
+            >
+              {showRawUnicode ? "Hide raw string" : "Show raw string"}
+            </button>
+            {showRawUnicode && (
+              <textarea
+                readOnly
+                value={unicodeCard}
+                onFocus={(e) => e.currentTarget.select()}
+                aria-label={`Raw unicodeCard string for Shape #${token.id.toString()}`}
+                style={{
+                  display: "block",
+                  marginTop: 12,
+                  width: "100%",
+                  maxWidth: "60ch",
+                  minHeight: 140,
+                  resize: "vertical",
+                  padding: "12px 14px",
+                  border: `1px solid ${C.border}`,
+                  background: C.row,
+                  color: C.body,
+                  fontFamily: "ui-monospace, Menlo, monospace",
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                  whiteSpace: "pre",
+                }}
+              />
+            )}
+          </div>
         )}
       </Section>
 
