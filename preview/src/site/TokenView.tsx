@@ -79,6 +79,7 @@ export function TokenView({
   const [prov, setProv] = React.useState<ProvNode | null>(null);
   const [unicodeCard, setUnicodeCard] = React.useState<string | null>(null);
   const [unicodeUnavailable, setUnicodeUnavailable] = React.useState(false);
+  const [showRawUnicode, setShowRawUnicode] = React.useState(false);
 
   // Ancestry tree from the event log; shown only when the token has one beyond its own mint.
   React.useEffect(() => {
@@ -383,6 +384,51 @@ export function TokenView({
           </div>
         ) : (
           <div style={{fontSize: 12, color: C.muted}}>Reading token contract…</div>
+        )}
+        {unicodeCard !== null && (
+          <div style={{marginTop: 18}}>
+            <button
+              type="button"
+              onClick={() => setShowRawUnicode((v) => !v)}
+              style={{
+                background: "none",
+                border: `1px solid ${C.border}`,
+                color: C.muted,
+                fontFamily: "inherit",
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                padding: "7px 12px",
+                cursor: "pointer",
+              }}
+            >
+              {showRawUnicode ? "Hide raw string" : "Show raw string"}
+            </button>
+            {showRawUnicode && (
+              <textarea
+                readOnly
+                value={unicodeCard}
+                onFocus={(e) => e.currentTarget.select()}
+                aria-label={`Raw unicodeCard string for Shape #${token.id.toString()}`}
+                style={{
+                  display: "block",
+                  marginTop: 12,
+                  width: "100%",
+                  maxWidth: "60ch",
+                  minHeight: 140,
+                  resize: "vertical",
+                  padding: "12px 14px",
+                  border: `1px solid ${C.border}`,
+                  background: C.row,
+                  color: C.body,
+                  fontFamily: "ui-monospace, Menlo, monospace",
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                  whiteSpace: "pre",
+                }}
+              />
+            )}
+          </div>
         )}
       </Section>
 
