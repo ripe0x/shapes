@@ -1,0 +1,21 @@
+{
+  "name": "shapes-indexer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ponder dev",
+    "start": "ponder start",
+    "codegen": "ponder codegen",
+    "typecheck": "tsc --noEmit",
+    "db": "ponder db"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "ponder": "^0.17.6",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
