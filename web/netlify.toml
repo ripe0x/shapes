@@ -1,0 +1,9 @@
+# Netlify build for the Shapes site. The app lives in web/ but imports the parity-tested canonical
+# renderer from ../preview/src, so the whole repo must be checked out (it is) and the build runs
+# from web/.
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
