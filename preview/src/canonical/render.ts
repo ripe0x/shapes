@@ -679,10 +679,9 @@ export function fillClass(c: Composition): "Solid" | "Outline" | "Mixed" {
  * ------------------------------------------------------------------ */
 
 export const DESCRIPTION =
-  "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH; " +
-  "burning it returns exactly that amount to its owner. Value sets the grammar, the " +
-  "seed writes the sentence: higher denominations resolve into fewer, larger modules. " +
-  "Artwork and metadata are generated entirely onchain.";
+  "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. " +
+  "Burning it returns exactly that amount to its owner. Higher denominations resolve " +
+  "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
 
 function b64(bytes: Uint8Array): string {
   let bin = "";
@@ -769,8 +768,7 @@ export function tokenMetadataJson(
     `{"trait_type":"Independent Origins","value":"${originCount.toString()}"},` +
     `{"trait_type":"Origin Density","value":"${densityPercent(units, originCount)}%"},` +
     `{"trait_type":"Complete","value":"${complete ? "true" : "false"}"},` +
-    `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +
-    `{"trait_type":"Seed","value":"${seedHex(seed)}"}` +
+    `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"}` +
     `]}`
   );
 }

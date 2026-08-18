@@ -2,7 +2,7 @@ import React from "react";
 import {formatEther, type PublicClient} from "viem";
 import {DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
 import {GRIDS} from "../canonical/denominations";
-import {composeShape, fillClass, seedHex} from "../canonical/render";
+import {composeShape, fillClass} from "../canonical/render";
 import {decomposeChildSeed} from "../decomposeSeed";
 import {shapesAbi} from "../chain/abi";
 import {
@@ -254,7 +254,6 @@ export function TokenView({
     {k: "grid", v: `${cols} × ${rows} · ${cols * rows === 1 ? "1 mark" : `${cols * rows} marks`}`},
     {k: "fill", v: fillClass(comp)},
     {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
-    {k: "seed", v: seedHex(token.seed), size: 12, wrap: "anywhere"},
     {k: "backing, exact", v: `${token.backing.toString()} wei`, size: 11},
   ];
 
