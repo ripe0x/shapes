@@ -28,6 +28,24 @@ export interface HistEvent {
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
+// Public RPCs cap eth_getLogs at ~50k blocks, so a scan from block 0 is rejected outright. Walk
+// from the deploy block to head in windows under that cap and concatenate. Enough to reconstruct a
+// single token's lineage; an indexer is the right source once log volume grows.
+const MAX_RANGE = 45_000n;
+
+async function paginate<T>(
+  dep: Deployment,
+  latest: bigint,
+  fetch: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = BigInt(dep.fromBlock ?? 0); from <= latest; from += MAX_RANGE + 1n) {
+    const to = from + MAX_RANGE < latest ? from + MAX_RANGE : latest;
+    out.push(...(await fetch(from, to)));
+  }
+  return out;
+}
+
 /// Reconstruct a single token's on-chain history from the contract's event log. Each Shapes
 /// operation is a distinct event, and recomposition events name every token they touch, so a
 /// token's full lineage — its birth (a mint, or a split of some parent), the merges and splits it
@@ -38,7 +56,8 @@ export async function loadHistory(
   dep: Deployment,
   id: bigint,
 ): Promise<HistEvent[]> {
-  const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
+  const base = {address: dep.shapes, abi: shapesAbi} as const;
+  const latest = await publicClient.getBlockNumber();
   // Events keyed on this token by an indexed arg are fetched targeted (mint, blacken, redeem,
   // and transfers of this id); a token composed from thousands of ancestors would otherwise pull
   // every ShapeMinted log and overflow the RPC response. The recomposition events name touched
@@ -46,13 +65,13 @@ export async function loadHistory(
   // compose/split/restore, far fewer than mints, so that stays cheap.
   const [minted, composed, decomposed, restored, blackened, redeemed, transfers] =
     await Promise.all([
-      publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}}),
-      publicClient.getContractEvents({...base, eventName: "Composed"}),
-      publicClient.getContractEvents({...base, eventName: "Decomposed"}),
-      publicClient.getContractEvents({...base, eventName: "Restored"}),
-      publicClient.getContractEvents({...base, eventName: "Blackened", args: {tokenId: id}}),
-      publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}}),
-      publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}}),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock, toBlock})),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock})),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock})),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Restored", fromBlock, toBlock})),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Blackened", args: {tokenId: id}, fromBlock, toBlock})),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}, fromBlock, toBlock})),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}, fromBlock, toBlock})),
     ]);
 
   const out: HistEvent[] = [];
@@ -169,15 +188,16 @@ export async function loadProvenance(
   dep: Deployment,
   id: bigint,
 ): Promise<ProvNode | null> {
-  const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
+  const base = {address: dep.shapes, abi: shapesAbi} as const;
+  const latest = await publicClient.getBlockNumber();
   // Recomposition events are few (one per compose/split/restore) and give the tree its structure,
   // so they are fetched whole. Mints are the many; an apex Complete has thousands of ancestor
   // mints whose logs overflow the RPC response. So a node's mint is fetched lazily by its indexed
   // tokenId, only for the bounded set of nodes the walk renders, and cached.
   const [composed, decomposed, restored] = await Promise.all([
-    publicClient.getContractEvents({...base, eventName: "Composed"}),
-    publicClient.getContractEvents({...base, eventName: "Decomposed"}),
-    publicClient.getContractEvents({...base, eventName: "Restored"}),
+    paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock})),
+    paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock})),
+    paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Restored", fromBlock, toBlock})),
   ]);
 
   const mintCache = new Map<string, {seed: bigint; di: number} | null>();
@@ -185,11 +205,9 @@ export async function loadProvenance(
     const k = nid.toString();
     const cached = mintCache.get(k);
     if (cached !== undefined) return cached;
-    const logs = await publicClient.getContractEvents({
-      ...base,
-      eventName: "ShapeMinted",
-      args: {tokenId: nid},
-    });
+    const logs = await paginate(dep, latest, (fromBlock, toBlock) =>
+      publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: nid}, fromBlock, toBlock}),
+    );
     const l = logs[0];
     const v = l ? {seed: BigInt(l.args.seed!), di: denomIndexOf(l.args.amountWei!)} : null;
     mintCache.set(k, v);
@@ -314,13 +332,16 @@ export async function findSplitBirth(
   dep: Deployment,
   id: bigint,
 ): Promise<SplitBirth | null> {
-  const events = await publicClient.getContractEvents({
-    address: dep.shapes,
-    abi: shapesAbi,
-    eventName: "Decomposed",
-    fromBlock: 0n,
-    toBlock: "latest",
-  });
+  const latest = await publicClient.getBlockNumber();
+  const events = await paginate(dep, latest, (fromBlock, toBlock) =>
+    publicClient.getContractEvents({
+      address: dep.shapes,
+      abi: shapesAbi,
+      eventName: "Decomposed",
+      fromBlock,
+      toBlock,
+    }),
+  );
   for (let i = events.length - 1; i >= 0; i--) {
     const l = events[i];
     const at = l.args.newIds?.findIndex((x) => x === id) ?? -1;

@@ -3,5 +3,6 @@
   "chainId": 11155111,
   "shapes": "0xAaB0b2E3645C909A6E3869BE23D6aD484624C2E1",
   "renderer": "0xe3D6A82cb22d82e5D71A6Ce9fF2bE0b6B4B90fa6",
-  "feeBps": "100"
+  "feeBps": "100",
+  "fromBlock": 11516979
 }
