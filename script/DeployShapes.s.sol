@@ -4,10 +4,11 @@ pragma solidity 0.8.28;
 import {Script, console} from "forge-std/Script.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 
-/// @notice Deploys the renderer and then the token, wiring the renderer in immutably.
+/// @notice Deploys the renderer, the collection metadata contract, and then the token.
 ///
 /// @dev The mint fee and the fee recipient are deployment parameters, not source constants:
 ///      both are `immutable` on the deployed contract and can never be changed afterwards, so
@@ -33,7 +34,7 @@ contract DeployShapes is Script {
     ///      certainly a mistake. Override deliberately if you really mean it.
     uint256 internal constant MAX_SANE_FEE_BPS = 1000;
 
-    function run() external returns (ShapeRenderer renderer, Shapes shapes) {
+    function run() external returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes) {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));
@@ -64,7 +65,9 @@ contract DeployShapes is Script {
             ? new ShapeRenderer()
             : ShapeRenderer(existingRenderer);
 
-        shapes = new Shapes(feeBps, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+
+        shapes = new Shapes(feeBps, feeRecipient, address(renderer), address(collection));
 
         vm.stopBroadcast();
 
@@ -74,6 +77,8 @@ contract DeployShapes is Script {
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         require(address(renderer).code.length != 0, "renderer has no code");
+        require(shapes.collection() == address(collection), "collection mismatch");
+        require(collection.renderer() == address(renderer), "collection points at another renderer");
 
         // Smoke the renderer through the interface the token will actually use. A renderer
         // that cannot produce metadata would leave every token permanently unrenderable.
@@ -94,14 +99,19 @@ contract DeployShapes is Script {
             "renderer produced no metadata at 100 ETH"
         );
 
+        // Contract-level metadata is what a marketplace reads for the collection itself.
+        require(bytes(shapes.contractURI()).length > 500, "collection produced no metadata");
+
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));
+        console.log("ShapeCollection", address(collection));
         console.log("Shapes        ", address(shapes));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
         console.log("owner         ", shapes.owner());
         console.log("");
-        console.log("Fee terms and the reserve are immutable. The owner's only power is the");
-        console.log("renderer: setRenderer to fix a rendering bug, lockRenderer to freeze it.");
+        console.log("Fee terms and the reserve are immutable. The owner's only power is");
+        console.log("presentation: setRenderer and setCollection to fix a rendering bug,");
+        console.log("lockRenderer to freeze both permanently.");
     }
 }

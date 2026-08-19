@@ -31,6 +31,9 @@ interface IShapes is IERC721 {
     /// @notice Emitted when the owner replaces the onchain renderer.
     event RendererUpdated(address indexed renderer);
 
+    /// @notice Emitted when the owner replaces the collection metadata contract.
+    event CollectionUpdated(address indexed collection);
+
     /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
     event RendererLocked();
 
@@ -110,14 +113,15 @@ interface IShapes is IERC721 {
     error InvalidRecipient(address recipient);
     error MintFeeTransferFailed(address recipient, uint256 amountWei);
     error DirectDepositRejected();
-    /// @dev A Shape held by the Shapes contract itself could never be redeemed, because the
-    ///      contract can never be `msg.sender`. Both minting and transferring to it are
-    ///      refused rather than allowing a token to become permanently unredeemable.
+    /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
+    ///      minting and transferring to `address(this)` are both refused.
     error SelfCustodyRejected(uint256 tokenId);
     /// @dev `setRenderer` and `lockRenderer` revert once the renderer has been locked.
     error RendererIsLocked();
     /// @dev A renderer must explicitly support the stable `IShapeRenderer` capability.
     error UnsupportedRenderer(address renderer);
+    /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
+    error UnsupportedCollection(address collection);
     /// @dev A Black Shape is terminal: it cannot be redeemed, composed, decomposed or split.
     error TokenIsBlack(uint256 tokenId);
     /// @dev `compose` needs at least one token to burn; `split` at least two outputs.
@@ -140,11 +144,8 @@ interface IShapes is IERC721 {
     /// @dev The children's summed backing no longer equals the split input's backing. A child's
     ///      denomination can only have grown, via compose, since the split.
     error RestoreBackingMismatch(uint256 expected, uint256 provided);
-    /// @dev `simulateCompose` only: a burn id repeated in `burnIds`. `compose` itself needs no
-    ///      dedicated check for this — the second occurrence's `_burn` reverts, because the
-    ///      first occurrence already consumed the token — but `simulateCompose` touches no
-    ///      state, so there is nothing for a second occurrence to fail against without an
-    ///      explicit check.
+    /// @dev `previewCompose` only: a burn id repeated in `burnIds`. `compose` reaches the same
+    ///      outcome through `_burn`, which reverts on the second occurrence.
     error DuplicateComposeInput(uint256 tokenId);
 
     /* --------------------------- immutables --------------------------- */
@@ -165,6 +166,10 @@ interface IShapes is IERC721 {
     /// @notice Whether the renderer has been permanently locked.
     function rendererLocked() external view returns (bool);
 
+    /// @notice The collection metadata contract, read only by `contractURI`. Replaceable by the
+    ///         owner via `setCollection` until `lockRenderer` freezes it.
+    function collection() external view returns (address);
+
     /* ----------------------------- renderer ---------------------------- */
 
     /// @notice Replace the onchain renderer. Owner only, and only while unlocked. The renderer
@@ -172,8 +177,13 @@ interface IShapes is IERC721 {
     ///         backing, redeemability or owner. `newRenderer` must carry code.
     function setRenderer(address newRenderer) external;
 
-    /// @notice Permanently lock the renderer. Owner only, one way. After this the renderer can
-    ///         never change again.
+    /// @notice Replace the collection metadata contract. Owner only, and only while unlocked.
+    ///         Read only by `contractURI`; it can never touch ETH, backing or ownership.
+    ///         `newCollection` must carry code and support `IShapeCollection`.
+    function setCollection(address newCollection) external;
+
+    /// @notice Permanently lock presentation. Owner only, one way. After this neither the
+    ///         renderer nor the collection can change again.
     function lockRenderer() external;
 
     /* ---------------------------- minting ----------------------------- */
@@ -307,6 +317,9 @@ interface IShapes is IERC721 {
     /// @notice A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
 
+    /// @notice Collection-level metadata URI, read from the renderer.
+    function contractURI() external view returns (string memory);
+
     /// @notice AutoGlyph-style Unicode rendering of a live Shape's canonical module grid.
     /// @dev Cells are separated by spaces and rows by newlines. This is intended for display;
     ///      integrations that need machine-readable geometry should call `IShapeGeometry` on
@@ -319,21 +332,9 @@ interface IShapes is IERC721 {
     /// @notice Stable numeric formation class; metadata strings are presentation only.
     function formationOf(uint256 tokenId) external view returns (ShapeFormation);
 
-    /// @notice Preview the gene and denomination `compose(survivorId, burnIds)` would produce,
-    ///         without moving state or requiring caller ownership. Mirrors `compose`'s
-    ///         validation (existence, not-Black, no self-burn, no duplicate id, the summed
-    ///         backing lands on a denomination).
-    function simulateCompose(uint256 survivorId, uint256[] calldata burnIds)
-        external
-        view
-        returns (uint8 newGene, uint8 newDenomIndex);
-
-    /// @notice Preview a split's child gene: trivially `inkGeneOf(tokenId)`, since every
-    ///         child of a split inherits the parent's gene verbatim. Included for interface
-    ///         symmetry with `simulateCompose`.
-    function simulateSplit(uint256 tokenId) external view returns (uint8 childGene);
-
-    /// @notice Complete deterministic state that `compose` would produce.
+    /// @notice The state `compose(survivorId, burnIds)` would produce. Requires no caller
+    ///         ownership and moves no state. Applies compose's validation: existence, not-Black,
+    ///         no self-burn, no duplicate id, and a summed backing that lands on a denomination.
     function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
         external
         view

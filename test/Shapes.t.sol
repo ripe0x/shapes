@@ -10,6 +10,7 @@ import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
@@ -34,6 +35,8 @@ abstract contract ShapesBase is Test {
     }
 
     ShapeRenderer internal renderer;
+
+    ShapeCollection internal collection;
     Shapes internal shapes;
 
     address internal feeRecipient = address(0xFEE);
@@ -54,7 +57,8 @@ abstract contract ShapesBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -292,7 +296,7 @@ contract FeeTest is ShapesBase {
     }
 
     function test_ZeroFeeIsSupported() public {
-        Shapes free = new Shapes(0, feeRecipient, address(renderer));
+        Shapes free = new Shapes(0, feeRecipient, address(renderer), address(collection));
         vm.prank(alice);
         uint256 id = free.mint{value: 1 ether}(1 ether, alice);
         assertEq(free.backingOf(id), 1 ether);
@@ -301,7 +305,7 @@ contract FeeTest is ShapesBase {
 
     function test_RevertingFeeRecipientBlocksMintingButNotRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
-        Shapes s = new Shapes(FEE_BPS, address(bad), address(renderer));
+        Shapes s = new Shapes(FEE_BPS, address(bad), address(renderer), address(collection));
 
         vm.prank(alice);
         vm.expectRevert(
@@ -313,7 +317,7 @@ contract FeeTest is ShapesBase {
 
         // With a zero fee there is no transfer at all, so the same recipient is harmless and
         // redemption is provably independent of the fee path.
-        Shapes s0 = new Shapes(0, address(bad), address(renderer));
+        Shapes s0 = new Shapes(0, address(bad), address(renderer), address(collection));
         vm.startPrank(alice);
         uint256 id = s0.mint{value: 1 ether}(1 ether, alice);
         uint256 before = alice.balance;
@@ -324,10 +328,10 @@ contract FeeTest is ShapesBase {
 
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(bytes("fee recipient is zero"));
-        new Shapes(FEE_BPS, address(0), address(renderer));
+        new Shapes(FEE_BPS, address(0), address(renderer), address(collection));
 
         vm.expectRevert(bytes("renderer is zero"));
-        new Shapes(FEE_BPS, feeRecipient, address(0));
+        new Shapes(FEE_BPS, feeRecipient, address(0), address(collection));
     }
 
     function test_ImmutablesAreExposedAndFixed() public view {
@@ -667,7 +671,7 @@ contract ReserveTest is ShapesBase {
 
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
-        Shapes s = new Shapes(FEE_BPS, address(fr), address(renderer));
+        Shapes s = new Shapes(FEE_BPS, address(fr), address(renderer), address(collection));
         fr.configure(IShapes(address(s)), 1 ether);
         vm.deal(address(fr), 10 ether);
 
@@ -1432,9 +1436,8 @@ contract BlackShapeTest is ShapesBase {
         shapes.blacken(id);
     }
 
-    /// @notice A Black Shape cannot be decomposed, so its preview must reject it too. Regression for
-    ///         the audit gap where `simulateSplit` reported success while `split` reverts.
-    function test_SimulateSplitRejectsBlackToMatchSplit() public {
+    /// @notice `split` rejects a Black Shape, and `previewSplit` reports the same rejection.
+    function test_PreviewSplitRejectsBlackToMatchSplit() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
         shapes.blacken(id);
@@ -1446,9 +1449,8 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.split(id, outs);
 
-        // The preview must agree, not report a valid child gene for an impossible operation.
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.simulateSplit(id);
+        shapes.previewSplit(id, outs);
     }
 }
 
@@ -1779,9 +1781,9 @@ contract InkGeneSplitRestoreTest is ShapesBase {
     }
 }
 
-/// @notice `simulateCompose`/`simulateSplit`: pure previews that touch no state and agree
-///         exactly with what the real mutating call would do.
-contract InkGeneSimulateTest is ShapesBase {
+/// @notice `previewCompose` guards that `Composability.t.sol` does not already cover: duplicate
+///         burn ids, and the absence of any state change.
+contract InkGenePreviewTest is ShapesBase {
     function _mintDust(uint256 qty) internal returns (uint256 first) {
         vm.prank(alice);
         first = shapes.mintBatch{value: qty * (0.01 ether + feeOf(0.01 ether))}(
@@ -1789,57 +1791,27 @@ contract InkGeneSimulateTest is ShapesBase {
         );
     }
 
-    function test_SimulateComposeMatchesRealCompose() public {
-        uint256 first = _mintDust(5);
-        uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
-
-        (uint8 simGene, uint8 simDenomIndex) = shapes.simulateCompose(first, burn);
-
-        vm.prank(alice);
-        shapes.compose(first, burn);
-
-        assertEq(shapes.inkGeneOf(first), simGene, "simulateCompose gene diverged from compose");
-        assertEq(uint8(1), simDenomIndex, "simulateCompose denomIndex diverged"); // 0.05 ETH
-    }
-
-    function test_SimulateComposeTouchesNoState() public {
+    function test_PreviewComposeTouchesNoState() public {
         uint256 first = _mintDust(5);
         uint256[] memory burn = new uint256[](4);
         for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
 
         uint256 snapshot = vm.snapshotState();
-        shapes.simulateCompose(first, burn);
-        // Every burn id must still exist and be unchanged: a state-mutating simulate would have
-        // burned them, so this would revert.
+        shapes.previewCompose(first, burn);
         for (uint256 i = 0; i < 4; ++i) {
-            assertEq(shapes.ownerOf(burn[i]), alice);
+            assertEq(shapes.ownerOf(burn[i]), alice, "previewCompose burned an input");
         }
-        assertEq(shapes.totalSupply(), 5, "simulateCompose changed totalSupply");
+        assertEq(shapes.totalSupply(), 5, "previewCompose changed totalSupply");
         vm.revertToState(snapshot);
     }
 
-    function test_SimulateComposeRejectsDuplicateBurnId() public {
+    /// @notice `compose` reaches this through `_burn`; `previewCompose` checks it explicitly.
+    function test_PreviewComposeRejectsDuplicateBurnId() public {
         uint256 first = _mintDust(3);
         uint256[] memory burn = new uint256[](2);
         burn[0] = first + 1;
-        burn[1] = first + 1; // duplicate
+        burn[1] = first + 1;
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
-        shapes.simulateCompose(first, burn);
-    }
-
-    /// @notice `simulateSplit` is trivially `inkGeneOf`: split always copies the gene
-    ///         verbatim to every child, so the preview needs no pool-statistics walk at all.
-    function test_SimulateSplitMatchesRealSplit() public {
-        uint256 id = _mint(alice, 0.05 ether);
-        uint8 preview = shapes.simulateSplit(id);
-        assertEq(preview, shapes.inkGeneOf(id));
-
-        uint8[] memory outs = new uint8[](5);
-        vm.prank(alice);
-        uint256[] memory kids = shapes.split(id, outs);
-        for (uint256 i = 0; i < kids.length; ++i) {
-            assertEq(shapes.inkGeneOf(kids[i]), preview, "simulateSplit diverged from split");
-        }
+        shapes.previewCompose(first, burn);
     }
 }

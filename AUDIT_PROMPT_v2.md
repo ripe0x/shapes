@@ -102,7 +102,7 @@ two are the newest, externally unaudited surface):
    - **Geometry:** `IShapeGeometry` (`cardGeometry`, `moduleAt`) exposes the renderer's
      module-level geometry, version-pinned by `grammarHash`.
 
-There are three value-bearing `CALL`s: redemption payout (`_settle`, after burn),
+There are three value-bearing `CALL`s: redemption payout (`_payRedemption`, after burn),
 the mint-fee forward (fee is 1% of backing, received in the same tx, never counted as
 backing), and the `blacken` sacrifice (fixed 100 ETH to the burn address).
 

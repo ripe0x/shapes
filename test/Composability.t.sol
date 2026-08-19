@@ -4,9 +4,11 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {
@@ -32,6 +34,7 @@ contract ComposableReceiver is IERC721Receiver {
 contract ComposabilityTest is Test {
     Shapes internal shapes;
     ShapeRenderer internal renderer;
+    ShapeCollection internal collection;
     ComposableReceiver internal receiver;
 
     address internal alice = makeAddr("alice");
@@ -40,7 +43,8 @@ contract ComposabilityTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(100, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection));
         receiver = new ComposableReceiver();
         vm.deal(alice, 1_000 ether);
     }
@@ -351,5 +355,87 @@ contract ComposabilityTest is Test {
     function test_ModuleAtRejectsOutOfRangeIndex() public {
         vm.expectRevert(abi.encodeWithSelector(IShapeGeometry.ModuleIndexOutOfRange.selector, 9, 9));
         renderer.moduleAt(bytes32(0), 1 ether, 3, 9);
+    }
+
+    /// @notice `contractURI` is the collection contract's metadata, served unchanged by the token.
+    function test_ContractUriIsTheCollectionsMetadata() public view {
+        string memory uri = shapes.contractURI();
+        assertEq(uri, collection.contractURI(), "token diverged from collection");
+
+        string memory prefix = "data:application/json;base64,";
+        assertEq(_head(uri, bytes(prefix).length), prefix, "not a json data uri");
+
+        string memory json = collection.json();
+        assertTrue(_contains(json, '"name":"Shapes"'), "no collection name");
+        assertTrue(_contains(json, '"description":"'), "no collection description");
+        assertTrue(_contains(json, '"image":"data:image/svg+xml;base64,'), "no inline image");
+    }
+
+    /// @notice The collection image is a filmstrip: one `<g>` per frame, stepped one frame at a time.
+    function test_CollectionImageIsASteppedFilmstrip() public view {
+        string memory svg = collection.image();
+
+        // 9 denominations x 2 variants, 250ms each.
+        assertTrue(_contains(svg, "steps(18)"), "wrong step count");
+        assertTrue(_contains(svg, "animation:r 4500ms"), "wrong cycle duration");
+        assertTrue(_contains(svg, "translateX(-36000px)"), "wrong strip travel");
+        // Every frame is placed at its own multiple of the frame width, first and last included.
+        assertTrue(_contains(svg, '<g transform="translate(0,0)">'), "no first frame");
+        assertTrue(_contains(svg, '<g transform="translate(34000,0)">'), "no last frame");
+
+        // Square white canvas, the card inset with rounded corners, an even shadow behind it.
+        assertTrue(_contains(svg, 'viewBox="0 0 3840 3840"'), "canvas is not square");
+        assertTrue(_contains(svg, '<rect width="3840" height="3840" fill="#fff"/>'), "no white ground");
+        assertTrue(
+            _contains(svg, '<rect x="920" y="520" width="2000" height="2800" rx="40" fill="#000"'),
+            "card is not inset and rounded"
+        );
+        assertTrue(_contains(svg, 'dx="0" dy="0"'), "shadow is offset, not even");
+        assertTrue(_contains(svg, "clip-path=\"url(#c)\""), "strip is not clipped to the card");
+    }
+
+    function test_ContractUriFollowsTheCollection() public {
+        ShapeCollection next = new ShapeCollection(address(renderer));
+        shapes.setCollection(address(next));
+        assertEq(shapes.contractURI(), next.contractURI(), "did not follow the new collection");
+    }
+
+    function test_PresentationLockFreezesTheCollectionToo() public {
+        shapes.lockRenderer();
+        ShapeCollection next = new ShapeCollection(address(renderer));
+        vm.expectRevert(IShapes.RendererIsLocked.selector);
+        shapes.setCollection(address(next));
+    }
+
+    /// @notice EIP-2981 is answered, at zero, rather than left to a marketplace default.
+    function test_RoyaltyIsDeclaredAndZero() public view {
+        assertTrue(shapes.supportsInterface(type(IERC2981).interfaceId), "2981 not advertised");
+        (address royaltyTo, uint256 amount) = shapes.royaltyInfo(1, 100 ether);
+        assertEq(royaltyTo, address(0));
+        assertEq(amount, 0);
+    }
+
+    function _head(string memory s, uint256 n) private pure returns (string memory) {
+        bytes memory b = bytes(s);
+        bytes memory out = new bytes(n);
+        for (uint256 i = 0; i < n; ++i) out[i] = b[i];
+        return string(out);
+    }
+
+    function _contains(string memory haystack, string memory needle) private pure returns (bool) {
+        bytes memory h = bytes(haystack);
+        bytes memory n = bytes(needle);
+        if (n.length == 0 || n.length > h.length) return false;
+        for (uint256 i = 0; i <= h.length - n.length; ++i) {
+            bool hit = true;
+            for (uint256 j = 0; j < n.length; ++j) {
+                if (h[i + j] != n[j]) {
+                    hit = false;
+                    break;
+                }
+            }
+            if (hit) return true;
+        }
+        return false;
     }
 }
