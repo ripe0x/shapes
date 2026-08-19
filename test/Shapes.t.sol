@@ -13,6 +13,7 @@ import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {InkGenes} from "../src/lib/InkGenes.sol";
 
@@ -23,7 +24,8 @@ import {
     ReentrantFeeRecipient,
     ReentrantMinter,
     ReentrantRedeemer,
-    RevertingFeeRecipient
+    RevertingFeeRecipient,
+    MockPositionResolver
 } from "./mocks/Mocks.sol";
 
 abstract contract ShapesBase is Test {
@@ -44,15 +46,7 @@ abstract contract ShapesBase is Test {
     address internal bob = address(0xB0B);
 
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether),
-        0.05 ether,
-        0.1 ether,
-        0.5 ether,
-        1 ether,
-        5 ether,
-        10 ether,
-        50 ether,
-        100 ether
+        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
     function setUp() public virtual {
@@ -114,13 +108,10 @@ contract MintTest is ShapesBase {
     }
 
     function test_RevertsOnUnsupportedDenomination() public {
-        uint256[6] memory bad =
-            [uint256(1), 0.011 ether, 25 ether, 2 ether, 99 ether, 101 ether];
+        uint256[6] memory bad = [uint256(1), 0.011 ether, 25 ether, 2 ether, 99 ether, 101 ether];
         for (uint256 i = 0; i < bad.length; ++i) {
             vm.prank(alice);
-            vm.expectRevert(
-                abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, bad[i])
-            );
+            vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, bad[i]));
             shapes.mint{value: bad[i] + feeOf(bad[i])}(bad[i], alice);
         }
     }
@@ -141,9 +132,7 @@ contract MintTest is ShapesBase {
             shapes.mint{value: amount + feeOf(amount)}(amount, alice);
             assertEq(shapes.redeemableBacking(), amount);
         } else {
-            vm.expectRevert(
-                abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, amount)
-            );
+            vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedDenomination.selector, amount));
             shapes.mint{value: amount + feeOf(amount)}(amount, alice);
             assertEq(shapes.redeemableBacking(), 0);
         }
@@ -184,9 +173,7 @@ contract MintTest is ShapesBase {
 
         vm.deal(alice, sent);
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.IncorrectPayment.selector, required, sent)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapes.IncorrectPayment.selector, required, sent));
         shapes.mint{value: sent}(1 ether, alice);
     }
 
@@ -195,9 +182,7 @@ contract MintTest is ShapesBase {
         uint256 required = qty * (1 ether + feeOf(1 ether));
 
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.IncorrectPayment.selector, required, required - 1)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapes.IncorrectPayment.selector, required, required - 1));
         shapes.mintBatch{value: required - 1}(1 ether, qty, alice);
 
         vm.prank(alice);
@@ -214,8 +199,7 @@ contract MintTest is ShapesBase {
     function test_BatchGivesUniqueIdsAndSeeds() public {
         uint256 qty = 25;
         vm.prank(alice);
-        uint256 first =
-            shapes.mintBatch{value: qty * (0.1 ether + feeOf(0.1 ether))}(0.1 ether, qty, alice);
+        uint256 first = shapes.mintBatch{value: qty * (0.1 ether + feeOf(0.1 ether))}(0.1 ether, qty, alice);
 
         bytes32[] memory seen = new bytes32[](qty);
         for (uint256 i = 0; i < qty; ++i) {
@@ -247,18 +231,14 @@ contract MintTest is ShapesBase {
     function test_MintToNonReceiverReverts() public {
         BadReceiver r = new BadReceiver();
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(r))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(r)));
         shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
         assertEq(shapes.redeemableBacking(), 0, "failed mint leaves no accounting behind");
     }
 
     function test_MintToZeroAddressReverts() public {
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721InvalidReceiver.selector, address(0)));
         shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(0));
     }
 }
@@ -277,9 +257,7 @@ contract FeeTest is ShapesBase {
 
         _mint(alice, 0.01 ether);
         assertEq(
-            feeRecipient.balance,
-            feeOf(100 ether) + feeOf(0.01 ether),
-            "fee is 1% of each backing, not flat"
+            feeRecipient.balance, feeOf(100 ether) + feeOf(0.01 ether), "fee is 1% of each backing, not flat"
         );
         assertEq(shapes.redeemableBacking(), 100.01 ether);
         assertEq(address(shapes).balance, 100.01 ether);
@@ -311,9 +289,7 @@ contract FeeTest is ShapesBase {
 
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                IShapes.MintFeeTransferFailed.selector, address(bad), feeOf(1 ether)
-            )
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(bad), feeOf(1 ether))
         );
         s.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
 
@@ -439,8 +415,7 @@ contract RedeemTest is ShapesBase {
     function test_RedeemBatchAccounting() public {
         uint256[] memory ids = new uint256[](4);
         uint256 total;
-        uint256[4] memory amounts =
-            [uint256(0.01 ether), 0.5 ether, 5 ether, 50 ether];
+        uint256[4] memory amounts = [uint256(0.01 ether), 0.5 ether, 5 ether, 50 ether];
         for (uint256 i = 0; i < 4; ++i) {
             ids[i] = _mint(alice, amounts[i]);
             total += amounts[i];
@@ -500,9 +475,7 @@ contract RedeemTest is ShapesBase {
         vm.prank(alice);
         uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(r));
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(r), 1 ether)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(r), 1 ether));
         r.redeem(shapes, id);
 
         assertEq(shapes.ownerOf(id), address(r), "token survives a failed payout");
@@ -718,9 +691,7 @@ contract ViewTest is ShapesBase {
     }
 
     function test_GridForUnsupportedAmountReverts() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, 2 ether)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, 2 ether));
         shapes.gridForAmount(2 ether);
     }
 
@@ -746,6 +717,368 @@ contract ViewTest is ShapesBase {
     function test_BackingOfNonexistentReverts() public {
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
         shapes.backingOf(1);
+    }
+}
+
+/* ==================================================================== *
+ *  Value discovery and draft ERC-8060
+ * ==================================================================== */
+
+contract ValueDiscoveryTest is ShapesBase {
+    function _expectBothNonexistent(uint256 tokenId) private {
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId));
+        shapes.backingOf(tokenId);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId));
+        shapes.valueOf(tokenId);
+    }
+
+    function test_ValueOfMatchesEveryDirectDenomination() public {
+        for (uint256 i = 0; i < DENOMS.length; ++i) {
+            uint256 id = _mint(alice, DENOMS[i]);
+            assertEq(shapes.valueOf(id), DENOMS[i]);
+            assertEq(shapes.valueOf(id), shapes.backingOf(id));
+        }
+    }
+
+    function test_ValueOfTracksComposeAndConsumedInputs() public {
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 5, alice);
+        uint256[] memory burnIds = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burnIds[i] = first + 1 + i;
+        }
+
+        vm.prank(alice);
+        shapes.compose(first, burnIds);
+
+        assertEq(shapes.valueOf(first), 0.05 ether);
+        assertEq(shapes.valueOf(first), shapes.backingOf(first));
+        for (uint256 i = 0; i < burnIds.length; ++i) {
+            _expectBothNonexistent(burnIds[i]);
+        }
+    }
+
+    function test_ValueOfTracksSplit() public {
+        uint256 parent = _mint(alice, 1 ether);
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 3;
+        outs[1] = 3;
+
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+        _expectBothNonexistent(parent);
+        assertEq(shapes.valueOf(kids[0]), 0.5 ether);
+        assertEq(shapes.valueOf(kids[1]), 0.5 ether);
+    }
+
+    function test_ValueOfRedeemedTokenMatchesBackingRevert() public {
+        uint256 id = _mint(alice, 5 ether);
+        vm.prank(alice);
+        shapes.redeem(id);
+        _expectBothNonexistent(id);
+    }
+
+    function test_ValueOfChangesNoStateOrEthAccounting() public {
+        uint256 id = _mint(alice, 10 ether);
+        uint256 balanceBefore = address(shapes).balance;
+        uint256 backingBefore = shapes.redeemableBacking();
+        uint256 supplyBefore = shapes.totalSupply();
+        uint256 mintedBefore = shapes.totalMinted();
+        address ownerBefore = shapes.ownerOf(id);
+        bytes32 seedBefore = shapes.seedOf(id);
+        uint256 originsBefore = shapes.originCountOf(id);
+        uint8 geneBefore = shapes.inkGeneOf(id);
+
+        assertEq(shapes.valueOf(id), 10 ether);
+
+        assertEq(address(shapes).balance, balanceBefore);
+        assertEq(shapes.redeemableBacking(), backingBefore);
+        assertEq(shapes.totalSupply(), supplyBefore);
+        assertEq(shapes.totalMinted(), mintedBefore);
+        assertEq(shapes.ownerOf(id), ownerBefore);
+        assertEq(shapes.seedOf(id), seedBefore);
+        assertEq(shapes.originCountOf(id), originsBefore);
+        assertEq(shapes.inkGeneOf(id), geneBefore);
+    }
+
+    function test_DraftErc8060InterfaceAndBurn() public {
+        assertEq(type(IERC721Value).interfaceId, bytes4(0x88495fe7));
+        assertTrue(shapes.supportsInterface(type(IERC721Value).interfaceId));
+
+        uint256 id = _mint(alice, 5 ether);
+        uint256 before = alice.balance;
+        vm.expectEmit(true, true, true, true, address(shapes));
+        emit IERC721.Transfer(alice, address(0), id);
+        vm.prank(alice);
+        shapes.burn(id);
+
+        assertEq(alice.balance - before, 5 ether);
+        assertEq(shapes.redeemableBacking(), 0);
+        assertEq(shapes.totalSupply(), 0);
+        _expectBothNonexistent(id);
+    }
+
+    function test_BurnIsOwnerOnlyEvenWhenOperatorIsApproved() public {
+        uint256 id = _mint(alice, 1 ether);
+        vm.prank(alice);
+        shapes.approve(bob, id);
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
+        shapes.burn(id);
+
+        vm.prank(alice);
+        shapes.burn(id);
+        _assertSolvent();
+    }
+
+    function test_BurnNonexistentAndDoubleBurnRevert() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 77));
+        shapes.burn(77);
+
+        uint256 id = _mint(alice, 0.01 ether);
+        vm.prank(alice);
+        shapes.burn(id);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        shapes.burn(id);
+    }
+
+    function test_TerminalIdsStayRetiredWhileDecomposeRevivesComposeInputs() public {
+        uint256 redeemed = _mint(alice, 0.01 ether);
+        assertEq(redeemed, 0);
+        vm.prank(alice);
+        shapes.redeem(redeemed);
+
+        uint256 parent = _mint(alice, 0.05 ether);
+        assertEq(parent, 1);
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+        assertEq(kids[0], 2);
+        assertEq(kids[4], 6);
+
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 5, alice);
+        assertEq(first, 7);
+        uint256[] memory burnIds = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burnIds[i] = first + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, burnIds);
+
+        // Reversible compose is the one deliberate exception: decompose revives the exact
+        // consumed identities without issuing new ids or moving the high-water counter.
+        vm.prank(alice);
+        uint256[] memory revived = shapes.decompose(first);
+        for (uint256 i = 0; i < revived.length; ++i) {
+            assertEq(revived[i], burnIds[i]);
+        }
+        assertEq(shapes.totalMinted(), 12);
+
+        uint256 next = _mint(alice, 0.01 ether);
+        assertEq(next, 12, "redeem and split never recycle a retired id");
+        assertEq(shapes.totalMinted(), 13);
+    }
+}
+
+/* ==================================================================== *
+ *  Optional position resolver
+ * ==================================================================== */
+
+contract PositionResolverTest is ShapesBase {
+    function test_ResolverStartsEmptyAndQueriesReturnZeroForAnyId() public view {
+        assertEq(shapes.positionResolver(), address(0));
+        assertFalse(shapes.positionResolverLocked());
+        assertEq(shapes.positionOf(1), address(0));
+        assertEq(shapes.positionOf(type(uint256).max), address(0));
+    }
+
+    function test_OwnerSetsExactResolverResultsAndEvent() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        resolver.setPosition(1, alice);
+        resolver.setPosition(99, address(renderer));
+
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.PositionResolverSet(address(resolver));
+        shapes.setPositionResolver(address(resolver));
+
+        assertEq(shapes.positionResolver(), address(resolver));
+        assertEq(shapes.positionOf(1), alice);
+        assertEq(shapes.positionOf(2), address(0));
+        assertEq(shapes.positionOf(99), address(renderer));
+    }
+
+    function test_ResolverCanBeReplacedAndClearedUntilLocked() public {
+        MockPositionResolver first = new MockPositionResolver();
+        MockPositionResolver second = new MockPositionResolver();
+        first.setPosition(1, alice);
+        second.setPosition(1, bob);
+
+        shapes.setPositionResolver(address(first));
+        assertEq(shapes.positionOf(1), alice);
+        shapes.setPositionResolver(address(second));
+        assertEq(shapes.positionOf(1), bob);
+        shapes.setPositionResolver(address(0));
+        assertEq(shapes.positionResolver(), address(0));
+        assertEq(shapes.positionOf(1), address(0));
+    }
+
+    function test_ResolverRejectsCodelessNonzeroAddress() public {
+        vm.expectRevert(IShapes.InvalidPositionResolver.selector);
+        shapes.setPositionResolver(alice);
+    }
+
+    function test_ResolverAdminIsOwnerOnly() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        shapes.setPositionResolver(address(resolver));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        shapes.lockPositionResolver();
+    }
+
+    function test_OwnerMayPermanentlyLockZero() public {
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.PositionResolverLocked(address(0));
+        shapes.lockPositionResolver();
+        assertTrue(shapes.positionResolverLocked());
+        assertEq(shapes.positionOf(123), address(0));
+
+        MockPositionResolver resolver = new MockPositionResolver();
+        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
+        shapes.setPositionResolver(address(resolver));
+        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
+        shapes.lockPositionResolver();
+    }
+
+    function test_ConfiguredResolverBecomesPermanentWhenLocked() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        shapes.setPositionResolver(address(resolver));
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.PositionResolverLocked(address(resolver));
+        shapes.lockPositionResolver();
+
+        MockPositionResolver replacement = new MockPositionResolver();
+        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
+        shapes.setPositionResolver(address(replacement));
+        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
+        shapes.setPositionResolver(address(0));
+        assertEq(shapes.positionResolver(), address(resolver));
+    }
+
+    function test_RendererAndResolverLocksAreIndependent() public {
+        shapes.lockRenderer();
+        MockPositionResolver resolver = new MockPositionResolver();
+        shapes.setPositionResolver(address(resolver));
+        shapes.lockPositionResolver();
+        assertTrue(shapes.rendererLocked());
+        assertTrue(shapes.positionResolverLocked());
+    }
+
+    function test_OwnershipTransferMovesAllRemainingAdminAuthority() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        shapes.transferOwnership(alice);
+        assertEq(shapes.owner(), alice);
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        shapes.setPositionResolver(address(resolver));
+
+        vm.startPrank(alice);
+        shapes.setRenderer(address(new ShapeRenderer()));
+        shapes.setPositionResolver(address(resolver));
+        shapes.lockPositionResolver();
+        shapes.transferOwnership(bob);
+        vm.stopPrank();
+
+        assertEq(shapes.owner(), bob);
+        assertEq(shapes.positionResolver(), address(resolver));
+        assertTrue(shapes.positionResolverLocked());
+    }
+
+    function test_RenouncingBeforeInstallLeavesResolverUnset() public {
+        shapes.renounceOwnership();
+        assertEq(shapes.owner(), address(0));
+        MockPositionResolver resolver = new MockPositionResolver();
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        shapes.setPositionResolver(address(resolver));
+        assertEq(shapes.positionResolver(), address(0));
+    }
+
+    function test_RenouncingAfterInstallLeavesResolverUsableAndUnchanged() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        resolver.setPosition(7, alice);
+        shapes.setPositionResolver(address(resolver));
+        shapes.renounceOwnership();
+        assertEq(shapes.positionResolver(), address(resolver));
+        assertEq(shapes.positionOf(7), alice);
+    }
+
+    function test_ResolverFailurePropagatesForExistingAndNonexistentIds() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        resolver.setShouldRevert(true);
+        shapes.setPositionResolver(address(resolver));
+        uint256 id = _mint(alice, 1 ether);
+
+        vm.expectRevert(abi.encodeWithSelector(MockPositionResolver.ResolverQueryFailed.selector, id));
+        shapes.positionOf(id);
+        vm.expectRevert(abi.encodeWithSelector(MockPositionResolver.ResolverQueryFailed.selector, 999));
+        shapes.positionOf(999);
+    }
+
+    function test_SettingAndQueryingResolverCannotChangeTokenOrReserveState() public {
+        uint256 id = _mint(alice, 5 ether);
+        uint256 balanceBefore = address(shapes).balance;
+        uint256 backingBefore = shapes.redeemableBacking();
+        uint256 supplyBefore = shapes.totalSupply();
+        address ownerBefore = shapes.ownerOf(id);
+        bytes32 seedBefore = shapes.seedOf(id);
+        string memory uriBefore = shapes.tokenURI(id);
+        MockPositionResolver resolver = new MockPositionResolver();
+        resolver.setPosition(id, bob);
+
+        shapes.setPositionResolver(address(resolver));
+        assertEq(shapes.positionOf(id), bob);
+
+        assertEq(address(shapes).balance, balanceBefore);
+        assertEq(shapes.redeemableBacking(), backingBefore);
+        assertEq(shapes.totalSupply(), supplyBefore);
+        assertEq(shapes.ownerOf(id), ownerBefore);
+        assertEq(shapes.seedOf(id), seedBefore);
+        assertEq(shapes.tokenURI(id), uriBefore);
+    }
+
+    function test_RevertingResolverCannotAffectCoreLifecycle() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        resolver.setShouldRevert(true);
+        shapes.setPositionResolver(address(resolver));
+
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 5, alice);
+        assertGt(bytes(shapes.tokenURI(first)).length, 0);
+        vm.prank(alice);
+        shapes.transferFrom(alice, bob, first + 4);
+        vm.prank(bob);
+        shapes.transferFrom(bob, alice, first + 4);
+
+        uint256[] memory burnIds = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burnIds[i] = first + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, burnIds);
+
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(first, outs);
+        vm.prank(alice);
+        shapes.redeemBatch(kids);
+
+        assertEq(shapes.redeemableBacking(), 0);
+        assertEq(shapes.totalSupply(), 0);
+        _assertSolvent();
     }
 }
 
@@ -868,7 +1201,9 @@ contract RecompositionTest is ShapesBase {
     function _buildComplete005() internal returns (uint256 survivor) {
         uint256 first = _mintMany(0.01 ether, 5);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; i++) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         survivor = shapes.compose(first, burn);
     }
@@ -876,7 +1211,9 @@ contract RecompositionTest is ShapesBase {
     function test_ComposeCombinesBackingAndOrigins() public {
         uint256 first = _mintMany(0.01 ether, 5);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; i++) {
+            burn[i] = first + 1 + i;
+        }
 
         vm.prank(alice);
         uint256 outId = shapes.compose(first, burn);
@@ -896,7 +1233,9 @@ contract RecompositionTest is ShapesBase {
         uint256 first = _mintMany(0.01 ether, 5);
         bytes32 seed = shapes.seedOf(first);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; i++) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         shapes.compose(first, burn);
         assertEq(shapes.seedOf(first), seed, "seed unchanged through compose");
@@ -993,9 +1332,7 @@ contract RecompositionTest is ShapesBase {
         outs[0] = 0;
         outs[1] = 0; // 0.02 != 0.1
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.SplitMismatch.selector, 0.1 ether, 0.02 ether)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitMismatch.selector, 0.1 ether, 0.02 ether));
         shapes.split(id, outs);
     }
 
@@ -1015,7 +1352,9 @@ contract RecompositionTest is ShapesBase {
         uint256[] memory kids = shapes.split(id, outs);
 
         uint256[] memory burn = new uint256[](9);
-        for (uint256 i = 0; i < 9; i++) burn[i] = kids[i + 1];
+        for (uint256 i = 0; i < 9; i++) {
+            burn[i] = kids[i + 1];
+        }
         vm.prank(alice);
         uint256 outId = shapes.compose(kids[0], burn);
 
@@ -1049,7 +1388,9 @@ contract RecompositionTest is ShapesBase {
         uint256 first = _mintMany(0.01 ether, 5);
         uint256 afterMint = feeRecipient.balance;
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; i++) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         shapes.compose(first, burn);
         assertEq(feeRecipient.balance, afterMint, "compose charged no fee");
@@ -1102,21 +1443,23 @@ contract RecompositionTest is ShapesBase {
 }
 
 /* ==================================================================== *
- *  Black Shape (terminal sacrifice)
+ *  Black Shape sacrifice and zero-value burn
  * ==================================================================== */
 
 contract BlackShapeTest is ShapesBase {
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     /// @dev A genuine apex Complete: 10,000 direct 0.01 mints composed into one 100 ETH token
-    ///      carrying 10,000 origins. The only blackenable state; nothing cheaper reaches it,
+    ///      carrying 10,000 origins. The only sacrificable state; nothing cheaper reaches it,
     ///      because origins are conserved and only a direct mint creates one.
     function _buildApexComplete() internal returns (uint256 id) {
         vm.prank(alice);
         uint256 first =
             shapes.mintBatch{value: 10_000 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 10_000, alice);
         uint256[] memory burn = new uint256[](9_999);
-        for (uint256 i = 0; i < 9_999; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 9_999; i++) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         id = shapes.compose(first, burn);
         assertEq(shapes.backingOf(id), 100 ether, "apex backing");
@@ -1129,12 +1472,17 @@ contract BlackShapeTest is ShapesBase {
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 5, alice);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; i++) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         survivor = shapes.compose(first, burn);
     }
 
-    function test_BlackenSacrificesAndInverts() public {
+    function test_SacrificeCreatesBlackWithoutBurningAndIgnoresResolver() public {
+        MockPositionResolver resolver = new MockPositionResolver();
+        resolver.setShouldRevert(true);
+        shapes.setPositionResolver(address(resolver));
         uint256 id = _buildApexComplete();
         uint256 deadBefore = DEAD.balance;
         uint256 balBefore = address(shapes).balance;
@@ -1143,7 +1491,7 @@ contract BlackShapeTest is ShapesBase {
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.Blackened(id, 100 ether);
         vm.prank(alice);
-        shapes.blacken(id);
+        shapes.sacrifice(id);
 
         assertTrue(shapes.isBlack(id), "now Black");
         assertEq(shapes.blackCount(), 1);
@@ -1152,6 +1500,7 @@ contract BlackShapeTest is ShapesBase {
         assertEq(DEAD.balance, deadBefore + 100 ether, "sacrificed to the burn address");
         assertEq(address(shapes).balance, balBefore - 100 ether, "contract paid it out");
         assertEq(shapes.backingOf(id), 0, "black backing reads zero");
+        assertEq(shapes.valueOf(id), 0, "black draft ERC-8060 value reads zero");
         assertEq(shapes.ownerOf(id), alice, "still owned");
         _assertSolvent();
 
@@ -1161,10 +1510,10 @@ contract BlackShapeTest is ShapesBase {
         assertEq(shapes.ownerOf(id), bob);
     }
 
-    function test_BlackIsTerminal() public {
+    function test_BlackRejectsRedeemAndRecompositionButCanBurnForZero() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
-        shapes.blacken(id);
+        shapes.sacrifice(id);
 
         // Non-redeemable.
         vm.prank(alice);
@@ -1185,39 +1534,55 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.split(id, outs);
 
-        // One way: cannot blacken twice.
+        // One way: cannot sacrifice twice.
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.blacken(id);
+        shapes.sacrifice(id);
+
+        uint256 balanceBefore = alice.balance;
+        uint256 mintedBefore = shapes.totalMinted();
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.ShapeRedeemed(id, alice, 0, 10_000);
+        vm.prank(alice);
+        shapes.burn(id);
+
+        assertEq(alice.balance, balanceBefore, "zero-value burn transfers no ETH");
+        assertEq(shapes.sacrificedBacking(), 100 ether, "historical sacrifice remains counted");
+        assertEq(shapes.blackCount(), 1, "blackCount is cumulative");
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
+        shapes.ownerOf(id);
+
+        uint256 next = _mint(alice, 0.01 ether);
+        assertEq(next, mintedBefore, "burned Black id is never reused");
     }
 
-    function test_BlackenRejectsDirectApex() public {
+    function test_SacrificeRejectsDirectApex() public {
         uint256 id = _mint(alice, 100 ether); // 100 ETH, originCount 1, not Complete
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
-        shapes.blacken(id);
+        shapes.sacrifice(id);
     }
 
-    function test_BlackenRejectsCompleteBelowApex() public {
+    function test_SacrificeRejectsCompleteBelowApex() public {
         uint256 id = _buildComplete005();
         assertTrue(shapes.isComplete(id));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
-        shapes.blacken(id);
+        shapes.sacrifice(id);
     }
 
-    function test_BlackenRejectsNonOwner() public {
+    function test_SacrificeRejectsNonOwner() public {
         uint256 id = _mint(alice, 1 ether);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
-        shapes.blacken(id);
+        shapes.sacrifice(id);
     }
 
     /// @notice `split` rejects a Black Shape, and `previewSplit` reports the same rejection.
     function test_PreviewSplitRejectsBlackToMatchSplit() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
-        shapes.blacken(id);
+        shapes.sacrifice(id);
 
         uint8[] memory outs = new uint8[](2);
         outs[0] = 7; // 50 ETH
@@ -1313,9 +1678,7 @@ contract InkGeneComposeTest is ShapesBase {
     /// @dev Mint `qty` dust (0.01 ETH) tokens to alice; ids are `first .. first+qty-1`.
     function _mintDust(uint256 qty) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: qty * (0.01 ether + feeOf(0.01 ether))}(
-            0.01 ether, qty, alice
-        );
+        first = shapes.mintBatch{value: qty * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, qty, alice);
     }
 
     /// @notice The same five tokens (one survivor, four burns), composed in three different
@@ -1331,7 +1694,9 @@ contract InkGeneComposeTest is ShapesBase {
         uint256 snapshot = vm.snapshotState();
 
         uint256[] memory forward = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) forward[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            forward[i] = first + 1 + i;
+        }
         vm.prank(alice);
         shapes.compose(survivor, forward);
         uint8 geneForward = shapes.inkGeneOf(survivor);
@@ -1339,7 +1704,9 @@ contract InkGeneComposeTest is ShapesBase {
         vm.revertToState(snapshot);
 
         uint256[] memory reversed = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) reversed[i] = first + 1 + (3 - i);
+        for (uint256 i = 0; i < 4; ++i) {
+            reversed[i] = first + 1 + (3 - i);
+        }
         vm.prank(alice);
         shapes.compose(survivor, reversed);
         uint8 geneReversed = shapes.inkGeneOf(survivor);
@@ -1375,7 +1742,9 @@ contract InkGeneComposeTest is ShapesBase {
         }
 
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) burn[i] = kids[1 + i];
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = kids[1 + i];
+        }
         vm.prank(alice);
         shapes.compose(kids[0], burn); // 5 x 0.01 -> 0.05: T = 1 - 0 = 1 tier
 
@@ -1398,7 +1767,9 @@ contract InkGeneComposeTest is ShapesBase {
         assertEq(shapes.inkGeneOf(kids[0]), parentGene, "split did not copy the gene verbatim");
 
         uint256[] memory burn = new uint256[](9_999);
-        for (uint256 i = 0; i < 9_999; ++i) burn[i] = kids[1 + i];
+        for (uint256 i = 0; i < 9_999; ++i) {
+            burn[i] = kids[1 + i];
+        }
 
         vm.prank(alice);
         shapes.compose(kids[0], burn); // 10,000 x 0.01 -> 100 ETH: T = 8 - 0 = 8 tiers
@@ -1425,7 +1796,9 @@ contract InkGeneComposeTest is ShapesBase {
     function test_ComposeMegaGasProfile_10000Dust() public {
         uint256 first = _mintDust(10_000);
         uint256[] memory burn = new uint256[](9_999);
-        for (uint256 i = 0; i < 9_999; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 9_999; ++i) {
+            burn[i] = first + 1 + i;
+        }
 
         vm.prank(alice);
         uint256 g0 = gasleft();
@@ -1484,6 +1857,7 @@ contract InkGeneSplitTest is ShapesBase {
 
 
 
+
 }
 
 /// @notice `previewCompose` guards that `Composability.t.sol` does not already cover: duplicate
@@ -1491,15 +1865,15 @@ contract InkGeneSplitTest is ShapesBase {
 contract InkGenePreviewTest is ShapesBase {
     function _mintDust(uint256 qty) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: qty * (0.01 ether + feeOf(0.01 ether))}(
-            0.01 ether, qty, alice
-        );
+        first = shapes.mintBatch{value: qty * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, qty, alice);
     }
 
     function test_PreviewComposeTouchesNoState() public {
         uint256 first = _mintDust(5);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
 
         uint256 snapshot = vm.snapshotState();
         shapes.previewCompose(first, burn);

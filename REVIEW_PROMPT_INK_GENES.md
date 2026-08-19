@@ -7,9 +7,10 @@ eyes: nothing below is trusted until you verify it yourself.
 
 You are reviewing the Shapes repo (`~/CascadeProjects/shapes`), an ERC721 that wraps exact
 ETH denominations (0.01–100, nine steps) with fully on-chain generative art. Core protocol:
-`mint`/`redeem` (ETH in/out), `compose`/`decompose`/`restore` (reshape without moving ETH),
-`blacken` (sacrifice a complete 100-ETH apex). No admin power except a replaceable-then-
-lockable renderer. Read `SPEC.md` and `SECURITY.md` first — they carry the project's
+`mint`/`redeem` (ETH in/out), `compose`/`decompose`/`split` (reshape without moving ETH),
+`sacrifice` (turn a complete 100-ETH apex Black without burning its NFT). Economic admin is
+absent; the transferable owner controls independently lockable renderer and position-resolver
+pointers. Read `SPEC.md` and `SECURITY.md` first — they carry the project's
 decision records (D1–D17) and threat model.
 
 ## What just happened (verify, don't trust)
@@ -27,7 +28,7 @@ mint from its seed — dust (0.01) rolls the full lottery with 3% extremes, larg
 mints roll only Sparse/Murk/Dense — and thereafter the gene changes only in `compose`,
 which walks one deterministic roll per denomination tier crossed (70% toward the
 units-weighted center of the pool, 20% toward the best gene present, 10% toward the worst),
-keyed by `keccak(survivorSeed, XOR(burnSeeds), newIndex)`. Decompose/restore copy the gene
+keyed by `keccak(survivorSeed, XOR(burnSeeds), newIndex)`. Split copies the gene and decompose restores it
 verbatim. The renderer consumes-and-discards the old card-level fill draw (stream
 alignment, D5) and paints `GENE_PROBABILITY[gene]`. Design goals it must satisfy: entropy
 at mint only; everything downstream deterministic and previewable (`simulateCompose`);
@@ -64,21 +65,19 @@ Review as an attacker and as an auditor. Named checks:
   rejection matches `compose`'s implicit one (burn-of-burned reverts).
 - **No fresh entropy**: grep the gene paths for any block data, msg.sender, or state that
   isn't (seed, gene, denomIndex). The walk must be a pure function.
-- **Reroll surfaces**: try to construct any sequence (compose/decompose/restore/redeem/
+- **Reroll surfaces**: try to construct any sequence (compose/decompose/split/redeem/
   re-mint) that rerolls a gene without paying a mint fee for fresh seeds. Decompose
   children derive seeds from the parent — confirm the reachable outcome tree really is
   finite and deterministic.
-- **Restore soundness**: gene captured from child 0; the claimed invariant is that all
-  children of a split share one gene because a gene changes only via compose, which burns
-  the token or grows its denomination past the backing check. Try to break it (transfer,
-  nested split/restore, compose-then-restore).
+- **Split soundness**: all children of a split must share the parent gene. Try to break it through
+  transfer, nested splits and later composition.
 - **Storage**: `ShapeData` still packs into two slots with `inkGene` added. Check with
   `forge inspect Shapes storage-layout`.
 - **Renderer**: D5 compliance — the discarded fill draw is still consumed in BOTH
   renderers; module streams identical to pre-ink for the same seed apart from solid flags.
   `isBlack` precedence unchanged. "Ink" trait JSON well-formed.
-- **Events**: `InkGene` emitted on every gene assignment (mint, compose, per decompose
-  child, restore) — enough for an indexer to track genes with no state reads.
+- **Events**: `InkGene` emitted on every gene assignment (mint, compose, split children and
+  revived decompose inputs) — enough for an indexer to track genes with no state reads.
 - **Walk math edge cases**: gene bounds (can g step outside 0..6? targets are genes, so
   no — verify), center division (units can never be 0), T=0 impossible (compose total
   strictly grows), uint8 arithmetic.
@@ -104,7 +103,7 @@ regenerate, parity green.
 3. **Mega-compose gas note.** A single-tx 10,000-dust → 100 compose costs ~70.8M gas —
    over any block limit. Pre-existing O(n) burn loop, fine for the game (ladder through
    intermediate composes), but record it in SPEC.md so nobody designs around one-tx apexes.
-4. **Blacken lore (open, cosmetic).** Should `blacken` record the gene the apex died with
+4. **Sacrifice lore (open, cosmetic).** Should `sacrifice` record the gene the apex died with
    (a Solid Black vs a Void Black), even though isBlack overrides rendering? Zero protocol
    cost. Ask Dave; one-line change + trait if yes.
 5. **Stale numbers/docs.** INK_GENES_IMPL_SPEC.md §5 says "66 fixtures"; the harness has
@@ -141,7 +140,7 @@ go:
 5. `script/DeployShapes.s.sol` + `script/e2e-anvil.sh` run clean end-to-end on anvil,
    including a tokenURI smoke check showing the Ink trait.
 6. Testnet (sepolia) deploy + manual walkthrough: mint dust, mint 1 ETH, compose with
-   simulate-preview parity, decompose/restore, redeem. Verify contracts on Etherscan.
+   simulate-preview parity, decompose/split, redeem. Verify contracts on Etherscan.
 7. Post-deploy policy decisions documented for Dave: when/whether to `lockRenderer`, and
    when/whether to `renounceOwnership` (the only admin power is the renderer swap).
 8. Items 1–2 of Task 3 resolved (tuned constants, epoch decision) — these are the two

@@ -3,15 +3,17 @@ pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {ShapeChildPreview, ShapeFormation, ShapeState} from "./IShapeCapabilities.sol";
+import {IERC721Value} from "./IERC721Value.sol";
 
 /// @title IShapes
 /// @notice ETH wrapped into unique ERC721 objects at nine fixed denominations.
-/// @dev A Shape holds an exact amount of ETH. Redeeming it burns the token and returns exactly
-///      that amount to its owner. The only other way ETH leaves the reserve is `blacken`, which
+/// @dev A Shape holds an exact amount of ETH. Redeeming or burning it destroys the token and
+///      returns exactly that amount to its owner. The other reserve outflow is `sacrifice`, which
 ///      sends a fixed 100 ETH to an unspendable address and is callable only by an apex Complete
-///      Shape's owner. No pause, no upgrade path, no recovery function, and no admin path reaches
-///      the reserve; the sole owner power is replacing the (value-inert) renderer until it locks.
-interface IShapes is IERC721 {
+///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
+///      The owner may administer and independently lock the value-inert renderer and optional
+///      position resolver; ownership itself is transferable and renounceable.
+interface IShapes is IERC721, IERC721Value {
     /// @notice Emitted when a Shape is minted. `originCount` is always 1: a mint is the sole
     ///         source of new origins. A strict origin-creation signal; recomposition does not
     ///         emit it.
@@ -19,7 +21,6 @@ interface IShapes is IERC721 {
         uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed, uint256 originCount
     );
 
-    /// @notice Emitted when a Shape is burned and its backing returned.
     /// @notice Emitted when a Shape is redeemed for its backing. `originCount` is the redeemed
     ///         token's origin credit, carried so an event-only indexer can track the global
     ///         origin balance (mint origins − redeemed origins) without a pre-burn state read.
@@ -36,6 +37,12 @@ interface IShapes is IERC721 {
 
     /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
     event RendererLocked();
+
+    /// @notice Emitted when the owner sets, replaces or clears the optional position resolver.
+    event PositionResolverSet(address indexed resolver);
+
+    /// @notice Emitted when the current resolver value is permanently locked, including zero.
+    event PositionResolverLocked(address indexed resolver);
 
     /// @notice Emitted when Shapes are composed into one. The survivor keeps its id and seed and
     ///         becomes the summed denomination; the burned inputs are consumed into it.
@@ -63,7 +70,8 @@ interface IShapes is IERC721 {
         uint32[] originCounts
     );
 
-    /// @notice Emitted when an apex Complete Shape is blackened. `sacrificedWei` (100 ETH) is sent
+    /// @notice Emitted when an apex Complete Shape is sacrificed into Black. `sacrificedWei`
+    ///         (100 ETH) is sent
     ///         to a provably unspendable address and is never redeemable again.
     event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
 
@@ -104,7 +112,8 @@ interface IShapes is IERC721 {
     error UnsupportedRenderer(address renderer);
     /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
     error UnsupportedCollection(address collection);
-    /// @dev A Black Shape is terminal: it cannot be redeemed, composed, decomposed or split.
+    /// @dev A Black Shape cannot be redeemed, composed, decomposed or sacrificed again.
+    ///      It remains transferable and may be destroyed through the draft ERC-8060 `burn` path.
     error TokenIsBlack(uint256 tokenId);
     /// @dev `compose` needs at least one token to burn; `split` at least two outputs.
     error EmptyRecomposition();
@@ -114,11 +123,15 @@ interface IShapes is IERC721 {
     error SplitMismatch(uint256 inputBacking, uint256 outputSum);
     /// @dev `decompose` found no compose to reverse: the survivor's compose stack is empty.
     error NoComposeRecord(uint256 survivorId);
-    /// @dev `blacken` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
+    /// @dev `sacrifice` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
     error NotApexComplete(uint256 tokenId);
     /// @dev `previewCompose` only: a burn id repeated in `burnIds`. `compose` reaches the same
     ///      outcome through `_burn`, which reverts on the second occurrence.
     error DuplicateComposeInput(uint256 tokenId);
+    /// @dev A nonzero position resolver must contain deployed code when configured.
+    error InvalidPositionResolver();
+    /// @dev The position resolver cannot be changed or locked again after its permanent lock.
+    error PositionResolverIsLocked();
 
     /* --------------------------- immutables --------------------------- */
 
@@ -142,6 +155,12 @@ interface IShapes is IERC721 {
     ///         owner via `setCollection` until `lockRenderer` freezes it.
     function collection() external view returns (address);
 
+    /// @notice Optional canonical resolver for external Shape positions. Zero means none configured.
+    function positionResolver() external view returns (address);
+
+    /// @notice Whether the resolver value has been permanently frozen, including a frozen zero.
+    function positionResolverLocked() external view returns (bool);
+
     /* ----------------------------- renderer ---------------------------- */
 
     /// @notice Replace the onchain renderer. Owner only, and only while unlocked. The renderer
@@ -157,6 +176,15 @@ interface IShapes is IERC721 {
     /// @notice Permanently lock presentation. Owner only, one way. After this neither the
     ///         renderer nor the collection can change again.
     function lockRenderer() external;
+
+    /* ---------------------- position resolver admin -------------------- */
+
+    /// @notice Set, replace or clear the optional resolver. Owner only, while unlocked.
+    /// @dev Zero clears it; a nonzero resolver must contain deployed code. No resolver call occurs.
+    function setPositionResolver(address resolver_) external;
+
+    /// @notice Permanently freeze the current resolver value. Owner only; may lock while zero.
+    function lockPositionResolver() external;
 
     /* ---------------------------- minting ----------------------------- */
 
@@ -224,9 +252,7 @@ interface IShapes is IERC721 {
     /// @notice Decompose several survivors in order in one transaction, restored inputs to the
     ///         caller. Repeat an id to pop stacked records; list a nested tree parent-before-child.
     ///         Bounded by block gas.
-    function decomposeMany(uint256[] calldata survivorIds)
-        external
-        returns (uint256[][] memory restoredIds);
+    function decomposeMany(uint256[] calldata survivorIds) external returns (uint256[][] memory restoredIds);
 
     /// @notice Batch decompose with a caller-selected recipient for every restored input.
     function decomposeManyTo(uint256[] calldata survivorIds, address recipient)
@@ -246,8 +272,9 @@ interface IShapes is IERC721 {
 
     /// @notice Permanently sacrifice an apex Complete Shape's 100 ETH backing, turning it Black.
     ///         Owner only, one way. The token keeps its id, seed and geometry; its 100 ETH is sent
-    ///         to an unspendable address and it becomes non-redeemable and non-recomposable.
-    function blacken(uint256 tokenId) external;
+    ///         to an unspendable address and it becomes non-redeemable and non-recomposable. The
+    ///         resulting zero-value Black Shape remains transferable and may be burned for zero.
+    function sacrifice(uint256 tokenId) external;
 
     /* ----------------------------- views ------------------------------ */
 
@@ -257,14 +284,18 @@ interface IShapes is IERC721 {
     /// @notice Cumulative backing sacrificed by Black Shapes. Monotonic; 100 ETH per Black Shape.
     function sacrificedBacking() external view returns (uint256);
 
-    /// @notice Number of Black Shapes. Monotonic.
+    /// @notice Number of Shapes ever sacrificed into Black. Monotonic even after a Black burn.
     function blackCount() external view returns (uint256);
 
-    /// @notice Whether a token has been blackened.
+    /// @notice Whether a live token is Black.
     function isBlack(uint256 tokenId) external view returns (bool);
 
     /// @notice ETH backing a live Shape.
     function backingOf(uint256 tokenId) external view returns (uint256);
+
+    /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
+    /// @dev Does not require a live token. Resolver results and failures propagate without validation.
+    function positionOf(uint256 tokenId) external view returns (address);
 
     /// @notice The immutable visual seed of a live Shape.
     function seedOf(uint256 tokenId) external view returns (bytes32);

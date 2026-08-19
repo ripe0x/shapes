@@ -47,7 +47,7 @@ struct ShapeState {
     uint8 inkGene;
     bool isBlack;
     ShapeFormation formation;   // Fragment | Direct | Composed | Complete | Black (stable enum)
-    uint256 faceValueWei;       // the denomination; survives blackening
+    uint256 faceValueWei;       // the denomination; survives sacrifice
     uint256 redeemableValueWei; // 0 for a Black Shape, otherwise equals faceValueWei
 }
 ```

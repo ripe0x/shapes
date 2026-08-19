@@ -71,7 +71,7 @@
   "Complete 1 ETH (100 origins)",
   "Composed 1 ETH (50 origins)",
   "Complete 0.05 (5 origins)",
-  "Fragment 50 ETH (0 origins, decompose remainder)",
+  "Fragment 50 ETH (0 origins, split remainder)",
   "density 0.01% (two decimals)",
   "density 0.07% (leading zero)",
   "density 0.12% (two decimals)",

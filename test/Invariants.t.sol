@@ -81,15 +81,7 @@ contract Handler is Test, IERC721Receiver {
     mapping(uint256 => uint256) private _indexOfToken;
 
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether),
-        0.05 ether,
-        0.1 ether,
-        0.5 ether,
-        1 ether,
-        5 ether,
-        10 ether,
-        50 ether,
-        100 ether
+        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
     constructor(Shapes shapes_) {
@@ -106,11 +98,7 @@ contract Handler is Test, IERC721Receiver {
         ];
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
@@ -276,7 +264,9 @@ contract Handler is Test, IERC721Receiver {
 
         vm.prank(owner);
         try shapes.compose(survivor, burn) {
-            for (uint256 i = 0; i < burn.length; ++i) _untrack(burn[i]);
+            for (uint256 i = 0; i < burn.length; ++i) {
+                _untrack(burn[i]);
+            }
         } catch {}
     }
 
@@ -291,7 +281,9 @@ contract Handler is Test, IERC721Receiver {
         uint256 ratio = amt / DENOMS[di - 1]; // 2 or 5
 
         uint8[] memory outs = new uint8[](ratio);
-        for (uint256 i = 0; i < ratio; ++i) outs[i] = uint8(di - 1);
+        for (uint256 i = 0; i < ratio; ++i) {
+            outs[i] = uint8(di - 1);
+        }
 
         vm.prank(owner);
         try shapes.split(id, outs) returns (uint256[] memory kids) {
@@ -300,12 +292,11 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-
-    /// @dev Blacken a live apex Complete if one exists. Apex Completes essentially never arise
+    /// @dev Sacrifice a live apex Complete if one exists. Apex Completes essentially never arise
     ///      from random fuzzing (10,000 conserved origins on one token), so this rarely fires;
     ///      the sacrifice path is exercised directly by the unit suite. It is kept here so the
     ///      invariant model stays exact should one ever be reached.
-    function blacken(uint256 seed) public {
+    function sacrifice(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
         if (shapes.isBlack(id)) return;
@@ -313,7 +304,7 @@ contract Handler is Test, IERC721Receiver {
 
         address owner = shapes.ownerOf(id);
         vm.prank(owner);
-        try shapes.blacken(id) {
+        try shapes.sacrifice(id) {
             ghostSacrificed += 100 ether;
         } catch {}
     }
@@ -393,7 +384,9 @@ contract Handler is Test, IERC721Receiver {
         uint256 ratio = amt / DENOMS[di - 1];
 
         uint8[] memory outs = new uint8[](ratio);
-        for (uint256 i = 0; i < ratio; ++i) outs[i] = uint8(di - 1);
+        for (uint256 i = 0; i < ratio; ++i) {
+            outs[i] = uint8(di - 1);
+        }
 
         vm.prank(owner);
         try shapes.splitTo(id, outs, recip) returns (uint256[] memory kids) {
@@ -412,7 +405,9 @@ contract Handler is Test, IERC721Receiver {
         address owner = shapes.ownerOf(survivor);
         vm.prank(owner);
         try shapes.decompose(survivor) returns (uint256[] memory restored) {
-            for (uint256 i = 0; i < restored.length; ++i) _track(restored[i]);
+            for (uint256 i = 0; i < restored.length; ++i) {
+                _track(restored[i]);
+            }
         } catch {}
     }
 
@@ -426,10 +421,11 @@ contract Handler is Test, IERC721Receiver {
         address recip = hostiles[recipSeed % 3];
         vm.prank(owner);
         try shapes.decomposeTo(survivor, recip) returns (uint256[] memory restored) {
-            for (uint256 i = 0; i < restored.length; ++i) _track(restored[i]);
+            for (uint256 i = 0; i < restored.length; ++i) {
+                _track(restored[i]);
+            }
         } catch {}
     }
-
 
     function _denomIndex(uint256 amt) private view returns (uint256) {
         for (uint256 i = 0; i < 9; ++i) {
@@ -471,7 +467,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[6] = Handler.pokeUnknownSelector.selector;
         selectors[7] = Handler.compose.selector;
         selectors[8] = Handler.split.selector;
-        selectors[9] = Handler.blacken.selector;
+        selectors[9] = Handler.sacrifice.selector;
         selectors[10] = Handler.redeemToHostile.selector;
         selectors[11] = Handler.redeemBatchToHostile.selector;
         selectors[12] = Handler.splitToHostile.selector;
@@ -517,6 +513,15 @@ contract ShapesInvariantTest is StdInvariant, Test {
         assertEq(n, shapes.totalSupply(), "live supply mismatch");
     }
 
+    /// @notice The generic draft ERC-8060 value seam is exactly the native backing query.
+    function invariant_ValueAlwaysEqualsBacking() public view {
+        uint256 n = handler.liveTokenCount();
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 id = handler.liveTokens(i);
+            assertEq(shapes.valueOf(id), shapes.backingOf(id), "valueOf/backingOf drifted");
+        }
+    }
+
     /// @notice Origins are created only by mint and destroyed only by redeem. The sum of live
     ///         origin counts equals mints minus origins redeemed — no operation manufactures them.
     function invariant_OriginsAreConserved() public view {
@@ -526,9 +531,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             sum += shapes.originCountOf(handler.liveTokens(i));
         }
         assertEq(
-            sum,
-            handler.ghostMints() - handler.ghostOriginsRedeemed(),
-            "origin count was fabricated or lost"
+            sum, handler.ghostMints() - handler.ghostOriginsRedeemed(), "origin count was fabricated or lost"
         );
     }
 
@@ -538,9 +541,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
             assertLe(
-                shapes.originCountOf(id),
-                shapes.backingOf(id) / 0.01 ether,
-                "origin count exceeds capacity"
+                shapes.originCountOf(id), shapes.backingOf(id) / 0.01 ether, "origin count exceeds capacity"
             );
         }
     }
@@ -554,9 +555,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             "fees are exactly feeBps of all backing minted"
         );
         assertGe(
-            address(shapes).balance,
-            shapes.redeemableBacking(),
-            "fees leaked into or out of the reserve"
+            address(shapes).balance, shapes.redeemableBacking(), "fees leaked into or out of the reserve"
         );
     }
 
@@ -590,8 +589,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             uint256 id = handler.liveTokens(i);
             if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
             assertTrue(
-                shapes.isSupportedDenomination(shapes.backingOf(id)),
-                "token holds an off-ladder amount"
+                shapes.isSupportedDenomination(shapes.backingOf(id)), "token holds an off-ladder amount"
             );
         }
     }

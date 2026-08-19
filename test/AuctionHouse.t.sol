@@ -179,7 +179,7 @@ contract AuctionHouseTest is AuctionBase {
     function test_BlackShapeIsRejectedAsWorthless() public {
         uint256 id = _open();
 
-        // Build an apex Complete and blacken it: 10,000 dust composed to 100 ETH.
+        // Build an apex Complete and sacrifice it: 10,000 dust composed to 100 ETH.
         vm.prank(alice);
         uint256 first =
             shapes.mintBatch{value: 10_000 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 10_000, alice);
@@ -190,7 +190,7 @@ contract AuctionHouseTest is AuctionBase {
         vm.prank(alice);
         shapes.compose(first, burn);
         vm.prank(alice);
-        shapes.blacken(first);
+        shapes.sacrifice(first);
 
         assertEq(shapes.backingOf(first), 0, "a Black Shape backs nothing");
 

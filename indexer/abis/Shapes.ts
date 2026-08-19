@@ -361,7 +361,7 @@ export const shapesAbi = [
   },
   {
     "type": "function",
-    "name": "blacken",
+    "name": "sacrifice",
     "inputs": [
       {
         "name": "tokenId",
