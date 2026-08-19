@@ -12,8 +12,6 @@ export type HistKind =
   | "mergedAway"
   | "decomposed"
   | "revived"
-  | "bornFromRestore"
-  | "restoredAway"
   | "blackened"
   | "redeemed"
   | "transfer";
@@ -64,14 +62,13 @@ export async function loadHistory(
   // and transfers of this id); a token composed from thousands of ancestors would otherwise pull
   // every ShapeMinted log and overflow the RPC response. The recomposition events name touched
   // ids in unindexed array args, so they are still fetched whole — but there is one per
-  // compose/split/decompose/restore, far fewer than mints, so that stays cheap.
-  const [minted, composed, split, decomposed, restored, blackened, redeemed, transfers] =
+  // compose/split/decompose, far fewer than mints, so that stays cheap.
+  const [minted, composed, split, decomposed, blackened, redeemed, transfers] =
     await Promise.all([
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Restored", fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Blackened", args: {tokenId: id}, fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}, fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}, fromBlock, toBlock})),
@@ -124,15 +121,6 @@ export async function loadHistory(
     }
     if (l.args.restoredIds?.some((x) => x === id)) {
       push(l, "revived", `Revived under this original id by #${l.args.survivorId?.toString()}'s decompose`);
-    }
-  }
-  for (const l of restored) {
-    if (l.args.newTokenId === id) {
-      const n = l.args.childIds?.length ?? 0;
-      push(l, "bornFromRestore", `Restored — reassembled from ${n} pieces of one split`);
-    }
-    if (l.args.childIds?.some((x) => x === id)) {
-      push(l, "restoredAway", `Reassembled into #${l.args.newTokenId?.toString()}, the original`);
     }
   }
   for (const l of blackened) {
@@ -195,10 +183,9 @@ function rollup(more: number, rel: ProvNode["rel"]): ProvNode {
 }
 
 /// A token's ancestry, reconstructed from events alone. Contributors are: the split input for
-/// a split-born token, the reassembled pieces for a restore-born token, and every token a
-/// compose burned into this id that a later decompose has not reversed. Every ancestor's seed is
-/// recoverable — mints carry it in ShapeMinted, split children derive from the parent seed,
-/// restored tokens carry the parent seed — so burned ancestors can still be drawn. Bounded by
+/// a split-born token, and every token a compose burned into this id that a later decompose has
+/// not reversed. Every ancestor's seed is recoverable — mints carry it in ShapeMinted and split
+/// children derive from the parent seed — so burned ancestors can still be drawn. Bounded by
 /// node and depth budgets; a cut branch is marked `truncated`.
 export async function loadProvenance(
   publicClient: PublicClient,
@@ -211,11 +198,10 @@ export async function loadProvenance(
   // structure, so they are fetched whole. Mints are the many; an apex Complete has thousands of
   // ancestor mints whose logs overflow the RPC response. So a node's mint is fetched lazily by
   // its indexed tokenId, only for the bounded set of nodes the walk renders, and cached.
-  const [composed, split, decomposed, restored] = await Promise.all([
+  const [composed, split, decomposed] = await Promise.all([
     paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock})),
     paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock, toBlock})),
     paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock})),
-    paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Restored", fromBlock, toBlock})),
   ]);
 
   const mintCache = new Map<string, {seed: bigint; di: number} | null>();
@@ -240,14 +226,6 @@ export async function loadProvenance(
         index: i,
         di: l.args.outDenoms![i],
       });
-    });
-  }
-  const restoreOf = new Map<string, {parentSeed: bigint; childIds: bigint[]; di: number}>();
-  for (const l of restored) {
-    restoreOf.set(l.args.newTokenId!.toString(), {
-      parentSeed: BigInt(l.args.parentSeed!),
-      childIds: [...l.args.childIds!],
-      di: l.args.denomIndex!,
     });
   }
   // Composed (push) and Decomposed (pop) events per survivor, replayed in block order as a LIFO
@@ -291,16 +269,13 @@ export async function loadProvenance(
   async function build(nid: bigint, rel: ProvNode["rel"], depth: number): Promise<ProvNode | null> {
     const k = nid.toString();
     const split = splitOf.get(k);
-    const restore = restoreOf.get(k);
-    // A token is born once (mint XOR split XOR restore); only fetch the mint when it is neither
-    // split- nor restore-born, so the targeted mint query runs at most once per rendered node.
-    const mint = split || restore ? null : await mintOf(nid);
-    if (!mint && !split && !restore) return null; // no birth event: not a token we know
+    // A token is born once (mint XOR split); only fetch the mint when it is not split-born, so
+    // the targeted mint query runs at most once per rendered node.
+    const mint = split ? null : await mintOf(nid);
+    if (!mint && !split) return null; // no birth event: not a token we know
 
-    const seed = mint ? mint.seed
-      : split ? splitChildSeed(split.parentSeed, split.index)
-      : restore!.parentSeed;
-    const birthDi = (mint ?? split ?? restore)!.di;
+    const seed = mint ? mint.seed : splitChildSeed(split!.parentSeed, split!.index);
+    const birthDi = (mint ?? split)!.di;
     const merges = absorbedBy.get(k) ?? [];
     const finalDi = merges.length > 0 ? merges[merges.length - 1].di : birthDi;
 
@@ -316,7 +291,7 @@ export async function loadProvenance(
     let node: ProvNode = {id: nid, seed, di: birthDi, rel, mintBorn: !!mint, contributors: []};
     if (budget <= 0 || depth >= PROV_MAX_DEPTH) {
       node.di = finalDi;
-      node.truncated = !!split || !!restore || merges.length > 0;
+      node.truncated = !!split || merges.length > 0;
       return node;
     }
     const childDepth = depth + merges.length + 1;
@@ -324,12 +299,6 @@ export async function loadProvenance(
       if (child) node.contributors.push(child);
     };
     if (split) push(await build(split.parentId, "splitSource", childDepth));
-    if (restore) {
-      const shown = restore.childIds.slice(0, PROV_MAX_CHILDREN);
-      for (const cid of shown) push(await build(cid, "piece", childDepth));
-      const hidden = restore.childIds.length - shown.length;
-      if (hidden > 0) node.contributors.push(rollup(hidden, "piece"));
-    }
 
     // Each merge is a level of its own: the token one state earlier beside what it absorbed.
     // Without this, a five-way merge would show four children and no fifth.
@@ -379,11 +348,10 @@ export async function loadDecomposePreview(
 ): Promise<DecomposeInput[]> {
   const base = {address: dep.shapes, abi: shapesAbi} as const;
   const latest = await publicClient.getBlockNumber();
-  const [composed, split, decomposed, restored] = await Promise.all([
+  const [composed, split, decomposed] = await Promise.all([
     paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock: f, toBlock: t})),
     paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock: f, toBlock: t})),
     paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock: f, toBlock: t})),
-    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Restored", fromBlock: f, toBlock: t})),
   ]);
 
   const key = survivorId.toString();
@@ -404,9 +372,6 @@ export async function loadDecomposePreview(
   for (const l of split)
     l.args.newIds!.forEach((nid, i) =>
       splitOf.set(nid.toString(), {parentSeed: BigInt(l.args.parentSeed!), index: i, di: l.args.outDenoms![i]}));
-  const restoreOf = new Map<string, {parentSeed: bigint; di: number}>();
-  for (const l of restored)
-    restoreOf.set(l.args.newTokenId!.toString(), {parentSeed: BigInt(l.args.parentSeed!), di: l.args.denomIndex!});
 
   const out: DecomposeInput[] = [];
   for (const id of top) {
@@ -414,11 +379,6 @@ export async function loadDecomposePreview(
     const sp = splitOf.get(k);
     if (sp) {
       out.push({id, seed: splitChildSeed(sp.parentSeed, sp.index), di: sp.di});
-      continue;
-    }
-    const rs = restoreOf.get(k);
-    if (rs) {
-      out.push({id, seed: rs.parentSeed, di: rs.di});
       continue;
     }
     // Mint-born: fetch its ShapeMinted by indexed id.

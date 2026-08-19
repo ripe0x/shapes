@@ -190,23 +190,6 @@ export function SiteApp({
     }
   };
 
-  const doRestore = async (parentSeed: `0x${string}`, childIds: bigint[]) => {
-    if (!publicClient) return;
-    setBusy("restore");
-    setTxErr(null);
-    try {
-      const hash = await write("restore", [parentSeed, childIds]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
-      const logs = parseEventLogs({abi: shapesAbi, eventName: "Restored", logs: receipt.logs});
-      await refresh();
-      setTokenId(logs[0].args.newTokenId); // land on the restored original
-      setRedeem({status: "idle"});
-    } catch (e) {
-      setTxErr({op: "restore", text: describeTxError(e)});
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const openToken = (id: bigint) => {
     setTokenId(id);
@@ -309,7 +292,6 @@ export function SiteApp({
           onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
           onCompose={(t, ids) => void doCompose(t, ids)}
-          onRestore={(seed, ids) => void doRestore(seed, ids)}
           onOpenToken={openToken}
         />
       )}

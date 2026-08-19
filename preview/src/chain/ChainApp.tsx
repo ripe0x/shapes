@@ -636,8 +636,6 @@ const HIST_MARK: Record<HistEvent["kind"], string> = {
   mergedAway: "⊞",
   decomposed: "⊟",
   revived: "⊟",
-  bornFromRestore: "⊞",
-  restoredAway: "⊞",
   blackened: "◆",
   redeemed: "↩",
   transfer: "→",

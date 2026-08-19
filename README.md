@@ -298,7 +298,7 @@ load. Every run is a fresh chain; prior tokens are gone.
 
 To browse the collection in a lived-in state, seed the running chain with simulated activity —
 mints across every denomination, compositions up to two 100 ETH apexes (one fully built, one
-half direct), splits, restores, transfers and redemptions. Run it from `preview/`, as many
+half direct), splits, transfers and redemptions. Run it from `preview/`, as many
 times as you like; each run appends another round:
 
 ```bash
@@ -309,7 +309,7 @@ The dev server serves three entries:
 
 | URL | What it is |
 | --- | --- |
-| `/site.html` | **The mint site** — mint, gallery, token detail, redeem, decompose / recompose / restore |
+| `/site.html` | **The mint site** — mint, gallery, token detail, redeem, compose / decompose / split |
 | `/chain.html` | Chain tester — a development harness against the same deployment |
 | `/` | Render harness — the canonical TypeScript renderer, no chain |
 

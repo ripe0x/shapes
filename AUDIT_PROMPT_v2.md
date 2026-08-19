@@ -28,10 +28,10 @@ hold real ETH on Ethereum mainnet and that any depositor can be an attacker.
   1. **Ink genes** — a seven-state per-token trait with a deterministic compose-time inheritance
      walk, `simulate`/`preview` views, and an `InkGene` event.
   2. **The composability layer** — capability-segmented interfaces, recipient-directed value flows
-     (`redeemTo` / `redeemBatchTo` / `decomposeTo` / `restoreTo`), full-state read structs, and
+     (`redeemTo` / `redeemBatchTo` / `decomposeTo` / `splitTo`), full-state read structs, and
      module-level geometry exposure.
 
-The **v2 recomposition / provenance / terminal Black Shape** layer (compose/decompose/restore,
+The **v2 recomposition / provenance / terminal Black Shape** layer (compose/decompose/split,
 `originCount`, `blacken`) had one prior internal adversarial pass with no Critical/High; it is
 described below and remains in scope, but the two areas above are where new surface was added.
 
@@ -84,20 +84,20 @@ two are the newest, externally unaudited surface):
      ladder position per denomination tier crossed, each step a pure roll against a
      units-weighted `center` (70%), the pool `best` (20%), or `worst` (10%). Burn seeds are folded
      order-invariantly by XOR, so `burnIds` order cannot affect the result; survivor choice can.
-     No fresh entropy enters any compose/decompose/restore.
-   - **decompose/restore copy the gene verbatim.** No roll. `InkGenes.sol` is a byte-exact port of
+     No fresh entropy enters any compose/decompose/split.
+   - **decompose/split copy the gene verbatim.** No roll. `InkGenes.sol` is a byte-exact port of
      the TypeScript canonical `preview/src/canonical/ink.ts`, under the parity suite.
 
 5. **Composability layer (new).** The external surface is segmented into ERC165-advertised
    capability interfaces (`IShapeValue`, `IShapeRecomposition`, `IShapeProvenance`,
    `IShapeSimulation`, `IShapeGeometry`) with new members:
    - **Recipient-directed value flows:** `redeemTo` / `redeemBatchTo` (burn, pay ETH to an
-     arbitrary recipient), `decomposeTo` / `restoreTo` (reshape, mint outputs to a recipient).
+     arbitrary recipient), `decomposeTo` / `splitTo` (reshape, mint outputs to a recipient).
      Each is a thin wrapper over the same private CEI-guarded impl its owner-directed form uses
      (`redeem` and `redeemTo` both call `_redeemTo`, etc.); only the destination is parameterised.
    - **Structured reads:** `shapeState` returns full state in one call (`faceValueWei` vs
      `redeemableValueWei`, the latter 0 for Black); a `ShapeFormation` enum with stable numeric
-     values; `previewCompose`/`previewDecompose`/`previewRestore` return full result structs,
+     values; `previewCompose`/`previewSplit` return full result structs,
      `view`, no ownership required.
    - **Geometry:** `IShapeGeometry` (`cardGeometry`, `moduleAt`) exposes the renderer's
      module-level geometry, version-pinned by `grammarHash`.
@@ -120,9 +120,9 @@ The renderer is owner-replaceable until `lockRenderer`, and is read only by `tok
 4. Capacity: every token `originCount <= backing / 0.01`.
 5. Sacrifice: `sacrificedBacking == 100 ether * blackCount`, both monotonic.
 6. Every live non-Black Shape is redeemable for exactly its backing.
-7. Ink is cosmetic and consumes no reserve: no gene path (`mint`/`compose`/`decompose`/`restore`/
+7. Ink is cosmetic and consumes no reserve: no gene path (`mint`/`compose`/`decompose`/`split`/
    the `simulate`/`preview` views) reads or moves ETH, backing, or ownership.
-8. Ink entropy at mint only: after a token exists, no sequence of compose/decompose/restore/
+8. Ink entropy at mint only: after a token exists, no sequence of compose/decompose/split/
    redeem/re-mint rerolls its gene without paying a mint fee for fresh seeds; the reachable gene
    tree is finite and deterministic.
 9. Ink determinism and parity: `geneAtCompose`/`geneAtMint` are pure functions of on-chain state
@@ -131,7 +131,7 @@ The renderer is owner-replaceable until `lockRenderer`, and is read only by `tok
 
 ## Primary files (Solidity is the priority)
 
-- `src/Shapes.sol` — core: mint/redeem (+`*To`), compose/decompose/restore (+`*To`), blacken,
+- `src/Shapes.sol` — core: mint/redeem (+`*To`), compose/decompose/split (+`*To`), blacken,
   the `simulate`/`preview` views, accounting, guards.
 - `src/lib/InkGenes.sol` — the ink-gene mint lottery, compose walk, and units-weighted center.
 - `src/ShapeRenderer.sol` — SVG + metadata, provenance/ink traits, color inversion, `IShapeGeometry`.
@@ -236,7 +236,7 @@ removes ETH without an equal burn, forges provenance, or breaks an invariant.
 
 ### Ink genes
 
-11. **Gene reroll / free entropy.** Construct any sequence (compose / decompose / restore /
+11. **Gene reroll / free entropy.** Construct any sequence (compose / decompose / split /
     redeem / re-mint) that changes a token's gene without paying a mint fee for fresh seeds.
     decompose→recompose of a token's own children is a homogeneous pool and must be a fixed
     point; confirm the reachable gene tree is finite and deterministic. Grep every gene path for
@@ -251,28 +251,21 @@ removes ETH without an equal burn, forges provenance, or breaks an invariant.
     must mirror what a real `compose` would do exactly, mutate no storage, require no ownership,
     and reject the same inputs (esp. the explicit duplicate-burn-id check standing in for
     `_burn` reverting). Any divergence lets a UI or an integrator be lied to.
-14. **Restore soundness with genes.** `restore` captures the gene from the first child only,
-    claiming all children of a split share it. Try to break that: transfer, nested split/restore,
-    compose-then-restore, or any state where the first child's gene differs from the others while
-    the count and backing checks still pass.
-
-### Composability layer
-
-15. **Recipient-directed value flows.** `redeemTo`/`redeemBatchTo`/`decomposeTo`/`restoreTo` send
+14. **Recipient-directed value flows.** `redeemTo`/`redeemBatchTo`/`decomposeTo`/`splitTo` send
     ETH or mint to an arbitrary recipient. Confirm the reserve invariant holds against hostile
     recipients (reverting on ETH, non-receiver, reentrant) — the guard, CEI, and the shared
     private impls. Confirm they grant no authority the owner-directed forms don't (caller still
     owns the inputs) and cannot strand a Shape or desync accounting.
-16. **Capability / ERC165 and struct correctness.** `supportsInterface` must return true for each
+15. **Capability / ERC165 and struct correctness.** `supportsInterface` must return true for each
     advertised capability and the `ShapeFormation` enum's numeric values are part of the API — a
     reordering silently misreports formation to every integrator. `shapeState.redeemableValueWei`
     must be 0 for a Black Shape and equal `faceValueWei` otherwise. Any read returning a value
     inconsistent with the live token.
-17. **Geometry exposure.** `IShapeGeometry` (`cardGeometry`, `moduleAt`) and `grammarHash` are a
+16. **Geometry exposure.** `IShapeGeometry` (`cardGeometry`, `moduleAt`) and `grammarHash` are a
     surface other contracts will pin to. Confirm `moduleAt` bounds-checks, the tuple returns match
     the renderer's own `Card`/`Module`, and whether `grammarHash`/`grammarVersion` is intended to
     be frozen for the renderer's life (it changes if the renderer is replaced before `lockRenderer`).
-18. **Gas estimation headroom (informational).** Every `nonReentrant` function's `eth_estimateGas`
+17. **Gas estimation headroom (informational).** Every `nonReentrant` function's `eth_estimateGas`
     is a lower bound: the guard's SSTORE reset earns a refund credited only at tx end, so a call
     funded with the bare estimate reverts out of gas at the guard cleanup. Wallets buffer; confirm
     the deploy/integration docs warn programmatic callers, and that no on-chain caller forwards a
