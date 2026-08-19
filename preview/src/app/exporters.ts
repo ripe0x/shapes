@@ -233,6 +233,7 @@ export function buildFixture(
       1n,
       false,
       mintGene(seed, amountWei),
+      0n,
       p,
     ),
   };

@@ -31,6 +31,7 @@ contract ParityTest is Test {
     uint256[] internal originCounts;
     bool[] internal inverteds;
     uint8[] internal genes;
+    uint256[] internal composeDepths;
     uint256 internal count;
 
     function setUp() public {
@@ -54,6 +55,7 @@ contract ParityTest is Test {
         string[] memory originStr = vm.parseJsonStringArray(json, ".originCount");
         string[] memory invertedStr = vm.parseJsonStringArray(json, ".inverted");
         string[] memory geneStr = vm.parseJsonStringArray(json, ".inkGene");
+        string[] memory composeDepthStr = vm.parseJsonStringArray(json, ".composeDepth");
 
         count = seedStr.length;
         assertGt(count, 60, "fixture corpus unexpectedly small");
@@ -65,6 +67,7 @@ contract ParityTest is Test {
             originCounts.push(vm.parseUint(originStr[i]));
             inverteds.push(_isTrue(invertedStr[i]));
             genes.push(uint8(vm.parseUint(geneStr[i])));
+            composeDepths.push(vm.parseUint(composeDepthStr[i]));
         }
     }
 
@@ -114,7 +117,13 @@ contract ParityTest is Test {
     function test_MetadataIsByteIdenticalToTypeScript() public view {
         for (uint256 i = 0; i < count; ++i) {
             string memory got = renderer.metadataJSON(
-                seeds[i], amounts[i], tokenIds[i], originCounts[i], inverteds[i], genes[i]
+                seeds[i],
+                amounts[i],
+                tokenIds[i],
+                originCounts[i],
+                inverteds[i],
+                genes[i],
+                composeDepths[i]
             );
             assertEq(got, expectedMetadata[i], why[i]);
         }

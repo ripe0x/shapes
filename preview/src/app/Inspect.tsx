@@ -209,6 +209,7 @@ export function Inspect({
                       1n,
                       false,
                       mintGene(seed, amountWei),
+                      0n,
                       params,
                     ),
                   )
@@ -217,7 +218,7 @@ export function Inspect({
                 copy metadata json
               </Button>
               <Button
-                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, false, mintGene(seed, amountWei), params))}
+                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, false, mintGene(seed, amountWei), 0n, params))}
               >
                 copy tokenURI
               </Button>

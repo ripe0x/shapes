@@ -3,7 +3,7 @@ import {formatEther, type PublicClient} from "viem";
 import {DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
 import {GRIDS} from "../canonical/denominations";
 import {composeShape, fillClass} from "../canonical/render";
-import {decomposeChildSeed} from "../decomposeSeed";
+import {splitChildSeed} from "../splitSeed";
 import {shapesAbi} from "../chain/abi";
 import {
   loadHistory,
@@ -26,6 +26,8 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   splitInto: "Split",
   absorbed: "Composed",
   mergedAway: "Merged",
+  decomposed: "Decomposed",
+  revived: "Revived",
   bornFromRestore: "Restored",
   restoredAway: "Reassembled",
   blackened: "Blackened",
@@ -50,6 +52,7 @@ export function TokenView({
   onAskRedeem,
   onCancelRedeem,
   onConfirmRedeem,
+  onSplit,
   onDecompose,
   onCompose,
   onRestore,
@@ -67,6 +70,7 @@ export function TokenView({
   onAskRedeem: () => void;
   onCancelRedeem: () => void;
   onConfirmRedeem: (t: SiteToken) => void;
+  onSplit: (t: SiteToken) => void;
   onDecompose: (t: SiteToken) => void;
   onCompose: (t: SiteToken, burnIds: bigint[]) => void;
   onRestore: (parentSeed: `0x${string}`, childIds: bigint[]) => void;
@@ -257,17 +261,21 @@ export function TokenView({
     {k: "backing, exact", v: `${token.backing.toString()} wei`, size: 11},
   ];
 
-  // Decompose: the designed one-tier-down even split. Child seeds are fixed by the parent's
+  // Split: the designed one-tier-down even split. Child seeds are fixed by the parent's
   // seed, so the previews are the exact tokens the contract would mint.
   const canSplit = di > 0;
   const downWei = canSplit ? DENOMINATIONS[di - 1].wei : 0n;
   const ratio = canSplit ? Number(token.backing / downWei) : 0;
   const splitChildren = canSplit
     ? Array.from({length: ratio}, (_, i) => ({
-        seed: decomposeChildSeed(token.seed, i),
+        seed: splitChildSeed(token.seed, i),
         wei: downWei,
       }))
     : [];
+
+  // Decompose: reverses the survivor's most recent still-standing compose. Shown only when a
+  // compose is on the stack to reverse.
+  const canDecompose = token.composeDepth > 0;
 
   // Recompose: same-denomination Shapes this wallet owns. The open token survives, keeping its
   // id and seed.
@@ -294,7 +302,7 @@ export function TokenView({
   const pieces = restorable
     ? birth!.siblingIds.map((sid, i) => {
         const t = data?.tokens.find((x) => x.id === sid) ?? null;
-        const okSeed = t !== null && t.seed === decomposeChildSeed(BigInt(birth!.parentSeed), i);
+        const okSeed = t !== null && t.seed === splitChildSeed(BigInt(birth!.parentSeed), i);
         const held =
           !!t && okSeed && !!address && t.owner.toLowerCase() === address.toLowerCase();
         return {id: sid, token: t, okSeed, held};
@@ -524,7 +532,7 @@ export function TokenView({
             )}
           </Section>
 
-          <Section title="DECOMPOSE" pad="26px 48px 36px 32px">
+          <Section title="SPLIT" pad="26px 48px 36px 32px">
             <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
               {canSplit
                 ? `Split this Shape into ${ratio} Shapes of ${DENOMINATIONS[di - 1].label} ETH. The outputs sum to exactly ${lbl} ETH.`
@@ -540,7 +548,7 @@ export function TokenView({
             <div style={{display: "flex", flexWrap: "wrap", gap: 18}}>
               {splitChildren.map((c, i) => (
                 <div key={i} style={{flex: "0 0 96px", width: 96}}>
-                  {/* decompose copies the parent's gene verbatim to every child */}
+                  {/* split copies the parent's gene verbatim to every child */}
                   <Art src={localArt(c.seed, c.wei, token.inkGene)} />
                   <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
                     {DENOMINATIONS[di - 1].label} ETH
@@ -552,14 +560,14 @@ export function TokenView({
               <button
                 type="button"
                 className="btn-outline"
-                onClick={() => onDecompose(token)}
+                onClick={() => onSplit(token)}
                 disabled={!!busy}
                 style={{marginTop: 26, padding: "10px 20px"}}
               >
-                {busy === "decompose" ? "Waiting for confirmation" : "Decompose"}
+                {busy === "split" ? "Waiting for confirmation" : "Split"}
               </button>
             )}
-            {errLine("decompose")}
+            {errLine("split")}
           </Section>
 
           <Section title="COMPOSE" pad="26px 48px 36px 32px">
@@ -643,6 +651,31 @@ export function TokenView({
             {errLine("compose")}
           </Section>
 
+          {canDecompose && (
+            <Section title="DECOMPOSE" pad="26px 48px 36px 32px">
+              <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+                Undo this Shape's most recent compose. #{token.id.toString()} keeps its id and
+                reverts to its pre-compose denomination and origins; every Shape burned by that
+                compose is re-minted under its original id and seed, to you.
+              </p>
+              <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+                No ETH moves. No fee is charged. Stacked composes reverse newest first — this
+                Shape has {token.composeDepth} compose{token.composeDepth === 1 ? "" : "s"} left to
+                undo.
+              </p>
+              <button
+                type="button"
+                className="btn-outline"
+                onClick={() => onDecompose(token)}
+                disabled={!!busy}
+                style={{padding: "10px 20px"}}
+              >
+                {busy === "decompose" ? "Waiting for confirmation" : "Decompose"}
+              </button>
+              {errLine("decompose")}
+            </Section>
+          )}
+
           {restorable && record && birth && (
             <Section title="RESTORE" pad="26px 48px 36px 32px">
               <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
@@ -655,7 +688,7 @@ export function TokenView({
               </p>
               <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
                 <div style={{flex: "0 0 140px", width: 140}}>
-                  {/* This token was a child of that split, and decompose copies the parent's gene
+                  {/* This token was a child of that split, and split copies the parent's gene
                       verbatim to each child, so the parent's gene at split equals this token's own
                       gene (unless it has since composed). */}
                   <Art src={localArt(BigInt(birth.parentSeed), parentWei, token.inkGene)} />
@@ -721,8 +754,8 @@ export function TokenView({
         <Section title="OWNERSHIP">
           <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
             {address
-              ? "This Shape belongs to another address. Only its owner can redeem, compose or decompose it."
-              : "Connect the owning wallet to redeem, compose or decompose this Shape."}
+              ? "This Shape belongs to another address. Only its owner can redeem, split, compose or decompose it."
+              : "Connect the owning wallet to redeem, split, compose or decompose this Shape."}
           </div>
         </Section>
       )}

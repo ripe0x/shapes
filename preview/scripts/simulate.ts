@@ -86,9 +86,9 @@ async function compose(actor: number, survivor: bigint, burns: bigint[]): Promis
   return survivor;
 }
 
-async function decompose(actor: number, id: bigint, outDenoms: number[]): Promise<bigint[]> {
-  const receipt = await send(actor, "decompose", [id, outDenoms]);
-  return parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs})[0].args
+async function split(actor: number, id: bigint, outDenoms: number[]): Promise<bigint[]> {
+  const receipt = await send(actor, "split", [id, outDenoms]);
+  return parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs})[0].args
     .newIds as bigint[];
 }
 
@@ -170,13 +170,13 @@ async function main() {
   const ten = await compose(4, five, [extraFive]); // built 5 + direct 5 -> 10
 
   console.log("6. splits: one-tier, mixed multiset, and deep");
-  await decompose(1, halves[0], [2, 2, 2, 2, 2]); // 0.5 -> 5 x 0.1
-  const mixedKids = await decompose(4, ones4[5], [3, 2, 2, 2, 2, 2]); // 1 -> 0.5 + 5 x 0.1
-  const tenPieces = await decompose(3, tens3[0], [5, 5]); // 10 -> 2 x 5
+  await split(1, halves[0], [2, 2, 2, 2, 2]); // 0.5 -> 5 x 0.1
+  const mixedKids = await split(4, ones4[5], [3, 2, 2, 2, 2, 2]); // 1 -> 0.5 + 5 x 0.1
+  const tenPieces = await split(3, tens3[0], [5, 5]); // 10 -> 2 x 5
 
   console.log("7. restores: two round trips; the step-6 splits above stay open");
   await restoreSplit(3, tens3[0], tenPieces); // history shows the split and the reassembly
-  const roundtripKids = await decompose(1, halves[2], [2, 2, 2, 2, 2]);
+  const roundtripKids = await split(1, halves[2], [2, 2, 2, 2, 2]);
   await restoreSplit(1, halves[2], roundtripKids);
 
   console.log("8. transfers, including presents for the browsing wallet");
@@ -206,7 +206,7 @@ async function main() {
   );
 }
 
-/** The seed a burned token had, recovered from its ShapeMinted / Decomposed / Restored event. */
+/** The seed a burned token had, recovered from its ShapeMinted / Split / Restored event. */
 async function seedOfBurned(id: bigint): Promise<`0x${string}`> {
   const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
   const minted = await pub.getContractEvents({...base, eventName: "ShapeMinted"});

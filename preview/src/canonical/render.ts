@@ -675,6 +675,69 @@ export function fillClass(c: Composition): "Solid" | "Outline" | "Mixed" {
 }
 
 /* ------------------------------------------------------------------ *
+ * Visual-rarity traits (TRAIT_SPEC.md batch 1)
+ * ------------------------------------------------------------------ */
+
+/** Display name per kind, indexed by the consensus-critical KIND_ORDER. Mirrors `ShapeRenderer._kindName`. */
+const KIND_NAMES: Record<Kind, string> = {
+  circle: "Circle",
+  square: "Square",
+  triangle: "Triangle",
+  half: "Half Circle",
+  quarter: "Quarter Circle",
+  diamond: "Diamond",
+  halfsquare: "Half Square",
+  rtriangle: "Right Triangle",
+  arc: "Arc",
+  line: "Line",
+};
+
+export function kindName(kind: Kind): string {
+  return KIND_NAMES[kind];
+}
+
+/**
+ * The most-frequent primitive kind on the card; ties resolve to the lowest KIND_ORDER index, so
+ * the result is deterministic. The "Primitive" trait. Mirrors `ShapeRenderer._dominantPrimitive`.
+ */
+export function dominantPrimitive(c: Composition): string {
+  const counts = new Map<Kind, number>(KIND_ORDER.map((k) => [k, 0]));
+  for (const m of c.modules) counts.set(m.kind, (counts.get(m.kind) ?? 0) + 1);
+
+  let best: Kind = KIND_ORDER[0];
+  let bestCount = 0;
+  for (const kind of KIND_ORDER) {
+    const count = counts.get(kind)!;
+    if (count > bestCount) {
+      bestCount = count;
+      best = kind;
+    }
+  }
+  return KIND_NAMES[best];
+}
+
+/**
+ * How many of the ten primitive kinds appear at least once (1..10). The "Variety" trait; a value
+ * of 1 is a single-kind card. Mirrors `ShapeRenderer._varietyCount`.
+ */
+export function varietyCount(c: Composition): number {
+  const seen = new Set<Kind>();
+  for (const m of c.modules) seen.add(m.kind);
+  return seen.size;
+}
+
+/**
+ * The ink gene's rarity band. The four extremes (Void, Faint, Rich, Solid) enter the population
+ * only through a dust mint, so they are scarcer than the {Sparse, Murk, Dense} band every larger
+ * mint draws from. The "Ink Tier" trait. Mirrors `ShapeRenderer._inkTier`.
+ */
+export function inkTier(gene: number): "Mythic" | "Rare" | "Common" {
+  if (gene === 0 || gene === 6) return "Mythic"; // Void, Solid
+  if (gene === 1 || gene === 5) return "Rare"; // Faint, Rich
+  return "Common"; // Sparse, Murk, Dense
+}
+
+/* ------------------------------------------------------------------ *
  * Metadata
  * ------------------------------------------------------------------ */
 
@@ -747,6 +810,7 @@ export function tokenMetadataJson(
   originCount: bigint,
   inverted: boolean,
   inkGene: number,
+  composeDepth: bigint,
   p: Params = CANONICAL,
 ): string {
   const c = composeShape(seed, amountWei, inkGene, p);
@@ -764,11 +828,15 @@ export function tokenMetadataJson(
     `{"trait_type":"Ink","value":"${GENE_NAMES[inkGene]}"},` +
     `{"trait_type":"Modules","value":"${moduleSequence(c)}"},` +
     `{"trait_type":"Module Count","value":"${c.cols * c.rows}"},` +
+    `{"trait_type":"Primitive","value":"${dominantPrimitive(c)}"},` +
+    `{"trait_type":"Variety","value":"${varietyCount(c)}"},` +
+    `{"trait_type":"Ink Tier","value":"${inkTier(inkGene)}"},` +
     `{"trait_type":"Formation","value":"${formation(units, originCount, inverted)}"},` +
     `{"trait_type":"Independent Origins","value":"${originCount.toString()}"},` +
     `{"trait_type":"Origin Density","value":"${densityPercent(units, originCount)}%"},` +
     `{"trait_type":"Complete","value":"${complete ? "true" : "false"}"},` +
-    `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"}` +
+    `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +
+    `{"trait_type":"Compose Depth","value":"${composeDepth.toString()}"}` +
     `]}`
   );
 }
@@ -780,11 +848,14 @@ export function tokenURI(
   originCount: bigint,
   inverted: boolean,
   inkGene: number,
+  composeDepth: bigint,
   p: Params = CANONICAL,
 ): string {
   return (
     "data:application/json;base64," +
-    base64Utf8(tokenMetadataJson(seed, amountWei, tokenId, originCount, inverted, inkGene, p))
+    base64Utf8(
+      tokenMetadataJson(seed, amountWei, tokenId, originCount, inverted, inkGene, composeDepth, p),
+    )
   );
 }
 

@@ -212,13 +212,20 @@ transaction within ~51 minutes and a token that is not fully formed at mint. Tha
 amount of machinery for a primitive whose §26 mandate is to stay extremely narrow, bought
 against a property the reference implementation in this space does not have either.
 
-**Decompose child seeds are deterministic, not block-derived.** A `decompose` mints its outputs
+**Split child seeds are deterministic, not block-derived.** A `split` mints its outputs
 with `childSeed_i = keccak256(abi.encodePacked(parentSeed, i))`, where `i` is the output index.
 No block value enters. The parent seed is already fixed and free of caller control (it was set
 at the parent's own mint under the rule above), and the index is not a free parameter, so the
-full decompose tree is determined the moment the parent exists. Using block entropy here would
+full split tree is determined the moment the parent exists. Using block entropy here would
 instead grant one fresh re-roll per block: burn, observe the children, and if they are unwanted,
 revert and retry next block. Deriving from the parent seed removes that grind entirely.
+
+**Decompose reads no seed entropy at all.** `decompose` is the exact inverse of `compose`, not a
+downward reshape like `split`. It pops the survivor's most-recent compose record and re-mints every
+burned input under its **original id and its original stored seed** (the record captured them at
+compose time), so no seed is derived and no block value enters. The survivor keeps its own id and
+seed unchanged, as it did through the compose. Where `split` fixes a deterministic tree of *new*
+child seeds, `decompose` simply restores seeds that already existed. See DECOMPOSE_SPEC.md.
 
 ### D4. Inset of outlined primitives — **specifications disagree**
 
@@ -349,11 +356,21 @@ one bit is not represented; every other module state is distinguishable.
 
 ### D11. Metadata
 
-`attributes` carries `ETH Value`, `Grid`, `Fill`, `Ink`, `Modules` (the glyph sequence),
-`Module Count`, `Formation`, `Independent Origins`, `Origin Density`, `Complete`, `Black` and
-`Seed`. Every `value` is a string, so no trait renders as a numeric range filter. `ETH Value` is
-derived from the same denomination index as `backingOf`, so it cannot disagree with the reserve.
-Full field-by-field reference in [METADATA.md](METADATA.md).
+`attributes` carries, in emission order: `ETH Value`, `Grid`, `Fill`, `Ink`, `Modules` (the glyph
+sequence), `Module Count`, then the visual-rarity block `Primitive` / `Variety` / `Ink Tier`, then
+the provenance block `Formation` / `Independent Origins` / `Origin Density` / `Complete` / `Black`,
+and finally `Compose Depth`. Every `value` is a string, so no trait renders as a numeric range
+filter. `ETH Value` is derived from the same denomination index as `backingOf`, so it cannot
+disagree with the reserve. Full field-by-field reference in [METADATA.md](METADATA.md).
+
+The four v2 additions are all **aesthetic**, carrying no economic weight (redemption stays
+denomination-only, D15): `Primitive` is the dominant of the ten primitive kinds on the card (ties to
+the lowest KIND index); `Variety` is the count of distinct kinds present (`"1"`..`"10"`); `Ink Tier`
+bands the seven-state ink gene to `Mythic` (Void/Solid), `Rare` (Faint/Rich) or `Common` (the rest);
+`Compose Depth` surfaces `Shapes.composeDepth(id)`, the reversible-compose stack depth (`0` at mint,
++1 per `compose`, −1 per matching `decompose`). `Compose Depth` is the one mutable-state input, the
+last argument to `metadataJSON`/`tokenURI`; the other three derive from the card the renderer already
+builds. The renderer stays byte-parity with the canonical TypeScript renderer. See TRAIT_SPEC.md.
 
 Every string in both the SVG and the JSON comes from a fixed table or from
 `fmt`. No caller-controlled text reaches either document, so there is no
@@ -608,7 +625,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 - **Entropy only at mint.** A Shape's ink gene (`VOID`..`SOLID`, seven states) is drawn once,
   a pure function of the mint seed and the denomination tier (`InkGenes.geneAtMint`). No
-  compose, decompose or restore ever consumes fresh randomness for the gene; every later
+  compose, decompose, split or restore ever consumes fresh randomness for the gene; every later
   transformation is a deterministic function of state already on chain. Non-dust mints draw
   only from the narrow `{Sparse, Murk, Dense}` band; the four extremes are reachable only
   through a dust (0.01 ETH) mint, the same asymmetry the fill-probability table already had.
@@ -626,11 +643,16 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   multiset with a different survivor can produce a different gene — this is deliberate and
   covered by `test_SurvivorChoiceChangesTheGene`. It is the one input to the walk that a caller
   actually controls; `burnIds` order is not, by the fold above.
-- **decompose/restore copy the gene verbatim.** Every child of a split inherits the parent's
+- **split/restore copy the gene verbatim.** Every child of a split inherits the parent's
   gene exactly; `restore` recovers the pre-split gene exactly (captured once, from the first
   child position, since every child of one split shares it by construction). Neither path rolls
   anything — origins-conservation reasoning applies unchanged to the gene.
-- **`simulateCompose`/`simulateDecompose`** preview the exact gene a real `compose`/`decompose`
+- **decompose restores the gene from the record.** `compose` captures the survivor's pre-compose
+  gene and each input's gene in the compose record; `decompose` writes them back verbatim (survivor
+  reverts to its snapshot gene, each revived input regains its own), so an `InkGene` event fires for
+  the survivor and every revived id but no roll occurs. A compose then a decompose leave the gene
+  exactly where it started (DECOMPOSE_SPEC.md).
+- **`simulateCompose`/`simulateSplit`** preview the exact gene a real `compose`/`split`
   would produce, `view`, touching no storage — mirrors `compose`'s validation with an explicit
   duplicate-burn-id check in place of relying on `_burn` reverting.
 - **One-tx apexes are not reachable.** `compose` burns its inputs in an O(n) loop, so a single

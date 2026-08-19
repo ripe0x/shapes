@@ -4,7 +4,7 @@ import {renderShape} from "../canonical/render";
  * Render a Shape locally from the canonical renderer (the code the contract ports) as a data
  * URI. `inkGene` is the token's ink state, which the artwork depends on alongside seed and
  * denomination; the caller supplies the exact gene the chain assigns the token being drawn
- * (`mintGene` for a fresh mint, the parent's gene for a decompose child, the stored gene for a
+ * (`mintGene` for a fresh mint, the parent's gene for a split child, the stored gene for a
  * live token), so the preview matches what the chain serves.
  */
 export function localArt(seed: bigint, amountWei: bigint, inkGene: number): string {
