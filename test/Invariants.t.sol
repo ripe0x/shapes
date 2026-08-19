@@ -568,6 +568,20 @@ contract ShapesInvariantTest is StdInvariant, Test {
         assertGe(shapes.totalMinted(), shapes.totalSupply(), "totalMinted below live supply");
     }
 
+    /// @notice No id ever escapes the counter. Ids are issued from 0 and `totalMinted` counts
+    ///         them, so every id in existence is strictly below it. This is the property that
+    ///         keeps `decompose`'s revived ids from colliding with a fresh mint: a revived id was
+    ///         issued in the past and so is bounded here, while a fresh mint takes `totalMinted`
+    ///         itself. An off-by-one in `_mintBatch`, `split` or `decompose`'s deliberate refusal
+    ///         to advance the counter would surface as a violation whatever the sequence was.
+    function invariant_EveryLiveIdIsBelowTheCounter() public view {
+        uint256 minted = shapes.totalMinted();
+        uint256 n = handler.liveTokenCount();
+        for (uint256 i = 0; i < n; ++i) {
+            assertLt(handler.liveTokens(i), minted, "a live id reached or passed totalMinted");
+        }
+    }
+
     /// @notice Every live token carries one of the nine denominations. Nothing else is
     ///         representable.
     function invariant_EveryLiveTokenIsOnTheLadder() public view {
