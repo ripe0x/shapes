@@ -218,6 +218,80 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         return "Mixed";
     }
 
+    /// @dev The primitive kind's display name, indexed by the consensus-critical KIND ordering.
+    ///      Byte-identical to `kindName` in the canonical TypeScript renderer.
+    function _kindName(uint256 kind) private pure returns (string memory) {
+        if (kind == KIND_CIRCLE) return "Circle";
+        if (kind == KIND_SQUARE) return "Square";
+        if (kind == KIND_TRIANGLE) return "Triangle";
+        if (kind == KIND_HALF) return "Half Circle";
+        if (kind == KIND_QUARTER) return "Quarter Circle";
+        if (kind == KIND_DIAMOND) return "Diamond";
+        if (kind == KIND_HALFSQUARE) return "Half Square";
+        if (kind == KIND_RTRIANGLE) return "Right Triangle";
+        if (kind == KIND_ARC) return "Arc";
+        return "Line"; // KIND_LINE
+    }
+
+    /// @dev The most-frequent primitive kind on the card; ties resolve to the lowest KIND index,
+    ///      so the result is deterministic. The "Primitive" trait.
+    function _dominantPrimitive(Card memory card) private pure returns (string memory) {
+        uint256[10] memory counts;
+        uint256 n = card.modules.length;
+        for (uint256 i = 0; i < n; ++i) counts[card.modules[i].kind]++;
+        uint256 best;
+        uint256 bestCount;
+        for (uint256 k = 0; k < KIND_COUNT; ++k) {
+            if (counts[k] > bestCount) {
+                bestCount = counts[k];
+                best = k;
+            }
+        }
+        return _kindName(best);
+    }
+
+    /// @dev How many of the ten primitive kinds appear at least once (1..10). The "Variety" trait;
+    ///      a value of 1 is a single-kind card.
+    function _varietyCount(Card memory card) private pure returns (uint256) {
+        bool[10] memory seen;
+        uint256 n = card.modules.length;
+        uint256 distinct;
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 k = card.modules[i].kind;
+            if (!seen[k]) {
+                seen[k] = true;
+                distinct++;
+            }
+        }
+        return distinct;
+    }
+
+    /// @dev The ink gene's rarity band. The four extremes (Void, Faint, Rich, Solid) enter the
+    ///      population only through a dust mint, so they are scarcer than the {Sparse, Murk, Dense}
+    ///      band every larger mint draws from. The "Ink Tier" trait.
+    function _inkTier(uint8 inkGene) private pure returns (string memory) {
+        if (inkGene == 0 || inkGene == 6) return "Mythic"; // Void, Solid
+        if (inkGene == 1 || inkGene == 5) return "Rare"; // Faint, Rich
+        return "Common"; // Sparse, Murk, Dense
+    }
+
+    /// @dev The visual-rarity trait block, split out to keep `metadataJSON` under the stack limit.
+    ///      Primitive (dominant kind), Variety (distinct kinds), Ink Tier. Mirrors
+    ///      `_provenanceTraits`'s chaining contract: opens by closing the preceding trait object
+    ///      and ends with the last value quote closed but its object left open for the next block
+    ///      to close.
+    function _visualTraits(Card memory card, uint8 inkGene) private pure returns (bytes memory) {
+        return abi.encodePacked(
+            '},{"trait_type":"Primitive","value":"',
+            _dominantPrimitive(card),
+            '"},{"trait_type":"Variety","value":"',
+            FixedPoint.toString(_varietyCount(card)),
+            '"},{"trait_type":"Ink Tier","value":"',
+            _inkTier(inkGene),
+            '"'
+        );
+    }
+
     /// @dev Solve the path footprint that paints to exactly `target` from the cell centre.
     ///
     ///      A solid mark paints to its own edge, so its footprint is `2 * target`. Outlined
@@ -971,7 +1045,8 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         uint256 tokenId,
         uint256 originCount,
         bool inverted,
-        uint8 inkGene
+        uint8 inkGene,
+        uint256 composeDepth
     ) public pure returns (string memory) {
         Card memory card = compose(seed, amountWei, inkGene);
         string memory svg = renderSVG(seed, amountWei, inverted, inkGene);
@@ -1002,7 +1077,11 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
                 '"},{"trait_type":"Module Count","value":"',
                 FixedPoint.toString(card.cols * card.rows),
                 '"',
+                _visualTraits(card, inkGene),
                 _provenanceTraits(units, originCount, complete, inverted),
+                ',{"trait_type":"Compose Depth","value":"',
+                FixedPoint.toString(composeDepth),
+                '"}',
                 "]}"
             )
         );
@@ -1037,12 +1116,17 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         uint256 tokenId,
         uint256 originCount,
         bool inverted,
-        uint8 inkGene
+        uint8 inkGene,
+        uint256 composeDepth
     ) external pure returns (string memory) {
         return string(
             abi.encodePacked(
                 "data:application/json;base64,",
-                Base64.encode(bytes(metadataJSON(seed, amountWei, tokenId, originCount, inverted, inkGene)))
+                Base64.encode(
+                    bytes(
+                        metadataJSON(seed, amountWei, tokenId, originCount, inverted, inkGene, composeDepth)
+                    )
+                )
             )
         );
     }

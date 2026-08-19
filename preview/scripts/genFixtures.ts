@@ -49,11 +49,21 @@ interface Case {
   why: string;
   /** Defaults to the gene a real mint of this seed at this denomination would draw. */
   gene?: number;
+  /**
+   * Reversible-compose stack depth, surfaced as the `Compose Depth` trait. Contract state, not
+   * seed-derived, so it defaults to 0 (a token that has never been composed into).
+   */
+  composeDepth?: bigint;
 }
 
 /** The gene a real mint of `seed` at `amountWei`'s denomination draws, unless overridden. */
 function geneOf(c: Case): number {
   return c.gene ?? geneAtMint(c.seed, denominationIndex(c.amountWei));
+}
+
+/** `composeDepth`, defaulting to 0 (never composed into). */
+function depthOf(c: Case): bigint {
+  return c.composeDepth ?? 0n;
 }
 
 /**
@@ -191,6 +201,11 @@ const edges: Case[] = [
   // Black: apex Complete rendered inverted.
   { seed: productionSeed(14n), amountWei: DENOMINATIONS[8], tokenId: 23n, originCount: 10000n, inverted: true, why: "Black apex (inverted, 10000 origins)" },
   { seed: 0n, amountWei: DENOMINATIONS[0], tokenId: 24n, originCount: 1n, inverted: true, why: "inverted densest grid" },
+
+  // Compose Depth: contract state, not seed-derived. Most cases default to 0 (never composed
+  // into); these exercise the non-zero rendering of the trait.
+  { seed: productionSeed(16n), amountWei: DENOMINATIONS[1], tokenId: 26n, originCount: 5n, inverted: false, why: "Compose Depth 1 (one reversible compose)", composeDepth: 1n },
+  { seed: productionSeed(17n), amountWei: DENOMINATIONS[4], tokenId: 27n, originCount: 100n, inverted: false, why: "Compose Depth 3 (stacked reversible composes)", composeDepth: 3n },
 ];
 cases.push(...edges);
 
@@ -229,9 +244,18 @@ const out = {
   originCount: cases.map((c) => c.originCount.toString()),
   inverted: cases.map((c) => (c.inverted ? "true" : "false")),
   inkGene: cases.map((c) => geneOf(c).toString()),
+  composeDepth: cases.map((c) => depthOf(c).toString()),
   svg: cases.map((c) => renderShape(c.seed, c.amountWei, c.tokenId, geneOf(c), CANONICAL, c.inverted)), // tokenId unused: no type
   metadata: cases.map((c) =>
-    tokenMetadataJson(c.seed, c.amountWei, c.tokenId, c.originCount, c.inverted, geneOf(c)),
+    tokenMetadataJson(
+      c.seed,
+      c.amountWei,
+      c.tokenId,
+      c.originCount,
+      c.inverted,
+      geneOf(c),
+      depthOf(c),
+    ),
   ),
   childParent: childCases.map((c) => hex32(c.parent)),
   childIndex: childCases.map((c) => c.index.toString()),
