@@ -182,7 +182,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         renderer = newRenderer;
         emit RendererUpdated(newRenderer);
         // A new renderer changes `tokenURI` for every existing token; ERC-4906 signals the refresh.
-        if (totalMinted != 0) emit BatchMetadataUpdate(1, totalMinted);
+        if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
     }
 
     /// @inheritdoc IShapes
@@ -262,7 +262,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         uint256 fees = mintFeeFor(amountWei) * quantity;
         if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
 
-        firstTokenId = totalMinted + 1;
+        firstTokenId = totalMinted;
 
         // One entropy root per batch; each token's seed derives from it and its own id, so every
         // token in a batch gets a distinct seed.
@@ -284,7 +284,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         );
 
         // -------- effects --------
-        totalMinted = firstTokenId + quantity - 1;
+        totalMinted = firstTokenId + quantity;
         totalSupply += quantity;
         redeemableBacking += backing;
 
@@ -564,8 +564,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         delete _shapes[tokenId];
         _burn(tokenId);
 
-        uint256 firstId = totalMinted + 1;
-        totalMinted = firstId + k - 1;
+        uint256 firstId = totalMinted;
+        totalMinted = firstId + k;
         totalSupply += k - 1; // burned one, minting k
 
         newIds = new uint256[](k);
@@ -605,7 +605,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///      merge: the survivor reverts to its pre-compose denomination, origin count and gene (its
     ///      id and seed never changed), and every burned input is re-minted verbatim under its
     ///      original id and seed. `totalMinted` is not bumped — the input ids are reused, not freshly
-    ///      issued, which is collision-free because fresh mints always exceed `totalMinted` and an id
+    ///      issued, which is collision-free because a fresh mint takes `totalMinted` itself, above
+    ///      every id already issued, and an id
     ///      belongs to at most one live record (DECOMPOSE_SPEC.md). LIFO: stacked composes on one
     ///      survivor unwind newest first. Backing is conserved, so `redeemableBacking` is untouched.
     ///      All accounting precedes the `_safeMint` loop so a receiver callback observes consistent

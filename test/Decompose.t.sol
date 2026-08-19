@@ -210,9 +210,10 @@ contract DecomposeTest is ShapesBase {
         vm.prank(alice);
         shapes.decompose(survivor); // re-mints ids first+1..first+4
 
-        // A fresh mint still advances past totalMinted; no collision with reused ids.
+        // A fresh mint takes `totalMinted`, above every id already issued; no collision with the
+        // reused ids.
         uint256 fresh = _mint(alice, 1 ether);
-        assertEq(fresh, 6, "fresh mint uses totalMinted + 1");
+        assertEq(fresh, 5, "fresh mint takes totalMinted");
         assertEq(shapes.totalMinted(), 6);
     }
 

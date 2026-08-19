@@ -311,7 +311,8 @@ interface IShapes is IERC721 {
     /// @notice Number of live Shapes.
     function totalSupply() external view returns (uint256);
 
-    /// @notice Number of Shapes ever minted. Also the highest token id issued.
+    /// @notice Number of Shapes ever minted. Ids are issued from 0, so the highest id issued
+    ///         is `totalMinted - 1`.
     function totalMinted() external view returns (uint256);
 
     /// @notice The survivor's compose-stack depth: how many stacked composes `decompose` can still

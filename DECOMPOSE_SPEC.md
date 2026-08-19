@@ -75,7 +75,7 @@ Effects (CEI, mint last):
 
 ## Safety — why re-minting burned ids is collision-free
 
-- **Fresh mints never collide.** `mint` and `split` issue `totalMinted + 1`, strictly greater than any id ever issued. A re-minted input id is `<= totalMinted`, so no fresh mint reproduces it.
+- **Fresh mints never collide.** Ids are issued from 0, so the highest id ever issued is `totalMinted - 1`. `mint` and `split` take `totalMinted` itself, strictly greater than that. A re-minted input id is `<= totalMinted - 1`, so no fresh mint reproduces it.
 - **An input id belongs to at most one live record.** An id is burned when it becomes a compose input. To be an input to a *second* compose it must first be alive again — which only `decompose` does, and `decompose` pops the record that held it in the same call. So no id sits in two live records at once.
 - **`_safeMint` is a backstop.** If a malformed stack ever pointed at a live id, OZ `_mint` reverts (`previousOwner != 0`). Worst case is a revert, never corruption.
 

@@ -210,7 +210,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
     // No enumerable extension; in a dev harness the id space is tiny, so scan it and keep the
     // live tokens this account owns. Burned ids revert on ownerOf and are skipped.
     const owned: OwnedToken[] = [];
-    for (let id = 1n; id <= minted; id++) {
+    for (let id = 0n; id < minted; id++) {
       let owner: string;
       try {
         owner = await publicClient.readContract({...shapes, functionName: "ownerOf", args: [id]});

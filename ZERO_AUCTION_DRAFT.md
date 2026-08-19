@@ -14,8 +14,8 @@ and a separate list of what this exercise revealed about `Shapes` itself.
 **Decided**
 
 - Token 0 is a Shape, in the collection. Not a companion 1-of-1.
-- **Token ids start at 0.** `_mintBatch`'s `firstTokenId = totalMinted + 1` becomes
-  `totalMinted`, and `totalMinted` becomes a count of ids issued rather than the highest id.
+- **Token ids start at 0.** Built: `_mintBatch` and `split` issue `totalMinted`, and
+  `totalMinted` counts ids issued rather than naming the highest one.
 - **Token 0 is minted at 0.01 ETH**, the lowest denomination: a 5×5 grid, 25 modules,
   maximum density. Every later addition can only make it sparser.
 - **Token 0's seed is one draw.** No grinding. Whatever the mint returns is the piece.
@@ -334,10 +334,9 @@ it is a deliberate burn.
 5. Artist calls `createAuction`, escrowing token 0.
 6. Bidding, then `settle`.
 
-If ids are to start at 0, that change lands in step 1. `_mintBatch` sets
-`firstTokenId = totalMinted + 1` today; `totalMinted` becomes a count of ids issued and
-"highest id issued" becomes `totalMinted - 1`. Small in code, wide in blast radius across the
-documentation and the invariant suite.
+Ids start at 0: `_mintBatch` and `split` issue `totalMinted`, so the highest id issued is
+`totalMinted - 1`. The collision argument that guards `decompose`'s revived ids holds unchanged,
+because a fresh mint still takes an id above every one already issued.
 
 ---
 
@@ -560,11 +559,8 @@ during the auction, but relevant to the site's own display of the bid.
 
 ## 8. Open questions
 
-1. **Ids starting at 0: decided, not yet built.** `Shapes.sol` still issues `totalMinted + 1`.
-   The only change that must land before deploy.
-
-Nothing else is open. F3 (§6) stays as SHAPES_V2_SPEC §5 has it; it concerns `split` and
-`restore`, which the auction never calls, and can be revisited at any time or never.
+None. Everything the auction needs from `Shapes` is deployed, and every setting is fixed. The
+house itself is the only thing left to build.
 
 ---
 

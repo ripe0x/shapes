@@ -89,7 +89,7 @@ contract MintTest is ShapesBase {
             uint256 id = _mint(alice, DENOMS[i]);
             expectedBacking += DENOMS[i];
 
-            assertEq(id, i + 1, "token ids are sequential from 1");
+            assertEq(id, i, "token ids are sequential from 0");
             assertEq(shapes.ownerOf(id), alice);
             assertEq(shapes.backingOf(id), DENOMS[i]);
             assertEq(shapes.redeemableBacking(), expectedBacking);
@@ -100,8 +100,10 @@ contract MintTest is ShapesBase {
         _assertSolvent();
     }
 
-    function test_TokenIdsStartAtOne() public {
+    function test_TokenIdsStartAtZero() public {
         assertEq(shapes.totalMinted(), 0);
+        assertEq(_mint(alice, 1 ether), 0, "the first Shape is #0");
+        assertEq(shapes.totalMinted(), 1, "totalMinted counts ids issued, not the highest one");
         assertEq(_mint(alice, 1 ether), 1);
     }
 
@@ -201,7 +203,7 @@ contract MintTest is ShapesBase {
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: required}(1 ether, qty, alice);
 
-        assertEq(first, 1);
+        assertEq(first, 0);
         assertEq(shapes.totalMinted(), qty);
         assertEq(shapes.totalSupply(), qty);
         assertEq(shapes.redeemableBacking(), qty * 1 ether, "fees are not part of backing");
@@ -790,7 +792,7 @@ contract RendererAdminTest is ShapesBase {
         ShapeRenderer next = new ShapeRenderer();
 
         vm.expectEmit(false, false, false, true, address(shapes));
-        emit IERC4906.BatchMetadataUpdate(1, shapes.totalMinted());
+        emit IERC4906.BatchMetadataUpdate(0, shapes.totalMinted() - 1);
         shapes.setRenderer(address(next));
     }
 
@@ -1250,7 +1252,7 @@ contract InkGeneMintTest is ShapesBase {
     /// @dev Recomputes the batch-root/seed derivation `_mintBatch` uses, independently, so this
     ///      does not just trust `seedOf` after the fact.
     function test_MintEmitsInkGeneEvent() public {
-        uint256 firstTokenId = shapes.totalMinted() + 1;
+        uint256 firstTokenId = shapes.totalMinted();
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
@@ -1463,7 +1465,7 @@ contract InkGeneSplitTest is ShapesBase {
     function test_SplitEmitsInkGenePerChild() public {
         uint256 id = _mint(alice, 0.05 ether);
         uint8 parentGene = shapes.inkGeneOf(id);
-        uint256 firstChild = shapes.totalMinted() + 1;
+        uint256 firstChild = shapes.totalMinted();
 
         uint8[] memory outs = new uint8[](5);
         vm.expectEmit(true, false, false, true, address(shapes));

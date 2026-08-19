@@ -46,7 +46,7 @@ fixed 100 ETH to `0x…dEaD`.
 - Renderer (`ShapeRenderer`) is `pure`/`view`-only, byte-parity with a canonical TypeScript
   renderer (10 primitive kinds, 52 module appearances), and is owner-replaceable until
   `lockRenderer` (a cosmetic power only; the renderer never touches ETH).
-- Token IDs are sequential (`firstTokenId = totalMinted + 1`), so lower ID ⟺ minted earlier.
+- Token IDs are sequential from 0 (`firstTokenId = totalMinted`), so lower ID ⟺ minted earlier.
 
 ---
 
@@ -232,7 +232,7 @@ uint256 public redeemableBacking;   // renamed from totalBacking
 uint256 public sacrificedBacking;   // monotonic; Black Shapes' burned backing
 uint256 public blackCount;          // monotonic; number of Black Shapes
 uint256 public totalSupply;         // live tokens, INCLUDING Black
-uint256 public totalMinted;         // high-water ID (bumped by split mints; NOT by decompose, which reuses ids)
+uint256 public totalMinted;         // ids issued; the highest is totalMinted-1 (bumped by split mints; NOT by decompose, which reuses ids)
 
 // unchanged: feeBps, feeRecipient (immutable); renderer, rendererLocked (owner, lockable); Ownable
 
@@ -337,7 +337,7 @@ step at a time, newest first.
   `redeemableBacking` unchanged (backing conserved: the survivor shrinks by exactly the inputs'
   summed backing, which the inputs regain); `stack.pop()`. **Interaction:** `_safeMint` each input
   under its **original id** to the caller (or `recipient`).
-- **Why re-minting burned ids is collision-free:** fresh mints always issue `totalMinted + 1`,
+- **Why re-minting burned ids is collision-free:** fresh mints always issue `totalMinted`, above every id already issued,
   strictly greater than any reused id; an input id belongs to at most one live record at a time; and
   `_safeMint` reverts rather than corrupting if a malformed stack ever pointed at a live id
   (DECOMPOSE_SPEC.md).
@@ -522,7 +522,7 @@ unwind into a handful of transactions, each sized to block gas by the client (DE
 Because recompose charges no fee, ID and seed generation is fee-free: one small mint funds unlimited
 split/compose cycles, inflating `totalMinted` and event volume without bound (paying only gas).
 This is economically harmless — no ETH or origins are created — but indexers must not assume
-`totalMinted` approximates mint volume; it is a high-water ID counter, not a mint count.
+`totalMinted` approximates mint volume; it counts ids issued, not mints.
 `decompose` does **not** bump `totalMinted` (it reuses ids), so a decompose-heavy history leaves
 `totalMinted` unmoved while `totalSupply` rises.
 
@@ -545,7 +545,7 @@ This is economically harmless — no ETH or origins are created — but indexers
 - Mint-time seed grinding (the v1 SPEC.md D3e residual, one attempt per block) now selects an entire
   deterministic split tree rather than a single seed. Accepted for the same reason: seeds have
   no economic effect, since redemption value is set by denomination alone.
-- Re-minting burned ids on `decompose` is collision-free: fresh mints always issue `totalMinted + 1`
+- Re-minting burned ids on `decompose` is collision-free: fresh mints always issue `totalMinted`
   (strictly greater than any reused id), an input id belongs to at most one live record at a time,
   and `_safeMint` reverts rather than corrupting on any malformed stack (§9.3, DECOMPOSE_SPEC.md).
 - `0xdEaD` is an economic burn (unspendable); Ethereum cannot truly destroy arbitrary ETH.
