@@ -361,6 +361,75 @@ export async function loadProvenance(
   return await build(id, "root", 0);
 }
 
+export interface DecomposeInput {
+  id: bigint; // the original id it is re-minted under
+  seed: bigint; // its birth seed
+  di: number; // its denomination index
+}
+
+/// The inputs the next `decompose(survivorId)` will restore: the burned inputs of the survivor's
+/// most recent still-standing compose, each with the id and seed it is re-minted under. Replays the
+/// survivor's compose(push)/decompose(pop) events as a LIFO stack — the top is what decompose pops —
+/// then resolves each burned input's birth seed (mint, split-child, or restore). Empty when the
+/// survivor has no standing compose.
+export async function loadDecomposePreview(
+  publicClient: PublicClient,
+  dep: Deployment,
+  survivorId: bigint,
+): Promise<DecomposeInput[]> {
+  const base = {address: dep.shapes, abi: shapesAbi} as const;
+  const latest = await publicClient.getBlockNumber();
+  const [composed, split, decomposed, restored] = await Promise.all([
+    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock: f, toBlock: t})),
+    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock: f, toBlock: t})),
+    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock: f, toBlock: t})),
+    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Restored", fromBlock: f, toBlock: t})),
+  ]);
+
+  const key = survivorId.toString();
+  type Op = {kind: "push" | "pop"; block: bigint; logIndex: number; burnedIds?: bigint[]};
+  const ops: Op[] = [];
+  for (const l of composed)
+    if (l.args.survivorId!.toString() === key)
+      ops.push({kind: "push", block: l.blockNumber!, logIndex: l.logIndex!, burnedIds: [...l.args.burnedIds!]});
+  for (const l of decomposed)
+    if (l.args.survivorId!.toString() === key) ops.push({kind: "pop", block: l.blockNumber!, logIndex: l.logIndex!});
+  ops.sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
+  const stack: bigint[][] = [];
+  for (const op of ops) op.kind === "push" ? stack.push(op.burnedIds!) : stack.pop();
+  const top = stack[stack.length - 1];
+  if (!top) return [];
+
+  const splitOf = new Map<string, {parentSeed: bigint; index: number; di: number}>();
+  for (const l of split)
+    l.args.newIds!.forEach((nid, i) =>
+      splitOf.set(nid.toString(), {parentSeed: BigInt(l.args.parentSeed!), index: i, di: l.args.outDenoms![i]}));
+  const restoreOf = new Map<string, {parentSeed: bigint; di: number}>();
+  for (const l of restored)
+    restoreOf.set(l.args.newTokenId!.toString(), {parentSeed: BigInt(l.args.parentSeed!), di: l.args.denomIndex!});
+
+  const out: DecomposeInput[] = [];
+  for (const id of top) {
+    const k = id.toString();
+    const sp = splitOf.get(k);
+    if (sp) {
+      out.push({id, seed: splitChildSeed(sp.parentSeed, sp.index), di: sp.di});
+      continue;
+    }
+    const rs = restoreOf.get(k);
+    if (rs) {
+      out.push({id, seed: rs.parentSeed, di: rs.di});
+      continue;
+    }
+    // Mint-born: fetch its ShapeMinted by indexed id.
+    const logs = await paginate(dep, latest, (f, t) =>
+      publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock: f, toBlock: t}));
+    const m = logs[0];
+    if (m) out.push({id, seed: BigInt(m.args.seed!), di: denomIndexOf(m.args.amountWei!)});
+  }
+  return out;
+}
+
 export interface SplitBirth {
   parentSeed: `0x${string}`;
   parentId: bigint;

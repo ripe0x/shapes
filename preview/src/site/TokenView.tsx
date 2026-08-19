@@ -9,9 +9,11 @@ import {
   loadHistory,
   findSplitBirth,
   loadProvenance,
+  loadDecomposePreview,
   type HistEvent,
   type SplitBirth,
   type ProvNode,
+  type DecomposeInput,
 } from "../chain/history";
 import {C} from "./theme";
 import {Section, Art, short, txUrl} from "./ui";
@@ -84,6 +86,7 @@ export function TokenView({
   const [unicodeCard, setUnicodeCard] = React.useState<string | null>(null);
   const [unicodeUnavailable, setUnicodeUnavailable] = React.useState(false);
   const [showRawUnicode, setShowRawUnicode] = React.useState(false);
+  const [decompInputs, setDecompInputs] = React.useState<DecomposeInput[] | null>(null);
 
   // Ancestry tree from the event log; shown only when the token has one beyond its own mint.
   React.useEffect(() => {
@@ -145,6 +148,22 @@ export function TokenView({
       );
       if (!cancelled) setHistory(events.map((e) => ({...e, date: stamps.get(e.block) ?? ""})));
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient, dep, tokenId, data]);
+
+  // The inputs a decompose would restore (its most recent compose's burned inputs), for the preview
+  // strip. Loaded only when the token has a compose to reverse; reloads after any transaction.
+  React.useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+    setDecompInputs(null);
+    const t = data?.tokens.find((x) => x.id === tokenId);
+    if (!t || t.composeDepth === 0) return;
+    void loadDecomposePreview(publicClient, dep, tokenId).then((inputs) => {
+      if (!cancelled) setDecompInputs(inputs);
+    });
     return () => {
       cancelled = true;
     };
@@ -655,7 +674,7 @@ export function TokenView({
             <Section title="DECOMPOSE" pad="26px 48px 36px 32px">
               <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
                 Undo this Shape's most recent compose. #{token.id.toString()} keeps its id and
-                reverts to its pre-compose denomination and origins; every Shape burned by that
+                reverts to its pre-compose denomination and origins. Every Shape burned by that
                 compose is re-minted under its original id and seed, to you.
               </p>
               <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
@@ -663,6 +682,19 @@ export function TokenView({
                 Shape has {token.composeDepth} compose{token.composeDepth === 1 ? "" : "s"} left to
                 undo.
               </p>
+              {decompInputs && decompInputs.length > 0 && (
+                <div style={{display: "flex", flexWrap: "wrap", gap: 18, margin: "0 0 26px"}}>
+                  {decompInputs.map((c) => (
+                    <div key={c.id.toString()} style={{flex: "0 0 96px", width: 96}}>
+                      {/* geometry is exact from the restored seed; ink shown as the seed's mint gene */}
+                      <Art src={localArt(c.seed, DENOMINATIONS[c.di].wei, mintGene(c.seed, DENOMINATIONS[c.di].wei))} />
+                      <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
+                        #{c.id.toString()} · {DENOMINATIONS[c.di].label} ETH
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <button
                 type="button"
                 className="btn-outline"
