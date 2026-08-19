@@ -68,6 +68,8 @@ export interface Deployment {
   chainId: number;
   shapes: `0x${string}`;
   renderer: `0x${string}`;
+  collection?: `0x${string}`;
+  auctionHouse?: `0x${string}`;
   feeBps: string;
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
