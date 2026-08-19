@@ -6,7 +6,7 @@ import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "./abi";
 import {renderShape, CANONICAL} from "../canonical/render";
 import {geneAtCompose, centerGene} from "../canonical/ink";
 import {geneIndexOfName} from "../previewGene";
-import {decomposeChildSeed} from "../decomposeSeed";
+import {splitChildSeed} from "../splitSeed";
 import {loadHistory, type HistEvent} from "./history";
 
 const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
@@ -21,6 +21,7 @@ interface OwnedToken {
   isBlack: boolean;
   inkGene: number; // stored ink gene, from the tokenURI "Ink" trait
   image: string; // svg data URI decoded from tokenURI
+  composeDepth: bigint; // stacked composes decompose(survivorId) can still reverse
 }
 
 type Formation = "Black" | "Complete" | "Fragment" | "Direct" | "Composed";
@@ -39,7 +40,7 @@ interface PreviewChild {
   seed: bigint;
   amountWei: bigint;
   originCount: bigint;
-  inkGene: number; // decompose copies the parent's gene verbatim to every child
+  inkGene: number; // split copies the parent's gene verbatim to every child
 }
 
 /* ------------------------------------------------------------------ *
@@ -48,7 +49,7 @@ interface PreviewChild {
 
 /// Render a Shape locally from the canonical renderer — the same code the contract ports — so a
 /// recomposition's outcome can be shown before any transaction is sent. Artwork is a pure function
-/// of (seed, denomination), and a decompose fixes its children's seeds deterministically, so these
+/// of (seed, denomination), and a split fixes its children's seeds deterministically, so these
 /// previews are exact, not approximations.
 function localShapeImage(
   seed: bigint,
@@ -110,7 +111,7 @@ function parseTokenMeta(uri: string): {image: string; denomWei: bigint; inkGene:
 }
 
 /// The provenance label for a (backing, originCount, isBlack) triple. Mirrors
-/// ShapeRenderer._formation. Fragment is a zero-origin decompose remainder.
+/// ShapeRenderer._formation. Fragment is a zero-origin split remainder.
 function formationOf(backing: bigint, originCount: bigint, isBlack: boolean): Formation {
   if (isBlack) return "Black";
   const units = backing / UNIT;
@@ -132,7 +133,7 @@ function densityPercent(backing: bigint, originCount: bigint): string {
   return `${whole}.${frac < 10n ? "0" : ""}${frac}`;
 }
 
-/// The exact outputs of splitting a token one tier down: fresh seeds from `decomposeChildSeed`, and
+/// The exact outputs of splitting a token one tier down: fresh seeds from `splitChildSeed`, and
 /// the survivor-first origin partition the contract applies (each child capped at its own capacity).
 function splitChildren(t: OwnedToken): PreviewChild[] {
   const di = denomIndexOf(t.backing);
@@ -147,7 +148,7 @@ function splitChildren(t: OwnedToken): PreviewChild[] {
     remaining -= give;
     kids.push({
       index: i,
-      seed: decomposeChildSeed(t.seed, i),
+      seed: splitChildSeed(t.seed, i),
       amountWei: downWei,
       originCount: give,
       inkGene: t.inkGene,
@@ -218,13 +219,14 @@ export function ChainApp({dep}: {dep: Deployment}) {
         continue; // burned
       }
       if (owner.toLowerCase() !== address.toLowerCase()) continue;
-      const [backing, seed, originCount, complete, black, uri] = await Promise.all([
+      const [backing, seed, originCount, complete, black, uri, composeDepth] = await Promise.all([
         publicClient.readContract({...shapes, functionName: "backingOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "seedOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "originCountOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "isComplete", args: [id]}),
         publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
         publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
+        publicClient.readContract({...shapes, functionName: "composeDepth", args: [id]}),
       ]);
       const {image, denomWei, inkGene} = parseTokenMeta(uri);
       owned.push({
@@ -237,6 +239,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
         isBlack: black,
         inkGene,
         image,
+        composeDepth,
       });
     }
     setTokens(owned);
@@ -357,7 +360,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
     });
   };
 
-  // Decompose one tier down into the ladder ratio. Confirmed from the split preview.
+  // Split one tier down into the ladder ratio. Confirmed from the split preview.
   const detailToken = view === null ? null : tokens.find((t) => t.id === view) ?? null;
   const splitKids = detailToken ? splitChildren(detailToken) : [];
 
@@ -365,11 +368,18 @@ export function ChainApp({dep}: {dep: Deployment}) {
     const di = denomIndexOf(t.backing);
     if (di <= 0) return;
     const outDenoms = Array<number>(splitChildren(t).length).fill(di - 1);
-    void run(`split ${t.id}`, () => write("decompose", [t.id, outDenoms])).then((ok) => {
+    void run(`split ${t.id}`, () => write("split", [t.id, outDenoms])).then((ok) => {
       if (ok) setView(null);
       else setSplitPreview(false); // keep the token open; just collapse the preview panel
     });
   };
+
+  // Decompose: reverse the survivor's most recent still-standing compose. The survivor keeps its
+  // id and reverts to its pre-compose state; every burned input comes back under its original id.
+  const decomposeUndo = (id: bigint) =>
+    void run(`decompose ${id}`, () => write("decompose", [id])).then((ok) => {
+      if (ok) setView(id); // survivor keeps its id; land back on its detail to see the reversion
+    });
 
   const openDetail = (id: bigint) => {
     setSplitPreview(false);
@@ -410,6 +420,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
             onToggleSelect={toggleSelect}
             onToggleSplit={() => setSplitPreview((v) => !v)}
             onConfirmSplit={confirmSplit}
+            onDecompose={decomposeUndo}
           />
         ) : (
           <>
@@ -483,6 +494,7 @@ function Detail({
   onToggleSelect,
   onToggleSplit,
   onConfirmSplit,
+  onDecompose,
 }: {
   token: OwnedToken | null;
   id: bigint;
@@ -497,6 +509,7 @@ function Detail({
   onToggleSelect: (id: bigint) => void;
   onToggleSplit: () => void;
   onConfirmSplit: (t: OwnedToken) => void;
+  onDecompose: (id: bigint) => void;
 }) {
   // The token can be gone (redeemed or merged elsewhere) while its history remains.
   if (!token) {
@@ -560,6 +573,11 @@ function Detail({
                 {splitPreview ? "hide split" : `split → ${DENOMINATIONS[di - 1].label} ETH ×${splitKids.length}`}
               </button>
             )}
+            {!token.isBlack && token.composeDepth > 0n && (
+              <button onClick={() => onDecompose(token.id)} disabled={!!busy} style={S.btn}>
+                {busy === `decompose ${token.id}` ? "decomposing…" : "decompose (undo compose)"}
+              </button>
+            )}
             {!token.isBlack && (
               <button
                 onClick={() => onToggleSelect(token.id)}
@@ -617,6 +635,8 @@ const HIST_MARK: Record<HistEvent["kind"], string> = {
   splitInto: "⊟",
   absorbed: "⊞",
   mergedAway: "⊞",
+  decomposed: "⊟",
+  revived: "⊟",
   bornFromRestore: "⊞",
   restoredAway: "⊞",
   blackened: "◆",

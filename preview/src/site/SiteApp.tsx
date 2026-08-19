@@ -139,17 +139,34 @@ export function SiteApp({
     }
   };
 
+  const doSplit = async (t: SiteToken) => {
+    if (!publicClient) return;
+    setBusy("split");
+    setTxErr(null);
+    try {
+      const downWei = DENOMINATIONS[t.di - 1].wei;
+      const ratio = Number(t.backing / downWei);
+      const hash = await write("split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
+      await publicClient.waitForTransactionReceipt({hash});
+      await refresh();
+      setView("gallery"); // the input is burned; its children are newest in the gallery
+    } catch (e) {
+      setTxErr({op: "split", text: describeTxError(e)});
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Reverse a survivor's most recent still-standing compose: it keeps its id and reverts to its
+  // pre-compose state, and every burned input is re-minted under its original id and seed.
   const doDecompose = async (t: SiteToken) => {
     if (!publicClient) return;
     setBusy("decompose");
     setTxErr(null);
     try {
-      const downWei = DENOMINATIONS[t.di - 1].wei;
-      const ratio = Number(t.backing / downWei);
-      const hash = await write("decompose", [t.id, Array<number>(ratio).fill(t.di - 1)]);
+      const hash = await write("decompose", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
-      await refresh();
-      setView("gallery"); // the input is burned; its children are newest in the gallery
+      await refresh(); // the survivor keeps its id; its detail shows the reverted state
     } catch (e) {
       setTxErr({op: "decompose", text: describeTxError(e)});
     } finally {
@@ -289,6 +306,7 @@ export function SiteApp({
           onAskRedeem={() => setRedeem({status: "asking"})}
           onCancelRedeem={() => setRedeem({status: "idle"})}
           onConfirmRedeem={(t) => void confirmRedeem(t)}
+          onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
           onCompose={(t, ids) => void doCompose(t, ids)}
           onRestore={(seed, ids) => void doRestore(seed, ids)}

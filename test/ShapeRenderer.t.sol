@@ -486,7 +486,8 @@ contract OutputTest is RendererTestBase {
         string[9] memory expected =
             ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
         for (uint256 i = 0; i < 9; ++i) {
-            string memory json = renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0);
+            string memory json =
+                renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0);
             assertEq(
                 vm.parseJsonString(json, ".attributes[0].value"),
                 string(abi.encodePacked(expected[i], " ETH")),
@@ -497,7 +498,7 @@ contract OutputTest is RendererTestBase {
 
     /// @notice The token number lives in the metadata name, not on the card.
     function test_TokenNumberIsInMetadataOnly() public view {
-        string memory json = renderer.metadataJSON(bytes32(uint256(1)), 1 ether, 123, 1, false, 0);
+        string memory json = renderer.metadataJSON(bytes32(uint256(1)), 1 ether, 123, 1, false, 0, 0);
         assertEq(vm.parseJsonString(json, ".name"), "Shape #123");
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), 1 ether, false, 0), "123"));
     }
@@ -508,7 +509,7 @@ contract OutputTest is RendererTestBase {
         view
     {
         uint256 amount = DENOMS[which % 9];
-        string memory uri = renderer.tokenURI(seed, amount, tokenId, 1, false, _gene(seed));
+        string memory uri = renderer.tokenURI(seed, amount, tokenId, 1, false, _gene(seed), 0);
 
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "json data uri");
         string memory json =
@@ -534,7 +535,7 @@ contract OutputTest is RendererTestBase {
     function testFuzz_AttributesDescribeTheSameToken(bytes32 seed, uint8 which) public view {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
-        string memory json = renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed));
+        string memory json = renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed), 0);
 
         assertEq(vm.parseJsonString(json, ".attributes[0].trait_type"), "ETH Value");
         assertEq(
@@ -549,8 +550,9 @@ contract OutputTest is RendererTestBase {
                 abi.encodePacked(FixedPoint.toString(cols), "x", FixedPoint.toString(rows))
             )
         );
-        // [0] ETH Value [1] Grid [2] Fill [3] Ink [4] Modules [5] Module Count [6] Formation
-        // [7] Independent Origins [8] Origin Density [9] Complete [10] Black [11] Seed
+        // [0] ETH Value [1] Grid [2] Fill [3] Ink [4] Modules [5] Module Count [6] Primitive
+        // [7] Variety [8] Ink Tier [9] Formation [10] Independent Origins [11] Origin Density
+        // [12] Complete [13] Black [14] Compose Depth
         string memory fill = vm.parseJsonString(json, ".attributes[2].value");
         assertTrue(
             keccak256(bytes(fill)) == keccak256("Solid")
@@ -565,6 +567,53 @@ contract OutputTest is RendererTestBase {
         );
         assertEq(vm.parseJsonString(json, ".attributes[5].value"), FixedPoint.toString(cols * rows));
         assertEq(vm.parseJsonString(json, ".attributes[11].value"), vm.toString(seed));
+    }
+
+    /// @notice The three batch-1 visual-rarity traits (TRAIT_SPEC.md): Primitive is a recognised
+    ///         kind name, Variety sits in 1..10, Ink Tier maps the gene to its rarity band. Also
+    ///         checks that Compose Depth (batch 2), the last attribute, echoes its input verbatim.
+    function testFuzz_VisualRarityTraits(bytes32 seed, uint8 which, uint256 composeDepth)
+        public
+        view
+    {
+        uint256 idx = which % 9;
+        uint256 amount = DENOMS[idx];
+        uint8 gene = _gene(seed);
+        string memory json = renderer.metadataJSON(seed, amount, 1, 1, false, gene, composeDepth);
+
+        assertEq(vm.parseJsonString(json, ".attributes[6].trait_type"), "Primitive");
+        string memory primitive = vm.parseJsonString(json, ".attributes[6].value");
+        bool validKind = keccak256(bytes(primitive)) == keccak256("Circle")
+            || keccak256(bytes(primitive)) == keccak256("Square")
+            || keccak256(bytes(primitive)) == keccak256("Triangle")
+            || keccak256(bytes(primitive)) == keccak256("Half Circle")
+            || keccak256(bytes(primitive)) == keccak256("Quarter Circle")
+            || keccak256(bytes(primitive)) == keccak256("Diamond")
+            || keccak256(bytes(primitive)) == keccak256("Half Square")
+            || keccak256(bytes(primitive)) == keccak256("Right Triangle")
+            || keccak256(bytes(primitive)) == keccak256("Arc")
+            || keccak256(bytes(primitive)) == keccak256("Line");
+        assertTrue(validKind, "Primitive must be a recognised kind name");
+
+        assertEq(vm.parseJsonString(json, ".attributes[7].trait_type"), "Variety");
+        uint256 variety = vm.parseUint(vm.parseJsonString(json, ".attributes[7].value"));
+        assertGe(variety, 1);
+        assertLe(variety, 10);
+
+        assertEq(vm.parseJsonString(json, ".attributes[8].trait_type"), "Ink Tier");
+        string memory tier = vm.parseJsonString(json, ".attributes[8].value");
+        string memory expectedTier =
+            (gene == 0 || gene == 6) ? "Mythic" : (gene == 1 || gene == 5) ? "Rare" : "Common";
+        assertEq(tier, expectedTier, "Ink Tier must map the gene to its rarity band");
+
+        assertEq(vm.parseJsonString(json, ".attributes[9].trait_type"), "Formation");
+
+        assertEq(vm.parseJsonString(json, ".attributes[14].trait_type"), "Compose Depth");
+        assertEq(
+            vm.parseJsonString(json, ".attributes[14].value"),
+            FixedPoint.toString(composeDepth),
+            "Compose Depth must echo its input"
+        );
     }
 
     /// @dev The glyph trait must come from the same stream as the artwork, so it must have
@@ -686,11 +735,12 @@ contract TokenMetadataTest is RendererTestBase {
         vm.prank(alice);
         uint256 direct = shapes.mint{value: 1 ether + 0.01 ether}(1 ether, alice);
         string memory dj = _decodeJson(direct);
-        assertEq(vm.parseJsonString(dj, ".attributes[6].value"), "Direct", "direct formation");
-        assertEq(vm.parseJsonString(dj, ".attributes[7].value"), "1", "direct origins");
-        assertEq(vm.parseJsonString(dj, ".attributes[8].value"), "1%", "direct density");
-        assertEq(vm.parseJsonString(dj, ".attributes[9].value"), "false", "direct not complete");
-        assertEq(vm.parseJsonString(dj, ".attributes[10].value"), "false", "direct not black");
+        // attributes[6..8] are Primitive/Variety/Ink Tier, [9..13] are the provenance block.
+        assertEq(vm.parseJsonString(dj, ".attributes[9].value"), "Direct", "direct formation");
+        assertEq(vm.parseJsonString(dj, ".attributes[10].value"), "1", "direct origins");
+        assertEq(vm.parseJsonString(dj, ".attributes[11].value"), "1%", "direct density");
+        assertEq(vm.parseJsonString(dj, ".attributes[12].value"), "false", "direct not complete");
+        assertEq(vm.parseJsonString(dj, ".attributes[13].value"), "false", "direct not black");
 
         // Complete: five 0.01 direct mints composed into one 0.05. units 5, originCount 5.
         vm.prank(alice);
@@ -700,10 +750,10 @@ contract TokenMetadataTest is RendererTestBase {
         vm.prank(alice);
         shapes.compose(first, burn);
         string memory cj = _decodeJson(first);
-        assertEq(vm.parseJsonString(cj, ".attributes[6].value"), "Complete", "complete formation");
-        assertEq(vm.parseJsonString(cj, ".attributes[7].value"), "5", "complete origins");
-        assertEq(vm.parseJsonString(cj, ".attributes[8].value"), "100%", "complete density");
-        assertEq(vm.parseJsonString(cj, ".attributes[9].value"), "true", "is complete");
+        assertEq(vm.parseJsonString(cj, ".attributes[9].value"), "Complete", "complete formation");
+        assertEq(vm.parseJsonString(cj, ".attributes[10].value"), "5", "complete origins");
+        assertEq(vm.parseJsonString(cj, ".attributes[11].value"), "100%", "complete density");
+        assertEq(vm.parseJsonString(cj, ".attributes[12].value"), "true", "is complete");
 
         // Fragment: split a Direct 100 ETH into two 50s. Origins partition survivor-first, so the
         // first child takes the lone origin and the second is a zero-origin Fragment.
@@ -717,10 +767,48 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(shapes.originCountOf(parts[0]), 1, "first half keeps the origin");
         assertEq(shapes.originCountOf(parts[1]), 0, "second half is a fragment");
         string memory fj = _decodeJson(parts[1]);
-        assertEq(vm.parseJsonString(fj, ".attributes[6].value"), "Fragment", "fragment formation");
-        assertEq(vm.parseJsonString(fj, ".attributes[7].value"), "0", "fragment origins");
-        assertEq(vm.parseJsonString(fj, ".attributes[8].value"), "0%", "fragment density");
-        assertEq(vm.parseJsonString(fj, ".attributes[9].value"), "false", "fragment not complete");
+        assertEq(vm.parseJsonString(fj, ".attributes[9].value"), "Fragment", "fragment formation");
+        assertEq(vm.parseJsonString(fj, ".attributes[10].value"), "0", "fragment origins");
+        assertEq(vm.parseJsonString(fj, ".attributes[11].value"), "0%", "fragment density");
+        assertEq(vm.parseJsonString(fj, ".attributes[12].value"), "false", "fragment not complete");
+    }
+
+    /// @notice Compose Depth (batch 2), the last attribute, tracks the survivor's live
+    ///         reversible-compose stack: 0 at mint, incremented by `compose`, decremented back by
+    ///         the matching `decompose`.
+    function test_ComposeDepthTraitTracksComposeAndDecompose() public {
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5, alice);
+
+        assertEq(shapes.composeDepth(first), 0, "fresh mint has no compose record");
+        assertEq(vm.parseJsonString(_decodeJson(first), ".attributes[14].trait_type"), "Compose Depth");
+        assertEq(
+            vm.parseJsonString(_decodeJson(first), ".attributes[14].value"),
+            "0",
+            "Compose Depth 0 before any compose"
+        );
+
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        vm.prank(alice);
+        shapes.compose(first, burn);
+
+        assertEq(shapes.composeDepth(first), 1, "one compose record pushed");
+        assertEq(
+            vm.parseJsonString(_decodeJson(first), ".attributes[14].value"),
+            "1",
+            "Compose Depth 1 after composing"
+        );
+
+        vm.prank(alice);
+        shapes.decompose(first);
+
+        assertEq(shapes.composeDepth(first), 0, "compose record popped");
+        assertEq(
+            vm.parseJsonString(_decodeJson(first), ".attributes[14].value"),
+            "0",
+            "Compose Depth back to 0 after decompose"
+        );
     }
 
     function test_TokenUriUsesTheStoredSeed() public {
@@ -729,7 +817,7 @@ contract TokenMetadataTest is RendererTestBase {
         bytes32 seed = shapes.seedOf(id);
         assertEq(
             shapes.tokenURI(id),
-            renderer.tokenURI(seed, 1 ether, id, 1, false, shapes.inkGeneOf(id))
+            renderer.tokenURI(seed, 1 ether, id, 1, false, shapes.inkGeneOf(id), 0)
         );
     }
 

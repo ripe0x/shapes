@@ -23,7 +23,7 @@ import { fmt } from "../src/canonical/wad";
 import { DENOMINATIONS, LABELS, denominationIndex } from "../src/canonical/denominations";
 import { CANONICAL, paramsEqualCanonical } from "../src/canonical/params";
 import { productionSeed } from "../src/seeds";
-import { decomposeChildSeed } from "../src/decomposeSeed";
+import { splitChildSeed } from "../src/splitSeed";
 import {
   GENE_COUNT,
   GENE_NAMES,
@@ -49,11 +49,21 @@ interface Case {
   why: string;
   /** Defaults to the gene a real mint of this seed at this denomination would draw. */
   gene?: number;
+  /**
+   * Reversible-compose stack depth, surfaced as the `Compose Depth` trait. Contract state, not
+   * seed-derived, so it defaults to 0 (a token that has never been composed into).
+   */
+  composeDepth?: bigint;
 }
 
 /** The gene a real mint of `seed` at `amountWei`'s denomination draws, unless overridden. */
 function geneOf(c: Case): number {
   return c.gene ?? geneAtMint(c.seed, denominationIndex(c.amountWei));
+}
+
+/** `composeDepth`, defaulting to 0 (never composed into). */
+function depthOf(c: Case): bigint {
+  return c.composeDepth ?? 0n;
 }
 
 /**
@@ -178,7 +188,7 @@ const edges: Case[] = [
   { seed: productionSeed(5n), amountWei: DENOMINATIONS[4], tokenId: 14n, originCount: 100n, inverted: false, why: "Complete 1 ETH (100 origins)" },
   { seed: productionSeed(6n), amountWei: DENOMINATIONS[4], tokenId: 15n, originCount: 50n, inverted: false, why: "Composed 1 ETH (50 origins)" },
   { seed: productionSeed(7n), amountWei: DENOMINATIONS[1], tokenId: 16n, originCount: 5n, inverted: false, why: "Complete 0.05 (5 origins)" },
-  { seed: productionSeed(15n), amountWei: DENOMINATIONS[7], tokenId: 25n, originCount: 0n, inverted: false, why: "Fragment 50 ETH (0 origins, decompose remainder)" },
+  { seed: productionSeed(15n), amountWei: DENOMINATIONS[7], tokenId: 25n, originCount: 0n, inverted: false, why: "Fragment 50 ETH (0 origins, split remainder)" },
 
   // Provenance: density formatter branches (hundredths of a percent).
   { seed: productionSeed(8n), amountWei: DENOMINATIONS[8], tokenId: 17n, originCount: 1n, inverted: false, why: "density 0.01% (two decimals)" },
@@ -191,12 +201,17 @@ const edges: Case[] = [
   // Black: apex Complete rendered inverted.
   { seed: productionSeed(14n), amountWei: DENOMINATIONS[8], tokenId: 23n, originCount: 10000n, inverted: true, why: "Black apex (inverted, 10000 origins)" },
   { seed: 0n, amountWei: DENOMINATIONS[0], tokenId: 24n, originCount: 1n, inverted: true, why: "inverted densest grid" },
+
+  // Compose Depth: contract state, not seed-derived. Most cases default to 0 (never composed
+  // into); these exercise the non-zero rendering of the trait.
+  { seed: productionSeed(16n), amountWei: DENOMINATIONS[1], tokenId: 26n, originCount: 5n, inverted: false, why: "Compose Depth 1 (one reversible compose)", composeDepth: 1n },
+  { seed: productionSeed(17n), amountWei: DENOMINATIONS[4], tokenId: 27n, originCount: 100n, inverted: false, why: "Compose Depth 3 (stacked reversible composes)", composeDepth: 3n },
 ];
 cases.push(...edges);
 
 const hex32 = (v: bigint) => "0x" + v.toString(16).padStart(64, "0");
 
-// Deterministic decompose child-seed derivation: childSeed = keccak256(abi.encodePacked(parent, i)).
+// Deterministic split child-seed derivation: childSeed = keccak256(abi.encodePacked(parent, i)).
 // Computed by the same TS helper the frontend preview uses; test/Parity.t.sol recomputes the
 // Solidity derivation and asserts it matches these byte for byte. Indices span the small values a
 // real split uses and larger ones to exercise the packing.
@@ -205,7 +220,7 @@ const childIndices = [0, 1, 2, 9, 255, 10000];
 const childCases: {parent: bigint; index: number; child: bigint}[] = [];
 for (const parent of childParents) {
   for (const index of childIndices) {
-    childCases.push({parent, index, child: decomposeChildSeed(parent, index)});
+    childCases.push({parent, index, child: splitChildSeed(parent, index)});
   }
 }
 
@@ -229,9 +244,18 @@ const out = {
   originCount: cases.map((c) => c.originCount.toString()),
   inverted: cases.map((c) => (c.inverted ? "true" : "false")),
   inkGene: cases.map((c) => geneOf(c).toString()),
+  composeDepth: cases.map((c) => depthOf(c).toString()),
   svg: cases.map((c) => renderShape(c.seed, c.amountWei, c.tokenId, geneOf(c), CANONICAL, c.inverted)), // tokenId unused: no type
   metadata: cases.map((c) =>
-    tokenMetadataJson(c.seed, c.amountWei, c.tokenId, c.originCount, c.inverted, geneOf(c)),
+    tokenMetadataJson(
+      c.seed,
+      c.amountWei,
+      c.tokenId,
+      c.originCount,
+      c.inverted,
+      geneOf(c),
+      depthOf(c),
+    ),
   ),
   childParent: childCases.map((c) => hex32(c.parent)),
   childIndex: childCases.map((c) => c.index.toString()),

@@ -22,14 +22,17 @@ interface IShapeRenderer {
     /// @notice The metadata JSON for a token, with the SVG inlined as a base64 data URI.
     /// @dev `originCount` and `inverted` drive the provenance traits (Formation, Independent
     ///      Origins, Origin Density, Complete, Black). `inverted` is the token's Black state.
-    ///      `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait.
+    ///      `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait. `composeDepth`
+    ///      is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait;
+    ///      it is the one input that is mutable chain state rather than fixed at mint.
     function metadataJSON(
         bytes32 seed,
         uint256 amountWei,
         uint256 tokenId,
         uint256 originCount,
         bool inverted,
-        uint8 inkGene
+        uint8 inkGene,
+        uint256 composeDepth
     ) external pure returns (string memory);
 
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSON`.
@@ -39,7 +42,8 @@ interface IShapeRenderer {
         uint256 tokenId,
         uint256 originCount,
         bool inverted,
-        uint8 inkGene
+        uint8 inkGene,
+        uint256 composeDepth
     ) external pure returns (string memory);
 
     /// @notice The module glyph sequence used as the `Modules` trait.
