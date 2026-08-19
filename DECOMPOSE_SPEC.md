@@ -85,7 +85,7 @@ Every write to a live survivor's `ShapeData` either overwrites/extends its stack
 
 - **`compose(survivorId, …)` again** pushes a new top; `decompose` pops it first (LIFO), restoring to that melt's pre-state — correct.
 - **`split`/`redeem`/being a compose input** burn the survivor. `decompose(survivorId)` then reverts on `_requireOwned` — inert. (When burned *as an input*, the record is intentionally kept: the outer `decompose` re-mints the survivor at its snapshot state, matching its own record's post-state, enabling nested unwind.)
-- **`blacken`** sets `isBlack` without touching the stack; `decompose`'s `isBlack` guard rejects it.
+- **`sacrifice`** sets `isBlack` without touching the stack; `decompose`'s `isBlack` guard rejects it.
 
 No path leaves a survivor alive with mutated state and an out-of-date top record.
 
@@ -93,7 +93,7 @@ No path leaves a survivor alive with mutated state and an out-of-date top record
 
 - **Same survivor, stacked:** `compose #3 (0.01→1)` then `compose #3 (1→10)` pushes two records. `decompose #3` twice unwinds 10→1→0.01, re-minting each melt's inputs. Full recovery.
 - **Nested, different survivors:** `#3` composed to 1 ETH (record on #3), then `#3` burned into survivor `#50` (record on #50 snapshots #3 at 1 ETH). `decompose #50` re-mints #3 at 1 ETH; `#3`'s own record survives, so `decompose #3` then recovers the atoms.
-- **Non-reversal ops forfeit:** `split`/`redeem`/`blacken` on a survivor abandon its stack (records become inert). Consistent with "you chose not to un-merge first."
+- **Non-reversal ops forfeit:** `split`/`redeem`/`sacrifice` on a survivor abandon its stack (records become inert). Consistent with "you chose not to un-merge first."
 
 ## Rename blast radius (contract + tests + docs this pass)
 

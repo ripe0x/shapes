@@ -6,6 +6,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 
 /// @notice Deploys the renderer, the collection metadata contract, and then the token.
@@ -44,8 +45,7 @@ contract DeployShapes is Script {
             // Anywhere else, an unset recipient is almost certainly a mistake, and it would be
             // permanent.
             require(
-                block.chainid == ANVIL_CHAIN_ID,
-                "set SHAPES_FEE_RECIPIENT: it is immutable once deployed"
+                block.chainid == ANVIL_CHAIN_ID, "set SHAPES_FEE_RECIPIENT: it is immutable once deployed"
             );
             feeRecipient = msg.sender;
         }
@@ -54,16 +54,15 @@ contract DeployShapes is Script {
             feeBps <= MAX_SANE_FEE_BPS || vm.envOr("SHAPES_ALLOW_HIGH_FEE", false),
             "fee bps above the sanity ceiling: set SHAPES_ALLOW_HIGH_FEE=true to confirm"
         );
-        require(feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
+        require(
+            feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
             "fee recipient is a contract: a reverting receive would brick minting forever. "
             "Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is audited to always accept ETH"
         );
 
         vm.startBroadcast();
 
-        renderer = existingRenderer == address(0)
-            ? new ShapeRenderer()
-            : ShapeRenderer(existingRenderer);
+        renderer = existingRenderer == address(0) ? new ShapeRenderer() : ShapeRenderer(existingRenderer);
 
         collection = new ShapeCollection(address(renderer));
 
@@ -71,11 +70,15 @@ contract DeployShapes is Script {
 
         vm.stopBroadcast();
 
-        // Everything below is immutable from here on, so prove it landed as intended rather
-        // than trusting the constructor arguments.
+        // Prove the constructor configuration and discovery defaults landed as intended.
+        // The fee terms are immutable; the owner may replace the renderer and position resolver
+        // until each independent lock is used.
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
+        require(shapes.positionResolver() == address(0), "position resolver should start empty");
+        require(!shapes.positionResolverLocked(), "position resolver should start unlocked");
+        require(shapes.supportsInterface(type(IERC721Value).interfaceId), "draft ERC-8060 interface missing");
         require(address(renderer).code.length != 0, "renderer has no code");
         require(shapes.collection() == address(collection), "collection mismatch");
         require(collection.renderer() == address(renderer), "collection points at another renderer");
@@ -83,19 +86,16 @@ contract DeployShapes is Script {
         // Smoke the renderer through the interface the token will actually use. A renderer
         // that cannot produce metadata would leave every token permanently unrenderable.
         require(
-            bytes(
-                IShapeRenderer(address(renderer)).tokenURI(
-                    bytes32(0), 0.01 ether, 1, 1, false, 0, 0
-                )
-            ).length > 500,
+            bytes(IShapeRenderer(address(renderer)).tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0, 0))
+                .length > 500,
             "renderer produced no metadata"
         );
         require(
             bytes(
-                IShapeRenderer(address(renderer)).tokenURI(
-                    bytes32(uint256(1)), 100 ether, 10_000, 10_000, true, 6, 0
-                )
-            ).length > 500,
+                IShapeRenderer(address(renderer))
+                    .tokenURI(bytes32(uint256(1)), 100 ether, 10_000, 10_000, true, 6, 0)
+            )
+            .length > 500,
             "renderer produced no metadata at 100 ETH"
         );
 
@@ -110,8 +110,7 @@ contract DeployShapes is Script {
         console.log("fee recipient ", feeRecipient);
         console.log("owner         ", shapes.owner());
         console.log("");
-        console.log("Fee terms and the reserve are immutable. The owner's only power is");
-        console.log("presentation: setRenderer and setCollection to fix a rendering bug,");
-        console.log("lockRenderer to freeze both permanently.");
+        console.log("Fee terms and reserve rules are immutable. Ownership is transferable.");
+        console.log("Presentation and position resolver settings are independently lockable.");
     }
 }

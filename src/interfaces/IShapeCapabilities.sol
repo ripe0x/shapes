@@ -11,7 +11,7 @@ enum ShapeFormation {
 }
 
 /// @notice The complete protocol state of one live Shape in a single read.
-/// @dev `faceValueWei` is the Shape's denomination and survives blackening;
+/// @dev `faceValueWei` is the Shape's denomination and survives sacrifice;
 ///      `redeemableValueWei` is zero for a Black Shape and otherwise equals face value.
 struct ShapeState {
     bytes32 seed;
@@ -59,7 +59,7 @@ interface IShapeRecomposition {
     function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
-    function blacken(uint256 tokenId) external;
+    function sacrifice(uint256 tokenId) external;
 }
 
 /// @notice Stable provenance capability, separate from metadata presentation.

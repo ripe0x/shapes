@@ -316,7 +316,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
       if (ok) setView(null);
     });
 
-  const blacken = (id: bigint) => run(`blacken ${id}`, () => write("blacken", [id]));
+  const sacrifice = (id: bigint) => run(`sacrifice ${id}`, () => write("sacrifice", [id]));
 
   const toggleSelect = (id: bigint) =>
     setSelected((prev) => {
@@ -415,7 +415,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
             splitKids={splitKids}
             onBack={() => setView(null)}
             onRedeem={redeem}
-            onBlacken={blacken}
+            onSacrifice={sacrifice}
             onToggleSelect={toggleSelect}
             onToggleSplit={() => setSplitPreview((v) => !v)}
             onConfirmSplit={confirmSplit}
@@ -489,7 +489,7 @@ function Detail({
   splitKids,
   onBack,
   onRedeem,
-  onBlacken,
+  onSacrifice,
   onToggleSelect,
   onToggleSplit,
   onConfirmSplit,
@@ -504,7 +504,7 @@ function Detail({
   splitKids: PreviewChild[];
   onBack: () => void;
   onRedeem: (id: bigint) => void;
-  onBlacken: (id: bigint) => void;
+  onSacrifice: (id: bigint) => void;
   onToggleSelect: (id: bigint) => void;
   onToggleSplit: () => void;
   onConfirmSplit: (t: OwnedToken) => void;
@@ -530,7 +530,7 @@ function Detail({
 
   const di = denomIndexOf(token.backing);
   const canSplit = !token.isBlack && di > 0;
-  const canBlacken = !token.isBlack && token.complete && token.backing === DENOMINATIONS[8].wei;
+  const canSacrifice = !token.isBlack && token.complete && token.backing === DENOMINATIONS[8].wei;
   const formation = formationOf(token.backing, token.originCount, token.isBlack);
 
   return (
@@ -586,9 +586,9 @@ function Detail({
                 {selected ? "selected to compose ✓" : "select to compose"}
               </button>
             )}
-            {canBlacken && (
-              <button onClick={() => onBlacken(token.id)} disabled={!!busy} style={S.btnBlacken}>
-                {busy === `blacken ${token.id}` ? "sacrificing…" : "blacken (sacrifice 100 ETH)"}
+            {canSacrifice && (
+              <button onClick={() => onSacrifice(token.id)} disabled={!!busy} style={S.btnSacrifice}>
+                {busy === `sacrifice ${token.id}` ? "sacrificing…" : "sacrifice 100 ETH"}
               </button>
             )}
           </div>
@@ -916,7 +916,7 @@ const S: Record<string, React.CSSProperties> = {
   btn: {background: "#111", color: "#ccc", border: "1px solid #333", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13},
   btnOn: {background: "#3a2a12", color: "#fb8", borderColor: "#963"},
   btnSel: {background: "#0f2418", color: "#8e8", borderColor: "#4a7"},
-  btnBlacken: {background: "#181818", color: "#fff", border: "1px solid #666", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600},
+  btnSacrifice: {background: "#181818", color: "#fff", border: "1px solid #666", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600},
 
   error: {fontFamily: MONO, color: "#f66", marginTop: 12, fontSize: 13},
 };

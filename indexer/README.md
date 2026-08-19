@@ -52,7 +52,7 @@ GraphiQL in the browser) and the `@ponder/client` SQL endpoint at
 Verified end to end against a running dev chain seeded by `npm run simulate`
 (see the repo root): all eight event handlers below fired with zero indexing
 errors. A representative run indexed 10k+ mints and their `InkGene`
-assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 blacken, and
+assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 sacrifice, and
 20k+ transfers — every `token` row carried its assigned `inkGene` and every
 `lineage_edge` its derived `childSeed`, queryable over GraphQL.
 
@@ -72,7 +72,7 @@ history stays queryable.
 | `backingWei` | `bigint` | wei backing; `0` once `isBlack` |
 | `originCount` | `integer` | independent direct-mint origins credited to this token |
 | `inkGene` | `integer` | ink gene 0..6; set by `InkGene`, reassigned on every recomposition |
-| `isBlack` | `boolean` | sacrificed via `blacken` |
+| `isBlack` | `boolean` | transformed via `sacrifice` |
 | `live` | `boolean` | `false` once redeemed/composed-away/split-away |
 | `owner` | `hex` | current owner address |
 | `mintedAtBlock` | `bigint` | block this row's token id was created at |
@@ -179,7 +179,8 @@ The eight events and what each does to the two tables (`src/index.ts`):
   because a split token becomes multiple children rather than several
   tokens becoming one.
 - **`Blackened(tokenId, sacrificedWei)`** — sets `isBlack: true`,
-  `backingWei: 0`. Does not change `live`: a blackened token is terminal but
+  `backingWei: 0`. Does not itself change `live`: a Black token remains transferable and
+  may later be destroyed through `burn` for zero, but
   still exists and still has an owner.
 - **`ShapeRedeemed(tokenId, to, amountWei, originCount)`** — marks `tokenId`
   `live: false`.

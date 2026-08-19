@@ -44,7 +44,7 @@ SEED_ETH=${SEED_ETH:-1000}
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 # --gas-limit (finite, high): the simulation builds a genuine apex Complete (10,000 x 0.01
-# minted then composed into one 100 ETH token, so it can be blackened). That single mint
+# minted then composed into one 100 ETH token, so it can be sacrificed). That single mint
 # batch and its compose each burn far past a mainnet block's gas, which is fine on a local
 # dev chain used only for browsing. Normal txs are unaffected.
 if [ -n "$FORK_URL" ]; then

@@ -136,13 +136,12 @@ Properties worth stating:
   For a wrapper protocol, "the endgame is parking more ETH" is the right kind of
   difficulty.
 
-## 4. Decompose and restore
+## 4. Split and decompose
 
-- **Decompose:** every child inherits the parent's gene, unchanged. Splitting the liquid
+- **Split:** every child inherits the parent's gene, unchanged. Splitting the liquid
   doesn't change the dye.
-- **Restore:** children are all equal by construction, so the restored parent takes their
-  common gene. `SplitRecord` needs NO new field.
-- **No reroll machine:** child seeds derive from the parent seed, so decompose → recompose
+- **Decompose:** the survivor and revived inputs recover the genes captured by the compose record.
+- **No reroll machine:** child seeds derive from the parent seed, so split → compose
   explores a FINITE deterministic tree. Recomposing a token's own children (uniform pool)
   returns the same gene with certainty. Fresh outcomes require fresh seeds, and fresh
   seeds cost mint fees.
@@ -184,7 +183,6 @@ the gene rule works either way.
 | Decompose→recompose reroll | Child seeds deterministic; uniform pools compose deterministically |
 | Tier-jump to skip gauntlet | Per-tier walk: T rolls regardless of path |
 | Off-chain pairing search | Embraced. Bounded by inventory (~1/p partner-sets per tier), which is parked ETH + fees |
-| Restore forgery | Unchanged from current SplitRecord scheme; gene adds no new surface |
 
 ## 8. What must be tuned before freeze (immutable after)
 
@@ -199,7 +197,7 @@ the gene rule works either way.
 
 - D3d/D3e: unchanged; gene derivation uses the token seed, never batch-correlated inputs.
 - D5: renderer consumes the legacy fill draw and discards it — streams stay aligned.
-- `blacken`: gate unchanged (apex + originCount = 10,000). Open flavor question: should
+- `sacrifice`: gate unchanged (apex + originCount = 10,000). Open flavor question: should
   the Black record the gene it died with (a Solid-gened Black vs a Void-gened Black), even
   though `isBlack` overrides rendering? Zero protocol cost, pure lore. — open
 - Parity: gene logic is small pure integer functions; port to TS canonical + fixtures
