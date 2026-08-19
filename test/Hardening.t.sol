@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 
@@ -19,6 +20,8 @@ contract HardeningTest is Test {
     }
 
     ShapeRenderer internal renderer;
+
+    ShapeCollection internal collection;
     Shapes internal shapes;
 
     address internal feeRecipient = address(0xFEE);
@@ -27,7 +30,8 @@ contract HardeningTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -111,11 +115,11 @@ contract HardeningTest is Test {
 
     function test_RendererWithoutCodeIsRejected() public {
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD));
+        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD), address(collection));
 
         // an EOA is equally unacceptable
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, alice);
+        new Shapes(FEE_BPS, feeRecipient, alice, address(collection));
     }
 
     /* ---------------- self-custody ---------------- */

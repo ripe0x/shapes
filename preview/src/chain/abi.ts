@@ -22,7 +22,6 @@ export const shapesAbi = parseAbi([
   "function restoreTo(bytes32 parentSeed, uint256[] childIds, address recipient) returns (uint256 newTokenId)",
   "function splitRecordOf(bytes32 parentSeed) view returns (uint16 childCount, uint8 denomIndex)",
   "function composeDepth(uint256 survivorId) view returns (uint256)",
-  "function simulateSplit(uint256 tokenId) view returns (uint8 childGene)",
   "function previewSplit(uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
   "function blacken(uint256 tokenId)",
   "function tokenURI(uint256 tokenId) view returns (string)",

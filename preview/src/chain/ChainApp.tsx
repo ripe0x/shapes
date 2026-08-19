@@ -60,10 +60,9 @@ function localShapeImage(
   return `data:image/svg+xml;base64,${btoa(renderShape(seed, amountWei, 0n, inkGene, CANONICAL, inverted))}`;
 }
 
-/// The ink gene a compose would assign the survivor, computed exactly as `Shapes.compose` /
-/// `simulateCompose` do: pool `{survivor + burns}` for the best, worst and units-weighted center,
-/// then walk the survivor's gene one tier at a time. Lets the compose-result preview show the real
-/// post-compose ink without a round trip to the chain's `simulateCompose` view.
+/// The ink gene a compose would assign the survivor, computed exactly as `Shapes.compose` does:
+/// pool `{survivor + burns}` for the best, worst and units-weighted center, then walk the
+/// survivor's gene one tier at a time. Avoids a round trip to `previewCompose`.
 function composedGene(survivor: OwnedToken, burns: OwnedToken[], sumWei: bigint): number {
   const oldIndex = denomIndexOf(survivor.denomWei);
   const newIndex = denomIndexOf(sumWei);

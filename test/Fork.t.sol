@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {DeployShapes} from "../script/DeployShapes.s.sol";
@@ -34,6 +35,8 @@ contract ForkTest is Test {
     }
 
     ShapeRenderer internal renderer;
+
+    ShapeCollection internal collection;
     Shapes internal shapes;
 
     address internal feeRecipient = address(0xFEE);
@@ -72,7 +75,8 @@ contract ForkTest is Test {
 
         live = true;
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
         strayWei = address(shapes).balance;
     }
 
@@ -100,11 +104,12 @@ contract ForkTest is Test {
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
         DeployShapes deployer = new DeployShapes();
-        (ShapeRenderer r, Shapes s) = deployer.run();
+        (ShapeRenderer r, ShapeCollection c, Shapes s) = deployer.run();
 
         assertEq(s.feeBps(), 100, "default fee bps not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
         assertEq(s.renderer(), address(r), "renderer mismatch");
+        assertEq(s.collection(), address(c), "collection mismatch");
         assertGt(address(r).code.length, 0, "renderer has no code");
         // Smoke the renderer through the interface the token uses; no mint needed.
         assertGt(bytes(r.tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0, 0)).length, 500, "no metadata");

@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {FixedPoint} from "../src/lib/FixedPoint.sol";
@@ -14,6 +15,7 @@ import {Base64Decode} from "./utils/Base64Decode.sol";
 contract RendererTestBase is Test {
     ShapeRenderer internal renderer;
 
+    ShapeCollection internal collection;
     uint256[9] internal DENOMS = [
         uint256(0.01 ether),
         0.05 ether,
@@ -28,6 +30,7 @@ contract RendererTestBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
+        collection = new ShapeCollection(address(renderer));
     }
 
     /// @dev A pseudo-varied gene (0..6) tied to a seed, for tests that need *some* ink gene but
@@ -693,7 +696,7 @@ contract TokenMetadataTest is RendererTestBase {
 
     function setUp() public override {
         super.setUp();
-        shapes = new Shapes(100, address(0xFEE), address(renderer));
+        shapes = new Shapes(100, address(0xFEE), address(renderer), address(collection));
         vm.deal(alice, 1_000 ether);
     }
 

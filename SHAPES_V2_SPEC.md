@@ -36,7 +36,7 @@ fixed 100 ETH to `0x…dEaD`.
   fixed denomination table — an off-ladder wei amount is not representable in storage.
 - Accounting: `totalBacking`, `totalSupply`, `totalMinted`. Reserve invariant
   `balance >= totalBacking`, asserted by stateful fuzz invariants. Two value-bearing calls exist:
-  the mint-fee forward (money received the same tx) and `_settle` (redemption payout, reached only
+  the mint-fee forward (money received the same tx) and `_payRedemption` (redemption payout, reached only
   after the token is burned).
 - Mint charges a fee of `feeBps` (1%) on new ETH; `msg.value == backing + fee`. Seed derives from
   block data only (no caller-controlled input): `keccak(prevrandao, blockhash, number, timestamp,
@@ -221,7 +221,7 @@ optics/verifiability.)*
 ```solidity
 uint256 constant UNIT             = 0.01 ether;                 // min tier
 uint256 constant COMPLETE_ORIGINS = 10_000;                     // 100 ETH / 0.01
-address constant BURN             = 0x000000000000000000000000000000000000dEaD;
+address constant UNSPENDABLE             = 0x000000000000000000000000000000000000dEaD;
 
 struct ShapeData {
     bytes32 seed;         // slot 1 (unchanged)
@@ -437,7 +437,7 @@ function blacken(uint256 tokenId) external nonReentrant;
 - **Checks:** caller owns `tokenId`; `!isBlack`; `originCount == COMPLETE_ORIGINS && denomIndex == 8`.
 - **Effects (CEI):** `isBlack = true`; `redeemableBacking -= 100 ether`;
   `sacrificedBacking += 100 ether`; `blackCount += 1`. **Interaction:**
-  `BURN.call{value: 100 ether}("")`, require success. Token keeps ID/seed/denom/originCount.
+  `UNSPENDABLE.call{value: 100 ether}("")`, require success. Token keeps ID/seed/denom/originCount.
 - **Emit** `Blackened(tokenId, 100 ether)` + `MetadataUpdate(tokenId)`.
 
 ### 9.7 Guards on existing paths

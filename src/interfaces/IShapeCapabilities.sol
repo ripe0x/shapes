@@ -82,11 +82,6 @@ interface IShapeProvenance {
 
 /// @notice Stable deterministic-preview capability. These calls do not require caller ownership.
 interface IShapeSimulation {
-    function simulateCompose(uint256 survivorId, uint256[] calldata burnIds)
-        external
-        view
-        returns (uint8 newGene, uint8 newDenomIndex);
-    function simulateSplit(uint256 tokenId) external view returns (uint8 childGene);
     function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
         external
         view
