@@ -23,7 +23,7 @@ import { fmt } from "../src/canonical/wad";
 import { DENOMINATIONS, LABELS, denominationIndex } from "../src/canonical/denominations";
 import { CANONICAL, paramsEqualCanonical } from "../src/canonical/params";
 import { productionSeed } from "../src/seeds";
-import { decomposeChildSeed } from "../src/decomposeSeed";
+import { splitChildSeed } from "../src/splitSeed";
 import {
   GENE_COUNT,
   GENE_NAMES,
@@ -188,7 +188,7 @@ const edges: Case[] = [
   { seed: productionSeed(5n), amountWei: DENOMINATIONS[4], tokenId: 14n, originCount: 100n, inverted: false, why: "Complete 1 ETH (100 origins)" },
   { seed: productionSeed(6n), amountWei: DENOMINATIONS[4], tokenId: 15n, originCount: 50n, inverted: false, why: "Composed 1 ETH (50 origins)" },
   { seed: productionSeed(7n), amountWei: DENOMINATIONS[1], tokenId: 16n, originCount: 5n, inverted: false, why: "Complete 0.05 (5 origins)" },
-  { seed: productionSeed(15n), amountWei: DENOMINATIONS[7], tokenId: 25n, originCount: 0n, inverted: false, why: "Fragment 50 ETH (0 origins, decompose remainder)" },
+  { seed: productionSeed(15n), amountWei: DENOMINATIONS[7], tokenId: 25n, originCount: 0n, inverted: false, why: "Fragment 50 ETH (0 origins, split remainder)" },
 
   // Provenance: density formatter branches (hundredths of a percent).
   { seed: productionSeed(8n), amountWei: DENOMINATIONS[8], tokenId: 17n, originCount: 1n, inverted: false, why: "density 0.01% (two decimals)" },
@@ -211,7 +211,7 @@ cases.push(...edges);
 
 const hex32 = (v: bigint) => "0x" + v.toString(16).padStart(64, "0");
 
-// Deterministic decompose child-seed derivation: childSeed = keccak256(abi.encodePacked(parent, i)).
+// Deterministic split child-seed derivation: childSeed = keccak256(abi.encodePacked(parent, i)).
 // Computed by the same TS helper the frontend preview uses; test/Parity.t.sol recomputes the
 // Solidity derivation and asserts it matches these byte for byte. Indices span the small values a
 // real split uses and larger ones to exercise the packing.
@@ -220,7 +220,7 @@ const childIndices = [0, 1, 2, 9, 255, 10000];
 const childCases: {parent: bigint; index: number; child: bigint}[] = [];
 for (const parent of childParents) {
   for (const index of childIndices) {
-    childCases.push({parent, index, child: decomposeChildSeed(parent, index)});
+    childCases.push({parent, index, child: splitChildSeed(parent, index)});
   }
 }
 

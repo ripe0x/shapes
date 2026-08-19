@@ -6,7 +6,7 @@
  * therefore supply the exact gene the chain would assign the token it is drawing:
  *
  *   - a freshly minted card       -> `mintGene(seed, amountWei)`   (geneAtMint)
- *   - a decompose child preview   -> the parent token's gene       (decompose copies it verbatim)
+ *   - a split child preview       -> the parent token's gene       (split copies it verbatim)
  *   - a compose result preview    -> the walked gene               (mirror compose's pool + walk)
  *   - a live/historical token     -> its stored gene, read from the tokenURI "Ink" trait
  *

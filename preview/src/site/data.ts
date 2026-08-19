@@ -17,6 +17,7 @@ export interface SiteToken {
   image: string; // svg data URI from tokenURI
   meta: TokenMeta; // the rest of the tokenURI JSON, parsed
   inkGene: number; // stored ink gene, from the tokenURI "Ink" trait
+  composeDepth: number; // stacked composes decompose(tokenId) can still reverse
 }
 
 /** Ink gene index from a parsed tokenURI's "Ink" trait. */
@@ -78,11 +79,12 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
     } catch {
       continue; // burned
     }
-    const [backing, seed, black, uri] = await Promise.all([
+    const [backing, seed, black, uri, composeDepth] = await Promise.all([
       publicClient.readContract({...shapes, functionName: "backingOf", args: [id]}),
       publicClient.readContract({...shapes, functionName: "seedOf", args: [id]}),
       publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
       publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
+      publicClient.readContract({...shapes, functionName: "composeDepth", args: [id]}),
     ]);
     if (black) continue;
     const {image, meta} = parseUri(uri);
@@ -95,6 +97,7 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
       image,
       meta,
       inkGene: geneOfMeta(meta),
+      composeDepth: Number(composeDepth),
     });
   }
 
