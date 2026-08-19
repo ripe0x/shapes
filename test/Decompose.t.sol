@@ -374,7 +374,7 @@ contract DecomposeTest is ShapesBase {
 }
 
 /// @notice Every adjacent denomination transition, exercised in all four directions with exact
-///         state assertions: compose up / decompose back, and split down / restore back. Covers
+///         state assertions: compose up / decompose back, and split down. Covers
 ///         the 5/10/50/100 ETH tiers the hand-written suite otherwise leaves to invariant fuzzing.
 contract LadderMatrixTest is ShapesBase {
     /// @dev compose `ratio` tokens of tier i into one tier i+1, then decompose it back to the exact
@@ -421,17 +421,15 @@ contract LadderMatrixTest is ShapesBase {
         }
     }
 
-    /// @dev split one tier-i token into `ratio` tier-(i-1) tokens, then restore the exact set back.
-    ///      Asserts backing, seed and origins at every step, for i = 1..8.
-    function test_SplitThenRestoreEveryTier() public {
+    /// @dev Split one tier-i token into `ratio` tier-(i-1) tokens, asserting backing and the
+    ///      origin partition at every step, for i = 1..8.
+    function test_SplitEveryTier() public {
         for (uint256 i = 1; i < 9; ++i) {
             uint256 hi = DENOMS[i];
             uint256 lo = DENOMS[i - 1];
             uint256 ratio = hi / lo;
 
             uint256 parent = _mint(alice, hi); // originCount 1
-            bytes32 parentSeed = shapes.seedOf(parent);
-
             uint8[] memory outs = new uint8[](ratio);
             for (uint256 j = 0; j < ratio; ++j) outs[j] = uint8(i - 1);
 
@@ -444,12 +442,6 @@ contract LadderMatrixTest is ShapesBase {
                 originSum += shapes.originCountOf(kids[j]);
             }
             assertEq(originSum, 1, "one parent origin partitioned across children");
-
-            vm.prank(alice);
-            uint256 nid = shapes.restore(parentSeed, kids);
-            assertEq(shapes.backingOf(nid), hi, "restored to tier i");
-            assertEq(shapes.seedOf(nid), parentSeed, "restored the exact seed");
-            assertEq(shapes.originCountOf(nid), 1, "origins conserved");
             _assertSolvent();
         }
     }

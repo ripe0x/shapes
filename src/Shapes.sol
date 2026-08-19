@@ -29,7 +29,7 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///
 /// @dev Two paths move ETH out of the reserve: `_payRedemption`, reached from the `redeem` entrypoints
 ///      after the token is burned, and `blacken`, which sends a fixed 100 ETH to an unspendable
-///      address. `compose`, `decompose`, `split` and `restore` reshape tokens at constant summed
+///      address. `compose`, `decompose` and `split` reshape tokens at constant summed
 ///      backing and leave the reserve unchanged.
 ///
 ///      The owner may replace the renderer via `setRenderer` and the collection metadata
@@ -37,7 +37,7 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///      only by `tokenURI`, the collection only by `contractURI`.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
-///      `split`, `restore`, `blacken`, the `redeem` entrypoints and every `*To` recipient variant
+///      `split`, `blacken`, the `redeem` entrypoints and every `*To` recipient variant
 ///      are guarded. The inherited ERC721 transfer and approval functions are not, so a receiver
 ///      can redeem a Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
 ///      Accounting stays exact; an integrator that assumes the token still exists after a safe
@@ -55,8 +55,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///      independent direct-mint events credited to this token (one per mint, conserved
     ///      across composition and decomposition). `isBlack` marks a sacrificed token.
     ///      `inkGene` (INK_GENES_IMPL_SPEC.md) is assigned once at mint and thereafter evolves
-    ///      only through `compose`; `decompose` restores the pre-compose value, `split` and
-    ///      `restore` copy it verbatim. The last four pack into one slot.
+    ///      only through `compose`; `decompose` restores the pre-compose value and `split` copies
+    ///      it verbatim to every child. The last four pack into one slot.
     struct ShapeData {
         bytes32 seed;
         uint8 denomIndex;
@@ -67,19 +67,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
 
     mapping(uint256 tokenId => ShapeData) private _shapes;
 
-    /// @dev One record per split, keyed by the input's seed: how many children it produced and
-    ///      the input's denomination index. Child seeds derive from the parent seed, so given
-    ///      this record `restore` can verify a claimed child set with no per-child storage.
-    ///      Written by `split`, deleted by `restore`. A parent seed holds at most one live
-    ///      record: writing requires a live token carrying the seed (which a prior split would
-    ///      have burned), and rewriting after a restore replaces a record whose children were
-    ///      all burned by that restore. Packs into one slot.
-    struct SplitRecord {
-        uint16 childCount;
-        uint8 denomIndex;
-    }
-
-    mapping(bytes32 parentSeed => SplitRecord) private _splitRecords;
 
     /// @dev One burned compose input, holding everything needed to re-mint it verbatim in
     ///      `decompose`. `id` is a uint96: the token id, narrowed to pack the whole struct into
@@ -574,13 +561,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         if (sum != parentBacking) revert SplitMismatch(parentBacking, sum);
 
         // -------- effects --------
-        uint256 parentIndex = p.denomIndex;
         delete _shapes[tokenId];
         _burn(tokenId);
-
-        // The record `restore` verifies against. Overwrites any earlier record under this seed:
-        // that record's children were burned by the restore that recreated this token.
-        _splitRecords[parentSeed] = SplitRecord({childCount: uint16(k), denomIndex: uint8(parentIndex)});
 
         uint256 firstId = totalMinted + 1;
         totalMinted = firstId + k - 1;
@@ -731,96 +713,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
             _safeMint(recipient, restoredIds[i]);
         }
     }
-
-    /// @inheritdoc IShapes
-    /// @dev The inverse of `split`, verified against the split record with no per-child
-    ///      storage: child i of a split is the unique token whose seed is
-    ///      `keccak256(abi.encodePacked(parentSeed, i))`, so seed equality proves membership and
-    ///      position. The count check rules out subsets; the backing check rules out children
-    ///      whose denomination grew via compose after the split (a denomination can only grow —
-    ///      shrinking is a split, which burns the token). Together they force the exact
-    ///      original multiset, so the minted token's denomination and artwork equal the split
-    ///      input's. Origins are conserved across split and restore, so the sum equals the
-    ///      input's count. Reshapes tokens without moving ETH; `redeemableBacking` is untouched.
-    ///      The record is deleted before the mint (CEI); `_burn` triggers no receiver callback
-    ///      and `_safeMint` runs last, behind the guard.
-    function restore(bytes32 parentSeed, uint256[] calldata childIds)
-        external
-        nonReentrant
-        returns (uint256 newTokenId)
-    {
-        return _restoreTo(parentSeed, childIds, msg.sender);
-    }
-
-    /// @inheritdoc IShapes
-    function restoreTo(bytes32 parentSeed, uint256[] calldata childIds, address recipient)
-        external
-        nonReentrant
-        returns (uint256 newTokenId)
-    {
-        return _restoreTo(parentSeed, childIds, recipient);
-    }
-
-    function _restoreTo(bytes32 parentSeed, uint256[] calldata childIds, address recipient)
-        private
-        returns (uint256 newTokenId)
-    {
-        SplitRecord memory record = _splitRecords[parentSeed];
-        if (record.childCount == 0) revert NoSplitRecord(parentSeed);
-        uint256 k = childIds.length;
-        if (k != record.childCount) revert RestoreCountMismatch(record.childCount, k);
-
-        uint256 expected = Denominations.amountAt(record.denomIndex);
-
-        uint256 sum;
-        uint256 origins;
-        uint8 gene;
-        for (uint256 i = 0; i < k; ++i) {
-            uint256 cid = childIds[i];
-            if (ownerOf(cid) != msg.sender) revert NotShapeOwner(cid, msg.sender);
-            ShapeData storage c = _shapes[cid];
-            if (c.isBlack) revert TokenIsBlack(cid);
-            if (c.seed != _childSeed(parentSeed, i)) {
-                revert RestoreChildMismatch(cid, i);
-            }
-            // Split copies the parent gene verbatim to every child, so one capture at i == 0
-            // suffices. A gene changes only via `compose`, which either burns the token or grows
-            // its denomination, failing the seed check above or the backing check below.
-            if (i == 0) gene = c.inkGene;
-
-            sum += Denominations.amountAt(c.denomIndex);
-            origins += c.originCount;
-            delete _shapes[cid];
-            _burn(cid);
-        }
-        if (sum != expected) revert RestoreBackingMismatch(expected, sum);
-
-        // -------- effects --------
-        delete _splitRecords[parentSeed];
-
-        newTokenId = totalMinted + 1;
-        totalMinted = newTokenId;
-        totalSupply -= k - 1; // burned k, minting one
-
-        _shapes[newTokenId] = ShapeData({
-            seed: parentSeed,
-            denomIndex: record.denomIndex,
-            originCount: uint32(origins), // == the split input's count, by conservation
-            isBlack: false,
-            inkGene: gene
-        });
-
-        emit Restored(newTokenId, parentSeed, childIds, record.denomIndex, uint32(origins));
-        emit InkGene(newTokenId, gene);
-        for (uint256 i = 0; i < k; ++i) {
-            emit ShapeReassembledFrom(newTokenId, childIds[i], parentSeed);
-        }
-
-        // -------- interactions --------
-        _safeMint(recipient, newTokenId);
-    }
-
-    /* ------------------------------ sacrifice ---------------------------- */
 
     /// @inheritdoc IShapes
     /// @dev Sends a fixed 100 ETH to a fixed unspendable address, moving the backing out of
@@ -1028,34 +920,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         assert(remaining == 0);
     }
 
-    /// @inheritdoc IShapes
-    function previewRestore(bytes32 parentSeed, uint256[] calldata childIds)
-        external
-        view
-        returns (ShapeState memory result)
-    {
-        SplitRecord memory record = _splitRecords[parentSeed];
-        if (record.childCount == 0) revert NoSplitRecord(parentSeed);
-        uint256 k = childIds.length;
-        if (k != record.childCount) revert RestoreCountMismatch(record.childCount, k);
-
-        uint256 expected = Denominations.amountAt(record.denomIndex);
-        uint256 sum;
-        uint256 origins;
-        uint8 gene;
-        for (uint256 i = 0; i < k; ++i) {
-            uint256 cid = childIds[i];
-            _requireOwned(cid);
-            ShapeData storage c = _shapes[cid];
-            if (c.isBlack) revert TokenIsBlack(cid);
-            if (c.seed != _childSeed(parentSeed, i)) revert RestoreChildMismatch(cid, i);
-            if (i == 0) gene = c.inkGene;
-            sum += Denominations.amountAt(c.denomIndex);
-            origins += c.originCount;
-        }
-        if (sum != expected) revert RestoreBackingMismatch(expected, sum);
-        return _shapeState(parentSeed, record.denomIndex, uint32(origins), gene, false);
-    }
 
     /// @inheritdoc IShapes
     function isComplete(uint256 tokenId) public view returns (bool) {
@@ -1065,11 +929,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         return !d.isBlack && units > 1 && d.originCount == units;
     }
 
-    /// @inheritdoc IShapes
-    function splitRecordOf(bytes32 parentSeed) external view returns (uint16 childCount, uint8 denomIndex) {
-        SplitRecord storage record = _splitRecords[parentSeed];
-        return (record.childCount, record.denomIndex);
-    }
 
     /// @inheritdoc IShapes
     function composeDepth(uint256 survivorId) external view returns (uint256) {

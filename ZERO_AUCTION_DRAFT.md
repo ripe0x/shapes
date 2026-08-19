@@ -24,7 +24,20 @@ and a separate list of what this exercise revealed about `Shapes` itself.
 - Outbid bidders get back the exact token ids they deposited, which is trivial once nothing
   is composed.
 - **The auction clock starts at the first bid**, not at creation.
+- **Auction settings.** Reserve 0.01 ETH (`reserveUnits = 1`), duration 24h, minimum increment
+  5%, extension window 15 minutes, 64 cards per bid. A reserve of one unit is the smallest the
+  lattice allows and is equivalent to no reserve: with the increment rule's one-unit floor, the
+  first bid already has to be at least 0.01 ETH. The piece can therefore sell for 0.01 ETH if
+  nobody else bids.
+- **No observer hook.** An optional per-auction callback on each new high bid was specced and
+  cut: nothing in this release reacts to a bid, and it put an external call into arbitrary code
+  inside the bid path of a contract holding escrowed, redeemable cards. Anything wanting to react
+  reads the events.
 - **The auction requires no changes to `Shapes`.** §6 lists what is already shipped.
+- **`ShapeAuctionHouse` ships, and is audited in the same engagement as `Shapes`**, scoped as a
+  second contract. It escrows redeemable cards, so it needs the same scrutiny.
+- **The renderer is not locked at launch.** `setRenderer` and `setCollection` stay open, so a
+  rendering bug is fixable. The cost is a live owner power over every token's artwork. See R14.
 - **No `seal`.** A one-way freeze on a token's compose history was designed and rejected: it
   costs a renderer signature change, a new trait pair and a new permanent state, to buy a
   capability nothing in the release needs. Compose stays reversible forever. See §6/F1.
@@ -143,12 +156,11 @@ struct Auction {
     address nft;
     uint256 tokenId;
     uint64  endTime;
-    uint32  extensionWindow;   // ⚙ 600s
-    uint16  minIncrementBps;   // ⚙ 500 (5%)
+    uint32  extensionWindow;   // 900s
+    uint16  minIncrementBps;   // 500 (5%)
     uint64  reserveUnits;
     uint64  highestUnits;
     address highestBidder;
-    address observer;          // optional; address(0) for none
     bool    settled;
 }
 
@@ -169,8 +181,7 @@ function createAuction(
     uint64  duration,
     uint64  reserveUnits,
     uint16  minIncrementBps,
-    uint32  extensionWindow,
-    address observer
+    uint32  extensionWindow
 ) external returns (uint256 auctionId);
 ```
 
@@ -212,9 +223,8 @@ function bid(uint256 auctionId, uint256[] calldata cardIds, uint256 ethBackingWe
    The unit ceiling and the `max(..., 1)` floor are what make L5 hold.
 6. Write the new leader. If `block.timestamp > endTime - extensionWindow`, set
    `endTime = block.timestamp + extensionWindow`.
-7. Fire the observer hook (§3.6).
 
-Cap cards per bid at ⚙ 64.
+Cap cards per bid at 64.
 
 ### 3.4 Refunds are pull, never push
 
@@ -242,19 +252,7 @@ Permissionless once `block.timestamp >= endTime` and a bid exists. Transfers the
 to the leader and marks settled. The winning cards stay escrowed until the seller pulls them.
 With no bids, the seller reclaims the token.
 
-### 3.6 The observer hook
-
-```solidity
-interface IBidObserver {
-    function onBidRaised(uint256 auctionId, uint64 highestUnits, address bidder) external;
-}
-```
-
-Optional, per auction. Called last, after every state write, inside `try/catch` with a fixed
-gas stipend (⚙ 50_000), so a reverting or gas-burning observer cannot affect the bid. The
-extension point for anyone who wants a reactive piece attached to their own auction.
-
-### 3.7 ERC721 receipt
+### 3.6 ERC721 receipt
 
 `onERC721Received` returns the magic value only when `msg.sender == address(shapes)` and a
 transient flag set inside the ETH path of `bid` is live. Everything else reverts, so
@@ -264,7 +262,7 @@ Bidding stays a single atomic transaction with a single comparison against the s
 `Shapes._update` refuses transfers to `address(shapes)` only, so the house holding Shapes is
 fine.
 
-### 3.8 No protocol fee
+### 3.7 No protocol fee
 
 The house charges nothing. A percentage fee is **structurally unrepresentable**: a bid is a
 set of indivisible cards, and 5% of a lattice amount is not necessarily on the lattice (5% of
@@ -331,7 +329,7 @@ it is a deliberate burn.
 
 1. Deploy `ShapeRenderer` and `Shapes`.
 2. Artist mints token 0. One draw at the seed (R11).
-3. Verify the renderer, then `lockRenderer`.
+3. Verify the renderer. Do not `lockRenderer`: presentation stays fixable.
 4. Deploy `ShapeAuctionHouse`.
 5. Artist calls `createAuction`, escrowing token 0.
 6. Bidding, then `settle`.
@@ -526,24 +524,13 @@ split, nobody can `restore` it until the cards are released, since `restore` req
 address to own the complete child set. Not a bug; worth a line so a bidder does not strand a
 reassembly they were part-way through.
 
-**R8. Equal bids are not equal objects (L7).** Two 1 ETH bids redeem identically and are
-different objects: origins are what make a Shape `Complete` and what gate `blacken`, so a bid
-paid in Complete-density cards is materially better to receive than one paid in origin-1
-cards at the same price.
-
-Two ways to handle it, and they are not the same size:
-
-- **Display only (recommended).** The house ranks strictly on wei, exactly as §3.3 already
-  specifies. No contract change of any kind. The site reads `shapeState` per escrowed card
-  and shows each bid's total `originCount` beside its ETH, so the difference is visible when
-  the bids are compared. Pure front end.
-- **Ranking.** Origins become part of who wins: a tiebreak, a minimum origin density to bid,
-  or a blended score. This one is a contract change and a real design problem, because it
-  needs an exchange rate between ETH and origins, and any rate is arbitrary and therefore
-  gameable at the margin. It turns the auction into a two-dimensional contest.
-
-Recommendation: display only for v1. The information is the valuable part; making it binding
-is a separate project.
+**R8. Equal bids are not equal objects (L7), which matters only if the cards are kept.**
+Ranking is `newUnits` and nothing else, so origins never affect who wins and there is nothing to
+decide at the contract layer. The only observation is that a 2 ETH bid paid as one card and the
+same bid paid as two hundred 0.01 cards carry different `originCount`, and origins are what make
+a Shape `Complete` and gate `blacken`. If the proceeds are redeemed for ETH the difference is
+invisible. If they are held as objects, the site can show each bid's total `originCount` beside
+its ETH, which is a front-end read of `shapeState` and no Solidity.
 
 **R9. Bidding is a mint with a refund.** On the ETH path a loser walks away holding freshly
 minted cards. The residual grinding vector is SPEC.md D3e (revert unless the seed suits, one
@@ -560,6 +547,12 @@ sanctioned escape is the D3e residual: mint through a contract that reverts unle
 suits, one attempt per block, gas per attempt. Decide before launch whether that is acceptable
 or whether the first draw stands.
 
+**R14. The owner can change every token's artwork for as long as they hold ownership.** The
+renderer is deliberately not locked at launch, so `setRenderer` and `setCollection` stay live.
+Backing, redeemability and ownership are untouchable either way, but artwork mutability is a real
+power and an auditor will name it. Disclose it, and either renounce ownership or lock at a moment
+of your choosing once the renderer has proven itself.
+
 **R12. Marketplaces cache metadata.** Not load-bearing now that nothing about token 0 changes
 during the auction, but relevant to the site's own display of the bid.
 
@@ -567,11 +560,11 @@ during the auction, but relevant to the site's own display of the bid.
 
 ## 8. Open questions
 
-1. F3: re-open the split identity decision, or leave SHAPES_V2_SPEC §5 as written? The only
-   remaining question about the contract itself, and it is aesthetic rather than technical.
-2. Reserve, duration, minimum increment, extension window: the ⚙ values.
-3. R8: surface origin counts in the UI, or make them count in the ranking? Recommendation is
-   UI only; see R8.
+1. **Ids starting at 0: decided, not yet built.** `Shapes.sol` still issues `totalMinted + 1`.
+   The only change that must land before deploy.
+
+Nothing else is open. F3 (§6) stays as SHAPES_V2_SPEC §5 has it; it concerns `split` and
+`restore`, which the auction never calls, and can be revisited at any time or never.
 
 ---
 
@@ -583,7 +576,6 @@ during the auction, but relevant to the site's own display of the bid.
 - Do not accept unsolicited ERC721s in `onERC721Received` (§3.7).
 - Do not add a percentage protocol fee to the house. It is not representable on the card
   lattice (§3.8).
-- Do not let the observer hook revert a bid (§3.6).
 - Do not add a pause, an admin withdrawal, or a recovery function to a contract that escrows
   redeemable cards (R2).
 - Do not leave the split record keyed by `parentSeed` if F3 is taken. A live decompose
