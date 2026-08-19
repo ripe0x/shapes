@@ -30,7 +30,7 @@ traits render as exact-match filters.
 ## Ink
 
 The ink gene is a seven-state value assigned once at mint and thereafter changed only by
-`compose`; `decompose` and `restore` copy it verbatim. It sets the probability that any given
+`compose`; `decompose` restores the pre-compose value and `split` copies it verbatim. It sets the probability that any given
 mark on the card is drawn filled rather than open outline:
 
 | Ink | Void | Faint | Sparse | Murk | Dense | Rich | Solid |

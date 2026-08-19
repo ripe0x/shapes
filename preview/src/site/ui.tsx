@@ -54,6 +54,43 @@ export function Art({src, alt = "", width}: {src: string; alt?: string; width?: 
   );
 }
 
+/**
+ * A confirmation dialog. Escape and an overlay click both cancel, so a destructive action always
+ * has a way out that is not the confirm button. `title` takes the section label's type.
+ */
+export function Modal({
+  title,
+  onCancel,
+  children,
+}: {
+  title: string;
+  onCancel: () => void;
+  children: React.ReactNode;
+}) {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  return (
+    <div className="modal-overlay" onClick={onCancel} role="presentation">
+      <div
+        className="modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{...label, marginBottom: 18}}>{title}</div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export const txUrl = (hash: string, chainId: number) =>

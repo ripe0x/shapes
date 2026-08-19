@@ -89,7 +89,7 @@ contract MintTest is ShapesBase {
             uint256 id = _mint(alice, DENOMS[i]);
             expectedBacking += DENOMS[i];
 
-            assertEq(id, i + 1, "token ids are sequential from 1");
+            assertEq(id, i, "token ids are sequential from 0");
             assertEq(shapes.ownerOf(id), alice);
             assertEq(shapes.backingOf(id), DENOMS[i]);
             assertEq(shapes.redeemableBacking(), expectedBacking);
@@ -100,8 +100,10 @@ contract MintTest is ShapesBase {
         _assertSolvent();
     }
 
-    function test_TokenIdsStartAtOne() public {
+    function test_TokenIdsStartAtZero() public {
         assertEq(shapes.totalMinted(), 0);
+        assertEq(_mint(alice, 1 ether), 0, "the first Shape is #0");
+        assertEq(shapes.totalMinted(), 1, "totalMinted counts ids issued, not the highest one");
         assertEq(_mint(alice, 1 ether), 1);
     }
 
@@ -201,7 +203,7 @@ contract MintTest is ShapesBase {
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: required}(1 ether, qty, alice);
 
-        assertEq(first, 1);
+        assertEq(first, 0);
         assertEq(shapes.totalMinted(), qty);
         assertEq(shapes.totalSupply(), qty);
         assertEq(shapes.redeemableBacking(), qty * 1 ether, "fees are not part of backing");
@@ -790,7 +792,7 @@ contract RendererAdminTest is ShapesBase {
         ShapeRenderer next = new ShapeRenderer();
 
         vm.expectEmit(false, false, false, true, address(shapes));
-        emit IERC4906.BatchMetadataUpdate(1, shapes.totalMinted());
+        emit IERC4906.BatchMetadataUpdate(0, shapes.totalMinted() - 1);
         shapes.setRenderer(address(next));
     }
 
@@ -1100,231 +1102,6 @@ contract RecompositionTest is ShapesBase {
 }
 
 /* ==================================================================== *
- *  Restore (split reassembly)
- * ==================================================================== */
-
-contract RestoreTest is ShapesBase {
-    /// @dev Mint a 1 ETH Shape to alice and split it 2 x 0.5. Returns the parent's seed and the
-    ///      two child ids.
-    function _splitOne() internal returns (bytes32 parentSeed, uint256[] memory kids) {
-        uint256 id = _mint(alice, 1 ether);
-        parentSeed = shapes.seedOf(id);
-        uint8[] memory outs = new uint8[](2);
-        outs[0] = 3;
-        outs[1] = 3; // 2 x 0.5
-        vm.prank(alice);
-        kids = shapes.split(id, outs);
-    }
-
-    function test_RestoreReturnsOriginalSeedDenominationAndOrigins() public {
-        uint256 id = _mint(alice, 1 ether);
-        bytes32 parentSeed = shapes.seedOf(id);
-        uint256 originCount = shapes.originCountOf(id);
-
-        uint8[] memory outs = new uint8[](2);
-        outs[0] = 3;
-        outs[1] = 3;
-        vm.prank(alice);
-        uint256[] memory kids = shapes.split(id, outs);
-
-        vm.prank(alice);
-        uint256 restored = shapes.restore(parentSeed, kids);
-
-        assertEq(shapes.seedOf(restored), parentSeed, "restored token carries the parent seed");
-        assertEq(shapes.backingOf(restored), 1 ether, "restored at the parent denomination");
-        assertEq(shapes.originCountOf(restored), originCount, "origins conserved through the round trip");
-        assertEq(shapes.ownerOf(restored), alice);
-        assertTrue(restored != id, "a fresh id, not a revival of the burned one");
-        _assertSolvent();
-    }
-
-    function test_RestoreAccountingAndRecordConsumption() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-
-        (uint16 count, uint8 denomIndex) = shapes.splitRecordOf(parentSeed);
-        assertEq(count, 2, "record written by the split");
-        assertEq(denomIndex, 4, "record holds the input's denomination index");
-
-        uint256 supplyBefore = shapes.totalSupply();
-        uint256 mintedBefore = shapes.totalMinted();
-        uint256 reserveBefore = shapes.redeemableBacking();
-
-        vm.prank(alice);
-        uint256 restored = shapes.restore(parentSeed, kids);
-
-        assertEq(restored, mintedBefore + 1, "next id in sequence");
-        assertEq(shapes.totalSupply(), supplyBefore - 1, "two burned, one minted");
-        assertEq(shapes.totalMinted(), mintedBefore + 1);
-        assertEq(shapes.redeemableBacking(), reserveBefore, "no ETH moved");
-
-        (count,) = shapes.splitRecordOf(parentSeed);
-        assertEq(count, 0, "record consumed");
-
-        vm.expectRevert();
-        shapes.ownerOf(kids[0]);
-        vm.expectRevert();
-        shapes.ownerOf(kids[1]);
-    }
-
-    function test_RestoreEmitsEvent() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        uint256 nextId = shapes.totalMinted() + 1;
-        vm.expectEmit(true, true, false, true, address(shapes));
-        emit IShapes.Restored(nextId, parentSeed, kids, 4, 1);
-        vm.prank(alice);
-        shapes.restore(parentSeed, kids);
-    }
-
-    function test_RestoreChargesNoFee() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        uint256 before = feeRecipient.balance;
-        vm.prank(alice);
-        shapes.restore(parentSeed, kids);
-        assertEq(feeRecipient.balance, before, "restore charged no fee");
-    }
-
-    function test_RestoreRejectsUnknownSeed() public {
-        bytes32 seed = keccak256("never split");
-        uint256[] memory kids = new uint256[](2);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.NoSplitRecord.selector, seed));
-        shapes.restore(seed, kids);
-    }
-
-    function test_RestoreRejectsSubset() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        uint256[] memory one = new uint256[](1);
-        one[0] = kids[0];
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.RestoreCountMismatch.selector, 2, 1));
-        shapes.restore(parentSeed, one);
-    }
-
-    function test_RestoreRejectsWrongOrder() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        uint256[] memory swapped = new uint256[](2);
-        swapped[0] = kids[1];
-        swapped[1] = kids[0];
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.RestoreChildMismatch.selector, kids[1], 0)
-        );
-        shapes.restore(parentSeed, swapped);
-    }
-
-    function test_RestoreRejectsForeignChild() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        uint256 foreign = _mint(alice, 0.5 ether);
-        uint256[] memory mixed = new uint256[](2);
-        mixed[0] = kids[0];
-        mixed[1] = foreign;
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.RestoreChildMismatch.selector, foreign, 1)
-        );
-        shapes.restore(parentSeed, mixed);
-    }
-
-    function test_RestoreRejectsChildHeldByAnother() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        vm.prank(alice);
-        shapes.transferFrom(alice, bob, kids[1]);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, kids[1], alice));
-        shapes.restore(parentSeed, kids);
-    }
-
-    /// @notice A child whose denomination grew via compose after the split no longer sums to the
-    ///         input's backing, so the exact original cannot be faked at a larger denomination.
-    function test_RestoreRejectsComposedUpChild() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        uint256 foreign = _mint(alice, 0.5 ether);
-        uint256[] memory burn = new uint256[](1);
-        burn[0] = foreign;
-        vm.prank(alice);
-        shapes.compose(kids[0], burn); // kids[0] grows to 1 ETH, keeping its seed
-
-        vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.RestoreBackingMismatch.selector, 1 ether, 1.5 ether)
-        );
-        shapes.restore(parentSeed, kids);
-    }
-
-    function test_RestoreIsSingleUse() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        vm.prank(alice);
-        shapes.restore(parentSeed, kids);
-        vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.NoSplitRecord.selector, parentSeed));
-        shapes.restore(parentSeed, kids);
-    }
-
-    /// @notice A split child that was itself split must first be restored; the reassembly then
-    ///         proceeds bottom-up, and the final token carries the original seed.
-    function test_RestoreNestedSplits() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-
-        bytes32 childSeed = shapes.seedOf(kids[0]);
-        uint8[] memory outs = new uint8[](5); // 0.5 -> 5 x 0.1
-        for (uint256 i = 0; i < 5; i++) outs[i] = 2;
-        vm.prank(alice);
-        uint256[] memory grandkids = shapes.split(kids[0], outs);
-
-        vm.prank(alice);
-        uint256 childBack = shapes.restore(childSeed, grandkids);
-        assertEq(shapes.seedOf(childBack), childSeed);
-        assertEq(shapes.backingOf(childBack), 0.5 ether);
-
-        uint256[] memory set = new uint256[](2);
-        set[0] = childBack; // carries keccak(parentSeed, 0), position 0
-        set[1] = kids[1];
-        vm.prank(alice);
-        uint256 restored = shapes.restore(parentSeed, set);
-        assertEq(shapes.seedOf(restored), parentSeed, "original seed after bottom-up reassembly");
-        assertEq(shapes.backingOf(restored), 1 ether);
-    }
-
-    /// @notice Re-splitting a restored Shape overwrites its consumed record; the new split is
-    ///         restorable on its own terms even with a different output multiset.
-    function test_ResplitAfterRestore() public {
-        (bytes32 parentSeed, uint256[] memory kids) = _splitOne();
-        vm.prank(alice);
-        uint256 restored = shapes.restore(parentSeed, kids);
-
-        uint8[] memory outs = new uint8[](10); // 1 ETH -> 10 x 0.1 this time
-        for (uint256 i = 0; i < 10; i++) outs[i] = 2;
-        vm.prank(alice);
-        uint256[] memory next = shapes.split(restored, outs);
-
-        (uint16 count,) = shapes.splitRecordOf(parentSeed);
-        assertEq(count, 10, "record overwritten by the new split");
-
-        vm.prank(alice);
-        uint256 again = shapes.restore(parentSeed, next);
-        assertEq(shapes.seedOf(again), parentSeed);
-        assertEq(shapes.backingOf(again), 1 ether);
-    }
-
-    function test_SplitEventCarriesParentSeed() public {
-        uint256 id = _mint(alice, 0.05 ether);
-        bytes32 parentSeed = shapes.seedOf(id);
-        uint256 firstChild = shapes.totalMinted() + 1;
-
-        uint256[] memory newIds = new uint256[](5);
-        uint8[] memory outs = new uint8[](5);
-        uint32[] memory oc = new uint32[](5);
-        for (uint256 i = 0; i < 5; i++) newIds[i] = firstChild + i;
-        oc[0] = 1;
-
-        vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.Split(id, parentSeed, newIds, outs, oc);
-        vm.prank(alice);
-        shapes.split(id, outs);
-    }
-}
-
-/* ==================================================================== *
  *  Black Shape (terminal sacrifice)
  * ==================================================================== */
 
@@ -1475,7 +1252,7 @@ contract InkGeneMintTest is ShapesBase {
     /// @dev Recomputes the batch-root/seed derivation `_mintBatch` uses, independently, so this
     ///      does not just trust `seedOf` after the fact.
     function test_MintEmitsInkGeneEvent() public {
-        uint256 firstTokenId = shapes.totalMinted() + 1;
+        uint256 firstTokenId = shapes.totalMinted();
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
@@ -1669,9 +1446,9 @@ contract InkGeneComposeTest is ShapesBase {
     }
 }
 
-/// @notice Split and restore: the gene is copied verbatim to every child, and restore
+/// @notice Split: the gene is copied verbatim to every child.
 ///         recovers the exact pre-split gene alongside the seed and denomination.
-contract InkGeneSplitRestoreTest is ShapesBase {
+contract InkGeneSplitTest is ShapesBase {
     function test_SplitCopiesGeneToEveryChild() public {
         uint256 id = _mint(alice, 0.05 ether);
         uint8 parentGene = shapes.inkGeneOf(id);
@@ -1688,7 +1465,7 @@ contract InkGeneSplitRestoreTest is ShapesBase {
     function test_SplitEmitsInkGenePerChild() public {
         uint256 id = _mint(alice, 0.05 ether);
         uint8 parentGene = shapes.inkGeneOf(id);
-        uint256 firstChild = shapes.totalMinted() + 1;
+        uint256 firstChild = shapes.totalMinted();
 
         uint8[] memory outs = new uint8[](5);
         vm.expectEmit(true, false, false, true, address(shapes));
@@ -1705,80 +1482,8 @@ contract InkGeneSplitRestoreTest is ShapesBase {
         shapes.split(id, outs);
     }
 
-    /// @notice A restore recovers not just the original seed, denomination and origin count, but
-    ///         also the exact gene the pre-split token carried — despite the new token id.
-    function test_RestoreRecoversTheOriginalGene() public {
-        uint256 id = _mint(alice, 1 ether);
-        bytes32 parentSeed = shapes.seedOf(id);
-        uint8 parentGene = shapes.inkGeneOf(id);
 
-        uint8[] memory outs = new uint8[](2);
-        outs[0] = 3;
-        outs[1] = 3; // 2 x 0.5
-        vm.prank(alice);
-        uint256[] memory kids = shapes.split(id, outs);
-        assertEq(shapes.inkGeneOf(kids[0]), parentGene);
-        assertEq(shapes.inkGeneOf(kids[1]), parentGene);
 
-        vm.prank(alice);
-        uint256 restored = shapes.restore(parentSeed, kids);
-
-        assertEq(shapes.inkGeneOf(restored), parentGene, "restore did not recover the original gene");
-    }
-
-    function test_RestoreEmitsInkGeneEvent() public {
-        uint256 id = _mint(alice, 1 ether);
-        bytes32 parentSeed = shapes.seedOf(id);
-        uint8 parentGene = shapes.inkGeneOf(id);
-
-        uint8[] memory outs = new uint8[](2);
-        outs[0] = 3;
-        outs[1] = 3;
-        vm.prank(alice);
-        uint256[] memory kids = shapes.split(id, outs);
-
-        uint256 nextId = shapes.totalMinted() + 1;
-        vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.InkGene(nextId, parentGene);
-        vm.prank(alice);
-        shapes.restore(parentSeed, kids);
-    }
-
-    /// @notice The gene survives nested split/restore round trips (split, split again, restore
-    ///         both levels bottom-up), the same nesting `test_RestoreNestedSplits` exercises for
-    ///         seed and denomination.
-    function test_RestoreGeneSurvivesNestedRoundTrip() public {
-        uint256 id = _mint(alice, 1 ether);
-        bytes32 parentSeed = shapes.seedOf(id);
-        uint8 gene = shapes.inkGeneOf(id);
-
-        uint8[] memory outs = new uint8[](2);
-        outs[0] = 3;
-        outs[1] = 3; // 2 x 0.5
-        vm.prank(alice);
-        uint256[] memory kids = shapes.split(id, outs);
-        assertEq(shapes.inkGeneOf(kids[0]), gene);
-
-        bytes32 childSeed = shapes.seedOf(kids[0]);
-        uint8[] memory innerOuts = new uint8[](5); // 0.5 -> 5 x 0.1
-        for (uint256 i = 0; i < 5; ++i) innerOuts[i] = 2;
-        vm.prank(alice);
-        uint256[] memory grandkids = shapes.split(kids[0], innerOuts);
-        for (uint256 i = 0; i < grandkids.length; ++i) {
-            assertEq(shapes.inkGeneOf(grandkids[i]), gene, "gene diverged through the inner split");
-        }
-
-        vm.prank(alice);
-        uint256 childBack = shapes.restore(childSeed, grandkids);
-        assertEq(shapes.inkGeneOf(childBack), gene, "gene diverged through the inner restore");
-
-        uint256[] memory outer = new uint256[](2);
-        outer[0] = childBack;
-        outer[1] = kids[1];
-        vm.prank(alice);
-        uint256 restored = shapes.restore(parentSeed, outer);
-        assertEq(shapes.inkGeneOf(restored), gene, "gene diverged through the outer restore");
-    }
 }
 
 /// @notice `previewCompose` guards that `Composability.t.sol` does not already cover: duplicate

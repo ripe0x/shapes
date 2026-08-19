@@ -25,6 +25,10 @@
       .btn-outline:hover { border-color: #e6e4dd; }
       .btn-ghost { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
       .row-denom:hover { background: #161613 !important; }
+      /* Modal. The overlay dims the page; the panel reuses the section rule colour so it reads
+         as the same surface rather than a floating card. */
+      .modal-overlay { position: fixed; inset: 0; background: rgba(6,6,5,0.78); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 50; animation: artin .18s ease both; }
+      .modal-panel { background: #0d0d0c; border: 1px solid #3a3a34; max-width: 480px; width: 100%; padding: 30px 32px 28px; }
       .btn-step { border: 1px solid #262622; background: none; color: #71716b; font: inherit; font-size: 12px; cursor: pointer; }
       .btn-step:hover { border-color: #3a3a34; color: #e6e4dd; }
     </style>

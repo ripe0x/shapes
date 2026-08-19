@@ -18,9 +18,6 @@ export const shapesAbi = parseAbi([
   "function decomposeManyTo(uint256[] survivorIds, address recipient) returns (uint256[][] restoredIds)",
   "function split(uint256 tokenId, uint8[] outDenoms) returns (uint256[] newIds)",
   "function splitTo(uint256 tokenId, uint8[] outDenoms, address recipient) returns (uint256[] newIds)",
-  "function restore(bytes32 parentSeed, uint256[] childIds) returns (uint256 newTokenId)",
-  "function restoreTo(bytes32 parentSeed, uint256[] childIds, address recipient) returns (uint256 newTokenId)",
-  "function splitRecordOf(bytes32 parentSeed) view returns (uint16 childCount, uint8 denomIndex)",
   "function composeDepth(uint256 survivorId) view returns (uint256)",
   "function previewSplit(uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
   "function blacken(uint256 tokenId)",
@@ -45,7 +42,6 @@ export const shapesAbi = parseAbi([
   "event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount)",
   "event Decomposed(uint256 indexed survivorId, uint256[] restoredIds, uint8 survivorDenomIndex, uint32 survivorOriginCount)",
   "event Split(uint256 indexed tokenId, bytes32 indexed parentSeed, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts)",
-  "event Restored(uint256 indexed newTokenId, bytes32 indexed parentSeed, uint256[] childIds, uint8 denomIndex, uint32 originCount)",
   "event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId)",
   "event Blackened(uint256 indexed tokenId, uint256 sacrificedWei)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
@@ -65,10 +61,6 @@ export const shapesAbi = parseAbi([
   "error SplitMismatch(uint256 inputBacking, uint256 outputSum)",
   "error NoComposeRecord(uint256 survivorId)",
   "error NotApexComplete(uint256 tokenId)",
-  "error NoSplitRecord(bytes32 parentSeed)",
-  "error RestoreCountMismatch(uint256 expected, uint256 provided)",
-  "error RestoreChildMismatch(uint256 tokenId, uint256 index)",
-  "error RestoreBackingMismatch(uint256 expected, uint256 provided)",
 ]);
 
 export interface Deployment {

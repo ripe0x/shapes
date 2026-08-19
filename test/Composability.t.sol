@@ -153,22 +153,6 @@ contract ComposabilityTest is Test {
         }
     }
 
-    function test_PreviewRestoreReturnsExactState() public {
-        uint256 parent = _mint(alice, 0.1 ether);
-        bytes32 parentSeed = shapes.seedOf(parent);
-        uint8[] memory outs = new uint8[](2);
-        outs[0] = 1;
-        outs[1] = 1;
-
-        vm.prank(alice);
-        uint256[] memory children = shapes.split(parent, outs);
-        ShapeState memory preview = shapes.previewRestore(parentSeed, children);
-
-        vm.prank(alice);
-        uint256 restored = shapes.restore(parentSeed, children);
-        ShapeState memory actual = shapes.shapeState(restored);
-        assertEq(keccak256(abi.encode(actual)), keccak256(abi.encode(preview)));
-    }
 
     function test_RedeemToPaysRecipientWithoutRequiringItToOwnToken() public {
         uint256 id = _mint(alice, 1 ether);
@@ -275,19 +259,6 @@ contract ComposabilityTest is Test {
         assertEq(shapes.composeDepth(survivor), 0);
     }
 
-    function test_RestoreToMintsRestoredShapeDirectlyToRecipient() public {
-        uint256 parent = _mint(alice, 0.1 ether);
-        bytes32 parentSeed = shapes.seedOf(parent);
-        uint8[] memory outs = new uint8[](2);
-        outs[0] = 1;
-        outs[1] = 1;
-
-        vm.prank(alice);
-        uint256[] memory children = shapes.split(parent, outs);
-        vm.prank(alice);
-        uint256 restored = shapes.restoreTo(parentSeed, children, address(receiver));
-        assertEq(shapes.ownerOf(restored), address(receiver));
-    }
 
     function test_FilterableLifecycleEdgesAreEmittedPerParticipant() public {
         uint256 first = _mintDust(5);

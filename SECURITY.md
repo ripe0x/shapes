@@ -129,7 +129,7 @@ so nobody mistakes it for a protection it is not.
 ### 9. Event ordering — informational
 
 All `ShapeMinted` events for a batch are emitted before any ERC721 `Transfer` (and `Decomposed`/
-`Restored` are emitted before their outputs' `Transfer`s). A pure log-ordered indexer that resolves
+`Split` are emitted before their outputs' `Transfer`s). A pure log-ordered indexer that resolves
 ownership on the lifecycle event, before the `Transfer`, sees a not-yet-existing token; a
 read-based indexer is unaffected. Kept as-is (the effects-before-interaction ordering); documented.
 
@@ -145,7 +145,7 @@ bypasses Black terminality. Three low findings were fixed and pinned with regres
   `BatchMetadataUpdate(1, totalMinted)` so marketplaces refresh
   (`test_SetRendererEmitsBatchMetadataUpdate`).
 - **`redeemTo`/`redeemBatchTo` to `address(0)` burned the payout.** They now revert
-  `InvalidRecipient` (`test_RedeemToRejectsZeroRecipient`). `decomposeTo`/`restoreTo` to the zero
+  `InvalidRecipient` (`test_RedeemToRejectsZeroRecipient`). `decomposeTo`/`splitTo` to the zero
   address already reverted through `_safeMint`.
 
 Accepted from the same audit: `setRenderer` validates the renderer by ERC165 claim and code
@@ -160,7 +160,7 @@ sizes stay uncapped (self-inflicted, per finding #7).
 
 | Axis | Result |
 |---|---|
-| Reentrancy | `mint`, `mintBatch`, `redeem`, `redeemBatch`, `redeemTo`, `redeemBatchTo`, `compose`, `decompose`, `decomposeTo`, `restore`, `restoreTo`, `blacken` guarded; `_payRedemption`, the fee call and the `blacken` sacrifice all execute inside the guard, after all effects. The recipient-directed `*To` variants delegate to the same private impls as their owner-directed forms (`redeem`/`redeemTo` share `_redeemTo`, etc.), so the destination is parameterised but the checks-effects-interactions and guard are identical. Reentry attempts from ERC721 callbacks, the payout callback and the fee callback all revert. `compose`/`decompose` make no external call. The invariant suite drives the `*To` paths against reverting-ETH, non-receiver and reentrant recipients. |
+| Reentrancy | `mint`, `mintBatch`, `redeem`, `redeemBatch`, `redeemTo`, `redeemBatchTo`, `compose`, `decompose`, `decomposeTo`, `split`, `splitTo`, `blacken` guarded; `_payRedemption`, the fee call and the `blacken` sacrifice all execute inside the guard, after all effects. The recipient-directed `*To` variants delegate to the same private impls as their owner-directed forms (`redeem`/`redeemTo` share `_redeemTo`, etc.), so the destination is parameterised but the checks-effects-interactions and guard are identical. Reentry attempts from ERC721 callbacks, the payout callback and the fee callback all revert. `compose`/`decompose` make no external call. The invariant suite drives the `*To` paths against reverting-ETH, non-receiver and reentrant recipients. |
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
 | Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a burn), the fee forward (money received in the same call, never counted as backing), and the `blacken` sacrifice (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds; a recipient that reverts or rejects the mint reverts only the caller's own transaction. Proven by stateful invariants: `balance >= redeemableBacking`, backing conservation net of sacrifice, `sacrificedBacking == 100 ether * blackCount`, and a full drain that redeems every live Shape (via `redeemTo` to a benign sink, so hostile-owned Shapes are included). |

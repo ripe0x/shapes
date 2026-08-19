@@ -625,7 +625,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 - **Entropy only at mint.** A Shape's ink gene (`VOID`..`SOLID`, seven states) is drawn once,
   a pure function of the mint seed and the denomination tier (`InkGenes.geneAtMint`). No
-  compose, decompose, split or restore ever consumes fresh randomness for the gene; every later
+  compose, decompose or split ever consumes fresh randomness for the gene; every later
   transformation is a deterministic function of state already on chain. Non-dust mints draw
   only from the narrow `{Sparse, Murk, Dense}` band; the four extremes are reachable only
   through a dust (0.01 ETH) mint, the same asymmetry the fill-probability table already had.
@@ -643,10 +643,8 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   multiset with a different survivor can produce a different gene — this is deliberate and
   covered by `test_SurvivorChoiceChangesTheGene`. It is the one input to the walk that a caller
   actually controls; `burnIds` order is not, by the fold above.
-- **split/restore copy the gene verbatim.** Every child of a split inherits the parent's
-  gene exactly; `restore` recovers the pre-split gene exactly (captured once, from the first
-  child position, since every child of one split shares it by construction). Neither path rolls
-  anything — origins-conservation reasoning applies unchanged to the gene.
+- **split copies the gene verbatim.** Every child of a split inherits the parent's gene exactly.
+  Nothing is rolled, so origins-conservation reasoning applies unchanged to the gene.
 - **decompose restores the gene from the record.** `compose` captures the survivor's pre-compose
   gene and each input's gene in the compose record; `decompose` writes them back verbatim (survivor
   reverts to its snapshot gene, each revived input regains its own), so an `InkGene` event fires for

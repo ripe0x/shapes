@@ -85,13 +85,13 @@ contract HardeningTest is Test {
 
         vm.prank(alice);
         shapes.mintBatch{value: 1 * (1 ether + feeOf(1 ether))}(1 ether, 1, alice);
-        bytes32 solo = shapes.seedOf(1);
+        bytes32 solo = shapes.seedOf(0);
 
         vm.revertToState(snap);
 
         vm.prank(alice);
         shapes.mintBatch{value: 7 * (1 ether + feeOf(1 ether))}(1 ether, 7, alice);
-        assertEq(shapes.seedOf(1), solo, "seed moved with batch size");
+        assertEq(shapes.seedOf(0), solo, "seed moved with batch size");
     }
 
     /// @notice Distinct token ids still give distinct seeds, including across batches mined in
@@ -104,7 +104,7 @@ contract HardeningTest is Test {
 
         bytes32[] memory seen = new bytes32[](12);
         for (uint256 i = 0; i < 12; ++i) {
-            seen[i] = shapes.seedOf(i + 1);
+            seen[i] = shapes.seedOf(i);
             for (uint256 j = 0; j < i; ++j) {
                 assertTrue(seen[i] != seen[j], "seed collision");
             }
@@ -142,7 +142,7 @@ contract HardeningTest is Test {
 
     function test_CannotMintDirectlyIntoTheContract() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 1));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
         shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(shapes));
 
         assertEq(shapes.redeemableBacking(), 0);

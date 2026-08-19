@@ -59,10 +59,6 @@ interface IShapeRecomposition {
     function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
-    function restore(bytes32 parentSeed, uint256[] calldata childIds) external returns (uint256 newTokenId);
-    function restoreTo(bytes32 parentSeed, uint256[] calldata childIds, address recipient)
-        external
-        returns (uint256 newTokenId);
     function blacken(uint256 tokenId) external;
 }
 
@@ -73,10 +69,6 @@ interface IShapeProvenance {
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
     function isComplete(uint256 tokenId) external view returns (bool);
     function formationOf(uint256 tokenId) external view returns (ShapeFormation);
-    function splitRecordOf(bytes32 parentSeed)
-        external
-        view
-        returns (uint16 childCount, uint8 denominationIndex);
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
 }
 
@@ -90,8 +82,4 @@ interface IShapeSimulation {
         external
         view
         returns (ShapeChildPreview[] memory children);
-    function previewRestore(bytes32 parentSeed, uint256[] calldata childIds)
-        external
-        view
-        returns (ShapeState memory result);
 }
