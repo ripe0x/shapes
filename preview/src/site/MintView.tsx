@@ -159,7 +159,7 @@ export function MintView({
         </div>
         <p style={{margin: "34px 0 0", fontSize: 14, lineHeight: 1.75, maxWidth: "62ch", color: C.bodyDim}}>
           A Shape holds an exact amount of ETH and gives back the same amount, exactly. Nine
-          denominations, 0.01 to 100 ETH. Higher value, fewer marks.
+          denominations, 0.0001 to 1 ETH. Higher value, fewer marks.
         </p>
       </div>
 
