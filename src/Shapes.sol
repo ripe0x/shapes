@@ -10,6 +10,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
+import {IERC721Value} from "./interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {
     IShapeProvenance,
@@ -20,6 +21,7 @@ import {
     ShapeFormation,
     ShapeState
 } from "./interfaces/IShapeCapabilities.sol";
+import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 
@@ -27,17 +29,20 @@ import {InkGenes} from "./lib/InkGenes.sol";
 /// @notice ETH in, Shape out.
 ///         Shape burned, ETH returned.
 ///
-/// @dev Two paths move ETH out of the reserve: `_payRedemption`, reached from the `redeem` entrypoints
-///      after the token is burned, and `blacken`, which sends a fixed 100 ETH to an unspendable
-///      address. `compose`, `decompose` and `split` reshape tokens at constant summed
+/// @dev Two paths move ETH out of the reserve: `_payRedemption`, reached from `redeem`, `burn`
+///      and their batch/recipient variants after the token is burned, and `sacrifice`, which sends
+///      a fixed 100 ETH to an unspendable address. `compose`, `decompose` and `split` reshape
+///      tokens at constant summed
 ///      backing and leave the reserve unchanged.
 ///
 ///      The owner may replace the renderer via `setRenderer` and the collection metadata
 ///      contract via `setCollection`, and freeze both via `lockRenderer`. The renderer is read
-///      only by `tokenURI`, the collection only by `contractURI`.
+///      only by `tokenURI`, the collection only by `contractURI`. Independently, the owner may
+///      set, clear and permanently lock an optional position resolver; core token and reserve
+///      operations never call it. Ownership is transferable and may be renounced.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
-///      `split`, `blacken`, the `redeem` entrypoints and every `*To` recipient variant
+///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
 ///      are guarded. The inherited ERC721 transfer and approval functions are not, so a receiver
 ///      can redeem a Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
 ///      Accounting stays exact; an integrator that assumes the token still exists after a safe
@@ -117,7 +122,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     /// @inheritdoc IShapes
     uint256 public totalMinted;
 
-    /// @dev The apex denomination (100 ETH) and its origin count, gating `blacken`.
+    /// @dev The apex denomination (100 ETH) and its origin count, gating `sacrifice`.
     uint256 private constant APEX_INDEX = 8;
     uint256 private constant APEX_BACKING = 100 ether;
     /// @dev Where sacrificed ETH is sent: an address with no known key. Provably unspendable.
@@ -146,6 +151,13 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     /// @dev Read only by `contractURI`. Replaceable by the owner until `lockRenderer` freezes
     ///      both presentation pointers.
     address public collection;
+
+    /// @inheritdoc IShapes
+    /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
+    address public positionResolver;
+
+    /// @inheritdoc IShapes
+    bool public positionResolverLocked;
 
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
     ///        May be zero. Above BPS_DENOMINATOR (100%) is rejected.
@@ -186,7 +198,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     }
 
     /// @inheritdoc IShapes
-    /// @dev Owner only, one way. After this the renderer can never change again.
+    /// @dev Owner only, one way. After this the renderer can never change again. The optional
+    ///      position resolver remains independently configurable until its own lock or renunciation.
     function lockRenderer() external onlyOwner {
         if (rendererLocked) revert RendererIsLocked();
         rendererLocked = true;
@@ -200,6 +213,24 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         _requireCollectionHasCode(newCollection);
         collection = newCollection;
         emit CollectionUpdated(newCollection);
+    }
+
+    /// @dev Zero clears the resolver. Nonzero values must carry code when configured, but Shapes
+    ///      intentionally does not inspect or call that code and makes no claim about its mutability.
+    function setPositionResolver(address resolver_) external onlyOwner {
+        if (positionResolverLocked) revert PositionResolverIsLocked();
+        if (resolver_ != address(0) && resolver_.code.length == 0) {
+            revert InvalidPositionResolver();
+        }
+        positionResolver = resolver_;
+        emit PositionResolverSet(resolver_);
+    }
+
+    /// @inheritdoc IShapes
+    function lockPositionResolver() external onlyOwner {
+        if (positionResolverLocked) revert PositionResolverIsLocked();
+        positionResolverLocked = true;
+        emit PositionResolverLocked(positionResolver);
     }
 
     /// @dev Applied at construction and on every replacement. Metadata has no fallback path.
@@ -326,7 +357,14 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///      outcome by transferring the Shape to itself and redeeming in the same transaction, so
     ///      approval is economically equivalent to granting redemption rights.
     function redeem(uint256 tokenId) external nonReentrant {
-        _redeemTo(tokenId, payable(msg.sender));
+        _redeemTo(tokenId, payable(msg.sender), false);
+    }
+
+    /// @inheritdoc IERC721Value
+    /// @dev Draft ERC-8060 entry point. It additionally permits a Black Shape to be destroyed
+    ///      for zero without making an ETH call. Structural burns never route through here.
+    function burn(uint256 tokenId) external nonReentrant {
+        _redeemTo(tokenId, payable(msg.sender), true);
     }
 
     /// @inheritdoc IShapes
@@ -336,7 +374,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
 
     /// @inheritdoc IShapes
     function redeemTo(uint256 tokenId, address payable recipient) external nonReentrant {
-        _redeemTo(tokenId, recipient);
+        _redeemTo(tokenId, recipient, false);
     }
 
     /// @inheritdoc IShapes
@@ -348,15 +386,15 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         return _redeemBatchTo(tokenIds, recipient);
     }
 
-    function _redeemTo(uint256 tokenId, address payable recipient) private {
+    function _redeemTo(uint256 tokenId, address payable recipient, bool allowBlack) private {
         if (recipient == address(0)) revert InvalidRecipient(recipient); // never burn the payout
-        (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId);
+        (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId, allowBlack);
 
         totalSupply -= 1;
         redeemableBacking -= amountWei;
 
         emit ShapeRedeemed(tokenId, recipient, amountWei, originCount);
-        _payRedemption(recipient, amountWei);
+        if (amountWei != 0) _payRedemption(recipient, amountWei);
     }
 
     function _redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
@@ -369,7 +407,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
 
         for (uint256 i = 0; i < n; ++i) {
             uint256 tokenId = tokenIds[i];
-            (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId);
+            (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId, false);
             totalWei += amountWei;
             emit ShapeRedeemed(tokenId, recipient, amountWei, originCount);
         }
@@ -385,13 +423,16 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///      carry it, letting an event-only indexer track global origin conservation without a
     ///      pre-burn state read. A duplicate id in a batch fails here on its second appearance,
     ///      because the token no longer exists.
-    function _burnForRedemption(uint256 tokenId) private returns (uint256 amountWei, uint256 originCount) {
+    function _burnForRedemption(uint256 tokenId, bool allowBlack)
+        private
+        returns (uint256 amountWei, uint256 originCount)
+    {
         address owner = _requireOwned(tokenId);
         if (owner != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
         ShapeData storage d = _shapes[tokenId];
-        if (d.isBlack) revert TokenIsBlack(tokenId);
+        if (d.isBlack && !allowBlack) revert TokenIsBlack(tokenId);
 
-        amountWei = Denominations.amountAt(d.denomIndex);
+        amountWei = d.isBlack ? 0 : Denominations.amountAt(d.denomIndex);
         originCount = d.originCount;
 
         delete _shapes[tokenId];
@@ -399,7 +440,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     }
 
     /// @dev The redemption payout. Reached only after the corresponding tokens are burned and the
-    ///      accounting is updated. A failed transfer reverts the whole redemption. `blacken` is the
+    ///      accounting is updated. A failed transfer reverts the whole redemption. `sacrifice` is the
     ///      only other path that sends reserve ETH out, at a fixed amount to a fixed address.
     function _payRedemption(address to, uint256 amountWei) private {
         (bool sent,) = to.call{value: amountWei}("");
@@ -484,13 +525,16 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
             unitsTotal += bUnits;
 
             // Snapshot the input verbatim, then burn it. Re-minted by `decompose` under this id.
-            rec.inputs.push(ComposeInput({
-                seed: b.seed,
-                id: uint96(burnId),
-                originCount: b.originCount,
-                denomIndex: b.denomIndex,
-                inkGene: b.inkGene
-            }));
+            rec.inputs
+                .push(
+                    ComposeInput({
+                        seed: b.seed,
+                        id: uint96(burnId),
+                        originCount: b.originCount,
+                        denomIndex: b.denomIndex,
+                        inkGene: b.inkGene
+                    })
+                );
 
             delete _shapes[burnId];
             _burn(burnId);
@@ -611,11 +655,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///      survivor unwind newest first. Backing is conserved, so `redeemableBacking` is untouched.
     ///      All accounting precedes the `_safeMint` loop so a receiver callback observes consistent
     ///      state.
-    function decompose(uint256 survivorId)
-        external
-        nonReentrant
-        returns (uint256[] memory restoredIds)
-    {
+    function decompose(uint256 survivorId) external nonReentrant returns (uint256[] memory restoredIds) {
         return _decomposeTo(survivorId, msg.sender);
     }
 
@@ -716,10 +756,11 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     }
 
     /// @inheritdoc IShapes
-    /// @dev Sends a fixed 100 ETH to a fixed unspendable address, moving the backing out of
-    ///      `redeemableBacking` into `sacrificedBacking`. CEI: the token is marked Black before
-    ///      the transfer, which is last.
-    function blacken(uint256 tokenId) external nonReentrant {
+    /// @dev The second and final reserve outflow path sends a fixed 100 ETH to a fixed
+    ///      unspendable address, moving the backing out of `redeemableBacking` into
+    ///      `sacrificedBacking`. Unlike `burn`, the token remains alive and becomes Black.
+    ///      CEI: the token is marked Black before the transfer, which is last.
+    function sacrifice(uint256 tokenId) external nonReentrant {
         if (ownerOf(tokenId) != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
         ShapeData storage d = _shapes[tokenId];
         if (d.isBlack) revert TokenIsBlack(tokenId);
@@ -793,6 +834,18 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
         return d.isBlack ? 0 : Denominations.amountAt(d.denomIndex);
+    }
+
+    /// @inheritdoc IERC721Value
+    function valueOf(uint256 tokenId) external view returns (uint256) {
+        return backingOf(tokenId);
+    }
+
+    /// @inheritdoc IShapes
+    function positionOf(uint256 tokenId) external view returns (address) {
+        address resolver_ = positionResolver;
+        if (resolver_ == address(0)) return address(0);
+        return IShapePositionResolver(resolver_).positionOf(tokenId);
     }
 
     /// @inheritdoc IShapes
@@ -1028,7 +1081,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
             || interfaceId == type(IShapeRecomposition).interfaceId
             || interfaceId == type(IShapeProvenance).interfaceId
             || interfaceId == type(IShapeSimulation).interfaceId
-            || interfaceId == type(IERC2981).interfaceId
+            || interfaceId == type(IERC721Value).interfaceId || interfaceId == type(IERC2981).interfaceId
             || interfaceId == bytes4(0x49064906) // ERC-4906 metadata update
             || super.supportsInterface(interfaceId);
     }

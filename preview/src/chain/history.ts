@@ -58,7 +58,7 @@ export async function loadHistory(
 ): Promise<HistEvent[]> {
   const base = {address: dep.shapes, abi: shapesAbi} as const;
   const latest = await publicClient.getBlockNumber();
-  // Events keyed on this token by an indexed arg are fetched targeted (mint, blacken, redeem,
+  // Events keyed on this token by an indexed arg are fetched targeted (mint, sacrifice, redeem,
   // and transfers of this id); a token composed from thousands of ancestors would otherwise pull
   // every ShapeMinted log and overflow the RPC response. The recomposition events name touched
   // ids in unindexed array args, so they are still fetched whole — but there is one per
@@ -194,7 +194,7 @@ export async function loadProvenance(
 ): Promise<ProvNode | null> {
   const base = {address: dep.shapes, abi: shapesAbi} as const;
   const latest = await publicClient.getBlockNumber();
-  // Recomposition events are few (one per compose/split/decompose/restore) and give the tree its
+  // Recomposition events are few (one per compose/split/decompose) and give the tree its
   // structure, so they are fetched whole. Mints are the many; an apex Complete has thousands of
   // ancestor mints whose logs overflow the RPC response. So a node's mint is fetched lazily by
   // its indexed tokenId, only for the bounded set of nodes the walk renders, and cached.
@@ -339,7 +339,7 @@ export interface DecomposeInput {
 /// The inputs the next `decompose(survivorId)` will restore: the burned inputs of the survivor's
 /// most recent still-standing compose, each with the id and seed it is re-minted under. Replays the
 /// survivor's compose(push)/decompose(pop) events as a LIFO stack — the top is what decompose pops —
-/// then resolves each burned input's birth seed (mint, split-child, or restore). Empty when the
+/// then resolves each burned input's birth seed (mint or split-child). Empty when the
 /// survivor has no standing compose.
 export async function loadDecomposePreview(
   publicClient: PublicClient,
@@ -398,7 +398,7 @@ export interface SplitBirth {
 }
 
 /// The split that created a token, if any: the latest Split event listing it among the
-/// outputs. Latest, because a restore-then-resplit can list the same seed-derived positions in
+/// outputs. Latest, because a later history query may include more than one matching split in
 /// more than one event; only the newest corresponds to the live split record.
 export async function findSplitBirth(
   publicClient: PublicClient,

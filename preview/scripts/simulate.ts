@@ -94,7 +94,7 @@ async function split(actor: number, id: bigint, outDenoms: number[]): Promise<bi
 
 
 const redeem = (actor: number, id: bigint) => send(actor, "redeem", [id]);
-const blacken = (actor: number, id: bigint) => send(actor, "blacken", [id]);
+const sacrifice = (actor: number, id: bigint) => send(actor, "sacrifice", [id]);
 const transfer = (actor: number, to: `0x${string}`, id: bigint) =>
   send(actor, "transferFrom", [actors[actor].account.address, to, id]);
 
@@ -120,7 +120,7 @@ async function main() {
   const fives5 = await mint(5, 5, 4);
   const tens3 = await mint(3, 6, 3);
   await mint(4, 7, 1); // a lone direct 50
-  // A pure direct 100 ETH: one mint, originCount 1. Never blackened (blacken needs an apex
+  // A pure direct 100 ETH: one mint, originCount 1. Never sacrificed (sacrifice needs an apex
   // Complete, 10,000 origins), so this is the "untouched 100" that stays fully redeemable.
   const [pureApex] = await mint(5, 8, 1);
 
@@ -140,9 +140,9 @@ async function main() {
   const partialApex = await compose(7, direct50, [built50]);
   console.log(`   partial apex: #${partialApex} (one branch deep, one branch a mint)`);
 
-  console.log("4. the Black Shape: a genuine apex Complete, blackened (slow: 10k mints across 10 batches)");
+  console.log("4. the Black Shape: a genuine apex Complete, sacrificed (slow: 10k mints across 10 batches)");
   // 10,000 x 0.01 composed into one 100 ETH token carrying 10,000 origins (an apex Complete,
-  // originCount == units). Only that state can be blackened: it sacrifices the 100 ETH to the
+  // originCount == units). Only that state can be sacrificed: it sends the 100 ETH to the
   // burn address and inverts the art (black form on white). Terminal thereafter.
   //
   // Built in 1,000-token batches: a single 10,000-mint tx mines fine on the dev chain, but its
@@ -154,7 +154,7 @@ async function main() {
     blackTens.push(await compose(0, batch[0], batch.slice(1))); // -> 10 ETH, originCount 1,000
   }
   const apexComplete = await compose(0, blackTens[0], blackTens.slice(1)); // 10 x 10 ETH -> 100 ETH, originCount 10,000
-  await blacken(0, apexComplete);
+  await sacrifice(0, apexComplete);
   console.log(`   black shape: #${apexComplete} (10,000 origins sacrificed; 100 ETH burned)`);
 
   console.log("5. mid-tier compositions");
@@ -186,7 +186,7 @@ async function main() {
   await redeem(1, dust1[1]);
   await redeem(3, dimes[6]);
   await redeem(5, fives5[2]);
-  await redeem(4, mixedKids[1]); // a piece of the mixed split: its set can never be restored
+  await redeem(4, mixedKids[1]); // a piece of the mixed split; splitting is final
 
   const supply = await pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "totalSupply"});
   const reserve = await pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "redeemableBacking"});

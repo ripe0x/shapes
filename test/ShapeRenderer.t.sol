@@ -569,7 +569,9 @@ contract OutputTest is RendererTestBase {
             InkGenes.geneNameAt(_gene(seed))
         );
         assertEq(vm.parseJsonString(json, ".attributes[5].value"), FixedPoint.toString(cols * rows));
-        assertEq(vm.parseJsonString(json, ".attributes[11].value"), vm.toString(seed));
+        string[9] memory densities =
+            ["100%", "20%", "10%", "2%", "1%", "0.2%", "0.1%", "0.02%", "0.01%"];
+        assertEq(vm.parseJsonString(json, ".attributes[11].value"), densities[idx]);
     }
 
     /// @notice The three batch-1 visual-rarity traits (TRAIT_SPEC.md): Primitive is a recognised

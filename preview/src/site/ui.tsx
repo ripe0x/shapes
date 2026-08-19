@@ -4,7 +4,7 @@ import {C, label} from "./theme";
 /**
  * The page grammar: a two-column section, 190px label column with a right border, content
  * column, 1px rule below. `labelNode` replaces the plain text label (used for the
- * split/restore tabs). `pad` overrides the content padding where a screen needs to.
+ * recomposition tabs). `pad` overrides the content padding where a screen needs to.
  */
 export function Section({
   title,

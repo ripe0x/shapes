@@ -141,8 +141,7 @@ can:
 - `IShapes` for `mintBatch` and `mintFeeFor` only. There is no mint capability interface, so
   the ETH on-ramp is the one place the house needs the full interface.
 
-The house needs **nothing** from `IShapeRecomposition`. It never composes, decomposes, splits
-or restores.
+The house needs **nothing** from `IShapeRecomposition`. It never composes, decomposes or splits.
 
 `shapeState(tokenId)` returns seed, denomination index, origin count, ink gene, black flag,
 formation, face value and redeemable value in one call, so a bid's full display data is one
@@ -317,7 +316,7 @@ reversible. This is permanent: there is no way to give up the option, so every c
 ever receives can be unwound by whoever owns it at the time.
 
 **What would destroy id 0:** `redeem` (burns it, pays out the backing) and `split` (burns it
-into fresh fragment ids). `blacken` keeps the id and inverts the artwork, but only applies at
+into fresh fragment ids). `sacrifice` keeps the id and inverts the artwork, but only applies at
 100 ETH apex Complete and permanently sacrifices the backing.
 
 So the piece is a ratchet the owner controls in both directions, and the one thing that ends
@@ -366,12 +365,12 @@ code change suggested, and it is a deletion.
 - **Batching.** `composeMany`, `decomposeMany`, `decomposeManyTo`, all non-payable, and
   `DECOMPOSE_SPEC.md` explicitly rejects a generic `multicall(bytes[])` for the
   `msg.value`-reuse hazard against payable `mint`/`mintBatch`.
-- **Recipient-directed everything.** `decomposeTo`, `splitTo`, `restoreTo`, `redeemTo`,
+- **Recipient-directed everything.** `decomposeTo`, `splitTo`, `redeemTo`,
   `redeemBatchTo`.
-- **A Black Shape's denomination is readable.** `ShapeState.faceValueWei` survives blackening;
+- **A Black Shape's denomination is readable.** `ShapeState.faceValueWei` survives sacrifice;
   `redeemableValueWei` is zero for a Black Shape and otherwise equals face value. Reached via
   `shapeState(tokenId)`.
-- **Previews and introspection.** `previewCompose`, `previewSplit`, `previewRestore`,
+- **Previews and introspection.** `previewCompose`, `previewSplit`,
   `composeDepth`, `formationOf`, `shapeState`, `childSeed`, `denominationAt`,
   `denominationCount`, `unit`, `unicodeCard`, and the split capability interfaces
   `IShapeValue` / `IShapeRecomposition` / `IShapeProvenance`.
@@ -409,34 +408,11 @@ That leaves contract integrators, for whom `try/catch` around a `staticcall` is 
 cheap. No identified consumer, an immutable contract, and a real off-chain answer already in
 the repo. Not worth a function.
 
-### F3. `split` and `restore` are still identity-lossy, and the asymmetry is now sharper
+### F3. `split` is final and identity-lossy
 
-`split` burns its input and issues fresh ids; `restore` reassembles the exact artwork under a
-fresh id (`Restored.newTokenId`). SHAPES_V2_SPEC §5 decided this deliberately: identity
-carries up through compose and ends at a split.
-
-What changed is the surrounding evidence. The contract now demonstrates, in `decompose`, that
-it can preserve ids across a reversal exactly, including re-minting burned ids collision-free.
-So the split pair is the one remaining place where a holder's token number is destroyed by an
-operation they can otherwise undo, and the reason is now purely aesthetic rather than
-technical.
-
-If it is ever re-opened, the shape is a survivor slot:
-
-```solidity
-function split(uint256 tokenId, uint8[] calldata outDenoms, uint256 survivorSlot)
-    external returns (uint256[] memory outIds);
-```
-
-with one trap: the split record is keyed by `parentSeed`, and its uniqueness rests on the
-split having burned the token that carried that seed. A live survivor keeps the seed alive, so
-a second split would overwrite the first record and orphan its children permanently. Rekey to
-`tokenId`.
-
-Scope note, because three nearby things get conflated. A split output has no original to
-return: split a 1 ETH card into ten 0.1 cards and those ten never existed before. Returning
-genuinely pre-existing ids and seeds is `decompose`, which already works. Returning the
-original artwork after a split is `restore`, which already works; only its id is new.
+`split` burns its input and issues fresh ids. There is no reassembly path: identity carries up
+through compose, can return through decompose, and ends at a split. This is a deliberate product
+choice, so auction and custody UIs must warn before submitting a split.
 
 ### F4. The split origin partition is caller-ordered, and now previewable
 
@@ -518,18 +494,27 @@ signing, and greedy breakdowns are minimal by L3 and should be the default.
 **R6. Bidders lock real ETH with no yield for the auction duration.** Standard for auctions,
 but the locked thing here is unusually liquid, which makes the lock more visible.
 
-**R7. Escrowed cards freeze their `restore` records.** If a bidder escrows children of a
-split, nobody can `restore` it until the cards are released, since `restore` requires one
-address to own the complete child set. Not a bug; worth a line so a bidder does not strand a
-reassembly they were part-way through.
+**R7. Split fragments cannot be reassembled.** Escrowing or releasing them does not change that;
+the original token and artwork identity ended when it was split.
 
-**R8. Equal bids are not equal objects (L7), which matters only if the cards are kept.**
-Ranking is `newUnits` and nothing else, so origins never affect who wins and there is nothing to
-decide at the contract layer. The only observation is that a 2 ETH bid paid as one card and the
-same bid paid as two hundred 0.01 cards carry different `originCount`, and origins are what make
-a Shape `Complete` and gate `blacken`. If the proceeds are redeemed for ETH the difference is
-invisible. If they are held as objects, the site can show each bid's total `originCount` beside
-its ETH, which is a front-end read of `shapeState` and no Solidity.
+**R8. Equal bids are not equal objects (L7).** Two 1 ETH bids redeem identically and are
+different objects: origins are what make a Shape `Complete` and what gate `sacrifice`, so a bid
+paid in Complete-density cards is materially better to receive than one paid in origin-1
+cards at the same price.
+
+Two ways to handle it, and they are not the same size:
+
+- **Display only (recommended).** The house ranks strictly on wei, exactly as §3.3 already
+  specifies. No contract change of any kind. The site reads `shapeState` per escrowed card
+  and shows each bid's total `originCount` beside its ETH, so the difference is visible when
+  the bids are compared. Pure front end.
+- **Ranking.** Origins become part of who wins: a tiebreak, a minimum origin density to bid,
+  or a blended score. This one is a contract change and a real design problem, because it
+  needs an exchange rate between ETH and origins, and any rate is arbitrary and therefore
+  gameable at the margin. It turns the auction into a two-dimensional contest.
+
+Recommendation: display only for v1. The information is the valuable part; making it binding
+is a separate project.
 
 **R9. Bidding is a mint with a refund.** On the ETH path a loser walks away holding freshly
 minted cards. The residual grinding vector is SPEC.md D3e (revert unless the seed suits, one

@@ -1,4 +1,4 @@
-# Audit brief — Shapes (recomposition, provenance, terminal Black Shape, ink genes, composability)
+# Audit brief — Shapes (recomposition, provenance, Black state, ink genes, composability)
 
 You are a senior smart-contract security auditor. Perform a thorough, adversarial
 security audit of the **Shapes** contract described below. Your mandate is to
@@ -32,7 +32,7 @@ hold real ETH on Ethereum mainnet and that any depositor can be an attacker.
      module-level geometry exposure.
 
 The **v2 recomposition / provenance / terminal Black Shape** layer (compose/decompose/split,
-`originCount`, `blacken`) had one prior internal adversarial pass with no Critical/High; it is
+`originCount`, `sacrifice`) had one prior internal adversarial pass with no Critical/High; it is
 described below and remains in scope, but the two areas above are where new surface was added.
 
 The prior internal review's one accepted hazard stands unchanged: an immutable, reverting
@@ -53,24 +53,26 @@ two are the newest, externally unaudited surface):
    - `compose(survivorId, burnIds[])`: burns the `burnIds`, grows the survivor to
      the summed denomination (survivor keeps its id and seed). Summed backing must
      land on the ladder or it reverts.
-   - `decompose(tokenId, outDenoms[])`: burns the input, mints fresh tokens whose
-     backing sums to the input's. Child seeds are `keccak256(abi.encodePacked(parentSeed, i))`.
+   - `decompose(survivorId)`: reverses the survivor's latest compose and revives its exact inputs
+     under their original ids and state. `split(tokenId, outDenoms[])` is the separate path that
+     burns one input and mints fresh children whose backing sums to it; child seeds are
+     `keccak256(abi.encodePacked(parentSeed, i))`.
 
 2. **Provenance via origin conservation.** One `uint32 originCount` per token counts
    independent direct-mint events. Rules: mint → 1; compose → sum of inputs;
-   decompose → partition the parent's count among children, **survivor/first-order
+   split → partition the parent's count among children, **survivor/first-order
    first**, each child capped at its capacity `childBacking / 0.01`. The global sum of
    all `originCount` equals (direct mints) − (origins redeemed) and rises **only** by a
    fresh mint of new ETH — the design claim is that origins, and therefore the
    "Complete" trait, cannot be forged. `Complete = !isBlack && units > 1 &&
    originCount == units`, where `units = backing / 0.01`.
 
-3. **Terminal Black Shape.** `blacken(tokenId)` requires an apex Complete (100 ETH with
+3. **Black Shape.** `sacrifice(tokenId)` requires an apex Complete (100 ETH with
    `originCount == 10000`). It moves the 100 ETH out of the redeemable reserve to an
    unspendable address (`0x…dEaD`), marks the token Black, and is irreversible. The
    reserve counter is split: `redeemableBacking` (owed to holders) and
    `sacrificedBacking` (burned, monotonic). Black tokens are non-redeemable and
-   non-recomposable but stay transferable.
+   non-recomposable but stay transferable and may be destroyed through `burn` for zero.
 
 4. **Ink genes (new, `src/lib/InkGenes.sol`, SPEC.md D17).** Each token carries a `uint8 inkGene`
    in `{Void..Solid}` (0..6), packed into the same storage slot as `denomIndex`/`originCount`/
@@ -104,11 +106,13 @@ two are the newest, externally unaudited surface):
 
 There are three value-bearing `CALL`s: redemption payout (`_payRedemption`, after burn),
 the mint-fee forward (fee is 1% of backing, received in the same tx, never counted as
-backing), and the `blacken` sacrifice (fixed 100 ETH to the burn address).
+backing), and the `sacrifice` call (fixed 100 ETH to the burn address).
 
 The renderer (`ShapeRenderer.sol`) is a byte-for-byte port of a TypeScript canonical
 renderer; a Foundry parity suite asserts identical output against generated fixtures.
-The renderer is owner-replaceable until `lockRenderer`, and is read only by `tokenURI`.
+The renderer and collection metadata contract are owner-replaceable until `lockRenderer`, and are
+read only by metadata views. The optional independently lockable position resolver is read only by
+`positionOf`.
 
 ## The core invariants (these must never break)
 
@@ -131,12 +135,14 @@ The renderer is owner-replaceable until `lockRenderer`, and is read only by `tok
 
 ## Primary files (Solidity is the priority)
 
-- `src/Shapes.sol` — core: mint/redeem (+`*To`), compose/decompose/split (+`*To`), blacken,
+- `src/Shapes.sol` — core: mint/redeem/burn (+`*To`), compose/decompose/split (+`*To`), sacrifice,
   the `simulate`/`preview` views, accounting, guards.
 - `src/lib/InkGenes.sol` — the ink-gene mint lottery, compose walk, and units-weighted center.
 - `src/ShapeRenderer.sol` — SVG + metadata, provenance/ink traits, color inversion, `IShapeGeometry`.
 - `src/interfaces/IShapeCapabilities.sol` — the capability interfaces + `ShapeState`/`ShapeFormation`.
-- `src/interfaces/IShapes.sol`, `src/interfaces/IShapeRenderer.sol`, `src/interfaces/IShapeGeometry.sol`
+- `src/interfaces/IShapes.sol`, `src/interfaces/IERC721Value.sol`,
+  `src/interfaces/IShapePositionResolver.sol`, `src/interfaces/IShapeRenderer.sol`,
+  `src/interfaces/IShapeGeometry.sol`
 - `src/lib/Denominations.sol` — the ladder, `unitsAt`, index lookups.
 - `src/lib/FixedPoint.sol`, `src/lib/Round03Rand.sol`
 - `script/DeployShapes.s.sol` — constructor args, deploy-time invariant checks.
@@ -174,7 +180,7 @@ parity if you change either renderer.
   0 reverts) covering solvency, backing/origin conservation, capacity, sacrifice.
 - Forgery: mint 100 → decompose → recompose ⇒ `originCount == 1`, not Complete.
 - Complete propagation; Complete excludes tier 0; Fragment (zero-origin) labelling.
-- blacken happy path (a genuine 10,000-origin apex build), terminal guards
+- sacrifice happy path (a genuine 10,000-origin apex build), Black-state guards
   (non-redeemable, non-recomposable, one-way), non-apex/non-owner rejections.
 - Deterministic child seeds: exact derivation, invariance across
   roll/warp/prevrandao/fee/chainid, and Solidity↔TypeScript parity.
@@ -202,12 +208,12 @@ removes ETH without an equal burn, forges provenance, or breaks an invariant.
 2. **Accounting split desync.** Any path where `redeemableBacking` and
    `sacrificedBacking` drift from real ETH: double-decrement, decrement-without-transfer,
    sacrifice that doesn't leave the balance, or a Black token that remains redeemable.
-   Re-derive solvency after `blacken` specifically.
-3. **blacken CEI / reentrancy.** It sends 100 ETH to `0x…dEaD` (a fixed address that
+   Re-derive solvency after `sacrifice` specifically.
+3. **sacrifice CEI / reentrancy.** It sends 100 ETH to `0x…dEaD` (a fixed address that
    cannot re-enter today — but audit the ordering as if it could). Is state fully
    updated before the external call? Can the guard be bypassed? Can a non-apex or
-   already-Black token be blackened? Can `blackCount`/`sacrificedBacking` be desynced?
-4. **Reentrancy across new functions.** compose/decompose/blacken and their interaction
+   already-Black token be sacrificed? Can `blackCount`/`sacrificedBacking` be desynced?
+4. **Reentrancy across new functions.** compose/decompose/sacrifice and their interaction
    with `_safeMint` receiver callbacks and `onERC721Received`. decompose mints outputs
    via `_safeMint` after accounting — verify a malicious receiver observes only
    consistent state and cannot re-enter to double-mint or corrupt counters.
@@ -220,7 +226,7 @@ removes ETH without an equal burn, forges provenance, or breaks an invariant.
    chosen artwork given the economic irrelevance of the seed. Seed collisions across
    lineages.
 7. **ERC-4906 / metadata.** `MetadataUpdate` emission correctness on compose/decompose/
-   blacken. Renderer inversion (Black) and the provenance traits — can metadata assert
+   sacrifice. Renderer inversion (Black) and the provenance traits — can metadata assert
    something false about a token (the Fragment label was one such case; look for others)?
 8. **Renderer trust boundary.** The renderer is owner-replaceable until locked. Confirm
    it can never touch ETH/backing/ownership, that `tokenURI` is its only caller, and that
