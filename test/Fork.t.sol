@@ -4,7 +4,10 @@ pragma solidity 0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {DeployShapes} from "../script/DeployShapes.s.sol";
 import {Base64Decode} from "./utils/Base64Decode.sol";
@@ -34,6 +37,8 @@ contract ForkTest is Test {
     }
 
     ShapeRenderer internal renderer;
+
+    ShapeCollection internal collection;
     Shapes internal shapes;
 
     address internal feeRecipient = address(0xFEE);
@@ -48,15 +53,7 @@ contract ForkTest is Test {
     uint256 internal strayWei;
 
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether),
-        0.05 ether,
-        0.1 ether,
-        0.5 ether,
-        1 ether,
-        5 ether,
-        10 ether,
-        50 ether,
-        100 ether
+        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
     function setUp() public {
@@ -72,7 +69,8 @@ contract ForkTest is Test {
 
         live = true;
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
         strayWei = address(shapes).balance;
     }
 
@@ -100,11 +98,16 @@ contract ForkTest is Test {
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
         DeployShapes deployer = new DeployShapes();
-        (ShapeRenderer r, Shapes s) = deployer.run();
+        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h) = deployer.run();
 
         assertEq(s.feeBps(), 100, "default fee bps not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
         assertEq(s.renderer(), address(r), "renderer mismatch");
+        assertEq(s.collection(), address(c), "collection mismatch");
+        assertEq(h.shapes(), address(s), "auction house mismatch");
+        assertEq(s.positionResolver(), address(0), "resolver should start empty");
+        assertFalse(s.positionResolverLocked(), "resolver should start unlocked");
+        assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");
         assertGt(address(r).code.length, 0, "renderer has no code");
         // Smoke the renderer through the interface the token uses; no mint needed.
         assertGt(bytes(r.tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0, 0)).length, 500, "no metadata");
@@ -119,7 +122,7 @@ contract ForkTest is Test {
         for (uint256 i = 0; i < DENOMS.length; i++) {
             uint256 amount = DENOMS[i];
             vm.prank(alice);
-            ids[i] = shapes.mint{value: amount + feeOf(amount)}(amount, alice);
+            ids[i] = shapes.mintTo{value: amount + feeOf(amount)}(amount, alice);
 
             assertEq(shapes.backingOf(ids[i]), amount, "backing wrong");
             assertTrue(shapes.seedOf(ids[i]) != bytes32(0), "seed is zero");
@@ -130,7 +133,9 @@ contract ForkTest is Test {
         // The fee left the contract on every mint; only backing (plus any stray wei) remains.
         assertEq(address(shapes).balance, shapes.redeemableBacking() + strayWei, "unexpected reserve");
         uint256 expectedFees;
-        for (uint256 i = 0; i < DENOMS.length; i++) expectedFees += feeOf(DENOMS[i]);
+        for (uint256 i = 0; i < DENOMS.length; i++) {
+            expectedFees += feeOf(DENOMS[i]);
+        }
         assertEq(feeRecipient.balance, expectedFees, "fees not forwarded");
 
         // Transfer the 1 ETH token to bob; redemption rights follow the token. Found by amount
@@ -179,7 +184,7 @@ contract ForkTest is Test {
 
         vm.prank(alice);
         uint256 g0 = gasleft();
-        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
+        uint256 id = shapes.mintTo{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
         uint256 mintGas = g0 - gasleft();
 
         vm.prank(alice);
@@ -218,8 +223,7 @@ contract ForkTest is Test {
         string memory image = vm.parseJsonString(json, ".image");
         assertTrue(_startsWith(image, "data:image/svg+xml;base64,"), "image not an svg data uri");
 
-        string memory svg =
-            string(Base64Decode.decode(_after(image, "data:image/svg+xml;base64,")));
+        string memory svg = string(Base64Decode.decode(_after(image, "data:image/svg+xml;base64,")));
         assertTrue(_startsWith(svg, "<svg "), "decoded image is not an svg");
     }
 

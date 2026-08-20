@@ -53,7 +53,7 @@ function parseUri(uri: string): {image: string; meta: TokenMeta} {
 }
 
 /**
- * Full chain state the site renders from. Scans token ids 1..totalMinted, which is fine on a
+ * Full chain state the site renders from. Scans token ids 0..totalMinted-1, which is fine on a
  * dev chain; a mainnet deployment needs an indexer (or at minimum a deploy-block floor on the
  * log scan in chain/history.ts) before this ships publicly.
  *
@@ -72,7 +72,7 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
   ]);
 
   const tokens: SiteToken[] = [];
-  for (let id = 1n; id <= minted; id++) {
+  for (let id = 0n; id < minted; id++) {
     let owner: `0x${string}`;
     try {
       owner = await publicClient.readContract({...shapes, functionName: "ownerOf", args: [id]});

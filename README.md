@@ -2,9 +2,10 @@
 
 ETH in, Shape out. Shape burned, the same ETH out.
 
-A Shape is an ERC721 token that wraps an exact amount of ETH. Whoever owns the token owns the
-right to unwrap it. Burn the token and you receive exactly the ETH it held — not a share of a
-pool, not a proportion, not a claim. The same wei.
+A Shape is an ERC721 token that wraps an exact amount of ETH. Whoever owns a normal Shape owns
+the right to unwrap it. Redeem or burn the token and you receive exactly its current value — not
+a share of a pool, not a proportion, not an appraisal. The same wei. A deliberately sacrificed
+Black Shape has zero remaining value and may be burned for zero.
 
 Between minting and burning, a Shape is an ordinary NFT. Transfer it, sell it, deposit it in
 another contract, hold it. The artwork and the token's history make it a distinct object; the
@@ -92,8 +93,10 @@ remain distinct historical objects. That is the whole design.
 Minting is permissionless.
 
 ```solidity
-mint(uint256 amountWei, address to) payable returns (uint256 tokenId)
-mintBatch(uint256 amountWei, uint256 quantity, address to) payable returns (uint256 firstTokenId)
+mint(uint256 amountWei) payable returns (uint256 tokenId)
+mintTo(uint256 amountWei, address to) payable returns (uint256 tokenId)
+mintBatch(uint256 amountWei, uint256 quantity) payable returns (uint256 firstTokenId)
+mintBatchTo(uint256 amountWei, uint256 quantity, address to) payable returns (uint256 firstTokenId)
 ```
 
 You send the backing **plus a mint fee that is a percentage of it**:
@@ -135,17 +138,65 @@ The contract can never be `msg.sender`, so such a token could never be redeemed.
 
 ```solidity
 redeem(uint256 tokenId)
+burn(uint256 tokenId)
 redeemBatch(uint256[] calldata tokenIds) returns (uint256 totalWei)
 ```
 
 The current owner burns the token and receives its exact backing, paid directly to them. All or
-nothing — there is no partial redemption, and no way to add ETH to an existing Shape. A 1 ETH
-Shape is a 1 ETH Shape for its entire lifetime.
+nothing — there is no partial redemption and no direct way to add ETH to an existing Shape.
+Recomposition may move backing between identities, and sacrifice may change an apex's value to zero.
 
 `redeemBatch` burns each token, then makes a single transfer of the exact total.
 
+`burn` is the draft ERC-8060 entry point. For a normal Shape it is economically identical to
+`redeem`; for a Black Shape it destroys the zero-value token without transferring ETH. Both are
+owner-only — an approved operator can transfer a Shape but cannot directly redeem or burn it.
+
+`backingOf(tokenId)` and `valueOf(tokenId)` return the same exact currently redeemable native ETH.
+Both revert for nonexistent or consumed IDs, and both return zero for a live Black Shape. Shapes
+implements the current draft `IERC721Value` interface (`valueOf` + `burn`) and advertises it through
+ERC-165; the draft may still change before finalization.
+
 If the ETH transfer fails, the entire redemption reverts. The token survives and the backing
 stays put.
+
+## Recomposition and identity
+
+`compose` combines several Shapes into a caller-selected survivor. Their exact backing and origins
+move onto that survivor; the other input IDs are consumed into a reversible LIFO record.
+`decompose` reverses the latest compose and revives those exact identities. Separately, `split`
+consumes one Shape and mints fresh child IDs whose denominations sum exactly to the parent. A split
+is final. None of these operations moves ETH or calls the position resolver.
+
+New token IDs are issued sequentially using `totalMinted` as the next ID and issued-count. IDs
+retired by redemption, public burn or split are never reassigned. The deliberate exception is
+reversible compose: `decompose` revives the exact inputs recorded by that compose without issuing
+new IDs. Positions attach to Shape identity, not automatically to ETH material that later moves
+into another ID.
+
+## Sacrifice and Black Shapes
+
+`sacrifice(tokenId)` is an owner-only transformation available only to a Complete 100 ETH apex.
+It sends exactly 100 ETH to `0x…dEaD`, changes the token's current value to zero and marks it Black
+without burning it. The same ID, owner, seed, provenance and artwork geometry remain; metadata is
+updated to the inverted Black rendering. A Black Shape stays transferable and may be burned for
+zero, but it cannot be redeemed, composed, decomposed or sacrificed again.
+
+`sacrificedBacking` and `blackCount` are cumulative historical counters. Burning a Black Shape does
+not reduce either one.
+
+## Optional external positions
+
+`positionOf(tokenId)` is a discovery seam for a future positions protocol. With no resolver it
+returns zero immediately, for any ID. Once configured it returns the resolver's result exactly and
+does not check token existence, backing, returned-address code, claim validity or authorization.
+Zero means the resolver reports no canonical position. A nonzero address only answers “where should
+I look?”; the future protocol defines what lives there and how it can be used.
+
+No core Shapes operation calls the resolver. A broken or malicious resolver can make `positionOf`
+revert or return misleading data, but cannot affect ownership, backing, redemption, burn,
+recomposition, rendering or reserve solvency. Historical or not-yet-minted IDs may resolve; callers
+that require a live Shape must separately call `ownerOf(tokenId)`.
 
 ---
 
@@ -165,25 +216,34 @@ reach the reserve.
 
 Direct ETH transfers to the contract revert. ETH arrives only through `mint`.
 
-Every wei counted by `redeemableBacking()` corresponds to a live Shape, and is asserted as a
-stateful invariant over fuzzed sequences of minting, transferring and redeeming.
+Every wei counted by `redeemableBacking()` corresponds to a live non-Black Shape. Stateful
+invariants cover minting, transfer, redemption, burn, composition, decomposition, splitting,
+restoration, sacrifice, forced ETH and `valueOf == backingOf`; unit tests pin high-water issuance
+and the narrow compose/decompose identity-revival exception.
 
 ## Immutability
 
-There is one administrative power, and it is cosmetic. The owner may replace the renderer
-(`setRenderer`) to fix a rendering bug, and may freeze it permanently (`lockRenderer`). The
-renderer is read only by `tokenURI`, so it can change how a Shape *looks* — never its backing,
-its redeemability, or who owns it. Once locked, even that ends. The owner may renounce ownership
-at any time (`Ownable`).
+Ownership is transferable through `transferOwnership` and renounceable through `renounceOwnership`.
+The current owner controls two independent, value-inert configuration domains:
+
+- Presentation: the renderer and collection metadata contracts may be replaced until
+  `lockRenderer` permanently freezes both. They are read only by metadata views and cannot affect
+  backing, redemption or ownership.
+- The optional position resolver may be set, replaced or cleared until `lockPositionResolver`
+  permanently freezes its current value. It may be locked while zero, permanently opting out.
+
+The resolver pointer is permanent after locking, but its target code and trust model are not
+guaranteed immutable. Renouncing ownership leaves any unlocked settings practically frozen because
+no caller can pass `onlyOwner` afterward.
 
 `feeBps` and `feeRecipient` are `immutable`. The reserve, the denominations and the redemption
 path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
-withdrawal, redemption pause, asset recovery, backing modification, token seizure, admin burn,
+withdrawal, redemption pause, asset recovery, backing modification, token seizure,
 fee change, upgradeability, proxies, allowlists, supply caps, royalties.
 
-There are exactly two code paths that move ETH out of the contract: the fee forward during
-minting, and the payout during redemption — and the latter burns the token first. No
-administrative function reaches either.
+There are three value-bearing external calls: the fee forward during minting, settlement after
+redemption or burn, and the fixed 100 ETH sacrifice to `0x…dEaD`. No administrative function
+reaches any of them.
 
 See [`SECURITY.md`](SECURITY.md) for the adversarial review, including the findings that were
 fixed and the residual risks that were accepted deliberately.
@@ -217,7 +277,9 @@ src/
   ShapeRenderer.sol           fully onchain SVG and metadata
   interfaces/
     IShapes.sol
+    IERC721Value.sol
     IShapeRenderer.sol
+    IShapePositionResolver.sol
   lib/
     Denominations.sol         the nine amounts and their grids
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
@@ -298,7 +360,7 @@ load. Every run is a fresh chain; prior tokens are gone.
 
 To browse the collection in a lived-in state, seed the running chain with simulated activity —
 mints across every denomination, compositions up to two 100 ETH apexes (one fully built, one
-half direct), splits, restores, transfers and redemptions. Run it from `preview/`, as many
+half direct), splits, transfers and redemptions. Run it from `preview/`, as many
 times as you like; each run appends another round:
 
 ```bash
@@ -309,7 +371,7 @@ The dev server serves three entries:
 
 | URL | What it is |
 | --- | --- |
-| `/site.html` | **The mint site** — mint, gallery, token detail, redeem, decompose / recompose / restore |
+| `/site.html` | **The mint site** — mint, gallery, token detail, redeem, compose / decompose / split |
 | `/chain.html` | Chain tester — a development harness against the same deployment |
 | `/` | Render harness — the canonical TypeScript renderer, no chain |
 

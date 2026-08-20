@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 
@@ -19,6 +20,8 @@ contract HardeningTest is Test {
     }
 
     ShapeRenderer internal renderer;
+
+    ShapeCollection internal collection;
     Shapes internal shapes;
 
     address internal feeRecipient = address(0xFEE);
@@ -27,7 +30,8 @@ contract HardeningTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -43,13 +47,13 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, alice);
+        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether);
         bytes32 seedA = shapes.seedOf(id);
 
         vm.revertToState(snap);
 
         vm.prank(bob);
-        uint256 id2 = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, address(0xC0FFEE));
+        uint256 id2 = shapes.mintTo{value: 100 ether + feeOf(100 ether)}(100 ether, address(0xC0FFEE));
         bytes32 seedB = shapes.seedOf(id2);
 
         assertEq(id, id2, "same token id");
@@ -61,7 +65,7 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, alice);
+        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether);
         string memory target = shapes.tokenURI(id);
         vm.revertToState(snap);
 
@@ -69,7 +73,7 @@ contract HardeningTest is Test {
             uint256 s = vm.snapshotState();
             address candidate = address(uint160(0x1000 + i));
             vm.prank(alice);
-            uint256 got = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether, candidate);
+            uint256 got = shapes.mintTo{value: 100 ether + feeOf(100 ether)}(100 ether, candidate);
             assertEq(shapes.tokenURI(got), target, "recipient choice changed the artwork");
             vm.revertToState(s);
         }
@@ -80,27 +84,27 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        shapes.mintBatch{value: 1 * (1 ether + feeOf(1 ether))}(1 ether, 1, alice);
-        bytes32 solo = shapes.seedOf(1);
+        shapes.mintBatch{value: 1 * (1 ether + feeOf(1 ether))}(1 ether, 1);
+        bytes32 solo = shapes.seedOf(0);
 
         vm.revertToState(snap);
 
         vm.prank(alice);
-        shapes.mintBatch{value: 7 * (1 ether + feeOf(1 ether))}(1 ether, 7, alice);
-        assertEq(shapes.seedOf(1), solo, "seed moved with batch size");
+        shapes.mintBatch{value: 7 * (1 ether + feeOf(1 ether))}(1 ether, 7);
+        assertEq(shapes.seedOf(0), solo, "seed moved with batch size");
     }
 
     /// @notice Distinct token ids still give distinct seeds, including across batches mined in
     ///         the same block.
     function test_SeedsRemainDistinctWithinAndAcrossBatches() public {
         vm.startPrank(alice);
-        shapes.mintBatch{value: 6 * (1 ether + feeOf(1 ether))}(1 ether, 6, alice);
-        shapes.mintBatch{value: 6 * (5 ether + feeOf(5 ether))}(5 ether, 6, alice);
+        shapes.mintBatchTo{value: 6 * (1 ether + feeOf(1 ether))}(1 ether, 6, alice);
+        shapes.mintBatchTo{value: 6 * (5 ether + feeOf(5 ether))}(5 ether, 6, alice);
         vm.stopPrank();
 
         bytes32[] memory seen = new bytes32[](12);
         for (uint256 i = 0; i < 12; ++i) {
-            seen[i] = shapes.seedOf(i + 1);
+            seen[i] = shapes.seedOf(i);
             for (uint256 j = 0; j < i; ++j) {
                 assertTrue(seen[i] != seen[j], "seed collision");
             }
@@ -111,18 +115,18 @@ contract HardeningTest is Test {
 
     function test_RendererWithoutCodeIsRejected() public {
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD));
+        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD), address(collection));
 
         // an EOA is equally unacceptable
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, alice);
+        new Shapes(FEE_BPS, feeRecipient, alice, address(collection));
     }
 
     /* ---------------- self-custody ---------------- */
 
     function test_CannotTransferAShapeToTheContractItself() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
+        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether);
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, id));
@@ -138,8 +142,8 @@ contract HardeningTest is Test {
 
     function test_CannotMintDirectlyIntoTheContract() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 1));
-        shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, address(shapes));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
+        shapes.mintTo{value: 1 ether + feeOf(1 ether)}(1 ether, address(shapes));
 
         assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
@@ -154,7 +158,7 @@ contract HardeningTest is Test {
         BalanceProbe probe = new BalanceProbe(shapes);
 
         vm.prank(alice);
-        shapes.mintBatch{value: 4 * (1 ether + feeOf(1 ether))}(1 ether, 4, address(probe));
+        shapes.mintBatchTo{value: 4 * (1 ether + feeOf(1 ether))}(1 ether, 4, address(probe));
 
         assertGt(probe.observations(), 0, "callback never ran");
         assertEq(
@@ -178,10 +182,7 @@ contract BalanceProbe is IERC721Receiver {
 
     receive() external payable {}
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
         if (observations == 0) {
             observedBalance = address(shapes).balance;
             observedBacking = shapes.redeemableBacking();

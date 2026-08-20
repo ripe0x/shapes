@@ -26,7 +26,7 @@ and verify it at runtime:
 
 ```solidity
 shapes.supportsInterface(type(IShapeValue).interfaceId);         // read state + redeem
-shapes.supportsInterface(type(IShapeRecomposition).interfaceId); // compose / decompose / restore
+shapes.supportsInterface(type(IShapeRecomposition).interfaceId); // compose / decompose / split
 shapes.supportsInterface(type(IShapeProvenance).interfaceId);    // seeds, origins, formation
 shapes.supportsInterface(type(IShapeSimulation).interfaceId);    // deterministic previews
 renderer.supportsInterface(type(IShapeGeometry).interfaceId);    // module-level geometry
@@ -47,7 +47,7 @@ struct ShapeState {
     uint8 inkGene;
     bool isBlack;
     ShapeFormation formation;   // Fragment | Direct | Composed | Complete | Black (stable enum)
-    uint256 faceValueWei;       // the denomination; survives blackening
+    uint256 faceValueWei;       // the denomination; survives sacrifice
     uint256 redeemableValueWei; // 0 for a Black Shape, otherwise equals faceValueWei
 }
 ```
@@ -91,10 +91,9 @@ contract can act and route in one atomic call instead of bouncing the asset thro
 | `redeemTo(id, recipient)` | Burn one Shape, send its ETH to `recipient`. |
 | `redeemBatchTo(ids, recipient)` | Burn several, send the total to `recipient` once. |
 | `decomposeTo(id, outDenoms, recipient)` | Split a Shape one or more tiers down, mint the children to `recipient`. |
-| `restoreTo(parentSeed, childIds, recipient)` | Reassemble a split, mint the restored Shape to `recipient`. |
 
 The caller must own the token (or its inputs). These are thin wrappers over the same
-checks-effects-interactions logic as the owner-directed `redeem` / `decompose` / `restore`; only the
+checks-effects-interactions logic as the owner-directed `redeem` / `decompose` / `split`; only the
 destination differs. They move no ETH that redemption does not already move, and the reserve
 invariant is fuzzed against reverting, non-receiving and reentrant recipients (SECURITY.md).
 
@@ -106,7 +105,6 @@ a contract can show or verify a result before committing:
 ```solidity
 shapes.previewCompose(survivorId, burnIds);   // returns the full ShapeState the compose would yield
 shapes.previewDecompose(tokenId, outDenoms);  // returns a ShapeChildPreview[] for the children
-shapes.previewRestore(parentSeed, childIds);  // returns the restored ShapeState
 ```
 
 These are `view` and require no ownership.

@@ -10,12 +10,12 @@ plus the parity rules in `SPEC.md` (D3d, D3e, D4, D5). This spec only says WHAT 
 
 ## 0. Scope
 
-IN: ink gene storage, mint assignment, compose walk, decompose/restore inheritance,
+IN: ink gene storage, mint assignment, compose walk, decompose/split inheritance,
 renderer integration (Solidity + TS canonical), simulate views, events, traits, tests,
 fixtures, parity.
 
 OUT (do not build, do not scaffold): epoch commit-reveal seeding (draft §6), Monte Carlo
-tuning, any change to fees, backing, redemption, blacken, or the reserve. The ⚙ constants
+tuning, any change to fees, backing, redemption, sacrifice, or the reserve. The ⚙ constants
 below are implemented as named constants exactly as given; do not tune them.
 
 Assumption: the contracts are not yet deployed; interface-breaking changes are allowed.
@@ -118,10 +118,10 @@ Worked example (must appear as a unit test): survivor SOLID(6) dust (1 unit) + f
 burns MURK(3) dust (1 unit each): sumW = 6 + 12 = 18, U = 5,
 center = (36+5)/10 = 4 (true mean 3.6 → rounds to 4 = DENSE).
 
-### 2.4 Decompose / restore
+### 2.4 Decompose / split
 
-No function needed: children copy the parent's gene verbatim; restore copies the common
-child gene verbatim.
+No function needed: a split's children copy the parent's gene verbatim, and decompose writes
+back the genes the compose record captured.
 
 ## 3. Solidity changes (`src/Shapes.sol`)
 
@@ -154,17 +154,10 @@ loop over live storage):
 
 Do not modify the `Composed` event signature.
 
-### 3.4 Decompose (~line 442) and restore (~line 479)
+### 3.4 Decompose and split
 
-- Decompose: capture `uint8 parentGene = p.inkGene;` before `delete _shapes[tokenId]`
-  (line 428). Every child's `ShapeData` literal gets `inkGene: parentGene`. One
-  `InkGene(nid, parentGene)` per child.
-- Restore: TRAP — children are deleted inside the verification loop; capture
-  `uint8 gene = c.inkGene;` on iteration `i == 0`. The restored token's literal gets
-  `inkGene: gene`. Emit `InkGene(newTokenId, gene)`.
-  (Children of one split always share a gene; no cross-check needed — add a comment
-  saying why: gene changes only via compose, which burns the token or grows its
-  denomination, and a grown child fails the backing check at line 507.)
+- Split: capture `uint8 parentGene = p.inkGene;` before `delete _shapes[tokenId]`. Every child's
+  `ShapeData` literal gets `inkGene: parentGene`. One `InkGene(nid, parentGene)` per child.
 
 ### 3.5 Views
 
@@ -191,7 +184,7 @@ function simulateDecompose(uint256 tokenId) external view returns (uint8 childGe
 event InkGene(uint256 indexed tokenId, uint8 gene);
 ```
 
-Emitted on every gene assignment: mint, compose, decompose (per child), restore.
+Emitted on every gene assignment: mint, compose, decompose (per revived input), split (per child).
 
 ### 3.7 Renderer plumbing
 
@@ -237,12 +230,10 @@ takes precedence exactly as today; the Ink trait is still reported.
    final genes (find it while generating fixtures; it must exist).
 7. Homogeneous pool: all inputs one gene → survivor gene unchanged, for T = 1 and for a
    max jump (10,000 dust → 100, T = 8; use mintBatch, this also gas-profiles the fold).
-8. Decompose: every child gene == parent gene. Restore: restored gene == original.
-   Round-trip decompose→restore preserves gene exactly.
+8. Decompose: the survivor reverts to its recorded gene and every revived input regains its own.
+   Split: every child gene == parent gene.
 9. `simulateCompose` == the gene a real `compose` of the same set then produces; and
    simulate is `view` (no state diff).
-10. Compose-survivor-as-restore-child: compose a decompose-child upward, then attempt
-    restore including it → reverts (existing backing check); documents the §3.4 comment.
 11. Existing suites stay green: `forge test`, `forge test --mc Parity`, and in
     `preview/`: `npm run fixtures` then `npm run sweep`. Fixture JSON gains an
     `inkGene` field per fixture entry; 78 fixtures regenerate deterministically.
@@ -265,8 +256,8 @@ takes precedence exactly as today; the Ink trait is still reported.
 - Do NOT introduce randomness anywhere except `geneAtMint` (which uses only the seed).
 - Do NOT let `burnIds` order, calldata layout, or msg.sender affect any gene.
 - Do NOT special-case tier jumps: the walk always runs `newIndex − oldIndex` steps.
-- Do NOT change fee, backing, redemption, blacken, `Composed`/`Decomposed`/`Restored`
-  event signatures, or `SplitRecord` (it needs no gene field — children carry it).
+- Do NOT change fee, backing, redemption, sacrifice, or `Composed`/`Decomposed`/`Split`
+  event signatures.
 - Do NOT tune the ⚙ tables; implement the values in §1 exactly.
 - Do NOT touch `Denominations.sol` or the PRNG (`Round03Rand`) draw order beyond the
   discard rule in §4.1.

@@ -52,7 +52,7 @@ GraphiQL in the browser) and the `@ponder/client` SQL endpoint at
 Verified end to end against a running dev chain seeded by `npm run simulate`
 (see the repo root): all eight event handlers below fired with zero indexing
 errors. A representative run indexed 10k+ mints and their `InkGene`
-assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 blacken, and
+assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 sacrifice, and
 20k+ transfers — every `token` row carried its assigned `inkGene` and every
 `lineage_edge` its derived `childSeed`, queryable over GraphQL.
 
@@ -61,7 +61,7 @@ assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 blacken, and
 ### `token`
 
 One row per token id ever minted. Never deleted — `live: false` marks a
-token consumed by redemption, composition, decomposition, or restore, so
+token consumed by redemption, composition, or decomposition, so
 history stays queryable.
 
 | Column | Type | Notes |
@@ -72,8 +72,8 @@ history stays queryable.
 | `backingWei` | `bigint` | wei backing; `0` once `isBlack` |
 | `originCount` | `integer` | independent direct-mint origins credited to this token |
 | `inkGene` | `integer` | ink gene 0..6; set by `InkGene`, reassigned on every recomposition |
-| `isBlack` | `boolean` | sacrificed via `blacken` |
-| `live` | `boolean` | `false` once redeemed/composed-away/decomposed/restored-away |
+| `isBlack` | `boolean` | transformed via `sacrifice` |
+| `live` | `boolean` | `false` once redeemed/composed-away/split-away |
 | `owner` | `hex` | current owner address |
 | `mintedAtBlock` | `bigint` | block this row's token id was created at |
 | `mintTxHash` | `hex` | tx hash this row's token id was created in |
@@ -83,14 +83,14 @@ Indexes: `(denomIndex, live)` for gallery filtering, `owner`, `mintedAtBlock`.
 ### `lineage_edge`
 
 One row per parent/child step in a token's provenance, written by `compose`,
-`decompose`, and `restore`.
+and `decompose`.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | `text` (PK) | `${txHash}-${logIndex}-${i}`, unique per edge within a single event |
-| `childId` | `bigint` | the token consumed into `parentId` (continuation, restore) or produced from it (split) |
+| `childId` | `bigint` | the token consumed into `parentId` (continuation) or produced from it (split) |
 | `parentId` | `bigint` | the surviving / continuing token |
-| `kind` | `text` | `"continuation"` (compose burn), `"split"` (decompose output), `"restore"` (restore input) |
+| `kind` | `text` | `"continuation"` (compose burn), `"split"` (split output) |
 | `childSeed` | `hex` | the child's seed at the time of the edge — lets a burned piece still be rendered from a lineage query alone |
 | `block` | `bigint` | |
 | `txHash` | `hex` | |
@@ -164,7 +164,7 @@ The eight events and what each does to the two tables (`src/index.ts`):
   `token` row. `originCount` is always `1` on this event.
 - **`InkGene(tokenId, gene)`** — sets the `token` row's `inkGene`. Emitted
   once per mint and once per recomposition, always right after the structural
-  event (`ShapeMinted`/`Composed`/`Decomposed`/`Restored`) that creates or
+  event (`ShapeMinted`/`Composed`/`Decomposed`) that creates or
   continues the row, so the row exists to update.
 - **`Composed(survivorId, burnedIds[], denomIndex, originCount)`** — updates
   the survivor's `denomIndex`/`backingWei`/`originCount`; for each burned id,
@@ -178,12 +178,9 @@ The eight events and what each does to the two tables (`src/index.ts`):
   `childId = newId`) — the edge direction is reversed from `Composed`
   because a split token becomes multiple children rather than several
   tokens becoming one.
-- **`Restored(newTokenId, parentSeed, childIds[], denomIndex, originCount)`**
-  — inserts the new `token` row (seed = `parentSeed`); for each child, marks
-  it `live: false` and inserts a `"restore"` edge (`childId`,
-  `parentId = newTokenId`).
 - **`Blackened(tokenId, sacrificedWei)`** — sets `isBlack: true`,
-  `backingWei: 0`. Does not change `live`: a blackened token is terminal but
+  `backingWei: 0`. Does not itself change `live`: a Black token remains transferable and
+  may later be destroyed through `burn` for zero, but
   still exists and still has an owner.
 - **`ShapeRedeemed(tokenId, to, amountWei, originCount)`** — marks `tokenId`
   `live: false`.
@@ -191,7 +188,7 @@ The eight events and what each does to the two tables (`src/index.ts`):
   ordinary transfer (`from` and `to` both non-zero). Mint and burn transfers
   are skipped: `ShapeMinted` already sets the owner for a direct mint, and a
   redeemed/consumed token's owner is no longer meaningful. `decompose` and
-  `restore` mint to `msg.sender`, which neither event carries as an
+  `decompose` mints to `msg.sender`, which the event does not carry as an
   argument; the indexer takes `event.transaction.from` as that recipient,
   which holds for a direct EOA call.
 

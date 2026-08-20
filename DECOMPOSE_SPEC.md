@@ -11,9 +11,8 @@ Four verbs, two reversible pairs, every name a real word.
 | `compose` | many burned into one survivor | survivor keeps id + seed, grows | — |
 | `decompose` | survivor un-merged into its exact inputs | **inputs regain their original ids + seeds** | `compose` |
 | `split` | one burned into many fresh | fresh sequential ids, seeds derived from parent | — |
-| `restore` | a split's complete child set reassembled | fresh id carrying the split input's seed | `split` |
 
-The prior `decompose` (free-choice shatter into fresh ids) is renamed `split`. Its inverse `restore` is unchanged. A new `decompose` is added as the exact inverse of `compose`.
+The prior `decompose` (free-choice shatter into fresh ids) is renamed `split`, and has no inverse: a split is final. A new `decompose` is added as the exact inverse of `compose`.
 
 Rationale for keeping `split`: `decompose`/`redeem` do not cover splitting a token with no compose history (minted-whole or bought big tokens) or reshaping into a shape the compose history cannot produce. `split` is the only fee-free, ETH-free downward reshape. See conversation for the full case.
 
@@ -69,14 +68,14 @@ Effects (CEI, mint last):
 2. Restore survivor: `s.denomIndex/originCount/inkGene = rec.survivor*`. Seed untouched (compose never changed it).
 3. For each `inp` in `rec.inputs`: write `_shapes[inp.id] = ShapeData(inp.seed, inp.denomIndex, inp.originCount, false, inp.inkGene)`.
 4. `totalSupply += rec.inputs.length` (compose did `-= n`; symmetric). `totalMinted` untouched — ids are reused, not freshly issued.
-5. `redeemableBacking` untouched — backing is conserved (survivor shrinks by exactly the inputs' summed backing; inputs regain it). Same as compose/split/restore.
+5. `redeemableBacking` untouched — backing is conserved (survivor shrinks by exactly the inputs' summed backing; inputs regain it). Same as compose/split.
 6. `stack.pop()` (clears the record incl. its inputs array).
 7. Emit `Decomposed(survivorId, restoredIds, survivorDenomIndex, survivorOriginCount)`, `InkGene` for survivor + each restored id, `MetadataUpdate(survivorId)`.
 8. Interactions: `_safeMint(msg.sender, inp.id)` for each input.
 
 ## Safety — why re-minting burned ids is collision-free
 
-- **Fresh mints never collide.** `mint`/`split`/`restore` issue `totalMinted + 1`, strictly greater than any id ever issued. A re-minted input id is `<= totalMinted`, so no fresh mint reproduces it.
+- **Fresh mints never collide.** Ids are issued from 0, so the highest id ever issued is `totalMinted - 1`. `mint` and `split` take `totalMinted` itself, strictly greater than that. A re-minted input id is `<= totalMinted - 1`, so no fresh mint reproduces it.
 - **An input id belongs to at most one live record.** An id is burned when it becomes a compose input. To be an input to a *second* compose it must first be alive again — which only `decompose` does, and `decompose` pops the record that held it in the same call. So no id sits in two live records at once.
 - **`_safeMint` is a backstop.** If a malformed stack ever pointed at a live id, OZ `_mint` reverts (`previousOwner != 0`). Worst case is a revert, never corruption.
 
@@ -86,7 +85,7 @@ Every write to a live survivor's `ShapeData` either overwrites/extends its stack
 
 - **`compose(survivorId, …)` again** pushes a new top; `decompose` pops it first (LIFO), restoring to that melt's pre-state — correct.
 - **`split`/`redeem`/being a compose input** burn the survivor. `decompose(survivorId)` then reverts on `_requireOwned` — inert. (When burned *as an input*, the record is intentionally kept: the outer `decompose` re-mints the survivor at its snapshot state, matching its own record's post-state, enabling nested unwind.)
-- **`blacken`** sets `isBlack` without touching the stack; `decompose`'s `isBlack` guard rejects it.
+- **`sacrifice`** sets `isBlack` without touching the stack; `decompose`'s `isBlack` guard rejects it.
 
 No path leaves a survivor alive with mutated state and an out-of-date top record.
 
@@ -94,7 +93,7 @@ No path leaves a survivor alive with mutated state and an out-of-date top record
 
 - **Same survivor, stacked:** `compose #3 (0.01→1)` then `compose #3 (1→10)` pushes two records. `decompose #3` twice unwinds 10→1→0.01, re-minting each melt's inputs. Full recovery.
 - **Nested, different survivors:** `#3` composed to 1 ETH (record on #3), then `#3` burned into survivor `#50` (record on #50 snapshots #3 at 1 ETH). `decompose #50` re-mints #3 at 1 ETH; `#3`'s own record survives, so `decompose #3` then recovers the atoms.
-- **Non-reversal ops forfeit:** `split`/`redeem`/`blacken` on a survivor abandon its stack (records become inert). Consistent with "you chose not to un-merge first."
+- **Non-reversal ops forfeit:** `split`/`redeem`/`sacrifice` on a survivor abandon its stack (records become inert). Consistent with "you chose not to un-merge first."
 
 ## Rename blast radius (contract + tests + docs this pass)
 

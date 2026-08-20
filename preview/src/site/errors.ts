@@ -16,12 +16,7 @@ const ERROR_TEXT: Record<string, (args: readonly unknown[]) => string> = {
   CannotComposeWithSelf: () => "A Shape cannot be composed with itself.",
   SplitMismatch: () => "The outputs must sum to exactly the input's backing.",
   NoComposeRecord: () => "This Shape has no compose left to undo.",
-  NotApexComplete: () => "Only a complete 1 ETH Shape can be blackened.",
-  NoSplitRecord: () => "No restorable split exists for this Shape.",
-  RestoreCountMismatch: () => "Restoring needs every piece of the split.",
-  RestoreChildMismatch: () => "One of the Shapes is not a piece of this split.",
-  RestoreBackingMismatch: () =>
-    "A piece changed denomination since the split, so the original cannot be restored.",
+  NotApexComplete: () => "Only a complete 1 ETH Shape can be sacrificed into Black.",
 };
 
 /**

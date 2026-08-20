@@ -6,6 +6,7 @@ import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 
 /* ==================================================================== *
@@ -13,7 +14,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
  * ==================================================================== */
 
 /// @dev Accepts NFTs but reverts on ETH. A `redeemTo` paying it reverts; it can still own tokens
-///      minted by `splitTo`/`restoreTo`, which the suite must still be able to drain.
+///      minted by `splitTo`, which the suite must still be able to drain.
 contract HostileRejectETH is IERC721Receiver {
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
@@ -24,7 +25,7 @@ contract HostileRejectETH is IERC721Receiver {
     }
 }
 
-/// @dev Accepts ETH but is not an ERC721 receiver, so `splitTo`/`restoreTo` minting to it
+/// @dev Accepts ETH but is not an ERC721 receiver, so `splitTo` minting to it
 ///      reverts on `_safeMint`. It therefore never comes to own a Shape.
 contract HostileRejectNFT {
     receive() external payable {}
@@ -80,15 +81,7 @@ contract Handler is Test, IERC721Receiver {
     mapping(uint256 => uint256) private _indexOfToken;
 
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether),
-        0.05 ether,
-        0.1 ether,
-        0.5 ether,
-        1 ether,
-        5 ether,
-        10 ether,
-        50 ether,
-        100 ether
+        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
     constructor(Shapes shapes_) {
@@ -105,11 +98,7 @@ contract Handler is Test, IERC721Receiver {
         ];
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
@@ -145,7 +134,7 @@ contract Handler is Test, IERC721Receiver {
         address who = _actor(actorSeed);
 
         vm.prank(who);
-        try shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount, who) returns (uint256 id) {
+        try shapes.mintTo{value: amount + shapes.mintFeeFor(amount)}(amount, who) returns (uint256 id) {
             ghostBackingIn += amount;
             ghostFeesPaid += shapes.mintFeeFor(amount);
             ghostMints += 1;
@@ -160,7 +149,7 @@ contract Handler is Test, IERC721Receiver {
         uint256 cost = qty * (amount + shapes.mintFeeFor(amount));
 
         vm.prank(who);
-        try shapes.mintBatch{value: cost}(amount, qty, who) returns (uint256 first) {
+        try shapes.mintBatchTo{value: cost}(amount, qty, who) returns (uint256 first) {
             ghostBackingIn += amount * qty;
             ghostFeesPaid += shapes.mintFeeFor(amount) * qty;
             ghostMints += qty;
@@ -275,12 +264,13 @@ contract Handler is Test, IERC721Receiver {
 
         vm.prank(owner);
         try shapes.compose(survivor, burn) {
-            for (uint256 i = 0; i < burn.length; ++i) _untrack(burn[i]);
+            for (uint256 i = 0; i < burn.length; ++i) {
+                _untrack(burn[i]);
+            }
         } catch {}
     }
 
     /// @dev Split a token one tier down. Exercises decomposition without moving ETH. The
-    ///      split is remembered so `restore` can later attempt its reassembly.
     function split(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
@@ -291,58 +281,24 @@ contract Handler is Test, IERC721Receiver {
         uint256 ratio = amt / DENOMS[di - 1]; // 2 or 5
 
         uint8[] memory outs = new uint8[](ratio);
-        for (uint256 i = 0; i < ratio; ++i) outs[i] = uint8(di - 1);
-
-        bytes32 parentSeed = shapes.seedOf(id);
-        vm.prank(owner);
-        try shapes.split(id, outs) returns (uint256[] memory kids) {
-            _untrack(id);
-            for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
-            pendingSplits.push(PendingSplit({parentSeed: parentSeed, kids: kids}));
-        } catch {}
-    }
-
-    /// @dev Reassemble a remembered split. The children may have been transferred, redeemed,
-    ///      composed or re-split since; the contract rejects those states, and a rejected or
-    ///      stale entry is dropped so the list does not clog.
-    function restore(uint256 seed) public {
-        if (pendingSplits.length == 0) return;
-        uint256 at = seed % pendingSplits.length;
-        PendingSplit memory s = pendingSplits[at];
-
-        address owner;
-        try shapes.ownerOf(s.kids[0]) returns (address o) {
-            owner = o;
-        } catch {
-            _dropSplit(at); // first child burned; the record can never be restored as remembered
-            return;
+        for (uint256 i = 0; i < ratio; ++i) {
+            outs[i] = uint8(di - 1);
         }
 
         vm.prank(owner);
-        try shapes.restore(s.parentSeed, s.kids) returns (uint256 nid) {
-            for (uint256 i = 0; i < s.kids.length; ++i) _untrack(s.kids[i]);
-            _track(nid);
+        try shapes.split(id, outs) returns (uint256[] memory kids) {
+            _untrack(id);
+            for (uint256 i = 0; i < kids.length; ++i) {
+                _track(kids[i]);
+            }
         } catch {}
-        _dropSplit(at);
     }
 
-    struct PendingSplit {
-        bytes32 parentSeed;
-        uint256[] kids;
-    }
-
-    PendingSplit[] internal pendingSplits;
-
-    function _dropSplit(uint256 at) private {
-        pendingSplits[at] = pendingSplits[pendingSplits.length - 1];
-        pendingSplits.pop();
-    }
-
-    /// @dev Blacken a live apex Complete if one exists. Apex Completes essentially never arise
+    /// @dev Sacrifice a live apex Complete if one exists. Apex Completes essentially never arise
     ///      from random fuzzing (10,000 conserved origins on one token), so this rarely fires;
     ///      the sacrifice path is exercised directly by the unit suite. It is kept here so the
     ///      invariant model stays exact should one ever be reached.
-    function blacken(uint256 seed) public {
+    function sacrifice(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
         if (shapes.isBlack(id)) return;
@@ -350,7 +306,7 @@ contract Handler is Test, IERC721Receiver {
 
         address owner = shapes.ownerOf(id);
         vm.prank(owner);
-        try shapes.blacken(id) {
+        try shapes.sacrifice(id) {
             ghostSacrificed += 100 ether;
         } catch {}
     }
@@ -430,14 +386,16 @@ contract Handler is Test, IERC721Receiver {
         uint256 ratio = amt / DENOMS[di - 1];
 
         uint8[] memory outs = new uint8[](ratio);
-        for (uint256 i = 0; i < ratio; ++i) outs[i] = uint8(di - 1);
+        for (uint256 i = 0; i < ratio; ++i) {
+            outs[i] = uint8(di - 1);
+        }
 
-        bytes32 parentSeed = shapes.seedOf(id);
         vm.prank(owner);
         try shapes.splitTo(id, outs, recip) returns (uint256[] memory kids) {
             _untrack(id);
-            for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
-            pendingSplits.push(PendingSplit({parentSeed: parentSeed, kids: kids}));
+            for (uint256 i = 0; i < kids.length; ++i) {
+                _track(kids[i]);
+            }
         } catch {}
     }
 
@@ -451,7 +409,9 @@ contract Handler is Test, IERC721Receiver {
         address owner = shapes.ownerOf(survivor);
         vm.prank(owner);
         try shapes.decompose(survivor) returns (uint256[] memory restored) {
-            for (uint256 i = 0; i < restored.length; ++i) _track(restored[i]);
+            for (uint256 i = 0; i < restored.length; ++i) {
+                _track(restored[i]);
+            }
         } catch {}
     }
 
@@ -465,31 +425,10 @@ contract Handler is Test, IERC721Receiver {
         address recip = hostiles[recipSeed % 3];
         vm.prank(owner);
         try shapes.decomposeTo(survivor, recip) returns (uint256[] memory restored) {
-            for (uint256 i = 0; i < restored.length; ++i) _track(restored[i]);
+            for (uint256 i = 0; i < restored.length; ++i) {
+                _track(restored[i]);
+            }
         } catch {}
-    }
-
-    /// @dev Restore a remembered split, minting the reassembled Shape to a hostile recipient.
-    function restoreToHostile(uint256 seed, uint256 recipSeed) public {
-        if (pendingSplits.length == 0) return;
-        uint256 at = seed % pendingSplits.length;
-        PendingSplit memory s = pendingSplits[at];
-        address recip = hostiles[recipSeed % 3];
-
-        address owner;
-        try shapes.ownerOf(s.kids[0]) returns (address o) {
-            owner = o;
-        } catch {
-            _dropSplit(at);
-            return;
-        }
-
-        vm.prank(owner);
-        try shapes.restoreTo(s.parentSeed, s.kids, recip) returns (uint256 nid) {
-            for (uint256 i = 0; i < s.kids.length; ++i) _untrack(s.kids[i]);
-            _track(nid);
-        } catch {}
-        _dropSplit(at);
     }
 
     function _denomIndex(uint256 amt) private view returns (uint256) {
@@ -508,18 +447,21 @@ contract ShapesInvariantTest is StdInvariant, Test {
     uint256 internal constant FEE_BPS = 100; // 1%
 
     ShapeRenderer internal renderer;
+
+    ShapeCollection internal collection;
     Shapes internal shapes;
     Handler internal handler;
     address internal feeRecipient = address(0xFEE);
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer));
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
         handler = new Handler(shapes);
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](17);
+        bytes4[] memory selectors = new bytes4[](15);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -529,14 +471,12 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[6] = Handler.pokeUnknownSelector.selector;
         selectors[7] = Handler.compose.selector;
         selectors[8] = Handler.split.selector;
-        selectors[9] = Handler.blacken.selector;
-        selectors[10] = Handler.restore.selector;
-        selectors[11] = Handler.redeemToHostile.selector;
-        selectors[12] = Handler.redeemBatchToHostile.selector;
-        selectors[13] = Handler.splitToHostile.selector;
-        selectors[14] = Handler.restoreToHostile.selector;
-        selectors[15] = Handler.decompose.selector;
-        selectors[16] = Handler.decomposeToHostile.selector;
+        selectors[9] = Handler.sacrifice.selector;
+        selectors[10] = Handler.redeemToHostile.selector;
+        selectors[11] = Handler.redeemBatchToHostile.selector;
+        selectors[12] = Handler.splitToHostile.selector;
+        selectors[13] = Handler.decompose.selector;
+        selectors[14] = Handler.decomposeToHostile.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -577,6 +517,15 @@ contract ShapesInvariantTest is StdInvariant, Test {
         assertEq(n, shapes.totalSupply(), "live supply mismatch");
     }
 
+    /// @notice The generic draft ERC-8060 value seam is exactly the native backing query.
+    function invariant_ValueAlwaysEqualsBacking() public view {
+        uint256 n = handler.liveTokenCount();
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 id = handler.liveTokens(i);
+            assertEq(shapes.valueOf(id), shapes.backingOf(id), "valueOf/backingOf drifted");
+        }
+    }
+
     /// @notice Origins are created only by mint and destroyed only by redeem. The sum of live
     ///         origin counts equals mints minus origins redeemed — no operation manufactures them.
     function invariant_OriginsAreConserved() public view {
@@ -586,9 +535,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             sum += shapes.originCountOf(handler.liveTokens(i));
         }
         assertEq(
-            sum,
-            handler.ghostMints() - handler.ghostOriginsRedeemed(),
-            "origin count was fabricated or lost"
+            sum, handler.ghostMints() - handler.ghostOriginsRedeemed(), "origin count was fabricated or lost"
         );
     }
 
@@ -598,9 +545,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
             assertLe(
-                shapes.originCountOf(id),
-                shapes.backingOf(id) / 0.01 ether,
-                "origin count exceeds capacity"
+                shapes.originCountOf(id), shapes.backingOf(id) / 0.01 ether, "origin count exceeds capacity"
             );
         }
     }
@@ -614,9 +559,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             "fees are exactly feeBps of all backing minted"
         );
         assertGe(
-            address(shapes).balance,
-            shapes.redeemableBacking(),
-            "fees leaked into or out of the reserve"
+            address(shapes).balance, shapes.redeemableBacking(), "fees leaked into or out of the reserve"
         );
     }
 
@@ -628,6 +571,20 @@ contract ShapesInvariantTest is StdInvariant, Test {
         assertGe(shapes.totalMinted(), shapes.totalSupply(), "totalMinted below live supply");
     }
 
+    /// @notice No id ever escapes the counter. Ids are issued from 0 and `totalMinted` counts
+    ///         them, so every id in existence is strictly below it. This is the property that
+    ///         keeps `decompose`'s revived ids from colliding with a fresh mint: a revived id was
+    ///         issued in the past and so is bounded here, while a fresh mint takes `totalMinted`
+    ///         itself. An off-by-one in `_mintBatch`, `split` or `decompose`'s deliberate refusal
+    ///         to advance the counter would surface as a violation whatever the sequence was.
+    function invariant_EveryLiveIdIsBelowTheCounter() public view {
+        uint256 minted = shapes.totalMinted();
+        uint256 n = handler.liveTokenCount();
+        for (uint256 i = 0; i < n; ++i) {
+            assertLt(handler.liveTokens(i), minted, "a live id reached or passed totalMinted");
+        }
+    }
+
     /// @notice Every live token carries one of the nine denominations. Nothing else is
     ///         representable.
     function invariant_EveryLiveTokenIsOnTheLadder() public view {
@@ -636,8 +593,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             uint256 id = handler.liveTokens(i);
             if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
             assertTrue(
-                shapes.isSupportedDenomination(shapes.backingOf(id)),
-                "token holds an off-ladder amount"
+                shapes.isSupportedDenomination(shapes.backingOf(id)), "token holds an off-ladder amount"
             );
         }
     }
@@ -645,7 +601,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
     /// @notice Whatever the sequence was, every live Shape's backing can still be extracted in
     ///         full. Solvency in the sense that actually matters. Drained via `redeemTo` to a
     ///         benign sink rather than `redeem`, so a Shape that a hostile recipient came to own
-    ///         (through `splitTo`/`restoreTo`) is still provably redeemable: the owner
+    ///         (through `splitTo`) is still provably redeemable: the owner
     ///         authorises the burn, and the ETH is directed somewhere that can receive it.
     function invariant_EveryLiveShapeIsStillRedeemable() public {
         uint256 n = handler.liveTokenCount();

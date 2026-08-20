@@ -138,7 +138,7 @@ expected number of exactly duplicated compositions is `n² / 2^33` — 0.012 at
 10,000 tokens, 1.2 at 100,000. The 500-sample acceptance test expects 3e-5. If
 you would rather have the full 256-bit seed drive the artwork, the preview
 exposes a `keccak256` stream alternative side by side; it must be chosen before
-deployment because the renderer is immutable.
+the renderer is permanently locked.
 
 **D3d. The stream is counter-based, and every seed is a window into one shared
 sequence.** The seeding multiplier and the per-draw increment are the *same*
@@ -582,16 +582,15 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
   flat radial ends lie on the footprint edges.
 
-- **One cosmetic admin power, no economic admin.** `Ownable` is inherited so
-  the owner can replace the renderer (`setRenderer`) and permanently freeze it
-  (`lockRenderer`); the renderer is read only by `tokenURI`, so it reaches no ETH,
-  backing, redemption or token ownership. No other administrative surface exists —
-  no pause, no upgrade path, no proxy, no way to move ETH except `redeem`/
-  `redeemBatch`, both of which burn the corresponding token first. The owner may
-  renounce at any time.
-- `Shapes` stores per token only a `bytes32 seed` and a `uint8` denomination
-  index. Backing is derived from the index against the immutable ladder, so an
-  out-of-range backing value is not representable.
+- **Two value-inert admin pointers, no economic admin.** `Ownable` is inherited and
+  transferable. The owner can replace and permanently lock the renderer, and can set,
+  replace, clear and permanently lock the optional position resolver — including locking
+  it forever at zero. The renderer is read only by `tokenURI`; the resolver is read only by
+  `positionOf`. Neither reaches ETH, backing, redemption or token ownership. There is no
+  pause, upgrade path, proxy or administrative reserve path. The owner may renounce at any time.
+- `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
+  origin count, Black flag and ink gene. Backing is derived from the index against the
+  immutable ladder, so an out-of-range backing value is not representable.
 - `feeBps` and `feeRecipient` are `immutable`, set at construction. `renderer` is
   mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
@@ -602,8 +601,9 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
   invariant asserted is `address(this).balance >= redeemableBacking`.
-- Checks-effects-interactions, plus a reentrancy guard on the four functions that
-  mint or move ETH: `mint`, `mintBatch`, `redeem`, `redeemBatch`. The inherited
+- Checks-effects-interactions, plus a reentrancy guard on functions that mint, restructure
+  or move ETH: `mint`, `mintBatch`, `redeem`, `burn`, `redeemBatch`, `compose`,
+  `decompose`, `split`, `sacrifice`. The inherited
   ERC721 transfer and approval functions are **not** guarded, deliberately —
   they move no ETH. One consequence is worth knowing: a receiver can redeem a
   Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
@@ -613,9 +613,8 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   The contract can never be `msg.sender`, so such a token could never be
   redeemed, and its backing would be stranded while `redeemableBacking` went on
   counting it.
-- The renderer address is checked for code at construction. It is immutable and
-  metadata has no fallback path, so an EOA there would break `tokenURI` for
-  every token, forever.
+- The renderer address is checked for code at construction and on replacement. Metadata has
+  no fallback path; the renderer becomes permanent only after `lockRenderer`.
 
 ### D17. Ink Genes
 
@@ -625,7 +624,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 - **Entropy only at mint.** A Shape's ink gene (`VOID`..`SOLID`, seven states) is drawn once,
   a pure function of the mint seed and the denomination tier (`InkGenes.geneAtMint`). No
-  compose, decompose, split or restore ever consumes fresh randomness for the gene; every later
+  compose, decompose or split ever consumes fresh randomness for the gene; every later
   transformation is a deterministic function of state already on chain. Non-dust mints draw
   only from the narrow `{Sparse, Murk, Dense}` band; the four extremes are reachable only
   through a dust (0.01 ETH) mint, the same asymmetry the fill-probability table already had.
@@ -643,10 +642,8 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   multiset with a different survivor can produce a different gene — this is deliberate and
   covered by `test_SurvivorChoiceChangesTheGene`. It is the one input to the walk that a caller
   actually controls; `burnIds` order is not, by the fold above.
-- **split/restore copy the gene verbatim.** Every child of a split inherits the parent's
-  gene exactly; `restore` recovers the pre-split gene exactly (captured once, from the first
-  child position, since every child of one split shares it by construction). Neither path rolls
-  anything — origins-conservation reasoning applies unchanged to the gene.
+- **split copies the gene verbatim.** Every child of a split inherits the parent's gene exactly.
+  Nothing is rolled, so origins-conservation reasoning applies unchanged to the gene.
 - **decompose restores the gene from the record.** `compose` captures the survivor's pre-compose
   gene and each input's gene in the compose record; `decompose` writes them back verbatim (survivor
   reverts to its snapshot gene, each revived input regains its own), so an `InkGene` event fires for
@@ -661,6 +658,34 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   game — a 100 is assembled by laddering through intermediate composes, not in one call — but no
   path should assume a single-transaction dust-to-apex is possible.
 
+### D18. Final value and position discovery interfaces
+
+- **One economic value, two names.** `valueOf(tokenId)` is an exact alias of the existing
+  `backingOf(tokenId)`: both return the native ETH the current owner would receive by burning a
+  live Shape now and both revert for nonexistent IDs. `backingOf` remains the protocol-native
+  descriptive name; `valueOf` is the integration surface.
+- **Draft ERC-8060.** `Shapes` implements the current draft `IERC721Value` pair (`valueOf` and
+  owner-only `burn`) and advertises its interface ID through ERC-165. A normal `burn` destroys the
+  token and pays its exact value. A Black Shape has value zero and can be destroyed without an
+  ETH call. `sacrifice` only creates the Black state; it never burns the NFT. The standard is still
+  a draft, so this deployment pins one revision rather than promising compatibility with later
+  edits to the proposal.
+- **Structural burns stay structural.** Tokens consumed by `compose` and `split` never
+  pass through the public value-burning path and never settle ETH; `decompose` only reverses a
+  recorded compose and likewise moves no ETH. Freshly produced tokens receive monotonically
+  increasing IDs. The only identity revival is the exact set of compose inputs restored by its
+  LIFO decompose record; redemption, public burn and split never recycle retired IDs.
+- **Optional position resolver.** `positionOf(tokenId)` returns `address(0)` without an external
+  call while `positionResolver` is empty. Otherwise it delegates the ID exactly to the configured
+  resolver and returns its address unchanged. Shapes deliberately performs no token-existence,
+  result-code or backing check: the resolver may describe historical/nonexistent IDs, and its
+  revert or misleading result affects only callers of `positionOf`.
+- **Replaceable, clearable, independently lockable.** The transferable owner may set or replace
+  the resolver with a contract address, clear it to zero, or permanently lock its current value at
+  any time — including locking zero. Renderer and resolver locks are independent. Ownership
+  transfer moves all still-unlocked authority; renunciation ends it. Neither pointer can change
+  backing, ownership, redemption, composition or reserve accounting.
+
 ---
 
 ## Part 4 — Acceptance checks
@@ -672,3 +697,5 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 | 500-sample collision sweep, all nine denominations | `npm run sweep` |
 | Solidity SVG byte-identical to TypeScript fixtures | `forge test --mc Parity` |
 | Reserve solvency under fuzzed mint/transfer/redeem sequences | `forge test --mc Invariant` |
+| Value alias, burn settlement, Black zero-burn and ID lifecycle | `forge test --mc ValueDiscoveryTest` |
+| Resolver delegation, locking and administrative isolation | `forge test --mc PositionResolverTest` |

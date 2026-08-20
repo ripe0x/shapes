@@ -7,16 +7,14 @@ import {splitChildSeed} from "../splitSeed";
 import {shapesAbi} from "../chain/abi";
 import {
   loadHistory,
-  findSplitBirth,
   loadProvenance,
   loadDecomposePreview,
   type HistEvent,
-  type SplitBirth,
   type ProvNode,
   type DecomposeInput,
 } from "../chain/history";
 import {C} from "./theme";
-import {Section, Art, short, txUrl} from "./ui";
+import {Section, Art, Modal, short, txUrl} from "./ui";
 import {localArt} from "./art";
 import {mintGene} from "../previewGene";
 import type {SiteData, SiteToken} from "./data";
@@ -30,8 +28,6 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   mergedAway: "Merged",
   decomposed: "Decomposed",
   revived: "Revived",
-  bornFromRestore: "Restored",
-  restoredAway: "Reassembled",
   blackened: "Blackened",
   redeemed: "Redeemed",
   transfer: "Transferred",
@@ -57,7 +53,6 @@ export function TokenView({
   onSplit,
   onDecompose,
   onCompose,
-  onRestore,
   onOpenToken,
 }: {
   data: SiteData | null;
@@ -75,13 +70,11 @@ export function TokenView({
   onSplit: (t: SiteToken) => void;
   onDecompose: (t: SiteToken) => void;
   onCompose: (t: SiteToken, burnIds: bigint[]) => void;
-  onRestore: (parentSeed: `0x${string}`, childIds: bigint[]) => void;
   onOpenToken: (id: bigint) => void;
 }) {
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
+  const [askSplit, setAskSplit] = React.useState(false);
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
-  const [birth, setBirth] = React.useState<SplitBirth | null>(null);
-  const [record, setRecord] = React.useState<{childCount: number; denomIndex: number} | null>(null);
   const [prov, setProv] = React.useState<ProvNode | null>(null);
   const [unicodeCard, setUnicodeCard] = React.useState<string | null>(null);
   const [unicodeUnavailable, setUnicodeUnavailable] = React.useState(false);
@@ -105,30 +98,6 @@ export function TokenView({
     setPicked(new Set());
   }, [tokenId]);
 
-  // The split this token came from, and whether its record is still restorable. Both reload
-  // after any transaction (data changes).
-  React.useEffect(() => {
-    if (!publicClient) return;
-    let cancelled = false;
-    setBirth(null);
-    setRecord(null);
-    void (async () => {
-      const b = await findSplitBirth(publicClient, dep, tokenId);
-      if (cancelled || !b) return;
-      const [childCount, denomIndex] = await publicClient.readContract({
-        address: dep.shapes,
-        abi: shapesAbi,
-        functionName: "splitRecordOf",
-        args: [b.parentSeed],
-      });
-      if (cancelled) return;
-      setBirth(b);
-      setRecord({childCount: Number(childCount), denomIndex: Number(denomIndex)});
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [publicClient, dep, tokenId, data]);
 
   // Token history from the event log, with block timestamps resolved to dates.
   React.useEffect(() => {
@@ -312,24 +281,6 @@ export function TokenView({
   const sumWei = token.backing + pickedTokens.reduce((a, t) => a + t.backing, 0n);
   const sumIdx = denomIndexOf(sumWei);
   const composeValid = pickedIds.length >= 1 && sumIdx >= 0;
-
-  // Restore: this token came from a split whose record is still open. Restorable when every
-  // sibling is live, seed-verified for its position, still at its split denomination (the sum
-  // check), and held by this wallet.
-  const restorable = birth !== null && record !== null && record.childCount === birth.siblingIds.length;
-  const parentWei = record ? DENOMINATIONS[record.denomIndex].wei : 0n;
-  const pieces = restorable
-    ? birth!.siblingIds.map((sid, i) => {
-        const t = data?.tokens.find((x) => x.id === sid) ?? null;
-        const okSeed = t !== null && t.seed === splitChildSeed(BigInt(birth!.parentSeed), i);
-        const held =
-          !!t && okSeed && !!address && t.owner.toLowerCase() === address.toLowerCase();
-        return {id: sid, token: t, okSeed, held};
-      })
-    : [];
-  const heldCount = pieces.filter((p) => p.held).length;
-  const piecesBacking = pieces.reduce((a, p) => a + (p.token?.backing ?? 0n), 0n);
-  const canRestore = restorable && heldCount === pieces.length && piecesBacking === parentWei;
 
   const errLine = (op: string) =>
     txErr && txErr.op === op ? (
@@ -524,8 +475,8 @@ export function TokenView({
             {(redeem.status === "asking" || redeem.status === "pending") && (
               <div>
                 <p style={{margin: "0 0 20px", fontSize: 13, lineHeight: 1.7, maxWidth: "60ch"}}>
-                  This cannot be undone. The token is burned and {token.backing.toString()} wei (
-                  {lbl} ETH) is sent to {short(token.owner)}.
+                  Redeeming burns the token and sends {token.backing.toString()} wei ({lbl} ETH)
+                  to {short(token.owner)}. This cannot be undone.
                 </p>
                 <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
                   <button
@@ -560,8 +511,8 @@ export function TokenView({
             {canSplit && (
               <p style={{margin: "0 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
                 No ETH moves. No fee is charged. The seeds below are fixed already, so this is
-                the exact result. A split can be undone: reassemble all the pieces and the
-                original comes back.
+                the exact result. A split is final: it burns this Shape, and its artwork cannot
+                be brought back.
               </p>
             )}
             <div style={{display: "flex", flexWrap: "wrap", gap: 18}}>
@@ -579,7 +530,7 @@ export function TokenView({
               <button
                 type="button"
                 className="btn-outline"
-                onClick={() => onSplit(token)}
+                onClick={() => setAskSplit(true)}
                 disabled={!!busy}
                 style={{marginTop: 26, padding: "10px 20px"}}
               >
@@ -587,12 +538,50 @@ export function TokenView({
               </button>
             )}
             {errLine("split")}
+            {askSplit && (
+              <Modal
+                title="SPLIT IS FINAL"
+                onCancel={() => setAskSplit(false)}
+              >
+                <p style={{margin: "0 0 14px", fontSize: 14, lineHeight: 1.7, color: C.ink}}>
+                  Splitting burns #{token.id.toString()} and returns {ratio} Shapes of{" "}
+                  {DENOMINATIONS[di - 1].label} ETH in its place.
+                </p>
+                <p style={{margin: "0 0 24px", fontSize: 13, lineHeight: 1.7, color: C.muted}}>
+                  This cannot be undone. Composing the pieces back gives a different Shape: the
+                  artwork on this one is gone for good. Your {lbl} ETH is untouched either way.
+                </p>
+                <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
+                  <button
+                    type="button"
+                    className="btn-filled"
+                    onClick={() => {
+                      setAskSplit(false);
+                      onSplit(token);
+                    }}
+                    disabled={!!busy}
+                    style={{padding: "11px 26px"}}
+                  >
+                    Split anyway
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setAskSplit(false)}
+                    disabled={!!busy}
+                    style={{padding: "11px 26px"}}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </Modal>
+            )}
           </Section>
 
           <Section title="COMPOSE" pad="26px 48px 36px 32px">
             <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-              Grow this Shape. Others of the same denomination are burned into it, and it
-              becomes the larger denomination.
+              Grow this Shape. Composing burns others of the same denomination into it and moves
+              it to the larger denomination.
             </p>
             <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
               #{token.id.toString()} keeps its id and its seed. No ETH moves. No fee is charged.
@@ -674,8 +663,8 @@ export function TokenView({
             <Section title="DECOMPOSE" pad="26px 48px 36px 32px">
               <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
                 Undo this Shape's most recent compose. #{token.id.toString()} keeps its id and
-                reverts to its pre-compose denomination and origins. Every Shape burned by that
-                compose is re-minted under its original id and seed, to you.
+                returns to its pre-compose denomination and origins, and every Shape that compose
+                burned is re-minted to you under its original id and seed.
               </p>
               <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
                 No ETH moves. No fee is charged. Stacked composes reverse newest first — this
@@ -708,77 +697,6 @@ export function TokenView({
             </Section>
           )}
 
-          {restorable && record && birth && (
-            <Section title="RESTORE" pad="26px 48px 36px 32px">
-              <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-                This Shape is piece {birth.index + 1} of {pieces.length} from one split. Restore
-                burns all {pieces.length} pieces and brings back the original: same artwork, same
-                denomination, a new token number.
-              </p>
-              <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-                No ETH moves. No fee is charged.
-              </p>
-              <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
-                <div style={{flex: "0 0 140px", width: 140}}>
-                  {/* This token was a child of that split, and split copies the parent's gene
-                      verbatim to each child, so the parent's gene at split equals this token's own
-                      gene (unless it has since composed). */}
-                  <Art src={localArt(BigInt(birth.parentSeed), parentWei, token.inkGene)} />
-                  <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
-                    {DENOMINATIONS[record.denomIndex].label} ETH · the original
-                  </div>
-                </div>
-                <div style={{flex: "1 1 320px", minWidth: 0}}>
-                  {pieces.map((p) => (
-                    <div
-                      key={p.id.toString()}
-                      style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        alignItems: "center",
-                        gap: 20,
-                        padding: "10px 0",
-                        borderBottom: `1px solid ${C.ruleInner}`,
-                        fontSize: 13,
-                      }}
-                    >
-                      {p.token ? <Art src={p.token.image} width={34} /> : <div style={{width: 34}} />}
-                      <div style={{flex: "1 1 120px", minWidth: 0}}>
-                        #{p.id.toString()}
-                        {p.token && p.token.di >= 0 ? ` · ${DENOMINATIONS[p.token.di].label} ETH` : ""}
-                      </div>
-                      <div style={{color: C.muted, fontSize: 12}}>
-                        {p.held
-                          ? p.id === token.id
-                            ? "this Shape"
-                            : "you hold this"
-                          : p.token
-                            ? `held by ${short(p.token.owner)}`
-                            : "no longer live"}
-                      </div>
-                    </div>
-                  ))}
-                  {canRestore ? (
-                    <button
-                      type="button"
-                      className="btn-outline"
-                      onClick={() => onRestore(birth.parentSeed, birth.siblingIds)}
-                      disabled={!!busy}
-                      style={{marginTop: 22, padding: "10px 20px"}}
-                    >
-                      {busy === "restore" ? "Waiting for confirmation" : "Restore"}
-                    </button>
-                  ) : (
-                    <div style={{marginTop: 22, fontSize: 13, color: C.muted}}>
-                      Restoring needs all {pieces.length} pieces, unchanged, in one wallet. You
-                      hold {heldCount} of {pieces.length}.
-                    </div>
-                  )}
-                  {errLine("restore")}
-                </div>
-              </div>
-            </Section>
-          )}
         </>
       )}
 

@@ -4,6 +4,8 @@ pragma solidity 0.8.28;
 import {Script, console} from "forge-std/Script.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
+import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
@@ -25,7 +27,10 @@ import {Denominations} from "../src/lib/Denominations.sol";
 contract DeploySepolia is Script {
     uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
 
-    function run() external returns (ShapeRenderer renderer, Shapes shapes) {
+    function run()
+        external
+        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
+    {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         bool seed = vm.envOr("SEED_ETH", true);
         address me = msg.sender;
@@ -33,7 +38,10 @@ contract DeploySepolia is Script {
         vm.startBroadcast();
 
         renderer = new ShapeRenderer();
-        shapes = new Shapes(feeBps, me, address(renderer));
+
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(feeBps, me, address(renderer), address(collection));
+        house = new ShapeAuctionHouse(address(shapes));
 
         if (seed) {
             // A modest spread across the low denominations: five 0.01, two 0.05, one 0.1. Total
@@ -43,7 +51,7 @@ contract DeploySepolia is Script {
                 uint256 wei_ = Denominations.amountAt(di);
                 uint256 fee = (wei_ * feeBps) / 10_000;
                 for (uint256 n = 0; n < counts[di]; n++) {
-                    shapes.mint{value: wei_ + fee}(wei_, me);
+                    shapes.mintTo{value: wei_ + fee}(wei_, me);
                 }
             }
         }

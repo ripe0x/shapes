@@ -11,7 +11,7 @@ enum ShapeFormation {
 }
 
 /// @notice The complete protocol state of one live Shape in a single read.
-/// @dev `faceValueWei` is the Shape's denomination and survives blackening;
+/// @dev `faceValueWei` is the Shape's denomination and survives sacrifice;
 ///      `redeemableValueWei` is zero for a Black Shape and otherwise equals face value.
 struct ShapeState {
     bytes32 seed;
@@ -59,11 +59,7 @@ interface IShapeRecomposition {
     function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
-    function restore(bytes32 parentSeed, uint256[] calldata childIds) external returns (uint256 newTokenId);
-    function restoreTo(bytes32 parentSeed, uint256[] calldata childIds, address recipient)
-        external
-        returns (uint256 newTokenId);
-    function blacken(uint256 tokenId) external;
+    function sacrifice(uint256 tokenId) external;
 }
 
 /// @notice Stable provenance capability, separate from metadata presentation.
@@ -73,20 +69,11 @@ interface IShapeProvenance {
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
     function isComplete(uint256 tokenId) external view returns (bool);
     function formationOf(uint256 tokenId) external view returns (ShapeFormation);
-    function splitRecordOf(bytes32 parentSeed)
-        external
-        view
-        returns (uint16 childCount, uint8 denominationIndex);
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
 }
 
 /// @notice Stable deterministic-preview capability. These calls do not require caller ownership.
 interface IShapeSimulation {
-    function simulateCompose(uint256 survivorId, uint256[] calldata burnIds)
-        external
-        view
-        returns (uint8 newGene, uint8 newDenomIndex);
-    function simulateSplit(uint256 tokenId) external view returns (uint8 childGene);
     function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
         external
         view
@@ -95,8 +82,4 @@ interface IShapeSimulation {
         external
         view
         returns (ShapeChildPreview[] memory children);
-    function previewRestore(bytes32 parentSeed, uint256[] calldata childIds)
-        external
-        view
-        returns (ShapeState memory result);
 }

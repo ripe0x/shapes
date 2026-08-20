@@ -2,7 +2,7 @@ import React from "react";
 import {parseEventLogs} from "viem";
 import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagmi";
 import {useConnectModal} from "@rainbow-me/rainbowkit";
-import {shapesAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
+import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
 import {short, addrUrl} from "./ui";
 import {describeTxError} from "./errors";
@@ -11,8 +11,10 @@ import {MintView} from "./MintView";
 import {GalleryView} from "./GalleryView";
 import {TokenView} from "./TokenView";
 import {AboutView} from "./AboutView";
+import {AuctionView} from "./AuctionView";
+import {loadAuction, loadLotImage, type AuctionState} from "./auction";
 
-export type View = "mint" | "gallery" | "token" | "about";
+export type View = "mint" | "auction" | "gallery" | "token" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -56,6 +58,9 @@ export function SiteApp({
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
   const [txErr, setTxErr] = React.useState<{op: string; text: string} | null>(null);
+  const [auction, setAuction] = React.useState<AuctionState | null>(null);
+  const [lotImage, setLotImage] = React.useState<string | null>(null);
+  const [txHash, setTxHash] = React.useState<string | null>(null);
 
   // URL <-> view sync for the Next.js host. `lastNav` tracks the last applied navigation so a
   // URL-driven change does not echo back out through `onNavigate`, and an internal navigation does
@@ -100,6 +105,22 @@ export function SiteApp({
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
 
+  const writeHouse = (
+    functionName: string,
+    args: readonly unknown[],
+    value?: bigint,
+    gas?: bigint,
+  ) =>
+    writeContractAsync({
+      address: dep.auctionHouse!,
+      abi: auctionHouseAbi,
+      functionName,
+      args,
+      value,
+      gas,
+      chainId: dep.chainId,
+    } as Parameters<typeof writeContractAsync>[0]);
+
   const doMint = async () => {
     if (!address || !publicClient || !data) return;
     setMint({status: "pending"});
@@ -108,8 +129,8 @@ export function SiteApp({
       const value = (wei + data.fees[sel]) * BigInt(qty);
       const hash =
         qty === 1
-          ? await write("mint", [wei, address], value)
-          : await write("mintBatch", [wei, BigInt(qty), address], value);
+          ? await write("mint", [wei], value)
+          : await write("mintBatch", [wei, BigInt(qty)], value);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs});
       await refresh();
@@ -190,22 +211,51 @@ export function SiteApp({
     }
   };
 
-  const doRestore = async (parentSeed: `0x${string}`, childIds: bigint[]) => {
-    if (!publicClient) return;
-    setBusy("restore");
+
+  // Auction 0 is the collection's own. Reloaded after every auction transaction, and whenever
+  // the wallet changes, since escrow and the lead are both per-address.
+  const refreshAuction = React.useCallback(async () => {
+    if (!publicClient || !dep.auctionHouse) return;
+    const a = await loadAuction(publicClient, dep, 0n, address);
+    setAuction(a);
+    setLotImage(a ? await loadLotImage(publicClient, dep, a) : null);
+  }, [publicClient, dep, address]);
+
+  React.useEffect(() => {
+    void refreshAuction();
+  }, [refreshAuction]);
+
+  const runHouse = async (op: string, fn: string, args: readonly unknown[], value?: bigint) => {
+    if (!publicClient || !dep.auctionHouse) return;
+    setBusy(op);
     setTxErr(null);
     try {
-      const hash = await write("restore", [parentSeed, childIds]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
-      const logs = parseEventLogs({abi: shapesAbi, eventName: "Restored", logs: receipt.logs});
-      await refresh();
-      setTokenId(logs[0].args.newTokenId); // land on the restored original
-      setRedeem({status: "idle"});
+      // A bid that mints its own cards lands exactly on the edge where the estimate is too tight
+      // and the mint's reentrancy guard runs out of gas re-executing (ReentrancySentryOOG).
+      // Estimate, then buffer; the block gas limit still caps it.
+      const estimate = await publicClient.estimateContractGas({
+        address: dep.auctionHouse,
+        abi: auctionHouseAbi,
+        functionName: fn,
+        args,
+        value,
+        account: address!,
+      } as Parameters<typeof publicClient.estimateContractGas>[0]);
+      const hash = await writeHouse(fn, args, value, (estimate * 3n) / 2n);
+      await publicClient.waitForTransactionReceipt({hash});
+      setTxHash(hash);
+      await Promise.all([refresh(), refreshAuction()]);
     } catch (e) {
-      setTxErr({op: "restore", text: describeTxError(e)});
+      setTxErr({op, text: describeTxError(e)});
     } finally {
       setBusy(null);
     }
+  };
+
+  const doBid = (cardIds: bigint[], ethBackingWei: bigint) => {
+    const sorted = [...cardIds].sort((a, b) => (a < b ? -1 : 1));
+    // The mint fee rides on top of the backing, and only on the ETH portion.
+    void runHouse("bid", "bid", [0n, sorted, ethBackingWei], ethBackingWei + ethBackingWei / 100n);
   };
 
   const openToken = (id: bigint) => {
@@ -249,6 +299,11 @@ export function SiteApp({
             <button type="button" className="btn-ghost" onClick={() => go("mint")} style={{letterSpacing: "0.14em", color: navColor("mint")}}>
               MINT
             </button>
+            {dep.auctionHouse && (
+              <button type="button" className="btn-ghost" onClick={() => go("auction")} style={{letterSpacing: "0.14em", color: navColor("auction")}}>
+                AUCTION
+              </button>
+            )}
             <button type="button" className="btn-ghost" onClick={() => go("gallery")} style={{letterSpacing: "0.14em", color: navColor("gallery")}}>
               GALLERY
             </button>
@@ -289,6 +344,24 @@ export function SiteApp({
           onOpenToken={openToken}
         />
       )}
+      {view === "auction" && (
+        <AuctionView
+          auction={auction}
+          lotImage={lotImage}
+          data={data}
+          address={address}
+          chainId={dep.chainId}
+          busy={busy}
+          txErr={txErr}
+          txHash={txHash}
+          onBid={doBid}
+          onWithdraw={() => void runHouse("withdraw", "withdraw", [0n])}
+          onSettle={() => void runHouse("settle", "settle", [0n])}
+          onClaim={() => void runHouse("claim", "claimProceeds", [0n])}
+          onOpenToken={openToken}
+        />
+      )}
+
       {view === "gallery" && (
         <GalleryView data={data} filter={filter} setFilter={setFilter} onOpenToken={openToken} />
       )}
@@ -309,7 +382,6 @@ export function SiteApp({
           onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
           onCompose={(t, ids) => void doCompose(t, ids)}
-          onRestore={(seed, ids) => void doRestore(seed, ids)}
           onOpenToken={openToken}
         />
       )}

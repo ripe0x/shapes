@@ -3,16 +3,34 @@ pragma solidity 0.8.28;
 
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {IShapes} from "../../src/interfaces/IShapes.sol";
+import {IShapePositionResolver} from "../../src/interfaces/IShapePositionResolver.sol";
+
+/// @notice Configurable position resolver used to exercise exact and zero position results.
+contract MockPositionResolver is IShapePositionResolver {
+    mapping(uint256 tokenId => address position) public positions;
+    bool public shouldRevert;
+
+    error ResolverQueryFailed(uint256 tokenId);
+
+    function setPosition(uint256 tokenId, address position) external {
+        positions[tokenId] = position;
+    }
+
+    function setShouldRevert(bool value) external {
+        shouldRevert = value;
+    }
+
+    function positionOf(uint256 tokenId) external view returns (address) {
+        if (shouldRevert) revert ResolverQueryFailed(tokenId);
+        return positions[tokenId];
+    }
+}
 
 /// @notice Accepts ERC721 transfers and ETH. The well-behaved contract counterparty.
 contract GoodReceiver is IERC721Receiver {
     receive() external payable {}
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
@@ -33,11 +51,7 @@ contract GoodReceiver is IERC721Receiver {
 contract BadReceiver is IERC721Receiver {
     receive() external payable {}
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return 0xdeadbeef;
     }
 }
@@ -51,11 +65,7 @@ contract EthRejectingReceiver is IERC721Receiver {
         revert NoEthThanks();
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
@@ -91,11 +101,7 @@ contract ReentrantRedeemer is IERC721Receiver {
         reentryReverted = false;
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 
@@ -147,18 +153,14 @@ contract ReentrantFeeRecipient {
         attempted = true;
         uint256 need = amountWei + shapes.mintFeeFor(amountWei);
         if (address(this).balance < need) return;
-        try shapes.mint{value: need}(amountWei, address(this)) {
+        try shapes.mintTo{value: need}(amountWei, address(this)) {
             reentryReverted = false;
         } catch {
             reentryReverted = true;
         }
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        pure
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
         return IERC721Receiver.onERC721Received.selector;
     }
 }
@@ -178,18 +180,15 @@ contract ReentrantMinter is IERC721Receiver {
     receive() external payable {}
 
     function mint() external payable returns (uint256) {
-        return shapes.mint{value: msg.value}(amountWei, address(this));
+        return shapes.mintTo{value: msg.value}(amountWei, address(this));
     }
 
-    function onERC721Received(address, address, uint256, bytes calldata)
-        external
-        returns (bytes4)
-    {
+    function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
         if (!attempted) {
             attempted = true;
             uint256 need = amountWei + shapes.mintFeeFor(amountWei);
             if (address(this).balance >= need) {
-                try shapes.mint{value: need}(amountWei, address(this)) {
+                try shapes.mintTo{value: need}(amountWei, address(this)) {
                     reentryReverted = false;
                 } catch {
                     reentryReverted = true;

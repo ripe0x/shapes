@@ -3,7 +3,7 @@
  * lived-in state: mints across every denomination and several actors, compositions up to
  * both a fully and a partially composed 100 ETH apex, a genuine apex Complete that is then
  * blackened (the Black Shape), a pure direct 100 ETH left untouched, one-tier and
- * mixed-multiset splits, restores, transfers, and redemptions.
+ * mixed-multiset splits, transfers, and redemptions.
  *
  *   ./script/fork-dev.sh          # chain up first, from the repo root
  *   cd preview && npm run simulate
@@ -74,8 +74,8 @@ async function mint(actor: number, di: number, qty: number): Promise<bigint[]> {
   const value = (wei + feeOf(wei)) * BigInt(qty);
   const receipt =
     qty === 1
-      ? await send(actor, "mint", [wei, actors[actor].account.address], value)
-      : await send(actor, "mintBatch", [wei, BigInt(qty), actors[actor].account.address], value);
+      ? await send(actor, "mint", [wei], value)
+      : await send(actor, "mintBatch", [wei, BigInt(qty)], value);
   return parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs}).map(
     (l) => l.args.tokenId,
   );
@@ -92,14 +92,9 @@ async function split(actor: number, id: bigint, outDenoms: number[]): Promise<bi
     .newIds as bigint[];
 }
 
-async function restore(actor: number, parentSeed: `0x${string}`, kids: bigint[]): Promise<bigint> {
-  const receipt = await send(actor, "restore", [parentSeed, kids]);
-  return parseEventLogs({abi: shapesAbi, eventName: "Restored", logs: receipt.logs})[0].args
-    .newTokenId as bigint;
-}
 
 const redeem = (actor: number, id: bigint) => send(actor, "redeem", [id]);
-const blacken = (actor: number, id: bigint) => send(actor, "blacken", [id]);
+const sacrifice = (actor: number, id: bigint) => send(actor, "sacrifice", [id]);
 const transfer = (actor: number, to: `0x${string}`, id: bigint) =>
   send(actor, "transferFrom", [actors[actor].account.address, to, id]);
 
@@ -125,7 +120,7 @@ async function main() {
   const fives5 = await mint(5, 5, 4);
   const tens3 = await mint(3, 6, 3);
   await mint(4, 7, 1); // a lone direct 50
-  // A pure direct 100 ETH: one mint, originCount 1. Never blackened (blacken needs an apex
+  // A pure direct 100 ETH: one mint, originCount 1. Never sacrificed (sacrifice needs an apex
   // Complete, 10,000 origins), so this is the "untouched 100" that stays fully redeemable.
   const [pureApex] = await mint(5, 8, 1);
 
@@ -145,9 +140,9 @@ async function main() {
   const partialApex = await compose(7, direct50, [built50]);
   console.log(`   partial apex: #${partialApex} (one branch deep, one branch a mint)`);
 
-  console.log("4. the Black Shape: a genuine apex Complete, blackened (slow: 10k mints across 10 batches)");
+  console.log("4. the Black Shape: a genuine apex Complete, sacrificed (slow: 10k mints across 10 batches)");
   // 10,000 x 0.01 composed into one 100 ETH token carrying 10,000 origins (an apex Complete,
-  // originCount == units). Only that state can be blackened: it sacrifices the 100 ETH to the
+  // originCount == units). Only that state can be sacrificed: it sends the 100 ETH to the
   // burn address and inverts the art (black form on white). Terminal thereafter.
   //
   // Built in 1,000-token batches: a single 10,000-mint tx mines fine on the dev chain, but its
@@ -159,7 +154,7 @@ async function main() {
     blackTens.push(await compose(0, batch[0], batch.slice(1))); // -> 10 ETH, originCount 1,000
   }
   const apexComplete = await compose(0, blackTens[0], blackTens.slice(1)); // 10 x 10 ETH -> 100 ETH, originCount 10,000
-  await blacken(0, apexComplete);
+  await sacrifice(0, apexComplete);
   console.log(`   black shape: #${apexComplete} (10,000 origins sacrificed; 100 ETH burned)`);
 
   console.log("5. mid-tier compositions");
@@ -172,14 +167,9 @@ async function main() {
   console.log("6. splits: one-tier, mixed multiset, and deep");
   await split(1, halves[0], [2, 2, 2, 2, 2]); // 0.5 -> 5 x 0.1
   const mixedKids = await split(4, ones4[5], [3, 2, 2, 2, 2, 2]); // 1 -> 0.5 + 5 x 0.1
-  const tenPieces = await split(3, tens3[0], [5, 5]); // 10 -> 2 x 5
+  await split(3, tens3[0], [5, 5]); // 10 -> 2 x 5
 
-  console.log("7. restores: two round trips; the step-6 splits above stay open");
-  await restoreSplit(3, tens3[0], tenPieces); // history shows the split and the reassembly
-  const roundtripKids = await split(1, halves[2], [2, 2, 2, 2, 2]);
-  await restoreSplit(1, halves[2], roundtripKids);
-
-  console.log("8. transfers, including presents for the browsing wallet");
+  console.log("7. transfers, including presents for the browsing wallet");
   await transfer(6, PRESENTS_TO, deepApex);
   await transfer(7, PRESENTS_TO, partialApex);
   await transfer(0, PRESENTS_TO, apexComplete); // the Black Shape
@@ -191,12 +181,12 @@ async function main() {
   await transfer(3, actors[2].account.address, half);
   await transfer(5, actors[1].account.address, fives5[1]);
 
-  console.log("9. redemptions");
+  console.log("8. redemptions");
   await redeem(1, dust1[0]);
   await redeem(1, dust1[1]);
   await redeem(3, dimes[6]);
   await redeem(5, fives5[2]);
-  await redeem(4, mixedKids[1]); // a piece of the mixed split: its set can never be restored
+  await redeem(4, mixedKids[1]); // a piece of the mixed split; splitting is final
 
   const supply = await pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "totalSupply"});
   const reserve = await pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "redeemableBacking"});
@@ -206,20 +196,7 @@ async function main() {
   );
 }
 
-/** The seed a burned token had, recovered from its ShapeMinted / Split / Restored event. */
-async function seedOfBurned(id: bigint): Promise<`0x${string}`> {
-  const base = {address: dep.shapes, abi: shapesAbi, fromBlock: 0n, toBlock: "latest"} as const;
-  const minted = await pub.getContractEvents({...base, eventName: "ShapeMinted"});
-  const m = minted.find((l) => l.args.tokenId === id);
-  if (m) return m.args.seed as `0x${string}`;
-  throw new Error(`no seed found for #${id}`);
-}
 
-/** Restore a split by its input's id: recover the parent seed from events, then reassemble. */
-async function restoreSplit(actor: number, parentId: bigint, kids: bigint[]) {
-  const parentSeed = await seedOfBurned(parentId);
-  return restore(actor, parentSeed, kids);
-}
 
 main().catch((e) => {
   console.error(e);

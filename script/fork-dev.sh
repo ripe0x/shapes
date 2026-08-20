@@ -44,7 +44,7 @@ SEED_ETH=${SEED_ETH:-1000}
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 
 # --gas-limit (finite, high): the simulation builds a genuine apex Complete (10,000 x 0.01
-# minted then composed into one 100 ETH token, so it can be blackened). That single mint
+# minted then composed into one 100 ETH token, so it can be sacrificed). That single mint
 # batch and its compose each burn far past a mainnet block's gas, which is fine on a local
 # dev chain used only for browsing. Normal txs are unaffected.
 if [ -n "$FORK_URL" ]; then
@@ -74,6 +74,8 @@ OUT=$(SHAPES_FEE_RECIPIENT="$FEE_RECIPIENT" \
   forge script script/DeployShapes.s.sol --rpc-url "$RPC" --private-key "$PK0" --broadcast 2>&1)
 SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+COLLECTION=$(echo "$OUT" | grep -oE 'ShapeCollection\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 FEE_BPS=$(cast call "$SHAPES" "feeBps()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
 
 [ -n "$SHAPES" ] && [ -n "$RENDERER" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
@@ -100,6 +102,8 @@ cat >"$DEPLOYMENT_FILE" <<JSON
   "chainId": $CHAIN_ID,
   "shapes": "$SHAPES",
   "renderer": "$RENDERER",
+  "collection": "$COLLECTION",
+  "auctionHouse": "$HOUSE",
   "feeBps": "$FEE_BPS"
 }
 JSON
@@ -107,6 +111,8 @@ JSON
 say "Ready"
 echo "  Shapes        $SHAPES"
 echo "  ShapeRenderer $RENDERER"
+echo "  ShapeCollection $COLLECTION"
+echo "  AuctionHouse  $HOUSE"
 echo "  fee (bps)     $FEE_BPS"
 echo "  wrote         $DEPLOYMENT_FILE"
 echo
