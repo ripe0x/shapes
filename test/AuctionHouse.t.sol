@@ -4,22 +4,12 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
-
-/// @dev A plain ERC721 to auction, so the suite is not implicitly testing Shapes-as-the-lot.
-contract Lot is ERC721 {
-    constructor() ERC721("Lot", "LOT") {}
-
-    function mint(address to, uint256 id) external {
-        _mint(to, id);
-    }
-}
 
 /// @dev Refuses ERC721s. Used to prove the house never pushes a card at anyone.
 contract HostileBidder is IERC721Receiver {
@@ -47,7 +37,7 @@ abstract contract AuctionBase is Test {
     ShapeRenderer internal renderer;
     ShapeCollection internal collection;
     ShapeAuctionHouse internal house;
-    Lot internal lot;
+    uint256 internal lotId;
 
     address internal seller = makeAddr("seller");
     address internal alice = makeAddr("alice");
@@ -64,15 +54,16 @@ abstract contract AuctionBase is Test {
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes(100, feeRecipient, address(renderer), address(collection));
         house = new ShapeAuctionHouse(address(shapes));
-        lot = new Lot();
 
         vm.deal(alice, 1_000 ether);
         vm.deal(bob, 1_000 ether);
         vm.deal(seller, 10 ether);
 
-        lot.mint(seller, 1);
+        // The lot is a Shape, which is the only collection the house will sell.
         vm.prank(seller);
-        lot.setApprovalForAll(address(house), true);
+        lotId = shapes.mint{value: 0.1 ether + feeOf(0.1 ether)}(0.1 ether);
+        vm.prank(seller);
+        shapes.setApprovalForAll(address(house), true);
         vm.prank(alice);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(bob);
@@ -90,7 +81,7 @@ abstract contract AuctionBase is Test {
 
     function _open() internal returns (uint256 auctionId) {
         vm.prank(seller);
-        auctionId = house.createAuction(address(lot), 1, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        auctionId = house.createAuction(lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
     }
 
     function _one(uint256 id) internal pure returns (uint256[] memory ids) {
@@ -102,8 +93,9 @@ abstract contract AuctionBase is Test {
         return new uint256[](0);
     }
 
-    /// @dev Every card the house holds must be accounted to exactly one escrow entry. If the two
-    ///      ever diverge, a card is either stranded or double-claimed.
+    /// @dev Every Shape the house holds is either an escrowed bid card or a lot awaiting
+    ///      settlement. If the two sides diverge, a card is stranded or claimable twice. The lot
+    ///      is itself a Shape, so it counts toward the balance until it is delivered.
     function _assertEscrowExact(uint256 auctionId, address[] memory bidders) internal view {
         uint256 counted;
         for (uint256 i = 0; i < bidders.length; ++i) {
@@ -113,7 +105,8 @@ abstract contract AuctionBase is Test {
                 counted++;
             }
         }
-        assertEq(shapes.balanceOf(address(house)), counted, "house holds unaccounted cards");
+        if (shapes.ownerOf(lotId) == address(house)) counted++; // the undelivered lot
+        assertEq(shapes.balanceOf(address(house)), counted, "house holds unaccounted Shapes");
     }
 }
 
@@ -123,14 +116,14 @@ contract AuctionHouseTest is AuctionBase {
     function test_CreateEscrowsTheLotAndIdsFromZero() public {
         uint256 id = _open();
         assertEq(id, 0, "auction ids start at 0");
-        assertEq(lot.ownerOf(1), address(house), "lot escrowed");
+        assertEq(shapes.ownerOf(lotId), address(house), "lot escrowed");
         assertEq(house.auctionCount(), 1);
     }
 
     function test_CreateRejectsZeroDuration() public {
         vm.prank(seller);
-        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
-        house.createAuction(address(lot), 1, 0, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        vm.expectRevert(IShapeAuctionHouse.DurationOutOfRange.selector);
+        house.createAuction(lotId, 0, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
     }
 
     function test_SellerCancelsBeforeAnyBidAndNotAfter() public {
@@ -144,13 +137,13 @@ contract AuctionHouseTest is AuctionBase {
         vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
         house.cancelAuction(id);
 
-        lot.mint(seller, 2);
         vm.prank(seller);
-        uint256 fresh =
-            house.createAuction(address(lot), 2, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        uint256 second = shapes.mint{value: 0.1 ether + feeOf(0.1 ether)}(0.1 ether);
+        vm.prank(seller);
+        uint256 fresh = house.createAuction(second, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
         vm.prank(seller);
         house.cancelAuction(fresh);
-        assertEq(lot.ownerOf(2), seller, "lot returned");
+        assertEq(shapes.ownerOf(second), seller, "lot returned");
     }
 
     function test_OnlySellerCancels() public {
@@ -311,7 +304,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_BidMustClearTheReserve() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(lot), 1, DURATION, 100, INCREMENT_BPS, EXTENSION);
+        uint256 id = house.createAuction(lotId, DURATION, 100, INCREMENT_BPS, EXTENSION);
         uint256 card = _mintCard(alice, 0.5 ether); // 50 units, under a 100 unit reserve
 
         vm.prank(alice);
@@ -436,7 +429,7 @@ contract AuctionHouseTest is AuctionBase {
 
         skip(DURATION);
         house.settle(id); // permissionless
-        assertEq(lot.ownerOf(1), alice, "winner has the lot");
+        assertEq(shapes.ownerOf(lotId), alice, "winner has the lot");
 
         vm.prank(seller);
         house.claimProceeds(id);
@@ -596,7 +589,7 @@ contract AuctionHouseTest is AuctionBase {
 
         skip(DURATION);
         house.settle(id);
-        assertEq(lot.ownerOf(1), bob);
+        assertEq(shapes.ownerOf(lotId), bob);
     }
 
     /// @notice Unsolicited Shapes are refused, so a token cannot be stranded here with no escrow

@@ -12,6 +12,21 @@ counterparties.
 
 ---
 
+## Assets sent to the auction house unasked
+
+`ShapeAuctionHouse` refuses ERC721s that arrive through `safeTransferFrom`: `onERC721Received`
+returns the magic value only for a Shape, only while the house's own bid path is minting, and only
+when `from` is the zero address, so only a mint can land. A plain `transferFrom` calls no receiver
+hook and cannot be refused by any contract, so a Shape can still be pushed into the house by its
+owner. It is then held with no escrow entry naming it and no function that releases it.
+
+This is accepted, not fixed. The alternatives are worse: teaching `Shapes` about the house couples
+the token to a contract it otherwise knows nothing about, and a recovery function is an
+administrative path into a contract holding other people's redeemable cards, which is the one
+thing this house does not have. The loss is confined to whoever pushed the token, is entirely
+self-inflicted, and mirrors how the reserve invariant already treats ETH forced in by paths that
+bypass `receive`: stated as an inequality and left permanently inaccessible.
+
 ## The threat model
 
 Shapes holds user ETH and has no administrator with any power over the reserve. The transferable
@@ -146,7 +161,7 @@ An independent AI auditor ran the refreshed `AUDIT_PROMPT_v2.md` against `main`.
 was found; no path removes ETH without the corresponding burn, forges origins, forges Complete, or
 bypasses Black terminality. Three low findings were fixed and pinned with regression tests:
 
-- **`simulateDecompose` reported success for a Black Shape** while `decompose` reverts `TokenIsBlack`.
+- **The split preview reported success for a Black Shape** while the split itself reverts `TokenIsBlack`. The preview is now `previewSplit`, which carries the same guard.
   The preview now rejects Black tokens too (`test_SimulateDecomposeRejectsBlackToMatchDecompose`).
 - **`setRenderer` changed every token's metadata without an ERC-4906 signal.** It now emits
   `BatchMetadataUpdate(0, totalMinted - 1)` (ids start at 0) so marketplaces refresh
