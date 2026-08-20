@@ -37,9 +37,12 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///
 ///      The owner may replace the renderer via `setRenderer` and the collection metadata
 ///      contract via `setCollection`, and freeze both via `lockRenderer`. The renderer is read
-///      only by `tokenURI`, the collection only by `contractURI`. Independently, the owner may
-///      set, clear and permanently lock an optional position resolver; core token and reserve
-///      operations never call it. Ownership is transferable and may be renounced.
+///      only by `tokenURI`, the collection only by `contractURI`. The owner also holds the
+///      metadata copy: `setTokenCopy` sets the per-token name prefix and description, and
+///      `setCollectionCopy` the collection name and description; both remain editable after
+///      `lockRenderer`. Independently, the owner may set, clear and permanently lock an optional
+///      position resolver; core token and reserve operations never call it. Ownership is
+///      transferable and may be renounced. None of these touch ETH, backing or redeemability.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
 ///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
@@ -151,9 +154,34 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///      both presentation pointers.
     address public collection;
 
+    /// @dev Default metadata copy, seeded at construction. Mirrors the canonical spec in
+    ///      `preview/src/canonical/render.ts`; the parity suite asserts byte identity against it.
+    string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
+    string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+    string private constant DEFAULT_COLLECTION_NAME = "Shapes";
+
+    /// @inheritdoc IShapes
+    /// @dev Editorial copy, owner-editable via `setTokenCopy`, written verbatim into every token's
+    ///      metadata by the renderer. Independent of `rendererLocked`.
+    string public tokenNamePrefix;
+    /// @inheritdoc IShapes
+    string public tokenDescription;
+    /// @inheritdoc IShapes
+    /// @dev Editorial copy, owner-editable via `setCollectionCopy`, passed to the collection
+    ///      contract by `contractURI`.
+    string public collectionName;
+    /// @inheritdoc IShapes
+    string public collectionDescription;
+
     /// @inheritdoc IShapes
     /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
     address public positionResolver;
+
+    /// @dev Gas forwarded to the untrusted resolver by `positionOf`. Ample for a mapping read;
+    ///      bounds a hostile resolver's ability to consume the caller's stipend.
+    uint256 private constant RESOLVER_GAS = 50_000;
 
     /// @inheritdoc IShapes
     bool public positionResolverLocked;
@@ -197,6 +225,10 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         feeRecipient = feeRecipient_;
         renderer = renderer_;
         collection = collection_;
+        tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
+        tokenDescription = DEFAULT_DESCRIPTION;
+        collectionName = DEFAULT_COLLECTION_NAME;
+        collectionDescription = DEFAULT_DESCRIPTION;
 
         // The first holder does not accept the title; it is conferred. Deployment is the point
         // from which `titleSince` counts.
@@ -228,6 +260,82 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         if (rendererLocked) revert RendererIsLocked();
         rendererLocked = true;
         emit RendererLocked();
+    }
+
+    /// @dev Longest a name or name prefix may be, in bytes.
+    uint256 private constant MAX_NAME_BYTES = 64;
+    /// @dev Longest a description may be, in bytes.
+    uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
+
+    /// @inheritdoc IShapes
+    /// @dev Owner only. Both arguments are validated (`_requireJsonSafe`) so copy cannot break or
+    ///      restructure the metadata JSON. Not gated by `rendererLocked`.
+    function setTokenCopy(string calldata namePrefix, string calldata description) external onlyOwner {
+        _requireJsonSafe(namePrefix, MAX_NAME_BYTES, 0);
+        _requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
+        tokenNamePrefix = namePrefix;
+        tokenDescription = description;
+        emit TokenCopyUpdated(namePrefix, description);
+        // The copy appears in every token's metadata; ERC-4906 signals the refresh.
+        if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Owner only. Same validation as `setTokenCopy`. Not gated by `rendererLocked`.
+    function setCollectionCopy(string calldata name, string calldata description) external onlyOwner {
+        _requireJsonSafe(name, MAX_NAME_BYTES, 0);
+        _requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
+        collectionName = name;
+        collectionDescription = description;
+        emit CollectionCopyUpdated(name, description);
+        emit ContractURIUpdated();
+    }
+
+    /// @dev The copy is written verbatim into the metadata JSON, so it must be a length-bounded
+    ///      run of well-formed UTF-8 that carries none of the bytes JSON forbids unescaped. In the
+    ///      ASCII range that means no `"` (0x22), no `\` (0x5C) and no C0 control (below 0x20); RFC
+    ///      8259's `unescaped` production is exactly the rest. Above ASCII this is a full RFC 3629
+    ///      walk: it rejects lone continuation bytes, overlong encodings, the UTF-16 surrogate
+    ///      range, code points above U+10FFFF and truncated sequences. The result is copy that no
+    ///      conformant JSON consumer can reject, not merely copy that cannot break the grammar.
+    ///      `field` distinguishes the two arguments in the revert (0 name/prefix, 1 description).
+    function _requireJsonSafe(string calldata s, uint256 maxBytes, uint8 field) private pure {
+        bytes calldata b = bytes(s);
+        if (b.length > maxBytes) revert InvalidCopy(field);
+        uint256 i;
+        while (i < b.length) {
+            uint8 c = uint8(b[i]);
+            if (c < 0x80) {
+                if (c == 0x22 || c == 0x5C || c < 0x20) revert InvalidCopy(field);
+                i += 1;
+            } else if (c < 0xC2) {
+                revert InvalidCopy(field); // lone continuation byte, or an overlong C0/C1 lead
+            } else if (c < 0xE0) {
+                _requireCont(b, i + 1, 0x80, 0xBF, field);
+                i += 2;
+            } else if (c < 0xF0) {
+                // E0 bars an overlong three-byte form; ED bars the surrogate range U+D800..U+DFFF.
+                _requireCont(b, i + 1, c == 0xE0 ? 0xA0 : 0x80, c == 0xED ? 0x9F : 0xBF, field);
+                _requireCont(b, i + 2, 0x80, 0xBF, field);
+                i += 3;
+            } else if (c < 0xF5) {
+                // F0 bars an overlong four-byte form; F4 caps the range at U+10FFFF.
+                _requireCont(b, i + 1, c == 0xF0 ? 0x90 : 0x80, c == 0xF4 ? 0x8F : 0xBF, field);
+                _requireCont(b, i + 2, 0x80, 0xBF, field);
+                _requireCont(b, i + 3, 0x80, 0xBF, field);
+                i += 4;
+            } else {
+                revert InvalidCopy(field); // lead byte encodes a code point above U+10FFFF
+            }
+        }
+    }
+
+    /// @dev One UTF-8 continuation byte at `idx`, required present and within `[lo, hi]`. The lead
+    ///      byte narrows `lo`/`hi` on the first continuation to exclude overlongs and surrogates.
+    function _requireCont(bytes calldata b, uint256 idx, uint8 lo, uint8 hi, uint8 field) private pure {
+        if (idx >= b.length) revert InvalidCopy(field);
+        uint8 c = uint8(b[idx]);
+        if (c < lo || c > hi) revert InvalidCopy(field);
     }
 
     /// @inheritdoc IShapes
@@ -355,10 +463,12 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         // One entropy root per batch; each token's seed derives from it and its own id, so every
         // token in a batch gets a distinct seed.
         //
-        // No caller-controlled value feeds this root, which would otherwise let a minter
-        // enumerate candidates off chain until the artwork suited them. The residual is grinding
-        // through a contract that reverts on an unwanted outcome: one attempt per block, gas per
-        // attempt (SPEC.md D3e).
+        // No minter or recipient identity feeds this root, so the seed cannot be enumerated by
+        // varying the recipient. It is still selectable: `firstTokenId` is `totalMinted`, which a
+        // minter can advance within one transaction by minting and redeeming dust (backing returns,
+        // only the fee is spent), so the mint ordinal is a free knob and traits are grindable at
+        // roughly the mint fee per candidate. The seed has no economic effect: redemption value is
+        // fixed by denomination. Trait scarcity is best-effort, not enforced (SPEC.md D3e).
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
@@ -899,10 +1009,19 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     }
 
     /// @inheritdoc IShapes
+    /// @dev The resolver is untrusted. The call is capped at `RESOLVER_GAS` and any revert or
+    ///      out-of-gas is swallowed to `address(0)`, so a hostile resolver can neither drain the
+    ///      caller's gas nor make `positionOf` revert. Its only power is to return a wrong address.
     function positionOf(uint256 tokenId) external view returns (address) {
         address resolver_ = positionResolver;
         if (resolver_ == address(0)) return address(0);
-        return IShapePositionResolver(resolver_).positionOf(tokenId);
+        try IShapePositionResolver(resolver_).positionOf{gas: RESOLVER_GAS}(tokenId) returns (
+            address position
+        ) {
+            return position;
+        } catch {
+            return address(0);
+        }
     }
 
     /// @inheritdoc IShapes
@@ -1093,7 +1212,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
 
     /// @inheritdoc IShapes
     function contractURI() external view returns (string memory) {
-        return IShapeCollection(collection).contractURI();
+        return IShapeCollection(collection).contractURI(collectionName, collectionDescription);
     }
 
     /// @inheritdoc IShapes
@@ -1115,7 +1234,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
                 d.originCount,
                 d.isBlack,
                 d.inkGene,
-                _composeStack[tokenId].length
+                _composeStack[tokenId].length,
+                tokenNamePrefix,
+                tokenDescription
             );
     }
 

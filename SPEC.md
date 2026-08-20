@@ -190,27 +190,35 @@ keccak256(abi.encodePacked(
 ))
 ```
 
-with `seed_i = keccak256(batchRoot, tokenId)`. Nothing caller-controlled appears.
+with `seed_i = keccak256(batchRoot, tokenId)`. No minter or recipient identity enters the root,
+which closes the original free off-chain enumeration of recipient addresses. What does enter is
+`firstTokenId` (the batch's first id, equal to `totalMinted` at mint) and, per token, `tokenId` —
+both values a minter can advance at will. They do not prevent trait selection; see the residual.
 
 This is the same construction Art Blocks uses for its own token hashes — its
 `PseudorandomAtomic` primitive is
 `keccak256(entropy, block.number, blockhash(block.number-1), timestamp, (timestamp % 200) + 1)`
-— pseudorandom, atomic at mint, block-derived, no VRF, and likewise free of minter-controlled
-inputs.
+— pseudorandom, atomic at mint, block-derived, no VRF.
 
-**The residual, stated plainly:** a minter can still grind by minting through a contract that
-reverts unless the outcome suits them. That costs gas per attempt and yields one attempt per
-block, so the ~3.5% trait above goes from 85 free tries to roughly 28 paid ones. Art Blocks
-has the same residual and has addressed it at the minter layer rather than in the randomizer.
-Shapes accepts it, because the seed has no economic effect: redemption value is set by
-denomination alone, and every Shape of a given denomination redeems for exactly the same ETH
-no matter what it looks like.
+**The residual, stated plainly:** trait selection is not prevented, only priced, and the price is
+low. `firstTokenId` is `totalMinted`, and a minter can advance `totalMinted` permanently inside a
+single transaction by minting throwaway dust Shapes and redeeming them in the same call: the
+backing returns in full, only the mint fee is spent. Every other root input is fixed within a
+block, so the mint ordinal is the free knob — a minter enumerates candidate ordinals on chain and
+mints the real token at the one whose seed suits them. Hundreds of candidates fit in one block, so
+the ~3.5% trait above costs on the order of the mint fee times a few dozen dust mints, in one
+transaction — not one attempt per block. At `feeBps == 0` only gas is spent. This applies to every
+seed-derived property: geometry, rotation, fill, module sequence and the ink gene, at every
+denomination.
 
-A commit-reveal seed was considered and rejected. The clean form — deriving the seed lazily
-from a future `blockhash` — degrades after 256 blocks, so it requires a mandatory second
-transaction within ~51 minutes and a token that is not fully formed at mint. That is a large
-amount of machinery for a primitive whose §26 mandate is to stay extremely narrow, bought
-against a property the reference implementation in this space does not have either.
+Shapes accepts this, because the seed has no economic effect: redemption value is set by
+denomination alone, and every Shape of a given denomination redeems for exactly the same ETH no
+matter what it looks like. Trait scarcity is best-effort, not enforced.
+
+A commit-reveal seed — deriving the seed lazily from a future `blockhash` — would close the
+residual, at the cost of a mandatory second transaction within the 256-block `blockhash` window
+and a token that is not fully formed at mint. It was considered and not built: the property it
+protects is cosmetic, and §26 mandates the primitive stay extremely narrow.
 
 **Split child seeds are deterministic, not block-derived.** A `split` mints its outputs
 with `childSeed_i = keccak256(abi.encodePacked(parentSeed, i))`, where `i` is the output index.
@@ -372,9 +380,12 @@ bands the seven-state ink gene to `Mythic` (Void/Solid), `Rare` (Faint/Rich) or 
 last argument to `metadataJSON`/`tokenURI`; the other three derive from the card the renderer already
 builds. The renderer stays byte-parity with the canonical TypeScript renderer. See TRAIT_SPEC.md.
 
-Every string in both the SVG and the JSON comes from a fixed table or from
-`fmt`. No caller-controlled text reaches either document, so there is no
-injection surface to escape against.
+Every string in the SVG, and every string in the JSON other than the `name` prefix and
+`description`, comes from a fixed table or from `fmt`. Those two are owner-set copy, stored on
+`Shapes` and passed into `metadataJSON`. They are written verbatim, but `Shapes.setTokenCopy`
+and `setCollectionCopy` reject any value containing `"`, `\`, or a C0 control byte, and cap their
+length, so owner copy cannot break or restructure the document. No other caller-controlled text
+reaches either document.
 
 ### D13. Sizing: the painted extent is the controlled quantity
 
@@ -582,12 +593,17 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
   flat radial ends lie on the footprint edges.
 
-- **Two value-inert admin pointers, no economic admin.** `Ownable` is inherited and
-  transferable. The owner can replace and permanently lock the renderer, and can set,
-  replace, clear and permanently lock the optional position resolver — including locking
-  it forever at zero. The renderer is read only by `tokenURI`; the resolver is read only by
-  `positionOf`. Neither reaches ETH, backing, redemption or token ownership. There is no
-  pause, upgrade path, proxy or administrative reserve path. The owner may renounce at any time.
+- **Value-inert admin only, no economic admin.** `Ownable` is inherited and transferable.
+  The owner can replace and permanently lock the renderer and collection metadata contracts,
+  can set, replace, clear and permanently lock the optional position resolver — including
+  locking it forever at zero — and can edit the metadata copy (token name prefix and
+  description, collection name and description) via `setTokenCopy`/`setCollectionCopy`. The
+  renderer and collection are read only by `tokenURI`/`contractURI`; the resolver only by
+  `positionOf`; the copy only by those metadata views, and it is validated on set so it cannot
+  break the JSON. None reach ETH, backing, redemption or token ownership. The copy is
+  deliberately not covered by the renderer lock; it stays editable until ownership is renounced.
+  There is no pause, upgrade path, proxy or administrative reserve path. The owner may renounce
+  at any time.
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.

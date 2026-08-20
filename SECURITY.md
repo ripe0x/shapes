@@ -12,6 +12,21 @@ counterparties.
 
 ---
 
+## Assets sent to the auction house unasked
+
+`ShapeAuctionHouse` refuses ERC721s that arrive through `safeTransferFrom`: `onERC721Received`
+returns the magic value only for a Shape, only while the house's own bid path is minting, and only
+when `from` is the zero address, so only a mint can land. A plain `transferFrom` calls no receiver
+hook and cannot be refused by any contract, so a Shape can still be pushed into the house by its
+owner. It is then held with no escrow entry naming it and no function that releases it.
+
+This is accepted, not fixed. The alternatives are worse: teaching `Shapes` about the house couples
+the token to a contract it otherwise knows nothing about, and a recovery function is an
+administrative path into a contract holding other people's redeemable cards, which is the one
+thing this house does not have. The loss is confined to whoever pushed the token, is entirely
+self-inflicted, and mirrors how the reserve invariant already treats ETH forced in by paths that
+bypass `receive`: stated as an inequality and left permanently inaccessible.
+
 ## The threat model
 
 Shapes holds user ETH and has no administrator with any power over the reserve. The transferable
@@ -44,7 +59,7 @@ that snapshots state, redeems *every* live Shape in turn, and asserts each pays 
 
 ## Findings and what was done
 
-### 1. Seed grinding — fixed
+### 1. Seed grinding — identity enumeration fixed, ordinal grinding accepted
 
 *Confirmed.* The original entropy root included `msg.sender`, the recipient and the quantity.
 Every other input is knowable before the transaction is sent, so a minter could enumerate
@@ -52,29 +67,32 @@ candidate recipients off chain, at zero cost, until the artwork suited them. The
 selected a specific 100 ETH composition (solid triangle, 270°, p ≈ 3.5%) in **85 free tries**.
 At 50 and 100 ETH a card is one or two modules, so trait selection was effectively total.
 
-**Fix:** all caller-controlled inputs removed from the root. The seed now derives only from
+**Fix (partial):** all *identity* inputs removed from the root. The seed now derives only from
 `prevrandao`, the prior blockhash, block number, timestamp, chain id, the contract address and
-the token id — matching the construction Art Blocks uses for its own token hashes. Regression
-tests `test_SeedIsIndependentOfMinterAndRecipient`, `test_SeedIsIndependentOfQuantity` and
-`test_EnumeratingRecipientsCannotChangeTheArtwork` (64 recipients, identical output) pin this.
+the token id. Regression tests `test_SeedIsIndependentOfMinterAndRecipient`,
+`test_SeedIsIndependentOfQuantity` and `test_EnumeratingRecipientsCannotChangeTheArtwork` (64
+recipients, identical output) pin that the recipient no longer moves the seed.
 
-**Accepted residual:** grinding by minting through a contract that reverts unless the outcome
-suits the minter. One attempt per block, gas per attempt. Art Blocks has the same residual.
-See SPEC.md D3e for why commit-reveal was rejected.
+**Residual — grinding is not one-attempt-per-block; it is one transaction.** The root folds
+`firstTokenId`, which equals `totalMinted`, and a minter can advance `totalMinted` permanently
+inside a single transaction by minting throwaway dust Shapes and redeeming them in the same call:
+the backing returns in full, only the mint fee is spent. Since every other root input is fixed
+within a block, the mint ordinal is a free knob, and hundreds of candidates fit in one block. The
+per-token seed also keys on `tokenId`, the same purchasable value. So the ~3.5% trait above is
+reachable in one transaction at roughly the mint fee times a few dozen dust mints; at `feeBps == 0`
+only gas is spent. This is accepted, not mitigated: the seed has no economic effect — redemption
+value is fixed by denomination, and every Shape of a denomination redeems for the same ETH
+regardless of appearance. Trait scarcity is best-effort, not enforced. Commit-reveal would close
+it (SPEC.md D3e) and is deliberately not built.
 
-**Ink Genes (SPEC.md D17) inherit this residual unchanged, with one asymmetry worth stating
-explicitly.** The gene is drawn from the same per-mint seed at mint time only (`InkGenes.
-geneAtMint`), so it is grindable exactly the way artwork traits are: one attempt per block,
-gas per attempt, no new attack surface. The asymmetry is in *reachability*, not in the grind
-itself — the four extreme genes (`Void`, `Faint`, `Rich`, `Solid`) are only ever drawn on a
-dust (0.01 ETH) mint; every other denomination draws exclusively from the narrow `{Sparse,
-Murk, Dense}` band (SPEC.md D17). A grinder chasing an extreme gene therefore must grind dust
-mints specifically — cheap per attempt, same one-attempt-per-block ceiling, no larger residual
-than the pre-existing artwork-trait grind. Composing, decomposing and restoring a Shape never
-consume fresh randomness for the gene (entropy-at-mint-only, D17), so none of those paths reopen
-grinding once a token exists. An epoch-batched commit-reveal scheme would close the residual
-across all traits, ink included; it remains deferred for the same reasons D3e gives for
-artwork.
+**Ink Genes (SPEC.md D17) inherit this residual unchanged.** The gene is drawn from the same
+per-mint seed at mint time only (`InkGenes.geneAtMint`), so it is grindable exactly the way
+artwork traits are, at the same one-transaction cost. The four extreme genes (`Void`, `Faint`,
+`Rich`, `Solid`) are only ever drawn on a dust (0.01 ETH) mint; every other denomination draws
+exclusively from the narrow `{Sparse, Murk, Dense}` band, so a grinder chasing an extreme gene
+grinds dust mints — the cheapest possible per candidate. Composing, decomposing and restoring a
+Shape never consume fresh randomness for the gene (entropy-at-mint-only, D17), so none of those
+paths reopen grinding once a token exists.
 
 ### 2. Renderer address never checked for code — fixed
 
@@ -150,10 +168,10 @@ An independent AI auditor ran the refreshed `AUDIT_PROMPT_v2.md` against `main`.
 was found; no path removes ETH without the corresponding burn, forges origins, forges Complete, or
 bypasses Black terminality. Three low findings were fixed and pinned with regression tests:
 
-- **`simulateDecompose` reported success for a Black Shape** while `decompose` reverts `TokenIsBlack`.
+- **The split preview reported success for a Black Shape** while the split itself reverts `TokenIsBlack`. The preview is now `previewSplit`, which carries the same guard.
   The preview now rejects Black tokens too (`test_SimulateDecomposeRejectsBlackToMatchDecompose`).
 - **`setRenderer` changed every token's metadata without an ERC-4906 signal.** It now emits
-  `BatchMetadataUpdate(1, totalMinted)` so marketplaces refresh
+  `BatchMetadataUpdate(0, totalMinted - 1)` (ids start at 0) so marketplaces refresh
   (`test_SetRendererEmitsBatchMetadataUpdate`).
 - **`redeemTo`/`redeemBatchTo` to `address(0)` burned the payout.** They now revert
   `InvalidRecipient` (`test_RedeemToRejectsZeroRecipient`). `decomposeTo`/`splitTo` to the zero
@@ -183,7 +201,7 @@ sizes stay uncapped (self-inflicted, per finding #7).
 | Forced ETH | Surplus from `selfdestruct`, coinbase or pre-deploy funding leaves `redeemableBacking` untouched, cannot be extracted, and cannot corrupt accounting — no function reads `address(this).balance`. |
 | DoS against the reserve | An owner that rejects ETH causes `_payRedemption` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
 | Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is owner-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only — never backing, redemption or ownership — and after locking it is fixed forever. |
-| Position resolver | The resolver starts at zero, may be replaced or cleared by the owner, and may be locked forever at any time including while zero. Its returned address is opaque and unvalidated. It may lie or revert, and its own code may be mutable; those failures affect only `positionOf`. Historical and nonexistent IDs are deliberately delegated without an existence check. |
+| Position resolver | The resolver starts at zero, may be replaced or cleared by the owner, and may be locked forever at any time including while zero. Its returned address is opaque and unvalidated. `positionOf` forwards a fixed gas cap and swallows any revert or out-of-gas to `address(0)`, so a hostile resolver can neither drain the caller nor make `positionOf` revert; its only power is to return a wrong address. Historical and nonexistent IDs are deliberately delegated without an existence check. |
 
 ---
 
@@ -194,19 +212,27 @@ sizes stay uncapped (self-inflicted, per finding #7).
 2. **The mint fee is immutable.** It is `feeBps` basis points of backing (default 100 = 1%). The
    deploy script's sanity ceiling is 1000 bps (10%); overriding it requires an explicit
    environment variable.
-3. **The owner can replace the renderer until it is locked.** This is a cosmetic power — the
-   renderer is `view`-only and cannot touch ETH, backing, redemption or ownership — but a
-   compromised owner could point `tokenURI` at a renderer producing misleading or offensive
-   metadata until `lockRenderer` is called. Hold ownership in a multisig, and lock the renderer
-   once the artwork is settled. Locking is one-way and permanent.
+3. **The owner can replace the renderer until it is locked, and can edit the metadata copy at any
+   time.** Both are cosmetic powers — the renderer is `view`-only and the copy is read only by
+   metadata views; neither can touch ETH, backing, redemption or ownership. A compromised owner
+   could point `tokenURI` at a renderer producing misleading or offensive metadata until
+   `lockRenderer` is called, and could set an offensive or misleading name/description via
+   `setTokenCopy`/`setCollectionCopy`. Copy is validated on set — a `"`, `\`, C0 control byte, or
+   over-length value reverts — so it cannot break or restructure the metadata JSON, but it is not
+   HTML-escaped: a marketplace that renders `description` as HTML will display owner-supplied
+   markup. Copy is deliberately never frozen: `lockRenderer` freezes the renderer and collection
+   pointers, not the copy, which stays editable while the owner holds the contract. Hold ownership
+   in a multisig; renounce to freeze copy permanently at its last value.
 4. **The owner can designate the canonical position resolver until it is locked.** The pointer
    can be replaced or cleared before locking, and can be permanently locked at zero. A configured
    resolver is a trust root for position discovery and may itself be upgradeable or malicious, but
    it has no authority over Shapes. Transfer ownership to the intended multisig before configuration.
 5. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
    ERC-165 ID match the current proposal, but an immutable deployment cannot follow later changes.
-6. **Artwork traits are grindable at one attempt per block.** If trait rarity is intended to
-   carry economic weight, this design is not sufficient — but for Shapes it does not, because
-   redemption value is set by denomination alone.
+6. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
+   mint ordinal (`totalMinted`) by minting and redeeming dust in the same call, so the seed is
+   grindable at roughly the mint fee per candidate, hundreds per block — not one attempt per block
+   (§1). If trait rarity is intended to carry economic weight, this design is not sufficient — but
+   for Shapes it does not, because redemption value is set by denomination alone.
 7. **This review is not a substitute for a professional audit** before mainnet deployment with
    real value at risk.

@@ -27,12 +27,14 @@ import {Denominations} from "./lib/Denominations.sol";
 ///
 ///      The house takes no fee and has no owner, no pause, and no path that reaches an escrowed
 ///      card other than its depositor pulling it back or the seller claiming a settled win. A
+///      Shape pushed here by a plain `transferFrom`, which calls no receiver hook and so cannot be
+///      refused, is held with no escrow entry and no way out. That is accepted: a recovery
+///      function would be an administrative path into everyone else's escrow. A
 ///      percentage fee is not merely declined but unrepresentable: a bid is a set of indivisible
 ///      cards and a percentage of a lattice amount need not land on the lattice.
 contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGuard {
     struct Auction {
         address seller;
-        address nft;
         uint256 tokenId;
         uint64 endTime;
         uint64 duration;
@@ -48,6 +50,9 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     uint256 public constant MAX_CARDS_PER_BID = 64;
 
     /// @inheritdoc IShapeAuctionHouse
+    uint64 public constant MAX_DURATION = 30 days;
+
+    /// @inheritdoc IShapeAuctionHouse
     address public immutable shapes;
 
     /// @inheritdoc IShapeAuctionHouse
@@ -57,9 +62,10 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     mapping(uint256 auctionId => mapping(address bidder => uint256[])) private _escrow;
     mapping(uint256 auctionId => mapping(address bidder => uint64)) private _units;
 
-    /// @dev Set only while `bid` is minting, and read only by `onERC721Received`. Anything else
-    ///      sending the house an ERC721 through the safe path is refused, so a token cannot be
-    ///      stranded here with no record of who owns it.
+    /// @dev Set only across the individual mint call inside `bid`, and read only by
+    ///      `onERC721Received`, which accepts a mint to the house (`from == address(0)`) and
+    ///      nothing else. An inbound `safeTransferFrom` is refused even during the window, so a
+    ///      token cannot be stranded here with no record of who owns it.
     bool private _minting;
 
     constructor(address shapes_) {
@@ -72,20 +78,26 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /// @inheritdoc IShapeAuctionHouse
     /// @dev The token is escrowed with `transferFrom` rather than `safeTransferFrom`, so the
     ///      house takes no receiver callback for it and the sale is deliverable from this point.
+    ///
+    ///      The lot is always a Shape. The house cannot tell a well-behaved ERC721 from one whose
+    ///      `transferFrom` returns without moving anything, and a lot that only pretends to move
+    ///      would let a seller collect a real winning bid for nothing. `Shapes` is the one
+    ///      contract this house can vouch for, so it is the only one it will sell.
     function createAuction(
-        address nft,
         uint256 tokenId,
         uint64 duration,
         uint64 reserveUnits,
         uint16 minIncrementBps,
         uint32 extensionWindow
     ) external nonReentrant returns (uint256 auctionId) {
-        if (duration == 0) revert InvalidAuction();
+        // Bound the clock. An unbounded duration would hold every bidder's escrow for as long as
+        // the seller chose; extensionWindow may not exceed the duration it extends.
+        if (duration == 0 || duration > MAX_DURATION) revert DurationOutOfRange();
+        if (extensionWindow > duration) revert ExtensionWindowTooLong();
 
         auctionId = auctionCount++;
         _auctions[auctionId] = Auction({
             seller: msg.sender,
-            nft: nft,
             tokenId: tokenId,
             endTime: 0, // set by the first bid
             duration: duration,
@@ -97,8 +109,12 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
             settled: false
         });
 
-        emit AuctionCreated(auctionId, msg.sender, nft, tokenId, duration, reserveUnits);
-        IERC721(nft).transferFrom(msg.sender, address(this), tokenId);
+        emit AuctionCreated(auctionId, msg.sender, shapes, tokenId, duration, reserveUnits);
+        IERC721(shapes).transferFrom(msg.sender, address(this), tokenId);
+        // Confirm the house holds the lot before the auction is live. Redundant for a Shape, whose
+        // transferFrom either moves the token or reverts, and the guarantee the rest of the
+        // contract relies on: a settled auction can always deliver.
+        if (IERC721(shapes).ownerOf(tokenId) != address(this)) revert LotNotReceived();
     }
 
     /// @inheritdoc IShapeAuctionHouse
@@ -110,7 +126,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
 
         a.settled = true;
         emit AuctionCancelled(auctionId);
-        IERC721(a.nft).transferFrom(address(this), a.seller, a.tokenId);
+        IERC721(shapes).transferFrom(address(this), a.seller, a.tokenId);
     }
 
     /* ----------------------------- bidding ---------------------------- */
@@ -122,6 +138,10 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         nonReentrant
     {
         Auction storage a = _requireAuction(auctionId);
+        // The seller cannot bid its own lot. A seller bidding sets a floor with cards it withdraws
+        // intact once a real bidder clears it, at no net cost. A second address defeats this, but
+        // the free, on-chain-obvious form is closed.
+        if (msg.sender == a.seller) revert SellerCannotBid();
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
         if (cardIds.length == 0 && ethBackingWei == 0) revert EmptyBid();
@@ -190,21 +210,23 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
             revert TooManyCards(held.length + _total(counts));
         }
 
-        _minting = true;
         for (uint256 d = 0; d < Denominations.COUNT; ++d) {
             uint256 count = counts[d];
             if (count == 0) continue;
 
             uint256 amount = Denominations.amountAt(d);
             uint256 cost = (amount + IShapes(shapes).mintFeeFor(amount)) * count;
+            // The window is open only across the mint call that fills it, not across the whole
+            // loop, so nothing between two calls can slip a token in under the flag.
+            _minting = true;
             // Take the ids the mint reports rather than predicting them from the counter: a batch
             // is contiguous from its return value, which is the guarantee actually offered.
             uint256 firstId = IShapes(shapes).mintBatchTo{value: cost}(amount, count, address(this));
+            _minting = false;
             for (uint256 i = 0; i < count; ++i) {
                 held.push(firstId + i);
             }
         }
-        _minting = false;
 
         emit BidCardsMinted(auctionId, msg.sender, backingWei);
         return backingWei;
@@ -222,7 +244,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         address winner = a.highestBidder;
 
         emit AuctionSettled(auctionId, winner, a.highestUnits);
-        IERC721(a.nft).transferFrom(address(this), winner, a.tokenId);
+        IERC721(shapes).transferFrom(address(this), winner, a.tokenId);
     }
 
     /// @inheritdoc IShapeAuctionHouse
@@ -267,11 +289,14 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /* ----------------------------- receipt ---------------------------- */
 
     /// @inheritdoc IERC721Receiver
-    /// @dev Accepts Shapes only while `bid` is minting them. Bidding by sending a card here
-    ///      directly is unsupported on purpose: a bid must be one transaction, so that what it
-    ///      totals is compared against the standing bid exactly once.
+    /// @dev Accepts a Shape only when it is minted to the house (`from == address(0)`) while `bid`
+    ///      is minting one. An inbound `safeTransferFrom` carries a nonzero `from` and is refused:
+    ///      bidding by sending a card here directly is unsupported on purpose, since a bid must be
+    ///      one transaction, so that what it totals is compared against the standing bid exactly
+    ///      once. A contract fee recipient that gains control inside the mint cannot push its own
+    ///      Shape in through this path.
     function onERC721Received(address, address from, uint256, bytes calldata) external view returns (bytes4) {
-        if (msg.sender != shapes || !_minting) revert UnsolicitedToken(from);
+        if (msg.sender != shapes || !_minting || from != address(0)) revert UnsolicitedToken(from);
         return IERC721Receiver.onERC721Received.selector;
     }
 

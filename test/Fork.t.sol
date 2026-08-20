@@ -101,19 +101,26 @@ contract ForkTest is Test {
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
         DeployShapes deployer = new DeployShapes();
-        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h) = deployer.run();
+        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h, uint256 genesis) =
+            deployer.run();
 
         assertEq(s.feeBps(), 100, "default fee bps not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
         assertEq(s.renderer(), address(r), "renderer mismatch");
         assertEq(s.collection(), address(c), "collection mismatch");
         assertEq(h.shapes(), address(s), "auction house mismatch");
+        assertEq(genesis, 0, "genesis token is not id 0");
+        assertEq(s.ownerOf(0), address(deployer), "genesis token did not land with the deployer");
         assertEq(s.positionResolver(), address(0), "resolver should start empty");
         assertFalse(s.positionResolverLocked(), "resolver should start unlocked");
         assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");
         assertGt(address(r).code.length, 0, "renderer has no code");
         // Smoke the renderer through the interface the token uses; no mint needed.
-        assertGt(bytes(r.tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0, 0)).length, 500, "no metadata");
+        assertGt(
+            bytes(r.tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0, 0, "Shape ", "x")).length,
+            500,
+            "no metadata"
+        );
     }
 
     /// @notice Mint every denomination, prove solvency at each step, redeem it all back out.

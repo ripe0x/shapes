@@ -80,15 +80,13 @@ ponder.on("Shapes:Composed", async ({ event, context }) => {
   }
 });
 
-// tokenId is consumed; newIds[] are born from it, each seed derived from tokenId's seed and its
-// position. Modeled as parentId=tokenId "split into" each newId (kind "split"), since the split
-// direction runs the opposite way from compose's "consumed into" edges.
-ponder.on("Shapes:Decomposed", async ({ event, context }) => {
+// A split burns its input and mints fresh children, each seeded deterministically from the
+// parent. This is the one-way shatter; nothing reassembles it.
+ponder.on("Shapes:Split", async ({ event, context }) => {
   const { tokenId, parentSeed, newIds, outDenoms, originCounts } = event.args;
 
-  // Decomposed carries no recipient: it mints to msg.sender of the call,
-  // which has no argument of its own in either event. We take event.transaction.from as that
-  // recipient, which holds for a direct EOA call and is corrected by the Transfer handler below
+  // Split carries no recipient: it mints to msg.sender, which the event does not name. Taking
+  // event.transaction.from holds for a direct EOA call and is corrected by the Transfer handler
   // for any other case.
   const owner = event.transaction.from;
 
@@ -118,6 +116,45 @@ ponder.on("Shapes:Decomposed", async ({ event, context }) => {
       parentId: tokenId,
       kind: "split",
       childSeed: seed,
+      block: event.block.number,
+      txHash: event.transaction.hash,
+    });
+  }
+});
+
+// A decompose reverses the survivor's most recent compose. The survivor keeps its id and reverts
+// to the denomination and origin count it held before that merge, and every input that compose
+// burned is re-minted under its original id and seed. Those ids already exist as rows, so they
+// are revived rather than inserted; the per-input `ShapeRevived` events carry the ids.
+ponder.on("Shapes:Decomposed", async ({ event, context }) => {
+  const { survivorId, restoredIds, survivorDenomIndex, survivorOriginCount } = event.args;
+  const denomIndex = Number(survivorDenomIndex);
+
+  const owner = event.transaction.from;
+
+  await context.db.update(token, { id: survivorId }).set({
+    denomIndex,
+    backingWei: backingForDenomIndex(denomIndex),
+    originCount: Number(survivorOriginCount),
+  });
+
+  for (let i = 0; i < restoredIds.length; i++) {
+    const revivedId = restoredIds[i]!;
+    const prior = await context.db.find(token, { id: revivedId });
+    if (!prior) {
+      throw new Error(`Shapes indexer: Decomposed revived unknown token ${revivedId}`);
+    }
+
+    // The row still carries the seed, denomination and origins it was burned with, which is
+    // exactly what decompose writes back. Only liveness and ownership move.
+    await context.db.update(token, { id: revivedId }).set({ live: true, owner });
+
+    await context.db.insert(lineageEdge).values({
+      id: edgeId(event.transaction.hash, event.log.logIndex, i),
+      childId: revivedId,
+      parentId: survivorId,
+      kind: "revival",
+      childSeed: prior.seed,
       block: event.block.number,
       txHash: event.transaction.hash,
     });

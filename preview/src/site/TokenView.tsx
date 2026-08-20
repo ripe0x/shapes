@@ -224,7 +224,7 @@ export function TokenView({
         {back}
         <Section title="SHAPE">
           <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
-            Shape #{tokenId.toString()} is no longer live. It was redeemed or recomposed. Its
+            Shape {tokenId.toString()} is no longer live. It was redeemed or recomposed. Its
             history is below.
           </div>
         </Section>
@@ -295,7 +295,7 @@ export function TokenView({
 
       <Section title="SHAPE" pad="36px 48px 44px 32px">
         <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
-          <Art src={token.image} alt={`Shape #${token.id}`} width={340} />
+          <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
           <div style={{flex: "1 1 320px", minWidth: 0}}>
             <div style={{fontSize: 40, lineHeight: 1}}>{lbl} ETH</div>
             <p style={{margin: "20px 0 0", fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "48ch"}}>
@@ -340,7 +340,7 @@ export function TokenView({
             }}
           >
             <pre
-              aria-label={`Unicode card for Shape #${token.id.toString()}`}
+              aria-label={`Unicode card for Shape ${token.id.toString()}`}
               style={{
                 margin: 0,
                 color: C.ink,
@@ -386,7 +386,7 @@ export function TokenView({
                 readOnly
                 value={unicodeCard}
                 onFocus={(e) => e.currentTarget.select()}
-                aria-label={`Raw unicodeCard string for Shape #${token.id.toString()}`}
+                aria-label={`Raw unicodeCard string for Shape ${token.id.toString()}`}
                 style={{
                   display: "block",
                   marginTop: 12,

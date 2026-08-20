@@ -7,41 +7,49 @@ You are auditing Solidity that holds other people's ETH. Report findings; do not
 ```
 repository  github.com/ripe0x/shapes
 branch      main
-commit      185bd0f   (Merge pull request #21 from ripe0x/claude/token-zero-tests)
 ```
 
-Check it out at that commit and audit that tree. Do not audit `main` at HEAD if HEAD has moved;
-findings must be attributable to a fixed state. This brief itself lands after `185bd0f`, which
-changes nothing about the code under audit: it is the only difference, and it is documentation.
+Audit `main` at its tip, and **record the commit hash you used at the top of your report**. This
+brief no longer pins one: the repository moved under two previous audits and a pinned hash went
+stale faster than the brief could be updated. A finding still has to be attributable to a fixed
+tree, so the hash you record is what makes it so.
 
 ```bash
-git fetch origin
-git checkout 185bd0f
+git fetch origin && git checkout origin/main
+git rev-parse HEAD            # put this in your report
 forge build
-forge test                    # 295 pass, 0 fail, 4 skipped (fork tests, no RPC)
+forge test                    # expect 0 failures; 4 fork tests skip without an RPC
 FOUNDRY_PROFILE=ci forge test # deeper fuzz and invariant runs
+./script/check-docs.sh        # every selector named in the docs exists on the contract
 ```
 
 **`AUDIT_PROMPT_v2.md` remains in scope and is not superseded.** It covers the token core:
-recomposition, provenance, the Black state, ink genes. Read it first. This brief covers what
-changed after it was written, and states where its claims are now stale.
+recomposition, provenance, the Black state, ink genes. Read it first.
+
+**Two audits have already run against this layer.** Their findings are closed, and the closures
+are described below rather than left for you to rediscover. Where a closure removed a capability
+rather than guarded it, that is stated: those are the places to check the removal is actually
+total.
 
 ## What is new since the v2 brief
 
 Four things, in descending order of how much they can cost if wrong.
 
-1. **`src/ShapeAuctionHouse.sol`** (6,500 bytes). New contract. Escrows ERC721 lots and Shape
-   cards, and is the only contract here that holds assets belonging to people other than its
-   caller. Nothing in the repo has audited it.
+1. **`src/ShapeAuctionHouse.sol`**. Escrows a Shape as the lot plus Shape cards as bids, and is
+   the only contract here holding assets belonging to people other than its caller.
 2. **The id allocator changed.** Token ids now issue from 0 rather than 1, and `totalMinted` is a
    count rather than the highest id. This interacts with `decompose`, which re-mints
    already-issued ids.
-3. **`src/ShapeCollection.sol`** (4,366 bytes). New contract. Contract-level metadata and seeded
-   card previews. Reads `block.prevrandao`, so it is the one piece of presentation that is not a
-   pure function.
+3. **`src/ShapeCollection.sol`**. Contract-level metadata and seeded card previews. Reads
+   `block.prevrandao`, so it is the one piece of presentation that is not a pure function.
 4. **`mint` split into `mint`/`mintTo` and `mintBatch`/`mintBatchTo`**, and **`restore` was
    removed** along with the `_splitRecords` mapping and four `Restore*` errors. A split is now
    final.
+5. **Owner-editable metadata copy**, with validation on set. New authority on a previously
+   copy-free contract, and a JSON-injection channel that had to be closed.
+6. **A contract title**: `titleHolder`, `titleSince`, `transferTitle`. One holder, no authority
+   beyond passing it on, independent of `owner()`. Read by nothing else.
+7. **Token 0 is minted by the deploy script**, in the same broadcast as deployment.
 
 ## Where the v2 brief is now stale
 
@@ -82,8 +90,24 @@ token win an auction.
 
 ### The auction house
 
-This is where I would spend most of the time. It holds redeemable cards and has had no review
-beyond my own.
+Still where I would spend most of the time. Two rounds have been through it, so the shallow
+findings are gone; what is left is whatever the closures did not fully cover.
+
+**Already found and closed — verify the closure, do not re-derive the finding:**
+
+- A seller-supplied ERC721 whose `transferFrom` returned without moving anything let the seller
+  collect a real winning bid for a lot that never changed hands. A second contract that permitted
+  the inbound transfer and reverted the outbound one stranded the leader's escrow with neither
+  settlement nor withdrawal reachable. **Closed by removing the `nft` parameter**: the lot is
+  always a Shape. Check the removal is total, that no path still reaches an arbitrary ERC721, and
+  that a Shape lot cannot itself be made to fail a transfer.
+- The mint fee is forwarded before minting, so a contract fee recipient ran code while the house's
+  `_minting` flag was set and could hand it an untracked card. **Closed by also requiring
+  `from == address(0)`.**
+- A Shape pushed in by a plain `transferFrom` is held with no escrow entry and no way out. **Not
+  closed. Accepted and documented** in `SECURITY.md`: the alternatives are coupling `Shapes` to
+  the house, or an administrative path into everyone else's escrow. Do not re-report it; do report
+  a way for it to affect anyone other than the sender.
 
 - **Escrow accounting.** `_takeCards`, `_mintCards` and `_release` are the whole of it. Can a
   bidder end up able to withdraw cards they did not deposit, or the seller claim cards that are
@@ -132,6 +156,25 @@ beyond my own.
 - It is reachable from `Shapes.contractURI`. Confirm a reverting or gas-exhausting collection
   cannot brick anything on the token beyond `contractURI` itself.
 
+### The metadata copy
+
+- Owner-editable strings land inside a JSON document served from `tokenURI` and `contractURI`.
+  Validation on set closed a JSON-injection channel and rejects malformed UTF-8. Try to get a
+  quote, a backslash, a control character or an invalid continuation byte through, or to make the
+  document parse as something other than intended.
+- Confirm the copy cannot affect backing, redemption, ownership or any id.
+
+### The contract title
+
+- `titleHolder` is read by exactly one function, `transferTitle`. Confirm nothing else gates on
+  it, in any contract.
+- Confirm a title transfer moves no ETH, calls nothing, and changes no token, accounting figure
+  or configuration, and that no core operation moves the title.
+- It is independent of `owner()` in both directions, including after renunciation. Confirm neither
+  role can reach the other.
+- It is a bearer instrument with no recovery, deliberately. Do not report the absence of recovery;
+  do report any way for someone other than the holder to move it.
+
 ### Cross-contract
 
 - `Shapes` has no knowledge of the house. Confirm that is actually true and that the house holds
@@ -179,7 +222,7 @@ Read the comments as claims to be falsified, not as documentation.
 
 ## Deliverable
 
-For each finding: severity, the exact file and line at commit `185bd0f`, a concrete failing
+For each finding: severity, the exact file and line at the commit you recorded, a concrete failing
 sequence with values rather than a description of a category, the invariant it breaks, and the
 smallest change that would close it.
 

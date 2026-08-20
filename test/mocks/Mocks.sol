@@ -26,6 +26,18 @@ contract MockPositionResolver is IShapePositionResolver {
     }
 }
 
+/// @notice A resolver that burns far more gas than `positionOf` forwards, to prove the call is
+///         capped and its failure swallowed rather than draining the caller.
+contract HostileGasResolver is IShapePositionResolver {
+    function positionOf(uint256) external pure returns (address) {
+        uint256 x;
+        for (uint256 i = 0; i < 1_000_000; ++i) {
+            x = uint256(keccak256(abi.encode(x, i)));
+        }
+        return address(uint160(x));
+    }
+}
+
 /// @notice Accepts ERC721 transfers and ETH. The well-behaved contract counterparty.
 contract GoodReceiver is IERC721Receiver {
     receive() external payable {}

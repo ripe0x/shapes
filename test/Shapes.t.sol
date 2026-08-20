@@ -25,7 +25,8 @@ import {
     ReentrantMinter,
     ReentrantRedeemer,
     RevertingFeeRecipient,
-    MockPositionResolver
+    MockPositionResolver,
+    HostileGasResolver
 } from "./mocks/Mocks.sol";
 
 abstract contract ShapesBase is Test {
@@ -1019,16 +1020,31 @@ contract PositionResolverTest is ShapesBase {
         assertEq(shapes.positionOf(7), alice);
     }
 
-    function test_ResolverFailurePropagatesForExistingAndNonexistentIds() public {
+    /// @notice A reverting resolver does not make `positionOf` revert; the failure is swallowed to
+    ///         `address(0)`, the same value an unset resolver returns.
+    function test_ResolverRevertIsSwallowedToZero() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
         shapes.setPositionResolver(address(resolver));
         uint256 id = _mint(alice, 1 ether);
 
-        vm.expectRevert(abi.encodeWithSelector(MockPositionResolver.ResolverQueryFailed.selector, id));
-        shapes.positionOf(id);
-        vm.expectRevert(abi.encodeWithSelector(MockPositionResolver.ResolverQueryFailed.selector, 999));
-        shapes.positionOf(999);
+        assertEq(shapes.positionOf(id), address(0), "existing id");
+        assertEq(shapes.positionOf(999), address(0), "nonexistent id");
+    }
+
+    /// @notice A resolver that burns unbounded gas cannot drain the caller: `positionOf` forwards a
+    ///         fixed cap and swallows the resulting out-of-gas to `address(0)`.
+    function test_HostileResolverGasIsBounded() public {
+        HostileGasResolver resolver = new HostileGasResolver();
+        shapes.setPositionResolver(address(resolver));
+
+        uint256 gasBefore = gasleft();
+        address position = shapes.positionOf(1);
+        uint256 used = gasBefore - gasleft();
+
+        assertEq(position, address(0), "hostile resolver swallowed to zero");
+        // The resolver alone would burn tens of millions; the capped call is a tiny fraction.
+        assertLt(used, 200_000, "forwarded gas is bounded");
     }
 
     function test_SettingAndQueryingResolverCannotChangeTokenOrReserveState() public {

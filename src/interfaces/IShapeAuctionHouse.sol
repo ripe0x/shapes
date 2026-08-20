@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 /// @title IShapeAuctionHouse
-/// @notice An English auction for any ERC721, with bids denominated in Shape cards.
+/// @notice An English auction for a Shape, with bids denominated in Shape cards.
 /// @dev A bid is a set of Shapes whose summed backing is the bid amount. Amounts are carried in
 ///      `UNIT` (0.01 ETH) multiples throughout, which is the finest granularity the denomination
 ///      ladder can express. Escrowed cards are never moved on an outbid; every payout is pulled.
@@ -42,9 +42,16 @@ interface IShapeAuctionHouse {
     error AuctionOver(uint256 auctionId);
     error AuctionStillRunning(uint256 auctionId);
     error AuctionAlreadySettled(uint256 auctionId);
-    /// @dev `createAuction` was given a zero duration, or `cancelAuction` was called once a bid
-    ///      had landed.
+    /// @dev `cancelAuction` was called by a non-seller, once a bid had landed, or after settlement.
     error InvalidAuction();
+    /// @dev `createAuction` duration was zero or above `MAX_DURATION`.
+    error DurationOutOfRange();
+    /// @dev `createAuction` extension window exceeded the duration.
+    error ExtensionWindowTooLong();
+    /// @dev `createAuction`'s transfer left the lot unheld by the house.
+    error LotNotReceived();
+    /// @dev The seller bid its own auction.
+    error SellerCannotBid();
     /// @dev A bid carried no cards and no ETH.
     error EmptyBid();
     /// @dev A card valued at zero: it does not exist, or it is Black and therefore unredeemable.
@@ -66,20 +73,33 @@ interface IShapeAuctionHouse {
     ///         than twenty for any amount below 100 ETH, so this is headroom, not a constraint.
     function MAX_CARDS_PER_BID() external view returns (uint256);
 
+    /// @notice The longest an auction may run. `createAuction` rejects a longer duration, and an
+    ///         `extensionWindow` larger than the duration.
+    function MAX_DURATION() external view returns (uint64);
+
     /// @notice The Shapes contract every bid is denominated in.
     function shapes() external view returns (address);
 
     /// @notice Number of auctions ever created. Ids are issued from 0.
     function auctionCount() external view returns (uint256);
 
-    /// @notice Escrow a token and open an auction on it. The clock starts at the first bid, so an
+    /// @notice Escrow a Shape and open an auction on it. The clock starts at the first bid, so an
     ///         auction cannot expire unsold because nobody was watching on day one.
-    /// @param duration Seconds the auction runs for once the first bid lands.
+    /// @dev The lot is always a Shape, never an arbitrary ERC721. A contract whose `transferFrom`
+    ///      returns without moving anything would let a seller take a real winning bid for a lot
+    ///      that never changed hands, and one that reverts only on the way out would strand the
+    ///      leader's escrow with no settlement and no withdrawal. The house cannot tell either
+    ///      apart from an honest implementation, so it sells only the collection it was built
+    ///      against.
+    ///
+    ///      A Black Shape (zero backing) is accepted as a lot. Its worth is assessed by bidders,
+    ///      unlike a bid's cards, which are valued at their backing and so reject a Black card.
+    /// @param duration Seconds the auction runs for once the first bid lands. At most `MAX_DURATION`.
     /// @param reserveUnits Smallest winning bid, in `UNIT` multiples.
     /// @param minIncrementBps How far a bid must clear the standing one, in basis points.
     /// @param extensionWindow A bid inside this many seconds of the end pushes the end out by it.
+    ///        At most `duration`.
     function createAuction(
-        address nft,
         uint256 tokenId,
         uint64 duration,
         uint64 reserveUnits,

@@ -57,7 +57,7 @@ export function GalleryView({
             onClick={() => onOpenToken(t.id)}
             style={{display: "block", textAlign: "left"}}
           >
-            <Art src={t.image} alt={`Shape #${t.id}`} />
+            <Art src={t.image} alt={`Shape ${t.id}`} />
             <div
               style={{
                 marginTop: 11,

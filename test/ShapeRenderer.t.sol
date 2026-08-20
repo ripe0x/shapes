@@ -2,10 +2,14 @@
 pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
+
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {FixedPoint} from "../src/lib/FixedPoint.sol";
 import {Round03Rand} from "../src/lib/Round03Rand.sol";
@@ -14,6 +18,12 @@ import {Base64Decode} from "./utils/Base64Decode.sol";
 
 contract RendererTestBase is Test {
     ShapeRenderer internal renderer;
+
+    /// @dev Canonical default metadata copy, passed to `metadataJSON`/`tokenURI` in tests.
+    string internal constant NAME_PREFIX = "Shape ";
+    string internal constant DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
 
     ShapeCollection internal collection;
     uint256[9] internal DENOMS = [
@@ -463,7 +473,9 @@ contract OutputTest is RendererTestBase {
     function test_EthLabelHasNoTrailingZeros() public view {
         string[9] memory expected = ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
         for (uint256 i = 0; i < 9; ++i) {
-            string memory json = renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0);
+            string memory json = renderer.metadataJSON(
+                bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            );
             assertEq(
                 vm.parseJsonString(json, ".attributes[0].value"),
                 string(abi.encodePacked(expected[i], " ETH")),
@@ -474,15 +486,18 @@ contract OutputTest is RendererTestBase {
 
     /// @notice The token number lives in the metadata name, not on the card.
     function test_TokenNumberIsInMetadataOnly() public view {
-        string memory json = renderer.metadataJSON(bytes32(uint256(1)), 1 ether, 123, 1, false, 0, 0);
-        assertEq(vm.parseJsonString(json, ".name"), "Shape #123");
+        string memory json = renderer.metadataJSON(
+            bytes32(uint256(1)), 1 ether, 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+        );
+        assertEq(vm.parseJsonString(json, ".name"), "Shape 123");
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), 1 ether, false, 0), "123"));
     }
 
     /// @notice tokenURI must decode to real JSON containing a real inline SVG.
     function testFuzz_TokenUriIsValidBase64Json(bytes32 seed, uint8 which, uint16 tokenId) public view {
         uint256 amount = DENOMS[which % 9];
-        string memory uri = renderer.tokenURI(seed, amount, tokenId, 1, false, _gene(seed), 0);
+        string memory uri =
+            renderer.tokenURI(seed, amount, tokenId, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION);
 
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "json data uri");
         string memory json = string(Base64Decode.decode(_after(uri, "data:application/json;base64,")));
@@ -490,7 +505,7 @@ contract OutputTest is RendererTestBase {
         // real JSON, parseable field by field
         assertEq(
             vm.parseJsonString(json, ".name"),
-            string(abi.encodePacked("Shape #", vm.toString(uint256(tokenId))))
+            string(abi.encodePacked("Shape ", vm.toString(uint256(tokenId))))
         );
         assertGt(bytes(vm.parseJsonString(json, ".description")).length, 40);
 
@@ -506,7 +521,8 @@ contract OutputTest is RendererTestBase {
     function testFuzz_AttributesDescribeTheSameToken(bytes32 seed, uint8 which) public view {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
-        string memory json = renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed), 0);
+        string memory json =
+            renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION);
 
         assertEq(vm.parseJsonString(json, ".attributes[0].trait_type"), "ETH Value");
         assertEq(
@@ -542,7 +558,8 @@ contract OutputTest is RendererTestBase {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
         uint8 gene = _gene(seed);
-        string memory json = renderer.metadataJSON(seed, amount, 1, 1, false, gene, composeDepth);
+        string memory json =
+            renderer.metadataJSON(seed, amount, 1, 1, false, gene, composeDepth, NAME_PREFIX, DESCRIPTION);
 
         assertEq(vm.parseJsonString(json, ".attributes[6].trait_type"), "Primitive");
         string memory primitive = vm.parseJsonString(json, ".attributes[6].value");
@@ -775,7 +792,10 @@ contract TokenMetadataTest is RendererTestBase {
         vm.prank(alice);
         uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
         bytes32 seed = shapes.seedOf(id);
-        assertEq(shapes.tokenURI(id), renderer.tokenURI(seed, 1 ether, id, 1, false, shapes.inkGeneOf(id), 0));
+        assertEq(
+            shapes.tokenURI(id),
+            renderer.tokenURI(seed, 1 ether, id, 1, false, shapes.inkGeneOf(id), 0, NAME_PREFIX, DESCRIPTION)
+        );
     }
 
     /// @dev Artwork is fixed at mint. Nothing about later chain state may change it.
@@ -792,4 +812,231 @@ contract TokenMetadataTest is RendererTestBase {
 
         assertEq(shapes.tokenURI(id), atMint, "artwork moved");
     }
+
+    /* ----------------------------- editable copy ----------------------------- */
+
+    function _decodeContract() internal view returns (string memory) {
+        return string(Base64Decode.decode(_after(shapes.contractURI(), "data:application/json;base64,")));
+    }
+
+    /// @notice The owner rewrites the per-token name prefix and description, and it shows in every
+    ///         token's metadata immediately.
+    function test_OwnerCanUpdateTokenCopy() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        string memory idStr = vm.toString(id);
+        assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat("Shape ", idStr), "default name");
+
+        shapes.setTokenCopy("Form ", "A reshaped description of the object.");
+
+        string memory j = _decodeJson(id);
+        assertEq(vm.parseJsonString(j, ".name"), string.concat("Form ", idStr), "name prefix updated");
+        assertEq(
+            vm.parseJsonString(j, ".description"),
+            "A reshaped description of the object.",
+            "description updated"
+        );
+        assertEq(shapes.tokenNamePrefix(), "Form ");
+        assertEq(shapes.tokenDescription(), "A reshaped description of the object.");
+    }
+
+    /// @notice The owner rewrites the collection name and description, and `contractURI` reflects it.
+    function test_OwnerCanUpdateCollectionCopy() public {
+        assertTrue(_contains(_decodeContract(), '"name":"Shapes"'), "default collection name");
+
+        shapes.setCollectionCopy("The Collection", "A rewritten collection description.");
+
+        string memory j = _decodeContract();
+        assertEq(vm.parseJsonString(j, ".name"), "The Collection", "collection name updated");
+        assertEq(
+            vm.parseJsonString(j, ".description"),
+            "A rewritten collection description.",
+            "collection desc updated"
+        );
+        assertEq(shapes.collectionName(), "The Collection");
+        assertEq(shapes.collectionDescription(), "A rewritten collection description.");
+    }
+
+    /// @notice Setting the token copy emits the editorial event and an ERC-4906 refresh over the
+    ///         whole supply so marketplaces re-read every token.
+    function test_TokenCopyUpdateEmitsRefresh() public {
+        vm.prank(alice);
+        shapes.mint{value: 1 ether + 0.01 ether}(1 ether); // totalMinted == 1
+
+        vm.expectEmit(true, true, true, true, address(shapes));
+        emit IShapes.TokenCopyUpdated("P ", "D");
+        vm.expectEmit(true, true, true, true, address(shapes));
+        emit BatchMetadataUpdate(0, 0);
+        shapes.setTokenCopy("P ", "D");
+    }
+
+    function test_CollectionCopyUpdateEmits() public {
+        vm.expectEmit(true, true, true, true, address(shapes));
+        emit IShapes.CollectionCopyUpdated("N", "D");
+        vm.expectEmit(true, true, true, true, address(shapes));
+        emit IShapes.ContractURIUpdated();
+        shapes.setCollectionCopy("N", "D");
+    }
+
+    /// @notice Copy is owner-gated. A non-owner cannot touch either the token or collection copy.
+    function test_NonOwnerCannotUpdateCopy() public {
+        vm.startPrank(alice);
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        shapes.setTokenCopy("x ", "y");
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        shapes.setCollectionCopy("x", "y");
+        vm.stopPrank();
+    }
+
+    /// @notice `lockRenderer` freezes the rendering contracts, not the editorial copy: the owner
+    ///         keeps editing copy afterwards.
+    function test_CopyStaysEditableAfterRendererLock() public {
+        shapes.lockRenderer();
+        shapes.setTokenCopy("Locked ", "Still editable copy after the presentation lock.");
+        assertEq(shapes.tokenNamePrefix(), "Locked ");
+    }
+
+    /// @notice Copy that would break or restructure the metadata JSON is rejected on set, so no
+    ///         edit — even after `lockRenderer` — can produce a malformed or forged document.
+    function test_CopyRejectsJsonBreakingBytes() public {
+        // A double quote closes the string early and lets the rest forge structure.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", 'x","image":"https://evil.example/a.png","attributes":[]}');
+
+        // Backslash (would start a JSON escape) and a C0 control byte are refused too.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setTokenCopy("Sh\\ape ", "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", "line\nbreak");
+
+        // Same enforcement on the collection setter.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setCollectionCopy('Bad"name', "ok");
+    }
+
+    /// @notice The length caps bound indexer cost and revert with the right field.
+    function test_CopyRejectsOverlongValues() public {
+        bytes memory longName = new bytes(65);
+        bytes memory longDesc = new bytes(2049);
+        for (uint256 i = 0; i < longName.length; ++i) {
+            longName[i] = "a";
+        }
+        for (uint256 i = 0; i < longDesc.length; ++i) {
+            longDesc[i] = "a";
+        }
+
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setTokenCopy(string(longName), "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", string(longDesc));
+
+        // At the caps exactly, it passes.
+        bytes memory maxName = new bytes(64);
+        bytes memory maxDesc = new bytes(2048);
+        for (uint256 i = 0; i < maxName.length; ++i) {
+            maxName[i] = "a";
+        }
+        for (uint256 i = 0; i < maxDesc.length; ++i) {
+            maxDesc[i] = "a";
+        }
+        shapes.setTokenCopy(string(maxName), string(maxDesc));
+        assertEq(bytes(shapes.tokenDescription()).length, 2048);
+
+        // The collection setter enforces the same caps.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setCollectionCopy(string(longName), "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setCollectionCopy("N", string(longDesc));
+        shapes.setCollectionCopy(string(maxName), string(maxDesc));
+        assertEq(bytes(shapes.collectionDescription()).length, 2048);
+    }
+
+    /// @notice Malformed UTF-8 is refused, so copy can never emit a byte sequence a strict
+    ///         (byte-level) JSON consumer would reject.
+    function test_CopyRejectsMalformedUtf8() public {
+        // Each is a distinct RFC 3629 violation; built from bytes since Solidity forbids invalid
+        // UTF-8 in string literals. field 1 unless the bad bytes are in the name argument.
+        _expectBadDesc(hex"61ff62"); // "a" 0xFF "b": invalid lead byte
+        _expectBadDesc(hex"c3"); // truncated two-byte sequence, no continuation
+        _expectBadDesc(hex"c0af"); // overlong encoding of "/"
+        _expectBadDesc(hex"eda080"); // UTF-16 surrogate half U+D800
+        _expectBadDesc(hex"f4908080"); // U+110000, one past the U+10FFFF ceiling
+
+        // Same rule on the name argument (field 0).
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setTokenCopy(string(bytes(hex"f5808080")), "ok"); // 0xF5 lead: above U+10FFFF
+    }
+
+    function _expectBadDesc(bytes memory bad) internal {
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", string(bad));
+    }
+
+    /// @notice Well-formed multi-byte UTF-8 is accepted and round-trips byte-exact through storage
+    ///         and back out of the parsed metadata. Guards against a future tightening to ASCII-only.
+    function test_CopyAcceptsValidUtf8() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+
+        string memory prefix = unicode"Formeß ";
+        string memory desc = unicode"Formes — «carrés» 形 🜂";
+        shapes.setTokenCopy(prefix, desc);
+
+        assertEq(shapes.tokenDescription(), desc, "description not stored byte-exact");
+        string memory j = _decodeJson(id);
+        assertEq(vm.parseJsonString(j, ".description"), desc, "description not preserved through JSON");
+        assertEq(vm.parseJsonString(j, ".name"), string.concat(prefix, vm.toString(id)), "name not preserved");
+    }
+
+    /// @notice The constructor's default copy satisfies the very rule the setters enforce, so the
+    ///         contract never ships in a state its own API could not reproduce.
+    function test_DefaultCopyPassesTheValidator() public {
+        // Re-setting the getters through the validated setters must succeed.
+        shapes.setTokenCopy(shapes.tokenNamePrefix(), shapes.tokenDescription());
+        shapes.setCollectionCopy(shapes.collectionName(), shapes.collectionDescription());
+    }
+
+    /// @notice Empty copy is allowed: the name is the bare token id, the description empty.
+    function test_EmptyCopyIsValidJson() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        shapes.setTokenCopy("", "");
+        string memory j = _decodeJson(id);
+        assertEq(vm.parseJsonString(j, ".name"), vm.toString(id), "name is the bare id");
+        assertEq(vm.parseJsonString(j, ".description"), "", "empty description");
+    }
+
+    /// @notice At zero supply, setting token copy emits no ERC-4906 refresh (and does not underflow).
+    function test_TokenCopyAtZeroSupplyEmitsNoRefresh() public {
+        assertEq(shapes.totalMinted(), 0, "precondition: nothing minted");
+        vm.recordLogs();
+        shapes.setTokenCopy("P ", "D");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 batchSig = keccak256("BatchMetadataUpdate(uint256,uint256)");
+        for (uint256 i = 0; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != batchSig, "no refresh should fire at zero supply");
+        }
+    }
+
+    /// @notice A copy edit is presentation only: it moves no backing, seed or artwork bytes.
+    function test_CopyEditLeavesValueStateUntouched() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+
+        uint256 backing = shapes.backingOf(id);
+        uint256 reserve = shapes.redeemableBacking();
+        bytes32 seed = shapes.seedOf(id);
+        string memory svg = renderer.renderSVG(seed, 1 ether, false, shapes.inkGeneOf(id));
+
+        shapes.setTokenCopy("Renamed ", "A different description entirely.");
+        shapes.setCollectionCopy("Renamed Collection", "Also different.");
+
+        assertEq(shapes.backingOf(id), backing, "backing moved");
+        assertEq(shapes.redeemableBacking(), reserve, "reserve moved");
+        assertEq(shapes.seedOf(id), seed, "seed moved");
+        assertEq(renderer.renderSVG(seed, 1 ether, false, shapes.inkGeneOf(id)), svg, "artwork moved");
+    }
+
+    /// @dev ERC-4906 batch refresh, declared locally so the test can assert it.
+    event BatchMetadataUpdate(uint256 fromTokenId, uint256 toTokenId);
 }

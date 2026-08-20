@@ -210,6 +210,8 @@ export function Inspect({
                       false,
                       mintGene(seed, amountWei),
                       0n,
+                      undefined,
+                      undefined,
                       params,
                     ),
                   )

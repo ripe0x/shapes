@@ -43,6 +43,15 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
     event RendererLocked();
 
+    /// @notice Emitted when the owner updates the per-token metadata copy (name prefix, description).
+    event TokenCopyUpdated(string namePrefix, string description);
+
+    /// @notice Emitted when the owner updates the collection metadata copy (name, description).
+    event CollectionCopyUpdated(string name, string description);
+
+    /// @notice Standard contract-level metadata refresh signal, emitted when the collection copy changes.
+    event ContractURIUpdated();
+
     /// @notice Emitted when the owner sets, replaces or clears the optional position resolver.
     event PositionResolverSet(address indexed resolver);
 
@@ -140,6 +149,11 @@ interface IShapes is IERC721, IERC721Value {
     /// @dev `previewCompose` only: a burn id repeated in `burnIds`. `compose` reaches the same
     ///      outcome through `_burn`, which reverts on the second occurrence.
     error DuplicateComposeInput(uint256 tokenId);
+    /// @dev Metadata copy is written verbatim into JSON, so a value is rejected when it carries a
+    ///      `"`, a `\`, or a C0 control byte (which would break or restructure the document), is
+    ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
+    ///      cap. `field` is 0 name/prefix, 1 description.
+    error InvalidCopy(uint8 field);
     /// @dev A nonzero position resolver must contain deployed code when configured.
     error InvalidPositionResolver();
     /// @dev The position resolver cannot be changed or locked again after its permanent lock.
@@ -167,6 +181,18 @@ interface IShapes is IERC721, IERC721Value {
     ///         owner via `setCollection` until `lockRenderer` freezes it.
     function collection() external view returns (address);
 
+    /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
+    function tokenNamePrefix() external view returns (string memory);
+
+    /// @notice The per-token metadata description, emitted verbatim in every token's metadata.
+    function tokenDescription() external view returns (string memory);
+
+    /// @notice The collection `name` used by `contractURI`.
+    function collectionName() external view returns (string memory);
+
+    /// @notice The collection `description` used by `contractURI`.
+    function collectionDescription() external view returns (string memory);
+
     /// @notice Optional canonical resolver for external Shape positions. Zero means none configured.
     function positionResolver() external view returns (address);
 
@@ -186,8 +212,24 @@ interface IShapes is IERC721, IERC721Value {
     function setCollection(address newCollection) external;
 
     /// @notice Permanently lock presentation. Owner only, one way. After this neither the
-    ///         renderer nor the collection can change again.
+    ///         renderer nor the collection can change again. Does not freeze the metadata copy,
+    ///         which the owner keeps editing via `setTokenCopy` / `setCollectionCopy`.
     function lockRenderer() external;
+
+    /// @notice Set the per-token metadata copy: the `name` prefix and the `description`. Owner
+    ///         only. Emits ERC-4906 `BatchMetadataUpdate` so marketplaces refresh every token.
+    /// @dev Written verbatim into each token's metadata JSON, so both arguments are validated:
+    ///      each must be well-formed UTF-8 within its length cap (64-byte prefix, 2048-byte
+    ///      description) and free of the bytes JSON forbids unescaped (`"`, `\`, C0 controls);
+    ///      anything else reverts `InvalidCopy`. This keeps copy from breaking the document and
+    ///      from producing bytes a conformant consumer would reject. Not affected by
+    ///      `lockRenderer`; copy is never frozen.
+    function setTokenCopy(string calldata namePrefix, string calldata description) external;
+
+    /// @notice Set the collection metadata copy: the `name` and the `description` used by
+    ///         `contractURI`. Owner only. Emits `ContractURIUpdated`.
+    /// @dev Same validation and length caps as `setTokenCopy`; reverts `InvalidCopy` otherwise.
+    function setCollectionCopy(string calldata name, string calldata description) external;
 
     /* ---------------------- position resolver admin -------------------- */
 
@@ -395,8 +437,9 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice Number of live Shapes.
     function totalSupply() external view returns (uint256);
 
-    /// @notice Number of Shapes ever minted. Ids are issued from 0, so the highest id issued
-    ///         is `totalMinted - 1`.
+    /// @notice The id counter: the next id to be issued, and one past the highest id ever issued
+    ///         (ids start at 0). Not a live-supply or mint count — `decompose` re-mints ids
+    ///         without advancing it, and burns do not decrease it. Use `totalSupply` for live count.
     function totalMinted() external view returns (uint256);
 
     /// @notice The survivor's compose-stack depth: how many stacked composes `decompose` can still

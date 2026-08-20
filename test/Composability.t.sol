@@ -32,6 +32,12 @@ contract ComposableReceiver is IERC721Receiver {
 }
 
 contract ComposabilityTest is Test {
+    /// @dev Default collection copy Shapes seeds at construction, for direct collection calls.
+    string internal constant COLLECTION_NAME = "Shapes";
+    string internal constant COLLECTION_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+
     Shapes internal shapes;
     ShapeRenderer internal renderer;
     ShapeCollection internal collection;
@@ -339,12 +345,16 @@ contract ComposabilityTest is Test {
     /// @notice `contractURI` is the collection contract's metadata, served unchanged by the token.
     function test_ContractUriIsTheCollectionsMetadata() public view {
         string memory uri = shapes.contractURI();
-        assertEq(uri, collection.contractURI(), "token diverged from collection");
+        assertEq(
+            uri,
+            collection.contractURI(COLLECTION_NAME, COLLECTION_DESCRIPTION),
+            "token diverged from collection"
+        );
 
         string memory prefix = "data:application/json;base64,";
         assertEq(_head(uri, bytes(prefix).length), prefix, "not a json data uri");
 
-        string memory json = collection.json();
+        string memory json = collection.json(COLLECTION_NAME, COLLECTION_DESCRIPTION);
         assertTrue(_contains(json, '"name":"Shapes"'), "no collection name");
         assertTrue(_contains(json, '"description":"'), "no collection description");
         assertTrue(_contains(json, '"image":"data:image/svg+xml;base64,'), "no inline image");
@@ -376,7 +386,11 @@ contract ComposabilityTest is Test {
     function test_ContractUriFollowsTheCollection() public {
         ShapeCollection next = new ShapeCollection(address(renderer));
         shapes.setCollection(address(next));
-        assertEq(shapes.contractURI(), next.contractURI(), "did not follow the new collection");
+        assertEq(
+            shapes.contractURI(),
+            next.contractURI(COLLECTION_NAME, COLLECTION_DESCRIPTION),
+            "did not follow the new collection"
+        );
     }
 
     function test_PresentationLockFreezesTheCollectionToo() public {
