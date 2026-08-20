@@ -336,101 +336,26 @@ export interface DecomposeInput {
   di: number; // its denomination index
 }
 
-/// The inputs the next `decompose(survivorId)` will restore: the burned inputs of the survivor's
-/// most recent still-standing compose, each with the id, seed and denomination it is re-minted
-/// under. Replays the survivor's compose(push)/decompose(pop) events as a LIFO stack — the top is
-/// what decompose pops. Empty when the survivor has no standing compose.
+/// The inputs the next `decompose(survivorId)` will revive, read straight from the contract's
+/// stored record. Empty when the survivor has no standing compose.
 ///
-/// An input's seed is its birth seed, because a compose never rewrites its survivor's seed. Its
-/// denomination is not: an input that was itself composed up before being absorbed is revived at
-/// the denomination it held when it was burned, not the one it was born at. That is recovered from
-/// the last `Composed` naming it as survivor before the burn.
+/// This used to be reconstructed from event history: replay the survivor's compose/decompose
+/// events as a LIFO stack, then work out each burned input's state at the moment it was burned.
+/// That was wrong in a way nothing caught — it reported each input's birth denomination, so an
+/// input that had itself been composed up before being absorbed previewed at the wrong tier — and
+/// the replay had a second bug besides. The contract holds the exact answer, so ask it.
 export async function loadDecomposePreview(
   publicClient: PublicClient,
   dep: Deployment,
   survivorId: bigint,
 ): Promise<DecomposeInput[]> {
-  const base = {address: dep.shapes, abi: shapesAbi} as const;
-  const latest = await publicClient.getBlockNumber();
-  const [composed, split, decomposed] = await Promise.all([
-    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock: f, toBlock: t})),
-    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock: f, toBlock: t})),
-    paginate(dep, latest, (f, t) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock: f, toBlock: t})),
-  ]);
-
-  const key = survivorId.toString();
-  type Op = {kind: "push" | "pop"; block: bigint; logIndex: number; burnedIds?: bigint[]};
-  const ops: Op[] = [];
-  for (const l of composed)
-    if (l.args.survivorId!.toString() === key)
-      ops.push({kind: "push", block: l.blockNumber!, logIndex: l.logIndex!, burnedIds: [...l.args.burnedIds!]});
-  for (const l of decomposed)
-    if (l.args.survivorId!.toString() === key) ops.push({kind: "pop", block: l.blockNumber!, logIndex: l.logIndex!});
-  ops.sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
-  // Each stack entry carries the compose that pushed it, so the surviving top knows when it
-  // happened. Indexing the push list by depth would be wrong: pops remove entries from the middle
-  // of that list, not the end.
-  const stack: {burnedIds: bigint[]; block: bigint; logIndex: number}[] = [];
-  for (const op of ops) {
-    if (op.kind === "push") {
-      stack.push({burnedIds: op.burnedIds!, block: op.block, logIndex: op.logIndex});
-    } else {
-      stack.pop();
-    }
-  }
-  const topEntry = stack[stack.length - 1];
-  if (!topEntry) return [];
-  const top = topEntry.burnedIds;
-
-  const splitOf = new Map<string, {parentSeed: bigint; index: number; di: number}>();
-  for (const l of split)
-    l.args.newIds!.forEach((nid, i) =>
-      splitOf.set(nid.toString(), {parentSeed: BigInt(l.args.parentSeed!), index: i, di: l.args.outDenoms![i]}));
-
-  // When the top compose happened. An input's denomination is whatever it had at that moment.
-  const burnedAt = topEntry;
-
-  /// The denomination `id` held when the top compose burned it: the `denomIndex` of the last
-  /// `Composed` naming it as survivor before that point, or its birth denomination if it was
-  /// never composed up.
-  const denomAtBurn = (id: bigint, birthDi: number): number => {
-    let di = birthDi;
-    let best: {block: bigint; logIndex: number} | null = null;
-    for (const l of composed) {
-      if (l.args.survivorId!.toString() !== id.toString()) continue;
-      const b = l.blockNumber!;
-      const li = l.logIndex!;
-      const beforeBurn = b < burnedAt.block || (b === burnedAt.block && li < burnedAt.logIndex);
-      if (!beforeBurn) continue;
-      if (!best || b > best.block || (b === best.block && li > best.logIndex)) {
-        best = {block: b, logIndex: li};
-        di = l.args.denomIndex!;
-      }
-    }
-    return di;
-  };
-
-  const out: DecomposeInput[] = [];
-  for (const id of top) {
-    const k = id.toString();
-    const sp = splitOf.get(k);
-    if (sp) {
-      out.push({id, seed: splitChildSeed(sp.parentSeed, sp.index), di: denomAtBurn(id, sp.di)});
-      continue;
-    }
-    // Mint-born: fetch its ShapeMinted by indexed id.
-    const logs = await paginate(dep, latest, (f, t) =>
-      publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock: f, toBlock: t}));
-    const m = logs[0];
-    if (m) {
-      out.push({
-        id,
-        seed: BigInt(m.args.seed!),
-        di: denomAtBurn(id, denomIndexOf(m.args.amountWei!)),
-      });
-    }
-  }
-  return out;
+  const inputs = await publicClient.readContract({
+    address: dep.shapes,
+    abi: shapesAbi,
+    functionName: "previewDecompose",
+    args: [survivorId],
+  });
+  return inputs.map((i) => ({id: i.tokenId, seed: BigInt(i.seed), di: i.denominationIndex}));
 }
 
 export interface SplitBirth {

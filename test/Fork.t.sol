@@ -58,7 +58,6 @@ contract ForkTest is Test {
 
     address internal titleHolder = makeAddr("titleHolder");
 
-
     function setUp() public {
         string memory rpc = vm.envOr("MAINNET_RPC_URL", string(""));
         if (bytes(rpc).length == 0) return;
@@ -101,8 +100,7 @@ contract ForkTest is Test {
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
         DeployShapes deployer = new DeployShapes();
-        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h, uint256 genesis) =
-            deployer.run();
+        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h, uint256 genesis) = deployer.run();
 
         assertEq(s.feeBps(), 100, "default fee bps not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");

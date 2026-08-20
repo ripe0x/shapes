@@ -460,7 +460,6 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
     address internal titleHolder = makeAddr("titleHolder");
 
-
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
@@ -828,7 +827,6 @@ contract AuctionInvariantTest is StdInvariant, Test {
     AuctionHandler internal handler;
 
     address internal titleHolder = makeAddr("titleHolder");
-
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();

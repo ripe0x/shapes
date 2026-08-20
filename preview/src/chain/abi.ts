@@ -5,6 +5,7 @@ import {parseAbi} from "viem";
 export const shapesAbi = parseAbi([
   "struct ComposeCall { uint256 survivorId; uint256[] burnIds; }",
   "struct ShapeChildPreview { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; }",
+  "struct ShapeRevivalPreview { uint256 tokenId; bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; }",
   "function mint(uint256 amountWei) payable returns (uint256 tokenId)",
   "function mintTo(uint256 amountWei, address to) payable returns (uint256 tokenId)",
   "function mintBatch(uint256 amountWei, uint256 quantity) payable returns (uint256 firstTokenId)",
@@ -22,6 +23,7 @@ export const shapesAbi = parseAbi([
   "function splitTo(uint256 tokenId, uint8[] outDenoms, address recipient) returns (uint256[] newIds)",
   "function composeDepth(uint256 survivorId) view returns (uint256)",
   "function previewSplit(uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
+  "function previewDecompose(uint256 survivorId) view returns (ShapeRevivalPreview[] inputs)",
   "function sacrifice(uint256 tokenId)",
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",

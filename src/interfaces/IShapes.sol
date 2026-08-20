@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {ShapeChildPreview, ShapeFormation, ShapeState} from "./IShapeCapabilities.sol";
+import {ShapeChildPreview, ShapeFormation, ShapeRevivalPreview, ShapeState} from "./IShapeCapabilities.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
 /// @title IShapes
@@ -423,6 +423,16 @@ interface IShapes is IERC721, IERC721Value {
         external
         view
         returns (ShapeState memory result);
+
+    /// @notice The inputs `decompose(survivorId)` would revive: the burned inputs of the
+    ///         survivor's most recent standing compose, each with the id, seed, denomination,
+    ///         origin count and gene it is re-minted under. Empty when the survivor has no
+    ///         standing compose, which is a state rather than an error.
+    /// @dev Read from the stored record, which is the only correct source. An input is revived at
+    ///      the state it held when it was burned, so one that was itself composed up first comes
+    ///      back at the larger denomination. Reconstructing that from event history is possible
+    ///      and easy to get wrong; this exists so nobody has to.
+    function previewDecompose(uint256 survivorId) external view returns (ShapeRevivalPreview[] memory inputs);
 
     /// @notice Validate a split and return every deterministic child before changing state.
     function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)

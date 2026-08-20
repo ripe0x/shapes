@@ -30,7 +30,6 @@ contract HardeningTest is Test {
 
     address internal titleHolder = makeAddr("titleHolder");
 
-
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));

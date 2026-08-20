@@ -52,7 +52,6 @@ abstract contract ShapesBase is Test {
 
     address internal titleHolder = makeAddr("titleHolder");
 
-
     function setUp() public virtual {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));

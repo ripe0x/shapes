@@ -18,6 +18,7 @@ import {
     IShapeSimulation,
     IShapeValue,
     ShapeChildPreview,
+    ShapeRevivalPreview,
     ShapeFormation,
     ShapeState
 } from "./interfaces/IShapeCapabilities.sol";
@@ -1111,6 +1112,32 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     {
         ComposeResult memory p = _previewCompose(survivorId, burnIds);
         return _shapeState(p.seed, p.denomIndex, p.originCount, p.inkGene, false);
+    }
+
+    /// @inheritdoc IShapes
+    function previewDecompose(uint256 survivorId)
+        external
+        view
+        returns (ShapeRevivalPreview[] memory inputs)
+    {
+        ComposeRecord[] storage stack = _composeStack[survivorId];
+        uint256 depth = stack.length;
+        if (depth == 0) return inputs; // nothing standing to reverse
+
+        ComposeRecord storage rec = stack[depth - 1];
+        uint256 n = rec.inputs.length;
+        inputs = new ShapeRevivalPreview[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            ComposeInput storage inp = rec.inputs[i];
+            inputs[i] = ShapeRevivalPreview({
+                tokenId: inp.id,
+                seed: inp.seed,
+                denominationIndex: inp.denomIndex,
+                originCount: inp.originCount,
+                inkGene: inp.inkGene,
+                faceValueWei: Denominations.amountAt(inp.denomIndex)
+            });
+        }
     }
 
     /// @inheritdoc IShapes

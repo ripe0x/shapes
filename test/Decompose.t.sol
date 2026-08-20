@@ -5,6 +5,7 @@ import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.s
 
 import {ShapesBase} from "./Shapes.t.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {ShapeRevivalPreview} from "../src/interfaces/IShapeCapabilities.sol";
 
 /// @notice `decompose`: the exact inverse of `compose`. The survivor keeps its id and seed and
 ///         reverts to its pre-compose state; every burned input is re-minted under its original id
@@ -492,5 +493,105 @@ contract LadderMatrixTest is ShapesBase {
         assertEq(shapes.totalSupply(), 100, "all 100 live again");
         assertEq(shapes.totalMinted(), 100, "no fresh ids issued");
         _assertSolvent();
+    }
+}
+
+/// @notice `previewDecompose`: the stored record read back, which is the only correct source for
+///         what a decompose will revive. Reconstructing it from event history is possible and easy
+///         to get wrong, which is the bug this view exists to make unnecessary.
+contract PreviewDecomposeTest is ShapesBase {
+    function _dust(uint256 k) internal returns (uint256 first) {
+        vm.prank(alice);
+        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k);
+    }
+
+    function test_EmptyWhenNothingStands() public {
+        uint256 id = _mint(alice, 1 ether);
+        assertEq(shapes.previewDecompose(id).length, 0, "a state, not an error");
+    }
+
+    /// @notice The preview matches what decompose actually does, field for field.
+    function test_MatchesTheRealDecompose() public {
+        uint256 first = _dust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, burn);
+
+        ShapeRevivalPreview[] memory p = shapes.previewDecompose(first);
+        assertEq(p.length, 4);
+
+        vm.prank(alice);
+        uint256[] memory revived = shapes.decompose(first);
+
+        for (uint256 i = 0; i < 4; ++i) {
+            assertEq(p[i].tokenId, revived[i], "id diverged");
+            assertEq(p[i].seed, shapes.seedOf(revived[i]), "seed diverged");
+            assertEq(p[i].denominationIndex, 0, "denomination diverged");
+            assertEq(p[i].faceValueWei, shapes.backingOf(revived[i]), "face value diverged");
+            assertEq(p[i].originCount, shapes.originCountOf(revived[i]), "origins diverged");
+            assertEq(p[i].inkGene, shapes.inkGeneOf(revived[i]), "gene diverged");
+        }
+    }
+
+    /// @notice The case the front end got wrong. An input composed up before being absorbed is
+    ///         revived at the denomination it held when burned, not the one it was born at.
+    function test_ReportsTheStateAtBurnNotAtBirth() public {
+        uint256 first = _dust(10); // ids 0..9, each 0.01
+
+        // #0 absorbs 1..4 and becomes 0.05.
+        uint256[] memory inner = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            inner[i] = first + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, inner);
+        assertEq(shapes.backingOf(first), 0.05 ether);
+
+        // #5 then absorbs the composed #0 plus 6..9, reaching 0.1.
+        uint256[] memory outer = new uint256[](5);
+        outer[0] = first;
+        for (uint256 i = 0; i < 4; ++i) {
+            outer[i + 1] = first + 6 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first + 5, outer);
+
+        ShapeRevivalPreview[] memory p = shapes.previewDecompose(first + 5);
+        assertEq(p[0].tokenId, first, "#0 is the first input");
+        assertEq(p[0].denominationIndex, 1, "reported birth denomination, not burn denomination");
+        assertEq(p[0].faceValueWei, 0.05 ether, "#0 comes back at 0.05, not 0.01");
+
+        vm.prank(alice);
+        shapes.decompose(first + 5);
+        assertEq(shapes.backingOf(first), 0.05 ether, "the chain agrees with the preview");
+    }
+
+    /// @notice Stacked composes preview newest first, matching the order decompose pops them.
+    function test_PreviewsTheTopOfTheStack() public {
+        uint256 first = _dust(10);
+        uint256[] memory inner = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            inner[i] = first + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, inner);
+
+        uint256[] memory outer = new uint256[](5);
+        for (uint256 i = 0; i < 5; ++i) {
+            outer[i] = first + 5 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, outer);
+
+        ShapeRevivalPreview[] memory p = shapes.previewDecompose(first);
+        assertEq(p.length, 5, "the newest record, not the oldest");
+        assertEq(p[0].tokenId, first + 5);
+
+        vm.prank(alice);
+        shapes.decompose(first);
+        assertEq(shapes.previewDecompose(first).length, 4, "now the inner record is on top");
     }
 }

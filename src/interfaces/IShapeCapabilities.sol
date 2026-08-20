@@ -33,6 +33,20 @@ struct ShapeChildPreview {
     uint256 faceValueWei;
 }
 
+/// @notice One input `decompose` would revive, with the id it is re-minted under.
+/// @dev A revived input returns at the state it held when the compose burned it, not the state it
+///      was born at, so an input that was itself composed up beforehand comes back at the larger
+///      denomination. That distinction is the reason this is worth reading from the contract
+///      rather than reconstructing from events.
+struct ShapeRevivalPreview {
+    uint256 tokenId;
+    bytes32 seed;
+    uint8 denominationIndex;
+    uint32 originCount;
+    uint8 inkGene;
+    uint256 faceValueWei;
+}
+
 /// @notice Stable value and redemption capability for integrators that do not need recomposition.
 interface IShapeValue {
     function backingOf(uint256 tokenId) external view returns (uint256);
@@ -82,4 +96,5 @@ interface IShapeSimulation {
         external
         view
         returns (ShapeChildPreview[] memory children);
+    function previewDecompose(uint256 survivorId) external view returns (ShapeRevivalPreview[] memory inputs);
 }
