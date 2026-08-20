@@ -17,7 +17,14 @@ counterparties.
 Shapes holds user ETH and has no administrator with any power over the reserve. The transferable
 owner can administer two value-inert configuration domains: presentation (renderer plus collection
 metadata, locked together) and the independently lockable optional position resolver. None is read
-by a reserve path. There is one
+by a reserve path. Separately and without authority, the contract records a
+`titleHolder`: cultural title to Shapes as a whole, whose only capability is `transferTitle`. It
+is read by no other function, gates nothing, and is independent of `owner()` in both directions.
+A title transfer moves no ETH, calls nothing and changes no token, so it cannot reach the reserve;
+`invariant_TitleIsUntouchedByCoreOperations` holds the converse, that no core path moves it.
+The title is a bearer instrument with no recovery: sent somewhere that cannot call
+`transferTitle`, it is stranded, and deliberately so, since an owner able to recover it would be
+an owner able to take it. There is one
 thing that must never happen: a holder unable to redeem a live Shape for exactly the ETH it
 wraps. Everything else is secondary.
 

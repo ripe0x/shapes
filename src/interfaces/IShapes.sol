@@ -35,6 +35,11 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice Emitted when the owner replaces the collection metadata contract.
     event CollectionUpdated(address indexed collection);
 
+    /// @notice Emitted when title to Shapes passes to a new holder, and once at deployment with
+    ///         `previousHolder` as the zero address. The full chain of custody is these events;
+    ///         the contract stores only the current holder.
+    event TitleTransferred(address indexed previousHolder, address indexed newHolder);
+
     /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
     event RendererLocked();
 
@@ -112,6 +117,13 @@ interface IShapes is IERC721, IERC721Value {
     error UnsupportedRenderer(address renderer);
     /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
     error UnsupportedCollection(address collection);
+    /// @dev Only the current title holder may pass the title on. The contract owner cannot.
+    error NotTitleHolder();
+    /// @dev The title cannot be sent to the zero address or to this contract, at construction or
+    ///      afterwards.
+    error InvalidTitleRecipient();
+    /// @dev The recipient already holds the title.
+    error TitleAlreadyHeldByRecipient();
     /// @dev A Black Shape cannot be redeemed, composed, decomposed or sacrificed again.
     ///      It remains transferable and may be destroyed through the draft ERC-8060 `burn` path.
     error TokenIsBlack(uint256 tokenId);
@@ -185,6 +197,39 @@ interface IShapes is IERC721, IERC721Value {
 
     /// @notice Permanently freeze the current resolver value. Owner only; may lock while zero.
     function lockPositionResolver() external;
+
+    /* ------------------------------ title ----------------------------- */
+
+    /// @notice Who currently holds title to Shapes as a whole.
+    /// @dev Cultural title to the work and the protocol, recorded by the contract itself. It is
+    ///      not a token: there is no title NFT, no companion collection and no reserved Shape.
+    ///      This contract is the only source of truth for it.
+    ///
+    ///      The title confers no authority. Its holder cannot reach the reserve, the mint fees,
+    ///      the fee recipient, any Shape, the renderer, the collection, the position resolver or
+    ///      administrative ownership, and it grants no intellectual property or legal right. The
+    ///      one capability it carries is `transferTitle`.
+    ///
+    ///      Distinct from `owner()`, which holds narrow configuration authority. The two roles
+    ///      may sit at one address or at different ones, and neither constrains the other:
+    ///      ownership can be renounced with the title still transferable.
+    function titleHolder() external view returns (address);
+
+    /// @notice When the current holder received the title, as a unix timestamp. Deployment for
+    ///         the first holder.
+    function titleSince() external view returns (uint64);
+
+    /// @notice Pass title to `to`. Current holder only.
+    /// @dev Immediate and unconditional: one transaction, no pending state, no approval, and no
+    ///      acceptance by the recipient. The previous holder loses the title in the same call and
+    ///      the new one may pass it on immediately. Moves no ETH, calls nothing, and alters no
+    ///      Shape, no accounting and no configuration.
+    ///
+    ///      A bearer instrument, deliberately. Sending the title to a contract that cannot itself
+    ///      call `transferTitle`, or to an address whose key is lost, strands it permanently.
+    ///      There is no administrative recovery, because an owner able to recover the title would
+    ///      be an owner able to take it.
+    function transferTitle(address to) external;
 
     /* ---------------------------- minting ----------------------------- */
 

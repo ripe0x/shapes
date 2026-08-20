@@ -49,10 +49,13 @@ abstract contract ShapesBase is Test {
         uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
+    address internal titleHolder = makeAddr("titleHolder");
+
+
     function setUp() public virtual {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection), titleHolder);
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -276,7 +279,7 @@ contract FeeTest is ShapesBase {
     }
 
     function test_ZeroFeeIsSupported() public {
-        Shapes free = new Shapes(0, feeRecipient, address(renderer), address(collection));
+        Shapes free = new Shapes(0, feeRecipient, address(renderer), address(collection), titleHolder);
         vm.prank(alice);
         uint256 id = free.mintTo{value: 1 ether}(1 ether, alice);
         assertEq(free.backingOf(id), 1 ether);
@@ -285,7 +288,7 @@ contract FeeTest is ShapesBase {
 
     function test_RevertingFeeRecipientBlocksMintingButNotRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
-        Shapes s = new Shapes(FEE_BPS, address(bad), address(renderer), address(collection));
+        Shapes s = new Shapes(FEE_BPS, address(bad), address(renderer), address(collection), titleHolder);
 
         vm.prank(alice);
         vm.expectRevert(
@@ -295,7 +298,7 @@ contract FeeTest is ShapesBase {
 
         // With a zero fee there is no transfer at all, so the same recipient is harmless and
         // redemption is provably independent of the fee path.
-        Shapes s0 = new Shapes(0, address(bad), address(renderer), address(collection));
+        Shapes s0 = new Shapes(0, address(bad), address(renderer), address(collection), titleHolder);
         vm.startPrank(alice);
         uint256 id = s0.mintTo{value: 1 ether}(1 ether, alice);
         uint256 before = alice.balance;
@@ -306,10 +309,10 @@ contract FeeTest is ShapesBase {
 
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(bytes("fee recipient is zero"));
-        new Shapes(FEE_BPS, address(0), address(renderer), address(collection));
+        new Shapes(FEE_BPS, address(0), address(renderer), address(collection), titleHolder);
 
         vm.expectRevert(bytes("renderer is zero"));
-        new Shapes(FEE_BPS, feeRecipient, address(0), address(collection));
+        new Shapes(FEE_BPS, feeRecipient, address(0), address(collection), titleHolder);
     }
 
     function test_ImmutablesAreExposedAndFixed() public view {
@@ -646,7 +649,7 @@ contract ReserveTest is ShapesBase {
 
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
-        Shapes s = new Shapes(FEE_BPS, address(fr), address(renderer), address(collection));
+        Shapes s = new Shapes(FEE_BPS, address(fr), address(renderer), address(collection), titleHolder);
         fr.configure(IShapes(address(s)), 1 ether);
         vm.deal(address(fr), 10 ether);
 

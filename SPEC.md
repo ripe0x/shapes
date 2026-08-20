@@ -699,3 +699,14 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 | Reserve solvency under fuzzed mint/transfer/redeem sequences | `forge test --mc Invariant` |
 | Value alias, burn settlement, Black zero-burn and ID lifecycle | `forge test --mc ValueDiscoveryTest` |
 | Resolver delegation, locking and administrative isolation | `forge test --mc PositionResolverTest` |
+
+---
+
+## Contract title
+
+Shapes records one holder of title to the work as a whole, in the contract rather than in a token.
+It is cultural title: it carries no authority over any Shape, the reserve, the fees or the
+configuration, and its only capability is `transferTitle`. It is independent of `owner()` in both
+directions, so it survives the renunciation of administrative ownership, which is the point of
+recording it here at all. See README for the full description and SHAPES_V2_SPEC §5a for the
+mechanics.

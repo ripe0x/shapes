@@ -158,6 +158,19 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     /// @inheritdoc IShapes
     bool public positionResolverLocked;
 
+    /* ------------------------------- title ------------------------------- */
+
+    /// @inheritdoc IShapes
+    /// @dev Cultural title to Shapes as a whole. Carries no authority over any Shape, the
+    ///      reserve, the fees or the configuration; the sole capability it grants is passing
+    ///      itself on. Independent of `owner()` in both directions: renouncing ownership leaves
+    ///      the title transferable, and transferring the title leaves ownership untouched.
+    ///      Packs into one slot with `titleSince`.
+    address public titleHolder;
+
+    /// @inheritdoc IShapes
+    uint64 public titleSince;
+
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
     ///        May be zero. Above BPS_DENOMINATOR (100%) is rejected.
     /// @param feeRecipient_ Where fees are forwarded. Immutable, and it MUST be able to receive
@@ -166,18 +179,30 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///        low-gas `receive`.
     /// @param renderer_ The onchain renderer. Replaceable by the owner until locked. An address
     ///        with no renderer code is refused here and by `setRenderer`.
-    constructor(uint256 feeBps_, address feeRecipient_, address renderer_, address collection_)
-        ERC721("Shapes", "SHAPE")
-        Ownable(msg.sender)
-    {
+    constructor(
+        uint256 feeBps_,
+        address feeRecipient_,
+        address renderer_,
+        address collection_,
+        address initialTitleHolder
+    ) ERC721("Shapes", "SHAPE") Ownable(msg.sender) {
         require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%");
         require(feeRecipient_ != address(0), "fee recipient is zero");
         _requireRendererHasCode(renderer_);
         _requireCollectionHasCode(collection_);
+        if (initialTitleHolder == address(0) || initialTitleHolder == address(this)) {
+            revert InvalidTitleRecipient();
+        }
         feeBps = feeBps_;
         feeRecipient = feeRecipient_;
         renderer = renderer_;
         collection = collection_;
+
+        // The first holder does not accept the title; it is conferred. Deployment is the point
+        // from which `titleSince` counts.
+        titleHolder = initialTitleHolder;
+        titleSince = uint64(block.timestamp);
+        emit TitleTransferred(address(0), initialTitleHolder);
     }
 
     /// @inheritdoc IShapes
@@ -253,6 +278,24 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         } catch {
             revert UnsupportedCollection(collection_);
         }
+    }
+
+    /* ------------------------------- title ------------------------------- */
+
+    /// @inheritdoc IShapes
+    /// @dev A bearer transfer: immediate, in one transaction, with no pending state, no approval
+    ///      and no acceptance by the recipient. The owner cannot block, redirect or reverse it.
+    ///      Moves no ETH, calls nothing, and touches no token.
+    function transferTitle(address to) external {
+        if (msg.sender != titleHolder) revert NotTitleHolder();
+        if (to == address(0) || to == address(this)) revert InvalidTitleRecipient();
+        if (to == titleHolder) revert TitleAlreadyHeldByRecipient();
+
+        address previousHolder = titleHolder;
+        titleHolder = to;
+        titleSince = uint64(block.timestamp);
+
+        emit TitleTransferred(previousHolder, to);
     }
 
     /* ------------------------------ minting ----------------------------- */

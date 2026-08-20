@@ -30,13 +30,14 @@ contract DeploySepolia is Script {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         bool seed = vm.envOr("SEED_ETH", true);
         address me = msg.sender;
+        address titleHolder = vm.envOr("SHAPES_TITLE_HOLDER", me);
 
         vm.startBroadcast();
 
         renderer = new ShapeRenderer();
 
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(feeBps, me, address(renderer), address(collection));
+        shapes = new Shapes(feeBps, me, address(renderer), address(collection), titleHolder);
         house = new ShapeAuctionHouse(address(shapes));
 
         if (seed) {

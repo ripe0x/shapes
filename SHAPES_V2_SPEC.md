@@ -191,6 +191,27 @@ its pre-compose backing.
 
 ---
 
+## 5a. Contract title
+
+One current holder of title to Shapes as a whole, recorded by the contract: `titleHolder()`,
+`titleSince()`, `transferTitle(address)`, and a `TitleTransferred` event.
+
+- **Not a token.** No title NFT, no companion collection, no reserved Shape. Every Shape follows
+  the ordinary denomination, backing, redemption, artwork, composition and gene rules without
+  exception. `Shapes.titleHolder()` is the sole source of truth.
+- **No authority.** The holder cannot reach the reserve, the fees, the fee recipient, any Shape,
+  the renderer, the collection, the resolver or `owner()`, and gains no intellectual property or
+  legal right. No function other than `transferTitle` reads `msg.sender == titleHolder`.
+- **Separate from ownership**, in both directions. Ownership may be transferred or renounced with
+  the title still transferable; the title may move without touching ownership.
+- **Bearer transfer.** One transaction, immediate, no pending state, no approval, no acceptance.
+  The owner cannot block, redirect or reverse it. No ETH moves and nothing is called.
+- **No recovery.** Title sent where it cannot be moved again is stranded permanently.
+- **Storage:** `address titleHolder` and `uint64 titleSince` share one slot. History is the
+  events; the contract keeps only the current holder.
+- **Initialization:** an explicit constructor argument, rejected if zero or the contract itself,
+  emitting `TitleTransferred(address(0), initialTitleHolder)`.
+
 ## 6. Black Shape & ETH sacrifice
 
 A 100 ETH Complete can be permanently transformed into a Black Shape by its owner. The token keeps

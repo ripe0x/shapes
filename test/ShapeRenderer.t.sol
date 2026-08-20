@@ -20,6 +20,9 @@ contract RendererTestBase is Test {
         uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
+    address internal titleHolder = makeAddr("titleHolder");
+
+
     function setUp() public virtual {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
@@ -650,7 +653,7 @@ contract TokenMetadataTest is RendererTestBase {
 
     function setUp() public override {
         super.setUp();
-        shapes = new Shapes(100, address(0xFEE), address(renderer), address(collection));
+        shapes = new Shapes(100, address(0xFEE), address(renderer), address(collection), titleHolder);
         vm.deal(alice, 1_000 ether);
     }
 

@@ -49,6 +49,8 @@ abstract contract AuctionBase is Test {
     ShapeAuctionHouse internal house;
     Lot internal lot;
 
+    address internal titleHolder = makeAddr("titleHolder");
+
     address internal seller = makeAddr("seller");
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
@@ -62,7 +64,7 @@ abstract contract AuctionBase is Test {
     function setUp() public virtual {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection), titleHolder);
         house = new ShapeAuctionHouse(address(shapes));
         lot = new Lot();
 

@@ -14,12 +14,14 @@ contract CollectionTest is Test {
     ShapeCollection internal collection;
     Shapes internal shapes;
 
+    address internal titleHolder = makeAddr("titleHolder");
+
     address internal feeRecipient = makeAddr("feeRecipient");
 
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection), titleHolder);
     }
 
     /* ------------------------------ seeding ----------------------------- */

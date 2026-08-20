@@ -28,10 +28,13 @@ contract HardeningTest is Test {
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
 
+    address internal titleHolder = makeAddr("titleHolder");
+
+
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection), titleHolder);
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -115,11 +118,11 @@ contract HardeningTest is Test {
 
     function test_RendererWithoutCodeIsRejected() public {
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD), address(collection));
+        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD), address(collection), titleHolder);
 
         // an EOA is equally unacceptable
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, alice, address(collection));
+        new Shapes(FEE_BPS, feeRecipient, alice, address(collection), titleHolder);
     }
 
     /* ---------------- self-custody ---------------- */

@@ -37,6 +37,8 @@ contract ComposabilityTest is Test {
     ShapeCollection internal collection;
     ComposableReceiver internal receiver;
 
+    address internal titleHolder = makeAddr("titleHolder");
+
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal feeRecipient = makeAddr("feeRecipient");
@@ -44,7 +46,7 @@ contract ComposabilityTest is Test {
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection), titleHolder);
         receiver = new ComposableReceiver();
         vm.deal(alice, 1_000 ether);
     }

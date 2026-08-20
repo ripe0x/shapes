@@ -236,6 +236,51 @@ The resolver pointer is permanent after locking, but its target code and trust m
 guaranteed immutable. Renouncing ownership leaves any unlocked settings practically frozen because
 no caller can pass `onlyOwner` afterward.
 
+## Title
+
+Shapes records one current holder of title to the work as a whole, in the contract itself:
+
+```
+titleHolder()  -> address     who holds title now
+titleSince()   -> uint64      when they received it
+transferTitle(address to)     current holder only
+```
+
+The title is cultural, not administrative. Its holder cannot reach the reserve, the mint fees, the
+fee recipient, any Shape, the renderer, the collection, the position resolver or `owner()`, and it
+conveys no intellectual property or legal right in the software, the brand or the assets. The one
+capability it carries is passing itself on.
+
+**It is not a token.** There is no title NFT, no companion collection, no wrapper and no reserved
+Shape. Every Shape follows the same denomination, backing, redemption, artwork, composition and
+gene rules as every other, without exception. `Shapes.titleHolder()` is the only source of truth,
+and a second token recording the same thing would only compete with it.
+
+**It is separate from `owner()`.** Those are different roles that may sit at one address or at
+different ones, and neither constrains the other: administrative ownership can be transferred or
+renounced with the title still transferable, and the title can move without touching ownership. A
+title holder who is not the owner cannot call an owner function; an owner who is not the holder
+cannot call `transferTitle`. The title outlives administration, which is the point.
+
+**Transfer is a bearer transfer.** One transaction, immediate, with no pending state, no approval
+and no acceptance by the recipient. The previous holder loses it in the same call; the new one may
+pass it on at once. No ETH moves, nothing is called, and no Shape, accounting figure or setting
+changes. The owner cannot block, redirect or reverse it.
+
+That cuts both ways: **title sent to a contract that cannot itself call `transferTitle`, or to an
+address whose key is lost, is stranded permanently.** There is no administrative recovery, because
+an owner able to recover the title would be an owner able to take it. Send it deliberately.
+
+A sale needs nothing from this contract. The holder can settle payment however they like and then
+call `transferTitle`; Shapes verifies no payment. An auction works the same way — the holder
+passes title to an auction contract, which settles under its own rules and passes it to the
+winner. No upgrade, allowlist, approval or hook is involved, and the contract stays neutral about
+format, currency, reserve, royalties and proceeds.
+
+The contract stores only the current holder. The full chain of custody is the `TitleTransferred`
+events, which start with a conferral from the zero address at deployment. `titleSince` reports
+when the current holder received it.
+
 `feeBps` and `feeRecipient` are `immutable`. The reserve, the denominations and the redemption
 path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
 withdrawal, redemption pause, asset recovery, backing modification, token seizure,

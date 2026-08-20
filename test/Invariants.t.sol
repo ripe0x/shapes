@@ -453,10 +453,13 @@ contract ShapesInvariantTest is StdInvariant, Test {
     Handler internal handler;
     address internal feeRecipient = address(0xFEE);
 
+    address internal titleHolder = makeAddr("titleHolder");
+
+
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection), titleHolder);
         handler = new Handler(shapes);
 
         targetContract(address(handler));
@@ -583,6 +586,16 @@ contract ShapesInvariantTest is StdInvariant, Test {
         for (uint256 i = 0; i < n; ++i) {
             assertLt(handler.liveTokens(i), minted, "a live id reached or passed totalMinted");
         }
+    }
+
+    /// @notice No core operation moves title to Shapes. The handler never calls `transferTitle`,
+    ///         so whatever sequence of mints, redemptions, compositions, decompositions, splits
+    ///         and sacrifices ran, the holder recorded at construction is still the holder. This
+    ///         is the invariant behind the claim that the title carries no protocol authority and
+    ///         no protocol path carries it.
+    function invariant_TitleIsUntouchedByCoreOperations() public view {
+        assertEq(shapes.titleHolder(), titleHolder, "a core operation moved the title");
+        assertTrue(shapes.titleHolder() != address(0), "the title was zeroed");
     }
 
     /// @notice Every live token carries one of the nine denominations. Nothing else is

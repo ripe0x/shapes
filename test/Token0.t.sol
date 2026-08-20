@@ -13,13 +13,14 @@ contract Token0Test is Test {
     ShapeRenderer renderer;
     ShapeCollection collection;
     ShapeAuctionHouse house;
+    address titleHolder = makeAddr("titleHolder");
     address artist = makeAddr("artist");
     address stranger = makeAddr("stranger");
 
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(100, makeAddr("fee"), address(renderer), address(collection));
+        shapes = new Shapes(100, makeAddr("fee"), address(renderer), address(collection), titleHolder);
         house = new ShapeAuctionHouse(address(shapes));
         vm.deal(artist, 10 ether);
         vm.deal(stranger, 10 ether);

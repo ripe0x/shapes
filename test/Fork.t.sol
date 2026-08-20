@@ -56,6 +56,9 @@ contract ForkTest is Test {
         uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
+    address internal titleHolder = makeAddr("titleHolder");
+
+
     function setUp() public {
         string memory rpc = vm.envOr("MAINNET_RPC_URL", string(""));
         if (bytes(rpc).length == 0) return;
@@ -70,7 +73,7 @@ contract ForkTest is Test {
         live = true;
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection), titleHolder);
         strayWei = address(shapes).balance;
     }
 
