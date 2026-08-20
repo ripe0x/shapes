@@ -7,7 +7,6 @@ export const UNIT = 10_000_000_000_000_000n;
 export interface AuctionState {
   id: bigint;
   seller: `0x${string}`;
-  nft: `0x${string}`;
   tokenId: bigint;
   /** Zero until the first bid lands: the clock starts then, not at creation. */
   endTime: bigint;
@@ -93,7 +92,6 @@ export async function loadAuction(
   return {
     id: auctionId,
     seller: raw.seller,
-    nft: raw.nft,
     tokenId: raw.tokenId,
     endTime: raw.endTime,
     duration: raw.duration,
@@ -109,13 +107,12 @@ export async function loadAuction(
   };
 }
 
-/** The lot's artwork, when the lot is itself a Shape. Other collections render nothing here. */
+/** The lot's artwork, from the Shapes contract's tokenURI. */
 export async function loadLotImage(
   publicClient: PublicClient,
   dep: Deployment,
   a: AuctionState,
 ): Promise<string | null> {
-  if (a.nft.toLowerCase() !== dep.shapes.toLowerCase()) return null;
   try {
     const uri = await publicClient.readContract({
       address: dep.shapes,
