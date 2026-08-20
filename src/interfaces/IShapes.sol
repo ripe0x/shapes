@@ -392,8 +392,9 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice Number of live Shapes.
     function totalSupply() external view returns (uint256);
 
-    /// @notice Number of Shapes ever minted. Ids are issued from 0, so the highest id issued
-    ///         is `totalMinted - 1`.
+    /// @notice The id counter: the next id to be issued, and one past the highest id ever issued
+    ///         (ids start at 0). Not a live-supply or mint count — `decompose` re-mints ids
+    ///         without advancing it, and burns do not decrease it. Use `totalSupply` for live count.
     function totalMinted() external view returns (uint256);
 
     /// @notice The survivor's compose-stack depth: how many stacked composes `decompose` can still

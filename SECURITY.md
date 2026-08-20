@@ -37,7 +37,7 @@ that snapshots state, redeems *every* live Shape in turn, and asserts each pays 
 
 ## Findings and what was done
 
-### 1. Seed grinding — fixed
+### 1. Seed grinding — identity enumeration fixed, ordinal grinding accepted
 
 *Confirmed.* The original entropy root included `msg.sender`, the recipient and the quantity.
 Every other input is knowable before the transaction is sent, so a minter could enumerate
@@ -45,29 +45,32 @@ candidate recipients off chain, at zero cost, until the artwork suited them. The
 selected a specific 100 ETH composition (solid triangle, 270°, p ≈ 3.5%) in **85 free tries**.
 At 50 and 100 ETH a card is one or two modules, so trait selection was effectively total.
 
-**Fix:** all caller-controlled inputs removed from the root. The seed now derives only from
+**Fix (partial):** all *identity* inputs removed from the root. The seed now derives only from
 `prevrandao`, the prior blockhash, block number, timestamp, chain id, the contract address and
-the token id — matching the construction Art Blocks uses for its own token hashes. Regression
-tests `test_SeedIsIndependentOfMinterAndRecipient`, `test_SeedIsIndependentOfQuantity` and
-`test_EnumeratingRecipientsCannotChangeTheArtwork` (64 recipients, identical output) pin this.
+the token id. Regression tests `test_SeedIsIndependentOfMinterAndRecipient`,
+`test_SeedIsIndependentOfQuantity` and `test_EnumeratingRecipientsCannotChangeTheArtwork` (64
+recipients, identical output) pin that the recipient no longer moves the seed.
 
-**Accepted residual:** grinding by minting through a contract that reverts unless the outcome
-suits the minter. One attempt per block, gas per attempt. Art Blocks has the same residual.
-See SPEC.md D3e for why commit-reveal was rejected.
+**Residual — grinding is not one-attempt-per-block; it is one transaction.** The root folds
+`firstTokenId`, which equals `totalMinted`, and a minter can advance `totalMinted` permanently
+inside a single transaction by minting throwaway dust Shapes and redeeming them in the same call:
+the backing returns in full, only the mint fee is spent. Since every other root input is fixed
+within a block, the mint ordinal is a free knob, and hundreds of candidates fit in one block. The
+per-token seed also keys on `tokenId`, the same purchasable value. So the ~3.5% trait above is
+reachable in one transaction at roughly the mint fee times a few dozen dust mints; at `feeBps == 0`
+only gas is spent. This is accepted, not mitigated: the seed has no economic effect — redemption
+value is fixed by denomination, and every Shape of a denomination redeems for the same ETH
+regardless of appearance. Trait scarcity is best-effort, not enforced. Commit-reveal would close
+it (SPEC.md D3e) and is deliberately not built.
 
-**Ink Genes (SPEC.md D17) inherit this residual unchanged, with one asymmetry worth stating
-explicitly.** The gene is drawn from the same per-mint seed at mint time only (`InkGenes.
-geneAtMint`), so it is grindable exactly the way artwork traits are: one attempt per block,
-gas per attempt, no new attack surface. The asymmetry is in *reachability*, not in the grind
-itself — the four extreme genes (`Void`, `Faint`, `Rich`, `Solid`) are only ever drawn on a
-dust (0.01 ETH) mint; every other denomination draws exclusively from the narrow `{Sparse,
-Murk, Dense}` band (SPEC.md D17). A grinder chasing an extreme gene therefore must grind dust
-mints specifically — cheap per attempt, same one-attempt-per-block ceiling, no larger residual
-than the pre-existing artwork-trait grind. Composing, decomposing and restoring a Shape never
-consume fresh randomness for the gene (entropy-at-mint-only, D17), so none of those paths reopen
-grinding once a token exists. An epoch-batched commit-reveal scheme would close the residual
-across all traits, ink included; it remains deferred for the same reasons D3e gives for
-artwork.
+**Ink Genes (SPEC.md D17) inherit this residual unchanged.** The gene is drawn from the same
+per-mint seed at mint time only (`InkGenes.geneAtMint`), so it is grindable exactly the way
+artwork traits are, at the same one-transaction cost. The four extreme genes (`Void`, `Faint`,
+`Rich`, `Solid`) are only ever drawn on a dust (0.01 ETH) mint; every other denomination draws
+exclusively from the narrow `{Sparse, Murk, Dense}` band, so a grinder chasing an extreme gene
+grinds dust mints — the cheapest possible per candidate. Composing, decomposing and restoring a
+Shape never consume fresh randomness for the gene (entropy-at-mint-only, D17), so none of those
+paths reopen grinding once a token exists.
 
 ### 2. Renderer address never checked for code — fixed
 
@@ -146,7 +149,7 @@ bypasses Black terminality. Three low findings were fixed and pinned with regres
 - **`simulateDecompose` reported success for a Black Shape** while `decompose` reverts `TokenIsBlack`.
   The preview now rejects Black tokens too (`test_SimulateDecomposeRejectsBlackToMatchDecompose`).
 - **`setRenderer` changed every token's metadata without an ERC-4906 signal.** It now emits
-  `BatchMetadataUpdate(1, totalMinted)` so marketplaces refresh
+  `BatchMetadataUpdate(0, totalMinted - 1)` (ids start at 0) so marketplaces refresh
   (`test_SetRendererEmitsBatchMetadataUpdate`).
 - **`redeemTo`/`redeemBatchTo` to `address(0)` burned the payout.** They now revert
   `InvalidRecipient` (`test_RedeemToRejectsZeroRecipient`). `decomposeTo`/`splitTo` to the zero
@@ -204,8 +207,10 @@ sizes stay uncapped (self-inflicted, per finding #7).
    it has no authority over Shapes. Transfer ownership to the intended multisig before configuration.
 5. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
    ERC-165 ID match the current proposal, but an immutable deployment cannot follow later changes.
-6. **Artwork traits are grindable at one attempt per block.** If trait rarity is intended to
-   carry economic weight, this design is not sufficient — but for Shapes it does not, because
-   redemption value is set by denomination alone.
+6. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
+   mint ordinal (`totalMinted`) by minting and redeeming dust in the same call, so the seed is
+   grindable at roughly the mint fee per candidate, hundreds per block — not one attempt per block
+   (§1). If trait rarity is intended to carry economic weight, this design is not sufficient — but
+   for Shapes it does not, because redemption value is set by denomination alone.
 7. **This review is not a substitute for a professional audit** before mainnet deployment with
    real value at risk.

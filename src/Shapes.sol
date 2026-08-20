@@ -416,10 +416,12 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         // One entropy root per batch; each token's seed derives from it and its own id, so every
         // token in a batch gets a distinct seed.
         //
-        // No caller-controlled value feeds this root, which would otherwise let a minter
-        // enumerate candidates off chain until the artwork suited them. The residual is grinding
-        // through a contract that reverts on an unwanted outcome: one attempt per block, gas per
-        // attempt (SPEC.md D3e).
+        // No minter or recipient identity feeds this root, so the seed cannot be enumerated by
+        // varying the recipient. It is still selectable: `firstTokenId` is `totalMinted`, which a
+        // minter can advance within one transaction by minting and redeeming dust (backing returns,
+        // only the fee is spent), so the mint ordinal is a free knob and traits are grindable at
+        // roughly the mint fee per candidate. The seed has no economic effect: redemption value is
+        // fixed by denomination. Trait scarcity is best-effort, not enforced (SPEC.md D3e).
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
