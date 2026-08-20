@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
@@ -83,7 +84,8 @@ abstract contract AuctionBase is Test {
 
     function _open() internal returns (uint256 auctionId) {
         vm.prank(seller);
-        auctionId = house.createAuction(lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        auctionId =
+            house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
     }
 
     function _one(uint256 id) internal pure returns (uint256[] memory ids) {
@@ -125,7 +127,7 @@ contract AuctionHouseTest is AuctionBase {
     function test_CreateRejectsZeroDuration() public {
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.DurationOutOfRange.selector);
-        house.createAuction(lotId, 0, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        house.createAuction(address(shapes), lotId, 0, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
     }
 
     function test_SellerCancelsBeforeAnyBidAndNotAfter() public {
@@ -142,9 +144,12 @@ contract AuctionHouseTest is AuctionBase {
         vm.prank(seller);
         uint256 second = shapes.mint{value: 0.1 ether + feeOf(0.1 ether)}(0.1 ether);
         vm.prank(seller);
-        uint256 fresh = house.createAuction(second, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        uint256 fresh =
+            house.createAuction(address(shapes), second, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
         vm.prank(seller);
         house.cancelAuction(fresh);
+        vm.prank(seller);
+        house.claimLot(fresh);
         assertEq(shapes.ownerOf(second), seller, "lot returned");
     }
 
@@ -306,7 +311,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_BidMustClearTheReserve() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(lotId, DURATION, 100, INCREMENT_BPS, EXTENSION);
+        uint256 id = house.createAuction(address(shapes), lotId, DURATION, 100, INCREMENT_BPS, EXTENSION);
         uint256 card = _mintCard(alice, 0.5 ether); // 50 units, under a 100 unit reserve
 
         vm.prank(alice);
@@ -423,15 +428,19 @@ contract AuctionHouseTest is AuctionBase {
 
     /* ---------------------------- settlement --------------------------- */
 
-    function test_SettleDeliversTheLotAndSellerPullsTheCards() public {
+    function test_SettleRecordsAndBothSidesPull() public {
         uint256 id = _open();
         uint256 card = _mintCard(alice, 1 ether);
         vm.prank(alice);
         house.bid(id, _one(card), 0);
 
         skip(DURATION);
-        house.settle(id); // permissionless
-        assertEq(shapes.ownerOf(lotId), alice, "winner has the lot");
+        house.settle(id); // permissionless, and moves nothing
+        assertEq(shapes.ownerOf(lotId), address(house), "settlement is bookkeeping, not delivery");
+
+        vm.prank(alice);
+        house.claimLot(id);
+        assertEq(shapes.ownerOf(lotId), alice, "winner pulled the lot");
 
         vm.prank(seller);
         house.claimProceeds(id);
@@ -564,6 +573,9 @@ contract AuctionHouseTest is AuctionBase {
         house.settle(id);
         vm.prank(seller);
         house.claimProceeds(id);
+        _assertEscrowExact(id, bidders); // the lot is still here, and still counted
+        vm.prank(alice); // alice led on the 10 ETH card
+        house.claimLot(id);
         _assertEscrowExact(id, bidders);
         assertEq(shapes.balanceOf(address(house)), 0);
     }
@@ -591,6 +603,8 @@ contract AuctionHouseTest is AuctionBase {
 
         skip(DURATION);
         house.settle(id);
+        vm.prank(bob);
+        house.claimLot(id);
         assertEq(shapes.ownerOf(lotId), bob);
     }
 
@@ -606,5 +620,147 @@ contract AuctionHouseTest is AuctionBase {
     function test_UnknownAuctionReverts() public {
         vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionNotFound.selector, 7));
         house.minimumBid(7);
+    }
+}
+
+/// @dev A plain, honest ERC721 from some other collection: the case the house exists to serve
+///      now that the lot is not required to be a Shape.
+contract ForeignCollection is ERC721 {
+    constructor() ERC721("Foreign", "FRGN") {}
+
+    function mint(address to, uint256 id) external {
+        _mint(to, id);
+    }
+}
+
+/// @notice A lot from a collection the house knows nothing about, priced in Shapes. The lot moves
+///         only through `claimLot`, and only to the party the outcome names.
+contract ForeignLotTest is AuctionBase {
+    ForeignCollection internal foreign;
+    uint256 internal foreignId = 7;
+
+    function setUp() public override {
+        super.setUp();
+        foreign = new ForeignCollection();
+        foreign.mint(seller, foreignId);
+        vm.prank(seller);
+        foreign.setApprovalForAll(address(house), true);
+    }
+
+    function _openForeign() internal returns (uint256 id) {
+        vm.prank(seller);
+        id = house.createAuction(
+            address(foreign), foreignId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION
+        );
+    }
+
+    function test_AForeignTokenSellsForShapes() public {
+        uint256 id = _openForeign();
+        assertEq(foreign.ownerOf(foreignId), address(house), "lot escrowed");
+        assertEq(house.auctions(id).nft, address(foreign), "the collection is recorded");
+
+        uint256 card = _mintCard(alice, 1 ether);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+
+        skip(DURATION);
+        house.settle(id);
+
+        vm.prank(alice);
+        house.claimLot(id);
+        assertEq(foreign.ownerOf(foreignId), alice, "winner holds the foreign token");
+
+        vm.prank(seller);
+        house.claimProceeds(id);
+        assertEq(shapes.ownerOf(card), seller, "seller was paid in Shapes");
+    }
+
+    /// @notice A bidder who brought no Shapes still pays in them: the ETH is minted into cards.
+    function test_AForeignTokenCanBeWonWithTheEthPath() public {
+        uint256 id = _openForeign();
+        vm.prank(bob);
+        house.bid{value: 1 ether + feeOf(1 ether)}(id, _none(), 1 ether);
+
+        skip(DURATION);
+        house.settle(id);
+        vm.prank(bob);
+        house.claimLot(id);
+        assertEq(foreign.ownerOf(foreignId), bob);
+    }
+
+    function test_LotAddressMustHaveCode() public {
+        address eoa = makeAddr("notACollection");
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.LotHasNoCode.selector, eoa));
+        house.createAuction(eoa, 1, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+    }
+
+    function test_ClaimLotIsRefusedBeforeSettlement() public {
+        uint256 id = _openForeign();
+        uint256 card = _mintCard(alice, 1 ether);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionStillRunning.selector, id));
+        house.claimLot(id);
+    }
+
+    function test_OnlyTheWinnerClaimsTheLot() public {
+        uint256 id = _openForeign();
+        uint256 card = _mintCard(alice, 1 ether);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+        skip(DURATION);
+        house.settle(id);
+
+        // Not the seller, who has been outbid out of their own lot, and not a bystander.
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NotLotRecipient.selector, id, seller));
+        house.claimLot(id);
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NotLotRecipient.selector, id, bob));
+        house.claimLot(id);
+    }
+
+    function test_TheLotCannotBeClaimedTwice() public {
+        uint256 id = _openForeign();
+        uint256 card = _mintCard(alice, 1 ether);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+        skip(DURATION);
+        house.settle(id);
+
+        vm.prank(alice);
+        house.claimLot(id);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.LotAlreadyClaimed.selector, id));
+        house.claimLot(id);
+    }
+
+    /// @notice An auction nobody bid on returns the lot to the seller, through the same pull.
+    function test_ACancelledAuctionReturnsTheLotToTheSeller() public {
+        uint256 id = _openForeign();
+        vm.prank(seller);
+        house.cancelAuction(id);
+        assertEq(foreign.ownerOf(foreignId), address(house), "cancelling moves nothing either");
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NotLotRecipient.selector, id, alice));
+        house.claimLot(id);
+
+        vm.prank(seller);
+        house.claimLot(id);
+        assertEq(foreign.ownerOf(foreignId), seller, "seller pulled their lot back");
+    }
+
+    /// @notice The seller cannot list what they do not own: the post-transfer ownership check is
+    ///         what an honest collection is held to.
+    function test_ASellerCannotListATokenTheyDoNotOwn() public {
+        foreign.mint(bob, 99);
+        vm.prank(seller);
+        vm.expectRevert();
+        house.createAuction(address(foreign), 99, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
     }
 }

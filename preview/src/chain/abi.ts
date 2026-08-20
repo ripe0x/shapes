@@ -117,7 +117,7 @@ export function denomLabel(wei: bigint): string {
 /** The auction house surface the site drives: opening state, bidding, and the two pulls. */
 export const auctionHouseAbi = parseAbi([
   "function auctionCount() view returns (uint256)",
-  "function auctions(uint256 auctionId) view returns ((address seller, uint256 tokenId, uint64 endTime, uint64 duration, uint32 extensionWindow, uint16 minIncrementBps, uint64 reserveUnits, uint64 highestUnits, address highestBidder, bool settled))",
+  "function auctions(uint256 auctionId) view returns ((address seller, address nft, uint256 tokenId, uint64 endTime, uint64 duration, uint32 extensionWindow, uint16 minIncrementBps, uint64 reserveUnits, uint64 highestUnits, address highestBidder, bool settled, bool lotClaimed))",
   "function bidUnits(uint256 auctionId, address bidder) view returns (uint64)",
   "function escrowedCards(uint256 auctionId, address bidder) view returns (uint256[])",
   "function minimumBid(uint256 auctionId) view returns (uint64)",
@@ -125,6 +125,7 @@ export const auctionHouseAbi = parseAbi([
   "function bid(uint256 auctionId, uint256[] cardIds, uint256 ethBackingWei) payable",
   "function withdraw(uint256 auctionId)",
   "function settle(uint256 auctionId)",
+  "function claimLot(uint256 auctionId)",
   "function claimProceeds(uint256 auctionId)",
   "error AuctionNotFound(uint256 auctionId)",
   "error AuctionOver(uint256 auctionId)",
@@ -139,4 +140,7 @@ export const auctionHouseAbi = parseAbi([
   "error BidTooLow(uint64 provided, uint64 required)",
   "error NothingToWithdraw(uint256 auctionId, address bidder)",
   "error UnsolicitedToken(address from)",
+  "error LotHasNoCode(address nft)",
+  "error LotAlreadyClaimed(uint256 auctionId)",
+  "error NotLotRecipient(uint256 auctionId, address caller)",
 ]);

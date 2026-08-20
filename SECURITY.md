@@ -27,6 +27,35 @@ thing this house does not have. The loss is confined to whoever pushed the token
 self-inflicted, and mirrors how the reserve invariant already treats ETH forced in by paths that
 bypass `receive`: stated as an inequality and left permanently inaccessible.
 
+## Lots from collections the house knows nothing about
+
+The house sells any ERC721 and prices it in Shapes. It cannot verify that a collection is what it
+claims: a contract whose `transferFrom` moves nothing and whose `ownerOf` names whoever asks passes
+every check that can be written, so a seller can list a lot that will never be delivered and take
+a real winning bid for it. This is the exposure of any permissionless marketplace and it has no
+on-chain fix.
+
+What the house does guarantee is who can be hurt. The lot's address is called from exactly two
+functions, `createAuction` and `claimLot`, whose callers are the seller and the winner. Every other
+path moves Shapes alone. So a dishonest or broken lot cannot reach a losing bidder's escrow, a
+seller's proceeds, another auction, or the outcome of its own:
+
+- `settle` and `cancelAuction` record a result and transfer nothing, so neither can be made to
+  revert by the lot. The outcome is always recordable.
+- `withdraw` returns an outbid bidder's cards, and `claimProceeds` hands the winning cards to the
+  seller. Both move Shapes.
+- `claimLot` is the single path by which the lot leaves, and the only one that can fail. It stays
+  callable indefinitely, so a collection that is paused when the auction ends can be claimed once
+  it resumes.
+
+`test_H01_ALyingLotCostsOnlyItsOwnBidder` runs a lying lot alongside an honest auction and asserts
+the honest one settles, delivers and pays out untouched.
+`test_H02_AJammedLotBlocksOnlyItsOwnDelivery` jams a lot after the bids are in and asserts the
+loser withdraws and the seller is paid regardless.
+
+The mitigation for the residual risk is presentational and belongs in the interface: the auction
+screen names the lot's collection and says the house does not vouch for it.
+
 ## The threat model
 
 Shapes holds user ETH and has no administrator with any power over the reserve. The transferable

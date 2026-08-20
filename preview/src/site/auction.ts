@@ -7,6 +7,9 @@ export const UNIT = 10_000_000_000_000_000n;
 export interface AuctionState {
   id: bigint;
   seller: `0x${string}`;
+  /** The lot's collection. Any ERC721, so a bidder is bidding on this address as much as on the
+   *  token: the house cannot vouch for a collection it has never seen. */
+  nft: `0x${string}`;
   tokenId: bigint;
   /** Zero until the first bid lands: the clock starts then, not at creation. */
   endTime: bigint;
@@ -17,6 +20,8 @@ export interface AuctionState {
   highestUnits: bigint;
   highestBidder: `0x${string}`;
   settled: boolean;
+  /** True once the lot has been pulled out of the house. */
+  lotClaimed: boolean;
   /** Smallest bid that would take the lead right now, in units. */
   minimumUnits: bigint;
   /** The connected wallet's own escrowed total and cards, if any. */
@@ -92,6 +97,7 @@ export async function loadAuction(
   return {
     id: auctionId,
     seller: raw.seller,
+    nft: raw.nft,
     tokenId: raw.tokenId,
     endTime: raw.endTime,
     duration: raw.duration,
@@ -101,18 +107,26 @@ export async function loadAuction(
     highestUnits: raw.highestUnits,
     highestBidder: raw.highestBidder,
     settled: raw.settled,
+    lotClaimed: raw.lotClaimed,
     minimumUnits: BigInt(minimumUnits),
     yourUnits: BigInt(yourUnits),
     yourCards: [...yourCards],
   };
 }
 
-/** The lot's artwork. Returns null once the lot has been redeemed and no longer renders. */
+/** True when the lot is a Shape, whose artwork this site can render inline. */
+export function lotIsAShape(dep: Deployment, a: AuctionState): boolean {
+  return a.nft.toLowerCase() === dep.shapes.toLowerCase();
+}
+
+/** The lot's artwork, for a Shape lot. A lot from another collection renders nothing here: its
+ *  `tokenURI` is whatever that collection returns, off-chain as often as not. */
 export async function loadLotImage(
   publicClient: PublicClient,
   dep: Deployment,
   a: AuctionState,
 ): Promise<string | null> {
+  if (!lotIsAShape(dep, a)) return null;
   try {
     const uri = await publicClient.readContract({
       address: dep.shapes,

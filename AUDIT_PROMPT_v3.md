@@ -35,8 +35,9 @@ total.
 
 Four things, in descending order of how much they can cost if wrong.
 
-1. **`src/ShapeAuctionHouse.sol`**. Escrows a Shape as the lot plus Shape cards as bids, and is
-   the only contract here holding assets belonging to people other than its caller.
+1. **`src/ShapeAuctionHouse.sol`**. Escrows any ERC721 as the lot plus Shape cards as bids, and
+   is the only contract here holding assets belonging to people other than its caller. **The lot
+   is no longer restricted to Shapes, and delivery is now a pull.** See the section below.
 2. **The id allocator changed.** Token ids now issue from 0 rather than 1, and `totalMinted` is a
    count rather than the highest id. This interacts with `decompose`, which re-mints
    already-issued ids.
@@ -79,8 +80,17 @@ critical rather than as a liveness nit.
 belongs to none is stranded forever; a card that belongs to two is claimable twice, and a Shape
 card is redeemable for real ETH by whoever holds it.
 
-**I3. The house never pushes an asset.** Outbid bidders pull. If any path pushes an ERC721 to an
-address chosen by someone else, a hostile receiver can revert it and freeze the auction.
+**I3. The house never pushes an asset.** Outbid bidders pull, and so does the winner: the lot is
+delivered by `claimLot`, not by `settle`. If any path pushes an ERC721 to an address chosen by
+someone else, a hostile receiver or a hostile collection can revert it and freeze the auction.
+
+**I5. No outcome depends on a foreign contract.** `settle` and `cancelAuction` must be unfailable
+given their preconditions: they call nothing. A lot that reverts on transfer must not be able to
+prevent an outcome being recorded, a seller claiming proceeds, or a losing bidder withdrawing.
+
+**I6. The lot has exactly one exit, taken at most once.** `claimLot` is the only path out for a
+lot, `lotClaimed` gates it, and the recipient is the winner when one exists and the seller when
+none does. A lot claimable twice is a stolen asset; one claimable by neither is a locked one.
 
 **I4. Bid value comes from `backingOf`, never from a denomination.** A Black Shape reads as
 100 ETH by denomination and zero by backing. Valuing off the denomination would let a worthless
@@ -98,9 +108,24 @@ findings are gone; what is left is whatever the closures did not fully cover.
 - A seller-supplied ERC721 whose `transferFrom` returned without moving anything let the seller
   collect a real winning bid for a lot that never changed hands. A second contract that permitted
   the inbound transfer and reverted the outbound one stranded the leader's escrow with neither
-  settlement nor withdrawal reachable. **Closed by removing the `nft` parameter**: the lot is
-  always a Shape. Check the removal is total, that no path still reaches an arbitrary ERC721, and
-  that a Shape lot cannot itself be made to fail a transfer.
+  settlement nor withdrawal reachable.
+
+  **This closure was reverted and replaced, and the replacement is the single largest thing to
+  attack in this round.** Restricting the lot to Shapes was treating the second finding as a
+  property of the lot being unknown, when it was a property of the house *pushing* the lot.
+  `settle` and `cancelAuction` now record an outcome and transfer nothing; the lot leaves only
+  through `claimLot`, pulled by the winner, or by the seller when the auction closed unsold.
+  `createAuction` takes an `nft` address again.
+
+  The claim to break is that the lot's collection is reachable from exactly two functions,
+  `createAuction` and `claimLot`, and that every other path moves Shapes alone. If you can reach
+  an arbitrary `nft` from `settle`, `withdraw`, `claimProceeds`, `bid` or `cancelAuction` — by any
+  route, including reentrancy from within `createAuction`'s or `claimLot`'s transfer — the
+  containment argument fails and the original H-02 is back.
+
+  The first finding is **accepted and unfixable**: a collection lying about `transferFrom` lies
+  about `ownerOf`. Do not report it. Do report any way it harms someone other than the bidder who
+  chose that auction.
 - The mint fee is forwarded before minting, so a contract fee recipient ran code while the house's
   `_minting` flag was set and could hand it an untracked card. **Closed by also requiring
   `from == address(0)`.**
@@ -130,6 +155,14 @@ findings are gone; what is left is whatever the closures did not fully cover.
 - **Timing.** The clock starts at the first bid. Can `endTime` be moved inward? Can an auction be
   settled before it ends, or an unbid auction be settled at all? Can `cancelAuction` run after a
   bid?
+- **The lot pull.** `claimLot` reads `highestBidder` to decide between the winner and the seller,
+  relying on `settle` requiring a bid and `cancelAuction` requiring none. Can an auction reach a
+  settled state where that partition is wrong, and the lot goes to the wrong party? Can a lot be
+  claimed while the auction is live, or after being claimed once?
+- **Foreign reentrancy.** `createAuction` and `claimLot` call a contract the seller chose.
+  `settle` and `cancelAuction` are deliberately not `nonReentrant`, because they make no external
+  call. Confirm that is true of them, and that the guard on the two that do call out cannot be
+  escaped.
 - **The increment.** `_minimumBid` rounds up to a whole unit and floors at one. Can it be made to
   demand an amount no combination of denominations can express, deadlocking the auction?
 - **Reentrancy.** Every external entry point is `nonReentrant`. The lot is escrowed with
@@ -197,9 +230,12 @@ Read the comments as claims to be falsified, not as documentation.
 
 ## What is already tested — find the gaps, do not re-derive
 
-- `test/AuctionHouse.t.sol` (34): Black Shape rejection against a real sacrificed apex, a hostile
-  bidder that refuses ERC721s, escrow exactness across a contested auction, the increment ceiling,
-  anti-sniping, and a fuzz over the minimal card set.
+- `test/AuctionHouse.t.sol` (34 plus 8 in `ForeignLotTest`): Black Shape rejection against a real
+  sacrificed apex, a hostile bidder that refuses ERC721s, escrow exactness across a contested
+  auction, the increment ceiling, anti-sniping, a fuzz over the minimal card set, and a foreign
+  ERC721 sold end to end through both the card and ETH bid paths.
+- `test/AuctionSecurity.t.sol`: a lying lot running alongside an honest auction, and a lot jammed
+  after the bids are in. Both assert on what is *unaffected*, which is where to look for a gap.
 - `test/TokenIds.t.sol` (12) and `invariant_EveryLiveIdIsBelowTheCounter`: the allocator, at
   65,536 calls under CI depth.
 - `test/Token0.t.sol` (6): who can take #0, that a Shape cannot be minted into the house, and the
@@ -212,6 +248,11 @@ Read the comments as claims to be falsified, not as documentation.
 - **Token id 0 is first-come.** Minting is permissionless; nothing reserves it. Deliberate.
 - **The winner can burn the lot.** If the lot is a Shape, `redeem` destroys it for its backing.
   Deliberate.
+- **A lot can be listed by a seller whose collection is worthless or fraudulent.** Permissionless
+  listing. The interface names the collection; the contract cannot judge it.
+- **A winner who cannot receive the lot has still paid for it.** `claimLot` remains callable
+  forever, so a paused collection resolves itself. A permanently hostile one does not, and that
+  loss stays with the bidder who chose the auction.
 - **The renderer is not locked at launch**, so the owner can change every token's artwork and the
   collection metadata until they choose to lock. Deliberate, and disclosed.
 - **The ETH bidding path costs the 1% Shapes mint fee**; the card path does not. Deliberate.

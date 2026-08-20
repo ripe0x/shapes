@@ -126,14 +126,26 @@ What survives from the exercise is §6.
 
 ## 3. `ShapeAuctionHouse`
 
-Sells a Shape. Bids are always denominated in Shape cards.
+Sells any ERC721. Bids are always denominated in Shape cards.
 
-The lot is not an arbitrary ERC721, and that is a security property rather than a limitation. An
-audit of `185bd0f` found that a seller-supplied contract whose `transferFrom` returns without
-moving anything lets the seller collect a real winning bid for a lot that never changed hands, and
-one that reverts only on the way out strands the leader's escrow with neither settlement nor
-withdrawal reachable. Both were reproduced. The house cannot tell either apart from an honest
-implementation, so it sells only the collection it holds an immutable reference to.
+An audit of `185bd0f` found two ways a seller-supplied lot contract could be abused, and both were
+reproduced. A `transferFrom` that returns without moving anything let the seller collect a real
+winning bid for a lot that never changed hands. One that reverted only on the way out stranded the
+leader's escrow, with neither settlement nor withdrawal reachable.
+
+The lot was restricted to Shapes as the first response. It is not restricted now, because the
+second finding was a symptom of the house pushing the lot rather than of the lot being unknown.
+Settlement records an outcome and moves nothing; the lot leaves through `claimLot`, pulled by the
+party the outcome names. A lot that refuses to move therefore blocks its own delivery and nothing
+else: the seller still claims the winning cards, every outbid bidder still withdraws, and both of
+those paths move Shapes alone.
+
+The first finding has no on-chain fix. A collection that lies about `transferFrom` lies about
+`ownerOf` too, and no check distinguishes it from an honest one. What the contract offers instead
+is a bound on who can be hurt: the lot's address is reached from `createAuction` and `claimLot`
+and nowhere else, so the loss falls on the bidder who chose that auction and reaches no other
+auction, seller or bidder. This is the exposure every permissionless marketplace carries, and the
+mitigation is the same one: the interface shows the collection address, and the bidder checks it.
 
 ### 3.0 What it depends on
 
@@ -182,6 +194,7 @@ immutable constructor argument.
 
 ```solidity
 function createAuction(
+    address nft,
     uint256 tokenId,
     uint64  duration,
     uint64  reserveUnits,
@@ -190,9 +203,12 @@ function createAuction(
 ) external returns (uint256 auctionId);
 ```
 
-The sold token is escrowed with `transferFrom`, never `safeTransferFrom`, so the house takes
-no `onERC721Received` callback for it and the sale is guaranteed deliverable. The seller may
-`cancelAuction` only while there is no bidder.
+`nft` must have code. The lot is escrowed with `transferFrom`, never `safeTransferFrom`, so the
+house takes no `onERC721Received` callback for it, and the house checks it holds the token
+afterwards. That check binds an honest collection; nothing binds a dishonest one.
+
+The seller may `cancelAuction` only while there is no bidder. Cancelling records the close and
+returns nothing: the seller pulls the lot back with `claimLot`, the same function a winner uses.
 
 The clock starts on the first bid rather than at creation (⚙), so the auction cannot expire
 unsold because nobody was watching on day one.

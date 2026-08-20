@@ -368,6 +368,8 @@ export function SiteApp({
           onBid={doBid}
           onWithdraw={() => void runHouse("withdraw", "withdraw", [0n])}
           onSettle={() => void runHouse("settle", "settle", [0n])}
+          onClaimLot={() => void runHouse("claimLot", "claimLot", [0n])}
+          dep={dep}
           onClaim={() => void runHouse("claim", "claimProceeds", [0n])}
           onOpenToken={openToken}
         />

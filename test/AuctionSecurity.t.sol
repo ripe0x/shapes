@@ -19,6 +19,27 @@ contract FakeLot {
     }
 }
 
+/// @dev A lot that accepts its inbound transfer and can then be made to refuse every outbound
+///      one: the H-02 shape. Under the pull model it can block only its own delivery.
+contract StickyLot {
+    mapping(uint256 tokenId => address) public ownerOf;
+    bool public jammed;
+
+    function mint(address to, uint256 id) external {
+        ownerOf[id] = to;
+    }
+
+    function jam() external {
+        jammed = true;
+    }
+
+    function transferFrom(address from, address to, uint256 id) external {
+        require(!jammed, "jammed");
+        require(ownerOf[id] == from, "wrong owner");
+        ownerOf[id] = to;
+    }
+}
+
 /// @dev I-06: an ERC721 whose `transferFrom` moves nothing. The house cannot be its `shapes`, but
 ///      as a stand-in it proves the post-transfer ownership check in `createAuction` reverts when
 ///      the house does not actually come to hold the lot.
@@ -74,6 +95,7 @@ contract AuctionSecurityTest is Test {
     address internal titleHolder = makeAddr("titleHolder");
     address seller = makeAddr("seller");
     address alice = makeAddr("alice");
+    address bob = makeAddr("bob");
 
     function setUp() public {
         renderer = new ShapeRenderer();
@@ -84,50 +106,120 @@ contract AuctionSecurityTest is Test {
         vm.deal(alice, 100 ether);
         vm.prank(alice);
         shapes.setApprovalForAll(address(house), true);
+        vm.deal(bob, 100 ether);
+        vm.prank(bob);
+        shapes.setApprovalForAll(address(house), true);
     }
 
-    /// @notice H-01. A lot whose `transferFrom` returns without moving anything would let a
-    ///         seller collect a real winning bid for a lot that never changed hands. The house
-    ///         cannot tell such a contract from an honest one, so it does not accept one: the lot
+    /// @notice H-01. A lot whose `transferFrom` returns without moving anything lets a seller
+    ///         collect a real winning bid for a lot that never changed hands, and no on-chain
+    ///         check separates it from an honest collection. What the house guarantees instead is
+    ///         the blast radius: the loss falls on the bidder who chose that auction, and reaches
+    ///         no other auction, seller or bidder. The original finding was that it did.
+    ///
+    ///         Superseded text, kept as the record of what changed: the lot
     ///         is always a Shape. `FakeLot` is unreachable as a lot, kept as a record of what the
     ///         parameter used to admit.
-    function test_H01_AnArbitraryContractCannotBeTheLot() public {
-        FakeLot fake = new FakeLot();
+    function test_H01_ALyingLotCostsOnlyItsOwnBidder() public {
+        FakeLot fake = new FakeLot(); // transferFrom moves nothing; ownerOf tells the caller it won
 
-        // There is no longer a way to name it: `createAuction` takes only a Shape token id, and
-        // escrowing pulls through `shapes`. Naming an id the seller does not own reverts.
+        // An honest auction runs alongside it, to show the fraud does not reach past its own lot.
         vm.prank(seller);
-        vm.expectRevert();
-        house.createAuction(uint256(uint160(address(fake))), 1, 100, 0, 0);
-
-        assertEq(house.auctionCount(), 0, "no auction was opened over a foreign contract");
-    }
-
-    /// @notice H-02. Delivery cannot be made to revert selectively, for the same reason: the only
-    ///         lot is a Shape, whose `transferFrom` the house can always complete once it holds
-    ///         the token. A seller cannot strand the leader's escrow.
-    function test_H02_SettlementCannotBeBlockedByTheLot() public {
-        vm.prank(seller);
-        uint256 lot = shapes.mint{value: 0.101 ether}(0.1 ether);
+        uint256 honestLot = shapes.mint{value: 0.101 ether}(0.1 ether);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
-        uint256 a = house.createAuction(lot, 1, 100, 0, 0);
+        uint256 honest = house.createAuction(address(shapes), honestLot, 1 days, 1, 0, 0);
+
+        // The lie passes creation: `ownerOf` returns the house because the house is asking. No
+        // check can separate this from an honest collection, which is why the containment below
+        // is the property that matters rather than the rejection.
+        vm.prank(seller);
+        uint256 bad = house.createAuction(address(fake), 1, 1, 100, 0, 0);
 
         vm.prank(alice);
-        uint256 card = shapes.mint{value: 1.01 ether}(1 ether);
+        uint256 aliceCard = shapes.mint{value: 1.01 ether}(1 ether);
         uint256[] memory ids = new uint256[](1);
-        ids[0] = card;
+        ids[0] = aliceCard;
         vm.prank(alice);
-        house.bid(a, ids, 0);
+        house.bid(bad, ids, 0); // alice pays for a lot that will never move
+
+        vm.prank(bob);
+        uint256 bobCard = shapes.mint{value: 1.01 ether}(1 ether);
+        uint256[] memory bobIds = new uint256[](1);
+        bobIds[0] = bobCard;
+        vm.prank(bob);
+        house.bid(honest, bobIds, 0);
 
         skip(2);
-        house.settle(a); // completes; nothing can interpose
-        assertEq(shapes.ownerOf(lot), alice, "winner received the lot");
+        house.settle(bad);
+
+        // Alice's loss is real and is hers. `claimLot` reports success because the collection
+        // says so, and she receives nothing, because there was never anything to receive.
+        vm.prank(alice);
+        house.claimLot(bad);
+        vm.prank(seller);
+        house.claimProceeds(bad);
+        assertEq(shapes.ownerOf(aliceCard), seller, "the seller took a real card for a false lot");
+
+        // It reaches no further. The honest auction settles, delivers and pays out untouched.
+        skip(1 days);
+        house.settle(honest);
+        vm.prank(bob);
+        house.claimLot(honest);
+        assertEq(shapes.ownerOf(honestLot), bob, "the honest winner still takes delivery");
+        vm.prank(seller);
+        house.claimProceeds(honest);
+        assertEq(shapes.ownerOf(bobCard), seller, "the honest seller is still paid");
+    }
+
+    /// @notice H-02. A lot that refuses to be transferred out can block its own delivery and
+    ///         nothing else. Settlement, the seller's proceeds and every losing bidder's escrow
+    ///         move Shapes alone and never touch the lot's collection, which is what the pull
+    ///         model buys: the original finding was that this froze all three at once.
+    function test_H02_AJammedLotBlocksOnlyItsOwnDelivery() public {
+        StickyLot sticky = new StickyLot();
+        sticky.mint(seller, 1);
 
         vm.prank(seller);
+        uint256 a = house.createAuction(address(sticky), 1, 1, 100, 0, 0);
+        assertEq(sticky.ownerOf(1), address(house), "the lot was escrowed while it still moved");
+
+        // Two bidders, so there is a loser with escrow at stake.
+        vm.prank(alice);
+        uint256 aliceCard = shapes.mint{value: 1.01 ether}(1 ether);
+        uint256[] memory aliceIds = new uint256[](1);
+        aliceIds[0] = aliceCard;
+        vm.prank(alice);
+        house.bid(a, aliceIds, 0);
+
+        vm.prank(bob);
+        uint256 bobCard = shapes.mint{value: 5.05 ether}(5 ether);
+        uint256[] memory bobIds = new uint256[](1);
+        bobIds[0] = bobCard;
+        vm.prank(bob);
+        house.bid(a, bobIds, 0);
+
+        sticky.jam(); // the seller turns hostile once the bids are in
+
+        skip(2);
+        house.settle(a); // records the outcome; touches no collection but Shapes
+
+        // The loser gets their cards back.
+        vm.prank(alice);
+        house.withdraw(a);
+        assertEq(shapes.ownerOf(aliceCard), alice, "a losing bidder is not held hostage");
+
+        // The seller is paid.
+        vm.prank(seller);
         house.claimProceeds(a);
-        assertEq(shapes.ownerOf(card), seller, "seller received the bid, having delivered");
+        assertEq(shapes.ownerOf(bobCard), seller, "the seller's proceeds are not held hostage");
+
+        // Only the winner's own delivery fails, and it stays claimable if the lot ever moves again.
+        vm.prank(bob);
+        vm.expectRevert(bytes("jammed"));
+        house.claimLot(a);
+        assertEq(sticky.ownerOf(1), address(house), "undelivered, and still owed");
     }
 
     /// @notice M-02. The seller cannot bid its own auction. Shill-bidding to set a floor with cards
@@ -138,7 +230,7 @@ contract AuctionSecurityTest is Test {
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
-        uint256 a = house.createAuction(lot, 1 days, 1, 0, 0);
+        uint256 a = house.createAuction(address(shapes), lot, 1 days, 1, 0, 0);
 
         vm.prank(seller);
         uint256 card = shapes.mint{value: 1.01 ether}(1 ether);
@@ -163,15 +255,15 @@ contract AuctionSecurityTest is Test {
 
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.DurationOutOfRange.selector);
-        house.createAuction(lot, max + 1, 1, 0, 0);
+        house.createAuction(address(shapes), lot, max + 1, 1, 0, 0);
 
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.ExtensionWindowTooLong.selector);
-        house.createAuction(lot, 1 days, 1, 0, uint32(1 days + 1));
+        house.createAuction(address(shapes), lot, 1 days, 1, 0, uint32(1 days + 1));
 
         // The boundaries themselves are accepted.
         vm.prank(seller);
-        uint256 a = house.createAuction(lot, max, 1, 0, uint32(max));
+        uint256 a = house.createAuction(address(shapes), lot, max, 1, 0, uint32(max));
         assertEq(shapes.ownerOf(lot), address(house), "lot escrowed at the boundary");
         a;
     }
@@ -184,7 +276,7 @@ contract AuctionSecurityTest is Test {
 
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.LotNotReceived.selector);
-        fakeHouse.createAuction(1, 1 days, 1, 0, 0);
+        fakeHouse.createAuction(address(fake), 1, 1 days, 1, 0, 0);
 
         assertEq(fakeHouse.auctionCount(), 0, "no auction over a lot the house never received");
     }
@@ -213,7 +305,7 @@ contract AuctionSecurityTest is Test {
         vm.prank(seller2);
         shapes2.setApprovalForAll(address(house2), true);
         vm.prank(seller2);
-        uint256 a = house2.createAuction(lot, 1 days, 1, 0, 0);
+        uint256 a = house2.createAuction(address(shapes2), lot, 1 days, 1, 0, 0);
 
         // A bidder takes the ETH path. The mint forwards the fee to `mal`, which fires while the
         // house is minting and attempts the push.

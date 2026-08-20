@@ -25,6 +25,14 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      to be pulled. Pushing up to sixty-four ERC721 transfers inside `bid` would let a bidder
 ///      with a reverting `onERC721Received` freeze the auction on their own bid permanently.
 ///
+///      The lot is pulled on the same terms, which is what lets the house sell a collection it
+///      knows nothing about. `settle` and `cancelAuction` record an outcome and move nothing;
+///      `claimLot` is the single path by which the lot leaves. A lot whose transfer reverts
+///      therefore blocks its own delivery and nothing else: the seller still claims the winning
+///      cards and every outbid bidder still withdraws, because those paths move Shapes alone.
+///      The lot's collection is called from exactly two functions, `createAuction` and
+///      `claimLot`, whose callers are the seller and the winner.
+///
 ///      The house takes no fee and has no owner, no pause, and no path that reaches an escrowed
 ///      card other than its depositor pulling it back or the seller claiming a settled win. A
 ///      Shape pushed here by a plain `transferFrom`, which calls no receiver hook and so cannot be
@@ -35,6 +43,7 @@ import {Denominations} from "./lib/Denominations.sol";
 contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGuard {
     struct Auction {
         address seller;
+        address nft;
         uint256 tokenId;
         uint64 endTime;
         uint64 duration;
@@ -44,6 +53,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         uint64 highestUnits;
         address highestBidder;
         bool settled;
+        bool lotClaimed;
     }
 
     /// @inheritdoc IShapeAuctionHouse
@@ -76,20 +86,26 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /* ---------------------------- creating ---------------------------- */
 
     /// @inheritdoc IShapeAuctionHouse
-    /// @dev The token is escrowed with `transferFrom` rather than `safeTransferFrom`, so the
-    ///      house takes no receiver callback for it and the sale is deliverable from this point.
+    /// @dev The lot is escrowed with `transferFrom` rather than `safeTransferFrom`, so the house
+    ///      takes no receiver callback for it.
     ///
-    ///      The lot is always a Shape. The house cannot tell a well-behaved ERC721 from one whose
-    ///      `transferFrom` returns without moving anything, and a lot that only pretends to move
-    ///      would let a seller collect a real winning bid for nothing. `Shapes` is the one
-    ///      contract this house can vouch for, so it is the only one it will sell.
+    ///      The ownership check after the transfer binds an honest collection: a `transferFrom`
+    ///      that returns without moving anything is caught, as is a token the seller did not own.
+    ///      It does not bind a collection that also reports `ownerOf` falsely, and nothing on
+    ///      chain does. What bounds that case is the shape of the contract rather than a check
+    ///      inside it: `nft` is called here and in `claimLot`, and nowhere those calls can reach
+    ///      does anyone but the seller and the winner have something at stake.
     function createAuction(
+        address nft,
         uint256 tokenId,
         uint64 duration,
         uint64 reserveUnits,
         uint16 minIncrementBps,
         uint32 extensionWindow
     ) external nonReentrant returns (uint256 auctionId) {
+        // An address with no code accepts a void call silently, so `transferFrom` on one would
+        // appear to succeed. `ownerOf` below would revert on it regardless; this names the reason.
+        if (nft.code.length == 0) revert LotHasNoCode(nft);
         // Bound the clock. An unbounded duration would hold every bidder's escrow for as long as
         // the seller chose; extensionWindow may not exceed the duration it extends.
         if (duration == 0 || duration > MAX_DURATION) revert DurationOutOfRange();
@@ -98,6 +114,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         auctionId = auctionCount++;
         _auctions[auctionId] = Auction({
             seller: msg.sender,
+            nft: nft,
             tokenId: tokenId,
             endTime: 0, // set by the first bid
             duration: duration,
@@ -106,19 +123,19 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
             reserveUnits: reserveUnits,
             highestUnits: 0,
             highestBidder: address(0),
-            settled: false
+            settled: false,
+            lotClaimed: false
         });
 
-        emit AuctionCreated(auctionId, msg.sender, shapes, tokenId, duration, reserveUnits);
-        IERC721(shapes).transferFrom(msg.sender, address(this), tokenId);
-        // Confirm the house holds the lot before the auction is live. Redundant for a Shape, whose
-        // transferFrom either moves the token or reverts, and the guarantee the rest of the
-        // contract relies on: a settled auction can always deliver.
-        if (IERC721(shapes).ownerOf(tokenId) != address(this)) revert LotNotReceived();
+        emit AuctionCreated(auctionId, msg.sender, nft, tokenId, duration, reserveUnits);
+        IERC721(nft).transferFrom(msg.sender, address(this), tokenId);
+        if (IERC721(nft).ownerOf(tokenId) != address(this)) revert LotNotReceived();
     }
 
     /// @inheritdoc IShapeAuctionHouse
-    function cancelAuction(uint256 auctionId) external nonReentrant {
+    /// @dev Records the close and returns nothing. The seller pulls the lot back with `claimLot`,
+    ///      which `highestBidder == address(0)` directs to them rather than to a winner.
+    function cancelAuction(uint256 auctionId) external {
         Auction storage a = _requireAuction(auctionId);
         if (msg.sender != a.seller || a.highestBidder != address(0) || a.settled) {
             revert InvalidAuction();
@@ -126,7 +143,6 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
 
         a.settled = true;
         emit AuctionCancelled(auctionId);
-        IERC721(shapes).transferFrom(address(this), a.seller, a.tokenId);
     }
 
     /* ----------------------------- bidding ---------------------------- */
@@ -235,16 +251,32 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /* ---------------------------- settling ---------------------------- */
 
     /// @inheritdoc IShapeAuctionHouse
-    function settle(uint256 auctionId) external nonReentrant {
+    /// @dev Touches no collection, so it cannot be made to revert by the lot and the outcome is
+    ///      always recordable. Needs no reentrancy guard for the same reason: it calls nothing.
+    function settle(uint256 auctionId) external {
         Auction storage a = _requireAuction(auctionId);
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime == 0 || block.timestamp < a.endTime) revert AuctionStillRunning(auctionId);
 
         a.settled = true;
-        address winner = a.highestBidder;
+        emit AuctionSettled(auctionId, a.highestBidder, a.highestUnits);
+    }
 
-        emit AuctionSettled(auctionId, winner, a.highestUnits);
-        IERC721(shapes).transferFrom(address(this), winner, a.tokenId);
+    /// @inheritdoc IShapeAuctionHouse
+    /// @dev `highestBidder` partitions the two outcomes: `settle` requires a bid and so leaves it
+    ///      set, `cancelAuction` requires none and so leaves it zero. Marked claimed before the
+    ///      transfer, so a collection that calls back finds nothing left to take twice.
+    function claimLot(uint256 auctionId) external nonReentrant {
+        Auction storage a = _requireAuction(auctionId);
+        if (!a.settled) revert AuctionStillRunning(auctionId);
+        if (a.lotClaimed) revert LotAlreadyClaimed(auctionId);
+
+        address recipient = a.highestBidder == address(0) ? a.seller : a.highestBidder;
+        if (msg.sender != recipient) revert NotLotRecipient(auctionId, msg.sender);
+
+        a.lotClaimed = true;
+        emit LotClaimed(auctionId, recipient);
+        IERC721(a.nft).transferFrom(address(this), recipient, a.tokenId);
     }
 
     /// @inheritdoc IShapeAuctionHouse

@@ -1,6 +1,6 @@
 import React from "react";
 import {formatEther} from "viem";
-import {DENOMINATIONS} from "../chain/abi";
+import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C} from "./theme";
 import {Section, Art, Modal, short, txUrl} from "./ui";
 import {localArt} from "./art";
@@ -8,12 +8,15 @@ import {
   breakdown,
   formatCountdown,
   isSettleable,
+  lotIsAShape,
   secondsLeft,
   unitsToEth,
   UNIT,
   type AuctionState,
 } from "./auction";
 import type {SiteData, SiteToken} from "./data";
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /** Ticks once a second so the countdown moves without the caller re-fetching the chain. */
 function useNow(): number {
@@ -39,6 +42,8 @@ export function AuctionView({
   onWithdraw,
   onSettle,
   onClaim,
+  onClaimLot,
+  dep,
   onOpenToken,
 }: {
   auction: AuctionState | null;
@@ -55,6 +60,8 @@ export function AuctionView({
   onWithdraw: () => void;
   onSettle: () => void;
   onClaim: () => void;
+  onClaimLot: () => void;
+  dep: Deployment;
   onOpenToken: (id: bigint) => void;
 }) {
   const now = useNow();
@@ -137,12 +144,12 @@ export function AuctionView({
           {lotImage && <Art src={lotImage} width={340} />}
           <div style={{flex: "1 1 320px", minWidth: 0}}>
             <div style={{fontSize: 40, lineHeight: 1}}>
-              {auction.highestBidder === "0x0000000000000000000000000000000000000000"
+              {auction.highestBidder === ZERO_ADDRESS
                 ? "No bids"
                 : `${unitsToEth(auction.highestUnits)} ETH`}
             </div>
             <div style={{marginTop: 10, fontSize: 13, color: C.muted}}>
-              {auction.highestBidder === "0x0000000000000000000000000000000000000000"
+              {auction.highestBidder === ZERO_ADDRESS
                 ? `Reserve ${unitsToEth(auction.reserveUnits)} ETH`
                 : `Held by ${short(auction.highestBidder)}`}
             </div>
@@ -161,6 +168,26 @@ export function AuctionView({
               <div>
                 Seller {short(auction.seller)} · lot #{auction.tokenId.toString()}
               </div>
+              <div>
+                Collection{" "}
+                {lotIsAShape(dep, auction) ? (
+                  "Shapes"
+                ) : (
+                  <a
+                    href={`https://evm.now/address/${auction.nft}?chainId=${chainId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{color: "inherit"}}
+                  >
+                    {short(auction.nft)}
+                  </a>
+                )}
+              </div>
+              {!lotIsAShape(dep, auction) && (
+                <div style={{color: C.muted}}>
+                  The house does not vouch for this collection. Check it before bidding.
+                </div>
+              )}
             </div>
 
             {isSettleable(auction, now) && (
@@ -348,7 +375,44 @@ export function AuctionView({
         </Section>
       )}
 
-      {isSeller && auction.settled && (
+      {yours && auction.settled && !auction.lotClaimed && (
+        <Section title="DELIVERY" pad="26px 48px 36px 32px">
+          <p style={{margin: "0 0 22px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+            You won lot #{auction.tokenId.toString()}. Settling recorded the result; this takes
+            delivery. It stays claimable, so there is no deadline.
+          </p>
+          <button
+            type="button"
+            className="btn-filled"
+            onClick={onClaimLot}
+            disabled={!!busy}
+            style={{padding: "11px 26px"}}
+          >
+            {busy === "claimLot" ? "Waiting for confirmation" : "Take delivery"}
+          </button>
+          {errLine("claimLot")}
+        </Section>
+      )}
+
+      {isSeller && auction.settled && !auction.lotClaimed && auction.highestBidder === ZERO_ADDRESS && (
+        <Section title="LOT" pad="26px 48px 36px 32px">
+          <p style={{margin: "0 0 22px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+            The auction closed without a bid. Pull the lot back out of the house.
+          </p>
+          <button
+            type="button"
+            className="btn-filled"
+            onClick={onClaimLot}
+            disabled={!!busy}
+            style={{padding: "11px 26px"}}
+          >
+            {busy === "claimLot" ? "Waiting for confirmation" : "Reclaim the lot"}
+          </button>
+          {errLine("claimLot")}
+        </Section>
+      )}
+
+      {isSeller && auction.settled && auction.highestBidder !== ZERO_ADDRESS && (
         <Section title="PROCEEDS" pad="26px 48px 36px 32px">
           <p style={{margin: "0 0 22px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
             The winning bid is {unitsToEth(auction.highestUnits)} ETH in Shapes. Hold them as

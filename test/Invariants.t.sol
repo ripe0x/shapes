@@ -714,7 +714,9 @@ contract AuctionHandler is Test, IERC721Receiver {
         vm.prank(seller);
         try shapes.mint{value: cost}(0.1 ether) returns (uint256 lot) {
             vm.prank(seller);
-            try house.createAuction(lot, duration, reserve, 500, extensionWindow) returns (uint256 id) {
+            try house.createAuction(address(shapes), lot, duration, reserve, 500, extensionWindow) returns (
+                uint256 id
+            ) {
                 auctionIds.push(id);
                 lotOf[id] = lot;
                 sellerOf[id] = seller;
@@ -914,6 +916,14 @@ contract AuctionInvariantTest is StdInvariant, Test {
             }
             vm.prank(handler.sellerOf(id));
             try house.claimProceeds(id) {} catch {}
+
+            // The lot leaves by its own pull: to the winner, or back to the seller if it never
+            // sold. Settlement no longer delivers it, so the exit has to be exercised here for
+            // the drain to mean anything.
+            address recipient = house.auctions(id).highestBidder;
+            if (recipient == address(0)) recipient = handler.sellerOf(id);
+            vm.prank(recipient);
+            try house.claimLot(id) {} catch {}
         }
 
         assertEq(shapes.balanceOf(address(house)), 0, "house retained a Shape with no exit");

@@ -50,7 +50,7 @@ contract Token0Test is Test {
         vm.prank(artist);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 a = house.createAuction(id, 24 hours, 1, 500, 15 minutes);
+        uint256 a = house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes);
 
         assertEq(shapes.ownerOf(id), address(house), "house escrows it");
         assertEq(house.auctions(a).seller, artist, "artist is the seller");
@@ -105,6 +105,6 @@ contract Token0Test is Test {
         uint256 id = shapes.mint{value: 0.0101 ether}(0.01 ether);
         vm.prank(stranger);
         vm.expectRevert();
-        house.createAuction(id, 24 hours, 1, 500, 15 minutes);
+        house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes);
     }
 }
