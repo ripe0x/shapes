@@ -307,8 +307,8 @@ export function ChainApp({dep}: {dep: Deployment}) {
     run("mint", () => {
       const value = (amountWei + feePerNft) * BigInt(qty);
       return qty === 1
-        ? write("mint", [amountWei, address!], value)
-        : write("mintBatch", [amountWei, BigInt(qty), address!], value);
+        ? write("mint", [amountWei], value)
+        : write("mintBatch", [amountWei, BigInt(qty)], value);
     });
 
   const redeem = (id: bigint) =>

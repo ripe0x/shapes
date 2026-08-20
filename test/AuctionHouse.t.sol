@@ -85,7 +85,7 @@ abstract contract AuctionBase is Test {
 
     function _mintCard(address to, uint256 amount) internal returns (uint256 id) {
         vm.prank(to);
-        id = shapes.mint{value: amount + feeOf(amount)}(amount, to);
+        id = shapes.mint{value: amount + feeOf(amount)}(amount);
     }
 
     function _open() internal returns (uint256 auctionId) {
@@ -182,7 +182,7 @@ contract AuctionHouseTest is AuctionBase {
         // Build an apex Complete and sacrifice it: 10,000 dust composed to 100 ETH.
         vm.prank(alice);
         uint256 first =
-            shapes.mintBatch{value: 10_000 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 10_000, alice);
+            shapes.mintBatchTo{value: 10_000 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 10_000, alice);
         uint256[] memory burn = new uint256[](9_999);
         for (uint256 i = 0; i < 9_999; ++i) {
             burn[i] = first + 1 + i;
@@ -354,7 +354,7 @@ contract AuctionHouseTest is AuctionBase {
 
         uint256[] memory ids = new uint256[](64);
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 64 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 64, alice);
+        uint256 first = shapes.mintBatch{value: 64 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 64);
         for (uint256 i = 0; i < 64; ++i) {
             ids[i] = first + i;
         }

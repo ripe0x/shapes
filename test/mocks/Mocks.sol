@@ -153,7 +153,7 @@ contract ReentrantFeeRecipient {
         attempted = true;
         uint256 need = amountWei + shapes.mintFeeFor(amountWei);
         if (address(this).balance < need) return;
-        try shapes.mint{value: need}(amountWei, address(this)) {
+        try shapes.mintTo{value: need}(amountWei, address(this)) {
             reentryReverted = false;
         } catch {
             reentryReverted = true;
@@ -180,7 +180,7 @@ contract ReentrantMinter is IERC721Receiver {
     receive() external payable {}
 
     function mint() external payable returns (uint256) {
-        return shapes.mint{value: msg.value}(amountWei, address(this));
+        return shapes.mintTo{value: msg.value}(amountWei, address(this));
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
@@ -188,7 +188,7 @@ contract ReentrantMinter is IERC721Receiver {
             attempted = true;
             uint256 need = amountWei + shapes.mintFeeFor(amountWei);
             if (address(this).balance >= need) {
-                try shapes.mint{value: need}(amountWei, address(this)) {
+                try shapes.mintTo{value: need}(amountWei, address(this)) {
                     reentryReverted = false;
                 } catch {
                     reentryReverted = true;

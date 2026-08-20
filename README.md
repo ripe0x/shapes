@@ -93,8 +93,10 @@ remain distinct historical objects. That is the whole design.
 Minting is permissionless.
 
 ```solidity
-mint(uint256 amountWei, address to) payable returns (uint256 tokenId)
-mintBatch(uint256 amountWei, uint256 quantity, address to) payable returns (uint256 firstTokenId)
+mint(uint256 amountWei) payable returns (uint256 tokenId)
+mintTo(uint256 amountWei, address to) payable returns (uint256 tokenId)
+mintBatch(uint256 amountWei, uint256 quantity) payable returns (uint256 firstTokenId)
+mintBatchTo(uint256 amountWei, uint256 quantity, address to) payable returns (uint256 firstTokenId)
 ```
 
 You send the backing **plus a mint fee that is a percentage of it**:

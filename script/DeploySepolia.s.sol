@@ -25,12 +25,7 @@ contract DeploySepolia is Script {
 
     function run()
         external
-        returns (
-            ShapeRenderer renderer,
-            ShapeCollection collection,
-            Shapes shapes,
-            ShapeAuctionHouse house
-        )
+        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
     {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         bool seed = vm.envOr("SEED_ETH", true);
@@ -52,7 +47,7 @@ contract DeploySepolia is Script {
                 uint256 wei_ = Denominations.amountAt(di);
                 uint256 fee = (wei_ * feeBps) / 10_000;
                 for (uint256 n = 0; n < counts[di]; n++) {
-                    shapes.mint{value: wei_ + fee}(wei_, me);
+                    shapes.mintTo{value: wei_ + fee}(wei_, me);
                 }
             }
         }

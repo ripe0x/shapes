@@ -211,6 +211,25 @@ export const shapesAbi = [
         "name": "amountWei",
         "type": "uint256",
         "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "mintTo",
+    "inputs": [
+      {
+        "name": "amountWei",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "to",
@@ -230,6 +249,30 @@ export const shapesAbi = [
   {
     "type": "function",
     "name": "mintBatch",
+    "inputs": [
+      {
+        "name": "amountWei",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "quantity",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "firstTokenId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "mintBatchTo",
     "inputs": [
       {
         "name": "amountWei",

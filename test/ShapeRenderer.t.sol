@@ -17,15 +17,7 @@ contract RendererTestBase is Test {
 
     ShapeCollection internal collection;
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether),
-        0.05 ether,
-        0.1 ether,
-        0.5 ether,
-        1 ether,
-        5 ether,
-        10 ether,
-        50 ether,
-        100 ether
+        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
     ];
 
     function setUp() public virtual {
@@ -106,8 +98,7 @@ contract Round03RandTest is RendererTestBase {
             assertEq(s.nextU32(), fromZero[i], "stream from seed 0");
         }
 
-        uint32[4] memory from1007 =
-            [uint32(3643707988), 1998004486, 2044178434, 210213278];
+        uint32[4] memory from1007 = [uint32(3643707988), 1998004486, 2044178434, 210213278];
         Round03Rand.Stream memory t = Round03Rand.init(bytes32(uint256(1007)));
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(t.nextU32(), from1007[i], "stream from a design-page seed");
@@ -124,9 +115,7 @@ contract Round03RandTest is RendererTestBase {
         second = a.nextU32();
 
         Round03Rand.Stream memory b = Round03Rand.init(bytes32(uint256(1)));
-        assertEq(
-            b.nextU32(), second, "seed n+1's first draw is seed n's second draw"
-        );
+        assertEq(b.nextU32(), second, "seed n+1's first draw is seed n's second draw");
     }
 
     /// @dev Only the low 32 bits of the stored seed reach the stream.
@@ -175,10 +164,10 @@ contract FixedPointTest is RendererTestBase {
     }
 
     function test_NoTrailingZerosOrPoint() public pure {
-        assertEq(FixedPoint.fmt(1.100000e18), "1.1");
-        assertEq(FixedPoint.fmt(1.010000e18), "1.01");
+        assertEq(FixedPoint.fmt(1.1e18), "1.1");
+        assertEq(FixedPoint.fmt(1.01e18), "1.01");
         assertEq(FixedPoint.fmt(1.000001e18), "1.000001");
-        assertEq(FixedPoint.fmt(0.000010e18), "0.00001");
+        assertEq(FixedPoint.fmt(0.00001e18), "0.00001");
     }
 
     function testFuzz_FormatterNeverEmitsTrailingZeroOrPoint(uint256 v) public pure {
@@ -238,11 +227,7 @@ contract GeometryTest is RendererTestBase {
     ///      Circle, square and half square are still stroked paths, where the stroke straddles
     ///      the edge and adds w/2 all round. Arc and line are open strokes, always drawn, so the
     ///      stroke applies whatever the ignored solid bit says.
-    function _extent(ShapeRenderer.Module memory m, uint256 triHeight)
-        internal
-        pure
-        returns (uint256 worst)
-    {
+    function _extent(ShapeRenderer.Module memory m, uint256 triHeight) internal pure returns (uint256 worst) {
         uint256 w;
         if (m.kind == 0 || m.kind == 1 || m.kind == 6) {
             w = m.solid ? 0 : m.weight; // circle, square, half square: stroked paths
@@ -315,10 +300,7 @@ contract GeometryTest is RendererTestBase {
 
     /// @dev With no type on the card the field is centred at y 175, the card's true centre,
     ///      and spans y 60..290 at every denomination.
-    function testFuzz_ArtworkStaysInsideTheCanvasAndClearOfType(bytes32 seed, uint8 which)
-        public
-        view
-    {
+    function testFuzz_ArtworkStaysInsideTheCanvasAndClearOfType(bytes32 seed, uint8 which) public view {
         uint256 amount = DENOMS[which % 9];
         ShapeRenderer.Card memory c = renderer.compose(seed, amount, _gene(seed));
 
@@ -351,10 +333,7 @@ contract GeometryTest is RendererTestBase {
     /// @notice Size and stroke are proportional to the cell and identical across the
     ///         collection: two Shapes at the same denomination always share them exactly, and
     ///         across denominations they scale with the cell and nothing else.
-    function testFuzz_SizeAndStrokeAreCollectionConstants(bytes32 a, bytes32 b, uint8 which)
-        public
-        view
-    {
+    function testFuzz_SizeAndStrokeAreCollectionConstants(bytes32 a, bytes32 b, uint8 which) public view {
         uint256 amount = DENOMS[which % 9];
         ShapeRenderer.Card memory x = renderer.compose(a, amount, _gene(a));
         ShapeRenderer.Card memory y = renderer.compose(b, amount, _gene(b));
@@ -365,9 +344,7 @@ contract GeometryTest is RendererTestBase {
         for (uint256 i = 0; i < 9; ++i) {
             ShapeRenderer.Card memory z = renderer.compose(a, DENOMS[i], _gene(a));
             assertEq(z.target, FixedPoint.mulWad(z.cell / 2, 0.83e18), "extent off proportion");
-            assertEq(
-                z.weight, FixedPoint.mulWad(2 * z.target, 0.14e18), "stroke off proportion"
-            );
+            assertEq(z.weight, FixedPoint.mulWad(2 * z.target, 0.14e18), "stroke off proportion");
         }
     }
 
@@ -390,10 +367,7 @@ contract GeometryTest is RendererTestBase {
     ///      contain a single outlined mark, and vice versa. That only holds because the
     ///      per-module test is `draw < p`; with `draw > threshold` a p=1 card would still
     ///      produce an outlined mark once every 2^32 draws.
-    function testFuzz_PureCardsAreActuallyPure(bytes32 seed, uint8 which, uint8 gene)
-        public
-        view
-    {
+    function testFuzz_PureCardsAreActuallyPure(bytes32 seed, uint8 which, uint8 gene) public view {
         gene = gene % 7;
         ShapeRenderer.Card memory c = renderer.compose(seed, DENOMS[which % 9], gene);
 
@@ -447,9 +421,7 @@ contract GeometryTest is RendererTestBase {
     }
 
     function test_ComposeRevertsForUnsupportedAmount() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, 2 ether)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, 2 ether));
         renderer.compose(bytes32(uint256(1)), 2 ether, 0);
     }
 }
@@ -486,11 +458,9 @@ contract OutputTest is RendererTestBase {
     /// @notice The denomination reads correctly in metadata, with no trailing zeros. It is no
     ///         longer on the card face, so this is where it has to be right.
     function test_EthLabelHasNoTrailingZeros() public view {
-        string[9] memory expected =
-            ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
+        string[9] memory expected = ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
         for (uint256 i = 0; i < 9; ++i) {
-            string memory json =
-                renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0);
+            string memory json = renderer.metadataJSON(bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0);
             assertEq(
                 vm.parseJsonString(json, ".attributes[0].value"),
                 string(abi.encodePacked(expected[i], " ETH")),
@@ -507,16 +477,12 @@ contract OutputTest is RendererTestBase {
     }
 
     /// @notice tokenURI must decode to real JSON containing a real inline SVG.
-    function testFuzz_TokenUriIsValidBase64Json(bytes32 seed, uint8 which, uint16 tokenId)
-        public
-        view
-    {
+    function testFuzz_TokenUriIsValidBase64Json(bytes32 seed, uint8 which, uint16 tokenId) public view {
         uint256 amount = DENOMS[which % 9];
         string memory uri = renderer.tokenURI(seed, amount, tokenId, 1, false, _gene(seed), 0);
 
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "json data uri");
-        string memory json =
-            string(Base64Decode.decode(_after(uri, "data:application/json;base64,")));
+        string memory json = string(Base64Decode.decode(_after(uri, "data:application/json;base64,")));
 
         // real JSON, parseable field by field
         assertEq(
@@ -528,8 +494,7 @@ contract OutputTest is RendererTestBase {
         string memory image = vm.parseJsonString(json, ".image");
         assertTrue(_startsWith(image, "data:image/svg+xml;base64,"), "inline svg data uri");
 
-        string memory svg =
-            string(Base64Decode.decode(_after(image, "data:image/svg+xml;base64,")));
+        string memory svg = string(Base64Decode.decode(_after(image, "data:image/svg+xml;base64,")));
         assertTrue(_startsWith(svg, "<svg "), "decoded image is an svg");
         assertTrue(_endsWith(svg, "</svg>"), "decoded image closes");
         assertEq(svg, renderer.renderSVG(seed, amount, false, _gene(seed)), "image is the canonical svg");
@@ -549,38 +514,28 @@ contract OutputTest is RendererTestBase {
         (uint256 cols, uint256 rows) = Denominations.gridAt(idx);
         assertEq(
             vm.parseJsonString(json, ".attributes[1].value"),
-            string(
-                abi.encodePacked(FixedPoint.toString(cols), "x", FixedPoint.toString(rows))
-            )
+            string(abi.encodePacked(FixedPoint.toString(cols), "x", FixedPoint.toString(rows)))
         );
         // [0] ETH Value [1] Grid [2] Fill [3] Ink [4] Modules [5] Module Count [6] Primitive
         // [7] Variety [8] Ink Tier [9] Formation [10] Independent Origins [11] Origin Density
         // [12] Complete [13] Black [14] Compose Depth
         string memory fill = vm.parseJsonString(json, ".attributes[2].value");
         assertTrue(
-            keccak256(bytes(fill)) == keccak256("Solid")
-                || keccak256(bytes(fill)) == keccak256("Outline")
+            keccak256(bytes(fill)) == keccak256("Solid") || keccak256(bytes(fill)) == keccak256("Outline")
                 || keccak256(bytes(fill)) == keccak256("Mixed"),
             "unexpected Fill trait"
         );
         assertEq(vm.parseJsonString(json, ".attributes[3].trait_type"), "Ink");
-        assertEq(
-            vm.parseJsonString(json, ".attributes[3].value"),
-            InkGenes.geneNameAt(_gene(seed))
-        );
+        assertEq(vm.parseJsonString(json, ".attributes[3].value"), InkGenes.geneNameAt(_gene(seed)));
         assertEq(vm.parseJsonString(json, ".attributes[5].value"), FixedPoint.toString(cols * rows));
-        string[9] memory densities =
-            ["100%", "20%", "10%", "2%", "1%", "0.2%", "0.1%", "0.02%", "0.01%"];
+        string[9] memory densities = ["100%", "20%", "10%", "2%", "1%", "0.2%", "0.1%", "0.02%", "0.01%"];
         assertEq(vm.parseJsonString(json, ".attributes[11].value"), densities[idx]);
     }
 
     /// @notice The three batch-1 visual-rarity traits (TRAIT_SPEC.md): Primitive is a recognised
     ///         kind name, Variety sits in 1..10, Ink Tier maps the gene to its rarity band. Also
     ///         checks that Compose Depth (batch 2), the last attribute, echoes its input verbatim.
-    function testFuzz_VisualRarityTraits(bytes32 seed, uint8 which, uint256 composeDepth)
-        public
-        view
-    {
+    function testFuzz_VisualRarityTraits(bytes32 seed, uint8 which, uint256 composeDepth) public view {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
         uint8 gene = _gene(seed);
@@ -668,10 +623,7 @@ contract OutputTest is RendererTestBase {
         }
     }
 
-    function testFuzz_RenderNeverRevertsForAnySeed(bytes32 seed, uint8 which, uint256 tokenId)
-        public
-        view
-    {
+    function testFuzz_RenderNeverRevertsForAnySeed(bytes32 seed, uint8 which, uint256 tokenId) public view {
         string memory svg = renderer.renderSVG(seed, DENOMS[which % 9], false, _gene(seed));
         // a 100 ETH card is one solid mark on a black field, and with no type it is tiny
         assertGt(bytes(svg).length, 180);
@@ -704,19 +656,17 @@ contract TokenMetadataTest is RendererTestBase {
 
     /// @notice The ETH value shown in metadata must equal the ETH the token actually returns.
     function test_MetadataValueMatchesOnchainBacking() public {
-        string[9] memory labels =
-            ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
+        string[9] memory labels = ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
 
         for (uint256 i = 0; i < 9; ++i) {
             vm.prank(alice);
-            uint256 id = shapes.mint{value: DENOMS[i] + DENOMS[i] / 100}(DENOMS[i], alice);
+            uint256 id = shapes.mint{value: DENOMS[i] + DENOMS[i] / 100}(DENOMS[i]);
 
             string memory json =
                 string(Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,")));
 
             assertEq(
-                vm.parseJsonString(json, ".attributes[0].value"),
-                string(abi.encodePacked(labels[i], " ETH"))
+                vm.parseJsonString(json, ".attributes[0].value"), string(abi.encodePacked(labels[i], " ETH"))
             );
             assertEq(shapes.backingOf(id), DENOMS[i]);
 
@@ -728,9 +678,7 @@ contract TokenMetadataTest is RendererTestBase {
     }
 
     function _decodeJson(uint256 id) internal view returns (string memory) {
-        return string(
-            Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,"))
-        );
+        return string(Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,")));
     }
 
     /// @notice The on-chain token drives the provenance traits from its own (originCount, isBlack),
@@ -738,7 +686,7 @@ contract TokenMetadataTest is RendererTestBase {
     function test_ProvenanceTraitsReflectOnchainState() public {
         // Direct: one 1 ETH mint. units 100, originCount 1.
         vm.prank(alice);
-        uint256 direct = shapes.mint{value: 1 ether + 0.01 ether}(1 ether, alice);
+        uint256 direct = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
         string memory dj = _decodeJson(direct);
         // attributes[6..8] are Primitive/Variety/Ink Tier, [9..13] are the provenance block.
         assertEq(vm.parseJsonString(dj, ".attributes[9].value"), "Direct", "direct formation");
@@ -749,9 +697,11 @@ contract TokenMetadataTest is RendererTestBase {
 
         // Complete: five 0.01 direct mints composed into one 0.05. units 5, originCount 5.
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5, alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; i++) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         shapes.compose(first, burn);
         string memory cj = _decodeJson(first);
@@ -763,7 +713,7 @@ contract TokenMetadataTest is RendererTestBase {
         // Fragment: split a Direct 100 ETH into two 50s. Origins partition survivor-first, so the
         // first child takes the lone origin and the second is a zero-origin Fragment.
         vm.prank(alice);
-        uint256 whole = shapes.mint{value: 100 ether + 1 ether}(100 ether, alice);
+        uint256 whole = shapes.mint{value: 100 ether + 1 ether}(100 ether);
         uint8[] memory halves = new uint8[](2);
         halves[0] = 7; // 50 ETH
         halves[1] = 7;
@@ -783,7 +733,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         the matching `decompose`.
     function test_ComposeDepthTraitTracksComposeAndDecompose() public {
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5, alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5);
 
         assertEq(shapes.composeDepth(first), 0, "fresh mint has no compose record");
         assertEq(vm.parseJsonString(_decodeJson(first), ".attributes[14].trait_type"), "Compose Depth");
@@ -794,7 +744,9 @@ contract TokenMetadataTest is RendererTestBase {
         );
 
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; i++) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; i++) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         shapes.compose(first, burn);
 
@@ -818,18 +770,15 @@ contract TokenMetadataTest is RendererTestBase {
 
     function test_TokenUriUsesTheStoredSeed() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether, alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
         bytes32 seed = shapes.seedOf(id);
-        assertEq(
-            shapes.tokenURI(id),
-            renderer.tokenURI(seed, 1 ether, id, 1, false, shapes.inkGeneOf(id), 0)
-        );
+        assertEq(shapes.tokenURI(id), renderer.tokenURI(seed, 1 ether, id, 1, false, shapes.inkGeneOf(id), 0));
     }
 
     /// @dev Artwork is fixed at mint. Nothing about later chain state may change it.
     function test_ArtworkIsStableForTheLifeOfTheToken() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 5 ether + 0.05 ether}(5 ether, alice);
+        uint256 id = shapes.mint{value: 5 ether + 0.05 ether}(5 ether);
         string memory atMint = shapes.tokenURI(id);
 
         vm.roll(block.number + 100_000);
