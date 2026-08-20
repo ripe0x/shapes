@@ -938,6 +938,59 @@ contract TokenMetadataTest is RendererTestBase {
         }
         shapes.setTokenCopy(string(maxName), string(maxDesc));
         assertEq(bytes(shapes.tokenDescription()).length, 2048);
+
+        // The collection setter enforces the same caps.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setCollectionCopy(string(longName), "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setCollectionCopy("N", string(longDesc));
+        shapes.setCollectionCopy(string(maxName), string(maxDesc));
+        assertEq(bytes(shapes.collectionDescription()).length, 2048);
+    }
+
+    /// @notice Malformed UTF-8 is refused, so copy can never emit a byte sequence a strict
+    ///         (byte-level) JSON consumer would reject.
+    function test_CopyRejectsMalformedUtf8() public {
+        // Each is a distinct RFC 3629 violation; built from bytes since Solidity forbids invalid
+        // UTF-8 in string literals. field 1 unless the bad bytes are in the name argument.
+        _expectBadDesc(hex"61ff62"); // "a" 0xFF "b": invalid lead byte
+        _expectBadDesc(hex"c3"); // truncated two-byte sequence, no continuation
+        _expectBadDesc(hex"c0af"); // overlong encoding of "/"
+        _expectBadDesc(hex"eda080"); // UTF-16 surrogate half U+D800
+        _expectBadDesc(hex"f4908080"); // U+110000, one past the U+10FFFF ceiling
+
+        // Same rule on the name argument (field 0).
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setTokenCopy(string(bytes(hex"f5808080")), "ok"); // 0xF5 lead: above U+10FFFF
+    }
+
+    function _expectBadDesc(bytes memory bad) internal {
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", string(bad));
+    }
+
+    /// @notice Well-formed multi-byte UTF-8 is accepted and round-trips byte-exact through storage
+    ///         and back out of the parsed metadata. Guards against a future tightening to ASCII-only.
+    function test_CopyAcceptsValidUtf8() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+
+        string memory prefix = unicode"Formeß ";
+        string memory desc = unicode"Formes — «carrés» 形 🜂";
+        shapes.setTokenCopy(prefix, desc);
+
+        assertEq(shapes.tokenDescription(), desc, "description not stored byte-exact");
+        string memory j = _decodeJson(id);
+        assertEq(vm.parseJsonString(j, ".description"), desc, "description not preserved through JSON");
+        assertEq(vm.parseJsonString(j, ".name"), string.concat(prefix, vm.toString(id)), "name not preserved");
+    }
+
+    /// @notice The constructor's default copy satisfies the very rule the setters enforce, so the
+    ///         contract never ships in a state its own API could not reproduce.
+    function test_DefaultCopyPassesTheValidator() public {
+        // Re-setting the getters through the validated setters must succeed.
+        shapes.setTokenCopy(shapes.tokenNamePrefix(), shapes.tokenDescription());
+        shapes.setCollectionCopy(shapes.collectionName(), shapes.collectionDescription());
     }
 
     /// @notice Empty copy is allowed: the name is the bare token id, the description empty.

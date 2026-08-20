@@ -585,12 +585,17 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
   flat radial ends lie on the footprint edges.
 
-- **Two value-inert admin pointers, no economic admin.** `Ownable` is inherited and
-  transferable. The owner can replace and permanently lock the renderer, and can set,
-  replace, clear and permanently lock the optional position resolver — including locking
-  it forever at zero. The renderer is read only by `tokenURI`; the resolver is read only by
-  `positionOf`. Neither reaches ETH, backing, redemption or token ownership. There is no
-  pause, upgrade path, proxy or administrative reserve path. The owner may renounce at any time.
+- **Value-inert admin only, no economic admin.** `Ownable` is inherited and transferable.
+  The owner can replace and permanently lock the renderer and collection metadata contracts,
+  can set, replace, clear and permanently lock the optional position resolver — including
+  locking it forever at zero — and can edit the metadata copy (token name prefix and
+  description, collection name and description) via `setTokenCopy`/`setCollectionCopy`. The
+  renderer and collection are read only by `tokenURI`/`contractURI`; the resolver only by
+  `positionOf`; the copy only by those metadata views, and it is validated on set so it cannot
+  break the JSON. None reach ETH, backing, redemption or token ownership. The copy is
+  deliberately not covered by the renderer lock; it stays editable until ownership is renounced.
+  There is no pause, upgrade path, proxy or administrative reserve path. The owner may renounce
+  at any time.
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.

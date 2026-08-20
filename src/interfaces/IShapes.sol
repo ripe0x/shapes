@@ -137,9 +137,10 @@ interface IShapes is IERC721, IERC721Value {
     /// @dev `previewCompose` only: a burn id repeated in `burnIds`. `compose` reaches the same
     ///      outcome through `_burn`, which reverts on the second occurrence.
     error DuplicateComposeInput(uint256 tokenId);
-    /// @dev Metadata copy is written verbatim into JSON. A value carrying a `"`, a `\`, or a C0
-    ///      control byte would break or restructure the document; one that exceeds its length cap
-    ///      is rejected too. `field` is 0 name/prefix, 1 description.
+    /// @dev Metadata copy is written verbatim into JSON, so a value is rejected when it carries a
+    ///      `"`, a `\`, or a C0 control byte (which would break or restructure the document), is
+    ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
+    ///      cap. `field` is 0 name/prefix, 1 description.
     error InvalidCopy(uint8 field);
     /// @dev A nonzero position resolver must contain deployed code when configured.
     error InvalidPositionResolver();
@@ -206,9 +207,11 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice Set the per-token metadata copy: the `name` prefix and the `description`. Owner
     ///         only. Emits ERC-4906 `BatchMetadataUpdate` so marketplaces refresh every token.
     /// @dev Written verbatim into each token's metadata JSON, so both arguments are validated:
-    ///      a `"`, a `\`, a C0 control byte, or a value over its length cap (64-byte prefix,
-    ///      2048-byte description) reverts `InvalidCopy`. This keeps the copy from breaking or
-    ///      restructuring the document. Not affected by `lockRenderer`; copy is never frozen.
+    ///      each must be well-formed UTF-8 within its length cap (64-byte prefix, 2048-byte
+    ///      description) and free of the bytes JSON forbids unescaped (`"`, `\`, C0 controls);
+    ///      anything else reverts `InvalidCopy`. This keeps copy from breaking the document and
+    ///      from producing bytes a conformant consumer would reject. Not affected by
+    ///      `lockRenderer`; copy is never frozen.
     function setTokenCopy(string calldata namePrefix, string calldata description) external;
 
     /// @notice Set the collection metadata copy: the `name` and the `description` used by

@@ -262,17 +262,51 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         emit ContractURIUpdated();
     }
 
-    /// @dev The copy is written verbatim into the metadata JSON. Reject the bytes that would
-    ///      break or restructure that document: `"` (0x22), `\` (0x5C) and the C0 control range
-    ///      (below 0x20). Bytes at or above 0x80 pass, so multi-byte UTF-8 copy is unaffected.
-    ///      Also bounds the length. `field` distinguishes the two arguments in the revert.
+    /// @dev The copy is written verbatim into the metadata JSON, so it must be a length-bounded
+    ///      run of well-formed UTF-8 that carries none of the bytes JSON forbids unescaped. In the
+    ///      ASCII range that means no `"` (0x22), no `\` (0x5C) and no C0 control (below 0x20); RFC
+    ///      8259's `unescaped` production is exactly the rest. Above ASCII this is a full RFC 3629
+    ///      walk: it rejects lone continuation bytes, overlong encodings, the UTF-16 surrogate
+    ///      range, code points above U+10FFFF and truncated sequences. The result is copy that no
+    ///      conformant JSON consumer can reject, not merely copy that cannot break the grammar.
+    ///      `field` distinguishes the two arguments in the revert (0 name/prefix, 1 description).
     function _requireJsonSafe(string calldata s, uint256 maxBytes, uint8 field) private pure {
         bytes calldata b = bytes(s);
         if (b.length > maxBytes) revert InvalidCopy(field);
-        for (uint256 i = 0; i < b.length; ++i) {
+        uint256 i;
+        while (i < b.length) {
             uint8 c = uint8(b[i]);
-            if (c == 0x22 || c == 0x5C || c < 0x20) revert InvalidCopy(field);
+            if (c < 0x80) {
+                if (c == 0x22 || c == 0x5C || c < 0x20) revert InvalidCopy(field);
+                i += 1;
+            } else if (c < 0xC2) {
+                revert InvalidCopy(field); // lone continuation byte, or an overlong C0/C1 lead
+            } else if (c < 0xE0) {
+                _requireCont(b, i + 1, 0x80, 0xBF, field);
+                i += 2;
+            } else if (c < 0xF0) {
+                // E0 bars an overlong three-byte form; ED bars the surrogate range U+D800..U+DFFF.
+                _requireCont(b, i + 1, c == 0xE0 ? 0xA0 : 0x80, c == 0xED ? 0x9F : 0xBF, field);
+                _requireCont(b, i + 2, 0x80, 0xBF, field);
+                i += 3;
+            } else if (c < 0xF5) {
+                // F0 bars an overlong four-byte form; F4 caps the range at U+10FFFF.
+                _requireCont(b, i + 1, c == 0xF0 ? 0x90 : 0x80, c == 0xF4 ? 0x8F : 0xBF, field);
+                _requireCont(b, i + 2, 0x80, 0xBF, field);
+                _requireCont(b, i + 3, 0x80, 0xBF, field);
+                i += 4;
+            } else {
+                revert InvalidCopy(field); // lead byte encodes a code point above U+10FFFF
+            }
         }
+    }
+
+    /// @dev One UTF-8 continuation byte at `idx`, required present and within `[lo, hi]`. The lead
+    ///      byte narrows `lo`/`hi` on the first continuation to exclude overlongs and surrogates.
+    function _requireCont(bytes calldata b, uint256 idx, uint8 lo, uint8 hi, uint8 field) private pure {
+        if (idx >= b.length) revert InvalidCopy(field);
+        uint8 c = uint8(b[idx]);
+        if (c < lo || c > hi) revert InvalidCopy(field);
     }
 
     /// @inheritdoc IShapes
