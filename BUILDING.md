@@ -90,7 +90,8 @@ contract can act and route in one atomic call instead of bouncing the asset thro
 |---|---|
 | `redeemTo(id, recipient)` | Burn one Shape, send its ETH to `recipient`. |
 | `redeemBatchTo(ids, recipient)` | Burn several, send the total to `recipient` once. |
-| `decomposeTo(id, outDenoms, recipient)` | Split a Shape one or more tiers down, mint the children to `recipient`. |
+| `splitTo(id, outDenoms, recipient)` | Split a Shape one or more tiers down, mint the children to `recipient`. |
+| `decomposeTo(survivorId, recipient)` | Reverse a survivor's most recent compose, re-minting its inputs to `recipient`. |
 
 The caller must own the token (or its inputs). These are thin wrappers over the same
 checks-effects-interactions logic as the owner-directed `redeem` / `decompose` / `split`; only the
@@ -104,7 +105,7 @@ a contract can show or verify a result before committing:
 
 ```solidity
 shapes.previewCompose(survivorId, burnIds);   // returns the full ShapeState the compose would yield
-shapes.previewDecompose(tokenId, outDenoms);  // returns a ShapeChildPreview[] for the children
+shapes.previewSplit(tokenId, outDenoms);      // returns a ShapeChildPreview[] for the children
 ```
 
 These are `view` and require no ownership.

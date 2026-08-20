@@ -41,7 +41,7 @@ export const lineageEdge = onchainTable(
     id: t.text().primaryKey(),
     childId: t.bigint().notNull(),
     parentId: t.bigint().notNull(),
-    kind: t.text().notNull(), // "continuation" | "split"
+    kind: t.text().notNull(), // "continuation" | "split" | "revival"
     childSeed: t.hex().notNull(),
     block: t.bigint().notNull(),
     txHash: t.hex().notNull(),

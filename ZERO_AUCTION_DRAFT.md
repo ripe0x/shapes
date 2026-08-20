@@ -126,7 +126,14 @@ What survives from the exercise is §6.
 
 ## 3. `ShapeAuctionHouse`
 
-Generic. Sells any ERC721. Bids are always denominated in Shape cards.
+Sells a Shape. Bids are always denominated in Shape cards.
+
+The lot is not an arbitrary ERC721, and that is a security property rather than a limitation. An
+audit of `185bd0f` found that a seller-supplied contract whose `transferFrom` returns without
+moving anything lets the seller collect a real winning bid for a lot that never changed hands, and
+one that reverts only on the way out strands the leader's escrow with neither settlement nor
+withdrawal reachable. Both were reproduced. The house cannot tell either apart from an honest
+implementation, so it sells only the collection it holds an immutable reference to.
 
 ### 3.0 What it depends on
 
@@ -175,7 +182,6 @@ immutable constructor argument.
 
 ```solidity
 function createAuction(
-    address nft,
     uint256 tokenId,
     uint64  duration,
     uint64  reserveUnits,

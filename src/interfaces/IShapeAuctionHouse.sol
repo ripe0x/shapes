@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 /// @title IShapeAuctionHouse
-/// @notice An English auction for any ERC721, with bids denominated in Shape cards.
+/// @notice An English auction for a Shape, with bids denominated in Shape cards.
 /// @dev A bid is a set of Shapes whose summed backing is the bid amount. Amounts are carried in
 ///      `UNIT` (0.01 ETH) multiples throughout, which is the finest granularity the denomination
 ///      ladder can express. Escrowed cards are never moved on an outbid; every payout is pulled.
@@ -72,14 +72,19 @@ interface IShapeAuctionHouse {
     /// @notice Number of auctions ever created. Ids are issued from 0.
     function auctionCount() external view returns (uint256);
 
-    /// @notice Escrow a token and open an auction on it. The clock starts at the first bid, so an
+    /// @notice Escrow a Shape and open an auction on it. The clock starts at the first bid, so an
     ///         auction cannot expire unsold because nobody was watching on day one.
+    /// @dev The lot is always a Shape, never an arbitrary ERC721. A contract whose `transferFrom`
+    ///      returns without moving anything would let a seller take a real winning bid for a lot
+    ///      that never changed hands, and one that reverts only on the way out would strand the
+    ///      leader's escrow with no settlement and no withdrawal. The house cannot tell either
+    ///      apart from an honest implementation, so it sells only the collection it was built
+    ///      against.
     /// @param duration Seconds the auction runs for once the first bid lands.
     /// @param reserveUnits Smallest winning bid, in `UNIT` multiples.
     /// @param minIncrementBps How far a bid must clear the standing one, in basis points.
     /// @param extensionWindow A bid inside this many seconds of the end pushes the end out by it.
     function createAuction(
-        address nft,
         uint256 tokenId,
         uint64 duration,
         uint64 reserveUnits,

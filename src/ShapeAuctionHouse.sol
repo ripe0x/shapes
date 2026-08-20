@@ -27,12 +27,14 @@ import {Denominations} from "./lib/Denominations.sol";
 ///
 ///      The house takes no fee and has no owner, no pause, and no path that reaches an escrowed
 ///      card other than its depositor pulling it back or the seller claiming a settled win. A
+///      Shape pushed here by a plain `transferFrom`, which calls no receiver hook and so cannot be
+///      refused, is held with no escrow entry and no way out. That is accepted: a recovery
+///      function would be an administrative path into everyone else's escrow. A
 ///      percentage fee is not merely declined but unrepresentable: a bid is a set of indivisible
 ///      cards and a percentage of a lattice amount need not land on the lattice.
 contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGuard {
     struct Auction {
         address seller;
-        address nft;
         uint256 tokenId;
         uint64 endTime;
         uint64 duration;
@@ -72,8 +74,12 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /// @inheritdoc IShapeAuctionHouse
     /// @dev The token is escrowed with `transferFrom` rather than `safeTransferFrom`, so the
     ///      house takes no receiver callback for it and the sale is deliverable from this point.
+    ///
+    ///      The lot is always a Shape. The house cannot tell a well-behaved ERC721 from one whose
+    ///      `transferFrom` returns without moving anything, and a lot that only pretends to move
+    ///      would let a seller collect a real winning bid for nothing. `Shapes` is the one
+    ///      contract this house can vouch for, so it is the only one it will sell.
     function createAuction(
-        address nft,
         uint256 tokenId,
         uint64 duration,
         uint64 reserveUnits,
@@ -85,7 +91,6 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         auctionId = auctionCount++;
         _auctions[auctionId] = Auction({
             seller: msg.sender,
-            nft: nft,
             tokenId: tokenId,
             endTime: 0, // set by the first bid
             duration: duration,
@@ -97,8 +102,8 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
             settled: false
         });
 
-        emit AuctionCreated(auctionId, msg.sender, nft, tokenId, duration, reserveUnits);
-        IERC721(nft).transferFrom(msg.sender, address(this), tokenId);
+        emit AuctionCreated(auctionId, msg.sender, shapes, tokenId, duration, reserveUnits);
+        IERC721(shapes).transferFrom(msg.sender, address(this), tokenId);
     }
 
     /// @inheritdoc IShapeAuctionHouse
@@ -110,7 +115,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
 
         a.settled = true;
         emit AuctionCancelled(auctionId);
-        IERC721(a.nft).transferFrom(address(this), a.seller, a.tokenId);
+        IERC721(shapes).transferFrom(address(this), a.seller, a.tokenId);
     }
 
     /* ----------------------------- bidding ---------------------------- */
@@ -222,7 +227,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         address winner = a.highestBidder;
 
         emit AuctionSettled(auctionId, winner, a.highestUnits);
-        IERC721(a.nft).transferFrom(address(this), winner, a.tokenId);
+        IERC721(shapes).transferFrom(address(this), winner, a.tokenId);
     }
 
     /// @inheritdoc IShapeAuctionHouse
