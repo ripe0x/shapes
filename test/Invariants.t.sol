@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
@@ -133,9 +134,12 @@ contract Handler is Test, IERC721Receiver {
     function mint(uint256 denomSeed, uint256 actorSeed) public {
         uint256 amount = DENOMS[denomSeed % 9];
         address who = _actor(actorSeed);
+        // Hoist the fee query out of the prank window: an external call inside the `{value:}`
+        // expression would consume the prank, and the mint would then run as the handler.
+        uint256 cost = amount + shapes.mintFeeFor(amount);
 
         vm.prank(who);
-        try shapes.mintTo{value: amount + shapes.mintFeeFor(amount)}(amount, who) returns (uint256 id) {
+        try shapes.mintTo{value: cost}(amount, who) returns (uint256 id) {
             ghostBackingIn += amount;
             ghostFeesPaid += shapes.mintFeeFor(amount);
             ghostMints += 1;
@@ -692,8 +696,11 @@ contract AuctionHandler is Test, IERC721Receiver {
         uint32 extensionWindow = uint32(bound(extSeed, 0, duration));
         uint64 reserve = uint64(bound(resSeed, 1, 10));
 
+        // Hoist the fee query out of the prank window; an external call inside `{value:}` consumes
+        // the prank and the mint would run as the handler.
+        uint256 cost = 0.1 ether + shapes.mintFeeFor(0.1 ether);
         vm.prank(seller);
-        try shapes.mint{value: 0.1 ether + shapes.mintFeeFor(0.1 ether)}(0.1 ether) returns (uint256 lot) {
+        try shapes.mint{value: cost}(0.1 ether) returns (uint256 lot) {
             vm.prank(seller);
             try house.createAuction(lot, duration, reserve, 500, extensionWindow) returns (uint256 id) {
                 auctionIds.push(id);
@@ -708,9 +715,10 @@ contract AuctionHandler is Test, IERC721Receiver {
         uint256 id = auctionIds[aSeed % auctionIds.length];
         address bidder = _actor(actorSeed);
         uint256 backing = bound(unitsSeed, 1, 200) * 0.01 ether;
+        uint256 cost = backing + shapes.mintFeeFor(backing);
 
         vm.prank(bidder);
-        try house.bid{value: backing + shapes.mintFeeFor(backing)}(id, new uint256[](0), backing) {
+        try house.bid{value: cost}(id, new uint256[](0), backing) {
             _recordBidder(id, bidder);
         } catch {}
     }
@@ -720,10 +728,11 @@ contract AuctionHandler is Test, IERC721Receiver {
         uint256 id = auctionIds[aSeed % auctionIds.length];
         address bidder = _actor(actorSeed);
         uint256 amount = DENOMS[denomSeed % 7]; // cap at 10 ETH to keep fuzzing cheap
+        uint256 cost = amount + shapes.mintFeeFor(amount);
 
         vm.prank(bidder);
         uint256 card;
-        try shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount) returns (uint256 c) {
+        try shapes.mint{value: cost}(amount) returns (uint256 c) {
             card = c;
         } catch {
             return;
@@ -731,6 +740,34 @@ contract AuctionHandler is Test, IERC721Receiver {
 
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
+        vm.prank(bidder);
+        try house.bid(id, ids, 0) {
+            _recordBidder(id, bidder);
+        } catch {}
+    }
+
+    /// @dev Several cards in one bid, so the multi-card `_takeCards` loop and the escrow bound are
+    ///      exercised, not just the single-card path.
+    function bidCardsMulti(uint256 aSeed, uint256 actorSeed, uint256 denomSeed, uint256 qtySeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        address bidder = _actor(actorSeed);
+        uint256 amount = DENOMS[denomSeed % 5]; // <= 1 ETH
+        uint256 qty = bound(qtySeed, 2, 8);
+        uint256 unit = amount + shapes.mintFeeFor(amount);
+
+        vm.prank(bidder);
+        uint256 first;
+        try shapes.mintBatch{value: unit * qty}(amount, qty) returns (uint256 f) {
+            first = f;
+        } catch {
+            return;
+        }
+
+        uint256[] memory ids = new uint256[](qty);
+        for (uint256 i = 0; i < qty; ++i) {
+            ids[i] = first + i;
+        }
         vm.prank(bidder);
         try house.bid(id, ids, 0) {
             _recordBidder(id, bidder);
@@ -777,30 +814,49 @@ contract AuctionInvariantTest is StdInvariant, Test {
     ShapeAuctionHouse internal house;
     AuctionHandler internal handler;
 
-    function setUp() public {
+    function setUp() public virtual {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes(100, address(0xFEE), address(renderer), address(collection));
         house = new ShapeAuctionHouse(address(shapes));
         handler = new AuctionHandler(shapes, house);
+        _wire();
+    }
 
+    /// @dev Register the handler and its action selectors as the fuzz target. Shared with the
+    ///      hostile-fee-recipient variant so both drive the same action set.
+    function _wire() internal {
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](8);
+        bytes4[] memory selectors = new bytes4[](9);
         selectors[0] = AuctionHandler.createAuction.selector;
         selectors[1] = AuctionHandler.bidEth.selector;
         selectors[2] = AuctionHandler.bidCards.selector;
-        selectors[3] = AuctionHandler.withdraw.selector;
-        selectors[4] = AuctionHandler.settle.selector;
-        selectors[5] = AuctionHandler.claimProceeds.selector;
-        selectors[6] = AuctionHandler.cancel.selector;
-        selectors[7] = AuctionHandler.warp.selector;
+        selectors[3] = AuctionHandler.bidCardsMulti.selector;
+        selectors[4] = AuctionHandler.withdraw.selector;
+        selectors[5] = AuctionHandler.settle.selector;
+        selectors[6] = AuctionHandler.claimProceeds.selector;
+        selectors[7] = AuctionHandler.cancel.selector;
+        selectors[8] = AuctionHandler.warp.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
-    /// @notice (a) Every Shape the house holds is accounted for: an open lot, or a card in exactly
-    ///         one bidder's escrow list. If the house's balance ever exceeds what the escrow lists
-    ///         and open lots sum to, a card is stranded; if it falls short, one is double-counted.
+    /// @notice Guards against the handler silently going inert (a consumed `vm.prank` leaving every
+    ///         action a no-op). If a handful of hand-driven actions do not open an auction and
+    ///         escrow a card, the fuzz invariants below would be asserting over an empty house.
+    function test_HandlerActuallyDrivesTheHouse() public {
+        handler.createAuction(0, 1000, 10, 1);
+        handler.bidEth(0, 1, 50);
+        handler.bidCardsMulti(0, 2, 4, 3);
+        assertGt(handler.auctionCount(), 0, "handler opened no auction");
+        assertGt(shapes.balanceOf(address(house)), 0, "handler escrowed nothing");
+    }
+
+    /// @notice (a) Every Shape the house holds under its own operations is accounted for: an open
+    ///         lot, or a card in exactly one bidder's escrow list. Balance above the escrow-plus-lot
+    ///         sum means a stranded card; below it means one double-counted. This covers the house's
+    ///         own paths only; a plain `transferFrom` push (documented as accepted, and unreachable
+    ///         from this handler) would need a separate pushed term.
     function invariant_HouseHoldingsAreAccounted() public view {
         uint256 counted;
         uint256 n = handler.auctionCount();
@@ -824,7 +880,7 @@ contract AuctionInvariantTest is StdInvariant, Test {
     ///         sequence was. This is the property H-1 turns on: no escrow can be trapped.
     function invariant_HouseFullyDrains() public {
         uint256 snap = vm.snapshotState();
-        vm.warp(block.timestamp + 60 days); // past every possible deadline
+        vm.warp(block.timestamp + 2 * house.MAX_DURATION()); // past every possible deadline
 
         uint256 n = handler.auctionCount();
         for (uint256 i = 0; i < n; ++i) {
@@ -848,5 +904,67 @@ contract AuctionInvariantTest is StdInvariant, Test {
 
         assertEq(shapes.balanceOf(address(house)), 0, "house retained a Shape with no exit");
         vm.revertToState(snap);
+    }
+
+    /// @notice The house never accumulates ETH. Every bid's payment is forwarded to `shapes` in the
+    ///         same call; the house holds only Shapes, never value directly.
+    function invariant_HouseHoldsNoEther() public view {
+        assertEq(address(house).balance, 0, "house accumulated ETH");
+    }
+}
+
+/// @dev L-02 as a stateful property. The Shapes fee recipient is a contract that, on every fee it
+///      receives (which happens inside the house's bid-path mint), tries to push a Shape it owns
+///      into the house. `onERC721Received` must refuse every attempt, so the accounting invariant
+///      holds with an actively hostile recipient in the loop, not only the single L-02 unit test.
+contract HostileAuctionFeeRecipient is IERC721Receiver {
+    Shapes public shapes;
+    address public house;
+    uint256 public held;
+    bool public holds;
+
+    function setTargets(Shapes shapes_, address house_) external {
+        shapes = shapes_;
+        house = house_;
+    }
+
+    function acquire(uint256 amount) external {
+        held = shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount);
+        holds = true;
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return IERC721Receiver.onERC721Received.selector;
+    }
+
+    receive() external payable {
+        if (holds) {
+            try IERC721(address(shapes)).safeTransferFrom(address(this), house, held) {} catch {}
+        }
+    }
+}
+
+contract AuctionInvariantHostileFeeTest is AuctionInvariantTest {
+    HostileAuctionFeeRecipient internal hostile;
+
+    function setUp() public override {
+        renderer = new ShapeRenderer();
+        collection = new ShapeCollection(address(renderer));
+        hostile = new HostileAuctionFeeRecipient();
+        shapes = new Shapes(100, address(hostile), address(renderer), address(collection));
+        house = new ShapeAuctionHouse(address(shapes));
+        hostile.setTargets(shapes, address(house));
+
+        // The recipient acquires a Shape it will try to push in on every fee it later receives.
+        vm.deal(address(hostile), 100 ether);
+        hostile.acquire(0.1 ether);
+
+        handler = new AuctionHandler(shapes, house);
+        _wire();
+    }
+
+    /// @notice The hostile recipient never succeeds in stranding its Shape in the house.
+    function invariant_HostileFeeRecipientKeepsItsShape() public view {
+        assertEq(shapes.ownerOf(hostile.held()), address(hostile), "a pushed Shape was stranded");
     }
 }

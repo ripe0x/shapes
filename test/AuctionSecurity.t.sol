@@ -19,19 +19,6 @@ contract FakeLot {
     }
 }
 
-/// @dev H-02: inbound works, outbound reverts.
-contract SelectiveLot {
-    address public house;
-
-    function setHouse(address h) external {
-        house = h;
-    }
-
-    function transferFrom(address from, address, uint256) external view {
-        if (from == house) revert("no delivery");
-    }
-}
-
 /// @dev I-06: an ERC721 whose `transferFrom` moves nothing. The house cannot be its `shapes`, but
 ///      as a stand-in it proves the post-transfer ownership check in `createAuction` reverts when
 ///      the house does not actually come to hold the lot.
@@ -101,8 +88,8 @@ contract AuctionSecurityTest is Test {
     /// @notice H-01. A lot whose `transferFrom` returns without moving anything would let a
     ///         seller collect a real winning bid for a lot that never changed hands. The house
     ///         cannot tell such a contract from an honest one, so it does not accept one: the lot
-    ///         is always a Shape. `FakeLot` and `SelectiveLot` below are unreachable as lots, and
-    ///         are kept as a record of what the parameter used to admit.
+    ///         is always a Shape. `FakeLot` is unreachable as a lot, kept as a record of what the
+    ///         parameter used to admit.
     function test_H01_AnArbitraryContractCannotBeTheLot() public {
         FakeLot fake = new FakeLot();
 
@@ -158,7 +145,7 @@ contract AuctionSecurityTest is Test {
         ids[0] = card;
 
         vm.prank(seller);
-        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        vm.expectRevert(IShapeAuctionHouse.SellerCannotBid.selector);
         house.bid(a, ids, 0);
     }
 
@@ -174,11 +161,11 @@ contract AuctionSecurityTest is Test {
         uint64 max = house.MAX_DURATION();
 
         vm.prank(seller);
-        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        vm.expectRevert(IShapeAuctionHouse.DurationOutOfRange.selector);
         house.createAuction(lot, max + 1, 1, 0, 0);
 
         vm.prank(seller);
-        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        vm.expectRevert(IShapeAuctionHouse.ExtensionWindowTooLong.selector);
         house.createAuction(lot, 1 days, 1, 0, uint32(1 days + 1));
 
         // The boundaries themselves are accepted.
@@ -195,7 +182,7 @@ contract AuctionSecurityTest is Test {
         ShapeAuctionHouse fakeHouse = new ShapeAuctionHouse(address(fake));
 
         vm.prank(seller);
-        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        vm.expectRevert(IShapeAuctionHouse.LotNotReceived.selector);
         fakeHouse.createAuction(1, 1 days, 1, 0, 0);
 
         assertEq(fakeHouse.auctionCount(), 0, "no auction over a lot the house never received");

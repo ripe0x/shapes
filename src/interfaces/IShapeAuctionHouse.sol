@@ -42,9 +42,16 @@ interface IShapeAuctionHouse {
     error AuctionOver(uint256 auctionId);
     error AuctionStillRunning(uint256 auctionId);
     error AuctionAlreadySettled(uint256 auctionId);
-    /// @dev `createAuction` was given a zero duration, or `cancelAuction` was called once a bid
-    ///      had landed.
+    /// @dev `cancelAuction` was called by a non-seller, once a bid had landed, or after settlement.
     error InvalidAuction();
+    /// @dev `createAuction` duration was zero or above `MAX_DURATION`.
+    error DurationOutOfRange();
+    /// @dev `createAuction` extension window exceeded the duration.
+    error ExtensionWindowTooLong();
+    /// @dev `createAuction`'s transfer left the lot unheld by the house.
+    error LotNotReceived();
+    /// @dev The seller bid its own auction.
+    error SellerCannotBid();
     /// @dev A bid carried no cards and no ETH.
     error EmptyBid();
     /// @dev A card valued at zero: it does not exist, or it is Black and therefore unredeemable.
@@ -84,6 +91,9 @@ interface IShapeAuctionHouse {
     ///      leader's escrow with no settlement and no withdrawal. The house cannot tell either
     ///      apart from an honest implementation, so it sells only the collection it was built
     ///      against.
+    ///
+    ///      A Black Shape (zero backing) is accepted as a lot. Its worth is assessed by bidders,
+    ///      unlike a bid's cards, which are valued at their backing and so reject a Black card.
     /// @param duration Seconds the auction runs for once the first bid lands. At most `MAX_DURATION`.
     /// @param reserveUnits Smallest winning bid, in `UNIT` multiples.
     /// @param minIncrementBps How far a bid must clear the standing one, in basis points.

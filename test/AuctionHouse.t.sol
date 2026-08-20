@@ -122,7 +122,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_CreateRejectsZeroDuration() public {
         vm.prank(seller);
-        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        vm.expectRevert(IShapeAuctionHouse.DurationOutOfRange.selector);
         house.createAuction(lotId, 0, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
     }
 

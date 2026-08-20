@@ -92,8 +92,8 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     ) external nonReentrant returns (uint256 auctionId) {
         // Bound the clock. An unbounded duration would hold every bidder's escrow for as long as
         // the seller chose; extensionWindow may not exceed the duration it extends.
-        if (duration == 0 || duration > MAX_DURATION) revert InvalidAuction();
-        if (extensionWindow > duration) revert InvalidAuction();
+        if (duration == 0 || duration > MAX_DURATION) revert DurationOutOfRange();
+        if (extensionWindow > duration) revert ExtensionWindowTooLong();
 
         auctionId = auctionCount++;
         _auctions[auctionId] = Auction({
@@ -114,7 +114,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         // Confirm the house holds the lot before the auction is live. Redundant for a Shape, whose
         // transferFrom either moves the token or reverts, and the guarantee the rest of the
         // contract relies on: a settled auction can always deliver.
-        if (IERC721(shapes).ownerOf(tokenId) != address(this)) revert InvalidAuction();
+        if (IERC721(shapes).ownerOf(tokenId) != address(this)) revert LotNotReceived();
     }
 
     /// @inheritdoc IShapeAuctionHouse
@@ -141,7 +141,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         // The seller cannot bid its own lot. A seller bidding sets a floor with cards it withdraws
         // intact once a real bidder clears it, at no net cost. A second address defeats this, but
         // the free, on-chain-obvious form is closed.
-        if (msg.sender == a.seller) revert InvalidAuction();
+        if (msg.sender == a.seller) revert SellerCannotBid();
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
         if (cardIds.length == 0 && ethBackingWei == 0) revert EmptyBid();
