@@ -53,7 +53,7 @@ wei is treated as strictly better than opening any withdrawal path that could re
 reserve. Direct ETH transfers to the contract revert; ETH enters only through `mint`.
 
 The invariant is asserted as a stateful fuzz invariant over randomized sequences of minting,
-transferring, redeeming, composing, decomposing, and blackening.
+transferring, redeeming, composing, decomposing, splitting, and sacrificing.
 
 ### ETH-out paths
 
@@ -64,7 +64,7 @@ entire attack surface for solvency:
    transaction. Money received that same tx; never joins the reserve.
 2. **Redemption payout** — reached only *after* the token is burned (checks-effects-interactions),
    `nonReentrant`, all-or-nothing.
-3. **Blacken sacrifice** — a fixed 100 ETH sent to `0x…dEaD`, gated to the owner of an apex
+3. **Sacrifice** — a fixed 100 ETH sent to `0x…dEaD`, gated to the owner of an apex
    token (see §5). Fixed amount, fixed unspendable destination.
 
 No administrative function reaches any of the three.
@@ -167,7 +167,7 @@ A token is **Complete** when its `originCount` equals its unit count (`units = b
 with `units > 1`. It carries as many independent mint events as its backing has 0.01 units — a
 live computed property, not a stored flag. Complete propagates upward: composing all-Complete
 pieces yields a Complete, because both units and origin counts sum. Only the **100 ETH
-Complete** (`originCount == 10,000`) can be blackened.
+Complete** (`originCount == 10,000`) can be sacrificed.
 
 An honest subtlety the spec is careful about: an origin is one mint event *of any
 denomination*, not a unit of 0.01 ETH. So Complete does **not** prove the backing entered as
@@ -182,50 +182,64 @@ that Complete proves all-0.01 origins — was found invalid and explicitly remov
 ## 5. Composition mechanics
 
 Four operations reshape tokens, modelled loosely on Checks (VV Edition) but adapted so identity
-behaves asymmetrically:
+behaves asymmetrically. They form two pairs, one reversible and one not:
 
 - **compose (many → one):** the caller names which input survives; it keeps its ID and seed and
   grows to the summed denomination, the others burn. Identity carries **up**. Backing only ever
   increases here, so there is no buyer-rug risk under a live listing.
-- **decompose (one → many):** the input is fully burned; every output is a fresh sequential ID
-  with a seed derived deterministically from the parent's (`keccak256(parentSeed, i)`).
-  Identity **ends**. A stale listing on the input auto-voids because the token is gone.
-- **restore (many → one, exact):** the one exception to "identity ends." Reassembling a split's
-  *complete* child set mints a fresh ID carrying the split input's exact seed and denomination —
-  the exact artwork — with origins summed back. Verified against a single-slot split record;
-  partial sets and substitutes are rejected by construction.
-- **blacken (in place):** an apex 100 ETH Complete becomes a Black Shape — same ID, seed, and
-  geometry, colours inverted (`#000↔#fff`). After: not redeemable, not recomposable,
-  `backingOf` = 0, and `sacrificedBacking` permanently reports 100 ETH. The 100 ETH is sent to
-  `0x…dEaD` as a real, visible, independently-verifiable economic burn. Black Shapes stay
-  transferable ERC721s (not soulbound). Identity is terminal.
+- **decompose (the exact inverse of compose):** pops the survivor's most recent compose. The
+  survivor keeps its ID and seed and reverts to the denomination, origin count and gene it held
+  before that merge, and every input that compose burned is re-minted **under its original ID and
+  seed** — not a fresh sequential one. Both the survivor's identity and each input's come back, so
+  a composition can be fully unwound. Stacked composes reverse newest first. The record holding
+  each input's state is stored per survivor, and `previewDecompose` reads it back, so a client
+  never has to reconstruct it from event history.
+- **split (one → many):** the input is fully burned; every output is a fresh sequential ID with a
+  seed derived deterministically from the parent's (`keccak256(parentSeed, i)`). Identity **ends**,
+  and so does the artwork — nothing reassembles it. Composing the pieces back yields a token
+  carrying the survivor's own seed, not the split input's. A stale listing on the input auto-voids
+  because the token is gone.
+- **sacrifice (in place):** an apex 100 ETH Complete becomes a Black Shape — same ID, seed, and
+  geometry, colours inverted (`#000↔#fff`). After: not redeemable, not recomposable, `backingOf`
+  is 0, and `sacrificedBacking` permanently reports 100 ETH. The 100 ETH is sent to `0x…dEaD` as a
+  real, visible, independently-verifiable economic burn. Black Shapes stay transferable ERC721s
+  (not soulbound). Identity is terminal.
 
-Recomposition (compose/decompose/restore) moves **no ETH** and conserves backing by an explicit
-equality check, so it cannot affect solvency. Compose makes no external calls at all; decompose
-and restore do all accounting before any `_safeMint`, so receiver callbacks are safe.
+An earlier design had a fifth operation, `restore`, which reassembled a split's complete child set
+back into the original artwork. It was removed. A split is now final, which is both simpler and
+more honest: the reason given for a split ending identity sat awkwardly beside an exception that
+un-ended it.
 
-Deterministic child seeds are a deliberate choice: they fix the entire decompose tree of every
-token at mint. Owners navigate a possibility space set at mint rather than rolling per-block
-entropy, and a frontend can preview any split exactly before executing. Since seeds have no
-economic effect, mint-time seed grinding (~one attempt per block) is an accepted, priced risk
-rather than a vulnerability.
+Recomposition moves **no ETH** and conserves backing by an explicit equality check, so it cannot
+affect solvency. Compose makes no external calls at all; split and decompose do all accounting
+before any `_safeMint`, so receiver callbacks are safe.
+
+Deterministic child seeds are a deliberate choice: they fix the entire split tree of every token at
+mint. Owners navigate a possibility space set at mint rather than rolling per-block entropy, and a
+frontend can preview any split exactly before executing. Since seeds have no economic effect,
+mint-time seed grinding (about one attempt per block) is an accepted, priced risk rather than a
+vulnerability.
 
 ### One marketplace caveat, documented
 
-The only remaining mutation-rug vector is blacken: a standing collection- or trait-level WETH
-bid on an apex Complete can be filled with a Black Shape if the owner blackens and then accepts
-the bid. ERC-4906 `MetadataUpdate` speeds refresh of the token's own listing but does not
+The only remaining mutation-rug vector is sacrifice: a standing collection- or trait-level WETH
+bid on an apex Complete can be filled with a Black Shape if the owner sacrifices it and then
+accepts the bid. ERC-4906 `MetadataUpdate` speeds refresh of the token's own listing but does not
 cancel standing offers. Any integrator that values a token by `backingOf` must treat an
 owner-held apex Complete as mutable to zero. This is disclosed rather than fixed.
 
 ### Provenance lives in events
 
-Lineage is not stored on-chain (a Complete can swallow up to 10,000 tokens; storing the tree is
-infeasible). Each operation emits an explicit lineage event (`Composed`, `Decomposed`,
-`Restored`, `Blackened`, plus `ShapeRedeemed` carrying `originCount`), and full ancestor trees
-are reconstructed off-chain. `totalMinted` is a high-water ID counter, not a mint count —
-fee-free recompose cycles inflate it without creating ETH or origins, and indexers are warned
-not to treat it as mint volume.
+Ancestry is not stored on-chain (a Complete can swallow up to 10,000 tokens; storing the tree is
+infeasible). Each operation emits an explicit lineage event (`Composed`, `Decomposed`, `Split`,
+`Blackened`, plus `ShapeRedeemed` carrying `originCount`), and full ancestor trees are
+reconstructed off-chain. The exception is the compose record itself, which *is* stored, because
+`decompose` needs it to revive each input exactly.
+
+IDs are issued from 0, and `totalMinted` counts IDs issued rather than naming the highest one, so
+the highest issued is `totalMinted - 1`. `decompose` reuses IDs rather than issuing them and does
+not advance the counter, which is what keeps a revived ID below every fresh one. Fee-free
+recomposition inflates neither ETH nor origins.
 
 ---
 
@@ -257,7 +271,7 @@ composition at bounded odds — that asymmetry is the game. Homogeneous pools ar
 exactly the same number of rolls a step-by-step climb does, so jumping tiers saves gas, never
 risk.
 
-**On decompose/restore:** children inherit the parent's gene unchanged; restore takes the
+**On split and decompose:** split children inherit the parent's gene unchanged; decompose takes the
 children's common gene. No new storage, no reroll machine — decompose→recompose of a token's
 own children returns the same gene with certainty.
 
@@ -269,28 +283,74 @@ difficulty.
 
 ---
 
-## 7. Immutability and admin surface
+## 7. Immutability, admin surface, and title
 
-There is exactly **one** administrative power, and it is cosmetic: the owner may replace the
-renderer (`setRenderer`) to fix a rendering bug, and may freeze it permanently
-(`lockRenderer`). The renderer is read only by `tokenURI`, so it can change how a Shape *looks*
-— never its backing, redeemability, or ownership. The owner may renounce ownership at any time.
+Administrative power is narrow and value-inert. The owner may replace the renderer and the
+collection metadata contract, freezing both together with `lockRenderer`; may set and separately
+lock an optional position resolver; and may edit the metadata copy — the token name prefix, the
+descriptions, the collection name — which is validated on write to close a JSON-injection channel.
+Every one of these is read only by metadata views. None can change what a Shape is worth, whether
+it redeems, or who owns it. The owner may renounce ownership at any time.
 
-`feeBps` and `feeRecipient` are `immutable`. The reserve, denominations, and redemption path
-have no admin access at all. Deliberately absent: emergency withdrawal, treasury withdrawal,
-redemption pause, asset recovery, backing modification, token seizure, admin burn, fee change,
-upgradeability, proxies, allowlists, supply caps, royalties.
+`feeBps` and `feeRecipient` are `immutable`. The reserve, denominations, and redemption path have
+no admin access at all. Deliberately absent: emergency withdrawal, treasury withdrawal, redemption
+pause, asset recovery, backing modification, token seizure, admin burn, fee change, upgradeability,
+proxies, allowlists, supply caps, royalties.
 
-One deliberate refusal: a Shape cannot be minted or transferred to the `Shapes` contract
-itself, since the contract can never be `msg.sender` and such a token could never be redeemed.
+One deliberate refusal: a Shape cannot be minted or transferred to the `Shapes` contract itself,
+since the contract can never be `msg.sender` and such a token could never be redeemed.
+
+### Contract title
+
+Separately, and carrying no authority whatsoever, the contract records a title holder:
+`titleHolder`, `titleSince`, `transferTitle`. This is cultural title to Shapes as a whole,
+recorded by the work itself rather than by a certificate.
+
+It is not a token. No title NFT, no companion collection, no reserved Shape; `Shapes.titleHolder()`
+is the only record, so nothing competes with it. Its holder cannot reach the reserve, the fees, any
+Shape, the renderer, the collection, the resolver or `owner()`, and gains no intellectual property
+or legal right. `msg.sender == titleHolder` appears in exactly one function, `transferTitle`.
+
+Title and administrative ownership are independent in both directions. Ownership can be renounced
+with the title still transferable, which is the point of recording it here: the title is meant to
+outlive administration. Transfer is a bearer transfer — immediate, one transaction, no approval, no
+acceptance by the recipient, and no recovery. Title sent somewhere that cannot move it again is
+stranded permanently, deliberately, because an owner able to recover it would be an owner able to
+take it.
+
+A sale needs nothing from the contract: the holder settles payment however they like and calls
+`transferTitle`. An auction is the same shape, with an auction contract holding title between
+seller and winner.
 
 ---
+
+## 7a. Two satellite contracts
+
+Neither holds a privileged position over `Shapes`, and `Shapes` knows nothing about either.
+
+**`ShapeCollection`** serves contract-level metadata and seeded card previews. It reads
+`block.prevrandao`, so the collection image changes each block: an animated filmstrip of one frame
+per denomination, cycling down the ladder. It is the one piece of presentation that is not a pure
+function, and it drives nothing economic.
+
+**`ShapeAuctionHouse`** is an English auction where a bid is a *set of Shapes* whose summed backing
+is the bid amount. A bidder holding no Shapes can bid ETH and the house mints the minimal card set
+for that amount, so every bid ends up expressed as cards either way. Amounts are carried in 0.01
+ETH units, which is exactly the granularity the denomination ladder can express.
+
+Two properties are worth a reviewer's attention. Nothing is ever pushed: an outbid bidder's cards
+do not move, they wait to be pulled, because pushing sixty-four ERC721 transfers inside a bid would
+let a bidder with a reverting receiver freeze the auction on their own bid. And the lot is always a
+Shape rather than an arbitrary ERC721 — an audit found that a seller-supplied contract whose
+`transferFrom` returns without moving anything let the seller collect a real winning bid for a lot
+that never changed hands, and the house cannot tell such a contract from an honest one. It takes no
+fee and has no owner.
 
 ## 8. Testing and repository
 
 ```
 src/
-  Shapes.sol            ERC721 + reserve + composition + blacken + ink genes
+  Shapes.sol            ERC721 + reserve + composition + sacrifice + ink genes + title
   ShapeRenderer.sol     fully onchain SVG and metadata
   interfaces/           IShapes, IShapeRenderer
   lib/
@@ -325,17 +385,27 @@ reads artwork back from the chain's own `tokenURI`, and shows the reserve invari
 
 ## 9. Current status
 
-Pre-deployment. No mainnet or testnet deployment, no git remote on the canonical line, no
-tokens anywhere — so interface-breaking changes are still free and no migration is required.
+Pre-deployment. No mainnet or testnet deployment of the current line, no tokens anywhere — so
+interface-breaking changes are still free and no migration is required.
 
-A documentation note worth flagging to a reviewer: the codebase is ahead of some of its prose.
-`Shapes.sol` and the renderer already implement v2 composition, blacken, and ink genes, but
-`README.md` and `SECURITY.md` still describe the v1 primitive in places (e.g. "exactly two /
-one code paths that move ETH out" — now three). A documentation sweep is a known outstanding
-task before deploy. The design specs — `SHAPES_V2_SPEC.md`, `INK_GENES_DRAFT.md`,
-`INK_GENES_IMPL_SPEC.md`, and `SPEC.md` — are the current source of truth for intent.
+Two external security audits have run against the auction layer and the token core. Both High
+findings, in the auction house, are closed: a seller-supplied lot contract could fake delivery and
+take a real winning bid, and a second could block settlement and strand the leader's escrow. Both
+were closed by removing the ability to name an arbitrary lot rather than by guarding it. The Low
+findings are closed except one, which is accepted and documented: a Shape pushed into the house by
+a plain `transferFrom` is held with no escrow entry, because the alternatives are coupling `Shapes`
+to the house or adding an administrative path into everyone else's escrow.
 
----
+The documentation gap this section used to flag has been closed, and `script/check-docs.sh` now
+fails if any document names a selector the compiled contract does not have.
+
+The live constraint is contract size. `Shapes` is within roughly a kilobyte of the 24,576-byte
+limit, so anything further needs measuring before it is written, and the next addition should come
+with a decision about what comes out.
+
+Known outstanding before deploy: nothing reserves token 0 beyond minting it in the same broadcast
+as the deployment, so a live deployment that cares should go through a private mempool; and the
+web deployment record still points at a superseded testnet deployment.
 
 ## 10. Design philosophy — what the reviewer should weigh
 
@@ -365,7 +435,7 @@ intended to be composable, not siloed.
 
 ## 11. Specific questions for a reviewer
 
-1. **Backing safety.** Is there any compose / decompose / restore / blacken sequence that could
+1. **Backing safety.** Is there any compose / decompose / split / sacrifice sequence that could
    violate `balance >= redeemableBacking`, or that increases the global `originCount`? The
    claim is no; the invariants assert it — is the reasoning airtight?
 2. **Provenance model.** Is "one conserved integer + events" the right minimal representation,
@@ -375,7 +445,7 @@ intended to be composable, not siloed.
    constants, frozen at deploy. Given previewable outcomes and free off-chain pairing search,
    are the published odds honest, and is "difficulty = parked ETH + combinatorial legwork" a
    sound framing?
-4. **The blacken marketplace caveat (§5).** Is documenting the standing-bid mutation risk
+4. **The sacrifice marketplace caveat (§5).** Is documenting the standing-bid mutation risk
    sufficient, or does it warrant a mechanism-level fix?
 5. **Simplicity vs. surface.** Three layers now sit on the primitive. Does the composition +
    ink-gene surface still leave something "simple enough for other contracts to build on," or
