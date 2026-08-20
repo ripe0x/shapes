@@ -242,15 +242,51 @@ export function Toggle({
 }
 
 /**
- * The canonical SVG carries explicit width="250" height="350" because that is
- * what belongs in an onchain document. For on-screen layout we swap in a
- * responsive box. The geometry is untouched.
+ * The canonical SVG's root tag carries explicit pixel width/height (the intrinsic
+ * raster size). For on-screen layout, swap the root tag's dimensions for a
+ * responsive box. Only the opening <svg> tag is touched; viewBox and geometry
+ * are unchanged.
  */
 export function forDisplay(svg: string): string {
   return svg.replace(
-    'width="250" height="350"',
-    'width="100%" height="100%" style="display:block"',
+    /(<svg[^>]*?) width="[^"]*" height="[^"]*"/,
+    '$1 width="100%" height="100%" style="display:block"',
   );
+}
+
+/**
+ * Rasterises a canonical SVG string to a PNG blob at its intrinsic raster size
+ * (the root tag's width/height attributes).
+ */
+async function svgToPngBlob(svg: string): Promise<Blob> {
+  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+  try {
+    const img = new Image();
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = () => reject(new Error("svg failed to load"));
+      img.src = url;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext("2d")!.drawImage(img, 0, 0);
+    return await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png"),
+    );
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * Writes the card image to the system clipboard as a PNG. Safari requires the
+ * ClipboardItem to be constructed with the pending promise, not an awaited blob.
+ */
+function copyCardImage(svg: string): Promise<void> {
+  return navigator.clipboard.write([
+    new ClipboardItem({ "image/png": svgToPngBlob(svg) }),
+  ]);
 }
 
 /** Renders a canonical SVG string. */
@@ -268,9 +304,22 @@ export function Card({
   /** 1-based frame number when this card is in the animation selection. */
   badge?: number | null;
 }) {
+  const [hover, setHover] = React.useState(false);
+  const [copied, setCopied] = React.useState<"ok" | "fail" | null>(null);
+  const copy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    copyCardImage(svg)
+      .then(() => setCopied("ok"))
+      .catch(() => setCopied("fail"));
+    setTimeout(() => setCopied(null), 1200);
+  };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, width }}>
-      <div style={{position: "relative"}}>
+      <div
+        style={{ position: "relative" }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
         <div
           onClick={onClick}
           data-card=""
@@ -287,6 +336,29 @@ export function Card({
           }}
           dangerouslySetInnerHTML={{ __html: forDisplay(svg) }}
         />
+        {(hover || copied) && (
+          <button
+            onClick={copy}
+            title="copy as PNG"
+            style={{
+              ...mono,
+              position: "absolute",
+              bottom: 4,
+              left: 4,
+              padding: "2px 6px",
+              fontSize: 9,
+              letterSpacing: "0.06em",
+              border: "none",
+              borderRadius: 3,
+              cursor: "pointer",
+              background:
+                copied === "ok" ? C.ok : copied === "fail" ? C.warn : "rgba(255,255,255,0.85)",
+              color: copied ? "#fff" : "#111",
+            }}
+          >
+            {copied === "ok" ? "copied" : copied === "fail" ? "failed" : "copy"}
+          </button>
+        )}
         {badge != null && (
           <div
             style={{

@@ -20,6 +20,7 @@ export function Ladder({
   setPerRow,
   setSeedMode,
   showGrid,
+  inverted,
   badgeOf,
 }: {
   params: Params;
@@ -31,6 +32,7 @@ export function Ladder({
   setPerRow: (v: number) => void;
   setSeedMode: (m: SeedMode) => void;
   showGrid: boolean;
+  inverted: boolean;
   badgeOf: (s: Selection) => number | null;
 }) {
   const [designSeeds, setDesignSeeds] = React.useState(false);
@@ -140,12 +142,12 @@ export function Ladder({
                         svg={
                           showGrid
                             ? withGridOverlay(
-                                renderShape(seed, amount, tokenId, mintGene(seed, amount), params),
+                                renderShape(seed, amount, tokenId, mintGene(seed, amount), params, inverted),
                                 seed,
                                 amount,
                                 params,
                               )
-                            : renderShape(seed, amount, tokenId, mintGene(seed, amount), params)
+                            : renderShape(seed, amount, tokenId, mintGene(seed, amount), params, inverted)
                         }
                         caption={"#" + tokenId.toString()}
                         badge={badgeOf({ seed, amountWei: amount, tokenId })}
@@ -160,7 +162,13 @@ export function Ladder({
         </div>
       </Section>
 
-      <Sweep params={params} seedMode={seedMode} onSelect={onSelect} showGrid={showGrid} />
+      <Sweep
+        params={params}
+        seedMode={seedMode}
+        onSelect={onSelect}
+        showGrid={showGrid}
+        inverted={inverted}
+      />
     </>
   );
 }
@@ -184,11 +192,13 @@ function Sweep({
   seedMode,
   onSelect,
   showGrid,
+  inverted,
 }: {
   params: Params;
   seedMode: SeedMode;
   onSelect: (s: Selection) => void;
   showGrid: boolean;
+  inverted: boolean;
 }) {
   const [n, setN] = React.useState(500);
   const [rows, setRows] = React.useState<SweepRow[] | null>(null);
@@ -348,6 +358,7 @@ function Sweep({
                                     BigInt(i + 1),
                                     mintGene(seed, DENOMINATIONS[r.di]),
                                     params,
+                                    inverted,
                                   ),
                                   seed,
                                   DENOMINATIONS[r.di],
@@ -359,6 +370,7 @@ function Sweep({
                                   BigInt(i + 1),
                                   mintGene(seed, DENOMINATIONS[r.di]),
                                   params,
+                                  inverted,
                                 )
                           }
                           caption={seed.toString().slice(0, 12)}

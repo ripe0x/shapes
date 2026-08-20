@@ -115,7 +115,7 @@ export function denomLabel(wei: bigint): string {
 /** The auction house surface the site drives: opening state, bidding, and the two pulls. */
 export const auctionHouseAbi = parseAbi([
   "function auctionCount() view returns (uint256)",
-  "function auctions(uint256 auctionId) view returns ((address seller, address nft, uint256 tokenId, uint64 endTime, uint64 duration, uint32 extensionWindow, uint16 minIncrementBps, uint64 reserveUnits, uint64 highestUnits, address highestBidder, bool settled))",
+  "function auctions(uint256 auctionId) view returns ((address seller, uint256 tokenId, uint64 endTime, uint64 duration, uint32 extensionWindow, uint16 minIncrementBps, uint64 reserveUnits, uint64 highestUnits, address highestBidder, bool settled))",
   "function bidUnits(uint256 auctionId, address bidder) view returns (uint64)",
   "function escrowedCards(uint256 auctionId, address bidder) view returns (uint256[])",
   "function minimumBid(uint256 auctionId) view returns (uint64)",
