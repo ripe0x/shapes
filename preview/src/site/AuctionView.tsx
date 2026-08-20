@@ -27,6 +27,7 @@ function useNow(): number {
 
 export function AuctionView({
   auction,
+  auctionErr,
   lotImage,
   data,
   address,
@@ -41,6 +42,8 @@ export function AuctionView({
   onOpenToken,
 }: {
   auction: AuctionState | null;
+  /** A read that failed, rather than an auction that is not there. */
+  auctionErr: string | null;
   lotImage: string | null;
   data: SiteData | null;
   address: `0x${string}` | undefined;
@@ -63,8 +66,13 @@ export function AuctionView({
     return (
       <Section title="AUCTION" last>
         <p style={{margin: 0, fontSize: 15, lineHeight: 1.7, color: C.bodyDim, maxWidth: "60ch"}}>
-          No auction is running.
+          {auctionErr ? "The auction could not be read." : "No auction is running."}
         </p>
+        {auctionErr && (
+          <p style={{margin: "12px 0 0", fontSize: 12, lineHeight: 1.6, color: C.bodyDim, maxWidth: "60ch", opacity: 0.75}}>
+            {auctionErr}
+          </p>
+        )}
       </Section>
     );
   }

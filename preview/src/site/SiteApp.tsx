@@ -60,6 +60,7 @@ export function SiteApp({
   const [txErr, setTxErr] = React.useState<{op: string; text: string} | null>(null);
   const [auction, setAuction] = React.useState<AuctionState | null>(null);
   const [lotImage, setLotImage] = React.useState<string | null>(null);
+  const [auctionErr, setAuctionErr] = React.useState<string | null>(null);
   const [txHash, setTxHash] = React.useState<string | null>(null);
 
   // URL <-> view sync for the Next.js host. `lastNav` tracks the last applied navigation so a
@@ -216,9 +217,18 @@ export function SiteApp({
   // the wallet changes, since escrow and the lead are both per-address.
   const refreshAuction = React.useCallback(async () => {
     if (!publicClient || !dep.auctionHouse) return;
-    const a = await loadAuction(publicClient, dep, 0n, address);
-    setAuction(a);
-    setLotImage(a ? await loadLotImage(publicClient, dep, a) : null);
+    try {
+      const a = await loadAuction(publicClient, dep, 0n, address);
+      setAuction(a);
+      setLotImage(a ? await loadLotImage(publicClient, dep, a) : null);
+      setAuctionErr(null);
+    } catch (e) {
+      // Distinguished from a null auction on purpose: a failed read and an auction that does not
+      // exist are the same empty screen otherwise, and the first is a bug on this side.
+      setAuction(null);
+      setLotImage(null);
+      setAuctionErr(e instanceof Error ? e.message : String(e));
+    }
   }, [publicClient, dep, address]);
 
   React.useEffect(() => {
@@ -347,6 +357,7 @@ export function SiteApp({
       {view === "auction" && (
         <AuctionView
           auction={auction}
+          auctionErr={auctionErr}
           lotImage={lotImage}
           data={data}
           address={address}

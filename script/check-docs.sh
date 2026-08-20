@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Fail if a document names a Shapes function the compiled contract does not have.
+# Fail if a document, or the site's hand-written ABI, names something the compiled contracts do
+# not have.
 #
 # Integration docs are read as executable claims: someone copies a call out of BUILDING.md and
 # expects it to compile. A selector that has been renamed or removed does not announce itself, so
 # this compares every `shapes.foo(` and every `| `foo(` table entry against the real ABI.
+#
+# The site is the same class of claim with a worse failure: `preview/src/chain/abi.ts` is typed
+# out by hand, so drift compiles, ships, and breaks inside viem's decoder at runtime.
 #
 #   ./script/check-docs.sh
 set -euo pipefail
@@ -37,3 +41,11 @@ if bad:
     sys.exit(1)
 print(f"ok: every selector named across {len(docs)} documents exists on Shapes")
 ' "${DOCS[@]}"
+
+# The site's vendored ABI, compared against the same compiled contracts. Run from preview/, which
+# is where viem resolves; skipped with a warning if its dependencies are not installed.
+if (cd preview && node --input-type=module -e "await import('viem')") >/dev/null 2>&1; then
+  (cd preview && node scripts/check-vendored-abi.mjs)
+else
+  echo "warn: viem does not resolve from preview/; skipping the vendored ABI check" >&2
+fi
