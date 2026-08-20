@@ -50,6 +50,9 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     uint256 public constant MAX_CARDS_PER_BID = 64;
 
     /// @inheritdoc IShapeAuctionHouse
+    uint64 public constant MAX_DURATION = 30 days;
+
+    /// @inheritdoc IShapeAuctionHouse
     address public immutable shapes;
 
     /// @inheritdoc IShapeAuctionHouse
@@ -59,9 +62,10 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     mapping(uint256 auctionId => mapping(address bidder => uint256[])) private _escrow;
     mapping(uint256 auctionId => mapping(address bidder => uint64)) private _units;
 
-    /// @dev Set only while `bid` is minting, and read only by `onERC721Received`. Anything else
-    ///      sending the house an ERC721 through the safe path is refused, so a token cannot be
-    ///      stranded here with no record of who owns it.
+    /// @dev Set only across the individual mint call inside `bid`, and read only by
+    ///      `onERC721Received`, which accepts a mint to the house (`from == address(0)`) and
+    ///      nothing else. An inbound `safeTransferFrom` is refused even during the window, so a
+    ///      token cannot be stranded here with no record of who owns it.
     bool private _minting;
 
     constructor(address shapes_) {
@@ -86,7 +90,10 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         uint16 minIncrementBps,
         uint32 extensionWindow
     ) external nonReentrant returns (uint256 auctionId) {
-        if (duration == 0) revert InvalidAuction();
+        // Bound the clock. An unbounded duration would hold every bidder's escrow for as long as
+        // the seller chose; extensionWindow may not exceed the duration it extends.
+        if (duration == 0 || duration > MAX_DURATION) revert InvalidAuction();
+        if (extensionWindow > duration) revert InvalidAuction();
 
         auctionId = auctionCount++;
         _auctions[auctionId] = Auction({
@@ -104,6 +111,10 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
 
         emit AuctionCreated(auctionId, msg.sender, shapes, tokenId, duration, reserveUnits);
         IERC721(shapes).transferFrom(msg.sender, address(this), tokenId);
+        // Confirm the house holds the lot before the auction is live. Redundant for a Shape, whose
+        // transferFrom either moves the token or reverts, and the guarantee the rest of the
+        // contract relies on: a settled auction can always deliver.
+        if (IERC721(shapes).ownerOf(tokenId) != address(this)) revert InvalidAuction();
     }
 
     /// @inheritdoc IShapeAuctionHouse
@@ -127,6 +138,10 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         nonReentrant
     {
         Auction storage a = _requireAuction(auctionId);
+        // The seller cannot bid its own lot. A seller bidding sets a floor with cards it withdraws
+        // intact once a real bidder clears it, at no net cost. A second address defeats this, but
+        // the free, on-chain-obvious form is closed.
+        if (msg.sender == a.seller) revert InvalidAuction();
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
         if (cardIds.length == 0 && ethBackingWei == 0) revert EmptyBid();
@@ -195,21 +210,23 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
             revert TooManyCards(held.length + _total(counts));
         }
 
-        _minting = true;
         for (uint256 d = 0; d < Denominations.COUNT; ++d) {
             uint256 count = counts[d];
             if (count == 0) continue;
 
             uint256 amount = Denominations.amountAt(d);
             uint256 cost = (amount + IShapes(shapes).mintFeeFor(amount)) * count;
+            // The window is open only across the mint call that fills it, not across the whole
+            // loop, so nothing between two calls can slip a token in under the flag.
+            _minting = true;
             // Take the ids the mint reports rather than predicting them from the counter: a batch
             // is contiguous from its return value, which is the guarantee actually offered.
             uint256 firstId = IShapes(shapes).mintBatchTo{value: cost}(amount, count, address(this));
+            _minting = false;
             for (uint256 i = 0; i < count; ++i) {
                 held.push(firstId + i);
             }
         }
-        _minting = false;
 
         emit BidCardsMinted(auctionId, msg.sender, backingWei);
         return backingWei;
@@ -272,11 +289,14 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /* ----------------------------- receipt ---------------------------- */
 
     /// @inheritdoc IERC721Receiver
-    /// @dev Accepts Shapes only while `bid` is minting them. Bidding by sending a card here
-    ///      directly is unsupported on purpose: a bid must be one transaction, so that what it
-    ///      totals is compared against the standing bid exactly once.
+    /// @dev Accepts a Shape only when it is minted to the house (`from == address(0)`) while `bid`
+    ///      is minting one. An inbound `safeTransferFrom` carries a nonzero `from` and is refused:
+    ///      bidding by sending a card here directly is unsupported on purpose, since a bid must be
+    ///      one transaction, so that what it totals is compared against the standing bid exactly
+    ///      once. A contract fee recipient that gains control inside the mint cannot push its own
+    ///      Shape in through this path.
     function onERC721Received(address, address from, uint256, bytes calldata) external view returns (bytes4) {
-        if (msg.sender != shapes || !_minting) revert UnsolicitedToken(from);
+        if (msg.sender != shapes || !_minting || from != address(0)) revert UnsolicitedToken(from);
         return IERC721Receiver.onERC721Received.selector;
     }
 

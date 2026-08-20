@@ -66,6 +66,10 @@ interface IShapeAuctionHouse {
     ///         than twenty for any amount below 100 ETH, so this is headroom, not a constraint.
     function MAX_CARDS_PER_BID() external view returns (uint256);
 
+    /// @notice The longest an auction may run. `createAuction` rejects a longer duration, and an
+    ///         `extensionWindow` larger than the duration.
+    function MAX_DURATION() external view returns (uint64);
+
     /// @notice The Shapes contract every bid is denominated in.
     function shapes() external view returns (address);
 
@@ -80,10 +84,11 @@ interface IShapeAuctionHouse {
     ///      leader's escrow with no settlement and no withdrawal. The house cannot tell either
     ///      apart from an honest implementation, so it sells only the collection it was built
     ///      against.
-    /// @param duration Seconds the auction runs for once the first bid lands.
+    /// @param duration Seconds the auction runs for once the first bid lands. At most `MAX_DURATION`.
     /// @param reserveUnits Smallest winning bid, in `UNIT` multiples.
     /// @param minIncrementBps How far a bid must clear the standing one, in basis points.
     /// @param extensionWindow A bid inside this many seconds of the end pushes the end out by it.
+    ///        At most `duration`.
     function createAuction(
         uint256 tokenId,
         uint64 duration,

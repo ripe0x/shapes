@@ -8,6 +8,7 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 
 /* ==================================================================== *
  *  Hostile recipients for the `*To` value-flow paths (PR #1).
@@ -622,5 +623,230 @@ contract ShapesInvariantTest is StdInvariant, Test {
         assertEq(sink.balance - before, expected, "a live Shape could not pay out in full");
         assertEq(shapes.redeemableBacking(), 0, "reserve not fully drained by redeeming everything");
         vm.revertToState(snapshot);
+    }
+}
+
+/* ==================================================================== *
+ *  Auction house: escrow custody invariants (I-2)
+ * ==================================================================== */
+
+/// @notice Drives the auction house through create / bid (cards and ETH) / withdraw / settle /
+///         claim / cancel, so the house's card custody sits under the stateful suite. The
+///         invariants prove: every Shape the house holds is either an open lot or in exactly one
+///         escrow list, and everything the house holds can always be pulled back out.
+contract AuctionHandler is Test, IERC721Receiver {
+    Shapes public immutable shapes;
+    ShapeAuctionHouse public immutable house;
+
+    address[4] public actors;
+
+    uint256[] public auctionIds;
+    mapping(uint256 => uint256) public lotOf;
+    mapping(uint256 => address) public sellerOf;
+    mapping(uint256 => address[]) private _biddersOf;
+    mapping(uint256 => mapping(address => bool)) private _isBidder;
+
+    uint256[9] internal DENOMS = [
+        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
+    ];
+
+    constructor(Shapes shapes_, ShapeAuctionHouse house_) {
+        shapes = shapes_;
+        house = house_;
+        actors = [address(0xB1), address(0xB2), address(0xB3), address(0xB4)];
+        for (uint256 i = 0; i < actors.length; ++i) {
+            vm.deal(actors[i], 1_000_000 ether);
+            vm.prank(actors[i]);
+            shapes_.setApprovalForAll(address(house_), true);
+        }
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return IERC721Receiver.onERC721Received.selector;
+    }
+
+    function auctionCount() external view returns (uint256) {
+        return auctionIds.length;
+    }
+
+    function bidders(uint256 id) external view returns (address[] memory) {
+        return _biddersOf[id];
+    }
+
+    function _actor(uint256 s) private view returns (address) {
+        return actors[s % actors.length];
+    }
+
+    function _recordBidder(uint256 id, address who) private {
+        if (!_isBidder[id][who]) {
+            _isBidder[id][who] = true;
+            _biddersOf[id].push(who);
+        }
+    }
+
+    /* ----------------------------- actions ----------------------------- */
+
+    function createAuction(uint256 actorSeed, uint256 durSeed, uint256 extSeed, uint256 resSeed) public {
+        address seller = _actor(actorSeed);
+        uint64 duration = uint64(bound(durSeed, 1, house.MAX_DURATION()));
+        uint32 extensionWindow = uint32(bound(extSeed, 0, duration));
+        uint64 reserve = uint64(bound(resSeed, 1, 10));
+
+        vm.prank(seller);
+        try shapes.mint{value: 0.1 ether + shapes.mintFeeFor(0.1 ether)}(0.1 ether) returns (uint256 lot) {
+            vm.prank(seller);
+            try house.createAuction(lot, duration, reserve, 500, extensionWindow) returns (uint256 id) {
+                auctionIds.push(id);
+                lotOf[id] = lot;
+                sellerOf[id] = seller;
+            } catch {}
+        } catch {}
+    }
+
+    function bidEth(uint256 aSeed, uint256 actorSeed, uint256 unitsSeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        address bidder = _actor(actorSeed);
+        uint256 backing = bound(unitsSeed, 1, 200) * 0.01 ether;
+
+        vm.prank(bidder);
+        try house.bid{value: backing + shapes.mintFeeFor(backing)}(id, new uint256[](0), backing) {
+            _recordBidder(id, bidder);
+        } catch {}
+    }
+
+    function bidCards(uint256 aSeed, uint256 actorSeed, uint256 denomSeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        address bidder = _actor(actorSeed);
+        uint256 amount = DENOMS[denomSeed % 7]; // cap at 10 ETH to keep fuzzing cheap
+
+        vm.prank(bidder);
+        uint256 card;
+        try shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount) returns (uint256 c) {
+            card = c;
+        } catch {
+            return;
+        }
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = card;
+        vm.prank(bidder);
+        try house.bid(id, ids, 0) {
+            _recordBidder(id, bidder);
+        } catch {}
+    }
+
+    function withdraw(uint256 aSeed, uint256 actorSeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        vm.prank(_actor(actorSeed));
+        try house.withdraw(id) {} catch {}
+    }
+
+    function settle(uint256 aSeed, uint256 warpSeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        if (warpSeed % 2 == 0) vm.warp(block.timestamp + 2 days);
+        try house.settle(id) {} catch {}
+    }
+
+    function claimProceeds(uint256 aSeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        vm.prank(sellerOf[id]);
+        try house.claimProceeds(id) {} catch {}
+    }
+
+    function cancel(uint256 aSeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        vm.prank(sellerOf[id]);
+        try house.cancelAuction(id) {} catch {}
+    }
+
+    function warp(uint256 s) public {
+        vm.warp(block.timestamp + bound(s, 1, 2 days));
+    }
+}
+
+contract AuctionInvariantTest is StdInvariant, Test {
+    ShapeRenderer internal renderer;
+    ShapeCollection internal collection;
+    Shapes internal shapes;
+    ShapeAuctionHouse internal house;
+    AuctionHandler internal handler;
+
+    function setUp() public {
+        renderer = new ShapeRenderer();
+        collection = new ShapeCollection(address(renderer));
+        shapes = new Shapes(100, address(0xFEE), address(renderer), address(collection));
+        house = new ShapeAuctionHouse(address(shapes));
+        handler = new AuctionHandler(shapes, house);
+
+        targetContract(address(handler));
+
+        bytes4[] memory selectors = new bytes4[](8);
+        selectors[0] = AuctionHandler.createAuction.selector;
+        selectors[1] = AuctionHandler.bidEth.selector;
+        selectors[2] = AuctionHandler.bidCards.selector;
+        selectors[3] = AuctionHandler.withdraw.selector;
+        selectors[4] = AuctionHandler.settle.selector;
+        selectors[5] = AuctionHandler.claimProceeds.selector;
+        selectors[6] = AuctionHandler.cancel.selector;
+        selectors[7] = AuctionHandler.warp.selector;
+        targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
+    }
+
+    /// @notice (a) Every Shape the house holds is accounted for: an open lot, or a card in exactly
+    ///         one bidder's escrow list. If the house's balance ever exceeds what the escrow lists
+    ///         and open lots sum to, a card is stranded; if it falls short, one is double-counted.
+    function invariant_HouseHoldingsAreAccounted() public view {
+        uint256 counted;
+        uint256 n = handler.auctionCount();
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 id = handler.auctionIds(i);
+            address[] memory bs = handler.bidders(id);
+            for (uint256 j = 0; j < bs.length; ++j) {
+                uint256[] memory cards = house.escrowedCards(id, bs[j]);
+                for (uint256 k = 0; k < cards.length; ++k) {
+                    assertEq(shapes.ownerOf(cards[k]), address(house), "escrowed card is not held");
+                }
+                counted += cards.length;
+            }
+            if (shapes.ownerOf(handler.lotOf(id)) == address(house)) counted++;
+        }
+        assertEq(shapes.balanceOf(address(house)), counted, "house holds an unaccounted Shape");
+    }
+
+    /// @notice (b) Every Shape the house holds has a reachable exit. Ending every auction and then
+    ///         pulling every escrow and every lot drains the house to nothing, whatever the
+    ///         sequence was. This is the property H-1 turns on: no escrow can be trapped.
+    function invariant_HouseFullyDrains() public {
+        uint256 snap = vm.snapshotState();
+        vm.warp(block.timestamp + 60 days); // past every possible deadline
+
+        uint256 n = handler.auctionCount();
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 id = handler.auctionIds(i);
+            try house.settle(id) {}
+            catch {
+                vm.prank(handler.sellerOf(id));
+                try house.cancelAuction(id) {} catch {}
+            }
+        }
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 id = handler.auctionIds(i);
+            address[] memory bs = handler.bidders(id);
+            for (uint256 j = 0; j < bs.length; ++j) {
+                vm.prank(bs[j]);
+                try house.withdraw(id) {} catch {}
+            }
+            vm.prank(handler.sellerOf(id));
+            try house.claimProceeds(id) {} catch {}
+        }
+
+        assertEq(shapes.balanceOf(address(house)), 0, "house retained a Shape with no exit");
+        vm.revertToState(snap);
     }
 }
