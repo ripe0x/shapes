@@ -372,9 +372,12 @@ bands the seven-state ink gene to `Mythic` (Void/Solid), `Rare` (Faint/Rich) or 
 last argument to `metadataJSON`/`tokenURI`; the other three derive from the card the renderer already
 builds. The renderer stays byte-parity with the canonical TypeScript renderer. See TRAIT_SPEC.md.
 
-Every string in both the SVG and the JSON comes from a fixed table or from
-`fmt`. No caller-controlled text reaches either document, so there is no
-injection surface to escape against.
+Every string in the SVG, and every string in the JSON other than the `name` prefix and
+`description`, comes from a fixed table or from `fmt`. Those two are owner-set copy, stored on
+`Shapes` and passed into `metadataJSON`. They are written verbatim, but `Shapes.setTokenCopy`
+and `setCollectionCopy` reject any value containing `"`, `\`, or a C0 control byte, and cap their
+length, so owner copy cannot break or restructure the document. No other caller-controlled text
+reaches either document.
 
 ### D13. Sizing: the painted extent is the controlled quantity
 

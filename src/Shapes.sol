@@ -233,10 +233,17 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         emit RendererLocked();
     }
 
+    /// @dev Longest a name or name prefix may be, in bytes.
+    uint256 private constant MAX_NAME_BYTES = 64;
+    /// @dev Longest a description may be, in bytes.
+    uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
+
     /// @inheritdoc IShapes
-    /// @dev Owner only. Copy is written verbatim into token metadata, so values must not contain
-    ///      a raw `"` or control characters. Not gated by `rendererLocked`.
+    /// @dev Owner only. Both arguments are validated (`_requireJsonSafe`) so copy cannot break or
+    ///      restructure the metadata JSON. Not gated by `rendererLocked`.
     function setTokenCopy(string calldata namePrefix, string calldata description) external onlyOwner {
+        _requireJsonSafe(namePrefix, MAX_NAME_BYTES, 0);
+        _requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
         tokenNamePrefix = namePrefix;
         tokenDescription = description;
         emit TokenCopyUpdated(namePrefix, description);
@@ -245,12 +252,27 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     }
 
     /// @inheritdoc IShapes
-    /// @dev Owner only. Same verbatim/escaping caveat as `setTokenCopy`. Not gated by `rendererLocked`.
+    /// @dev Owner only. Same validation as `setTokenCopy`. Not gated by `rendererLocked`.
     function setCollectionCopy(string calldata name, string calldata description) external onlyOwner {
+        _requireJsonSafe(name, MAX_NAME_BYTES, 0);
+        _requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
         collectionName = name;
         collectionDescription = description;
         emit CollectionCopyUpdated(name, description);
         emit ContractURIUpdated();
+    }
+
+    /// @dev The copy is written verbatim into the metadata JSON. Reject the bytes that would
+    ///      break or restructure that document: `"` (0x22), `\` (0x5C) and the C0 control range
+    ///      (below 0x20). Bytes at or above 0x80 pass, so multi-byte UTF-8 copy is unaffected.
+    ///      Also bounds the length. `field` distinguishes the two arguments in the revert.
+    function _requireJsonSafe(string calldata s, uint256 maxBytes, uint8 field) private pure {
+        bytes calldata b = bytes(s);
+        if (b.length > maxBytes) revert InvalidCopy(field);
+        for (uint256 i = 0; i < b.length; ++i) {
+            uint8 c = uint8(b[i]);
+            if (c == 0x22 || c == 0x5C || c < 0x20) revert InvalidCopy(field);
+        }
     }
 
     /// @inheritdoc IShapes

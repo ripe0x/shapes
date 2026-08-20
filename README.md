@@ -227,8 +227,11 @@ Ownership is transferable through `transferOwnership` and renounceable through `
 The current owner controls two independent, value-inert configuration domains:
 
 - Presentation: the renderer and collection metadata contracts may be replaced until
-  `lockRenderer` permanently freezes both. They are read only by metadata views and cannot affect
-  backing, redemption or ownership.
+  `lockRenderer` permanently freezes both pointers. The metadata copy — the token name prefix and
+  description, the collection name and description — is separate owner-set state, edited via
+  `setTokenCopy` and `setCollectionCopy`, and is not covered by `lockRenderer`; it stays editable
+  for as long as the owner holds the contract. Copy is validated so it cannot break the metadata
+  JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
 - The optional position resolver may be set, replaced or cleared until `lockPositionResolver`
   permanently freezes its current value. It may be locked while zero, permanently opting out.
 

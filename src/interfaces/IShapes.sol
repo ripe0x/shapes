@@ -137,6 +137,10 @@ interface IShapes is IERC721, IERC721Value {
     /// @dev `previewCompose` only: a burn id repeated in `burnIds`. `compose` reaches the same
     ///      outcome through `_burn`, which reverts on the second occurrence.
     error DuplicateComposeInput(uint256 tokenId);
+    /// @dev Metadata copy is written verbatim into JSON. A value carrying a `"`, a `\`, or a C0
+    ///      control byte would break or restructure the document; one that exceeds its length cap
+    ///      is rejected too. `field` is 0 name/prefix, 1 description.
+    error InvalidCopy(uint8 field);
     /// @dev A nonzero position resolver must contain deployed code when configured.
     error InvalidPositionResolver();
     /// @dev The position resolver cannot be changed or locked again after its permanent lock.
@@ -201,13 +205,15 @@ interface IShapes is IERC721, IERC721Value {
 
     /// @notice Set the per-token metadata copy: the `name` prefix and the `description`. Owner
     ///         only. Emits ERC-4906 `BatchMetadataUpdate` so marketplaces refresh every token.
-    /// @dev Written verbatim into each token's metadata JSON. The copy is not JSON-escaped, so
-    ///      values must not contain a raw `"` or control characters. Not affected by `lockRenderer`.
+    /// @dev Written verbatim into each token's metadata JSON, so both arguments are validated:
+    ///      a `"`, a `\`, a C0 control byte, or a value over its length cap (64-byte prefix,
+    ///      2048-byte description) reverts `InvalidCopy`. This keeps the copy from breaking or
+    ///      restructuring the document. Not affected by `lockRenderer`; copy is never frozen.
     function setTokenCopy(string calldata namePrefix, string calldata description) external;
 
     /// @notice Set the collection metadata copy: the `name` and the `description` used by
     ///         `contractURI`. Owner only. Emits `ContractURIUpdated`.
-    /// @dev Written verbatim; the same escaping caveat as `setTokenCopy` applies.
+    /// @dev Same validation and length caps as `setTokenCopy`; reverts `InvalidCopy` otherwise.
     function setCollectionCopy(string calldata name, string calldata description) external;
 
     /* ---------------------- position resolver admin -------------------- */

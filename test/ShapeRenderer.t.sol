@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
@@ -890,6 +891,94 @@ contract TokenMetadataTest is RendererTestBase {
         shapes.lockRenderer();
         shapes.setTokenCopy("Locked ", "Still editable copy after the presentation lock.");
         assertEq(shapes.tokenNamePrefix(), "Locked ");
+    }
+
+    /// @notice Copy that would break or restructure the metadata JSON is rejected on set, so no
+    ///         edit — even after `lockRenderer` — can produce a malformed or forged document.
+    function test_CopyRejectsJsonBreakingBytes() public {
+        // A double quote closes the string early and lets the rest forge structure.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", 'x","image":"https://evil.example/a.png","attributes":[]}');
+
+        // Backslash (would start a JSON escape) and a C0 control byte are refused too.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setTokenCopy("Sh\\ape ", "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", "line\nbreak");
+
+        // Same enforcement on the collection setter.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setCollectionCopy('Bad"name', "ok");
+    }
+
+    /// @notice The length caps bound indexer cost and revert with the right field.
+    function test_CopyRejectsOverlongValues() public {
+        bytes memory longName = new bytes(65);
+        bytes memory longDesc = new bytes(2049);
+        for (uint256 i = 0; i < longName.length; ++i) {
+            longName[i] = "a";
+        }
+        for (uint256 i = 0; i < longDesc.length; ++i) {
+            longDesc[i] = "a";
+        }
+
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
+        shapes.setTokenCopy(string(longName), "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
+        shapes.setTokenCopy("Shape ", string(longDesc));
+
+        // At the caps exactly, it passes.
+        bytes memory maxName = new bytes(64);
+        bytes memory maxDesc = new bytes(2048);
+        for (uint256 i = 0; i < maxName.length; ++i) {
+            maxName[i] = "a";
+        }
+        for (uint256 i = 0; i < maxDesc.length; ++i) {
+            maxDesc[i] = "a";
+        }
+        shapes.setTokenCopy(string(maxName), string(maxDesc));
+        assertEq(bytes(shapes.tokenDescription()).length, 2048);
+    }
+
+    /// @notice Empty copy is allowed: the name is the bare token id, the description empty.
+    function test_EmptyCopyIsValidJson() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        shapes.setTokenCopy("", "");
+        string memory j = _decodeJson(id);
+        assertEq(vm.parseJsonString(j, ".name"), vm.toString(id), "name is the bare id");
+        assertEq(vm.parseJsonString(j, ".description"), "", "empty description");
+    }
+
+    /// @notice At zero supply, setting token copy emits no ERC-4906 refresh (and does not underflow).
+    function test_TokenCopyAtZeroSupplyEmitsNoRefresh() public {
+        assertEq(shapes.totalMinted(), 0, "precondition: nothing minted");
+        vm.recordLogs();
+        shapes.setTokenCopy("P ", "D");
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 batchSig = keccak256("BatchMetadataUpdate(uint256,uint256)");
+        for (uint256 i = 0; i < logs.length; ++i) {
+            assertTrue(logs[i].topics[0] != batchSig, "no refresh should fire at zero supply");
+        }
+    }
+
+    /// @notice A copy edit is presentation only: it moves no backing, seed or artwork bytes.
+    function test_CopyEditLeavesValueStateUntouched() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+
+        uint256 backing = shapes.backingOf(id);
+        uint256 reserve = shapes.redeemableBacking();
+        bytes32 seed = shapes.seedOf(id);
+        string memory svg = renderer.renderSVG(seed, 1 ether, false, shapes.inkGeneOf(id));
+
+        shapes.setTokenCopy("Renamed ", "A different description entirely.");
+        shapes.setCollectionCopy("Renamed Collection", "Also different.");
+
+        assertEq(shapes.backingOf(id), backing, "backing moved");
+        assertEq(shapes.redeemableBacking(), reserve, "reserve moved");
+        assertEq(shapes.seedOf(id), seed, "seed moved");
+        assertEq(renderer.renderSVG(seed, 1 ether, false, shapes.inkGeneOf(id)), svg, "artwork moved");
     }
 
     /// @dev ERC-4906 batch refresh, declared locally so the test can assert it.

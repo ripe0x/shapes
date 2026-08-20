@@ -187,11 +187,17 @@ sizes stay uncapped (self-inflicted, per finding #7).
 2. **The mint fee is immutable.** It is `feeBps` basis points of backing (default 100 = 1%). The
    deploy script's sanity ceiling is 1000 bps (10%); overriding it requires an explicit
    environment variable.
-3. **The owner can replace the renderer until it is locked.** This is a cosmetic power — the
-   renderer is `view`-only and cannot touch ETH, backing, redemption or ownership — but a
-   compromised owner could point `tokenURI` at a renderer producing misleading or offensive
-   metadata until `lockRenderer` is called. Hold ownership in a multisig, and lock the renderer
-   once the artwork is settled. Locking is one-way and permanent.
+3. **The owner can replace the renderer until it is locked, and can edit the metadata copy at any
+   time.** Both are cosmetic powers — the renderer is `view`-only and the copy is read only by
+   metadata views; neither can touch ETH, backing, redemption or ownership. A compromised owner
+   could point `tokenURI` at a renderer producing misleading or offensive metadata until
+   `lockRenderer` is called, and could set an offensive or misleading name/description via
+   `setTokenCopy`/`setCollectionCopy`. Copy is validated on set — a `"`, `\`, C0 control byte, or
+   over-length value reverts — so it cannot break or restructure the metadata JSON, but it is not
+   HTML-escaped: a marketplace that renders `description` as HTML will display owner-supplied
+   markup. Copy is deliberately never frozen: `lockRenderer` freezes the renderer and collection
+   pointers, not the copy, which stays editable while the owner holds the contract. Hold ownership
+   in a multisig; renounce to freeze copy permanently at its last value.
 4. **The owner can designate the canonical position resolver until it is locked.** The pointer
    can be replaced or cleared before locking, and can be permanently locked at zero. A configured
    resolver is a trust root for position discovery and may itself be upgradeable or malicious, but
