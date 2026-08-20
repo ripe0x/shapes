@@ -30,9 +30,11 @@ export function GifBar({
   remove,
   clear,
   reverse,
+  inverted,
 }: {
   selection: Selection[];
   params: Params;
+  inverted: boolean;
   remove: (i: number) => void;
   clear: () => void;
   reverse: () => void;
@@ -50,7 +52,7 @@ export function GifBar({
     setBusy("rendering frames…");
     try {
       const svgs = selection.map((s) =>
-        renderShape(s.seed, s.amountWei, s.tokenId, mintGene(s.seed, s.amountWei), params),
+        renderShape(s.seed, s.amountWei, s.tokenId, mintGene(s.seed, s.amountWei), params, inverted),
       );
       const out = await buildGif(svgs, {
         width,
@@ -178,7 +180,7 @@ export function GifBar({
                 }}
                 dangerouslySetInnerHTML={{
                   __html: forDisplay(
-                    renderShape(s.seed, s.amountWei, s.tokenId, mintGene(s.seed, s.amountWei), params),
+                    renderShape(s.seed, s.amountWei, s.tokenId, mintGene(s.seed, s.amountWei), params, inverted),
                   ),
                 }}
               />

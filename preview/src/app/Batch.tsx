@@ -25,6 +25,7 @@ export function Batch({
   onSelect,
   paramsAreCommitted,
   showGrid,
+  inverted,
   badgeOf,
   addMany,
 }: {
@@ -33,6 +34,7 @@ export function Batch({
   onSelect: (s: Selection) => void;
   paramsAreCommitted: boolean;
   showGrid: boolean;
+  inverted: boolean;
   badgeOf: (s: Selection) => number | null;
   addMany: (items: Selection[]) => void;
 }) {
@@ -54,9 +56,9 @@ export function Batch({
   const svgs = React.useMemo(
     () =>
       cards.map((c, i) =>
-        renderShape(c.seed, amount, seedStart + BigInt(i), mintGene(c.seed, amount), params),
+        renderShape(c.seed, amount, seedStart + BigInt(i), mintGene(c.seed, amount), params, inverted),
       ),
-    [cards, amount, seedStart, params],
+    [cards, amount, seedStart, params, inverted],
   );
 
   // Overlay is display only: `svgs` stays canonical so exports are unaffected.

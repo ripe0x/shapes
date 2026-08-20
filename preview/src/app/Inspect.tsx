@@ -34,18 +34,21 @@ export function Inspect({
   sel,
   params,
   showGrid,
+  inverted,
   onClose,
 }: {
   sel: Selection;
   params: Params;
   showGrid: boolean;
+  inverted: boolean;
   onClose: () => void;
 }) {
   const { seed, amountWei, tokenId } = sel;
-  const c = composeShape(seed, amountWei, mintGene(seed, amountWei), params);
-  const svg = renderShape(seed, amountWei, tokenId, mintGene(seed, amountWei), params);
   const [copied, setCopied] = React.useState<string | null>(null);
   const [overlay, setOverlay] = React.useState(showGrid);
+  const [black, setBlack] = React.useState(inverted);
+  const c = composeShape(seed, amountWei, mintGene(seed, amountWei), params);
+  const svg = renderShape(seed, amountWei, tokenId, mintGene(seed, amountWei), params, black);
   // The raw SVG shown and copied below is always canonical; the overlay is a display layer.
   const displaySvg = overlay ? withGridOverlay(svg, seed, amountWei, params) : svg;
 
@@ -102,6 +105,9 @@ export function Inspect({
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <Button active={overlay} onClick={() => setOverlay((o) => !o)}>
               grid overlay
+            </Button>
+            <Button active={black} onClick={() => setBlack((b) => !b)}>
+              black
             </Button>
             <Button onClick={() => copy("svg", svg)}>copy svg</Button>
             <Button
@@ -207,7 +213,7 @@ export function Inspect({
                       amountWei,
                       tokenId,
                       1n,
-                      false,
+                      black,
                       mintGene(seed, amountWei),
                       0n,
                       undefined,
@@ -220,7 +226,7 @@ export function Inspect({
                 copy metadata json
               </Button>
               <Button
-                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, false, mintGene(seed, amountWei), 0n, params))}
+                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, black, mintGene(seed, amountWei), 0n, params))}
               >
                 copy tokenURI
               </Button>

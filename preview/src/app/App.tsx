@@ -31,6 +31,7 @@ export function App() {
   const [perRow, setPerRow] = React.useState(6);
   const [sel, setSel] = React.useState<Selection | null>(null);
   const [showGrid, setShowGrid] = React.useState(false);
+  const [inverted, setInverted] = React.useState(false);
   const [selectMode, setSelectMode] = React.useState(false);
   const [selection, setSelection] = React.useState<Selection[]>([]);
 
@@ -159,6 +160,13 @@ export function App() {
             >
               grid overlay
             </Button>
+            <Button
+              active={inverted}
+              onClick={() => setInverted((v) => !v)}
+              title="Render every card inverted: white field, black marks — the sacrificed-token variant."
+            >
+              black shapes
+            </Button>
           </div>
           <div
             style={{
@@ -188,6 +196,7 @@ export function App() {
             setPerRow={setPerRow}
             onSelect={onCard}
             showGrid={showGrid}
+            inverted={inverted}
             badgeOf={indexOf}
           />
         ) : view === "batch" ? (
@@ -197,6 +206,7 @@ export function App() {
             onSelect={onCard}
             paramsAreCommitted={committed}
             showGrid={showGrid}
+            inverted={inverted}
             badgeOf={indexOf}
             addMany={addMany}
           />
@@ -207,13 +217,20 @@ export function App() {
         <GifBar
           selection={selection}
           params={params}
+          inverted={inverted}
           remove={(i) => setSelection((cur) => cur.filter((_, j) => j !== i))}
           clear={() => setSelection([])}
           reverse={() => setSelection((cur) => [...cur].reverse())}
         />
 
         {sel && (
-          <Inspect sel={sel} params={params} showGrid={showGrid} onClose={() => setSel(null)} />
+          <Inspect
+            sel={sel}
+            params={params}
+            showGrid={showGrid}
+            inverted={inverted}
+            onClose={() => setSel(null)}
+          />
         )}
       </div>
     </div>
