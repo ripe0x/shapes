@@ -179,6 +179,10 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
     address public positionResolver;
 
+    /// @dev Gas forwarded to the untrusted resolver by `positionOf`. Ample for a mapping read;
+    ///      bounds a hostile resolver's ability to consume the caller's stipend.
+    uint256 private constant RESOLVER_GAS = 50_000;
+
     /// @inheritdoc IShapes
     bool public positionResolverLocked;
 
@@ -962,10 +966,19 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     }
 
     /// @inheritdoc IShapes
+    /// @dev The resolver is untrusted. The call is capped at `RESOLVER_GAS` and any revert or
+    ///      out-of-gas is swallowed to `address(0)`, so a hostile resolver can neither drain the
+    ///      caller's gas nor make `positionOf` revert. Its only power is to return a wrong address.
     function positionOf(uint256 tokenId) external view returns (address) {
         address resolver_ = positionResolver;
         if (resolver_ == address(0)) return address(0);
-        return IShapePositionResolver(resolver_).positionOf(tokenId);
+        try IShapePositionResolver(resolver_).positionOf{gas: RESOLVER_GAS}(tokenId) returns (
+            address position
+        ) {
+            return position;
+        } catch {
+            return address(0);
+        }
     }
 
     /// @inheritdoc IShapes
