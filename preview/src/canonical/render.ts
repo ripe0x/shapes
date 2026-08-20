@@ -811,6 +811,8 @@ export function tokenMetadataJson(
   inverted: boolean,
   inkGene: number,
   composeDepth: bigint,
+  namePrefix: string = "Shape ",
+  description: string = DESCRIPTION,
   p: Params = CANONICAL,
 ): string {
   const c = composeShape(seed, amountWei, inkGene, p);
@@ -818,8 +820,8 @@ export function tokenMetadataJson(
   const units = unitsOf(c);
   const complete = !inverted && units > 1n && originCount === units;
   return (
-    `{"name":"Shape #${tokenId.toString()}",` +
-    `"description":"${DESCRIPTION}",` +
+    `{"name":"${namePrefix}${tokenId.toString()}",` +
+    `"description":"${description}",` +
     `"image":"data:image/svg+xml;base64,${base64Utf8(svg)}",` +
     `"attributes":[` +
     `{"trait_type":"ETH Value","value":"${c.label} ETH"},` +
@@ -854,7 +856,18 @@ export function tokenURI(
   return (
     "data:application/json;base64," +
     base64Utf8(
-      tokenMetadataJson(seed, amountWei, tokenId, originCount, inverted, inkGene, composeDepth, p),
+      tokenMetadataJson(
+        seed,
+        amountWei,
+        tokenId,
+        originCount,
+        inverted,
+        inkGene,
+        composeDepth,
+        "Shape ",
+        DESCRIPTION,
+        p,
+      ),
     )
   );
 }

@@ -52,10 +52,10 @@ export async function generateMetadata({
   if (r.view === "token" && r.tokenId !== null) {
     const id = r.tokenId.toString();
     return {
-      title: `Shape #${id}`,
-      description: `Shape #${id} — an ETH-backed on-chain object, redeemable for exactly its denomination.`,
+      title: `Shape ${id}`,
+      description: `Shape ${id} — an ETH-backed on-chain object, redeemable for exactly its denomination.`,
       openGraph: {
-        title: `Shape #${id} · Shapes`,
+        title: `Shape ${id} · Shapes`,
         url: `/shape/${id}`,
         images: [{ url: `/og/shape/${id}`, width: 1200, height: 630 }],
       },

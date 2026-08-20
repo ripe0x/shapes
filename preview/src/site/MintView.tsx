@@ -291,7 +291,7 @@ export function MintView({
           <div style={{display: "flex", flexWrap: "wrap", gap: 40, alignItems: "flex-start"}}>
             <Art src={localArt(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei, mintGene(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei))} width={250} />
             <div style={{flex: "1 1 300px", minWidth: 0}}>
-              <div style={{fontSize: 26}}>Shape #{minted.tokens[0].id.toString()}</div>
+              <div style={{fontSize: 26}}>Shape {minted.tokens[0].id.toString()}</div>
               <div
                 style={{
                   marginTop: 12,

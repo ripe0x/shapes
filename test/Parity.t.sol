@@ -12,6 +12,12 @@ import {FixedPoint} from "../src/lib/FixedPoint.sol";
 ///      not the bar here: the strings must be identical, including every decimal digit,
 ///      attribute order and space. Regenerate with `npm run fixtures` in preview/.
 contract ParityTest is Test {
+    /// @dev The canonical default copy the fixtures were generated with (see render.ts).
+    string internal constant NAME_PREFIX = "Shape ";
+    string internal constant DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+
     ShapeRenderer internal renderer;
 
     string internal json;
@@ -123,7 +129,9 @@ contract ParityTest is Test {
                 originCounts[i],
                 inverteds[i],
                 genes[i],
-                composeDepths[i]
+                composeDepths[i],
+                NAME_PREFIX,
+                DESCRIPTION
             );
             assertEq(got, expectedMetadata[i], why[i]);
         }
@@ -132,9 +140,7 @@ contract ParityTest is Test {
     /// @notice The glyph trait must come from the same stream as the artwork.
     function test_ModuleSequenceMatches() public view {
         for (uint256 i = 0; i < count; ++i) {
-            assertEq(
-                renderer.moduleSequence(seeds[i], amounts[i], genes[i]), expectedModules[i], why[i]
-            );
+            assertEq(renderer.moduleSequence(seeds[i], amounts[i], genes[i]), expectedModules[i], why[i]);
         }
     }
 
@@ -165,9 +171,7 @@ contract ParityTest is Test {
         vm.fee(999 gwei);
         vm.chainId(1234);
 
-        assertEq(
-            renderer.renderSVG(seed, amount, false, gene), first, "renderer read mutable state"
-        );
+        assertEq(renderer.renderSVG(seed, amount, false, gene), first, "renderer read mutable state");
     }
 
     /// @notice A second deployment of the same bytecode renders identically. There is no

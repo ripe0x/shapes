@@ -37,9 +37,12 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///
 ///      The owner may replace the renderer via `setRenderer` and the collection metadata
 ///      contract via `setCollection`, and freeze both via `lockRenderer`. The renderer is read
-///      only by `tokenURI`, the collection only by `contractURI`. Independently, the owner may
-///      set, clear and permanently lock an optional position resolver; core token and reserve
-///      operations never call it. Ownership is transferable and may be renounced.
+///      only by `tokenURI`, the collection only by `contractURI`. The owner also holds the
+///      metadata copy: `setTokenCopy` sets the per-token name prefix and description, and
+///      `setCollectionCopy` the collection name and description; both remain editable after
+///      `lockRenderer`. Independently, the owner may set, clear and permanently lock an optional
+///      position resolver; core token and reserve operations never call it. Ownership is
+///      transferable and may be renounced. None of these touch ETH, backing or redeemability.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
 ///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
@@ -151,6 +154,27 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     ///      both presentation pointers.
     address public collection;
 
+    /// @dev Default metadata copy, seeded at construction. Mirrors the canonical spec in
+    ///      `preview/src/canonical/render.ts`; the parity suite asserts byte identity against it.
+    string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
+    string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+    string private constant DEFAULT_COLLECTION_NAME = "Shapes";
+
+    /// @inheritdoc IShapes
+    /// @dev Editorial copy, owner-editable via `setTokenCopy`, written verbatim into every token's
+    ///      metadata by the renderer. Independent of `rendererLocked`.
+    string public tokenNamePrefix;
+    /// @inheritdoc IShapes
+    string public tokenDescription;
+    /// @inheritdoc IShapes
+    /// @dev Editorial copy, owner-editable via `setCollectionCopy`, passed to the collection
+    ///      contract by `contractURI`.
+    string public collectionName;
+    /// @inheritdoc IShapes
+    string public collectionDescription;
+
     /// @inheritdoc IShapes
     /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
     address public positionResolver;
@@ -178,6 +202,10 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         feeRecipient = feeRecipient_;
         renderer = renderer_;
         collection = collection_;
+        tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
+        tokenDescription = DEFAULT_DESCRIPTION;
+        collectionName = DEFAULT_COLLECTION_NAME;
+        collectionDescription = DEFAULT_DESCRIPTION;
     }
 
     /// @inheritdoc IShapes
@@ -203,6 +231,26 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         if (rendererLocked) revert RendererIsLocked();
         rendererLocked = true;
         emit RendererLocked();
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Owner only. Copy is written verbatim into token metadata, so values must not contain
+    ///      a raw `"` or control characters. Not gated by `rendererLocked`.
+    function setTokenCopy(string calldata namePrefix, string calldata description) external onlyOwner {
+        tokenNamePrefix = namePrefix;
+        tokenDescription = description;
+        emit TokenCopyUpdated(namePrefix, description);
+        // The copy appears in every token's metadata; ERC-4906 signals the refresh.
+        if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Owner only. Same verbatim/escaping caveat as `setTokenCopy`. Not gated by `rendererLocked`.
+    function setCollectionCopy(string calldata name, string calldata description) external onlyOwner {
+        collectionName = name;
+        collectionDescription = description;
+        emit CollectionCopyUpdated(name, description);
+        emit ContractURIUpdated();
     }
 
     /// @inheritdoc IShapes
@@ -1050,7 +1098,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
 
     /// @inheritdoc IShapes
     function contractURI() external view returns (string memory) {
-        return IShapeCollection(collection).contractURI();
+        return IShapeCollection(collection).contractURI(collectionName, collectionDescription);
     }
 
     /// @inheritdoc IShapes
@@ -1072,7 +1120,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
                 d.originCount,
                 d.isBlack,
                 d.inkGene,
-                _composeStack[tokenId].length
+                _composeStack[tokenId].length,
+                tokenNamePrefix,
+                tokenDescription
             );
     }
 

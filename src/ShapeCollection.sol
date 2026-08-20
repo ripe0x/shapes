@@ -25,11 +25,6 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /// @inheritdoc IShapeCollection
     address public immutable renderer;
 
-    string private constant NAME = "Shapes";
-    string private constant DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
-        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
-        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
-
     /// @dev Frames per denomination in the filmstrip, and how long each is held. Nine
     ///      denominations at two variants is eighteen frames, a 4.5 second loop.
     uint256 private constant VARIANTS = 2;
@@ -56,18 +51,24 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /* ---------------------------- collection ---------------------------- */
 
     /// @inheritdoc IShapeCollection
-    function contractURI() external view returns (string memory) {
-        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json()))));
+    function contractURI(string calldata name, string calldata description)
+        external
+        view
+        returns (string memory)
+    {
+        return string(
+            abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json(name, description))))
+        );
     }
 
     /// @inheritdoc IShapeCollection
-    function json() public view returns (string memory) {
+    function json(string calldata name, string calldata description) public view returns (string memory) {
         return string(
             abi.encodePacked(
                 '{"name":"',
-                NAME,
+                name,
                 '","description":"',
-                DESCRIPTION,
+                description,
                 '","image":"data:image/svg+xml;base64,',
                 Base64.encode(bytes(image())),
                 '"}'

@@ -4,8 +4,9 @@ pragma solidity 0.8.28;
 /// @title IShapeRenderer
 /// @notice The fully onchain renderer for Shape tokens.
 /// @dev Every function is `pure`. The renderer holds no state, has no owner and no
-///      initialiser; a deployed renderer's output for a given (seed, amount, tokenId) is
-///      fixed for as long as the chain exists.
+///      initialiser; its output is a function of its arguments alone. The artwork and traits
+///      depend only on (seed, amount, tokenId, ...); the `name` and `description` copy is
+///      supplied per call by `Shapes`, which stores it, rather than held here.
 interface IShapeRenderer {
     /// @notice The complete SVG document for a token.
     /// @dev Takes no token id: a Shape carries no type, so its artwork is a function of its
@@ -25,6 +26,9 @@ interface IShapeRenderer {
     ///      `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait. `composeDepth`
     ///      is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait;
     ///      it is the one input that is mutable chain state rather than fixed at mint.
+    ///      `namePrefix` and `description` are the editorial copy the caller supplies: the `name`
+    ///      is `namePrefix` followed by the decimal token id, and `description` is emitted verbatim.
+    ///      The renderer neither stores nor escapes them; the caller owns their content.
     function metadataJSON(
         bytes32 seed,
         uint256 amountWei,
@@ -32,7 +36,9 @@ interface IShapeRenderer {
         uint256 originCount,
         bool inverted,
         uint8 inkGene,
-        uint256 composeDepth
+        uint256 composeDepth,
+        string calldata namePrefix,
+        string calldata description
     ) external pure returns (string memory);
 
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSON`.
@@ -43,7 +49,9 @@ interface IShapeRenderer {
         uint256 originCount,
         bool inverted,
         uint8 inkGene,
-        uint256 composeDepth
+        uint256 composeDepth,
+        string calldata namePrefix,
+        string calldata description
     ) external pure returns (string memory);
 
     /// @notice The module glyph sequence used as the `Modules` trait.

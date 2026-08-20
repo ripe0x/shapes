@@ -18,10 +18,15 @@ interface IShapeCollection {
     function seed() external view returns (bytes32);
 
     /// @notice Contract-level metadata URI, as a base64 `data:application/json`.
-    function contractURI() external view returns (string memory);
+    /// @dev `name` and `description` are the editorial copy the caller supplies, emitted verbatim;
+    ///      the `image` is generated here. `Shapes` stores that copy and passes it through.
+    function contractURI(string calldata name, string calldata description)
+        external
+        view
+        returns (string memory);
 
-    /// @notice The contract-level metadata JSON: name, description, and `image` inline.
-    function json() external view returns (string memory);
+    /// @notice The contract-level metadata JSON: `name` and `description` from the caller, `image` inline.
+    function json(string calldata name, string calldata description) external view returns (string memory);
 
     /// @notice The collection image at the current block's seed.
     function image() external view returns (string memory);
