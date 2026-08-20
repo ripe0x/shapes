@@ -20,8 +20,8 @@ const CARD_W = 210;
 
 function card(svg: string, cap: string) {
   return `<div class="c"><div class="a">${svg.replace(
-    'width="250" height="350"',
-    'width="100%" height="100%" style="display:block"',
+    /(<svg[^>]*?) width="[^"]*" height="[^"]*"/,
+    '$1 width="100%" height="100%" style="display:block"',
   )}</div><div class="cap">${cap}</div></div>`;
 }
 

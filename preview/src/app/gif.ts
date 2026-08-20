@@ -297,14 +297,17 @@ export function grayPalette(levels: number): [number, number, number][] {
 }
 
 /**
- * The canonical SVG carries `width="250" height="350"`, which is its intrinsic size. Drawing
- * that image scaled up makes the browser rasterise the vector at 250x350 and then enlarge the
- * bitmap — so a "500px" frame really carries 250px of detail. Rewriting the attributes makes
- * the vector rasterise at the size actually wanted. The viewBox is untouched, so the geometry
- * is identical; only the raster resolution changes.
+ * The canonical SVG's root tag carries explicit pixel width/height, its intrinsic raster
+ * size. Drawing the image at a different size makes the browser rasterise the vector at the
+ * intrinsic size and then rescale the bitmap. Rewriting the root tag's attributes makes the
+ * vector rasterise at the size actually wanted. The viewBox is untouched, so the geometry is
+ * identical; only the raster resolution changes.
  */
 function svgAtSize(svg: string, w: number, h: number): string {
-  return svg.replace('width="250" height="350"', `width="${w}" height="${h}"`);
+  return svg.replace(
+    /(<svg[^>]*?) width="[^"]*" height="[^"]*"/,
+    `$1 width="${w}" height="${h}"`,
+  );
 }
 
 export interface RasterOptions {
