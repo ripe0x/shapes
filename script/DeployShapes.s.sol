@@ -42,12 +42,7 @@ contract DeployShapes is Script {
 
     function run()
         external
-        returns (
-            ShapeRenderer renderer,
-            ShapeCollection collection,
-            Shapes shapes,
-            ShapeAuctionHouse house
-        )
+        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
     {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));

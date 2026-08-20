@@ -199,7 +199,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
             uint256 cost = (amount + IShapes(shapes).mintFeeFor(amount)) * count;
             // Take the ids the mint reports rather than predicting them from the counter: a batch
             // is contiguous from its return value, which is the guarantee actually offered.
-            uint256 firstId = IShapes(shapes).mintBatch{value: cost}(amount, count, address(this));
+            uint256 firstId = IShapes(shapes).mintBatchTo{value: cost}(amount, count, address(this));
             for (uint256 i = 0; i < count; ++i) {
                 held.push(firstId + i);
             }

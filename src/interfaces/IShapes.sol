@@ -188,14 +188,22 @@ interface IShapes is IERC721, IERC721Value {
 
     /* ---------------------------- minting ----------------------------- */
 
-    /// @notice Mint one Shape backed by `amountWei`.
+    /// @notice Mint one Shape backed by `amountWei`, to the caller.
     /// @dev `msg.value` must equal exactly `amountWei + mintFeeFor(amountWei)`.
-    function mint(uint256 amountWei, address to) external payable returns (uint256 tokenId);
+    function mint(uint256 amountWei) external payable returns (uint256 tokenId);
 
-    /// @notice Mint `quantity` Shapes, each backed by `amountWei`.
+    /// @notice Mint one Shape backed by `amountWei`, to `to`.
+    /// @dev The recipient does not feed the seed, so naming one cannot be used to search for a
+    ///      particular artwork. `to` must be able to receive an ERC721.
+    function mintTo(uint256 amountWei, address to) external payable returns (uint256 tokenId);
+
+    /// @notice Mint `quantity` Shapes, each backed by `amountWei`, to the caller.
     /// @dev `msg.value` must equal exactly `quantity * (amountWei + mintFeeFor(amountWei))`.
     ///      Each token receives a distinct id and a distinct seed.
-    function mintBatch(uint256 amountWei, uint256 quantity, address to)
+    function mintBatch(uint256 amountWei, uint256 quantity) external payable returns (uint256 firstTokenId);
+
+    /// @notice Mint `quantity` Shapes, each backed by `amountWei`, to `to`.
+    function mintBatchTo(uint256 amountWei, uint256 quantity, address to)
         external
         payable
         returns (uint256 firstTokenId);

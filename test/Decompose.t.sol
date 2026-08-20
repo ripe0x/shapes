@@ -13,13 +13,15 @@ contract DecomposeTest is ShapesBase {
     /// @dev Mint `k` 0.01 dust to alice; ids are `first .. first + k - 1`.
     function _mintDust(uint256 k) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k, alice);
+        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k);
     }
 
     /// @dev Compose the `k` dust starting at `first` into survivor `first`.
     function _composeDust(uint256 first, uint256 k) internal returns (uint256 survivor) {
         uint256[] memory burn = new uint256[](k - 1);
-        for (uint256 i = 0; i < k - 1; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < k - 1; ++i) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         survivor = shapes.compose(first, burn);
     }
@@ -77,7 +79,9 @@ contract DecomposeTest is ShapesBase {
         uint256 survivor = _composeDust(first, 5);
 
         uint256[] memory expectedIds = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) expectedIds[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            expectedIds[i] = first + 1 + i;
+        }
 
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.Decomposed(survivor, expectedIds, 0, 1); // reverts to denomIndex 0, origin 1
@@ -196,9 +200,7 @@ contract DecomposeTest is ShapesBase {
 
         // The record is now inert: the survivor no longer exists.
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, survivor)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, survivor));
         shapes.decompose(survivor);
     }
 
@@ -336,7 +338,9 @@ contract DecomposeTest is ShapesBase {
 
         IShapes.ComposeCall[] memory calls = new IShapes.ComposeCall[](2);
         uint256[] memory b1 = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) b1[i] = firstA + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            b1[i] = firstA + 1 + i;
+        }
         calls[0] = IShapes.ComposeCall({survivorId: firstA, burnIds: b1});
         uint256[] memory b2 = new uint256[](1);
         b2[0] = secondFive;
@@ -388,14 +392,18 @@ contract LadderMatrixTest is ShapesBase {
 
             // Mint `ratio` tier-i tokens; survivor is the first, `ratio - 1` are burned in.
             vm.prank(alice);
-            uint256 first = shapes.mintBatch{value: ratio * (lo + feeOf(lo))}(lo, ratio, alice);
+            uint256 first = shapes.mintBatch{value: ratio * (lo + feeOf(lo))}(lo, ratio);
 
             bytes32[] memory seeds = new bytes32[](ratio - 1);
-            for (uint256 j = 0; j < ratio - 1; ++j) seeds[j] = shapes.seedOf(first + 1 + j);
+            for (uint256 j = 0; j < ratio - 1; ++j) {
+                seeds[j] = shapes.seedOf(first + 1 + j);
+            }
             bytes32 survivorSeed = shapes.seedOf(first);
 
             uint256[] memory burn = new uint256[](ratio - 1);
-            for (uint256 j = 0; j < ratio - 1; ++j) burn[j] = first + 1 + j;
+            for (uint256 j = 0; j < ratio - 1; ++j) {
+                burn[j] = first + 1 + j;
+            }
 
             vm.prank(alice);
             uint256 survivor = shapes.compose(first, burn);
@@ -432,7 +440,9 @@ contract LadderMatrixTest is ShapesBase {
 
             uint256 parent = _mint(alice, hi); // originCount 1
             uint8[] memory outs = new uint8[](ratio);
-            for (uint256 j = 0; j < ratio; ++j) outs[j] = uint8(i - 1);
+            for (uint256 j = 0; j < ratio; ++j) {
+                outs[j] = uint8(i - 1);
+            }
 
             vm.prank(alice);
             uint256[] memory kids = shapes.split(parent, outs);
@@ -452,13 +462,17 @@ contract LadderMatrixTest is ShapesBase {
     ///      to the exact 100 dust under their original ids and seeds.
     function test_MultiTierJumpComposeDecomposeRoundTrip() public {
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 100 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 100, alice);
+        uint256 first = shapes.mintBatch{value: 100 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 100);
 
         bytes32[] memory seeds = new bytes32[](99);
-        for (uint256 j = 0; j < 99; ++j) seeds[j] = shapes.seedOf(first + 1 + j);
+        for (uint256 j = 0; j < 99; ++j) {
+            seeds[j] = shapes.seedOf(first + 1 + j);
+        }
 
         uint256[] memory burn = new uint256[](99);
-        for (uint256 j = 0; j < 99; ++j) burn[j] = first + 1 + j;
+        for (uint256 j = 0; j < 99; ++j) {
+            burn[j] = first + 1 + j;
+        }
 
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn);

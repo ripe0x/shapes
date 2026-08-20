@@ -67,10 +67,7 @@ contract InkGenesParityTest is Test {
     }
 
     /// @notice Non-dust mints never yield genes outside {Sparse, Murk, Dense}.
-    function testFuzz_NonDustMintsStayInTheNarrowBand(bytes32 seed, uint8 denomIndex)
-        public
-        pure
-    {
+    function testFuzz_NonDustMintsStayInTheNarrowBand(bytes32 seed, uint8 denomIndex) public pure {
         denomIndex = uint8(bound(denomIndex, 1, 8));
         uint8 gene = InkGenes.geneAtMint(seed, denomIndex);
         assertTrue(
@@ -184,9 +181,8 @@ contract InkGenesParityTest is Test {
         oldIndex = oldIndex % 8;
         uint8 newIndex = oldIndex + 1 + (span % (8 - oldIndex));
 
-        uint8 result = InkGenes.geneAtCompose(
-            survivorSeed, burnSeedFold, gene, oldIndex, newIndex, gene, gene, gene
-        );
+        uint8 result =
+            InkGenes.geneAtCompose(survivorSeed, burnSeedFold, gene, oldIndex, newIndex, gene, gene, gene);
         assertEq(result, gene, "a uniform pool's gene drifted");
     }
 
@@ -233,12 +229,10 @@ contract InkGenesParityTest is Test {
             if (i != indexB) foldB ^= uint256(seeds[i]);
         }
 
-        uint8 geneA = InkGenes.geneAtCompose(
-            seeds[indexA], foldA, genes[indexA], 0, 1, best, worst, centerGene
-        );
-        uint8 geneB = InkGenes.geneAtCompose(
-            seeds[indexB], foldB, genes[indexB], 0, 1, best, worst, centerGene
-        );
+        uint8 geneA =
+            InkGenes.geneAtCompose(seeds[indexA], foldA, genes[indexA], 0, 1, best, worst, centerGene);
+        uint8 geneB =
+            InkGenes.geneAtCompose(seeds[indexB], foldB, genes[indexB], 0, 1, best, worst, centerGene);
 
         assertEq(geneA, expectedA, "survivor A outcome drifted from TS");
         assertEq(geneB, expectedB, "survivor B outcome drifted from TS");

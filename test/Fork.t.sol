@@ -122,7 +122,7 @@ contract ForkTest is Test {
         for (uint256 i = 0; i < DENOMS.length; i++) {
             uint256 amount = DENOMS[i];
             vm.prank(alice);
-            ids[i] = shapes.mint{value: amount + feeOf(amount)}(amount, alice);
+            ids[i] = shapes.mintTo{value: amount + feeOf(amount)}(amount, alice);
 
             assertEq(shapes.backingOf(ids[i]), amount, "backing wrong");
             assertTrue(shapes.seedOf(ids[i]) != bytes32(0), "seed is zero");
@@ -184,7 +184,7 @@ contract ForkTest is Test {
 
         vm.prank(alice);
         uint256 g0 = gasleft();
-        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
+        uint256 id = shapes.mintTo{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
         uint256 mintGas = g0 - gasleft();
 
         vm.prank(alice);

@@ -50,7 +50,7 @@ else
 fi
 
 say "Rejecting an unsupported denomination (2 ETH)"
-if cast send "$SHAPES" "mint(uint256,address)" 2000000000000000000 "$ADDR0" \
+if cast send "$SHAPES" "mint(uint256)" 2000000000000000000 \
      --value "$(big "2000000000000000000 + 2000000000000000000*$FEE_BPS//10000")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
   echo "  FAIL: 2 ETH was accepted"; exit 1
 else
@@ -62,7 +62,7 @@ DENOMS=(10000000000000000 50000000000000000 100000000000000000 50000000000000000
         1000000000000000000 5000000000000000000 10000000000000000000 50000000000000000000 \
         100000000000000000000)
 for d in "${DENOMS[@]}"; do
-  send_wait "$SHAPES" "mint(uint256,address)" "$d" "$ADDR0" \
+  send_wait "$SHAPES" "mint(uint256)" "$d" \
     --value "$(big "$d + $d*$FEE_BPS//10000")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null
   printf '  minted %s wei\n' "$d"
 done

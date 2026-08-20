@@ -129,8 +129,8 @@ export function SiteApp({
       const value = (wei + data.fees[sel]) * BigInt(qty);
       const hash =
         qty === 1
-          ? await write("mint", [wei, address], value)
-          : await write("mintBatch", [wei, BigInt(qty), address], value);
+          ? await write("mint", [wei], value)
+          : await write("mintBatch", [wei, BigInt(qty)], value);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs});
       await refresh();

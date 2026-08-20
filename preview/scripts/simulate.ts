@@ -74,8 +74,8 @@ async function mint(actor: number, di: number, qty: number): Promise<bigint[]> {
   const value = (wei + feeOf(wei)) * BigInt(qty);
   const receipt =
     qty === 1
-      ? await send(actor, "mint", [wei, actors[actor].account.address], value)
-      : await send(actor, "mintBatch", [wei, BigInt(qty), actors[actor].account.address], value);
+      ? await send(actor, "mint", [wei], value)
+      : await send(actor, "mintBatch", [wei, BigInt(qty)], value);
   return parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs}).map(
     (l) => l.args.tokenId,
   );

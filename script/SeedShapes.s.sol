@@ -28,7 +28,7 @@ contract SeedShapes is Script {
             uint256 wei_ = Denominations.amountAt(di);
             uint256 fee = (wei_ * feeBps) / 10_000;
             for (uint256 n = 0; n < counts[di]; n++) {
-                shapes.mint{value: wei_ + fee}(wei_, me);
+                shapes.mint{value: wei_ + fee}(wei_);
             }
         }
         vm.stopBroadcast();

@@ -55,12 +55,12 @@ contract ComposabilityTest is Test {
 
     function _mint(address to, uint256 amount) internal returns (uint256 id) {
         vm.prank(to);
-        id = shapes.mint{value: amount + _fee(amount)}(amount, to);
+        id = shapes.mint{value: amount + _fee(amount)}(amount);
     }
 
     function _mintDust(uint256 count) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: count * (0.01 ether + _fee(0.01 ether))}(0.01 ether, count, alice);
+        first = shapes.mintBatch{value: count * (0.01 ether + _fee(0.01 ether))}(0.01 ether, count);
     }
 
     function test_AdvertisesGranularCapabilities() public view {
@@ -103,7 +103,9 @@ contract ComposabilityTest is Test {
     function test_TokenUnicodeCardMatchesCanonicalRenderer() public {
         uint256 id = _mint(alice, 1 ether);
         ShapeState memory state = shapes.shapeState(id);
-        assertEq(shapes.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene));
+        assertEq(
+            shapes.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene)
+        );
     }
 
     function test_PreviewComposeReturnsCompleteResultAndMatchesExecution() public {
@@ -152,7 +154,6 @@ contract ComposabilityTest is Test {
             assertEq(actual.inkGene, preview[i].inkGene);
         }
     }
-
 
     function test_RedeemToPaysRecipientWithoutRequiringItToOwnToken() public {
         uint256 id = _mint(alice, 1 ether);
@@ -209,7 +210,9 @@ contract ComposabilityTest is Test {
         // different recipient. The survivor stays with its owner; only the inputs are redirected.
         uint256 first = _mintDust(5);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn);
 
@@ -228,7 +231,9 @@ contract ComposabilityTest is Test {
         // decompose: the survivor stays merged and its compose record is intact.
         uint256 first = _mintDust(5);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn);
 
@@ -244,7 +249,9 @@ contract ComposabilityTest is Test {
     function test_DecomposeManyToMintsAllRevivedInputsToRecipient() public {
         uint256 first = _mintDust(5);
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn); // depth 1
 
@@ -258,7 +265,6 @@ contract ComposabilityTest is Test {
         }
         assertEq(shapes.composeDepth(survivor), 0);
     }
-
 
     function test_FilterableLifecycleEdgesAreEmittedPerParticipant() public {
         uint256 first = _mintDust(5);
@@ -389,7 +395,9 @@ contract ComposabilityTest is Test {
     function _head(string memory s, uint256 n) private pure returns (string memory) {
         bytes memory b = bytes(s);
         bytes memory out = new bytes(n);
-        for (uint256 i = 0; i < n; ++i) out[i] = b[i];
+        for (uint256 i = 0; i < n; ++i) {
+            out[i] = b[i];
+        }
         return string(out);
     }
 

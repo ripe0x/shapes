@@ -134,7 +134,7 @@ contract Handler is Test, IERC721Receiver {
         address who = _actor(actorSeed);
 
         vm.prank(who);
-        try shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount, who) returns (uint256 id) {
+        try shapes.mintTo{value: amount + shapes.mintFeeFor(amount)}(amount, who) returns (uint256 id) {
             ghostBackingIn += amount;
             ghostFeesPaid += shapes.mintFeeFor(amount);
             ghostMints += 1;
@@ -149,7 +149,7 @@ contract Handler is Test, IERC721Receiver {
         uint256 cost = qty * (amount + shapes.mintFeeFor(amount));
 
         vm.prank(who);
-        try shapes.mintBatch{value: cost}(amount, qty, who) returns (uint256 first) {
+        try shapes.mintBatchTo{value: cost}(amount, qty, who) returns (uint256 first) {
             ghostBackingIn += amount * qty;
             ghostFeesPaid += shapes.mintFeeFor(amount) * qty;
             ghostMints += qty;
@@ -288,7 +288,9 @@ contract Handler is Test, IERC721Receiver {
         vm.prank(owner);
         try shapes.split(id, outs) returns (uint256[] memory kids) {
             _untrack(id);
-            for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
+            for (uint256 i = 0; i < kids.length; ++i) {
+                _track(kids[i]);
+            }
         } catch {}
     }
 
@@ -391,7 +393,9 @@ contract Handler is Test, IERC721Receiver {
         vm.prank(owner);
         try shapes.splitTo(id, outs, recip) returns (uint256[] memory kids) {
             _untrack(id);
-            for (uint256 i = 0; i < kids.length; ++i) _track(kids[i]);
+            for (uint256 i = 0; i < kids.length; ++i) {
+                _track(kids[i]);
+            }
         } catch {}
     }
 

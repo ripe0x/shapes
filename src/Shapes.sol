@@ -72,7 +72,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
 
     mapping(uint256 tokenId => ShapeData) private _shapes;
 
-
     /// @dev One burned compose input, holding everything needed to re-mint it verbatim in
     ///      `decompose`. `id` is a uint96: the token id, narrowed to pack the whole struct into
     ///      two slots (seed, then id+originCount+denomIndex+inkGene). Overflow needs ~8e28 mints.
@@ -259,12 +258,27 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     /* ------------------------------ minting ----------------------------- */
 
     /// @inheritdoc IShapes
-    function mint(uint256 amountWei, address to) external payable nonReentrant returns (uint256 tokenId) {
+    function mint(uint256 amountWei) external payable nonReentrant returns (uint256 tokenId) {
+        return _mintBatch(amountWei, 1, msg.sender);
+    }
+
+    /// @inheritdoc IShapes
+    function mintTo(uint256 amountWei, address to) external payable nonReentrant returns (uint256 tokenId) {
         return _mintBatch(amountWei, 1, to);
     }
 
     /// @inheritdoc IShapes
-    function mintBatch(uint256 amountWei, uint256 quantity, address to)
+    function mintBatch(uint256 amountWei, uint256 quantity)
+        external
+        payable
+        nonReentrant
+        returns (uint256 firstTokenId)
+    {
+        return _mintBatch(amountWei, quantity, msg.sender);
+    }
+
+    /// @inheritdoc IShapes
+    function mintBatchTo(uint256 amountWei, uint256 quantity, address to)
         external
         payable
         nonReentrant
@@ -974,7 +988,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         assert(remaining == 0);
     }
 
-
     /// @inheritdoc IShapes
     function isComplete(uint256 tokenId) public view returns (bool) {
         _requireOwned(tokenId);
@@ -982,7 +995,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         uint256 units = Denominations.unitsAt(d.denomIndex);
         return !d.isBlack && units > 1 && d.originCount == units;
     }
-
 
     /// @inheritdoc IShapes
     function composeDepth(uint256 survivorId) external view returns (uint256) {

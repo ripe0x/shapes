@@ -21,12 +21,14 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 contract TokenIdAllocationTest is ShapesBase {
     function _mintDust(uint256 k) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k, alice);
+        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k);
     }
 
     function _composeDust(uint256 first, uint256 k) internal returns (uint256 survivor) {
         uint256[] memory burn = new uint256[](k - 1);
-        for (uint256 i = 0; i < k - 1; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < k - 1; ++i) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         survivor = shapes.compose(first, burn);
     }
@@ -71,7 +73,9 @@ contract TokenIdAllocationTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory revived = shapes.decompose(0);
         assertEq(revived.length, 4);
-        for (uint256 i = 0; i < 4; ++i) assertEq(revived[i], i + 1, "originals came back");
+        for (uint256 i = 0; i < 4; ++i) {
+            assertEq(revived[i], i + 1, "originals came back");
+        }
         assertEq(shapes.backingOf(0), 0.01 ether, "#0 reverted");
 
         uint8[] memory outs = new uint8[](0);
@@ -102,7 +106,9 @@ contract TokenIdAllocationTest is ShapesBase {
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
-        for (uint256 i = 0; i < 5; ++i) assertEq(kids[i], 8 + i, "split ids continue the sequence");
+        for (uint256 i = 0; i < 5; ++i) {
+            assertEq(kids[i], 8 + i, "split ids continue the sequence");
+        }
         assertEq(shapes.totalMinted(), 13, "counter advanced by the child count");
     }
 
@@ -193,12 +199,16 @@ contract TokenIdAllocationTest is ShapesBase {
 
         // Inner: #0 absorbs 1..4, reaching 0.05. Outer: #0 absorbs 5..9, reaching 0.1.
         uint256[] memory inner = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) inner[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            inner[i] = first + 1 + i;
+        }
         vm.prank(alice);
         shapes.compose(first, inner);
 
         uint256[] memory outer = new uint256[](5);
-        for (uint256 i = 0; i < 5; ++i) outer[i] = first + 5 + i;
+        for (uint256 i = 0; i < 5; ++i) {
+            outer[i] = first + 5 + i;
+        }
         vm.prank(alice);
         shapes.compose(first, outer);
 
@@ -208,12 +218,16 @@ contract TokenIdAllocationTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory back1 = shapes.decompose(first);
         assertEq(back1.length, 5);
-        for (uint256 i = 0; i < 5; ++i) assertEq(back1[i], first + 5 + i, "newest record first");
+        for (uint256 i = 0; i < 5; ++i) {
+            assertEq(back1[i], first + 5 + i, "newest record first");
+        }
 
         vm.prank(alice);
         uint256[] memory back2 = shapes.decompose(first);
         assertEq(back2.length, 4);
-        for (uint256 i = 0; i < 4; ++i) assertEq(back2[i], first + 1 + i);
+        for (uint256 i = 0; i < 4; ++i) {
+            assertEq(back2[i], first + 1 + i);
+        }
 
         assertEq(shapes.totalMinted(), 10, "ten ids issued, ten still the count");
         for (uint256 id = 0; id < 10; ++id) {
@@ -233,7 +247,9 @@ contract TokenIdAllocationTest is ShapesBase {
 
         // Burn the revived 1..4 into a different survivor, #5.
         uint256[] memory burn = new uint256[](4);
-        for (uint256 i = 0; i < 4; ++i) burn[i] = first + 1 + i;
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
         vm.prank(alice);
         shapes.compose(first + 5, burn);
         assertEq(shapes.totalMinted(), 10, "still ten ids issued");
