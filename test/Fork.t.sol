@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test, console} from "forge-std/Test.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
@@ -97,12 +98,13 @@ contract ForkTest is Test {
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
         DeployShapes deployer = new DeployShapes();
-        (ShapeRenderer r, ShapeCollection c, Shapes s) = deployer.run();
+        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h) = deployer.run();
 
         assertEq(s.feeBps(), 100, "default fee bps not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
         assertEq(s.renderer(), address(r), "renderer mismatch");
         assertEq(s.collection(), address(c), "collection mismatch");
+        assertEq(h.shapes(), address(s), "auction house mismatch");
         assertEq(s.positionResolver(), address(0), "resolver should start empty");
         assertFalse(s.positionResolverLocked(), "resolver should start unlocked");
         assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");

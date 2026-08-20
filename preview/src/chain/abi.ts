@@ -79,6 +79,8 @@ export interface Deployment {
   chainId: number;
   shapes: `0x${string}`;
   renderer: `0x${string}`;
+  collection?: `0x${string}`;
+  auctionHouse?: `0x${string}`;
   feeBps: string;
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
@@ -107,3 +109,30 @@ export function denomLabel(wei: bigint): string {
   const i = denomIndexOf(wei);
   return i < 0 ? `${wei} wei` : DENOMINATIONS[i].label;
 }
+
+/** The auction house surface the site drives: opening state, bidding, and the two pulls. */
+export const auctionHouseAbi = parseAbi([
+  "function auctionCount() view returns (uint256)",
+  "function auctions(uint256 auctionId) view returns ((address seller, address nft, uint256 tokenId, uint64 endTime, uint64 duration, uint32 extensionWindow, uint16 minIncrementBps, uint64 reserveUnits, uint64 highestUnits, address highestBidder, bool settled))",
+  "function bidUnits(uint256 auctionId, address bidder) view returns (uint64)",
+  "function escrowedCards(uint256 auctionId, address bidder) view returns (uint256[])",
+  "function minimumBid(uint256 auctionId) view returns (uint64)",
+  "function cardsFor(uint256 backingWei) pure returns (uint256[9])",
+  "function bid(uint256 auctionId, uint256[] cardIds, uint256 ethBackingWei) payable",
+  "function withdraw(uint256 auctionId)",
+  "function settle(uint256 auctionId)",
+  "function claimProceeds(uint256 auctionId)",
+  "error AuctionNotFound(uint256 auctionId)",
+  "error AuctionOver(uint256 auctionId)",
+  "error AuctionStillRunning(uint256 auctionId)",
+  "error AuctionAlreadySettled(uint256 auctionId)",
+  "error InvalidAuction()",
+  "error EmptyBid()",
+  "error WorthlessCard(uint256 tokenId)",
+  "error TooManyCards(uint256 provided)",
+  "error NotAUnitMultiple(uint256 backingWei)",
+  "error IncorrectPayment(uint256 expected, uint256 provided)",
+  "error BidTooLow(uint64 provided, uint64 required)",
+  "error NothingToWithdraw(uint256 auctionId, address bidder)",
+  "error UnsolicitedToken(address from)",
+]);

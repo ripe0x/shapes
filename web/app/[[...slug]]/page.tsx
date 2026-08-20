@@ -9,6 +9,7 @@ type Params = { slug?: string[] };
 function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | null } | null {
   const parts = slug ?? [];
   if (parts.length === 0) return { view: "mint", tokenId: null };
+  if (parts.length === 1 && parts[0] === "auction") return { view: "auction", tokenId: null };
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
   if (parts.length === 1 && parts[0] === "how-it-works") return { view: "about", tokenId: null };
   if (parts.length === 2 && parts[0] === "shape" && /^\d+$/.test(parts[1])) {
@@ -25,6 +26,14 @@ export async function generateMetadata({
   const r = resolve((await params).slug);
   if (!r) return { title: "Not found" };
 
+  if (r.view === "auction") {
+    return {
+      title: "Auction",
+      description:
+        "Token 0 of the collection, sold at auction. Bids are Shapes: a set of cards whose backing sums to the bid.",
+      openGraph: { title: "Auction · Shapes", url: "/auction" },
+    };
+  }
   if (r.view === "gallery") {
     return {
       title: "Gallery",

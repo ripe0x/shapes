@@ -4,12 +4,13 @@ pragma solidity 0.8.28;
 import {Script, console} from "forge-std/Script.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 
-/// @notice Deploys the renderer, the collection metadata contract, and then the token.
+/// @notice Deploys the renderer, the collection metadata contract, the token, and the auction house.
 ///
 /// @dev The mint fee and the fee recipient are deployment parameters, not source constants:
 ///      both are `immutable` on the deployed contract and can never be changed afterwards, so
@@ -18,6 +19,10 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 ///        SHAPES_FEE_BPS        mint fee in basis points of backing. Defaults to 100 (1%).
 ///        SHAPES_FEE_RECIPIENT  where fees are forwarded. Must be set off local chains.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
+///
+///      The auction house is deployed alongside but wired only to `Shapes`: it holds no
+///      privileged position over the token and the token knows nothing about it, so a broken
+///      house costs an auction rather than the collection.
 ///
 ///      Local:
 ///        forge script script/DeployShapes.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
@@ -35,7 +40,15 @@ contract DeployShapes is Script {
     ///      certainly a mistake. Override deliberately if you really mean it.
     uint256 internal constant MAX_SANE_FEE_BPS = 1000;
 
-    function run() external returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes) {
+    function run()
+        external
+        returns (
+            ShapeRenderer renderer,
+            ShapeCollection collection,
+            Shapes shapes,
+            ShapeAuctionHouse house
+        )
+    {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));
@@ -67,6 +80,7 @@ contract DeployShapes is Script {
         collection = new ShapeCollection(address(renderer));
 
         shapes = new Shapes(feeBps, feeRecipient, address(renderer), address(collection));
+        house = new ShapeAuctionHouse(address(shapes));
 
         vm.stopBroadcast();
 
@@ -102,10 +116,16 @@ contract DeployShapes is Script {
         // Contract-level metadata is what a marketplace reads for the collection itself.
         require(bytes(shapes.contractURI()).length > 500, "collection produced no metadata");
 
+        // The house is wired to the token and to nothing else. It holds no role on the token, so
+        // this is the whole of the relationship.
+        require(house.shapes() == address(shapes), "auction house points at another token");
+        require(house.auctionCount() == 0, "auction house is not fresh");
+
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));
         console.log("ShapeCollection", address(collection));
         console.log("Shapes        ", address(shapes));
+        console.log("AuctionHouse  ", address(house));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
         console.log("owner         ", shapes.owner());
