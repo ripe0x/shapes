@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 // Canonical origin for absolute OG/Twitter URLs. Env-overridable so a preview deploy can stamp its
@@ -32,7 +33,21 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {/* react-dom 19.2's dev build logs component renders to the Performance panel and
+            serializes prop diffs with JSON.stringify, which throws on props containing an
+            array of bigints (addValueToProperties, PRIMITIVE_ARRAY branch) and crashes the
+            tree. The track is enabled only if console.timeStamp exists when react-dom's
+            module scope runs; beforeInteractive executes this before any framework chunk.
+            Production react-dom omits the track. Remove once react-dom serializes bigint
+            arrays without throwing. Same workaround as preview/src/reactPerfTrackOff.ts. */}
+        {process.env.NODE_ENV === "development" && (
+          <Script id="react-perf-track-off" strategy="beforeInteractive">
+            {`delete console.timeStamp;`}
+          </Script>
+        )}
+        {children}
+      </body>
     </html>
   );
 }
