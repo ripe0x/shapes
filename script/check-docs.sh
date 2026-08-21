@@ -15,7 +15,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 forge build --skip test >/dev/null 2>&1
 
-DOCS=(README.md BUILDING.md SPEC.md SECURITY.md METADATA.md SHAPES_V2_SPEC.md DECOMPOSE_SPEC.md indexer/README.md)
+DOCS=(README.md BUILDING.md SPEC.md SECURITY.md METADATA.md SHAPES_V2_SPEC.md DECOMPOSE_SPEC.md \
+      PROJECT_OVERVIEW.md indexer/README.md)
 
 forge inspect Shapes abi --json 2>/dev/null | python3 -c '
 import json, re, sys, pathlib

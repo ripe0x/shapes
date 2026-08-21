@@ -338,13 +338,26 @@ is the bid amount. A bidder holding no Shapes can bid ETH and the house mints th
 for that amount, so every bid ends up expressed as cards either way. Amounts are carried in 0.01
 ETH units, which is exactly the granularity the denomination ladder can express.
 
-Two properties are worth a reviewer's attention. Nothing is ever pushed: an outbid bidder's cards
-do not move, they wait to be pulled, because pushing sixty-four ERC721 transfers inside a bid would
-let a bidder with a reverting receiver freeze the auction on their own bid. And the lot is always a
-Shape rather than an arbitrary ERC721 — an audit found that a seller-supplied contract whose
-`transferFrom` returns without moving anything let the seller collect a real winning bid for a lot
-that never changed hands, and the house cannot tell such a contract from an honest one. It takes no
-fee and has no owner.
+The lot is any ERC721; only the bid is denominated in Shapes. That is possible because nothing is
+ever pushed, including the lot. `settle` and `cancelAuction` record an outcome and transfer
+nothing, and the lot leaves through `claimLot`, pulled by the winner or by the seller when the
+auction closed unsold. So a lot that refuses to move blocks its own delivery and nothing else: the
+seller still claims the winning cards and every outbid bidder still withdraws, because those paths
+move Shapes alone. An earlier revision restricted the lot to Shapes after an audit found that a
+lot could block settlement and strand the leader's escrow; that was a property of the house pushing
+the lot rather than of the lot being unknown, and the pull removes it at the source.
+
+Escrowed cards are pulled for a related reason: pushing up to sixty-four ERC721 transfers inside a
+bid would shift that cost onto whoever outbids.
+
+What the house cannot do is tell an honest collection from one that reports its own state falsely.
+A contract lying about `transferFrom` lies about `ownerOf` too, so a seller can list a lot that
+will never be delivered and take a real bid for it. There is no on-chain fix; the bound is that
+the lot's address is reached from `createAuction` and `claimLot` alone, so the loss falls on the
+bidder who chose that auction. `createAuction` does check ERC165 for the ERC721 interface and that
+the caller owns or is approved for the token, which rejects a wrong address and an unauthorised
+lister — the mistakes that actually happen — and a (collection, token) index refuses a duplicate
+listing. The house takes no fee and has no owner.
 
 ## 8. Testing and repository
 
@@ -389,12 +402,17 @@ Pre-deployment. No mainnet or testnet deployment of the current line, no tokens 
 interface-breaking changes are still free and no migration is required.
 
 Two external security audits have run against the auction layer and the token core. Both High
-findings, in the auction house, are closed: a seller-supplied lot contract could fake delivery and
-take a real winning bid, and a second could block settlement and strand the leader's escrow. Both
-were closed by removing the ability to name an arbitrary lot rather than by guarding it. The Low
-findings are closed except one, which is accepted and documented: a Shape pushed into the house by
-a plain `transferFrom` is held with no escrow entry, because the alternatives are coupling `Shapes`
-to the house or adding an administrative path into everyone else's escrow.
+findings were in the auction house. One, that a lot could block settlement and strand the leader's
+escrow, is closed at the source: settlement no longer touches the lot, so nothing about the lot can
+prevent an outcome, a payout or a withdrawal. The other, that a lot contract could fake delivery
+and take a real winning bid, has no on-chain fix and is documented as bounded rather than closed —
+see §7a.
+
+The Low findings are closed except one, which is accepted: a Shape pushed into the house by a plain
+`transferFrom` is held with no escrow entry. A per-owner house could offer a recovery function, as
+`SovereignAuctionHouse` in `ripe0x/pin` does, but this is a single permissionless house holding
+every bidder's escrow, so it has no owner to entrust with that power and inventing one would be an
+administrative path into other people's cards.
 
 The documentation gap this section used to flag has been closed, and `script/check-docs.sh` now
 fails if any document names a selector the compiled contract does not have.
