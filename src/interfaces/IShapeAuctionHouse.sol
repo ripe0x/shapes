@@ -57,6 +57,12 @@ interface IShapeAuctionHouse {
     error LotNotReceived();
     /// @dev `createAuction` was given a lot address with no code.
     error LotHasNoCode(address nft);
+    /// @dev `createAuction`'s lot does not report the ERC721 interface under ERC165.
+    error LotNotERC721(address nft);
+    /// @dev `createAuction`'s caller neither owns the lot nor is approved for it.
+    error NotTokenOwnerOrApproved(address nft, uint256 tokenId, address caller);
+    /// @dev The house already holds this token under an auction that has not released it.
+    error AuctionAlreadyExistsForToken(address nft, uint256 tokenId);
     /// @dev The lot has already left the house.
     error LotAlreadyClaimed(uint256 auctionId);
     /// @dev `claimLot` was called by someone other than the winner, or the seller of an auction
@@ -113,7 +119,9 @@ interface IShapeAuctionHouse {
     ///
     ///      A Black Shape (zero backing) is accepted as a lot. Its worth is assessed by bidders,
     ///      unlike a bid's cards, which are valued at their backing and so reject a Black card.
-    /// @param nft The collection the lot belongs to. Must have code.
+    /// @param nft The collection the lot belongs to. Must have code and report the ERC721
+    ///        interface under ERC165. That check rejects a wrong address, which is the common
+    ///        mistake; it does not bind a contract written to answer it falsely.
     /// @param duration Seconds the auction runs for once the first bid lands. At most `MAX_DURATION`.
     /// @param reserveUnits Smallest winning bid, in `UNIT` multiples.
     /// @param minIncrementBps How far a bid must clear the standing one, in basis points.
@@ -175,4 +183,16 @@ interface IShapeAuctionHouse {
     /// @notice The minimal card set for `backingWei`: `counts[i]` cards at denomination `i`.
     ///         Reverts unless `backingWei` is a whole multiple of `UNIT`.
     function cardsFor(uint256 backingWei) external pure returns (uint256[9] memory counts);
+
+    /// @notice The auction holding `tokenId` of `nft`, if the house currently holds it under one.
+    /// @dev Paired with an existence flag because auction id 0 is a real id, and a bare zero
+    ///      would be indistinguishable from no auction.
+    function getAuctionFor(address nft, uint256 tokenId)
+        external
+        view
+        returns (bool exists, uint256 auctionId);
+
+    /// @notice Whether `tokenId` of `nft` is escrowed here under an auction that has not yet
+    ///         released it. Cheaper than `getAuctionFor` when the id is not needed.
+    function hasAuctionFor(address nft, uint256 tokenId) external view returns (bool);
 }

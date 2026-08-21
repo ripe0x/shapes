@@ -17,6 +17,18 @@ contract FakeLot {
     function ownerOf(uint256) external view returns (address) {
         return msg.sender;
     }
+
+    function getApproved(uint256) external view returns (address) {
+        return msg.sender;
+    }
+
+    function isApprovedForAll(address, address) external pure returns (bool) {
+        return true; // a liar approves everyone, too
+    }
+
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == 0x80ac58cd; // a liar passes introspection too
+    }
 }
 
 /// @dev A lot that accepts its inbound transfer and can then be made to refuse every outbound
@@ -38,6 +50,18 @@ contract StickyLot {
         require(ownerOf[id] == from, "wrong owner");
         ownerOf[id] = to;
     }
+
+    function getApproved(uint256) external pure returns (address) {
+        return address(0);
+    }
+
+    function isApprovedForAll(address, address) external pure returns (bool) {
+        return true;
+    }
+
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == 0x80ac58cd; // a liar passes introspection too
+    }
 }
 
 /// @dev I-06: an ERC721 whose `transferFrom` moves nothing. The house cannot be its `shapes`, but
@@ -48,6 +72,18 @@ contract NoOpShapes {
 
     function ownerOf(uint256) external pure returns (address) {
         return address(0xdead);
+    }
+
+    function getApproved(uint256) external view returns (address) {
+        return msg.sender;
+    }
+
+    function isApprovedForAll(address, address) external pure returns (bool) {
+        return true; // a liar approves everyone, too
+    }
+
+    function supportsInterface(bytes4 id) external pure returns (bool) {
+        return id == 0x80ac58cd; // a liar passes introspection too
     }
 }
 

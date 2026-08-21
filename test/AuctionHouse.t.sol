@@ -623,6 +623,14 @@ contract AuctionHouseTest is AuctionBase {
     }
 }
 
+/// @dev Has code and answers ERC165, but is not an ERC721. Stands in for the address a seller
+///      pastes by mistake.
+contract NotACollection {
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return false;
+    }
+}
+
 /// @dev A plain, honest ERC721 from some other collection: the case the house exists to serve
 ///      now that the lot is not required to be a Shape.
 contract ForeignCollection is ERC721 {
@@ -762,5 +770,95 @@ contract ForeignLotTest is AuctionBase {
         vm.prank(seller);
         vm.expectRevert();
         house.createAuction(address(foreign), 99, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+    }
+
+    /* ------------------- collection checks and the token index ------------------- */
+
+    function test_LotMustReportTheErc721Interface() public {
+        NotACollection wrong = new NotACollection();
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.LotNotERC721.selector, address(wrong)));
+        house.createAuction(address(wrong), 1, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+    }
+
+    function test_ANonOwnerWithoutApprovalCannotList() public {
+        vm.prank(bob);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShapeAuctionHouse.NotTokenOwnerOrApproved.selector, address(foreign), foreignId, bob
+            )
+        );
+        house.createAuction(address(foreign), foreignId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+    }
+
+    /// @notice An operator the owner approved may list on their behalf, and the lot is pulled from
+    ///         the owner rather than from the operator.
+    function test_AnApprovedOperatorCanListForTheOwner() public {
+        vm.prank(seller);
+        foreign.setApprovalForAll(bob, true);
+        vm.prank(bob);
+        uint256 id = house.createAuction(
+            address(foreign), foreignId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION
+        );
+        assertEq(foreign.ownerOf(foreignId), address(house), "pulled from the owner");
+        assertEq(house.auctions(id).seller, bob, "the lister is the seller of record");
+    }
+
+    function test_TheSameTokenCannotBeListedTwice() public {
+        _openForeign();
+        // The house holds it now, so a second listing is refused by the index before the transfer.
+        vm.prank(seller);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IShapeAuctionHouse.AuctionAlreadyExistsForToken.selector, address(foreign), foreignId
+            )
+        );
+        house.createAuction(address(foreign), foreignId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+    }
+
+    function test_TheTokenIndexTracksTheLotAndClearsOnClaim() public {
+        (bool exists,) = house.getAuctionFor(address(foreign), foreignId);
+        assertFalse(exists, "nothing indexed before the auction");
+
+        uint256 id = _openForeign();
+        (bool found, uint256 foundId) = house.getAuctionFor(address(foreign), foreignId);
+        assertTrue(found, "indexed while escrowed");
+        assertEq(foundId, id, "auction id 0 is a real id, not an absence");
+        assertTrue(house.hasAuctionFor(address(foreign), foreignId));
+
+        uint256 card = _mintCard(alice, 1 ether);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+        skip(DURATION);
+        house.settle(id);
+
+        // Settlement does not free the token: the house still holds it until the winner pulls.
+        assertTrue(house.hasAuctionFor(address(foreign), foreignId), "still held, still indexed");
+
+        vm.prank(alice);
+        house.claimLot(id);
+        assertFalse(house.hasAuctionFor(address(foreign), foreignId), "freed once it left");
+    }
+
+    /// @notice Once the lot has been pulled back out of a cancelled auction it can be listed again.
+    function test_ATokenCanBeRelistedAfterItIsReclaimed() public {
+        uint256 first = _openForeign();
+        vm.prank(seller);
+        house.cancelAuction(first);
+        vm.prank(seller);
+        house.claimLot(first);
+
+        vm.prank(seller);
+        uint256 second = house.createAuction(
+            address(foreign), foreignId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION
+        );
+        assertTrue(second != first, "a fresh auction");
+        assertEq(foreign.ownerOf(foreignId), address(house), "escrowed again");
+    }
+
+    function test_PlainEthSentToTheHouseIsRejected() public {
+        vm.prank(alice);
+        (bool sent,) = address(house).call{value: 1 ether}("");
+        assertFalse(sent, "the house has no receive and holds no ETH");
     }
 }

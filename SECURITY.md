@@ -20,12 +20,19 @@ when `from` is the zero address, so only a mint can land. A plain `transferFrom`
 hook and cannot be refused by any contract, so a Shape can still be pushed into the house by its
 owner. It is then held with no escrow entry naming it and no function that releases it.
 
-This is accepted, not fixed. The alternatives are worse: teaching `Shapes` about the house couples
-the token to a contract it otherwise knows nothing about, and a recovery function is an
-administrative path into a contract holding other people's redeemable cards, which is the one
-thing this house does not have. The loss is confined to whoever pushed the token, is entirely
-self-inflicted, and mirrors how the reserve invariant already treats ETH forced in by paths that
-bypass `receive`: stated as an inequality and left permanently inaccessible.
+This is accepted, not fixed, and the reason is the shared house rather than anything inherent.
+`SovereignAuctionHouse` in `ripe0x/pin` recovers stuck tokens with an owner-only
+`recoverStuckERC721` gated by its active-auction index, which is sound there because each house
+has exactly one owner and sells only their tokens. This house is a single permissionless contract
+that any seller lists on and that holds every bidder's escrowed cards, so it has no owner to give
+that power to, and inventing one would be an administrative path into other people's redeemable
+cards. Teaching `Shapes` about the house is the other alternative, and it couples the token to a
+contract it otherwise knows nothing about.
+
+The loss is confined to whoever pushed the token, is entirely self-inflicted, and mirrors how the
+reserve invariant already treats ETH forced in by paths that bypass `receive`: stated as an
+inequality and left permanently inaccessible. If the house ever moves to a per-seller model, the
+recovery function becomes available and should be taken.
 
 ## Lots from collections the house knows nothing about
 
@@ -47,6 +54,12 @@ seller's proceeds, another auction, or the outcome of its own:
 - `claimLot` is the single path by which the lot leaves, and the only one that can fail. It stays
   callable indefinitely, so a collection that is paused when the auction ends can be claimed once
   it resumes.
+
+Two checks run before the transfer and are worth naming for what they do and do not do.
+`createAuction` requires the lot to report the ERC721 interface under ERC165, and requires the
+caller to own the token or hold an approval for it. Both reject a wrong address or an unauthorised
+lister, which are the mistakes that actually happen. Neither binds a contract written to answer
+them falsely, and the test mocks answer both truthfully for exactly that reason.
 
 `test_H01_ALyingLotCostsOnlyItsOwnBidder` runs a lying lot alongside an honest auction and asserts
 the honest one settles, delivers and pays out untouched.

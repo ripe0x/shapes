@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -62,6 +63,9 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /// @inheritdoc IShapeAuctionHouse
     uint64 public constant MAX_DURATION = 30 days;
 
+    /// @dev EIP-721's ERC165 interface id.
+    bytes4 private constant ERC721_INTERFACE_ID = 0x80ac58cd;
+
     /// @inheritdoc IShapeAuctionHouse
     address public immutable shapes;
 
@@ -71,6 +75,12 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     mapping(uint256 auctionId => Auction) private _auctions;
     mapping(uint256 auctionId => mapping(address bidder => uint256[])) private _escrow;
     mapping(uint256 auctionId => mapping(address bidder => uint64)) private _units;
+
+    /// @dev (collection, token) to auction id plus one, so the zero default reads as "none".
+    ///      Set when the lot is escrowed and cleared when it leaves, which is `claimLot` rather
+    ///      than settlement: the house still holds a settled lot until the winner takes it, and
+    ///      it must not be listable again in the meantime.
+    mapping(address nft => mapping(uint256 tokenId => uint256)) private _auctionIdByToken;
 
     /// @dev Set only across the individual mint call inside `bid`, and read only by
     ///      `onERC721Received`, which accepts a mint to the house (`from == address(0)`) and
@@ -106,6 +116,21 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         // An address with no code accepts a void call silently, so `transferFrom` on one would
         // appear to succeed. `ownerOf` below would revert on it regardless; this names the reason.
         if (nft.code.length == 0) revert LotHasNoCode(nft);
+        // Rejects an address that is not the collection the seller meant, which is the mistake
+        // that actually happens. A contract that answers this falsely is not caught here or
+        // anywhere else; see `claimLot` for what bounds that case instead.
+        if (!IERC165(nft).supportsInterface(ERC721_INTERFACE_ID)) revert LotNotERC721(nft);
+        if (_auctionIdByToken[nft][tokenId] != 0) revert AuctionAlreadyExistsForToken(nft, tokenId);
+
+        // Checked here so the caller gets a named error rather than the collection's internal
+        // one, and so an approved operator can list on the owner's behalf.
+        address tokenOwner = IERC721(nft).ownerOf(tokenId);
+        if (
+            msg.sender != tokenOwner && msg.sender != IERC721(nft).getApproved(tokenId)
+                && !IERC721(nft).isApprovedForAll(tokenOwner, msg.sender)
+        ) {
+            revert NotTokenOwnerOrApproved(nft, tokenId, msg.sender);
+        }
         // Bound the clock. An unbounded duration would hold every bidder's escrow for as long as
         // the seller chose; extensionWindow may not exceed the duration it extends.
         if (duration == 0 || duration > MAX_DURATION) revert DurationOutOfRange();
@@ -127,8 +152,10 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
             lotClaimed: false
         });
 
+        _auctionIdByToken[nft][tokenId] = auctionId + 1;
+
         emit AuctionCreated(auctionId, msg.sender, nft, tokenId, duration, reserveUnits);
-        IERC721(nft).transferFrom(msg.sender, address(this), tokenId);
+        IERC721(nft).transferFrom(tokenOwner, address(this), tokenId);
         if (IERC721(nft).ownerOf(tokenId) != address(this)) revert LotNotReceived();
     }
 
@@ -275,6 +302,7 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         if (msg.sender != recipient) revert NotLotRecipient(auctionId, msg.sender);
 
         a.lotClaimed = true;
+        delete _auctionIdByToken[a.nft][a.tokenId]; // the token is free to be listed again
         emit LotClaimed(auctionId, recipient);
         IERC721(a.nft).transferFrom(address(this), recipient, a.tokenId);
     }
@@ -370,6 +398,22 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /// @inheritdoc IShapeAuctionHouse
     function cardsFor(uint256 backingWei) external pure returns (uint256[9] memory) {
         return _cardsFor(backingWei);
+    }
+
+    /// @inheritdoc IShapeAuctionHouse
+    function getAuctionFor(address nft, uint256 tokenId)
+        external
+        view
+        returns (bool exists, uint256 auctionId)
+    {
+        uint256 stored = _auctionIdByToken[nft][tokenId];
+        if (stored == 0) return (false, 0);
+        return (true, stored - 1);
+    }
+
+    /// @inheritdoc IShapeAuctionHouse
+    function hasAuctionFor(address nft, uint256 tokenId) external view returns (bool) {
+        return _auctionIdByToken[nft][tokenId] != 0;
     }
 
     /// @dev Largest denomination first, as many as fit, repeat. On this ladder that is provably
