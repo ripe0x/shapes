@@ -12,7 +12,7 @@ import {GalleryView} from "./GalleryView";
 import {TokenView} from "./TokenView";
 import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
-import {loadAuction, loadLotImage, type AuctionState} from "./auction";
+import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
 
 export type View = "mint" | "auction" | "gallery" | "token" | "about";
 
@@ -51,14 +51,14 @@ export function SiteApp({
   const [view, setView] = React.useState<View>(initialView ?? "mint");
   const [tokenId, setTokenId] = React.useState<bigint | null>(initialTokenId ?? null);
   const [data, setData] = React.useState<SiteData | null>(null);
-  const [sel, setSel] = React.useState(4); // 1 ETH
+  const [sel, setSel] = React.useState(0); // 0.01 ETH
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
   const [mint, setMint] = React.useState<MintState>({status: "idle"});
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
   const [txErr, setTxErr] = React.useState<{op: string; text: string} | null>(null);
-  const [auction, setAuction] = React.useState<AuctionState | null>(null);
+  const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
   const [txHash, setTxHash] = React.useState<string | null>(null);
 
@@ -88,7 +88,13 @@ export function SiteApp({
 
   const refresh = React.useCallback(async () => {
     if (!publicClient) return;
-    setData(await loadSite(publicClient, dep));
+    // A failed load (dead RPC, contract not yet deployed on a dev chain) keeps the current
+    // data and the loading state instead of surfacing an unhandled rejection.
+    try {
+      setData(await loadSite(publicClient, dep));
+    } catch {
+      /* leave data as-is; the user can reload once the chain answers */
+    }
   }, [publicClient, dep]);
 
   React.useEffect(() => {
@@ -213,10 +219,24 @@ export function SiteApp({
 
 
   // Auction 0 is the collection's own. Reloaded after every auction transaction, and whenever
-  // the wallet changes, since escrow and the lead are both per-address.
+  // the wallet changes, since escrow and the lead are both per-address. A deployment with no
+  // auction house has no auction to load, ever, so it resolves to null immediately rather than
+  // sitting in "loading" forever; otherwise the slot stays "loading" until the first read lands.
   const refreshAuction = React.useCallback(async () => {
-    if (!publicClient || !dep.auctionHouse) return;
-    const a = await loadAuction(publicClient, dep, 0n, address);
+    if (!dep.auctionHouse) {
+      setAuction(null);
+      setLotImage(null);
+      return;
+    }
+    if (!publicClient) return;
+    // A failed read (dead RPC, mid-redeploy chain, malformed response) degrades to the empty
+    // state instead of surfacing an unhandled rejection.
+    let a: Awaited<ReturnType<typeof loadAuction>> = null;
+    try {
+      a = await loadAuction(publicClient, dep, 0n, address);
+    } catch {
+      a = null;
+    }
     setAuction(a);
     setLotImage(a ? await loadLotImage(publicClient, dep, a) : null);
   }, [publicClient, dep, address]);
@@ -312,9 +332,9 @@ export function SiteApp({
             </button>
           </nav>
           <div style={{marginLeft: "auto", display: "flex", alignItems: "center", gap: 18}}>
-            <span style={{color: C.muted, letterSpacing: "0.1em"}}>
-              {isConnected && address ? short(address) : "NO WALLET CONNECTED"}
-            </span>
+            {isConnected && address && (
+              <span style={{color: C.muted, letterSpacing: "0.1em"}}>{short(address)}</span>
+            )}
             <button
               type="button"
               className="btn-outline"
@@ -349,8 +369,9 @@ export function SiteApp({
           auction={auction}
           lotImage={lotImage}
           data={data}
+          dep={dep}
+          publicClient={publicClient}
           address={address}
-          chainId={dep.chainId}
           busy={busy}
           txErr={txErr}
           txHash={txHash}
@@ -399,13 +420,9 @@ export function SiteApp({
           }}
         >
           <span style={{letterSpacing: "0.14em"}}>SHAPES</span>
-          <span>Wrapping ETH in a Shape is not an investment and earns nothing.</span>
           <span style={{marginLeft: "auto", display: "flex", gap: 20}}>
             <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 11}}>
               Contract
-            </a>
-            <a href="https://github.com/ripe0x/shapes" target="_blank" rel="noreferrer" style={{fontSize: 11}}>
-              Source
             </a>
           </span>
         </div>

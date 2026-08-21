@@ -65,6 +65,22 @@ export function moduleCountForAmount(amountWei: bigint): number {
   return c * r;
 }
 
+/** The minimum denomination, in wei. Every denomination is a whole multiple of it. Mirrors
+ *  Denominations.sol UNIT. */
+export const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
+
+/** Backing amount for a denomination index, in UNIT (0.01 ETH) multiples. Mirrors
+ *  Denominations.sol unitsAt. */
+export function unitsAt(index: number): bigint {
+  return DENOMINATIONS[index] / UNIT;
+}
+
+/** Grid cell count for a denomination index. Mirrors Denominations.sol gridAt (cols * rows). */
+export function cellCountAt(index: number): number {
+  const [c, r] = GRIDS[index];
+  return c * r;
+}
+
 export function labelForAmount(amountWei: bigint): string {
   const i = denominationIndex(amountWei);
   if (i < 0) throw new Error(`unsupported denomination: ${amountWei}`);

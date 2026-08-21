@@ -19,10 +19,6 @@ export const FACTS: Fact[] = [
     v: "The contract holds the ETH. It does not lend it, stake it, or invest it. Direct transfers to the contract revert; ETH arrives only through a mint.",
   },
   {
-    k: "THE OWNER CANNOT",
-    v: "Pause it, withdraw from it, seize a token, burn a token, cap the supply, upgrade it, or change the fee. The fee and its recipient are set at deployment.",
-  },
-  {
     k: "ARTWORK",
     v: "Generated onchain when it is asked for. No IPFS, no server, no fonts. 2000 × 2800, black ground, white marks, no other colours and no type on the face.",
   },

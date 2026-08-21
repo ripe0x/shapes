@@ -10,6 +10,7 @@ import {Denominations} from "./lib/Denominations.sol";
 import {FixedPoint} from "./lib/FixedPoint.sol";
 import {Round03Rand} from "./lib/Round03Rand.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
+import {ModuleCodec} from "./lib/ModuleCodec.sol";
 
 /// @title ShapeRenderer
 /// @notice Fully onchain SVG and metadata for Shape tokens.
@@ -91,8 +92,11 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     uint256 private constant KIND_LINE = 9;
     uint256 private constant KIND_COUNT = 10;
 
-    uint32 private constant GRAMMAR_VERSION = 1;
-    bytes32 private constant GRAMMAR_HASH = keccak256("Shapes/canonical-geometry/v1");
+    /// @dev v2 adds the sampled geometry source (SAMPLING_SPEC.md): a materialized module byte
+    ///      array in place of a seed, decoded by `composeSampled`. Grammar v1's seed-based draw
+    ///      order and output are unchanged.
+    uint32 private constant GRAMMAR_VERSION = 2;
+    bytes32 private constant GRAMMAR_HASH = keccak256("Shapes/canonical-geometry/v2");
 
     /* ------------------------------------------------------------------ *
      *  Composition
@@ -368,6 +372,63 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         }
     }
 
+    /// @notice Resolve a materialized token into its full geometric description (grammar v2).
+    /// @dev `modules` is a stored byte array (`ModuleCodec`), one byte per cell in row-major grid
+    ///      order; its length must equal the grid's cell count for `amountWei`. Position, size and
+    ///      weight derive from the grid and card constants exactly as `compose`; only the module
+    ///      identities (kind, solid, rotation) come from `modules` instead of a seed draw, so no
+    ///      `Round03Rand` stream runs here. `solidProbability` is still set from `inkGene`, as
+    ///      metadata: no solid draws occur on this path.
+    function composeSampled(bytes memory modules, uint256 amountWei, uint8 inkGene)
+        public
+        pure
+        returns (Card memory card)
+    {
+        uint256 di = Denominations.requireIndexOf(amountWei);
+        Geometry memory g = _geometry(di);
+        uint256 n = g.cols * g.rows;
+        if (modules.length != n) revert IShapeGeometry.InvalidModuleLength(n, modules.length);
+
+        card.denomIndex = di;
+        card.cols = g.cols;
+        card.rows = g.rows;
+        card.cell = g.cell;
+        card.fill = FILL;
+        card.wRatio = WRATIO;
+        card.target = g.halfCell.mulWad(FILL);
+        card.weight = (2 * card.target).mulWad(card.wRatio);
+        card.inkGene = inkGene;
+        card.solidProbability = InkGenes.geneProbabilityAt(inkGene);
+
+        card.modules = new Module[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            bytes1 b = modules[i];
+            if (!ModuleCodec.isValid(b)) revert IShapeGeometry.InvalidModuleByte(i, b);
+            (uint256 kind, bool solid, uint256 rotIndex) = ModuleCodec.decode(b);
+            card.modules[i] = _moduleFromBytes(kind, solid, rotIndex, i, g, card.target, card.weight);
+        }
+    }
+
+    /// @dev One materialized cell: identity from the decoded byte, position from the grid, size
+    ///      and weight from the card constants. The non-RNG counterpart of `_module`.
+    function _moduleFromBytes(
+        uint256 kind,
+        bool solid,
+        uint256 rotIndex,
+        uint256 i,
+        Geometry memory g,
+        uint256 target,
+        uint256 weight
+    ) private pure returns (Module memory m) {
+        m.kind = kind;
+        m.solid = solid;
+        m.rot = rotIndex * 90;
+        m.weight = weight;
+        m.size = _solveSize(kind, solid, target, weight);
+        m.cx = g.x0 + (i % g.cols) * g.cell + g.halfCell;
+        m.cy = g.y0 + (i / g.cols) * g.cell + g.halfCell;
+    }
+
     /// @inheritdoc IShapeGeometry
     function grammarVersion() external pure returns (uint32) {
         return GRAMMAR_VERSION;
@@ -407,6 +468,34 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     }
 
     /// @inheritdoc IShapeGeometry
+    function cardGeometrySampled(bytes calldata modules, uint256 amountWei, uint8 inkGene)
+        external
+        pure
+        returns (
+            uint8 denominationIndex,
+            uint256 cols,
+            uint256 rows,
+            uint256 cell,
+            uint256 target,
+            uint256 weight,
+            uint256 solidProbability,
+            uint256 moduleCount
+        )
+    {
+        Card memory card = composeSampled(modules, amountWei, inkGene);
+        return (
+            uint8(card.denomIndex),
+            card.cols,
+            card.rows,
+            card.cell,
+            card.target,
+            card.weight,
+            card.solidProbability,
+            card.modules.length
+        );
+    }
+
+    /// @inheritdoc IShapeGeometry
     function moduleAt(bytes32 seed, uint256 amountWei, uint8 inkGene, uint256 index)
         external
         pure
@@ -421,6 +510,27 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         )
     {
         Card memory card = compose(seed, amountWei, inkGene);
+        uint256 count = card.modules.length;
+        if (index >= count) revert ModuleIndexOutOfRange(index, count);
+        Module memory m = card.modules[index];
+        return (uint8(m.kind), m.solid, uint16(m.rot), m.cx, m.cy, m.size, m.weight);
+    }
+
+    /// @inheritdoc IShapeGeometry
+    function moduleAtSampled(bytes calldata modules, uint256 amountWei, uint8 inkGene, uint256 index)
+        external
+        pure
+        returns (
+            uint8 kind,
+            bool solid,
+            uint16 rotation,
+            uint256 cx,
+            uint256 cy,
+            uint256 size,
+            uint256 weight
+        )
+    {
+        Card memory card = composeSampled(modules, amountWei, inkGene);
         uint256 count = card.modules.length;
         if (index >= count) revert ModuleIndexOutOfRange(index, count);
         Module memory m = card.modules[index];
@@ -887,8 +997,19 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         pure
         returns (string memory)
     {
-        Card memory card = compose(seed, amountWei, inkGene);
+        return _svgFromCard(compose(seed, amountWei, inkGene), inverted);
+    }
 
+    /// @inheritdoc IShapeRenderer
+    function renderSVGSampled(bytes calldata modules, uint256 amountWei, bool inverted, uint8 inkGene)
+        external
+        pure
+        returns (string memory)
+    {
+        return _svgFromCard(composeSampled(modules, amountWei, inkGene), inverted);
+    }
+
+    function _svgFromCard(Card memory card, bool inverted) private pure returns (string memory) {
         string memory bg = inverted ? "#fff" : "#000";
         string memory fg = inverted ? "#000" : "#fff";
 
@@ -993,12 +1114,30 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     }
 
     /// @inheritdoc IShapeRenderer
+    function moduleSequenceSampled(bytes calldata modules, uint256 amountWei, uint8 inkGene)
+        external
+        pure
+        returns (string memory)
+    {
+        return string(_moduleSequence(composeSampled(modules, amountWei, inkGene)));
+    }
+
+    /// @inheritdoc IShapeRenderer
     function renderUnicode(bytes32 seed, uint256 amountWei, uint8 inkGene)
         external
         pure
         returns (string memory)
     {
         return string(_unicodeCard(compose(seed, amountWei, inkGene)));
+    }
+
+    /// @inheritdoc IShapeRenderer
+    function renderUnicodeSampled(bytes calldata modules, uint256 amountWei, uint8 inkGene)
+        external
+        pure
+        returns (string memory)
+    {
+        return string(_unicodeCard(composeSampled(modules, amountWei, inkGene)));
     }
 
     /* ------------------------------------------------------------------ *
@@ -1050,8 +1189,56 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         string memory description
     ) public pure returns (string memory) {
         Card memory card = compose(seed, amountWei, inkGene);
-        string memory svg = renderSVG(seed, amountWei, inverted, inkGene);
+        return _metadataFromCard(
+            card,
+            _svgFromCard(card, inverted),
+            tokenId,
+            originCount,
+            inverted,
+            inkGene,
+            composeDepth,
+            namePrefix,
+            description
+        );
+    }
 
+    /// @inheritdoc IShapeRenderer
+    function metadataJSONSampled(
+        bytes memory modules,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted,
+        uint8 inkGene,
+        uint256 composeDepth,
+        string memory namePrefix,
+        string memory description
+    ) public pure returns (string memory) {
+        Card memory card = composeSampled(modules, amountWei, inkGene);
+        return _metadataFromCard(
+            card,
+            _svgFromCard(card, inverted),
+            tokenId,
+            originCount,
+            inverted,
+            inkGene,
+            composeDepth,
+            namePrefix,
+            description
+        );
+    }
+
+    function _metadataFromCard(
+        Card memory card,
+        string memory svg,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted,
+        uint8 inkGene,
+        uint256 composeDepth,
+        string memory namePrefix,
+        string memory description
+    ) private pure returns (string memory) {
         uint256 units = Denominations.unitsAt(card.denomIndex);
         bool complete = !inverted && units > 1 && originCount == units;
 
@@ -1123,25 +1310,49 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         string calldata namePrefix,
         string calldata description
     ) external pure returns (string memory) {
-        return string(
-            abi.encodePacked(
-                "data:application/json;base64,",
-                Base64.encode(
-                    bytes(
-                        metadataJSON(
-                            seed,
-                            amountWei,
-                            tokenId,
-                            originCount,
-                            inverted,
-                            inkGene,
-                            composeDepth,
-                            namePrefix,
-                            description
-                        )
-                    )
-                )
+        return _wrapTokenURI(
+            metadataJSON(
+                seed,
+                amountWei,
+                tokenId,
+                originCount,
+                inverted,
+                inkGene,
+                composeDepth,
+                namePrefix,
+                description
             )
         );
+    }
+
+    /// @inheritdoc IShapeRenderer
+    function tokenURISampled(
+        bytes calldata modules,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted,
+        uint8 inkGene,
+        uint256 composeDepth,
+        string calldata namePrefix,
+        string calldata description
+    ) external pure returns (string memory) {
+        return _wrapTokenURI(
+            metadataJSONSampled(
+                modules,
+                amountWei,
+                tokenId,
+                originCount,
+                inverted,
+                inkGene,
+                composeDepth,
+                namePrefix,
+                description
+            )
+        );
+    }
+
+    function _wrapTokenURI(string memory json) private pure returns (string memory) {
+        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json))));
     }
 }

@@ -32,6 +32,33 @@ a:hover {
     opacity: 1;
   }
 }
+@keyframes dotpulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+/* Auction hero row: artwork at 2/3, bid panel at 1/3, stacked below 860px. */
+/* align-items: stretch so the panel column's left-edge rule (its own border-left) always spans
+   the full row height, connecting the header's rule above to the row's own bottom rule below,
+   regardless of which column's content is taller. */
+.auction-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+  gap: 40px;
+  align-items: stretch;
+}
+@media (max-width: 860px) {
+  .auction-hero {
+    grid-template-columns: 1fr;
+  }
+}
+.status-dot-live {
+  animation: dotpulse 1.6s ease-in-out infinite;
+}
 /* React sets style properties in object key order, so an inline `font` shorthand can land after an
    inline font-size and reset it to 16px. Inheriting the page font via a rule avoids that. */
 button {
@@ -52,7 +79,9 @@ button {
 }
 .btn-filled:disabled {
   cursor: default;
-  background: #e6e4dd;
+  background: #262622;
+  border-color: #262622;
+  color: #71716b;
 }
 .btn-outline {
   border: 1px solid #3a3a34;
@@ -88,4 +117,24 @@ button {
 .btn-step:hover {
   border-color: #3a3a34;
   color: #e6e4dd;
+}
+/* Modal. The overlay dims the page; the panel reuses the section rule colour so it reads
+   as the same surface rather than a floating card. */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 6, 5, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+  animation: artin 0.18s ease both;
+}
+.modal-panel {
+  background: #0d0d0c;
+  border: 1px solid #3a3a34;
+  max-width: 480px;
+  width: 100%;
+  padding: 30px 32px 28px;
 }

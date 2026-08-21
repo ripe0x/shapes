@@ -1,3 +1,4 @@
+import "../reactPerfTrackOff";
 import React from "react";
 import {createRoot} from "react-dom/client";
 import "@fontsource/ibm-plex-mono/400.css";

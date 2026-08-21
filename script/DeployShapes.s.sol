@@ -6,11 +6,13 @@ import {Script, console} from "forge-std/Script.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
+import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 
-/// @notice Deploys the renderer, the collection metadata contract, the token, and the auction house.
+/// @notice Deploys the renderer, the collection metadata contract, the token, the read-only lens,
+///         and the auction house.
 ///
 /// @dev The mint fee and the fee recipient are deployment parameters, not source constants:
 ///      both are `immutable` on the deployed contract and can never be changed afterwards, so
@@ -19,6 +21,13 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 ///        SHAPES_FEE_BPS        mint fee in basis points of backing. Defaults to 100 (1%).
 ///        SHAPES_FEE_RECIPIENT  where fees are forwarded. Must be set off local chains.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
+///
+///      `ShapeLens` is periphery deployed alongside `Shapes`: it holds the rich view surface
+///      (`shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt`,
+///      `splitOriginOf`) that was moved off `Shapes` to keep the token's runtime bytecode under
+///      the EIP-170 size limit (see IShapes.sol and IShapeLens.sol). It takes the deployed
+///      `Shapes` address as its only constructor argument, holds no state of its own, and reads
+///      everything through `Shapes`'s getters.
 ///
 ///      The auction house is deployed alongside but wired only to `Shapes`: it holds no
 ///      privileged position over the token and the token knows nothing about it, so a broken
@@ -42,7 +51,13 @@ contract DeployShapes is Script {
 
     function run()
         external
-        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
+        returns (
+            ShapeRenderer renderer,
+            ShapeCollection collection,
+            Shapes shapes,
+            ShapeLens lens,
+            ShapeAuctionHouse house
+        )
     {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
@@ -75,6 +90,7 @@ contract DeployShapes is Script {
         collection = new ShapeCollection(address(renderer));
 
         shapes = new Shapes(feeBps, feeRecipient, address(renderer), address(collection));
+        lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
 
         vm.stopBroadcast();
@@ -114,6 +130,10 @@ contract DeployShapes is Script {
         // Contract-level metadata is what a marketplace reads for the collection itself.
         require(bytes(shapes.contractURI()).length > 500, "collection produced no metadata");
 
+        // The lens is wired to the token and holds no privileged position over it; it can never
+        // move state, only read it back through `Shapes`'s own getters.
+        require(address(lens.shapes()) == address(shapes), "lens points at another token");
+
         // The house is wired to the token and to nothing else. It holds no role on the token, so
         // this is the whole of the relationship.
         require(house.shapes() == address(shapes), "auction house points at another token");
@@ -123,6 +143,7 @@ contract DeployShapes is Script {
         console.log("ShapeRenderer ", address(renderer));
         console.log("ShapeCollection", address(collection));
         console.log("Shapes        ", address(shapes));
+        console.log("ShapeLens     ", address(lens));
         console.log("AuctionHouse  ", address(house));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);

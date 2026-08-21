@@ -4,9 +4,15 @@ pragma solidity 0.8.28;
 /// @title IShapeRenderer
 /// @notice The fully onchain renderer for Shape tokens.
 /// @dev Every function is `pure`. The renderer holds no state, has no owner and no
-///      initialiser; its output is a function of its arguments alone. The artwork and traits
-///      depend only on (seed, amount, tokenId, ...); the `name` and `description` copy is
+///      initialiser; its output is a function of its arguments alone. Grammar v1's artwork and
+///      traits depend only on (seed, amount, tokenId, ...); the `name` and `description` copy is
 ///      supplied per call by `Shapes`, which stores it, rather than held here.
+///
+///      Grammar v2 adds a second geometry source for a compose or split result: a materialized
+///      module byte array (`ModuleCodec`) in place of a seed. Every `*Sampled` function is the
+///      same read over that source instead; positions, size and weight still derive from the
+///      grid and card constants, so a `Sampled` and a seed-based card at the same denomination
+///      and ink gene share every constant except the module identities themselves.
 interface IShapeRenderer {
     /// @notice The complete SVG document for a token.
     /// @dev Takes no token id: a Shape carries no type, so its artwork is a function of its
@@ -16,6 +22,12 @@ interface IShapeRenderer {
     ///      outline states are drawn against `GENE_PROBABILITY[inkGene]` rather than a per-seed
     ///      band. `isBlack`/`inverted` precedence over rendering is unchanged.
     function renderSVG(bytes32 seed, uint256 amountWei, bool inverted, uint8 inkGene)
+        external
+        pure
+        returns (string memory);
+
+    /// @notice `renderSVG`, reading a materialized module array instead of a seed.
+    function renderSVGSampled(bytes calldata modules, uint256 amountWei, bool inverted, uint8 inkGene)
         external
         pure
         returns (string memory);
@@ -41,9 +53,35 @@ interface IShapeRenderer {
         string calldata description
     ) external pure returns (string memory);
 
+    /// @notice `metadataJSON`, reading a materialized module array instead of a seed.
+    function metadataJSONSampled(
+        bytes calldata modules,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted,
+        uint8 inkGene,
+        uint256 composeDepth,
+        string calldata namePrefix,
+        string calldata description
+    ) external pure returns (string memory);
+
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSON`.
     function tokenURI(
         bytes32 seed,
+        uint256 amountWei,
+        uint256 tokenId,
+        uint256 originCount,
+        bool inverted,
+        uint8 inkGene,
+        uint256 composeDepth,
+        string calldata namePrefix,
+        string calldata description
+    ) external pure returns (string memory);
+
+    /// @notice A base64 `data:application/json` URI wrapping `metadataJSONSampled`.
+    function tokenURISampled(
+        bytes calldata modules,
         uint256 amountWei,
         uint256 tokenId,
         uint256 originCount,
@@ -62,11 +100,23 @@ interface IShapeRenderer {
         pure
         returns (string memory);
 
+    /// @notice `moduleSequence`, reading a materialized module array instead of a seed.
+    function moduleSequenceSampled(bytes calldata modules, uint256 amountWei, uint8 inkGene)
+        external
+        pure
+        returns (string memory);
+
     /// @notice The canonical module glyphs arranged in the Shape's denomination grid.
     /// @dev Cells are separated by one ASCII space and rows by one `\n`, with no trailing
     ///      separator. This is a human-readable view of the same modules returned by
     ///      `moduleSequence`; contracts should use `IShapeGeometry.moduleAt` for structured data.
     function renderUnicode(bytes32 seed, uint256 amountWei, uint8 inkGene)
+        external
+        pure
+        returns (string memory);
+
+    /// @notice `renderUnicode`, reading a materialized module array instead of a seed.
+    function renderUnicodeSampled(bytes calldata modules, uint256 amountWei, uint8 inkGene)
         external
         pure
         returns (string memory);

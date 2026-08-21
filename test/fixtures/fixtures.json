@@ -2005,5 +2005,313 @@
   "4",
   "5",
   "4"
+ ],
+ "sampleComposeWhy": [
+  "compose sampling: seed-derived donors only, ascending burn order",
+  "compose sampling: mixed materialized and seed-derived donors",
+  "compose sampling: shuffled burn calldata order, mixed donors",
+  "compose sampling: higher-unit donors into the apex denomination"
+ ],
+ "sampleComposeSurvivorSeed": [
+  "0xe71fac6fb785942cc6c6404a423f94f32a28ae66d69ff41494c38bfd4788b2f8",
+  "0x975c2ff2d88bb33eba87988c482ba1a11cee273451aa76eb28acc668585ac527",
+  "0xbd5c86c9fbaa47a598cf55ad1cee7a1d8f8450857cb10e0f122503b8c0e65243",
+  "0xccd4ae6ef6fa5c628d5b3e95d10589f3cbb4e21e9f997aeda1c7403b267bac1a"
+ ],
+ "sampleComposeSurvivorDenomIndex": [
+  "2",
+  "1",
+  "1",
+  "5"
+ ],
+ "sampleComposeSurvivorInkGene": [
+  "1",
+  "4",
+  "3",
+  "4"
+ ],
+ "sampleComposeSurvivorModules": [
+  "0x",
+  "0x5804281511101311151634333707100105106206",
+  "0x",
+  "0x"
+ ],
+ "sampleComposeNewIndex": [
+  "4",
+  "5",
+  "6",
+  "8"
+ ],
+ "sampleComposeExpected": [
+  "0x624705001528054628",
+  "0x563739051137",
+  "0x43432374",
+  "0x10"
+ ],
+ "sampleComposeBurnTokenId": [
+  "10",
+  "11",
+  "12",
+  "5",
+  "6",
+  "7",
+  "22",
+  "20",
+  "21",
+  "1",
+  "2",
+  "3"
+ ],
+ "sampleComposeBurnSeed": [
+  "0x66be4f155c5ef2ebd3772b228f2f00681e4ed5826cdb3b1943cc11ad15ad1d28",
+  "0x42d72674974f694b5f5159593243114d38a5c39c89d6b62fee061ff523240ee1",
+  "0xa7ce836d032b2bf62b7e2097a8e0a6d8aeb35405ad15271e96d3b0188a1d06fb",
+  "0x193a3ae4da5049eb74cee39e4cf5827f7ce7b1d1d1775ef1c6311eb60558e6d5",
+  "0xbdaadd9f750d0166045bf387a364eadd28ba243e04512a47282aa5147a68e37f",
+  "0x232da9e50dad2971456a78fb5cd6ff6b75019984d6e918139ce990999420f979",
+  "0xfc8af01f449989052b52093a58fc9f42d0b11f0c6dd5dca0463dab62346ccc68",
+  "0xfb4a0ff48df6de8777afc824e4cbf267beb8602db7c5a7456c954593226c1fd5",
+  "0xfcfced99f9d921eebdc59aa6f7a664084bd564a3d2d54ebc1a5c057c99c67aba",
+  "0x734ccdfecf0c98f1f610e13e821eeaab95dc92184ba090032ab8cf544a28f167",
+  "0x6ea6ba7afdda9dd98317feb84bb80d157ea581b23ca788496ba1c38c64dd8212",
+  "0xab423d91e51275f405563b297e90b3a62f6d51fbcf68f05522049701393dd8c3"
+ ],
+ "sampleComposeBurnDenomIndex": [
+  "0",
+  "1",
+  "3",
+  "0",
+  "4",
+  "2",
+  "1",
+  "0",
+  "3",
+  "6",
+  "7",
+  "4"
+ ],
+ "sampleComposeBurnInkGene": [
+  "3",
+  "5",
+  "0",
+  "2",
+  "6",
+  "0",
+  "6",
+  "5",
+  "2",
+  "1",
+  "3",
+  "6"
+ ],
+ "sampleComposeBurnModules": [
+  "0x",
+  "0x",
+  "0x",
+  "0x02447676030268386644271619541010126411460642674463",
+  "0x",
+  "0x08294205242463042705472900280743",
+  "0x1110743619195317107711547836721674571611",
+  "0x34111948680558391612781158521052120118527223101033",
+  "0x",
+  "0x",
+  "0x1019",
+  "0x"
+ ],
+ "sampleSplitWhy": [
+  "split sampling: materialized parent, dust child",
+  "split sampling: materialized parent, second child index",
+  "split sampling: materialized parent, childIndex wraps past uint8 (256 -> 0)",
+  "split sampling: seed-derived (original) parent",
+  "split sampling: seed-derived apex parent, single-module donor",
+  "split sampling: seed-derived parent, childIndex wraps past uint8 (256 -> 0)"
+ ],
+ "sampleSplitParentSeed": [
+  "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
+  "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
+  "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
+  "0xc7c0d14be439d5c4da6b16179406bf0ac78e800b0dccf7bda3d194a44403f657",
+  "0xce0236a5efe714299a42f6f2c9cfc717a528be41a4d75e4891e940c13ffa4685",
+  "0xf053972e2a70d33d6a0c98aa53e7749152ea05e436054ae8ebfcf3ff58428b9e"
+ ],
+ "sampleSplitParentDenomIndex": [
+  "1",
+  "1",
+  "1",
+  "4",
+  "8",
+  "2"
+ ],
+ "sampleSplitParentInkGene": [
+  "2",
+  "2",
+  "2",
+  "5",
+  "0",
+  "6"
+ ],
+ "sampleSplitParentModules": [
+  "0x1853115647393209005211620226765843050100",
+  "0x1853115647393209005211620226765843050100",
+  "0x1853115647393209005211620226765843050100",
+  "0x",
+  "0x",
+  "0x"
+ ],
+ "sampleSplitChildDenomIndex": [
+  "0",
+  "4",
+  "8",
+  "0",
+  "7",
+  "1"
+ ],
+ "sampleSplitChildIndex": [
+  "0",
+  "1",
+  "256",
+  "0",
+  "3",
+  "256"
+ ],
+ "sampleSplitExpected": [
+  "0x00624302260153525311583956015205562652110109320062",
+  "0x010139471139021847",
+  "0x52",
+  "0x10480314761018373703100310131013101010371818140303",
+  "0x6363",
+  "0x1515741512113838151136743936361015387412"
+ ],
+ "sampledRenderWhy": [
+  "sampled render: 1-module grid (100 ETH apex)",
+  "sampled render: 20-module grid (0.05 ETH)",
+  "sampled render: densest grid (0.01 ETH, 25 modules)",
+  "sampled render: 9-module grid (1 ETH), inverted",
+  "sampled render: 16-module grid (0.1 ETH), fragment",
+  "sampled render: 4-module grid (10 ETH)",
+  "sampled render: full vocabulary, part 1/3 (25-cell grid)",
+  "sampled render: full vocabulary, part 2/3 (25-cell grid)",
+  "sampled render: full vocabulary, part 3/3 (2-cell grid)"
+ ],
+ "sampledRenderDenomIndex": [
+  "8",
+  "1",
+  "0",
+  "4",
+  "2",
+  "6",
+  "0",
+  "0",
+  "7"
+ ],
+ "sampledRenderAmountWei": [
+  "100000000000000000000",
+  "50000000000000000",
+  "10000000000000000",
+  "1000000000000000000",
+  "100000000000000000",
+  "10000000000000000000",
+  "10000000000000000",
+  "10000000000000000",
+  "50000000000000000000"
+ ],
+ "sampledRenderModules": [
+  "0x10",
+  "0x2202486206262647480068072600000163040105",
+  "0x15151017561138765411533933111973525739391054561019",
+  "0x150115033966334405",
+  "0x32521139111815393912521510181215",
+  "0x00190216",
+  "0x10001101123252720222426213335373032343631434547404",
+  "0x24446415051636567606264666173757770727476708284868",
+  "0x0929"
+ ],
+ "sampledRenderInkGene": [
+  "3",
+  "0",
+  "6",
+  "2",
+  "5",
+  "1",
+  "4",
+  "2",
+  "0"
+ ],
+ "sampledRenderTokenId": [
+  "1000",
+  "1001",
+  "1002",
+  "1003",
+  "1004",
+  "1005",
+  "2000",
+  "2001",
+  "2002"
+ ],
+ "sampledRenderOriginCount": [
+  "1",
+  "5",
+  "25",
+  "50",
+  "0",
+  "4",
+  "1",
+  "1",
+  "1"
+ ],
+ "sampledRenderInverted": [
+  "false",
+  "false",
+  "false",
+  "true",
+  "false",
+  "false",
+  "false",
+  "true",
+  "false"
+ ],
+ "sampledRenderComposeDepth": [
+  "0",
+  "1",
+  "2",
+  "3",
+  "0",
+  "0",
+  "0",
+  "0",
+  "0"
+ ],
+ "sampledRenderSvg": [
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#000\"/><circle cx=\"125\" cy=\"175\" r=\"82.17\" fill=\"#fff\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M56,66.46806 L75.09,99.53194 L36.91,99.53194 Z M56,77.15846 L65.83157,94.18674 L46.16843,94.18674 Z\" transform=\"rotate(90 56 83)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M102,66.46806 L121.09,99.53194 L82.91,99.53194 Z M102,77.15846 L111.83157,94.18674 L92.16843,94.18674 Z\" fill=\"#fff\"/><path d=\"M167.09,102.09 A38.18,38.18 0 0 0 128.91,63.91 L128.91,69.2552 A32.8348,32.8348 0 0 1 161.7448,102.09 Z\" transform=\"rotate(180 148 83)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M194,66.46806 L213.09,99.53194 L174.91,99.53194 Z M194,77.15846 L203.83157,94.18674 L184.16843,94.18674 Z\" transform=\"rotate(270 194 83)\" fill=\"#fff\"/><rect x=\"39.5826\" y=\"112.5826\" width=\"32.8348\" height=\"16.4174\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><rect x=\"85.5826\" y=\"112.5826\" width=\"32.8348\" height=\"16.4174\" transform=\"rotate(90 102 129)\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><rect x=\"131.5826\" y=\"112.5826\" width=\"32.8348\" height=\"16.4174\" transform=\"rotate(90 148 129)\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><path fill-rule=\"evenodd\" d=\"M174.91,109.91 L213.09,109.91 L174.91,148.09 Z M180.2552,115.2552 L200.185546,115.2552 L180.2552,135.185546 Z\" transform=\"rotate(180 194 129)\" fill=\"#fff\"/><path d=\"M75.09,194.09 A38.18,38.18 0 0 0 36.91,155.91 L36.91,161.2552 A32.8348,32.8348 0 0 1 69.7448,194.09 Z\" transform=\"rotate(180 56 175)\" fill=\"#fff\"/><circle cx=\"102\" cy=\"175\" r=\"16.4174\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><path d=\"M167.09,194.09 A38.18,38.18 0 0 0 128.91,155.91 L128.91,161.2552 A32.8348,32.8348 0 0 1 161.7448,194.09 Z\" transform=\"rotate(270 148 175)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M174.91,155.91 L213.09,155.91 L174.91,194.09 Z M180.2552,161.2552 L200.185546,161.2552 L180.2552,181.185546 Z\" fill=\"#fff\"/><rect x=\"39.5826\" y=\"204.5826\" width=\"32.8348\" height=\"16.4174\" transform=\"rotate(90 56 221)\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><circle cx=\"102\" cy=\"221\" r=\"16.4174\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><circle cx=\"148\" cy=\"221\" r=\"16.4174\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><rect x=\"177.5826\" y=\"204.5826\" width=\"32.8348\" height=\"32.8348\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><path fill-rule=\"evenodd\" d=\"M36.91,267 A19.09,19.09 0 0 1 75.09,267 Z M43.337127,261.6548 A13.7448,13.7448 0 0 1 68.662873,261.6548 Z\" transform=\"rotate(270 56 267)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M82.91,286.09 L121.09,286.09 A38.18,38.18 0 0 0 82.91,247.91 Z M88.2552,280.7448 L115.306804,280.7448 A32.8348,32.8348 0 0 0 88.2552,253.693196 Z\" fill=\"#fff\"/><rect x=\"131.5826\" y=\"250.5826\" width=\"32.8348\" height=\"32.8348\" fill=\"none\" stroke=\"#fff\" stroke-width=\"5.3452\"/><path fill-rule=\"evenodd\" d=\"M194,247.91 L213.09,267 L194,286.09 L174.91,267 Z M194,255.469254 L205.530746,267 L194,278.530746 L182.469254,267 Z\" fill=\"#fff\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#000\"/><polygon points=\"45.8,79.366 62.234,95.8 45.8,112.234 29.366,95.8\" fill=\"#fff\"/><polygon points=\"85.4,79.366 101.834,95.8 85.4,112.234 68.966,95.8\" fill=\"#fff\"/><circle cx=\"125\" cy=\"95.8\" r=\"16.434\" fill=\"#fff\"/><polygon points=\"148.166,79.366 181.034,79.366 148.166,112.234\" fill=\"#fff\"/><rect x=\"187.766\" y=\"79.366\" width=\"32.868\" height=\"16.434\" transform=\"rotate(180 204.2 95.8)\" fill=\"#fff\"/><rect x=\"29.366\" y=\"118.966\" width=\"32.868\" height=\"32.868\" fill=\"#fff\"/><path d=\"M101.834,151.834 A32.868,32.868 0 0 0 68.966,118.966 L68.966,123.56752 A28.26648,28.26648 0 0 1 97.23248,151.834 Z\" transform=\"rotate(90 85.4 135.4)\" fill=\"#fff\"/><rect x=\"108.566\" y=\"118.966\" width=\"32.868\" height=\"16.434\" transform=\"rotate(270 125 135.4)\" fill=\"#fff\"/><path d=\"M148.166,151.834 L181.034,151.834 A32.868,32.868 0 0 0 148.166,118.966 Z\" transform=\"rotate(180 164.6 135.4)\" fill=\"#fff\"/><rect x=\"187.766\" y=\"118.966\" width=\"32.868\" height=\"32.868\" fill=\"#fff\"/><path d=\"M29.366,175 A16.434,16.434 0 0 1 62.234,175 Z\" transform=\"rotate(180 45.8 175)\" fill=\"#fff\"/><path d=\"M72.219766,158.566 L101.834,188.180234 L98.580234,191.434 L68.966,161.819766 Z\" transform=\"rotate(90 85.4 175)\" fill=\"#fff\"/><path d=\"M108.566,175 A16.434,16.434 0 0 1 141.434,175 Z\" transform=\"rotate(90 125 175)\" fill=\"#fff\"/><rect x=\"148.166\" y=\"158.566\" width=\"32.868\" height=\"32.868\" fill=\"#fff\"/><path d=\"M191.019766,158.566 L220.634,188.180234 L217.380234,191.434 L187.766,161.819766 Z\" fill=\"#fff\"/><path d=\"M29.366,214.6 A16.434,16.434 0 0 1 62.234,214.6 Z\" transform=\"rotate(270 45.8 214.6)\" fill=\"#fff\"/><polygon points=\"85.4,200.368156 101.834,228.831844 68.966,228.831844\" transform=\"rotate(180 85.4 214.6)\" fill=\"#fff\"/><polygon points=\"108.566,198.166 141.434,198.166 108.566,231.034\" transform=\"rotate(180 125 214.6)\" fill=\"#fff\"/><path d=\"M151.419766,198.166 L181.034,227.780234 L177.780234,231.034 L148.166,201.419766 Z\" transform=\"rotate(90 164.6 214.6)\" fill=\"#fff\"/><path d=\"M191.019766,198.166 L220.634,227.780234 L217.380234,231.034 L187.766,201.419766 Z\" transform=\"rotate(90 204.2 214.6)\" fill=\"#fff\"/><circle cx=\"45.8\" cy=\"254.2\" r=\"16.434\" fill=\"#fff\"/><path d=\"M68.966,270.634 L101.834,270.634 A32.868,32.868 0 0 0 68.966,237.766 Z\" transform=\"rotate(180 85.4 254.2)\" fill=\"#fff\"/><rect x=\"108.566\" y=\"237.766\" width=\"32.868\" height=\"16.434\" transform=\"rotate(180 125 254.2)\" fill=\"#fff\"/><circle cx=\"164.6\" cy=\"254.2\" r=\"16.434\" fill=\"#fff\"/><path d=\"M191.019766,237.766 L220.634,267.380234 L217.380234,270.634 L187.766,241.019766 Z\" fill=\"#fff\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#fff\"/><polygon points=\"59,81.61 86.39,109 59,136.39 31.61,109\" fill=\"#000\"/><rect x=\"101.4446\" y=\"85.4446\" width=\"47.1108\" height=\"47.1108\" fill=\"none\" stroke=\"#000\" stroke-width=\"7.6692\"/><polygon points=\"191,81.61 218.39,109 191,136.39 163.61,109\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M31.61,175 A27.39,27.39 0 0 1 86.39,175 Z M40.831529,167.3308 A19.7208,19.7208 0 0 1 77.168471,167.3308 Z\" fill=\"#000\"/><path d=\"M103.032943,147.61 L152.39,196.967057 L146.967057,202.39 L97.61,153.032943 Z\" transform=\"rotate(90 125 175)\" fill=\"#000\"/><rect x=\"167.4446\" y=\"151.4446\" width=\"47.1108\" height=\"23.5554\" transform=\"rotate(270 191 175)\" fill=\"none\" stroke=\"#000\" stroke-width=\"7.6692\"/><path d=\"M31.61,241 A27.39,27.39 0 0 1 86.39,241 Z\" transform=\"rotate(90 59 241)\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M97.61,268.39 L152.39,268.39 A54.78,54.78 0 0 0 97.61,213.61 Z M105.2792,260.7208 L144.092371,260.7208 A47.1108,47.1108 0 0 0 105.2792,221.907629 Z\" transform=\"rotate(180 125 241)\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M191,213.61 L218.39,241 L191,268.39 L163.61,241 Z M191,224.455887 L207.544113,241 L191,257.544113 L174.455887,241 Z\" fill=\"#000\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#000\"/><polygon points=\"50.75,82.960195 71.2925,118.539805 30.2075,118.539805\" transform=\"rotate(90 50.75 100.75)\" fill=\"#fff\"/><polygon points=\"100.25,82.960195 120.7925,118.539805 79.7075,118.539805\" transform=\"rotate(180 100.25 100.75)\" fill=\"#fff\"/><rect x=\"129.2075\" y=\"80.2075\" width=\"41.085\" height=\"41.085\" fill=\"#fff\"/><path d=\"M182.774707,80.2075 L219.7925,117.225293 L215.725293,121.2925 L178.7075,84.274707 Z\" transform=\"rotate(90 199.25 100.75)\" fill=\"#fff\"/><rect x=\"30.2075\" y=\"129.7075\" width=\"41.085\" height=\"41.085\" fill=\"#fff\"/><path d=\"M120.7925,170.7925 A41.085,41.085 0 0 0 79.7075,129.7075 L79.7075,135.4594 A35.3331,35.3331 0 0 1 115.0406,170.7925 Z\" fill=\"#fff\"/><polygon points=\"149.75,129.7075 170.2925,150.25 149.75,170.7925 129.2075,150.25\" fill=\"#fff\"/><path d=\"M182.774707,129.7075 L219.7925,166.725293 L215.725293,170.7925 L178.7075,133.774707 Z\" transform=\"rotate(90 199.25 150.25)\" fill=\"#fff\"/><path d=\"M34.274707,179.2075 L71.2925,216.225293 L67.225293,220.2925 L30.2075,183.274707 Z\" transform=\"rotate(90 50.75 199.75)\" fill=\"#fff\"/><polygon points=\"100.25,181.960195 120.7925,217.539805 79.7075,217.539805\" fill=\"#fff\"/><polygon points=\"149.75,181.960195 170.2925,217.539805 129.2075,217.539805\" transform=\"rotate(180 149.75 199.75)\" fill=\"#fff\"/><polygon points=\"199.25,179.2075 219.7925,199.75 199.25,220.2925 178.7075,199.75\" fill=\"#fff\"/><circle cx=\"50.75\" cy=\"249.25\" r=\"20.5425\" fill=\"#fff\"/><path d=\"M120.7925,269.7925 A41.085,41.085 0 0 0 79.7075,228.7075 L79.7075,234.4594 A35.3331,35.3331 0 0 1 115.0406,269.7925 Z\" fill=\"#fff\"/><polygon points=\"149.75,231.460195 170.2925,267.039805 129.2075,267.039805\" fill=\"#fff\"/><polygon points=\"199.25,228.7075 219.7925,249.25 199.25,269.7925 178.7075,249.25\" fill=\"#fff\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#000\"/><circle cx=\"75.5\" cy=\"125.5\" r=\"35.3331\" fill=\"none\" stroke=\"#fff\" stroke-width=\"11.5038\"/><path d=\"M141.549415,84.415 L215.585,158.450585 L207.450585,166.585 L133.415,92.549415 Z\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M75.5,188.92039 L116.585,260.07961 L34.415,260.07961 Z M75.5,211.92799 L96.659249,248.57581 L54.340751,248.57581 Z\" fill=\"#fff\"/><rect x=\"133.415\" y=\"183.415\" width=\"82.17\" height=\"41.085\" fill=\"#fff\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#000\"/><circle cx=\"45.8\" cy=\"95.8\" r=\"16.434\" fill=\"#fff\"/><circle cx=\"85.4\" cy=\"95.8\" r=\"14.13324\" fill=\"none\" stroke=\"#fff\" stroke-width=\"4.60152\"/><rect x=\"108.566\" y=\"79.366\" width=\"32.868\" height=\"32.868\" fill=\"#fff\"/><rect x=\"150.46676\" y=\"81.66676\" width=\"28.26648\" height=\"28.26648\" fill=\"none\" stroke=\"#fff\" stroke-width=\"4.60152\"/><polygon points=\"204.2,81.568156 220.634,110.031844 187.766,110.031844\" fill=\"#fff\"/><polygon points=\"45.8,121.168156 62.234,149.631844 29.366,149.631844\" transform=\"rotate(90 45.8 135.4)\" fill=\"#fff\"/><polygon points=\"85.4,121.168156 101.834,149.631844 68.966,149.631844\" transform=\"rotate(180 85.4 135.4)\" fill=\"#fff\"/><polygon points=\"125,121.168156 141.434,149.631844 108.566,149.631844\" transform=\"rotate(270 125 135.4)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M164.6,121.168156 L181.034,149.631844 L148.166,149.631844 Z M164.6,130.371196 L173.0637,145.030324 L156.1363,145.030324 Z\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M204.2,121.168156 L220.634,149.631844 L187.766,149.631844 Z M204.2,130.371196 L212.6637,145.030324 L195.7363,145.030324 Z\" transform=\"rotate(90 204.2 135.4)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M45.8,160.768156 L62.234,189.231844 L29.366,189.231844 Z M45.8,169.971196 L54.2637,184.630324 L37.3363,184.630324 Z\" transform=\"rotate(180 45.8 175)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M85.4,160.768156 L101.834,189.231844 L68.966,189.231844 Z M85.4,169.971196 L93.8637,184.630324 L76.9363,184.630324 Z\" transform=\"rotate(270 85.4 175)\" fill=\"#fff\"/><path d=\"M108.566,175 A16.434,16.434 0 0 1 141.434,175 Z\" fill=\"#fff\"/><path d=\"M148.166,175 A16.434,16.434 0 0 1 181.034,175 Z\" transform=\"rotate(90 164.6 175)\" fill=\"#fff\"/><path d=\"M187.766,175 A16.434,16.434 0 0 1 220.634,175 Z\" transform=\"rotate(180 204.2 175)\" fill=\"#fff\"/><path d=\"M29.366,214.6 A16.434,16.434 0 0 1 62.234,214.6 Z\" transform=\"rotate(270 45.8 214.6)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M68.966,214.6 A16.434,16.434 0 0 1 101.834,214.6 Z M74.498918,209.99848 A11.83248,11.83248 0 0 1 96.301082,209.99848 Z\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M108.566,214.6 A16.434,16.434 0 0 1 141.434,214.6 Z M114.098918,209.99848 A11.83248,11.83248 0 0 1 135.901082,209.99848 Z\" transform=\"rotate(90 125 214.6)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M148.166,214.6 A16.434,16.434 0 0 1 181.034,214.6 Z M153.698918,209.99848 A11.83248,11.83248 0 0 1 175.501082,209.99848 Z\" transform=\"rotate(180 164.6 214.6)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M187.766,214.6 A16.434,16.434 0 0 1 220.634,214.6 Z M193.298918,209.99848 A11.83248,11.83248 0 0 1 215.101082,209.99848 Z\" transform=\"rotate(270 204.2 214.6)\" fill=\"#fff\"/><path d=\"M29.366,270.634 L62.234,270.634 A32.868,32.868 0 0 0 29.366,237.766 Z\" fill=\"#fff\"/><path d=\"M68.966,270.634 L101.834,270.634 A32.868,32.868 0 0 0 68.966,237.766 Z\" transform=\"rotate(90 85.4 254.2)\" fill=\"#fff\"/><path d=\"M108.566,270.634 L141.434,270.634 A32.868,32.868 0 0 0 108.566,237.766 Z\" transform=\"rotate(180 125 254.2)\" fill=\"#fff\"/><path d=\"M148.166,270.634 L181.034,270.634 A32.868,32.868 0 0 0 148.166,237.766 Z\" transform=\"rotate(270 164.6 254.2)\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M187.766,270.634 L220.634,270.634 A32.868,32.868 0 0 0 187.766,237.766 Z M192.36752,266.03248 L215.655423,266.03248 A28.26648,28.26648 0 0 0 192.36752,242.744577 Z\" fill=\"#fff\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#fff\"/><path fill-rule=\"evenodd\" d=\"M29.366,112.234 L62.234,112.234 A32.868,32.868 0 0 0 29.366,79.366 Z M33.96752,107.63248 L57.255423,107.63248 A28.26648,28.26648 0 0 0 33.96752,84.344577 Z\" transform=\"rotate(90 45.8 95.8)\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M68.966,112.234 L101.834,112.234 A32.868,32.868 0 0 0 68.966,79.366 Z M73.56752,107.63248 L96.855423,107.63248 A28.26648,28.26648 0 0 0 73.56752,84.344577 Z\" transform=\"rotate(180 85.4 95.8)\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M108.566,112.234 L141.434,112.234 A32.868,32.868 0 0 0 108.566,79.366 Z M113.16752,107.63248 L136.455423,107.63248 A28.26648,28.26648 0 0 0 113.16752,84.344577 Z\" transform=\"rotate(270 125 95.8)\" fill=\"#000\"/><polygon points=\"164.6,79.366 181.034,95.8 164.6,112.234 148.166,95.8\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M204.2,79.366 L220.634,95.8 L204.2,112.234 L187.766,95.8 Z M204.2,85.873532 L214.126468,95.8 L204.2,105.726468 L194.273532,95.8 Z\" fill=\"#000\"/><rect x=\"29.366\" y=\"118.966\" width=\"32.868\" height=\"16.434\" fill=\"#000\"/><rect x=\"68.966\" y=\"118.966\" width=\"32.868\" height=\"16.434\" transform=\"rotate(90 85.4 135.4)\" fill=\"#000\"/><rect x=\"108.566\" y=\"118.966\" width=\"32.868\" height=\"16.434\" transform=\"rotate(180 125 135.4)\" fill=\"#000\"/><rect x=\"148.166\" y=\"118.966\" width=\"32.868\" height=\"16.434\" transform=\"rotate(270 164.6 135.4)\" fill=\"#000\"/><rect x=\"190.06676\" y=\"121.26676\" width=\"28.26648\" height=\"14.13324\" fill=\"none\" stroke=\"#000\" stroke-width=\"4.60152\"/><rect x=\"31.66676\" y=\"160.86676\" width=\"28.26648\" height=\"14.13324\" transform=\"rotate(90 45.8 175)\" fill=\"none\" stroke=\"#000\" stroke-width=\"4.60152\"/><rect x=\"71.26676\" y=\"160.86676\" width=\"28.26648\" height=\"14.13324\" transform=\"rotate(180 85.4 175)\" fill=\"none\" stroke=\"#000\" stroke-width=\"4.60152\"/><rect x=\"110.86676\" y=\"160.86676\" width=\"28.26648\" height=\"14.13324\" transform=\"rotate(270 125 175)\" fill=\"none\" stroke=\"#000\" stroke-width=\"4.60152\"/><polygon points=\"148.166,158.566 181.034,158.566 148.166,191.434\" fill=\"#000\"/><polygon points=\"187.766,158.566 220.634,158.566 187.766,191.434\" transform=\"rotate(90 204.2 175)\" fill=\"#000\"/><polygon points=\"29.366,198.166 62.234,198.166 29.366,231.034\" transform=\"rotate(180 45.8 214.6)\" fill=\"#000\"/><polygon points=\"68.966,198.166 101.834,198.166 68.966,231.034\" transform=\"rotate(270 85.4 214.6)\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M108.566,198.166 L141.434,198.166 L108.566,231.034 Z M113.16752,202.76752 L130.324948,202.76752 L113.16752,219.924948 Z\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M148.166,198.166 L181.034,198.166 L148.166,231.034 Z M152.76752,202.76752 L169.924948,202.76752 L152.76752,219.924948 Z\" transform=\"rotate(90 164.6 214.6)\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M187.766,198.166 L220.634,198.166 L187.766,231.034 Z M192.36752,202.76752 L209.524948,202.76752 L192.36752,219.924948 Z\" transform=\"rotate(180 204.2 214.6)\" fill=\"#000\"/><path fill-rule=\"evenodd\" d=\"M29.366,237.766 L62.234,237.766 L29.366,270.634 Z M33.96752,242.36752 L51.124948,242.36752 L33.96752,259.524948 Z\" transform=\"rotate(270 45.8 254.2)\" fill=\"#000\"/><path d=\"M101.834,270.634 A32.868,32.868 0 0 0 68.966,237.766 L68.966,242.36752 A28.26648,28.26648 0 0 1 97.23248,270.634 Z\" fill=\"#000\"/><path d=\"M141.434,270.634 A32.868,32.868 0 0 0 108.566,237.766 L108.566,242.36752 A28.26648,28.26648 0 0 1 136.83248,270.634 Z\" transform=\"rotate(90 125 254.2)\" fill=\"#000\"/><path d=\"M181.034,270.634 A32.868,32.868 0 0 0 148.166,237.766 L148.166,242.36752 A28.26648,28.26648 0 0 1 176.43248,270.634 Z\" transform=\"rotate(180 164.6 254.2)\" fill=\"#000\"/><path d=\"M220.634,270.634 A32.868,32.868 0 0 0 187.766,237.766 L187.766,242.36752 A28.26648,28.26648 0 0 1 216.03248,270.634 Z\" transform=\"rotate(270 204.2 254.2)\" fill=\"#000\"/></svg>",
+  "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 250 350\" width=\"2000\" height=\"2800\" shape-rendering=\"geometricPrecision\"><rect x=\"0\" y=\"0\" width=\"250\" height=\"350\" fill=\"#000\"/><path d=\"M86.724068,69.775 L172.725,155.775932 L163.275932,165.225 L77.275,79.224068 Z\" fill=\"#fff\"/><path d=\"M86.724068,184.775 L172.725,270.775932 L163.275932,280.225 L77.275,194.224068 Z\" transform=\"rotate(90 125 232.5)\" fill=\"#fff\"/></svg>"
+ ],
+ "sampledRenderMetadata": [
+  "{\"name\":\"Shape 1000\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiMwMDAiLz48Y2lyY2xlIGN4PSIxMjUiIGN5PSIxNzUiIHI9IjgyLjE3IiBmaWxsPSIjZmZmIi8+PC9zdmc+\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"100 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"1x1\"},{\"trait_type\":\"Fill\",\"value\":\"Solid\"},{\"trait_type\":\"Ink\",\"value\":\"Murk\"},{\"trait_type\":\"Modules\",\"value\":\"●\"},{\"trait_type\":\"Module Count\",\"value\":\"1\"},{\"trait_type\":\"Primitive\",\"value\":\"Circle\"},{\"trait_type\":\"Variety\",\"value\":\"1\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Common\"},{\"trait_type\":\"Formation\",\"value\":\"Direct\"},{\"trait_type\":\"Independent Origins\",\"value\":\"1\"},{\"trait_type\":\"Origin Density\",\"value\":\"0.01%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"false\"},{\"trait_type\":\"Compose Depth\",\"value\":\"0\"}]}",
+  "{\"name\":\"Shape 1001\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiMwMDAiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik01Niw2Ni40NjgwNiBMNzUuMDksOTkuNTMxOTQgTDM2LjkxLDk5LjUzMTk0IFogTTU2LDc3LjE1ODQ2IEw2NS44MzE1Nyw5NC4xODY3NCBMNDYuMTY4NDMsOTQuMTg2NzQgWiIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgNTYgODMpIiBmaWxsPSIjZmZmIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTAyLDY2LjQ2ODA2IEwxMjEuMDksOTkuNTMxOTQgTDgyLjkxLDk5LjUzMTk0IFogTTEwMiw3Ny4xNTg0NiBMMTExLjgzMTU3LDk0LjE4Njc0IEw5Mi4xNjg0Myw5NC4xODY3NCBaIiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTE2Ny4wOSwxMDIuMDkgQTM4LjE4LDM4LjE4IDAgMCAwIDEyOC45MSw2My45MSBMMTI4LjkxLDY5LjI1NTIgQTMyLjgzNDgsMzIuODM0OCAwIDAgMSAxNjEuNzQ0OCwxMDIuMDkgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDE0OCA4MykiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xOTQsNjYuNDY4MDYgTDIxMy4wOSw5OS41MzE5NCBMMTc0LjkxLDk5LjUzMTk0IFogTTE5NCw3Ny4xNTg0NiBMMjAzLjgzMTU3LDk0LjE4Njc0IEwxODQuMTY4NDMsOTQuMTg2NzQgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMjcwIDE5NCA4MykiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIzOS41ODI2IiB5PSIxMTIuNTgyNiIgd2lkdGg9IjMyLjgzNDgiIGhlaWdodD0iMTYuNDE3NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjUuMzQ1MiIvPjxyZWN0IHg9Ijg1LjU4MjYiIHk9IjExMi41ODI2IiB3aWR0aD0iMzIuODM0OCIgaGVpZ2h0PSIxNi40MTc0IiB0cmFuc2Zvcm09InJvdGF0ZSg5MCAxMDIgMTI5KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjUuMzQ1MiIvPjxyZWN0IHg9IjEzMS41ODI2IiB5PSIxMTIuNTgyNiIgd2lkdGg9IjMyLjgzNDgiIGhlaWdodD0iMTYuNDE3NCIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgMTQ4IDEyOSkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1LjM0NTIiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xNzQuOTEsMTA5LjkxIEwyMTMuMDksMTA5LjkxIEwxNzQuOTEsMTQ4LjA5IFogTTE4MC4yNTUyLDExNS4yNTUyIEwyMDAuMTg1NTQ2LDExNS4yNTUyIEwxODAuMjU1MiwxMzUuMTg1NTQ2IFoiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxOTQgMTI5KSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik03NS4wOSwxOTQuMDkgQTM4LjE4LDM4LjE4IDAgMCAwIDM2LjkxLDE1NS45MSBMMzYuOTEsMTYxLjI1NTIgQTMyLjgzNDgsMzIuODM0OCAwIDAgMSA2OS43NDQ4LDE5NC4wOSBaIiB0cmFuc2Zvcm09InJvdGF0ZSgxODAgNTYgMTc1KSIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjEwMiIgY3k9IjE3NSIgcj0iMTYuNDE3NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmIiBzdHJva2Utd2lkdGg9IjUuMzQ1MiIvPjxwYXRoIGQ9Ik0xNjcuMDksMTk0LjA5IEEzOC4xOCwzOC4xOCAwIDAgMCAxMjguOTEsMTU1LjkxIEwxMjguOTEsMTYxLjI1NTIgQTMyLjgzNDgsMzIuODM0OCAwIDAgMSAxNjEuNzQ0OCwxOTQuMDkgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMjcwIDE0OCAxNzUpIiBmaWxsPSIjZmZmIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTc0LjkxLDE1NS45MSBMMjEzLjA5LDE1NS45MSBMMTc0LjkxLDE5NC4wOSBaIE0xODAuMjU1MiwxNjEuMjU1MiBMMjAwLjE4NTU0NiwxNjEuMjU1MiBMMTgwLjI1NTIsMTgxLjE4NTU0NiBaIiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iMzkuNTgyNiIgeT0iMjA0LjU4MjYiIHdpZHRoPSIzMi44MzQ4IiBoZWlnaHQ9IjE2LjQxNzQiIHRyYW5zZm9ybT0icm90YXRlKDkwIDU2IDIyMSkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1LjM0NTIiLz48Y2lyY2xlIGN4PSIxMDIiIGN5PSIyMjEiIHI9IjE2LjQxNzQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1LjM0NTIiLz48Y2lyY2xlIGN4PSIxNDgiIGN5PSIyMjEiIHI9IjE2LjQxNzQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1LjM0NTIiLz48cmVjdCB4PSIxNzcuNTgyNiIgeT0iMjA0LjU4MjYiIHdpZHRoPSIzMi44MzQ4IiBoZWlnaHQ9IjMyLjgzNDgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1LjM0NTIiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0zNi45MSwyNjcgQTE5LjA5LDE5LjA5IDAgMCAxIDc1LjA5LDI2NyBaIE00My4zMzcxMjcsMjYxLjY1NDggQTEzLjc0NDgsMTMuNzQ0OCAwIDAgMSA2OC42NjI4NzMsMjYxLjY1NDggWiIgdHJhbnNmb3JtPSJyb3RhdGUoMjcwIDU2IDI2NykiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik04Mi45MSwyODYuMDkgTDEyMS4wOSwyODYuMDkgQTM4LjE4LDM4LjE4IDAgMCAwIDgyLjkxLDI0Ny45MSBaIE04OC4yNTUyLDI4MC43NDQ4IEwxMTUuMzA2ODA0LDI4MC43NDQ4IEEzMi44MzQ4LDMyLjgzNDggMCAwIDAgODguMjU1MiwyNTMuNjkzMTk2IFoiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIxMzEuNTgyNiIgeT0iMjUwLjU4MjYiIHdpZHRoPSIzMi44MzQ4IiBoZWlnaHQ9IjMyLjgzNDgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI1LjM0NTIiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xOTQsMjQ3LjkxIEwyMTMuMDksMjY3IEwxOTQsMjg2LjA5IEwxNzQuOTEsMjY3IFogTTE5NCwyNTUuNDY5MjU0IEwyMDUuNTMwNzQ2LDI2NyBMMTk0LDI3OC41MzA3NDYgTDE4Mi40NjkyNTQsMjY3IFoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"0.05 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"4x5\"},{\"trait_type\":\"Fill\",\"value\":\"Outline\"},{\"trait_type\":\"Ink\",\"value\":\"Void\"},{\"trait_type\":\"Modules\",\"value\":\"▷ △ ◞ ◁ ⬒ ◨ ◨ ◿ ◞ ○ ◟ ◸ ◨ ○ ○ □ ◐ ◷ □ ◇\"},{\"trait_type\":\"Module Count\",\"value\":\"20\"},{\"trait_type\":\"Primitive\",\"value\":\"Half Square\"},{\"trait_type\":\"Variety\",\"value\":\"9\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Mythic\"},{\"trait_type\":\"Formation\",\"value\":\"Complete\"},{\"trait_type\":\"Independent Origins\",\"value\":\"5\"},{\"trait_type\":\"Origin Density\",\"value\":\"100%\"},{\"trait_type\":\"Complete\",\"value\":\"true\"},{\"trait_type\":\"Black\",\"value\":\"false\"},{\"trait_type\":\"Compose Depth\",\"value\":\"1\"}]}",
+  "{\"name\":\"Shape 1002\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiMwMDAiLz48cG9seWdvbiBwb2ludHM9IjQ1LjgsNzkuMzY2IDYyLjIzNCw5NS44IDQ1LjgsMTEyLjIzNCAyOS4zNjYsOTUuOCIgZmlsbD0iI2ZmZiIvPjxwb2x5Z29uIHBvaW50cz0iODUuNCw3OS4zNjYgMTAxLjgzNCw5NS44IDg1LjQsMTEyLjIzNCA2OC45NjYsOTUuOCIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjEyNSIgY3k9Ijk1LjgiIHI9IjE2LjQzNCIgZmlsbD0iI2ZmZiIvPjxwb2x5Z29uIHBvaW50cz0iMTQ4LjE2Niw3OS4zNjYgMTgxLjAzNCw3OS4zNjYgMTQ4LjE2NiwxMTIuMjM0IiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iMTg3Ljc2NiIgeT0iNzkuMzY2IiB3aWR0aD0iMzIuODY4IiBoZWlnaHQ9IjE2LjQzNCIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDIwNC4yIDk1LjgpIiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iMjkuMzY2IiB5PSIxMTguOTY2IiB3aWR0aD0iMzIuODY4IiBoZWlnaHQ9IjMyLjg2OCIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik0xMDEuODM0LDE1MS44MzQgQTMyLjg2OCwzMi44NjggMCAwIDAgNjguOTY2LDExOC45NjYgTDY4Ljk2NiwxMjMuNTY3NTIgQTI4LjI2NjQ4LDI4LjI2NjQ4IDAgMCAxIDk3LjIzMjQ4LDE1MS44MzQgWiIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgODUuNCAxMzUuNCkiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIxMDguNTY2IiB5PSIxMTguOTY2IiB3aWR0aD0iMzIuODY4IiBoZWlnaHQ9IjE2LjQzNCIgdHJhbnNmb3JtPSJyb3RhdGUoMjcwIDEyNSAxMzUuNCkiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMTQ4LjE2NiwxNTEuODM0IEwxODEuMDM0LDE1MS44MzQgQTMyLjg2OCwzMi44NjggMCAwIDAgMTQ4LjE2NiwxMTguOTY2IFoiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxNjQuNiAxMzUuNCkiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIxODcuNzY2IiB5PSIxMTguOTY2IiB3aWR0aD0iMzIuODY4IiBoZWlnaHQ9IjMyLjg2OCIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik0yOS4zNjYsMTc1IEExNi40MzQsMTYuNDM0IDAgMCAxIDYyLjIzNCwxNzUgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDQ1LjggMTc1KSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik03Mi4yMTk3NjYsMTU4LjU2NiBMMTAxLjgzNCwxODguMTgwMjM0IEw5OC41ODAyMzQsMTkxLjQzNCBMNjguOTY2LDE2MS44MTk3NjYgWiIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgODUuNCAxNzUpIiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTEwOC41NjYsMTc1IEExNi40MzQsMTYuNDM0IDAgMCAxIDE0MS40MzQsMTc1IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDEyNSAxNzUpIiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iMTQ4LjE2NiIgeT0iMTU4LjU2NiIgd2lkdGg9IjMyLjg2OCIgaGVpZ2h0PSIzMi44NjgiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMTkxLjAxOTc2NiwxNTguNTY2IEwyMjAuNjM0LDE4OC4xODAyMzQgTDIxNy4zODAyMzQsMTkxLjQzNCBMMTg3Ljc2NiwxNjEuODE5NzY2IFoiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMjkuMzY2LDIxNC42IEExNi40MzQsMTYuNDM0IDAgMCAxIDYyLjIzNCwyMTQuNiBaIiB0cmFuc2Zvcm09InJvdGF0ZSgyNzAgNDUuOCAyMTQuNikiIGZpbGw9IiNmZmYiLz48cG9seWdvbiBwb2ludHM9Ijg1LjQsMjAwLjM2ODE1NiAxMDEuODM0LDIyOC44MzE4NDQgNjguOTY2LDIyOC44MzE4NDQiIHRyYW5zZm9ybT0icm90YXRlKDE4MCA4NS40IDIxNC42KSIgZmlsbD0iI2ZmZiIvPjxwb2x5Z29uIHBvaW50cz0iMTA4LjU2NiwxOTguMTY2IDE0MS40MzQsMTk4LjE2NiAxMDguNTY2LDIzMS4wMzQiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxMjUgMjE0LjYpIiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTE1MS40MTk3NjYsMTk4LjE2NiBMMTgxLjAzNCwyMjcuNzgwMjM0IEwxNzcuNzgwMjM0LDIzMS4wMzQgTDE0OC4xNjYsMjAxLjQxOTc2NiBaIiB0cmFuc2Zvcm09InJvdGF0ZSg5MCAxNjQuNiAyMTQuNikiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMTkxLjAxOTc2NiwxOTguMTY2IEwyMjAuNjM0LDIyNy43ODAyMzQgTDIxNy4zODAyMzQsMjMxLjAzNCBMMTg3Ljc2NiwyMDEuNDE5NzY2IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDIwNC4yIDIxNC42KSIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjQ1LjgiIGN5PSIyNTQuMiIgcj0iMTYuNDM0IiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTY4Ljk2NiwyNzAuNjM0IEwxMDEuODM0LDI3MC42MzQgQTMyLjg2OCwzMi44NjggMCAwIDAgNjguOTY2LDIzNy43NjYgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDg1LjQgMjU0LjIpIiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iMTA4LjU2NiIgeT0iMjM3Ljc2NiIgd2lkdGg9IjMyLjg2OCIgaGVpZ2h0PSIxNi40MzQiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxMjUgMjU0LjIpIiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iMTY0LjYiIGN5PSIyNTQuMiIgcj0iMTYuNDM0IiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTE5MS4wMTk3NjYsMjM3Ljc2NiBMMjIwLjYzNCwyNjcuMzgwMjM0IEwyMTcuMzgwMjM0LDI3MC42MzQgTDE4Ny43NjYsMjQxLjAxOTc2NiBaIiBmaWxsPSIjZmZmIi8+PC9zdmc+\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"0.01 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"5x5\"},{\"trait_type\":\"Fill\",\"value\":\"Mixed\"},{\"trait_type\":\"Ink\",\"value\":\"Solid\"},{\"trait_type\":\"Modules\",\"value\":\"◆ ◆ ● ◸ ⬓ ■ ◝ ◧ ◔ ■ ◒ ╱ ◑ ■ ╲ ◐ ▼ ◿ ╱ ╱ ● ◔ ⬓ ● ╲\"},{\"trait_type\":\"Module Count\",\"value\":\"25\"},{\"trait_type\":\"Primitive\",\"value\":\"Line\"},{\"trait_type\":\"Variety\",\"value\":\"10\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Mythic\"},{\"trait_type\":\"Formation\",\"value\":\"Composed\"},{\"trait_type\":\"Independent Origins\",\"value\":\"25\"},{\"trait_type\":\"Origin Density\",\"value\":\"2500%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"false\"},{\"trait_type\":\"Compose Depth\",\"value\":\"2\"}]}",
+  "{\"name\":\"Shape 1003\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiNmZmYiLz48cG9seWdvbiBwb2ludHM9IjU5LDgxLjYxIDg2LjM5LDEwOSA1OSwxMzYuMzkgMzEuNjEsMTA5IiBmaWxsPSIjMDAwIi8+PHJlY3QgeD0iMTAxLjQ0NDYiIHk9Ijg1LjQ0NDYiIHdpZHRoPSI0Ny4xMTA4IiBoZWlnaHQ9IjQ3LjExMDgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLXdpZHRoPSI3LjY2OTIiLz48cG9seWdvbiBwb2ludHM9IjE5MSw4MS42MSAyMTguMzksMTA5IDE5MSwxMzYuMzkgMTYzLjYxLDEwOSIgZmlsbD0iIzAwMCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTMxLjYxLDE3NSBBMjcuMzksMjcuMzkgMCAwIDEgODYuMzksMTc1IFogTTQwLjgzMTUyOSwxNjcuMzMwOCBBMTkuNzIwOCwxOS43MjA4IDAgMCAxIDc3LjE2ODQ3MSwxNjcuMzMwOCBaIiBmaWxsPSIjMDAwIi8+PHBhdGggZD0iTTEwMy4wMzI5NDMsMTQ3LjYxIEwxNTIuMzksMTk2Ljk2NzA1NyBMMTQ2Ljk2NzA1NywyMDIuMzkgTDk3LjYxLDE1My4wMzI5NDMgWiIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgMTI1IDE3NSkiIGZpbGw9IiMwMDAiLz48cmVjdCB4PSIxNjcuNDQ0NiIgeT0iMTUxLjQ0NDYiIHdpZHRoPSI0Ny4xMTA4IiBoZWlnaHQ9IjIzLjU1NTQiIHRyYW5zZm9ybT0icm90YXRlKDI3MCAxOTEgMTc1KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjcuNjY5MiIvPjxwYXRoIGQ9Ik0zMS42MSwyNDEgQTI3LjM5LDI3LjM5IDAgMCAxIDg2LjM5LDI0MSBaIiB0cmFuc2Zvcm09InJvdGF0ZSg5MCA1OSAyNDEpIiBmaWxsPSIjMDAwIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNOTcuNjEsMjY4LjM5IEwxNTIuMzksMjY4LjM5IEE1NC43OCw1NC43OCAwIDAgMCA5Ny42MSwyMTMuNjEgWiBNMTA1LjI3OTIsMjYwLjcyMDggTDE0NC4wOTIzNzEsMjYwLjcyMDggQTQ3LjExMDgsNDcuMTEwOCAwIDAgMCAxMDUuMjc5MiwyMjEuOTA3NjI5IFoiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxMjUgMjQxKSIgZmlsbD0iIzAwMCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTE5MSwyMTMuNjEgTDIxOC4zOSwyNDEgTDE5MSwyNjguMzkgTDE2My42MSwyNDEgWiBNMTkxLDIyNC40NTU4ODcgTDIwNy41NDQxMTMsMjQxIEwxOTEsMjU3LjU0NDExMyBMMTc0LjQ1NTg4NywyNDEgWiIgZmlsbD0iIzAwMCIvPjwvc3ZnPg==\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"1 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"3x3\"},{\"trait_type\":\"Fill\",\"value\":\"Mixed\"},{\"trait_type\":\"Ink\",\"value\":\"Sparse\"},{\"trait_type\":\"Modules\",\"value\":\"◆ □ ◆ ◓ ╱ ◧ ◑ ◷ ◇\"},{\"trait_type\":\"Module Count\",\"value\":\"9\"},{\"trait_type\":\"Primitive\",\"value\":\"Diamond\"},{\"trait_type\":\"Variety\",\"value\":\"6\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Common\"},{\"trait_type\":\"Formation\",\"value\":\"Black\"},{\"trait_type\":\"Independent Origins\",\"value\":\"50\"},{\"trait_type\":\"Origin Density\",\"value\":\"50%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"true\"},{\"trait_type\":\"Compose Depth\",\"value\":\"3\"}]}",
+  "{\"name\":\"Shape 1004\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiMwMDAiLz48cG9seWdvbiBwb2ludHM9IjUwLjc1LDgyLjk2MDE5NSA3MS4yOTI1LDExOC41Mzk4MDUgMzAuMjA3NSwxMTguNTM5ODA1IiB0cmFuc2Zvcm09InJvdGF0ZSg5MCA1MC43NSAxMDAuNzUpIiBmaWxsPSIjZmZmIi8+PHBvbHlnb24gcG9pbnRzPSIxMDAuMjUsODIuOTYwMTk1IDEyMC43OTI1LDExOC41Mzk4MDUgNzkuNzA3NSwxMTguNTM5ODA1IiB0cmFuc2Zvcm09InJvdGF0ZSgxODAgMTAwLjI1IDEwMC43NSkiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIxMjkuMjA3NSIgeT0iODAuMjA3NSIgd2lkdGg9IjQxLjA4NSIgaGVpZ2h0PSI0MS4wODUiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMTgyLjc3NDcwNyw4MC4yMDc1IEwyMTkuNzkyNSwxMTcuMjI1MjkzIEwyMTUuNzI1MjkzLDEyMS4yOTI1IEwxNzguNzA3NSw4NC4yNzQ3MDcgWiIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgMTk5LjI1IDEwMC43NSkiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIzMC4yMDc1IiB5PSIxMjkuNzA3NSIgd2lkdGg9IjQxLjA4NSIgaGVpZ2h0PSI0MS4wODUiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMTIwLjc5MjUsMTcwLjc5MjUgQTQxLjA4NSw0MS4wODUgMCAwIDAgNzkuNzA3NSwxMjkuNzA3NSBMNzkuNzA3NSwxMzUuNDU5NCBBMzUuMzMzMSwzNS4zMzMxIDAgMCAxIDExNS4wNDA2LDE3MC43OTI1IFoiIGZpbGw9IiNmZmYiLz48cG9seWdvbiBwb2ludHM9IjE0OS43NSwxMjkuNzA3NSAxNzAuMjkyNSwxNTAuMjUgMTQ5Ljc1LDE3MC43OTI1IDEyOS4yMDc1LDE1MC4yNSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik0xODIuNzc0NzA3LDEyOS43MDc1IEwyMTkuNzkyNSwxNjYuNzI1MjkzIEwyMTUuNzI1MjkzLDE3MC43OTI1IEwxNzguNzA3NSwxMzMuNzc0NzA3IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDE5OS4yNSAxNTAuMjUpIiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTM0LjI3NDcwNywxNzkuMjA3NSBMNzEuMjkyNSwyMTYuMjI1MjkzIEw2Ny4yMjUyOTMsMjIwLjI5MjUgTDMwLjIwNzUsMTgzLjI3NDcwNyBaIiB0cmFuc2Zvcm09InJvdGF0ZSg5MCA1MC43NSAxOTkuNzUpIiBmaWxsPSIjZmZmIi8+PHBvbHlnb24gcG9pbnRzPSIxMDAuMjUsMTgxLjk2MDE5NSAxMjAuNzkyNSwyMTcuNTM5ODA1IDc5LjcwNzUsMjE3LjUzOTgwNSIgZmlsbD0iI2ZmZiIvPjxwb2x5Z29uIHBvaW50cz0iMTQ5Ljc1LDE4MS45NjAxOTUgMTcwLjI5MjUsMjE3LjUzOTgwNSAxMjkuMjA3NSwyMTcuNTM5ODA1IiB0cmFuc2Zvcm09InJvdGF0ZSgxODAgMTQ5Ljc1IDE5OS43NSkiIGZpbGw9IiNmZmYiLz48cG9seWdvbiBwb2ludHM9IjE5OS4yNSwxNzkuMjA3NSAyMTkuNzkyNSwxOTkuNzUgMTk5LjI1LDIyMC4yOTI1IDE3OC43MDc1LDE5OS43NSIgZmlsbD0iI2ZmZiIvPjxjaXJjbGUgY3g9IjUwLjc1IiBjeT0iMjQ5LjI1IiByPSIyMC41NDI1IiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTEyMC43OTI1LDI2OS43OTI1IEE0MS4wODUsNDEuMDg1IDAgMCAwIDc5LjcwNzUsMjI4LjcwNzUgTDc5LjcwNzUsMjM0LjQ1OTQgQTM1LjMzMzEsMzUuMzMzMSAwIDAgMSAxMTUuMDQwNiwyNjkuNzkyNSBaIiBmaWxsPSIjZmZmIi8+PHBvbHlnb24gcG9pbnRzPSIxNDkuNzUsMjMxLjQ2MDE5NSAxNzAuMjkyNSwyNjcuMDM5ODA1IDEyOS4yMDc1LDI2Ny4wMzk4MDUiIGZpbGw9IiNmZmYiLz48cG9seWdvbiBwb2ludHM9IjE5OS4yNSwyMjguNzA3NSAyMTkuNzkyNSwyNDkuMjUgMTk5LjI1LDI2OS43OTI1IDE3OC43MDc1LDI0OS4yNSIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"0.1 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"4x4\"},{\"trait_type\":\"Fill\",\"value\":\"Mixed\"},{\"trait_type\":\"Ink\",\"value\":\"Rich\"},{\"trait_type\":\"Modules\",\"value\":\"▶ ▼ ■ ╱ ■ ◜ ◆ ╱ ╱ ▲ ▼ ◆ ● ◜ ▲ ◆\"},{\"trait_type\":\"Module Count\",\"value\":\"16\"},{\"trait_type\":\"Primitive\",\"value\":\"Triangle\"},{\"trait_type\":\"Variety\",\"value\":\"6\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Rare\"},{\"trait_type\":\"Formation\",\"value\":\"Fragment\"},{\"trait_type\":\"Independent Origins\",\"value\":\"0\"},{\"trait_type\":\"Origin Density\",\"value\":\"0%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"false\"},{\"trait_type\":\"Compose Depth\",\"value\":\"0\"}]}",
+  "{\"name\":\"Shape 1005\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiMwMDAiLz48Y2lyY2xlIGN4PSI3NS41IiBjeT0iMTI1LjUiIHI9IjM1LjMzMzEiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSIxMS41MDM4Ii8+PHBhdGggZD0iTTE0MS41NDk0MTUsODQuNDE1IEwyMTUuNTg1LDE1OC40NTA1ODUgTDIwNy40NTA1ODUsMTY2LjU4NSBMMTMzLjQxNSw5Mi41NDk0MTUgWiIgZmlsbD0iI2ZmZiIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTc1LjUsMTg4LjkyMDM5IEwxMTYuNTg1LDI2MC4wNzk2MSBMMzQuNDE1LDI2MC4wNzk2MSBaIE03NS41LDIxMS45Mjc5OSBMOTYuNjU5MjQ5LDI0OC41NzU4MSBMNTQuMzQwNzUxLDI0OC41NzU4MSBaIiBmaWxsPSIjZmZmIi8+PHJlY3QgeD0iMTMzLjQxNSIgeT0iMTgzLjQxNSIgd2lkdGg9IjgyLjE3IiBoZWlnaHQ9IjQxLjA4NSIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"10 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"2x2\"},{\"trait_type\":\"Fill\",\"value\":\"Mixed\"},{\"trait_type\":\"Ink\",\"value\":\"Faint\"},{\"trait_type\":\"Modules\",\"value\":\"○ ╲ △ ⬒\"},{\"trait_type\":\"Module Count\",\"value\":\"4\"},{\"trait_type\":\"Primitive\",\"value\":\"Circle\"},{\"trait_type\":\"Variety\",\"value\":\"4\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Rare\"},{\"trait_type\":\"Formation\",\"value\":\"Composed\"},{\"trait_type\":\"Independent Origins\",\"value\":\"4\"},{\"trait_type\":\"Origin Density\",\"value\":\"0.4%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"false\"},{\"trait_type\":\"Compose Depth\",\"value\":\"0\"}]}",
+  "{\"name\":\"Shape 2000\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiMwMDAiLz48Y2lyY2xlIGN4PSI0NS44IiBjeT0iOTUuOCIgcj0iMTYuNDM0IiBmaWxsPSIjZmZmIi8+PGNpcmNsZSBjeD0iODUuNCIgY3k9Ijk1LjgiIHI9IjE0LjEzMzI0IiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iNC42MDE1MiIvPjxyZWN0IHg9IjEwOC41NjYiIHk9Ijc5LjM2NiIgd2lkdGg9IjMyLjg2OCIgaGVpZ2h0PSIzMi44NjgiIGZpbGw9IiNmZmYiLz48cmVjdCB4PSIxNTAuNDY2NzYiIHk9IjgxLjY2Njc2IiB3aWR0aD0iMjguMjY2NDgiIGhlaWdodD0iMjguMjY2NDgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI0LjYwMTUyIi8+PHBvbHlnb24gcG9pbnRzPSIyMDQuMiw4MS41NjgxNTYgMjIwLjYzNCwxMTAuMDMxODQ0IDE4Ny43NjYsMTEwLjAzMTg0NCIgZmlsbD0iI2ZmZiIvPjxwb2x5Z29uIHBvaW50cz0iNDUuOCwxMjEuMTY4MTU2IDYyLjIzNCwxNDkuNjMxODQ0IDI5LjM2NiwxNDkuNjMxODQ0IiB0cmFuc2Zvcm09InJvdGF0ZSg5MCA0NS44IDEzNS40KSIgZmlsbD0iI2ZmZiIvPjxwb2x5Z29uIHBvaW50cz0iODUuNCwxMjEuMTY4MTU2IDEwMS44MzQsMTQ5LjYzMTg0NCA2OC45NjYsMTQ5LjYzMTg0NCIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDg1LjQgMTM1LjQpIiBmaWxsPSIjZmZmIi8+PHBvbHlnb24gcG9pbnRzPSIxMjUsMTIxLjE2ODE1NiAxNDEuNDM0LDE0OS42MzE4NDQgMTA4LjU2NiwxNDkuNjMxODQ0IiB0cmFuc2Zvcm09InJvdGF0ZSgyNzAgMTI1IDEzNS40KSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTE2NC42LDEyMS4xNjgxNTYgTDE4MS4wMzQsMTQ5LjYzMTg0NCBMMTQ4LjE2NiwxNDkuNjMxODQ0IFogTTE2NC42LDEzMC4zNzExOTYgTDE3My4wNjM3LDE0NS4wMzAzMjQgTDE1Ni4xMzYzLDE0NS4wMzAzMjQgWiIgZmlsbD0iI2ZmZiIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTIwNC4yLDEyMS4xNjgxNTYgTDIyMC42MzQsMTQ5LjYzMTg0NCBMMTg3Ljc2NiwxNDkuNjMxODQ0IFogTTIwNC4yLDEzMC4zNzExOTYgTDIxMi42NjM3LDE0NS4wMzAzMjQgTDE5NS43MzYzLDE0NS4wMzAzMjQgWiIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgMjA0LjIgMTM1LjQpIiBmaWxsPSIjZmZmIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNNDUuOCwxNjAuNzY4MTU2IEw2Mi4yMzQsMTg5LjIzMTg0NCBMMjkuMzY2LDE4OS4yMzE4NDQgWiBNNDUuOCwxNjkuOTcxMTk2IEw1NC4yNjM3LDE4NC42MzAzMjQgTDM3LjMzNjMsMTg0LjYzMDMyNCBaIiB0cmFuc2Zvcm09InJvdGF0ZSgxODAgNDUuOCAxNzUpIiBmaWxsPSIjZmZmIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNODUuNCwxNjAuNzY4MTU2IEwxMDEuODM0LDE4OS4yMzE4NDQgTDY4Ljk2NiwxODkuMjMxODQ0IFogTTg1LjQsMTY5Ljk3MTE5NiBMOTMuODYzNywxODQuNjMwMzI0IEw3Ni45MzYzLDE4NC42MzAzMjQgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMjcwIDg1LjQgMTc1KSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik0xMDguNTY2LDE3NSBBMTYuNDM0LDE2LjQzNCAwIDAgMSAxNDEuNDM0LDE3NSBaIiBmaWxsPSIjZmZmIi8+PHBhdGggZD0iTTE0OC4xNjYsMTc1IEExNi40MzQsMTYuNDM0IDAgMCAxIDE4MS4wMzQsMTc1IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDE2NC42IDE3NSkiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMTg3Ljc2NiwxNzUgQTE2LjQzNCwxNi40MzQgMCAwIDEgMjIwLjYzNCwxNzUgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDIwNC4yIDE3NSkiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMjkuMzY2LDIxNC42IEExNi40MzQsMTYuNDM0IDAgMCAxIDYyLjIzNCwyMTQuNiBaIiB0cmFuc2Zvcm09InJvdGF0ZSgyNzAgNDUuOCAyMTQuNikiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik02OC45NjYsMjE0LjYgQTE2LjQzNCwxNi40MzQgMCAwIDEgMTAxLjgzNCwyMTQuNiBaIE03NC40OTg5MTgsMjA5Ljk5ODQ4IEExMS44MzI0OCwxMS44MzI0OCAwIDAgMSA5Ni4zMDEwODIsMjA5Ljk5ODQ4IFoiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xMDguNTY2LDIxNC42IEExNi40MzQsMTYuNDM0IDAgMCAxIDE0MS40MzQsMjE0LjYgWiBNMTE0LjA5ODkxOCwyMDkuOTk4NDggQTExLjgzMjQ4LDExLjgzMjQ4IDAgMCAxIDEzNS45MDEwODIsMjA5Ljk5ODQ4IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDEyNSAyMTQuNikiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xNDguMTY2LDIxNC42IEExNi40MzQsMTYuNDM0IDAgMCAxIDE4MS4wMzQsMjE0LjYgWiBNMTUzLjY5ODkxOCwyMDkuOTk4NDggQTExLjgzMjQ4LDExLjgzMjQ4IDAgMCAxIDE3NS41MDEwODIsMjA5Ljk5ODQ4IFoiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxNjQuNiAyMTQuNikiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xODcuNzY2LDIxNC42IEExNi40MzQsMTYuNDM0IDAgMCAxIDIyMC42MzQsMjE0LjYgWiBNMTkzLjI5ODkxOCwyMDkuOTk4NDggQTExLjgzMjQ4LDExLjgzMjQ4IDAgMCAxIDIxNS4xMDEwODIsMjA5Ljk5ODQ4IFoiIHRyYW5zZm9ybT0icm90YXRlKDI3MCAyMDQuMiAyMTQuNikiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMjkuMzY2LDI3MC42MzQgTDYyLjIzNCwyNzAuNjM0IEEzMi44NjgsMzIuODY4IDAgMCAwIDI5LjM2NiwyMzcuNzY2IFoiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNNjguOTY2LDI3MC42MzQgTDEwMS44MzQsMjcwLjYzNCBBMzIuODY4LDMyLjg2OCAwIDAgMCA2OC45NjYsMjM3Ljc2NiBaIiB0cmFuc2Zvcm09InJvdGF0ZSg5MCA4NS40IDI1NC4yKSIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik0xMDguNTY2LDI3MC42MzQgTDE0MS40MzQsMjcwLjYzNCBBMzIuODY4LDMyLjg2OCAwIDAgMCAxMDguNTY2LDIzNy43NjYgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDEyNSAyNTQuMikiIGZpbGw9IiNmZmYiLz48cGF0aCBkPSJNMTQ4LjE2NiwyNzAuNjM0IEwxODEuMDM0LDI3MC42MzQgQTMyLjg2OCwzMi44NjggMCAwIDAgMTQ4LjE2NiwyMzcuNzY2IFoiIHRyYW5zZm9ybT0icm90YXRlKDI3MCAxNjQuNiAyNTQuMikiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0xODcuNzY2LDI3MC42MzQgTDIyMC42MzQsMjcwLjYzNCBBMzIuODY4LDMyLjg2OCAwIDAgMCAxODcuNzY2LDIzNy43NjYgWiBNMTkyLjM2NzUyLDI2Ni4wMzI0OCBMMjE1LjY1NTQyMywyNjYuMDMyNDggQTI4LjI2NjQ4LDI4LjI2NjQ4IDAgMCAwIDE5Mi4zNjc1MiwyNDIuNzQ0NTc3IFoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"0.01 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"5x5\"},{\"trait_type\":\"Fill\",\"value\":\"Mixed\"},{\"trait_type\":\"Ink\",\"value\":\"Dense\"},{\"trait_type\":\"Modules\",\"value\":\"● ○ ■ □ ▲ ▶ ▼ ◀ △ ▷ ▽ ◁ ◓ ◑ ◒ ◐ ◓ ◑ ◒ ◐ ◔ ◔ ◔ ◔ ◷\"},{\"trait_type\":\"Module Count\",\"value\":\"25\"},{\"trait_type\":\"Primitive\",\"value\":\"Triangle\"},{\"trait_type\":\"Variety\",\"value\":\"5\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Common\"},{\"trait_type\":\"Formation\",\"value\":\"Direct\"},{\"trait_type\":\"Independent Origins\",\"value\":\"1\"},{\"trait_type\":\"Origin Density\",\"value\":\"100%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"false\"},{\"trait_type\":\"Compose Depth\",\"value\":\"0\"}]}",
+  "{\"name\":\"Shape 2001\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiNmZmYiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0yOS4zNjYsMTEyLjIzNCBMNjIuMjM0LDExMi4yMzQgQTMyLjg2OCwzMi44NjggMCAwIDAgMjkuMzY2LDc5LjM2NiBaIE0zMy45Njc1MiwxMDcuNjMyNDggTDU3LjI1NTQyMywxMDcuNjMyNDggQTI4LjI2NjQ4LDI4LjI2NjQ4IDAgMCAwIDMzLjk2NzUyLDg0LjM0NDU3NyBaIiB0cmFuc2Zvcm09InJvdGF0ZSg5MCA0NS44IDk1LjgpIiBmaWxsPSIjMDAwIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNNjguOTY2LDExMi4yMzQgTDEwMS44MzQsMTEyLjIzNCBBMzIuODY4LDMyLjg2OCAwIDAgMCA2OC45NjYsNzkuMzY2IFogTTczLjU2NzUyLDEwNy42MzI0OCBMOTYuODU1NDIzLDEwNy42MzI0OCBBMjguMjY2NDgsMjguMjY2NDggMCAwIDAgNzMuNTY3NTIsODQuMzQ0NTc3IFoiIHRyYW5zZm9ybT0icm90YXRlKDE4MCA4NS40IDk1LjgpIiBmaWxsPSIjMDAwIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTA4LjU2NiwxMTIuMjM0IEwxNDEuNDM0LDExMi4yMzQgQTMyLjg2OCwzMi44NjggMCAwIDAgMTA4LjU2Niw3OS4zNjYgWiBNMTEzLjE2NzUyLDEwNy42MzI0OCBMMTM2LjQ1NTQyMywxMDcuNjMyNDggQTI4LjI2NjQ4LDI4LjI2NjQ4IDAgMCAwIDExMy4xNjc1Miw4NC4zNDQ1NzcgWiIgdHJhbnNmb3JtPSJyb3RhdGUoMjcwIDEyNSA5NS44KSIgZmlsbD0iIzAwMCIvPjxwb2x5Z29uIHBvaW50cz0iMTY0LjYsNzkuMzY2IDE4MS4wMzQsOTUuOCAxNjQuNiwxMTIuMjM0IDE0OC4xNjYsOTUuOCIgZmlsbD0iIzAwMCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTIwNC4yLDc5LjM2NiBMMjIwLjYzNCw5NS44IEwyMDQuMiwxMTIuMjM0IEwxODcuNzY2LDk1LjggWiBNMjA0LjIsODUuODczNTMyIEwyMTQuMTI2NDY4LDk1LjggTDIwNC4yLDEwNS43MjY0NjggTDE5NC4yNzM1MzIsOTUuOCBaIiBmaWxsPSIjMDAwIi8+PHJlY3QgeD0iMjkuMzY2IiB5PSIxMTguOTY2IiB3aWR0aD0iMzIuODY4IiBoZWlnaHQ9IjE2LjQzNCIgZmlsbD0iIzAwMCIvPjxyZWN0IHg9IjY4Ljk2NiIgeT0iMTE4Ljk2NiIgd2lkdGg9IjMyLjg2OCIgaGVpZ2h0PSIxNi40MzQiIHRyYW5zZm9ybT0icm90YXRlKDkwIDg1LjQgMTM1LjQpIiBmaWxsPSIjMDAwIi8+PHJlY3QgeD0iMTA4LjU2NiIgeT0iMTE4Ljk2NiIgd2lkdGg9IjMyLjg2OCIgaGVpZ2h0PSIxNi40MzQiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxMjUgMTM1LjQpIiBmaWxsPSIjMDAwIi8+PHJlY3QgeD0iMTQ4LjE2NiIgeT0iMTE4Ljk2NiIgd2lkdGg9IjMyLjg2OCIgaGVpZ2h0PSIxNi40MzQiIHRyYW5zZm9ybT0icm90YXRlKDI3MCAxNjQuNiAxMzUuNCkiIGZpbGw9IiMwMDAiLz48cmVjdCB4PSIxOTAuMDY2NzYiIHk9IjEyMS4yNjY3NiIgd2lkdGg9IjI4LjI2NjQ4IiBoZWlnaHQ9IjE0LjEzMzI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iNC42MDE1MiIvPjxyZWN0IHg9IjMxLjY2Njc2IiB5PSIxNjAuODY2NzYiIHdpZHRoPSIyOC4yNjY0OCIgaGVpZ2h0PSIxNC4xMzMyNCIgdHJhbnNmb3JtPSJyb3RhdGUoOTAgNDUuOCAxNzUpIiBmaWxsPSJub25lIiBzdHJva2U9IiMwMDAiIHN0cm9rZS13aWR0aD0iNC42MDE1MiIvPjxyZWN0IHg9IjcxLjI2Njc2IiB5PSIxNjAuODY2NzYiIHdpZHRoPSIyOC4yNjY0OCIgaGVpZ2h0PSIxNC4xMzMyNCIgdHJhbnNmb3JtPSJyb3RhdGUoMTgwIDg1LjQgMTc1KSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDAwIiBzdHJva2Utd2lkdGg9IjQuNjAxNTIiLz48cmVjdCB4PSIxMTAuODY2NzYiIHk9IjE2MC44NjY3NiIgd2lkdGg9IjI4LjI2NjQ4IiBoZWlnaHQ9IjE0LjEzMzI0IiB0cmFuc2Zvcm09InJvdGF0ZSgyNzAgMTI1IDE3NSkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzAwMCIgc3Ryb2tlLXdpZHRoPSI0LjYwMTUyIi8+PHBvbHlnb24gcG9pbnRzPSIxNDguMTY2LDE1OC41NjYgMTgxLjAzNCwxNTguNTY2IDE0OC4xNjYsMTkxLjQzNCIgZmlsbD0iIzAwMCIvPjxwb2x5Z29uIHBvaW50cz0iMTg3Ljc2NiwxNTguNTY2IDIyMC42MzQsMTU4LjU2NiAxODcuNzY2LDE5MS40MzQiIHRyYW5zZm9ybT0icm90YXRlKDkwIDIwNC4yIDE3NSkiIGZpbGw9IiMwMDAiLz48cG9seWdvbiBwb2ludHM9IjI5LjM2NiwxOTguMTY2IDYyLjIzNCwxOTguMTY2IDI5LjM2NiwyMzEuMDM0IiB0cmFuc2Zvcm09InJvdGF0ZSgxODAgNDUuOCAyMTQuNikiIGZpbGw9IiMwMDAiLz48cG9seWdvbiBwb2ludHM9IjY4Ljk2NiwxOTguMTY2IDEwMS44MzQsMTk4LjE2NiA2OC45NjYsMjMxLjAzNCIgdHJhbnNmb3JtPSJyb3RhdGUoMjcwIDg1LjQgMjE0LjYpIiBmaWxsPSIjMDAwIi8+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTA4LjU2NiwxOTguMTY2IEwxNDEuNDM0LDE5OC4xNjYgTDEwOC41NjYsMjMxLjAzNCBaIE0xMTMuMTY3NTIsMjAyLjc2NzUyIEwxMzAuMzI0OTQ4LDIwMi43Njc1MiBMMTEzLjE2NzUyLDIxOS45MjQ5NDggWiIgZmlsbD0iIzAwMCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTE0OC4xNjYsMTk4LjE2NiBMMTgxLjAzNCwxOTguMTY2IEwxNDguMTY2LDIzMS4wMzQgWiBNMTUyLjc2NzUyLDIwMi43Njc1MiBMMTY5LjkyNDk0OCwyMDIuNzY3NTIgTDE1Mi43Njc1MiwyMTkuOTI0OTQ4IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDE2NC42IDIxNC42KSIgZmlsbD0iIzAwMCIvPjxwYXRoIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTTE4Ny43NjYsMTk4LjE2NiBMMjIwLjYzNCwxOTguMTY2IEwxODcuNzY2LDIzMS4wMzQgWiBNMTkyLjM2NzUyLDIwMi43Njc1MiBMMjA5LjUyNDk0OCwyMDIuNzY3NTIgTDE5Mi4zNjc1MiwyMTkuOTI0OTQ4IFoiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAyMDQuMiAyMTQuNikiIGZpbGw9IiMwMDAiLz48cGF0aCBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0yOS4zNjYsMjM3Ljc2NiBMNjIuMjM0LDIzNy43NjYgTDI5LjM2NiwyNzAuNjM0IFogTTMzLjk2NzUyLDI0Mi4zNjc1MiBMNTEuMTI0OTQ4LDI0Mi4zNjc1MiBMMzMuOTY3NTIsMjU5LjUyNDk0OCBaIiB0cmFuc2Zvcm09InJvdGF0ZSgyNzAgNDUuOCAyNTQuMikiIGZpbGw9IiMwMDAiLz48cGF0aCBkPSJNMTAxLjgzNCwyNzAuNjM0IEEzMi44NjgsMzIuODY4IDAgMCAwIDY4Ljk2NiwyMzcuNzY2IEw2OC45NjYsMjQyLjM2NzUyIEEyOC4yNjY0OCwyOC4yNjY0OCAwIDAgMSA5Ny4yMzI0OCwyNzAuNjM0IFoiIGZpbGw9IiMwMDAiLz48cGF0aCBkPSJNMTQxLjQzNCwyNzAuNjM0IEEzMi44NjgsMzIuODY4IDAgMCAwIDEwOC41NjYsMjM3Ljc2NiBMMTA4LjU2NiwyNDIuMzY3NTIgQTI4LjI2NjQ4LDI4LjI2NjQ4IDAgMCAxIDEzNi44MzI0OCwyNzAuNjM0IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDEyNSAyNTQuMikiIGZpbGw9IiMwMDAiLz48cGF0aCBkPSJNMTgxLjAzNCwyNzAuNjM0IEEzMi44NjgsMzIuODY4IDAgMCAwIDE0OC4xNjYsMjM3Ljc2NiBMMTQ4LjE2NiwyNDIuMzY3NTIgQTI4LjI2NjQ4LDI4LjI2NjQ4IDAgMCAxIDE3Ni40MzI0OCwyNzAuNjM0IFoiIHRyYW5zZm9ybT0icm90YXRlKDE4MCAxNjQuNiAyNTQuMikiIGZpbGw9IiMwMDAiLz48cGF0aCBkPSJNMjIwLjYzNCwyNzAuNjM0IEEzMi44NjgsMzIuODY4IDAgMCAwIDE4Ny43NjYsMjM3Ljc2NiBMMTg3Ljc2NiwyNDIuMzY3NTIgQTI4LjI2NjQ4LDI4LjI2NjQ4IDAgMCAxIDIxNi4wMzI0OCwyNzAuNjM0IFoiIHRyYW5zZm9ybT0icm90YXRlKDI3MCAyMDQuMiAyNTQuMikiIGZpbGw9IiMwMDAiLz48L3N2Zz4=\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"0.01 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"5x5\"},{\"trait_type\":\"Fill\",\"value\":\"Mixed\"},{\"trait_type\":\"Ink\",\"value\":\"Sparse\"},{\"trait_type\":\"Modules\",\"value\":\"◷ ◷ ◷ ◆ ◇ ⬒ ◨ ⬓ ◧ ⬒ ◨ ⬓ ◧ ◸ ◹ ◿ ◺ ◸ ◹ ◿ ◺ ◜ ◝ ◞ ◟\"},{\"trait_type\":\"Module Count\",\"value\":\"25\"},{\"trait_type\":\"Primitive\",\"value\":\"Half Square\"},{\"trait_type\":\"Variety\",\"value\":\"5\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Common\"},{\"trait_type\":\"Formation\",\"value\":\"Black\"},{\"trait_type\":\"Independent Origins\",\"value\":\"1\"},{\"trait_type\":\"Origin Density\",\"value\":\"100%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"true\"},{\"trait_type\":\"Compose Depth\",\"value\":\"0\"}]}",
+  "{\"name\":\"Shape 2002\",\"description\":\"Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. Burning it returns exactly that amount to its owner. Higher denominations resolve into fewer, larger modules. Artwork and metadata are generated entirely onchain.\",\"image\":\"data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTAgMzUwIiB3aWR0aD0iMjAwMCIgaGVpZ2h0PSIyODAwIiBzaGFwZS1yZW5kZXJpbmc9Imdlb21ldHJpY1ByZWNpc2lvbiI+PHJlY3QgeD0iMCIgeT0iMCIgd2lkdGg9IjI1MCIgaGVpZ2h0PSIzNTAiIGZpbGw9IiMwMDAiLz48cGF0aCBkPSJNODYuNzI0MDY4LDY5Ljc3NSBMMTcyLjcyNSwxNTUuNzc1OTMyIEwxNjMuMjc1OTMyLDE2NS4yMjUgTDc3LjI3NSw3OS4yMjQwNjggWiIgZmlsbD0iI2ZmZiIvPjxwYXRoIGQ9Ik04Ni43MjQwNjgsMTg0Ljc3NSBMMTcyLjcyNSwyNzAuNzc1OTMyIEwxNjMuMjc1OTMyLDI4MC4yMjUgTDc3LjI3NSwxOTQuMjI0MDY4IFoiIHRyYW5zZm9ybT0icm90YXRlKDkwIDEyNSAyMzIuNSkiIGZpbGw9IiNmZmYiLz48L3N2Zz4=\",\"attributes\":[{\"trait_type\":\"ETH Value\",\"value\":\"50 ETH\"},{\"trait_type\":\"Grid\",\"value\":\"1x2\"},{\"trait_type\":\"Fill\",\"value\":\"Outline\"},{\"trait_type\":\"Ink\",\"value\":\"Void\"},{\"trait_type\":\"Modules\",\"value\":\"╲ ╱\"},{\"trait_type\":\"Module Count\",\"value\":\"2\"},{\"trait_type\":\"Primitive\",\"value\":\"Line\"},{\"trait_type\":\"Variety\",\"value\":\"1\"},{\"trait_type\":\"Ink Tier\",\"value\":\"Mythic\"},{\"trait_type\":\"Formation\",\"value\":\"Direct\"},{\"trait_type\":\"Independent Origins\",\"value\":\"1\"},{\"trait_type\":\"Origin Density\",\"value\":\"0.02%\"},{\"trait_type\":\"Complete\",\"value\":\"false\"},{\"trait_type\":\"Black\",\"value\":\"false\"},{\"trait_type\":\"Compose Depth\",\"value\":\"0\"}]}"
+ ],
+ "sampledRenderModuleSequence": [
+  "●",
+  "▷ △ ◞ ◁ ⬒ ◨ ◨ ◿ ◞ ○ ◟ ◸ ◨ ○ ○ □ ◐ ◷ □ ◇",
+  "◆ ◆ ● ◸ ⬓ ■ ◝ ◧ ◔ ■ ◒ ╱ ◑ ■ ╲ ◐ ▼ ◿ ╱ ╱ ● ◔ ⬓ ● ╲",
+  "◆ □ ◆ ◓ ╱ ◧ ◑ ◷ ◇",
+  "▶ ▼ ■ ╱ ■ ◜ ◆ ╱ ╱ ▲ ▼ ◆ ● ◜ ▲ ◆",
+  "○ ╲ △ ⬒",
+  "● ○ ■ □ ▲ ▶ ▼ ◀ △ ▷ ▽ ◁ ◓ ◑ ◒ ◐ ◓ ◑ ◒ ◐ ◔ ◔ ◔ ◔ ◷",
+  "◷ ◷ ◷ ◆ ◇ ⬒ ◨ ⬓ ◧ ⬒ ◨ ⬓ ◧ ◸ ◹ ◿ ◺ ◸ ◹ ◿ ◺ ◜ ◝ ◞ ◟",
+  "╲ ╱"
  ]
 }

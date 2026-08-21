@@ -57,14 +57,19 @@ export function Art({src, alt = "", width}: {src: string; alt?: string; width?: 
 /**
  * A confirmation dialog. Escape and an overlay click both cancel, so a destructive action always
  * has a way out that is not the confirm button. `title` takes the section label's type.
+ * `maxWidth` overrides the panel's default 480px cap (`.modal-panel` in site.html) for content
+ * wider than a confirmation prompt; it also switches on internal scrolling so tall content clips
+ * to the viewport instead of overflowing it.
  */
 export function Modal({
   title,
   onCancel,
+  maxWidth,
   children,
 }: {
   title: string;
   onCancel: () => void;
+  maxWidth?: number | string;
   children: React.ReactNode;
 }) {
   React.useEffect(() => {
@@ -83,6 +88,7 @@ export function Modal({
         aria-modal="true"
         aria-label={title}
         onClick={(e) => e.stopPropagation()}
+        style={maxWidth != null ? {maxWidth, maxHeight: "calc(100vh - 48px)", overflowY: "auto"} : undefined}
       >
         <div style={{...label, marginBottom: 18}}>{title}</div>
         {children}

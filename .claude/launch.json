@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "preview", "run", "dev"],
       "port": 5173
+    },
+    {
+      "name": "shapes-site-dist",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "cd preview && npx vite preview --port 5205 --strictPort"],
+      "port": 5205
     }
   ]
 }

@@ -366,6 +366,11 @@ export const shapesAbi = [
             "name": "redeemableValueWei",
             "type": "uint256",
             "internalType": "uint256"
+          },
+          {
+            "name": "modules",
+            "type": "bytes",
+            "internalType": "bytes"
           }
         ]
       }
@@ -526,6 +531,25 @@ export const shapesAbi = [
         "type": "uint8",
         "indexed": false,
         "internalType": "uint8"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ModulesSampled",
+    "inputs": [
+      {
+        "name": "tokenId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "modules",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
       }
     ],
     "anonymous": false

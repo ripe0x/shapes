@@ -47,6 +47,17 @@ ponder.on("Shapes:InkGene", async ({ event, context }) => {
   await context.db.update(token, { id: tokenId }).set({ inkGene: gene });
 });
 
+// A token's materialized geometry is set or restored: compose (survivor), each split child,
+// decompose (survivor restore and each re-minted input). Always emitted after the structural
+// event that creates or continues the row (Composed/Split/Decomposed), so the row exists here.
+// Empty bytes mean the token reverted to seed-derived geometry (grammar v1); store null so the
+// row matches an original mint, which never gets this event.
+ponder.on("Shapes:ModulesSampled", async ({ event, context }) => {
+  const { tokenId, modules } = event.args;
+
+  await context.db.update(token, { id: tokenId }).set({ modules: modules === "0x" ? null : modules });
+});
+
 // The burnedIds are consumed into survivorId, which keeps its id and seed and becomes the summed
 // denomination. Each burned id becomes a "continuation" edge into the survivor.
 ponder.on("Shapes:Composed", async ({ event, context }) => {

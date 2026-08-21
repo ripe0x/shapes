@@ -8,6 +8,11 @@ pragma solidity 0.8.28;
 ///      byte for byte, the same way `Denominations` and `denominations.ts` are kept in lockstep.
 ///      Pure library, no storage. See INK_GENES_IMPL_SPEC.md for the pinned formulas and
 ///      INK_GENES_DRAFT.md for the design rationale.
+///
+///      `geneAtMint` and `geneAtCompose` are `public`: forge deploys this library separately and
+///      links its address into `Shapes` at deploy time, the same mechanism as `GeometrySampling`.
+///      The link is fixed in `Shapes`'s bytecode with no setter, so gene assignment cannot be
+///      redirected to different logic after deployment.
 library InkGenes {
     uint256 internal constant GENE_COUNT = 7;
 
@@ -60,7 +65,7 @@ library InkGenes {
     /// @dev Dust (denomIndex 0) draws the full seven-gene lottery; every other direct mint draws
     ///      only the narrow {Sparse, Murk, Dense} band. The extremes (Void, Faint, Rich, Solid)
     ///      enter the population only through a dust mint (INK_GENES_DRAFT.md §2).
-    function geneAtMint(bytes32 seed, uint8 denomIndex) internal pure returns (uint8) {
+    function geneAtMint(bytes32 seed, uint8 denomIndex) public pure returns (uint8) {
         uint256 r = uint256(keccak256(abi.encodePacked("ink:mint", seed))) % 100;
 
         if (denomIndex == 0) {
@@ -105,9 +110,8 @@ library InkGenes {
         uint8 best,
         uint8 worst,
         uint8 centerGene
-    ) internal pure returns (uint8 g) {
-        bytes32 R =
-            keccak256(abi.encodePacked("ink:compose", survivorSeed, burnSeedFold, newIndex));
+    ) public pure returns (uint8 g) {
+        bytes32 R = keccak256(abi.encodePacked("ink:compose", survivorSeed, burnSeedFold, newIndex));
         g = survivorGene;
         uint256 t = uint256(newIndex) - uint256(oldIndex); // always >= 1
         for (uint256 k = 1; k <= t; ++k) {

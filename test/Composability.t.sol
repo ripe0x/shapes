@@ -9,12 +9,12 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
+import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {
     IShapeProvenance,
     IShapeRecomposition,
-    IShapeSimulation,
     IShapeValue,
     ShapeChildPreview,
     ShapeFormation,
@@ -41,6 +41,7 @@ contract ComposabilityTest is Test {
     Shapes internal shapes;
     ShapeRenderer internal renderer;
     ShapeCollection internal collection;
+    ShapeLens internal lens;
     ComposableReceiver internal receiver;
 
     address internal alice = makeAddr("alice");
@@ -51,6 +52,7 @@ contract ComposabilityTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes(100, feeRecipient, address(renderer), address(collection));
+        lens = new ShapeLens(address(shapes));
         receiver = new ComposableReceiver();
         vm.deal(alice, 1_000 ether);
     }
@@ -69,11 +71,12 @@ contract ComposabilityTest is Test {
         first = shapes.mintBatch{value: count * (0.01 ether + _fee(0.01 ether))}(0.01 ether, count);
     }
 
+    /// @notice The deterministic-preview capability (previewCompose/previewSplit) moved off
+    ///         `Shapes` onto `ShapeLens`; `Shapes` no longer advertises it.
     function test_AdvertisesGranularCapabilities() public view {
         assertTrue(shapes.supportsInterface(type(IShapeValue).interfaceId));
         assertTrue(shapes.supportsInterface(type(IShapeRecomposition).interfaceId));
         assertTrue(shapes.supportsInterface(type(IShapeProvenance).interfaceId));
-        assertTrue(shapes.supportsInterface(type(IShapeSimulation).interfaceId));
 
         assertTrue(renderer.supportsInterface(type(IERC165).interfaceId));
         assertTrue(renderer.supportsInterface(type(IShapeRenderer).interfaceId));
@@ -88,7 +91,7 @@ contract ComposabilityTest is Test {
 
     function test_CanonicalStateAndDenominationReads() public {
         uint256 id = _mint(alice, 1 ether);
-        ShapeState memory state = shapes.shapeState(id);
+        ShapeState memory state = lens.shapeState(id);
 
         assertEq(state.seed, shapes.seedOf(id));
         assertEq(state.denominationIndex, 4);
@@ -108,10 +111,8 @@ contract ComposabilityTest is Test {
 
     function test_TokenUnicodeCardMatchesCanonicalRenderer() public {
         uint256 id = _mint(alice, 1 ether);
-        ShapeState memory state = shapes.shapeState(id);
-        assertEq(
-            shapes.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene)
-        );
+        ShapeState memory state = lens.shapeState(id);
+        assertEq(lens.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene));
     }
 
     function test_PreviewComposeReturnsCompleteResultAndMatchesExecution() public {
@@ -121,7 +122,7 @@ contract ComposabilityTest is Test {
             burnIds[i] = first + i + 1;
         }
 
-        ShapeState memory preview = shapes.previewCompose(first, burnIds);
+        ShapeState memory preview = lens.previewCompose(first, burnIds);
         assertEq(preview.seed, shapes.seedOf(first));
         assertEq(preview.denominationIndex, 1);
         assertEq(preview.originCount, 5);
@@ -131,7 +132,7 @@ contract ComposabilityTest is Test {
 
         vm.prank(alice);
         shapes.compose(first, burnIds);
-        ShapeState memory actual = shapes.shapeState(first);
+        ShapeState memory actual = lens.shapeState(first);
         assertEq(keccak256(abi.encode(actual)), keccak256(abi.encode(preview)));
     }
 
@@ -142,7 +143,7 @@ contract ComposabilityTest is Test {
         outs[0] = 1;
         outs[1] = 1;
 
-        ShapeChildPreview[] memory preview = shapes.previewSplit(parent, outs);
+        ShapeChildPreview[] memory preview = lens.previewSplit(parent, outs);
         assertEq(preview.length, 2);
         assertEq(preview[0].seed, shapes.childSeed(parentSeed, 0));
         assertEq(preview[1].seed, shapes.childSeed(parentSeed, 1));
@@ -153,7 +154,7 @@ contract ComposabilityTest is Test {
         vm.prank(alice);
         uint256[] memory children = shapes.split(parent, outs);
         for (uint256 i = 0; i < children.length; ++i) {
-            ShapeState memory actual = shapes.shapeState(children[i]);
+            ShapeState memory actual = lens.shapeState(children[i]);
             assertEq(actual.seed, preview[i].seed);
             assertEq(actual.denominationIndex, preview[i].denominationIndex);
             assertEq(actual.originCount, preview[i].originCount);
@@ -331,7 +332,7 @@ contract ComposabilityTest is Test {
         assertEq(cy, module.cy);
         assertEq(size, module.size);
         assertEq(w, module.weight);
-        assertEq(renderer.grammarVersion(), 1);
+        assertEq(renderer.grammarVersion(), 2);
         assertTrue(renderer.grammarHash() != bytes32(0));
     }
 

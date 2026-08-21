@@ -52,47 +52,132 @@ function parseUri(uri: string): {image: string; meta: TokenMeta} {
   };
 }
 
+// Calls per Multicall3 aggregate (or per concurrent fallback burst). 500 ownerOf calls fit one
+// eth_call comfortably; the per-token stage carries tokenURI payloads, so it uses fewer calls
+// per chunk (see TOKEN_CHUNK).
+const ID_CHUNK = 500;
+// Live tokens per per-token chunk. Each token is FIELDS.length calls, and tokenURI returns a
+// full SVG data URI, so the returndata per chunk is the binding constraint, not the call count.
+const TOKEN_CHUNK = 50;
+
+interface ReadCall {
+  address: `0x${string}`;
+  abi: typeof shapesAbi;
+  functionName: string;
+  args: readonly unknown[];
+}
+
+type ReadResult = {status: "success"; result: unknown} | {status: "failure"; error: Error};
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
+/** True when the client's chain declares a Multicall3 address and code is deployed there. */
+async function hasMulticall3(publicClient: PublicClient): Promise<boolean> {
+  const address = publicClient.chain?.contracts?.multicall3?.address;
+  if (!address) return false;
+  const code = await publicClient.getCode({address});
+  return code !== undefined && code !== "0x";
+}
+
 /**
- * Full chain state the site renders from. Scans token ids 0..totalMinted-1, which is fine on a
- * dev chain; a mainnet deployment needs an indexer (or at minimum a deploy-block floor on the
- * log scan in chain/history.ts) before this ships publicly.
+ * Runs every call and returns per-call results in order. Chunks go through Multicall3 (one
+ * eth_call per chunk) when the chain has it, or as concurrent single reads otherwise; all
+ * chunks are in flight at once. A reverted call becomes a "failure" result, not a throw.
+ */
+async function batchRead(
+  publicClient: PublicClient,
+  calls: ReadCall[],
+  viaMulticall: boolean,
+  chunkSize: number,
+): Promise<ReadResult[]> {
+  const parts = await Promise.all(
+    chunk(calls, chunkSize).map((part): Promise<ReadResult[]> => {
+      if (viaMulticall) {
+        return publicClient.multicall({
+          contracts: part,
+          allowFailure: true,
+        }) as Promise<ReadResult[]>;
+      }
+      return Promise.all(
+        part.map((call) =>
+          publicClient.readContract(call as Parameters<PublicClient["readContract"]>[0]).then(
+            (result): ReadResult => ({status: "success", result}),
+            (error: Error): ReadResult => ({status: "failure", error}),
+          ),
+        ),
+      );
+    }),
+  );
+  return parts.flat();
+}
+
+// Per-token reads, in call order within each token's chunk slice.
+const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as const;
+
+/**
+ * Full chain state the site renders from. Scans token ids 0..totalMinted-1 with batched reads:
+ * ownerOf across all ids to find live tokens, then the per-token fields for live ids only.
+ * Fine on a dev chain even at SeedDemo scale (10k+ minted ids); a mainnet deployment needs an
+ * indexer (or at minimum a deploy-block floor on the log scan in chain/history.ts) before this
+ * ships publicly.
  *
  * Black tokens are skipped: the sacrifice mechanics are out of scope for this site.
  */
 export async function loadSite(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-  const [minted, reserve, supply, ...fees] = await Promise.all([
+  const [minted, reserve, supply, viaMulticall, ...fees] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "totalMinted"}),
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
+    hasMulticall3(publicClient),
     ...DENOMINATIONS.map((d) =>
       publicClient.readContract({...shapes, functionName: "mintFeeFor", args: [d.wei]}),
     ),
   ]);
 
+  const ids = Array.from({length: Number(minted)}, (_, i) => BigInt(i));
+  const owners = await batchRead(
+    publicClient,
+    ids.map((id) => ({...shapes, functionName: "ownerOf", args: [id]})),
+    viaMulticall,
+    ID_CHUNK,
+  );
+
+  // ownerOf reverts for burned ids; those drop out of the live set.
+  const live: {id: bigint; owner: `0x${string}`}[] = [];
+  ids.forEach((id, i) => {
+    const r = owners[i];
+    if (r.status === "success") live.push({id, owner: r.result as `0x${string}`});
+  });
+
+  const reads = await batchRead(
+    publicClient,
+    live.flatMap(({id}) => FIELDS.map((functionName) => ({...shapes, functionName, args: [id]}))),
+    viaMulticall,
+    TOKEN_CHUNK * FIELDS.length,
+  );
+
   const tokens: SiteToken[] = [];
-  for (let id = 0n; id < minted; id++) {
-    let owner: `0x${string}`;
-    try {
-      owner = await publicClient.readContract({...shapes, functionName: "ownerOf", args: [id]});
-    } catch {
-      continue; // burned
-    }
-    const [backing, seed, black, uri, composeDepth] = await Promise.all([
-      publicClient.readContract({...shapes, functionName: "backingOf", args: [id]}),
-      publicClient.readContract({...shapes, functionName: "seedOf", args: [id]}),
-      publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
-      publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
-      publicClient.readContract({...shapes, functionName: "composeDepth", args: [id]}),
-    ]);
+  for (let i = 0; i < live.length; i++) {
+    const {id, owner} = live[i];
+    const row = reads.slice(i * FIELDS.length, (i + 1) * FIELDS.length);
+    const failed = row.find((r) => r.status === "failure");
+    if (failed && failed.status === "failure") throw failed.error;
+    const [backing, seed, black, uri, composeDepth] = row.map(
+      (r) => (r as {result: unknown}).result,
+    );
     if (black) continue;
-    const {image, meta} = parseUri(uri);
+    const {image, meta} = parseUri(uri as string);
     tokens.push({
       id,
-      backing,
-      di: denomIndexOf(backing),
-      seed: BigInt(seed),
+      backing: backing as bigint,
+      di: denomIndexOf(backing as bigint),
+      seed: BigInt(seed as bigint),
       owner,
       image,
       meta,

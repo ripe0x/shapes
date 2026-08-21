@@ -33,7 +33,7 @@ const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 // single token's lineage; an indexer is the right source once log volume grows.
 const MAX_RANGE = 45_000n;
 
-async function paginate<T>(
+export async function paginate<T>(
   dep: Deployment,
   latest: bigint,
   fetch: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,

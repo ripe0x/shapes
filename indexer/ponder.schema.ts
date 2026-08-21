@@ -15,6 +15,11 @@ export const token = onchainTable(
     // separate InkGene event emitted right after the structural event; the default holds only
     // for the instant between the two within one transaction.
     inkGene: t.integer().notNull().default(0),
+    // Materialized module geometry from ModulesSampled: set on compose (survivor), split
+    // (each child) and decompose (survivor restore, each re-minted input). Null means
+    // seed-derived geometry (grammar v1); an original mint never emits ModulesSampled, so its
+    // row keeps this null.
+    modules: t.hex(),
     isBlack: t.boolean().notNull().default(false),
     live: t.boolean().notNull().default(true),
     owner: t.hex().notNull(),

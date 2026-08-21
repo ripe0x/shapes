@@ -12,6 +12,14 @@
       a { color: #e6e4dd; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
       a:hover { color: #8f8f88; }
       @keyframes artin { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes dotpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+      /* Auction hero row: artwork at 2/3, bid panel at 1/3, stacked below 860px. */
+      /* align-items: stretch so the panel column's left-edge rule (its own border-left) always
+         spans the full row height, connecting the header's rule above to the row's own bottom
+         rule below, regardless of which column's content is taller. */
+      .auction-hero { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); gap: 40px; align-items: stretch; }
+      @media (max-width: 860px) { .auction-hero { grid-template-columns: 1fr; } }
+      .status-dot-live { animation: dotpulse 1.6s ease-in-out infinite; }
       /* Buttons inherit the page font here rather than via an inline `font` shorthand: React
          sets style properties in object key order, so a shorthand can land after an inline
          font-size and silently reset it to 16px. A stylesheet rule always loses to inline
@@ -20,7 +28,7 @@
       /* Hover states for the recurring button styles. Inline styles carry everything else. */
       .btn-filled { border: 1px solid #e6e4dd; background: #e6e4dd; color: #0d0d0c; font: inherit; font-size: 13px; cursor: pointer; flex: 0 0 auto; white-space: nowrap; }
       .btn-filled:hover { background: #ffffff; }
-      .btn-filled:disabled { cursor: default; background: #e6e4dd; }
+      .btn-filled:disabled { cursor: default; background: #262622; border-color: #262622; color: #71716b; }
       .btn-outline { border: 1px solid #3a3a34; background: none; color: #e6e4dd; font: inherit; font-size: 13px; cursor: pointer; flex: 0 0 auto; white-space: nowrap; }
       .btn-outline:hover { border-color: #e6e4dd; }
       .btn-ghost { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }

@@ -6,6 +6,7 @@ import { Batch } from "./Batch";
 import { Inspect } from "./Inspect";
 import { GifBar } from "./GifBar";
 import { Vocabulary } from "./Vocabulary";
+import { Dna } from "./Dna";
 import {
   CANONICAL_NUM,
   diffFromCanonical,
@@ -21,7 +22,7 @@ export interface Selection {
   tokenId: bigint;
 }
 
-type View = "ladder" | "batch" | "vocabulary";
+type View = "ladder" | "batch" | "vocabulary" | "dna";
 
 export function App() {
   const [view, setView] = React.useState<View>("ladder");
@@ -145,6 +146,9 @@ export function App() {
             <Button active={view === "vocabulary"} onClick={() => setView("vocabulary")}>
               vocabulary
             </Button>
+            <Button active={view === "dna"} onClick={() => setView("dna")}>
+              dna
+            </Button>
             <span style={{width: 14}} />
             <Button
               active={selectMode}
@@ -210,8 +214,10 @@ export function App() {
             badgeOf={indexOf}
             addMany={addMany}
           />
-        ) : (
+        ) : view === "vocabulary" ? (
           <Vocabulary params={params} />
+        ) : (
+          <Dna params={params} />
         )}
 
         <GifBar

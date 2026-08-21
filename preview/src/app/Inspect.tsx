@@ -1,12 +1,14 @@
 import React from "react";
-import { C, Button, mono, forDisplay } from "./ui";
+import { C, Button, Label, mono, forDisplay } from "./ui";
 import {
   composeShape,
   moduleGlyph,
   moduleSequence,
   renderShape,
+  svgFromComposition,
   tokenMetadataJson,
   tokenURI,
+  type Composition,
 } from "../canonical/render";
 import { fmt } from "../canonical/wad";
 import { LABELS } from "../canonical/denominations";
@@ -18,6 +20,16 @@ import { withGridOverlay } from "./gridOverlay";
 import { moduleExtent } from "./containment";
 import { mintGene } from "../previewGene";
 import type { Selection } from "./App";
+import { encodeModules, moduleBytesToHex } from "../canonical/moduleCodec";
+import {
+  cellDetailAt,
+  cellStyleAt,
+  DetailPanel,
+  donorColor,
+  ProvenanceCard,
+  useActiveCell,
+  type ProvenanceInfo,
+} from "./provenance";
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
@@ -30,27 +42,49 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-export function Inspect({
-  sel,
-  params,
-  showGrid,
-  inverted,
-  onClose,
-}: {
-  sel: Selection;
+/** A sampled (compose/split result) composition to inspect in place of a seed-derived one.
+ *  `tokenId` is a display placeholder: sampled compositions previewed from the dna tab carry
+ *  no real token id. */
+export interface InspectSampled {
+  composition: Composition;
+  bytes: Uint8Array;
+  tokenId: bigint;
+  label: string;
+}
+
+type InspectProps = {
   params: Params;
   showGrid: boolean;
   inverted: boolean;
   onClose: () => void;
-}) {
-  const { seed, amountWei, tokenId } = sel;
+  /** Per-cell donor/split provenance for the DNA section. Only meaningful alongside `sampled`;
+   *  a seed-derived card's DNA section reads its own module bytes directly. */
+  provenance?: ProvenanceInfo;
+} & ({ sel: Selection; sampled?: undefined } | { sel?: undefined; sampled: InspectSampled });
+
+export function Inspect({
+  sel,
+  sampled,
+  params,
+  showGrid,
+  inverted,
+  onClose,
+  provenance,
+}: InspectProps) {
+  const tokenId = sampled ? sampled.tokenId : sel.tokenId;
   const [copied, setCopied] = React.useState<string | null>(null);
   const [overlay, setOverlay] = React.useState(showGrid);
   const [black, setBlack] = React.useState(inverted);
-  const c = composeShape(seed, amountWei, mintGene(seed, amountWei), params);
-  const svg = renderShape(seed, amountWei, tokenId, mintGene(seed, amountWei), params, black);
+  const c: Composition = sampled
+    ? sampled.composition
+    : composeShape(sel.seed, sel.amountWei, mintGene(sel.seed, sel.amountWei), params);
+  const svg = sampled
+    ? svgFromComposition(c, tokenId, params, black)
+    : renderShape(sel.seed, sel.amountWei, tokenId, mintGene(sel.seed, sel.amountWei), params, black);
+  const bytes = sampled ? sampled.bytes : encodeModules(c.modules);
   // The raw SVG shown and copied below is always canonical; the overlay is a display layer.
-  const displaySvg = overlay ? withGridOverlay(svg, seed, amountWei, params) : svg;
+  // The debug escape-overlay reads a seed directly, so it only applies to a seed-derived card.
+  const displaySvg = !sampled && overlay ? withGridOverlay(svg, sel.seed, sel.amountWei, params) : svg;
 
   const copy = async (what: string, text: string) => {
     try {
@@ -103,9 +137,11 @@ export function Inspect({
             dangerouslySetInnerHTML={{ __html: forDisplay(displaySvg) }}
           />
           <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-            <Button active={overlay} onClick={() => setOverlay((o) => !o)}>
-              grid overlay
-            </Button>
+            {!sampled && (
+              <Button active={overlay} onClick={() => setOverlay((o) => !o)}>
+                grid overlay
+              </Button>
+            )}
             <Button active={black} onClick={() => setBlack((b) => !b)}>
               black
             </Button>
@@ -130,16 +166,23 @@ export function Inspect({
             }}
           >
             <div style={{ fontSize: 18, letterSpacing: "0.1em", fontWeight: 500 }}>
-              SHAPE #{tokenId.toString()}
+              {sampled ? sampled.label.toUpperCase() : `SHAPE #${tokenId.toString()}`}
             </div>
             <Button onClick={onClose}>close (esc)</Button>
           </div>
 
           <Row k="eth value" v={`${LABELS[c.denomIndex]} ETH`} />
-          <Row k="amount (wei)" v={amountWei.toString()} />
+          {!sampled && <Row k="amount (wei)" v={sel.amountWei.toString()} />}
           <Row k="token id" v={tokenId.toString()} />
-          <Row k="seed" v={"0x" + seed.toString(16).padStart(64, "0")} />
-          <Row k="stream seed" v={"0x" + (seed & 0xffffffffn).toString(16).padStart(8, "0")} />
+          {!sampled && (
+            <>
+              <Row k="seed" v={"0x" + sel.seed.toString(16).padStart(64, "0")} />
+              <Row
+                k="stream seed"
+                v={"0x" + (sel.seed & 0xffffffffn).toString(16).padStart(8, "0")}
+              />
+            </>
+          )}
           <Row k="grid" v={`${c.cols} × ${c.rows} — ${c.cols * c.rows} modules`} />
           <Row k="cell" v={fmt(c.cell)} />
           <Row k="cell fill" v={fmt(c.fill)} />
@@ -147,10 +190,12 @@ export function Inspect({
           <Row k="wRatio" v={fmt(c.wRatio)} />
           <Row k="stroke" v={fmt(c.weight)} />
           <Row k="draws consumed" v={c.draws} />
-          <Row
-            k="geometry hash"
-            v={shortHash(renderGeometry(seed, amountWei, mintGene(seed, amountWei), params))}
-          />
+          {!sampled && (
+            <Row
+              k="geometry hash"
+              v={shortHash(renderGeometry(sel.seed, sel.amountWei, mintGene(sel.seed, sel.amountWei), params))}
+            />
+          )}
           <Row
             k="modules"
             v={<span style={{ fontSize: 15, letterSpacing: "0.18em" }}>{moduleSequence(c)}</span>}
@@ -204,32 +249,41 @@ export function Inspect({
             >
               <span style={{ ...mono, fontSize: 10, color: C.dim }}>RAW SVG</span>
               <Button onClick={() => copy("svg", svg)}>copy</Button>
-              <Button
-                onClick={() =>
-                  copy(
-                    "metadata",
-                    tokenMetadataJson(
-                      seed,
-                      amountWei,
-                      tokenId,
-                      1n,
-                      black,
-                      mintGene(seed, amountWei),
-                      0n,
-                      undefined,
-                      undefined,
-                      params,
-                    ),
-                  )
-                }
-              >
-                copy metadata json
-              </Button>
-              <Button
-                onClick={() => copy("tokenURI", tokenURI(seed, amountWei, tokenId, 1n, black, mintGene(seed, amountWei), 0n, params))}
-              >
-                copy tokenURI
-              </Button>
+              {!sampled && (
+                <>
+                  <Button
+                    onClick={() =>
+                      copy(
+                        "metadata",
+                        tokenMetadataJson(
+                          sel.seed,
+                          sel.amountWei,
+                          tokenId,
+                          1n,
+                          black,
+                          mintGene(sel.seed, sel.amountWei),
+                          0n,
+                          undefined,
+                          undefined,
+                          params,
+                        ),
+                      )
+                    }
+                  >
+                    copy metadata json
+                  </Button>
+                  <Button
+                    onClick={() =>
+                      copy(
+                        "tokenURI",
+                        tokenURI(sel.seed, sel.amountWei, tokenId, 1n, black, mintGene(sel.seed, sel.amountWei), 0n, params),
+                      )
+                    }
+                  >
+                    copy tokenURI
+                  </Button>
+                </>
+              )}
               {copied && (
                 <span style={{ ...mono, fontSize: 10, color: C.ok }}>{copied} copied</span>
               )}
@@ -255,8 +309,87 @@ export function Inspect({
               {svg.length} bytes
             </div>
           </div>
+
+          <DnaSection composition={c} bytes={bytes} params={params} provenance={provenance} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Per-cell DNA: which module byte each cell decodes to, and, when `provenance` is supplied,
+ * which donor and source module index it was sampled from. Collapsed by default; the overlay
+ * card and detail panel are the same components the dna tab uses, so hovering a cell here reads
+ * identically to hovering it there.
+ */
+function DnaSection({
+  composition,
+  bytes,
+  params,
+  provenance,
+}: {
+  composition: Composition;
+  bytes: Uint8Array;
+  params: Params;
+  provenance?: ProvenanceInfo;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const { active, onEnter, onLeave, onClickCell } = useActiveCell();
+  const detail = active != null ? cellDetailAt(active, bytes, provenance) : null;
+
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <span style={{ ...mono, fontSize: 10, color: C.dim, letterSpacing: "0.06em" }}>
+          DNA —{" "}
+          {provenance
+            ? provenance.type === "compose"
+              ? "compose provenance"
+              : "split provenance"
+            : "seed-derived (grammar v1)"}
+        </span>
+        <Button active={open} onClick={() => setOpen((o) => !o)}>
+          {open ? "hide" : "show"}
+        </Button>
+      </div>
+      {open && (
+        <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <ProvenanceCard
+            composition={composition}
+            params={params}
+            width={180}
+            cellStyle={(j) => cellStyleAt(j, active, provenance)}
+            onEnter={onEnter}
+            onLeave={onLeave}
+            onClickCell={onClickCell}
+          />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {provenance?.type === "compose" && (
+              <div>
+                <Label>donor legend</Label>
+                <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                  {provenance.donorLabels.map((label, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 2, background: donorColor(i) }} />
+                      <span style={{ ...mono, fontSize: 10.5, color: C.mid }}>
+                        {label}
+                        {provenance.donorMaterialized[i] ? " · materialized" : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {detail && (
+              <DetailPanel label={detail.label} moduleIndex={detail.moduleIndex} byte={detail.byte} color={detail.color} />
+            )}
+            <div style={{ ...mono, fontSize: 10, color: C.dim }}>
+              result bytes: {moduleBytesToHex(bytes)}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

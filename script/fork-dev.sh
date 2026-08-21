@@ -49,10 +49,10 @@ say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 # dev chain used only for browsing. Normal txs are unaffected.
 if [ -n "$FORK_URL" ]; then
   say "Starting mainnet-forked Anvil on $RPC (fork: $FORK_URL, chain $CHAIN_ID)"
-  anvil --fork-url "$FORK_URL" --chain-id "$CHAIN_ID" --port "$PORT" --gas-limit 500000000 >/tmp/shapes-anvil.log 2>&1 &
+  anvil --fork-url "$FORK_URL" --chain-id "$CHAIN_ID" --port "$PORT" --gas-limit 5000000000 >/tmp/shapes-anvil.log 2>&1 &
 else
   say "Starting local Anvil on $RPC (chain $CHAIN_ID)"
-  anvil --chain-id "$CHAIN_ID" --port "$PORT" --gas-limit 500000000 >/tmp/shapes-anvil.log 2>&1 &
+  anvil --chain-id "$CHAIN_ID" --port "$PORT" --gas-limit 5000000000 >/tmp/shapes-anvil.log 2>&1 &
 fi
 ANVIL_PID=$!
 trap 'kill $ANVIL_PID 2>/dev/null || true' EXIT
@@ -64,6 +64,14 @@ for _ in $(seq 1 50); do
 done
 cast block-number --rpc-url "$RPC" >/dev/null 2>&1 || { echo "anvil never came up; see /tmp/shapes-anvil.log"; exit 1; }
 
+# Multicall3 at its canonical address, used by the site's batched reads (preview/src/site/data.ts).
+# A plain anvil chain has no predeploys; a mainnet fork already has it, so etch only when absent.
+# script/multicall3-runtime.hex is the deployed runtime bytecode from mainnet.
+MULTICALL3=0xcA11bde05977b3631167028862bE2a173976CA11
+if [ "$(cast code "$MULTICALL3" --rpc-url "$RPC")" = "0x" ]; then
+  say "Etching Multicall3"
+  cast rpc anvil_setCode "$MULTICALL3" "$(cat "$REPO_ROOT/script/multicall3-runtime.hex")" --rpc-url "$RPC" >/dev/null
+fi
 # Block height before the deploy: lower bound for the frontend's event-log scans (the
 # Deployment interface's optional fromBlock). 0 on a plain chain, fork head when forking.
 DEPLOY_BLOCK=$(cast block-number --rpc-url "$RPC")
@@ -79,10 +87,11 @@ OUT=$(SHAPES_FEE_RECIPIENT="$FEE_RECIPIENT" \
 SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 COLLECTION=$(echo "$OUT" | grep -oE 'ShapeCollection\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+LENS=$(echo "$OUT" | grep -oE 'ShapeLens\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 FEE_BPS=$(cast call "$SHAPES" "feeBps()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
 
-[ -n "$SHAPES" ] && [ -n "$RENDERER" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
+[ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
 
 if [ -n "$SEED_WALLETS" ]; then
   say "Seeding wallets with $SEED_ETH ETH each"
@@ -105,6 +114,7 @@ cat >"$DEPLOYMENT_FILE" <<JSON
   "rpc": "$RPC",
   "chainId": $CHAIN_ID,
   "shapes": "$SHAPES",
+  "lens": "$LENS",
   "renderer": "$RENDERER",
   "collection": "$COLLECTION",
   "auctionHouse": "$HOUSE",
@@ -115,6 +125,7 @@ JSON
 
 say "Ready"
 echo "  Shapes        $SHAPES"
+echo "  ShapeLens     $LENS"
 echo "  ShapeRenderer $RENDERER"
 echo "  ShapeCollection $COLLECTION"
 echo "  AuctionHouse  $HOUSE"

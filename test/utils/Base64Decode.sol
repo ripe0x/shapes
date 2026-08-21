@@ -22,8 +22,7 @@ library Base64Decode {
         uint256 o = 0;
 
         for (uint256 i = 0; i < s.length; i += 4) {
-            uint256 chunk = (_v(s[i]) << 18) | (_v(s[i + 1]) << 12) | (_vp(s[i + 2]) << 6)
-                | _vp(s[i + 3]);
+            uint256 chunk = (_v(s[i]) << 18) | (_v(s[i + 1]) << 12) | (_vp(s[i + 2]) << 6) | _vp(s[i + 3]);
             if (o < out.length) out[o++] = bytes1(uint8(chunk >> 16));
             if (o < out.length) out[o++] = bytes1(uint8((chunk >> 8) & 0xff));
             if (o < out.length) out[o++] = bytes1(uint8(chunk & 0xff));

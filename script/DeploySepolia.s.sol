@@ -6,6 +6,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
+import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
@@ -25,7 +26,13 @@ contract DeploySepolia is Script {
 
     function run()
         external
-        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
+        returns (
+            ShapeRenderer renderer,
+            ShapeCollection collection,
+            Shapes shapes,
+            ShapeLens lens,
+            ShapeAuctionHouse house
+        )
     {
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         bool seed = vm.envOr("SEED_ETH", true);
@@ -37,6 +44,7 @@ contract DeploySepolia is Script {
 
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes(feeBps, me, address(renderer), address(collection));
+        lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
 
         if (seed) {
@@ -57,10 +65,12 @@ contract DeploySepolia is Script {
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == me, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
+        require(address(lens.shapes()) == address(shapes), "lens points at another token");
 
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));
         console.log("Shapes        ", address(shapes));
+        console.log("ShapeLens     ", address(lens));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", me);
         console.log("total minted  ", shapes.totalMinted());

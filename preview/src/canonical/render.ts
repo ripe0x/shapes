@@ -27,6 +27,7 @@ import {
   GRIDS,
   LABELS,
   denominationIndex,
+  unitsAt,
 } from "./denominations";
 import { GENE_PROBABILITY, GENE_NAMES } from "./ink";
 
@@ -80,6 +81,37 @@ export interface Composition {
  * Composition
  * ------------------------------------------------------------------ */
 
+/** Per-denomination layout, shared by every module on a card. */
+export interface CardGeometry {
+  cols: number;
+  rows: number;
+  cell: bigint;
+  x0: bigint;
+  y0: bigint;
+  halfCell: bigint;
+  /** Painted half-extent every module on this card reaches, in user units. */
+  target: bigint;
+  /** Stroke weight, identical for every outlined mark on this card. */
+  weight: bigint;
+}
+
+/**
+ * Grid layout and card constants for a denomination index, independent of seed or ink gene.
+ * Shared by the seed-drawn path (`composeShape`) and the sampled path (`composeSampledShape`)
+ * so both derive positions, size and stroke from one place.
+ */
+export function geometryAt(denomIndex: number, p: Params = CANONICAL): CardGeometry {
+  const [cols, rows] = GRIDS[denomIndex];
+  // cell = min(FIELD.w / cols, FIELD.h / rows)
+  const cell = min(FIELD.w / BigInt(cols), FIELD.h / BigInt(rows));
+  const x0 = FIELD.cx - (BigInt(cols) * cell) / 2n;
+  const y0 = p.fieldCy - (BigInt(rows) * cell) / 2n;
+  const halfCell = cell / 2n;
+  const target = mulWad(halfCell, p.fill);
+  const weight = mulWad(2n * target, p.wRatio);
+  return {cols, rows, cell, x0, y0, halfCell, target, weight};
+}
+
 /**
  * Resolve a token into its full geometric description.
  *
@@ -114,19 +146,11 @@ export function composeShape(
     throw new Error(`gene out of range: ${inkGene}`);
   }
 
-  const [cols, rows] = GRIDS[di];
   const rand = new Round03Rand(seed32Of(seed));
-
-  // cell = min(FIELD.w / cols, FIELD.h / rows)
-  const cell = min(FIELD.w / BigInt(cols), FIELD.h / BigInt(rows));
-  const x0 = FIELD.cx - (BigInt(cols) * cell) / 2n;
-  const y0 = p.fieldCy - (BigInt(rows) * cell) / 2n;
-  const halfCell = cell / 2n;
 
   // Size and stroke are collection constants, proportional to the cell. Everything a Shape
   // varies is in the vocabulary, not in its scale.
-  const target = mulWad(halfCell, p.fill);
-  const weight = mulWad(2n * target, p.wRatio);
+  const {cols, rows, cell, x0, y0, halfCell, target, weight} = geometryAt(di, p);
   // The seed's card-level fill draw is consumed here so the stream stays aligned with every
   // downstream cell, but its value is discarded: the ink gene replaces it (superseding the
   // earlier "history sets the ink" prototype).
@@ -225,7 +249,7 @@ export function drawSolidProbability(r: bigint, p: Params = CANONICAL): bigint {
  *                                 corners, the line's tips are clipped into the other two
  *                                 -> size = 2 * target
  */
-function solveSize(
+export function solveSize(
   kind: Kind,
   solid: boolean,
   target: bigint,
@@ -462,25 +486,22 @@ function textSvg(
 }
 
 /**
- * Render the complete SVG document for a token.
+ * Render the complete SVG document for a composition. Shared by the seed-drawn path
+ * (`renderShape`) and the sampled path (`renderSampledShape` in `./sampling`), so both draw the
+ * same document structure from a `Composition` regardless of where its modules came from.
  *
  * The committed card carries no type: black field, white marks, nothing else. `tokenId` is
- * therefore unused unless the preview's `showText` override is on, and the Solidity renderer
- * does not take it at all.
+ * therefore unused unless `p.showText` is on, and the Solidity renderer does not take it at all.
  *
  * Every string in the output is drawn from a fixed table or is a decimal produced by `fmt`.
  * No caller-controlled text ever reaches the document, so there is no injection surface.
  */
-export function renderShape(
-  seed: bigint,
-  amountWei: bigint,
+export function svgFromComposition(
+  c: Composition,
   tokenId: bigint,
-  inkGene: number,
-  p: Params = CANONICAL,
-  inverted = false,
+  p: Params,
+  inverted: boolean,
 ): string {
-  const c = composeShape(seed, amountWei, inkGene, p);
-
   const bg = inverted ? "#fff" : "#000";
   const fg = inverted ? "#000" : "#fff";
 
@@ -501,6 +522,18 @@ export function renderShape(
   out += `</svg>`;
 
   return out;
+}
+
+export function renderShape(
+  seed: bigint,
+  amountWei: bigint,
+  tokenId: bigint,
+  inkGene: number,
+  p: Params = CANONICAL,
+  inverted = false,
+): string {
+  const c = composeShape(seed, amountWei, inkGene, p);
+  return svgFromComposition(c, tokenId, p, inverted);
 }
 
 /**
@@ -527,7 +560,7 @@ export function renderGeometry(
  * ------------------------------------------------------------------ */
 
 /** Distinct rotations each kind takes: 1 (rotation-invariant), 2 (the diagonal line), or 4. */
-const ROT_COUNT: Record<Kind, number> = {
+export const ROT_COUNT: Record<Kind, number> = {
   circle: 1,
   square: 1,
   diamond: 1,
@@ -763,11 +796,9 @@ export function seedHex(seed: bigint): string {
   return "0x" + seed.toString(16).padStart(64, "0");
 }
 
-const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
-
 /** The backing's 0.01-unit count for a composition. */
 export function unitsOf(c: Composition): bigint {
-  return DENOMINATIONS[c.denomIndex] / UNIT;
+  return unitsAt(c.denomIndex);
 }
 
 /**
@@ -803,20 +834,22 @@ export function densityPercent(units: bigint, originCount: bigint): string {
   return `${whole}.${two}`;
 }
 
-export function tokenMetadataJson(
-  seed: bigint,
-  amountWei: bigint,
+/**
+ * Metadata JSON attributes block, built from a composition and its already-rendered SVG. Shared
+ * by the seed-drawn path (`tokenMetadataJson`) and the sampled path (`sampledTokenMetadataJson`
+ * in `./sampling`).
+ */
+export function metadataJsonFromComposition(
+  c: Composition,
+  svg: string,
   tokenId: bigint,
   originCount: bigint,
   inverted: boolean,
   inkGene: number,
   composeDepth: bigint,
-  namePrefix: string = "Shape ",
-  description: string = DESCRIPTION,
-  p: Params = CANONICAL,
+  namePrefix: string,
+  description: string,
 ): string {
-  const c = composeShape(seed, amountWei, inkGene, p);
-  const svg = renderShape(seed, amountWei, tokenId, inkGene, p, inverted);
   const units = unitsOf(c);
   const complete = !inverted && units > 1n && originCount === units;
   return (
@@ -840,6 +873,33 @@ export function tokenMetadataJson(
     `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +
     `{"trait_type":"Compose Depth","value":"${composeDepth.toString()}"}` +
     `]}`
+  );
+}
+
+export function tokenMetadataJson(
+  seed: bigint,
+  amountWei: bigint,
+  tokenId: bigint,
+  originCount: bigint,
+  inverted: boolean,
+  inkGene: number,
+  composeDepth: bigint,
+  namePrefix: string = "Shape ",
+  description: string = DESCRIPTION,
+  p: Params = CANONICAL,
+): string {
+  const c = composeShape(seed, amountWei, inkGene, p);
+  const svg = svgFromComposition(c, tokenId, p, inverted);
+  return metadataJsonFromComposition(
+    c,
+    svg,
+    tokenId,
+    originCount,
+    inverted,
+    inkGene,
+    composeDepth,
+    namePrefix,
+    description,
   );
 }
 

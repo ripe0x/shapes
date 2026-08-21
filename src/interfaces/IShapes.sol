@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {ShapeChildPreview, ShapeFormation, ShapeState} from "./IShapeCapabilities.sol";
+import {ShapeFormation} from "./IShapeCapabilities.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
 /// @title IShapes
@@ -13,6 +13,13 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
 ///      The owner may administer and independently lock the value-inert renderer and optional
 ///      position resolver; ownership itself is transferable and renounceable.
+///
+///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
+///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
+///      read-only periphery, deployed separately as `ShapeLens` (`IShapeLens`) to keep this
+///      contract's runtime bytecode under the EIP-170 size limit. `modulesOf`,
+///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the minimal
+///      raw accessors `ShapeLens` reads to reconstruct them.
 interface IShapes is IERC721, IERC721Value {
     /// @notice Emitted when a Shape is minted. `originCount` is always 1: a mint is the sole
     ///         source of new origins. A strict origin-creation signal; recomposition does not
@@ -103,6 +110,12 @@ interface IShapes is IERC721, IERC721Value {
     ///         id when a survivor's compose is reversed, in addition to the aggregate `Decomposed`.
     event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId);
 
+    /// @notice Emitted whenever a token's materialized module geometry (`ModuleCodec`) is set or
+    ///         restored: the survivor after `compose`, each child after `split`, and both the
+    ///         survivor and every re-minted input after `decompose`. Empty `modules` signals the
+    ///         token's geometry has reverted to seed-derived grammar v1.
+    event ModulesSampled(uint256 indexed tokenId, bytes modules);
+
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
     error ZeroQuantity();
@@ -146,6 +159,12 @@ interface IShapes is IERC721, IERC721Value {
     error InvalidPositionResolver();
     /// @dev The position resolver cannot be changed or locked again after its permanent lock.
     error PositionResolverIsLocked();
+    /// @dev Reverted by `IShapeLens.composeRecordAt` when `depth >= composeDepth(survivorId)`,
+    ///      checked against `composeDepth` there rather than inside `composeRecordHeaderAt`.
+    error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable);
+    /// @dev `splitOriginRaw` requires `tokenId` to have been minted as a split child. Original
+    ///      mints and re-minted decompose outputs never carry an entry.
+    error NotASplitChild(uint256 tokenId);
 
     /* --------------------------- immutables --------------------------- */
 
@@ -356,34 +375,20 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
 
+    /// @notice A live Shape's raw materialized module array (`ModuleCodec`), empty when its
+    ///         geometry derives from `seed` under grammar v1. The minimal raw accessor
+    ///         `ShapeLens` reads to assemble the rich views moved off this contract; the other
+    ///         field those views need, denomination index, is recoverable from `backingOf` for a
+    ///         non-Black Shape (`sacrifice` requires the apex denomination and no path changes a
+    ///         live token's denomination after it turns Black, so a Black Shape's denomination
+    ///         index is always the apex one, `denominationCount() - 1`).
+    function modulesOf(uint256 tokenId) external view returns (bytes memory);
+
     /// @notice Collection-level metadata URI, read from the renderer.
     function contractURI() external view returns (string memory);
 
-    /// @notice AutoGlyph-style Unicode rendering of a live Shape's canonical module grid.
-    /// @dev Cells are separated by spaces and rows by newlines. This is intended for display;
-    ///      integrations that need machine-readable geometry should call `IShapeGeometry` on
-    ///      `renderer()` instead.
-    function unicodeCard(uint256 tokenId) external view returns (string memory);
-
-    /// @notice Every protocol fact about a live Shape in one canonical read.
-    function shapeState(uint256 tokenId) external view returns (ShapeState memory);
-
     /// @notice Stable numeric formation class; metadata strings are presentation only.
     function formationOf(uint256 tokenId) external view returns (ShapeFormation);
-
-    /// @notice The state `compose(survivorId, burnIds)` would produce. Requires no caller
-    ///         ownership and moves no state. Applies compose's validation: existence, not-Black,
-    ///         no self-burn, no duplicate id, and a summed backing that lands on a denomination.
-    function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
-        external
-        view
-        returns (ShapeState memory result);
-
-    /// @notice Validate a split and return every deterministic child before changing state.
-    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
-        external
-        view
-        returns (ShapeChildPreview[] memory children);
 
     /// @notice Whether a Shape is Complete: not Black, above the minimum tier, and carrying one
     ///         origin per 0.01 unit of backing (`originCount == backing / 0.01`).
@@ -400,6 +405,68 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice The survivor's compose-stack depth: how many stacked composes `decompose` can still
     ///         reverse, newest first. Zero means nothing to decompose.
     function composeDepth(uint256 survivorId) external view returns (uint256);
+
+    /// @notice Raw accessor for one compose record's survivor-side fields on `survivorId`'s stack
+    ///         at `depth` (0 the oldest, `composeDepth(survivorId) - 1` the newest, next in line
+    ///         for `decompose`), plus the record's input count. `ShapeLens.composeRecordAt`
+    ///         combines this with `composeRecordInputAt` to reassemble the full
+    ///         `ComposeRecordView` (IShapeLens); declared here rather than as a rich struct getter
+    ///         to keep this contract's runtime bytecode under the EIP-170 size limit.
+    /// @dev No `depth` bounds check: an out-of-range `depth` panics on the storage array access
+    ///      rather than reverting `ComposeRecordOutOfRange`. `ShapeLens.composeRecordAt` checks
+    ///      `depth` against `composeDepth` itself and reverts that error before calling this.
+    function composeRecordHeaderAt(uint256 survivorId, uint256 depth)
+        external
+        view
+        returns (
+            uint8 survivorDenomIndex,
+            uint32 survivorOriginCount,
+            uint8 survivorInkGene,
+            bytes memory survivorModules,
+            uint256 inputCount
+        );
+
+    /// @notice Raw accessor for one burned input's fields within the compose record at
+    ///         `(survivorId, depth)`, indexed 0..`inputCount - 1` as reported by
+    ///         `composeRecordHeaderAt`. See `IShapeLens.composeRecordAt` for the reassembled view.
+    /// @dev Reverts with the standard out-of-bounds panic for an `inputIndex` at or beyond the
+    ///      record's input count.
+    function composeRecordInputAt(uint256 survivorId, uint256 depth, uint256 inputIndex)
+        external
+        view
+        returns (
+            uint256 id,
+            bytes32 seed,
+            uint8 denomIndex,
+            uint32 originCount,
+            uint8 inkGene,
+            bytes memory modules
+        );
+
+    /// @notice The split that minted `childId`: the parent's pre-split seed, denomination index,
+    ///         ink gene and effective module snapshot (SAMPLING_SPEC.md), plus `childId`'s index
+    ///         among that split's outputs. A caller re-runs `GeometrySampling.sampleSplitChild`
+    ///         with this data and the child's own denomination index to reproduce the child's
+    ///         module bytes as sampled at split time.
+    /// @dev The record is written once per split and shared by every child of that split; only
+    ///      `childIndex` distinguishes them. It survives the child's own later mutation (e.g. the
+    ///      child subsequently used as a compose survivor): this view answers how the token was
+    ///      created, not what it currently looks like, so it keeps answering even though
+    ///      `IShapeLens.shapeState(childId).modules` has since moved on to a later operation's
+    ///      result. Reverts `NotASplitChild` for a token that was never minted by `split`/
+    ///      `splitTo` (an original mint, or an input re-minted verbatim by `decompose`). Already
+    ///      minimal (a passthrough, no struct assembly), so `ShapeLens.splitOriginOf` returns this
+    ///      unchanged rather than reassembling anything.
+    function splitOriginRaw(uint256 childId)
+        external
+        view
+        returns (
+            bytes32 parentSeed,
+            uint8 parentDenomIndex,
+            uint8 parentInkGene,
+            bytes memory parentModules,
+            uint256 childIndex
+        );
 
     /// @notice Deterministic seed assigned to a split child at `childIndex`.
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);

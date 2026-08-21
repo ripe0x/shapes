@@ -11,6 +11,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
+import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
@@ -41,6 +42,7 @@ abstract contract ShapesBase is Test {
 
     ShapeCollection internal collection;
     Shapes internal shapes;
+    ShapeLens internal lens;
 
     address internal feeRecipient = address(0xFEE);
     address internal alice = address(0xA11CE);
@@ -54,6 +56,7 @@ abstract contract ShapesBase is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        lens = new ShapeLens(address(shapes));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -1608,7 +1611,7 @@ contract BlackShapeTest is ShapesBase {
         shapes.split(id, outs);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.previewSplit(id, outs);
+        lens.previewSplit(id, outs);
     }
 }
 
@@ -1828,10 +1831,14 @@ contract InkGeneComposeTest is ShapesBase {
         assertTrue(shapes.isComplete(survivor));
         // Loose ceiling: this test exists to catch a regression and record the true number, not
         // to micro-optimise. 9,999 burns each touching the ink-gene fields is inherently large, and
-        // reversible compose adds a ~52k-gas record per input (~2 storage slots). This 10,000-in-one
-        // compose is far past any block gas limit and exists only as a gas-profile datapoint; real
-        // merges of this size are built incrementally, each step independently reversible.
-        assertLt(composeGas, 650_000_000, "10,000-dust mega-compose gas regressed");
+        // reversible compose adds a ~52k-gas record per input (~3 storage slots: seed, packed
+        // fields, and the input's materialized-modules snapshot, SAMPLING_SPEC.md). Module
+        // sampling itself adds a donor array built and sorted over all 10,000 donors (memory, not
+        // storage, but memory expansion is quadratic at this size) so the ceiling is raised from
+        // the pre-sampling baseline to keep headroom. This 10,000-in-one compose is far past any
+        // block gas limit and exists only as a gas-profile datapoint; real merges of this size are
+        // built incrementally, each step independently reversible.
+        assertLt(composeGas, 1_500_000_000, "10,000-dust mega-compose gas regressed");
     }
 }
 
@@ -1888,7 +1895,7 @@ contract InkGenePreviewTest is ShapesBase {
         }
 
         uint256 snapshot = vm.snapshotState();
-        shapes.previewCompose(first, burn);
+        lens.previewCompose(first, burn);
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(burn[i]), alice, "previewCompose burned an input");
         }
@@ -1903,6 +1910,6 @@ contract InkGenePreviewTest is ShapesBase {
         burn[0] = first + 1;
         burn[1] = first + 1;
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
-        shapes.previewCompose(first, burn);
+        lens.previewCompose(first, burn);
     }
 }

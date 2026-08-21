@@ -11,8 +11,10 @@ enum ShapeFormation {
 }
 
 /// @notice The complete protocol state of one live Shape in a single read.
-/// @dev `faceValueWei` is the Shape's denomination and survives sacrifice;
-///      `redeemableValueWei` is zero for a Black Shape and otherwise equals face value.
+/// @dev Returned by `IShapeLens.shapeState` and `IShapeLens.previewCompose`. `faceValueWei` is the
+///      Shape's denomination and survives sacrifice; `redeemableValueWei` is zero for a Black
+///      Shape and otherwise equals face value. `modules` is the token's materialized module array
+///      (`ModuleCodec`), empty when its geometry derives from `seed` under grammar v1.
 struct ShapeState {
     bytes32 seed;
     uint8 denominationIndex;
@@ -22,9 +24,10 @@ struct ShapeState {
     ShapeFormation formation;
     uint256 faceValueWei;
     uint256 redeemableValueWei;
+    bytes modules;
 }
 
-/// @notice One deterministic child returned by `previewSplit`.
+/// @notice One deterministic child returned by `IShapeLens.previewSplit`.
 struct ShapeChildPreview {
     bytes32 seed;
     uint8 denominationIndex;
@@ -33,10 +36,33 @@ struct ShapeChildPreview {
     uint256 faceValueWei;
 }
 
+/// @notice One burned compose input as returned by `composeRecordAt`.
+/// @dev `modules` is the input's materialized geometry snapshot at the time it was burned, empty
+///      if it had none (an unmaterialized original mint).
+struct ComposeInputView {
+    uint256 id;
+    bytes32 seed;
+    uint8 denominationIndex;
+    uint32 originCount;
+    uint8 inkGene;
+    bytes modules;
+}
+
+/// @notice One reversible compose record as returned by `composeRecordAt`: the survivor's
+///         pre-compose state and every input burned into it, in the order recorded.
+/// @dev `survivorModules` is the survivor's materialized geometry snapshot before the compose,
+///      empty if it had none.
+struct ComposeRecordView {
+    uint8 survivorDenominationIndex;
+    uint32 survivorOriginCount;
+    uint8 survivorInkGene;
+    bytes survivorModules;
+    ComposeInputView[] inputs;
+}
+
 /// @notice Stable value and redemption capability for integrators that do not need recomposition.
 interface IShapeValue {
     function backingOf(uint256 tokenId) external view returns (uint256);
-    function shapeState(uint256 tokenId) external view returns (ShapeState memory);
     function denominationAt(uint8 index) external pure returns (uint256);
     function denominationCount() external pure returns (uint8);
     function unit() external pure returns (uint256);
@@ -70,16 +96,4 @@ interface IShapeProvenance {
     function isComplete(uint256 tokenId) external view returns (bool);
     function formationOf(uint256 tokenId) external view returns (ShapeFormation);
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
-}
-
-/// @notice Stable deterministic-preview capability. These calls do not require caller ownership.
-interface IShapeSimulation {
-    function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
-        external
-        view
-        returns (ShapeState memory result);
-    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
-        external
-        view
-        returns (ShapeChildPreview[] memory children);
 }

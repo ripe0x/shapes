@@ -1,19 +1,34 @@
 import React from "react";
-import {formatEther} from "viem";
-import {DENOMINATIONS} from "../chain/abi";
-import {C} from "./theme";
-import {Section, Art, Modal, short, txUrl} from "./ui";
+import {formatEther, type PublicClient} from "viem";
+import {useBalance} from "wagmi";
+import {DENOMINATIONS, type Deployment} from "../chain/abi";
+import {C, label} from "./theme";
+import {Section, Modal, Art, txUrl} from "./ui";
 import {localArt} from "./art";
+import {useEnsDisplay} from "./ens";
 import {
   breakdown,
   formatCountdown,
-  isSettleable,
+  formatRelativeTime,
+  getPhase,
+  loadBidHistory,
   secondsLeft,
   unitsToEth,
   UNIT,
-  type AuctionState,
+  type AuctionSlot,
+  type BidHistoryEntry,
 } from "./auction";
 import type {SiteData, SiteToken} from "./data";
+
+/** Font size for the token name, the panel's dominant element. */
+const HERO_SIZE = 40;
+
+/** Font size for the current-bid amount and the countdown, which share one row at equal size. */
+const PRICE_SIZE = 22;
+
+/** Top padding of the hero row, in px. Reused as the target bottom margin below the artwork so
+ *  the image sits with matching space above and below within the viewport. */
+const TOP_MARGIN = 32;
 
 /** Ticks once a second so the countdown moves without the caller re-fetching the chain. */
 function useNow(): number {
@@ -25,12 +40,31 @@ function useNow(): number {
   return now;
 }
 
+/** Max height available for the hero artwork so it renders fully within the viewport: the window
+ *  height minus the measured header and minus the top margin twice, once for the gap already
+ *  above the art and once matched below it. Re-measured on resize since the header height and
+ *  viewport size can both change. */
+function useArtMaxHeight(): number | null {
+  const [maxHeight, setMaxHeight] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    const measure = () => {
+      const headerHeight = document.querySelector("header")?.getBoundingClientRect().height ?? 0;
+      setMaxHeight(window.innerHeight - headerHeight - 2 * TOP_MARGIN);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+  return maxHeight;
+}
+
 export function AuctionView({
   auction,
   lotImage,
   data,
+  dep,
+  publicClient,
   address,
-  chainId,
   busy,
   txErr,
   txHash,
@@ -40,11 +74,13 @@ export function AuctionView({
   onClaim,
   onOpenToken,
 }: {
-  auction: AuctionState | null;
+  /** "loading" before the first chain read resolves, null once resolved with no live auction. */
+  auction: AuctionSlot;
   lotImage: string | null;
   data: SiteData | null;
+  dep: Deployment;
+  publicClient: PublicClient | undefined;
   address: `0x${string}` | undefined;
-  chainId: number;
   busy: string | null;
   txErr: {op: string; text: string} | null;
   txHash: string | null;
@@ -55,9 +91,50 @@ export function AuctionView({
   onOpenToken: (id: bigint) => void;
 }) {
   const now = useNow();
+  const artMaxHeight = useArtMaxHeight();
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [ethAmount, setEthAmount] = React.useState("");
   const [asking, setAsking] = React.useState(false);
+  // Which input is live: the ETH field mints its own cards, the card picker spends cards the
+  // wallet already holds. Mutually exclusive — a bid is whichever mode is active, plus whatever
+  // is already escrowed from earlier bids.
+  const [mode, setMode] = React.useState<"eth" | "cards">("eth");
+  const {data: balance} = useBalance({
+    address,
+    chainId: dep.chainId,
+    query: {enabled: !!address},
+  });
+
+  // The standing bidder's identity, resolved before any early return so the hook order stays
+  // fixed regardless of the auction slot's state.
+  const highestBidder = auction && auction !== "loading" ? auction.highestBidder : undefined;
+  const bidderIdentity = useEnsDisplay(publicClient, highestBidder);
+
+  const auctionId = auction && auction !== "loading" ? auction.id : null;
+  const [bidHistory, setBidHistory] = React.useState<BidHistoryEntry[] | null>(null);
+  React.useEffect(() => {
+    if (!publicClient || auctionId === null) return;
+    let cancelled = false;
+    setBidHistory(null);
+    void loadBidHistory(publicClient, dep, auctionId).then((entries) => {
+      if (!cancelled) setBidHistory(entries);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // txHash re-triggers the load after any confirmed auction transaction; loadBidHistory's own
+    // cache (keyed by log count) makes this a no-op unless a new bid actually landed.
+  }, [publicClient, dep, auctionId, txHash]);
+
+  if (auction === "loading") {
+    return (
+      <Section title="AUCTION" last>
+        <p style={{margin: 0, fontSize: 15, lineHeight: 1.7, color: C.bodyDim, maxWidth: "60ch"}}>
+          Reading the chain…
+        </p>
+      </Section>
+    );
+  }
 
   if (!auction) {
     return (
@@ -69,10 +146,19 @@ export function AuctionView({
     );
   }
 
+  const phase = getPhase(auction, now);
   const left = secondsLeft(auction, now);
-  const ended = left !== null && left === 0;
   const yours = address && auction.highestBidder.toLowerCase() === address.toLowerCase();
   const isSeller = address && auction.seller.toLowerCase() === address.toLowerCase();
+  const nearExtension = phase === "live" && left !== null && left <= auction.extensionWindow;
+
+  // The lot's own name and denomination, looked up by the lot's tokenId (auction.tokenId), not
+  // the auction's own id (auction.id) — those are unrelated numbers. Looked up from the
+  // already-loaded token list (no extra chain read); absent if the token isn't in the live set
+  // for some reason, in which case the name falls back to the tokenId directly.
+  const lotToken = data?.tokens.find((t) => t.id === auction.tokenId);
+  const lotDenomLabel = lotToken ? DENOMINATIONS[lotToken.di]!.label : null;
+  const tokenName = lotToken?.meta.name || `Shape #${auction.tokenId.toString()}`;
 
   // Cards the connected wallet holds, offered as bid material.
   const owned: SiteToken[] = (data?.tokens ?? []).filter(
@@ -93,10 +179,14 @@ export function AuctionView({
   })();
   const ethInvalid = ethWei < 0n;
 
-  const addedWei = cardsWei + (ethInvalid ? 0n : ethWei);
+  // Only the active mode contributes to the bid; the other input's value, if any, is inert.
+  const addedWei = mode === "eth" ? (ethInvalid ? 0n : ethWei) : cardsWei;
   const totalUnits = auction.yourUnits + addedWei / UNIT;
   const clears = totalUnits >= auction.minimumUnits;
-  const mintFee = ethInvalid ? 0n : ethWei / 100n;
+  const mintFee = mode === "eth" && !ethInvalid ? ethWei / 100n : 0n;
+  // A bid worth stating: something was actually entered or picked, and it would take the lead.
+  // The submit button stays disabled and unlabeled with an amount until both hold.
+  const hasValidBid = addedWei > 0n && clears;
 
   const toggle = (id: bigint) => {
     const key = id.toString();
@@ -112,7 +202,9 @@ export function AuctionView({
     setAsking(false);
     setPicked(new Set());
     setEthAmount("");
-    onBid(pickedTokens.map((t) => t.id), ethInvalid ? 0n : ethWei);
+    const cardIds = mode === "cards" ? pickedTokens.map((t) => t.id) : [];
+    const backingWei = mode === "eth" && !ethInvalid ? ethWei : 0n;
+    onBid(cardIds, backingWei);
   };
 
   const errLine = (op: string) =>
@@ -124,182 +216,374 @@ export function AuctionView({
 
   return (
     <>
-      <Section title="LOT">
-        <div style={{display: "flex", flexWrap: "wrap", gap: 40}}>
-          {lotImage && <Art src={lotImage} width={340} />}
-          <div style={{flex: "1 1 320px", minWidth: 0}}>
-            <div style={{fontSize: 40, lineHeight: 1}}>
-              {auction.highestBidder === "0x0000000000000000000000000000000000000000"
-                ? "No bids"
-                : `${unitsToEth(auction.highestUnits)} ETH`}
-            </div>
-            <div style={{marginTop: 10, fontSize: 13, color: C.muted}}>
-              {auction.highestBidder === "0x0000000000000000000000000000000000000000"
-                ? `Reserve ${unitsToEth(auction.reserveUnits)} ETH`
-                : `Held by ${short(auction.highestBidder)}`}
-            </div>
+      {/* Hero row: no Section label gutter here (per the layout brief) so the artwork starts at
+          the page's own left padding and fills the full 2/3; the bid panel takes the other 1/3.
+          Grid ratio and the narrow-screen stack are defined in site.html (.auction-hero).
 
-            <div style={{marginTop: 26, fontSize: 13, lineHeight: 1.8, color: C.bodyDim}}>
-              <div>
-                {auction.settled
-                  ? "Settled."
-                  : left === null
-                    ? "The clock starts at the first bid."
-                    : ended
-                      ? "Bidding is closed."
-                      : `${formatCountdown(left)} left`}
-              </div>
-              <div>Next bid: {unitsToEth(auction.minimumUnits)} ETH or more</div>
-              <div>
-                Seller {short(auction.seller)} · lot #{auction.tokenId.toString()}
-              </div>
-            </div>
+          The row container itself carries no padding: its box is exactly the space between the
+          header's rule above and this row's own border-bottom below, so the panel's border-left
+          (drawn at the edge of its box, outside any padding) touches both with no gap. Each
+          column supplies its own padding instead, reproducing the same visual inset for its
+          content that a shared container padding would have given. */}
+      <div className="auction-hero" style={{borderBottom: `1px solid ${C.rule}`}}>
+        <div
+          className="auction-hero-art"
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            paddingLeft: 48,
+            // Top and bottom padding both equal TOP_MARGIN (not the panel's 36): the artwork's
+            // own margins are symmetric top-to-bottom by requirement, independent of the
+            // panel's own bottom inset before its section rule.
+            paddingTop: TOP_MARGIN,
+            paddingBottom: TOP_MARGIN,
+            ...(artMaxHeight != null ? {height: artMaxHeight + 2 * TOP_MARGIN} : null),
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              aspectRatio: "250 / 350",
+              backgroundColor: C.art,
+              ...(artMaxHeight != null
+                ? {maxHeight: artMaxHeight, maxWidth: (artMaxHeight * 250) / 350}
+                : null),
+            }}
+          >
+            {lotImage && (
+              <img
+                src={lotImage}
+                alt=""
+                style={{
+                  display: "block",
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  animation: "artin .35s ease both",
+                }}
+              />
+            )}
+          </div>
+        </div>
 
-            {isSettleable(auction, now) && (
+        <div
+          className="auction-hero-panel"
+          style={{
+            borderLeft: `1px solid ${C.rule}`,
+            padding: `${TOP_MARGIN}px 48px 36px 26px`,
+            display: "flex",
+            flexDirection: "column",
+            gap: 22,
+            minWidth: 0,
+          }}
+        >
+          <div>
+            <div style={{fontSize: HERO_SIZE, lineHeight: 1.05}}>{tokenName}</div>
+            {lotDenomLabel && (
+              <div style={{marginTop: 8, fontSize: 12, color: C.muted}}>{lotDenomLabel} ETH Shape</div>
+            )}
+          </div>
+
+          <div>
+            <div style={{display: "flex"}}>
+              <div style={{flex: 1, minWidth: 0}}>
+                <div style={label}>
+                  {phase === "pre-bid" ? "RESERVE" : phase === "live" ? "CURRENT BID" : "FINAL BID"}
+                </div>
+                <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
+                  {phase === "pre-bid" ? unitsToEth(auction.reserveUnits) : unitsToEth(auction.highestUnits)}{" "}
+                  <span style={{fontSize: 12, color: C.muted}}>ETH</span>
+                </div>
+              </div>
+              {phase === "live" && left !== null && (
+                <>
+                  <div style={{width: 1, alignSelf: "stretch", backgroundColor: C.rule, margin: "0 20px"}} />
+                  <div style={{flex: 1, minWidth: 0}}>
+                    <div style={label}>ENDS IN</div>
+                    <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
+                      {formatCountdown(left)}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            {phase !== "pre-bid" && (
+              <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
+                {phase === "live" ? bidderIdentity : `Won by ${bidderIdentity}`}
+              </div>
+            )}
+          </div>
+
+          {(phase === "pre-bid" || (phase === "live" && nearExtension)) && (
+            <div style={{fontSize: 12, lineHeight: 1.7, color: C.bodyDim}}>
+              {phase === "pre-bid" && <div>The clock starts at the first bid.</div>}
+              {phase === "live" && nearExtension && (
+                <div>A bid now pushes the end out by {auction.extensionWindow / 60} more minutes.</div>
+              )}
+            </div>
+          )}
+
+          {phase === "ended-unsettled" && (
+            <div>
               <button
                 type="button"
                 className="btn-filled"
                 onClick={onSettle}
                 disabled={!!busy}
-                style={{marginTop: 26, padding: "11px 26px"}}
+                style={{width: "100%", padding: "13px 20px"}}
               >
                 {busy === "settle" ? "Waiting for confirmation" : "Settle"}
               </button>
-            )}
-            {errLine("settle")}
-          </div>
-        </div>
-      </Section>
+              {errLine("settle")}
+            </div>
+          )}
 
-      {!auction.settled && !ended && (
-        <Section title="BID" pad="26px 48px 36px 32px">
-          <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-            A bid is Shapes, not a number. Pick cards you hold, or name an amount of ETH and the
-            house mints the cards for you.
-          </p>
-          <p style={{margin: "0 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-            Your cards sit in escrow while you lead. Outbid, you pull them back yourself; the
-            house never sends anything unasked. Amounts step in 0.01 ETH, the smallest
-            denomination.
-          </p>
-
-          {owned.length > 0 && (
-            <>
-              <div style={{fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 14}}>
-                YOUR SHAPES
-              </div>
-              <div style={{display: "flex", flexWrap: "wrap", gap: 14, marginBottom: 26}}>
-                {owned.map((t) => {
-                  const on = picked.has(t.id.toString());
-                  return (
-                    <button
-                      key={t.id.toString()}
-                      type="button"
-                      className="btn-ghost"
-                      onClick={() => toggle(t.id)}
-                      style={{width: 84, textAlign: "left"}}
+          {(phase === "pre-bid" || phase === "live") && (
+            <div style={{display: "flex", flexDirection: "column", gap: 14}}>
+              {mode === "eth" ? (
+                <div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "stretch",
+                      border: `1px solid ${ethInvalid ? C.border : C.rule}`,
+                    }}
+                  >
+                    <input
+                      value={ethAmount}
+                      onChange={(e) => setEthAmount(e.target.value)}
+                      placeholder={`${unitsToEth(auction.minimumUnits)} or more`}
+                      inputMode="decimal"
+                      style={{
+                        flex: "1 1 auto",
+                        minWidth: 0,
+                        background: "none",
+                        border: "none",
+                        color: C.ink,
+                        font: "inherit",
+                        fontSize: 15,
+                        padding: "12px 14px",
+                      }}
+                    />
+                    <span
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        padding: "0 14px",
+                        fontSize: 11,
+                        letterSpacing: "0.1em",
+                        color: C.muted,
+                        borderLeft: `1px solid ${C.rule}`,
+                      }}
                     >
-                      <div style={{outline: on ? `2px solid ${C.ink}` : "none", outlineOffset: 2}}>
-                        <Art src={localArt(t.seed, t.backing, t.inkGene)} />
+                      ETH
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      fontSize: 10,
+                      letterSpacing: "0.1em",
+                      color: C.muted,
+                    }}
+                  >
+                    <span>MINIMUM BID: {unitsToEth(auction.minimumUnits)} ETH</span>
+                    {address && balance && (
+                      <span>BALANCE: {Number(formatEther(balance.value)).toFixed(3)} ETH</span>
+                    )}
+                  </div>
+                  {ethInvalid && (
+                    <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
+                      Amounts step in 0.01 ETH.
+                    </div>
+                  )}
+                  {!ethInvalid && ethWei > 0n && (
+                    <div style={{marginTop: 10, fontSize: 11, lineHeight: 1.6, color: C.muted}}>
+                      Mints {breakdown(ethWei).map((b) => `${b.count} × ${DENOMINATIONS[b.di]!.label}`).join(", ")}
+                      . Costs {formatEther(ethWei + mintFee)} ETH, including the {formatEther(mintFee)} ETH
+                      mint fee.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div style={{fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 12}}>
+                    YOUR SHAPES
+                  </div>
+                  {owned.length === 0 ? (
+                    <div style={{fontSize: 12, color: C.muted}}>This wallet holds no Shapes.</div>
+                  ) : (
+                    <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
+                      {owned.map((t) => {
+                        const on = picked.has(t.id.toString());
+                        return (
+                          <button
+                            key={t.id.toString()}
+                            type="button"
+                            className="btn-ghost"
+                            onClick={() => toggle(t.id)}
+                            style={{width: 72, textAlign: "left"}}
+                          >
+                            <div style={{outline: on ? `2px solid ${C.ink}` : "none", outlineOffset: 2}}>
+                              <div style={{width: "100%", aspectRatio: "250 / 350", backgroundColor: C.art}}>
+                                <img
+                                  src={localArt(t.seed, t.backing, t.inkGene)}
+                                  alt=""
+                                  style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
+                                />
+                              </div>
+                            </div>
+                            <div style={{marginTop: 6, fontSize: 10, color: on ? C.ink : C.muted}}>
+                              #{t.id.toString()} · {DENOMINATIONS[t.di]!.label} ETH
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      marginTop: 12,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      fontSize: 10,
+                      letterSpacing: "0.1em",
+                      color: C.muted,
+                    }}
+                  >
+                    <span>MINIMUM BID: {unitsToEth(auction.minimumUnits)} ETH</span>
+                    {address && balance && (
+                      <span>BALANCE: {Number(formatEther(balance.value)).toFixed(3)} ETH</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setMode((m) => (m === "eth" ? "cards" : "eth"))}
+                style={{
+                  alignSelf: "flex-start",
+                  fontSize: 11,
+                  color: C.muted,
+                  textDecoration: "underline",
+                  textUnderlineOffset: 3,
+                }}
+              >
+                {mode === "eth" ? "or bid with cards you hold" : "bid with ETH instead"}
+              </button>
+
+              {!clears && addedWei > 0n && (
+                <div style={{fontSize: 12, lineHeight: 1.7, color: C.muted}}>
+                  Needs {unitsToEth(auction.minimumUnits)} ETH to take the lead.
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="btn-filled"
+                onClick={() => setAsking(true)}
+                disabled={!!busy || !address || !hasValidBid}
+                style={{width: "100%", padding: "13px 20px"}}
+              >
+                {busy === "bid"
+                  ? "Waiting for confirmation"
+                  : hasValidBid
+                    ? `Place bid worth ${unitsToEth(totalUnits)} ETH`
+                    : "Place bid"}
+              </button>
+              {errLine("bid")}
+
+              <p style={{margin: 0, fontSize: 11, lineHeight: 1.7, color: C.bodyDim}}>
+                A bid is Shapes, not a number. Pick cards you hold, or name an amount of ETH and
+                the house mints the cards for you. Your cards sit in escrow while you lead.
+                Outbid, you pull them back yourself; the house never sends anything unasked.
+                Amounts step in 0.01 ETH, the smallest denomination.
+              </p>
+
+              {asking && (
+                <Modal title="CONFIRM BID" onCancel={() => setAsking(false)}>
+                  <div style={{fontSize: 13, lineHeight: 1.8, color: C.ink}}>
+                    {mode === "eth" && ethWei > 0n && (
+                      <div>
+                        Mints {breakdown(ethWei).map((b) => `${b.count} × ${DENOMINATIONS[b.di]!.label}`).join(", ")}{" "}
+                        ETH Shapes. Costs {formatEther(ethWei + mintFee)} ETH, including the{" "}
+                        {formatEther(mintFee)} ETH mint fee.
                       </div>
-                      <div style={{marginTop: 8, fontSize: 11, color: on ? C.ink : C.muted}}>
-                        {DENOMINATIONS[t.di]!.label} ETH
+                    )}
+                    {mode === "cards" && pickedTokens.length > 0 && (
+                      <div>
+                        Bidding with {pickedTokens.length} Shape{pickedTokens.length === 1 ? "" : "s"}:{" "}
+                        {pickedTokens
+                          .map((t) => `#${t.id.toString()} (${DENOMINATIONS[t.di]!.label} ETH)`)
+                          .join(", ")}
+                        .
                       </div>
+                    )}
+                    <div style={{marginTop: 12}}>
+                      {auction.yourUnits > 0n
+                        ? `${unitsToEth(auction.yourUnits)} ETH already escrowed + ${unitsToEth(
+                            addedWei / UNIT,
+                          )} ETH new = ${unitsToEth(totalUnits)} ETH total bid.`
+                        : `${unitsToEth(totalUnits)} ETH total bid.`}
+                    </div>
+                  </div>
+                  <p style={{margin: "18px 0 24px", fontSize: 13, lineHeight: 1.7, color: C.muted}}>
+                    Your cards stay in escrow while you lead. If you are outbid, you pull them back
+                    yourself. Winning hands them to the seller and the lot to you.
+                  </p>
+                  <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
+                    <button
+                      type="button"
+                      className="btn-filled"
+                      onClick={submit}
+                      disabled={!!busy}
+                      style={{padding: "11px 26px"}}
+                    >
+                      {busy === "bid" ? "Waiting for confirmation" : `Place bid worth ${unitsToEth(totalUnits)} ETH`}
                     </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          <div style={{fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10}}>
-            OR ETH
-          </div>
-          <input
-            value={ethAmount}
-            onChange={(e) => setEthAmount(e.target.value)}
-            placeholder="0.00"
-            inputMode="decimal"
-            style={{
-              background: "none",
-              border: `1px solid ${ethInvalid ? C.border : C.rule}`,
-              color: C.ink,
-              font: "inherit",
-              fontSize: 15,
-              padding: "10px 14px",
-              width: 180,
-            }}
-          />
-          {ethInvalid && (
-            <div style={{marginTop: 10, fontSize: 12, color: C.muted}}>
-              Amounts step in 0.01 ETH.
+                    <button
+                      type="button"
+                      className="btn-outline"
+                      onClick={() => setAsking(false)}
+                      disabled={!!busy}
+                      style={{padding: "11px 26px"}}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </Modal>
+              )}
             </div>
           )}
-          {!ethInvalid && ethWei > 0n && (
-            <div style={{marginTop: 12, fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-              Mints {breakdown(ethWei).map((b) => `${b.count} × ${DENOMINATIONS[b.di]!.label}`).join(", ")}
-              . Costs {formatEther(ethWei + mintFee)} ETH, including the {formatEther(mintFee)} ETH
-              mint fee.
-            </div>
-          )}
+        </div>
+      </div>
 
-          <div style={{marginTop: 26, fontSize: 13, lineHeight: 1.8}}>
-            <div>
-              This bid: {unitsToEth(totalUnits)} ETH
-              {auction.yourUnits > 0n && ` (${unitsToEth(auction.yourUnits)} already escrowed)`}
-            </div>
-            {!clears && addedWei > 0n && (
-              <div style={{color: C.muted}}>
-                Needs {unitsToEth(auction.minimumUnits)} ETH to take the lead.
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            className="btn-filled"
-            onClick={() => setAsking(true)}
-            disabled={!!busy || !address || addedWei === 0n || !clears}
-            style={{marginTop: 22, padding: "11px 26px"}}
-          >
-            {busy === "bid" ? "Waiting for confirmation" : "Place bid"}
-          </button>
-          {errLine("bid")}
-
-          {asking && (
-            <Modal title="CONFIRM BID" onCancel={() => setAsking(false)}>
-              <p style={{margin: "0 0 14px", fontSize: 14, lineHeight: 1.7, color: C.ink}}>
-                Bidding escrows {unitsToEth(addedWei / UNIT)} ETH of Shapes, taking your bid to{" "}
-                {unitsToEth(totalUnits)} ETH.
-              </p>
-              <p style={{margin: "0 0 24px", fontSize: 13, lineHeight: 1.7, color: C.muted}}>
-                Your cards stay in escrow while you lead. If you are outbid, you pull them back
-                yourself. Winning hands them to the seller and the lot to you.
-              </p>
-              <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
-                <button
-                  type="button"
-                  className="btn-filled"
-                  onClick={submit}
-                  disabled={!!busy}
-                  style={{padding: "11px 26px"}}
-                >
-                  Place bid
-                </button>
-                <button
-                  type="button"
-                  className="btn-outline"
-                  onClick={() => setAsking(false)}
-                  disabled={!!busy}
-                  style={{padding: "11px 26px"}}
-                >
-                  Cancel
-                </button>
-              </div>
-            </Modal>
-          )}
-        </Section>
-      )}
+      <Section title="BID HISTORY" pad="16px 48px 24px 32px">
+        {bidHistory === null ? (
+          <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>Reading the event log…</div>
+        ) : bidHistory.length === 0 ? (
+          <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>No bids yet.</div>
+        ) : (
+          bidHistory.map((entry) => (
+            <BidHistoryRow
+              key={entry.key}
+              entry={entry}
+              publicClient={publicClient}
+              chainId={dep.chainId}
+              data={data}
+              now={now}
+              onOpenToken={onOpenToken}
+            />
+          ))
+        )}
+      </Section>
 
       {auction.yourCards.length > 0 && (
         <Section title="YOUR ESCROW" pad="26px 48px 36px 32px">
@@ -311,17 +595,32 @@ export function AuctionView({
                 : "Yours to take back."}
           </p>
           <div style={{display: "flex", flexWrap: "wrap", gap: 14}}>
-            {auction.yourCards.map((id) => (
-              <button
-                key={id.toString()}
-                type="button"
-                className="btn-ghost"
-                onClick={() => onOpenToken(id)}
-                style={{fontSize: 12, color: C.bodyDim}}
-              >
-                #{id.toString()}
-              </button>
-            ))}
+            {auction.yourCards.map((id) => {
+              const t = data?.tokens.find((x) => x.id === id);
+              return (
+                <button
+                  key={id.toString()}
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => onOpenToken(id)}
+                  style={{width: 72, textAlign: "left"}}
+                >
+                  {t && (
+                    <div style={{width: "100%", aspectRatio: "250 / 350", backgroundColor: C.art}}>
+                      <img
+                        src={localArt(t.seed, t.backing, t.inkGene)}
+                        alt=""
+                        style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
+                      />
+                    </div>
+                  )}
+                  <div style={{marginTop: 6, fontSize: 10, color: C.bodyDim}}>
+                    #{id.toString()}
+                    {t ? ` · ${DENOMINATIONS[t.di]!.label} ETH` : ""}
+                  </div>
+                </button>
+              );
+            })}
           </div>
           {!yours && (
             <>
@@ -374,12 +673,103 @@ export function AuctionView({
         </div>
         {txHash && (
           <div style={{marginTop: 20, fontSize: 12}}>
-            <a href={txUrl(txHash, chainId)} target="_blank" rel="noreferrer">
+            <a href={txUrl(txHash, dep.chainId)} target="_blank" rel="noreferrer">
               View the last transaction
             </a>
           </div>
         )}
       </Section>
     </>
+  );
+}
+
+/** One bid history row: bidder (ENS-resolved), the bidder's running total after this bid,
+ *  thumbnails (each labeled with its denomination) of the cards this bid's transaction moved
+ *  into escrow, and the time it landed, relative to now and linking to the transaction. */
+function BidHistoryRow({
+  entry,
+  publicClient,
+  chainId,
+  data,
+  now,
+  onOpenToken,
+}: {
+  entry: BidHistoryEntry;
+  publicClient: PublicClient | undefined;
+  chainId: number;
+  data: SiteData | null;
+  now: number;
+  onOpenToken: (id: bigint) => void;
+}) {
+  const identity = useEnsDisplay(publicClient, entry.bidder);
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "8px 24px",
+        padding: "14px 0",
+        borderBottom: `1px solid ${C.ruleInner}`,
+        fontSize: 13,
+      }}
+    >
+      <div style={{minWidth: 150, overflowWrap: "anywhere"}}>{identity}</div>
+      <div style={{minWidth: 90}}>{unitsToEth(entry.totalUnits)} ETH</div>
+      <div style={{flex: "1 1 160px", display: "flex", flexWrap: "wrap", gap: 12}}>
+        {entry.cards.length === 0 ? (
+          <span style={{fontSize: 12, color: C.muted}}>—</span>
+        ) : (
+          entry.cards.map((c) => {
+            // The card's own seed, from the live token list when it is still live; a card since
+            // composed, split, or redeemed falls back to an id-only chip since its seed is no
+            // longer available to render. The denomination label comes from the bid history
+            // entry itself, resolved at load time, so it still shows even for a card since gone.
+            const token = data?.tokens.find((t) => t.id === c.id);
+            const denomLabel = c.di >= 0 ? `${DENOMINATIONS[c.di]!.label} ETH` : "—";
+            return (
+              <button
+                key={c.id.toString()}
+                type="button"
+                className="btn-ghost"
+                onClick={() => onOpenToken(c.id)}
+                title={`#${c.id.toString()}${c.di >= 0 ? ` · ${denomLabel}` : ""}`}
+                style={{width: 36, textAlign: "center"}}
+              >
+                {token ? (
+                  <Art src={localArt(token.seed, token.backing, token.inkGene)} />
+                ) : (
+                  <div
+                    style={{
+                      width: 36,
+                      aspectRatio: "250 / 350",
+                      backgroundColor: C.art,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 9,
+                      color: C.muted,
+                    }}
+                  >
+                    #{c.id.toString()}
+                  </div>
+                )}
+                <div style={{marginTop: 4, fontSize: 9, color: C.muted}}>{denomLabel}</div>
+              </button>
+            );
+          })
+        )}
+      </div>
+      <a
+        href={txUrl(entry.tx, chainId)}
+        target="_blank"
+        rel="noreferrer"
+        title={entry.timestamp > 0 ? new Date(entry.timestamp * 1000).toISOString() : undefined}
+        style={{marginLeft: "auto", fontSize: 12, color: C.muted, whiteSpace: "nowrap"}}
+      >
+        {formatRelativeTime(entry.timestamp, now)}
+      </a>
+    </div>
   );
 }

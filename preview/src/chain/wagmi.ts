@@ -13,6 +13,9 @@ export function buildConfig(dep: Deployment) {
     name: "Shapes dev chain",
     nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18},
     rpcUrls: {default: {http: [dep.rpc]}},
+    // Canonical Multicall3 address. fork-dev.sh etches it onto a plain dev chain; forks and
+    // public chains already have it. Batched readers check for deployed code before using it.
+    contracts: {multicall3: {address: "0xcA11bde05977b3631167028862bE2a173976CA11"}},
   });
 
   const connectors = connectorsForWallets(
@@ -23,6 +26,8 @@ export function buildConfig(dep: Deployment) {
   return createConfig({
     chains: [chain],
     connectors,
+    // No transport-level JSON-RPC batching: same-tick Multicall3 aggregates would coalesce
+    // into request bodies past anvil's ~2MB limit, which resets the connection.
     transports: {[chain.id]: http(dep.rpc)},
     ssr: false,
   });

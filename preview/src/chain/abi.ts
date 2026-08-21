@@ -1,10 +1,11 @@
 import {parseAbi} from "viem";
 
 // The subset of the Shapes ERC721 the chain tester calls. Human-readable form; viem parses it
-// to the full ABI at import.
+// to the full ABI at import. `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`,
+// `composeRecordAt` and `splitOriginOf` moved to `ShapeLens` (see `shapeLensAbi` below) and are
+// not declared here.
 export const shapesAbi = parseAbi([
   "struct ComposeCall { uint256 survivorId; uint256[] burnIds; }",
-  "struct ShapeChildPreview { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; }",
   "function mint(uint256 amountWei) payable returns (uint256 tokenId)",
   "function mintTo(uint256 amountWei, address to) payable returns (uint256 tokenId)",
   "function mintBatch(uint256 amountWei, uint256 quantity) payable returns (uint256 firstTokenId)",
@@ -21,7 +22,6 @@ export const shapesAbi = parseAbi([
   "function split(uint256 tokenId, uint8[] outDenoms) returns (uint256[] newIds)",
   "function splitTo(uint256 tokenId, uint8[] outDenoms, address recipient) returns (uint256[] newIds)",
   "function composeDepth(uint256 survivorId) view returns (uint256)",
-  "function previewSplit(uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
   "function sacrifice(uint256 tokenId)",
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
@@ -31,7 +31,6 @@ export const shapesAbi = parseAbi([
   "function lockPositionResolver()",
   "function positionOf(uint256 tokenId) view returns (address)",
   "function tokenURI(uint256 tokenId) view returns (string)",
-  "function unicodeCard(uint256 tokenId) view returns (string)",
   "function backingOf(uint256 tokenId) view returns (uint256)",
   "function seedOf(uint256 tokenId) view returns (bytes32)",
   "function originCountOf(uint256 tokenId) view returns (uint256)",
@@ -74,12 +73,46 @@ export const shapesAbi = parseAbi([
   "error SplitMismatch(uint256 inputBacking, uint256 outputSum)",
   "error NoComposeRecord(uint256 survivorId)",
   "error NotApexComplete(uint256 tokenId)",
+  "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
+  "error NotASplitChild(uint256 tokenId)",
+  "error DuplicateComposeInput(uint256 tokenId)",
+]);
+
+// ShapeLens: the read-only periphery holding `shapeState`, `previewCompose`, `previewSplit`,
+// `unicodeCard`, `composeRecordAt` and `splitOriginOf`, moved off `Shapes` to keep the token's
+// runtime bytecode under the EIP-170 size limit. Deployed separately; see `Deployment.lens`.
+export const shapeLensAbi = parseAbi([
+  "struct ShapeChildPreview { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; }",
+  "struct ShapeState { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bool isBlack; uint8 formation; uint256 faceValueWei; uint256 redeemableValueWei; bytes modules; }",
+  "struct ComposeInputView { uint256 id; bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bytes modules; }",
+  "struct ComposeRecordView { uint8 survivorDenominationIndex; uint32 survivorOriginCount; uint8 survivorInkGene; bytes survivorModules; ComposeInputView[] inputs; }",
+  "function previewCompose(uint256 survivorId, uint256[] burnIds) view returns (ShapeState result)",
+  "function previewSplit(uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
+  "function shapeState(uint256 tokenId) view returns (ShapeState)",
+  "function unicodeCard(uint256 tokenId) view returns (string)",
+  "function composeRecordAt(uint256 survivorId, uint256 depth) view returns (ComposeRecordView)",
+  "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint8 parentDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
+  // Custom errors, from IShapes.sol, that previewCompose/previewSplit/composeRecordAt apply the
+  // same validation as the mutating calls and revert with, so a revert decodes to a named error.
+  "error CannotComposeWithSelf(uint256 tokenId)",
+  "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
+  "error DenominationIndexOutOfRange(uint256 index)",
+  "error DuplicateComposeInput(uint256 tokenId)",
+  "error EmptyRecomposition()",
+  "error SplitMismatch(uint256 inputBacking, uint256 outputSum)",
+  "error TokenIsBlack(uint256 tokenId)",
+  "error UnsupportedDenomination(uint256 amountWei)",
 ]);
 
 export interface Deployment {
   rpc: string;
   chainId: number;
   shapes: `0x${string}`;
+  /** ShapeLens: the read-only periphery contract. The DNA/provenance section and other
+   *  lens-backed reads have nothing to call without it; see the per-call fallbacks in
+   *  `site/dna.ts` and `site/TokenView.tsx` for what happens when it is absent from
+   *  `deployment.json` (a stale file from before the lens split). */
+  lens: `0x${string}`;
   renderer: `0x${string}`;
   collection?: `0x${string}`;
   auctionHouse?: `0x${string}`;
@@ -124,6 +157,8 @@ export const auctionHouseAbi = parseAbi([
   "function withdraw(uint256 auctionId)",
   "function settle(uint256 auctionId)",
   "function claimProceeds(uint256 auctionId)",
+  "event BidPlaced(uint256 indexed auctionId, address indexed bidder, uint64 units, uint64 endTime)",
+  "event BidCardsMinted(uint256 indexed auctionId, address indexed bidder, uint256 backingWei)",
   "error AuctionNotFound(uint256 auctionId)",
   "error AuctionOver(uint256 auctionId)",
   "error AuctionStillRunning(uint256 auctionId)",

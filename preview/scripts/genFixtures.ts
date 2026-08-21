@@ -18,9 +18,10 @@ import {
   moduleSequence,
   renderShape,
   tokenMetadataJson,
+  vocabulary,
 } from "../src/canonical/render";
 import { fmt } from "../src/canonical/wad";
-import { DENOMINATIONS, LABELS, denominationIndex } from "../src/canonical/denominations";
+import { DENOMINATIONS, LABELS, cellCountAt, denominationIndex } from "../src/canonical/denominations";
 import { CANONICAL, paramsEqualCanonical } from "../src/canonical/params";
 import { productionSeed } from "../src/seeds";
 import { splitChildSeed } from "../src/splitSeed";
@@ -32,6 +33,16 @@ import {
   geneAtMint,
   centerGene,
 } from "../src/canonical/ink";
+import { encodeModuleByte, encodeModules, kindIndexOf, moduleBytesToHex } from "../src/canonical/moduleCodec";
+import {
+  composeSampledShape,
+  renderSampledShape,
+  sampleCompose,
+  sampleSplitChild,
+  sampledTokenMetadataJson,
+  type SampleBurn,
+  type SampleDonor,
+} from "../src/canonical/sampling";
 
 if (!paramsEqualCanonical(CANONICAL)) {
   throw new Error("refusing to generate fixtures from non-canonical params");
@@ -356,6 +367,348 @@ const out = {
       inkWalkWorst: wst,
       inkWalkCenter: ctr,
       inkWalkExpectedGene: exp,
+    };
+  })(),
+
+  // ---------------------------------------------------------------------------------------
+  // Materialized module sampling (SAMPLING_SPEC.md)
+  // ---------------------------------------------------------------------------------------
+
+  ...(() => {
+    /** A donor's materialized bytes: a real grammar-v1 composition, encoded as if an earlier
+     *  compose had stored it. Builds deterministic "materialized donor" fixture inputs. */
+    function materializedFrom(seed: bigint, denomIndex: number, inkGene: number): Uint8Array {
+      return encodeModules(composeShape(seed, DENOMINATIONS[denomIndex], inkGene).modules);
+    }
+
+    // Every compose-sampling case carries exactly this many burns, flattened row-major into
+    // parallel arrays below (case0 burn0..N-1, case1 burn0..N-1, ...) so Foundry can read them
+    // as flat columns. test/Parity.t.sol hard-codes the same constant.
+    const BURNS_PER_COMPOSE_CASE = 3;
+
+    interface ComposeSampleCase {
+      why: string;
+      survivor: SampleDonor;
+      burns: SampleBurn[];
+      newIndex: number;
+    }
+
+    const composeSampleCases: ComposeSampleCase[] = [
+      {
+        why: "compose sampling: seed-derived donors only, ascending burn order",
+        survivor: {seed: productionSeed(200n), denomIndex: 2, inkGene: 1},
+        burns: [
+          {tokenId: 10n, seed: productionSeed(201n), denomIndex: 0, inkGene: 3},
+          {tokenId: 11n, seed: productionSeed(202n), denomIndex: 1, inkGene: 5},
+          {tokenId: 12n, seed: productionSeed(203n), denomIndex: 3, inkGene: 0},
+        ],
+        newIndex: 4,
+      },
+      {
+        why: "compose sampling: mixed materialized and seed-derived donors",
+        survivor: {
+          seed: productionSeed(300n),
+          denomIndex: 1,
+          inkGene: 4,
+          modules: materializedFrom(productionSeed(300n), 1, 4),
+        },
+        burns: [
+          {
+            tokenId: 5n,
+            seed: productionSeed(301n),
+            denomIndex: 0,
+            inkGene: 2,
+            modules: materializedFrom(productionSeed(301n), 0, 2),
+          },
+          {tokenId: 6n, seed: productionSeed(302n), denomIndex: 4, inkGene: 6},
+          {
+            tokenId: 7n,
+            seed: productionSeed(303n),
+            denomIndex: 2,
+            inkGene: 0,
+            modules: materializedFrom(productionSeed(303n), 2, 0),
+          },
+        ],
+        newIndex: 5,
+      },
+      {
+        why: "compose sampling: shuffled burn calldata order, mixed donors",
+        survivor: {seed: productionSeed(400n), denomIndex: 1, inkGene: 3},
+        // Deliberately out of ascending-tokenId order (22, 20, 21): sampleCompose sorts burns
+        // internally, and the Solidity side must independently sort to the same order.
+        burns: [
+          {
+            tokenId: 22n,
+            seed: productionSeed(403n),
+            denomIndex: 1,
+            inkGene: 6,
+            modules: materializedFrom(productionSeed(403n), 1, 6),
+          },
+          {
+            tokenId: 20n,
+            seed: productionSeed(401n),
+            denomIndex: 0,
+            inkGene: 5,
+            modules: materializedFrom(productionSeed(401n), 0, 5),
+          },
+          {tokenId: 21n, seed: productionSeed(402n), denomIndex: 3, inkGene: 2},
+        ],
+        newIndex: 6,
+      },
+      {
+        why: "compose sampling: higher-unit donors into the apex denomination",
+        survivor: {seed: productionSeed(500n), denomIndex: 5, inkGene: 4},
+        burns: [
+          {tokenId: 1n, seed: productionSeed(501n), denomIndex: 6, inkGene: 1},
+          {
+            tokenId: 2n,
+            seed: productionSeed(502n),
+            denomIndex: 7,
+            inkGene: 3,
+            modules: materializedFrom(productionSeed(502n), 7, 3),
+          },
+          {tokenId: 3n, seed: productionSeed(503n), denomIndex: 4, inkGene: 6},
+        ],
+        newIndex: 8,
+      },
+    ];
+
+    for (const c of composeSampleCases) {
+      if (c.burns.length !== BURNS_PER_COMPOSE_CASE) {
+        throw new Error(`${c.why}: expected ${BURNS_PER_COMPOSE_CASE} burns, got ${c.burns.length}`);
+      }
+    }
+
+    const composeSampleExpected = composeSampleCases.map((c) =>
+      sampleCompose(c.survivor, c.burns, c.newIndex),
+    );
+
+    interface SplitSampleCase {
+      why: string;
+      parent: SampleDonor;
+      childDenomIndex: number;
+      childIndex: number;
+    }
+
+    const materializedParentA = materializedFrom(productionSeed(600n), 1, 2);
+    const splitSampleCases: SplitSampleCase[] = [
+      {
+        why: "split sampling: materialized parent, dust child",
+        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        childDenomIndex: 0,
+        childIndex: 0,
+      },
+      {
+        why: "split sampling: materialized parent, second child index",
+        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        childDenomIndex: 4,
+        childIndex: 1,
+      },
+      {
+        why: "split sampling: materialized parent, childIndex wraps past uint8 (256 -> 0)",
+        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        childDenomIndex: 8,
+        childIndex: 256,
+      },
+      {
+        why: "split sampling: seed-derived (original) parent",
+        parent: {seed: productionSeed(601n), denomIndex: 4, inkGene: 5},
+        childDenomIndex: 0,
+        childIndex: 0,
+      },
+      {
+        why: "split sampling: seed-derived apex parent, single-module donor",
+        parent: {seed: productionSeed(602n), denomIndex: 8, inkGene: 0},
+        childDenomIndex: 7,
+        childIndex: 3,
+      },
+      {
+        why: "split sampling: seed-derived parent, childIndex wraps past uint8 (256 -> 0)",
+        parent: {seed: productionSeed(603n), denomIndex: 2, inkGene: 6},
+        childDenomIndex: 1,
+        childIndex: 256,
+      },
+    ];
+
+    const splitSampleExpected = splitSampleCases.map((c) =>
+      sampleSplitChild(c.parent, c.childDenomIndex, c.childIndex),
+    );
+
+    // Every valid kind/rot/solid combination (52 appearances, render.ts vocabulary()), split
+    // across two 25-cell grids and one 2-cell grid so the three arrays cover it exactly once.
+    const vocabBytes = vocabulary().map((a) => encodeModuleByte(kindIndexOf(a.kind), a.solid, a.rot));
+    if (vocabBytes.length !== 52) {
+      throw new Error(`expected 52 vocabulary appearances, got ${vocabBytes.length}`);
+    }
+
+    interface SampledRenderCase {
+      why: string;
+      denomIndex: number;
+      modules: Uint8Array;
+      inkGene: number;
+      tokenId: bigint;
+      originCount: bigint;
+      inverted: boolean;
+      composeDepth: bigint;
+    }
+
+    const sampledRenderCases: SampledRenderCase[] = [
+      {
+        why: "sampled render: 1-module grid (100 ETH apex)",
+        denomIndex: 8,
+        modules: materializedFrom(productionSeed(700n), 8, 3),
+        inkGene: 3,
+        tokenId: 1000n,
+        originCount: 1n,
+        inverted: false,
+        composeDepth: 0n,
+      },
+      {
+        why: "sampled render: 20-module grid (0.05 ETH)",
+        denomIndex: 1,
+        modules: materializedFrom(productionSeed(701n), 1, 0),
+        inkGene: 0,
+        tokenId: 1001n,
+        originCount: 5n,
+        inverted: false,
+        composeDepth: 1n,
+      },
+      {
+        why: "sampled render: densest grid (0.01 ETH, 25 modules)",
+        denomIndex: 0,
+        modules: materializedFrom(productionSeed(702n), 0, 6),
+        inkGene: 6,
+        tokenId: 1002n,
+        originCount: 25n,
+        inverted: false,
+        composeDepth: 2n,
+      },
+      {
+        why: "sampled render: 9-module grid (1 ETH), inverted",
+        denomIndex: 4,
+        modules: materializedFrom(productionSeed(703n), 4, 2),
+        inkGene: 2,
+        tokenId: 1003n,
+        originCount: 50n,
+        inverted: true,
+        composeDepth: 3n,
+      },
+      {
+        why: "sampled render: 16-module grid (0.1 ETH), fragment",
+        denomIndex: 2,
+        modules: materializedFrom(productionSeed(704n), 2, 5),
+        inkGene: 5,
+        tokenId: 1004n,
+        originCount: 0n,
+        inverted: false,
+        composeDepth: 0n,
+      },
+      {
+        why: "sampled render: 4-module grid (10 ETH)",
+        denomIndex: 6,
+        modules: materializedFrom(productionSeed(705n), 6, 1),
+        inkGene: 1,
+        tokenId: 1005n,
+        originCount: 4n,
+        inverted: false,
+        composeDepth: 0n,
+      },
+      {
+        why: "sampled render: full vocabulary, part 1/3 (25-cell grid)",
+        denomIndex: 0,
+        modules: new Uint8Array(vocabBytes.slice(0, 25)),
+        inkGene: 4,
+        tokenId: 2000n,
+        originCount: 1n,
+        inverted: false,
+        composeDepth: 0n,
+      },
+      {
+        why: "sampled render: full vocabulary, part 2/3 (25-cell grid)",
+        denomIndex: 0,
+        modules: new Uint8Array(vocabBytes.slice(25, 50)),
+        inkGene: 2,
+        tokenId: 2001n,
+        originCount: 1n,
+        inverted: true,
+        composeDepth: 0n,
+      },
+      {
+        why: "sampled render: full vocabulary, part 3/3 (2-cell grid)",
+        denomIndex: 7,
+        modules: new Uint8Array(vocabBytes.slice(50, 52)),
+        inkGene: 0,
+        tokenId: 2002n,
+        originCount: 1n,
+        inverted: false,
+        composeDepth: 0n,
+      },
+    ];
+
+    for (const c of sampledRenderCases) {
+      const expected = cellCountAt(c.denomIndex);
+      if (c.modules.length !== expected) {
+        throw new Error(`${c.why}: modules length ${c.modules.length} != grid cell count ${expected}`);
+      }
+    }
+
+    return {
+      sampleComposeWhy: composeSampleCases.map((c) => c.why),
+      sampleComposeSurvivorSeed: composeSampleCases.map((c) => hex32(c.survivor.seed)),
+      sampleComposeSurvivorDenomIndex: composeSampleCases.map((c) => c.survivor.denomIndex.toString()),
+      sampleComposeSurvivorInkGene: composeSampleCases.map((c) => c.survivor.inkGene.toString()),
+      sampleComposeSurvivorModules: composeSampleCases.map((c) =>
+        c.survivor.modules ? moduleBytesToHex(c.survivor.modules) : "0x",
+      ),
+      sampleComposeNewIndex: composeSampleCases.map((c) => c.newIndex.toString()),
+      sampleComposeExpected: composeSampleExpected.map(moduleBytesToHex),
+      sampleComposeBurnTokenId: composeSampleCases.flatMap((c) => c.burns.map((b) => b.tokenId.toString())),
+      sampleComposeBurnSeed: composeSampleCases.flatMap((c) => c.burns.map((b) => hex32(b.seed))),
+      sampleComposeBurnDenomIndex: composeSampleCases.flatMap((c) =>
+        c.burns.map((b) => b.denomIndex.toString()),
+      ),
+      sampleComposeBurnInkGene: composeSampleCases.flatMap((c) => c.burns.map((b) => b.inkGene.toString())),
+      sampleComposeBurnModules: composeSampleCases.flatMap((c) =>
+        c.burns.map((b) => (b.modules ? moduleBytesToHex(b.modules) : "0x")),
+      ),
+
+      sampleSplitWhy: splitSampleCases.map((c) => c.why),
+      sampleSplitParentSeed: splitSampleCases.map((c) => hex32(c.parent.seed)),
+      sampleSplitParentDenomIndex: splitSampleCases.map((c) => c.parent.denomIndex.toString()),
+      sampleSplitParentInkGene: splitSampleCases.map((c) => c.parent.inkGene.toString()),
+      sampleSplitParentModules: splitSampleCases.map((c) =>
+        c.parent.modules ? moduleBytesToHex(c.parent.modules) : "0x",
+      ),
+      sampleSplitChildDenomIndex: splitSampleCases.map((c) => c.childDenomIndex.toString()),
+      sampleSplitChildIndex: splitSampleCases.map((c) => c.childIndex.toString()),
+      sampleSplitExpected: splitSampleExpected.map(moduleBytesToHex),
+
+      sampledRenderWhy: sampledRenderCases.map((c) => c.why),
+      sampledRenderDenomIndex: sampledRenderCases.map((c) => c.denomIndex.toString()),
+      sampledRenderAmountWei: sampledRenderCases.map((c) => DENOMINATIONS[c.denomIndex].toString()),
+      sampledRenderModules: sampledRenderCases.map((c) => moduleBytesToHex(c.modules)),
+      sampledRenderInkGene: sampledRenderCases.map((c) => c.inkGene.toString()),
+      sampledRenderTokenId: sampledRenderCases.map((c) => c.tokenId.toString()),
+      sampledRenderOriginCount: sampledRenderCases.map((c) => c.originCount.toString()),
+      sampledRenderInverted: sampledRenderCases.map((c) => (c.inverted ? "true" : "false")),
+      sampledRenderComposeDepth: sampledRenderCases.map((c) => c.composeDepth.toString()),
+      sampledRenderSvg: sampledRenderCases.map((c) =>
+        renderSampledShape(c.modules, c.denomIndex, c.tokenId, c.inkGene, CANONICAL, c.inverted),
+      ),
+      sampledRenderMetadata: sampledRenderCases.map((c) =>
+        sampledTokenMetadataJson(
+          c.modules,
+          c.denomIndex,
+          c.tokenId,
+          c.originCount,
+          c.inverted,
+          c.inkGene,
+          c.composeDepth,
+        ),
+      ),
+      sampledRenderModuleSequence: sampledRenderCases.map((c) =>
+        moduleSequence(composeSampledShape(c.modules, c.denomIndex, c.inkGene)),
+      ),
     };
   })(),
 };

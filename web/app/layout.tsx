@@ -32,7 +32,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      {/* suppressHydrationWarning: browser extensions (e.g. screen recorders) inject body
+          attributes before hydration; attribute-level mismatches are noise, content
+          mismatches still warn. */}
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
