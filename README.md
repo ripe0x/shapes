@@ -350,11 +350,20 @@ First shell — anvil, deploy, seed wallet funding. Leave it running:
 ./script/fork-dev.sh
 ```
 
-Second shell — the dev server; then open http://localhost:5173/site.html:
+Second shell — the dev server; then open https://preview.shapes.localhost/site.html
+(or http://localhost:5173/site.html):
 
 ```bash
-cd preview && npm run dev
+cd preview && portless
 ```
+
+Dev servers run through [portless](https://portless.sh) (`npm install -g portless`), which gives
+each app a stable named URL on top of its fixed port. `web` is `shapes.localhost`, `preview` is
+`preview.shapes.localhost`; in a git worktree the worktree name is prefixed
+(`<worktree>.preview.shapes.localhost`). The command prints the exact URL on start. Run
+`portless service install` once to keep the proxy on port 443 across reboots; without it the
+proxy falls back to port 1355 and URLs carry that port. `npm run dev` still works directly on
+the plain localhost ports.
 
 `fork-dev.sh` boots Anvil on `:8545` (chain id `31337`), deploys Shapes and the renderer through
 the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLETS` /
@@ -383,7 +392,7 @@ The dev server serves three entries:
 ```bash
 cd preview
 npm install
-npm run dev            # http://localhost:5173
+portless               # https://preview.shapes.localhost (also http://localhost:5173)
 ```
 
 The harness renders the full nine-denomination ladder, generates reproducible batches of up to
@@ -477,12 +486,11 @@ You sign every mint and redeem in the wallet, against the deployed contract.
    Leave it running. It prints the RPC URL (`http://127.0.0.1:8545` unless `PORT` is set), the
    chain id, the deployed addresses, and the fee in basis points.
 
-2. **Serve the page** in another shell, and open the chain entry. Vite falls through to the next
-   free port if 5173 is taken, so use whatever it prints.
+2. **Serve the page** in another shell, and open the chain entry.
 
    ```bash
-   cd preview && npm run dev
-   # open http://localhost:5173/chain.html
+   cd preview && portless
+   # open https://preview.shapes.localhost/chain.html (or http://localhost:5173/chain.html)
    ```
 
 3. **Connect** through the RainbowKit button. Pick the browser wallet and approve the
