@@ -4,14 +4,33 @@
     {
       "name": "shapes-web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "web",
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "shapes-preview",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "preview", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "preview",
+        "run",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "shapes-site-built",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd preview/dist && python3 -m http.server 4173"
+      ],
+      "port": 4173
     }
   ]
 }
