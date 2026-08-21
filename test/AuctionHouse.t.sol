@@ -11,6 +11,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
+import {IShapeCardEscrow} from "../src/interfaces/IShapeCardEscrow.sol";
 
 /// @dev Refuses ERC721s. Used to prove the house never pushes a card at anyone.
 contract HostileBidder is IERC721Receiver {
@@ -195,7 +196,7 @@ contract AuctionHouseTest is AuctionBase {
         assertEq(shapes.backingOf(first), 0, "a Black Shape backs nothing");
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.WorthlessCard.selector, first));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.WorthlessCard.selector, first));
         house.bid(id, _one(first), 0);
     }
 
@@ -209,7 +210,7 @@ contract AuctionHouseTest is AuctionBase {
     function test_EmptyBidReverts() public {
         uint256 id = _open();
         vm.prank(alice);
-        vm.expectRevert(IShapeAuctionHouse.EmptyBid.selector);
+        vm.expectRevert(IShapeCardEscrow.EmptyBid.selector);
         house.bid(id, _none(), 0);
     }
 
@@ -219,7 +220,7 @@ contract AuctionHouseTest is AuctionBase {
         uint256 card = _mintCard(alice, 1 ether);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.IncorrectPayment.selector, 0, 1 ether));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, 0, 1 ether));
         house.bid{value: 1 ether}(id, _one(card), 0);
     }
 
@@ -247,14 +248,14 @@ contract AuctionHouseTest is AuctionBase {
         uint256 exact = backing + feeOf(backing);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.IncorrectPayment.selector, exact, backing));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, exact, backing));
         house.bid{value: backing}(id, _none(), backing);
     }
 
     function test_EthBidRejectsAnOffLatticeAmount() public {
         uint256 id = _open();
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NotAUnitMultiple.selector, 0.015 ether));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NotAUnitMultiple.selector, 0.015 ether));
         house.bid{value: 1 ether}(id, _none(), 0.015 ether);
     }
 
@@ -315,7 +316,7 @@ contract AuctionHouseTest is AuctionBase {
         uint256 card = _mintCard(alice, 0.5 ether); // 50 units, under a 100 unit reserve
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.BidTooLow.selector, 50, 100));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.BidTooLow.selector, 50, 100));
         house.bid(id, _one(card), 0);
     }
 
@@ -331,7 +332,7 @@ contract AuctionHouseTest is AuctionBase {
 
         uint256 b = _mintCard(bob, 0.01 ether);
         vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.BidTooLow.selector, 1, 2));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.BidTooLow.selector, 1, 2));
         house.bid(id, _one(b), 0);
     }
 
@@ -365,7 +366,7 @@ contract AuctionHouseTest is AuctionBase {
 
         uint256 oneMore = _mintCard(alice, 0.01 ether);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.TooManyCards.selector, 65));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.TooManyCards.selector, 65));
         house.bid(id, _one(oneMore), 0);
     }
 
@@ -496,7 +497,7 @@ contract AuctionHouseTest is AuctionBase {
         house.bid(id, _one(a), 0);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NothingToWithdraw.selector, id, alice));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, id, alice));
         house.withdraw(id);
     }
 
@@ -510,7 +511,7 @@ contract AuctionHouseTest is AuctionBase {
         house.settle(id);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NothingToWithdraw.selector, id, alice));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, id, alice));
         house.withdraw(id);
     }
 
@@ -526,7 +527,7 @@ contract AuctionHouseTest is AuctionBase {
         vm.prank(alice);
         house.withdraw(id);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NothingToWithdraw.selector, id, alice));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, id, alice));
         house.withdraw(id);
     }
 
@@ -539,7 +540,7 @@ contract AuctionHouseTest is AuctionBase {
         house.settle(id);
 
         vm.prank(bob);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NothingToWithdraw.selector, id, bob));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, id, bob));
         house.claimProceeds(id);
     }
 
@@ -613,7 +614,7 @@ contract AuctionHouseTest is AuctionBase {
     function test_UnsolicitedShapeIsRefused() public {
         uint256 card = _mintCard(alice, 1 ether);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.UnsolicitedToken.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.UnsolicitedToken.selector, alice));
         shapes.safeTransferFrom(alice, address(house), card);
     }
 

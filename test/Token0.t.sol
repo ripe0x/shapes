@@ -7,6 +7,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
+import {IShapeCardEscrow} from "../src/interfaces/IShapeCardEscrow.sol";
 
 contract Token0Test is Test {
     Shapes shapes;
@@ -37,7 +38,7 @@ contract Token0Test is Test {
     /// Can a Shape be minted straight into the auction house?
     function test_CannotMintDirectlyToTheHouse() public {
         vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.UnsolicitedToken.selector, address(0)));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.UnsolicitedToken.selector, address(0)));
         shapes.mintTo{value: 0.0101 ether}(0.01 ether, address(house));
     }
 

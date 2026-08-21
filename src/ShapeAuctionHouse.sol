@@ -3,12 +3,9 @@ pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
+import {ShapeCardEscrow} from "./ShapeCardEscrow.sol";
 import {IShapeAuctionHouse} from "./interfaces/IShapeAuctionHouse.sol";
-import {IShapes} from "./interfaces/IShapes.sol";
-import {Denominations} from "./lib/Denominations.sol";
 
 /// @title ShapeAuctionHouse
 /// @notice An English auction for any ERC721, with bids denominated in Shape cards.
@@ -21,12 +18,8 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      smallest denomination is 0.01 ETH and every other is a whole multiple of it, so no sum of
 ///      cards can land between two units.
 ///
-///      Escrowed cards are claims on real ETH, redeemable by whoever holds them, so the custody
-///      rules are strict. Nothing is ever pushed: an outbid bidder's cards do not move, they wait
-///      to be pulled. Pushing up to sixty-four ERC721 transfers inside `bid` would let a bidder
-///      with a reverting `onERC721Received` freeze the auction on their own bid permanently.
-///
-///      The lot is pulled on the same terms, which is what lets the house sell a collection it
+///      Card custody is `ShapeCardEscrow`, which never pushes a card. The lot is pulled on the
+///      same terms, which is what lets the house sell a collection it
 ///      knows nothing about. `settle` and `cancelAuction` record an outcome and move nothing;
 ///      `claimLot` is the single path by which the lot leaves. A lot whose transfer reverts
 ///      therefore blocks its own delivery and nothing else: the seller still claims the winning
@@ -34,14 +27,12 @@ import {Denominations} from "./lib/Denominations.sol";
 ///      The lot's collection is called from exactly two functions, `createAuction` and
 ///      `claimLot`, whose callers are the seller and the winner.
 ///
-///      The house takes no fee and has no owner, no pause, and no path that reaches an escrowed
-///      card other than its depositor pulling it back or the seller claiming a settled win. A
-///      Shape pushed here by a plain `transferFrom`, which calls no receiver hook and so cannot be
-///      refused, is held with no escrow entry and no way out. That is accepted: a recovery
-///      function would be an administrative path into everyone else's escrow. A
-///      percentage fee is not merely declined but unrepresentable: a bid is a set of indivisible
-///      cards and a percentage of a lattice amount need not land on the lattice.
-contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGuard {
+///      The house takes no fee and has no owner. A percentage fee is not merely declined but
+///      unrepresentable: a bid is a set of indivisible cards and a percentage of a lattice amount
+///      need not land on the lattice.
+contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
+    constructor(address shapes_) ShapeCardEscrow(shapes_) {}
+
     struct Auction {
         address seller;
         address nft;
@@ -58,40 +49,21 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     }
 
     /// @inheritdoc IShapeAuctionHouse
-    uint256 public constant MAX_CARDS_PER_BID = 64;
-
-    /// @inheritdoc IShapeAuctionHouse
     uint64 public constant MAX_DURATION = 30 days;
 
     /// @dev EIP-721's ERC165 interface id.
     bytes4 private constant ERC721_INTERFACE_ID = 0x80ac58cd;
 
     /// @inheritdoc IShapeAuctionHouse
-    address public immutable shapes;
-
-    /// @inheritdoc IShapeAuctionHouse
     uint256 public auctionCount;
 
     mapping(uint256 auctionId => Auction) private _auctions;
-    mapping(uint256 auctionId => mapping(address bidder => uint256[])) private _escrow;
-    mapping(uint256 auctionId => mapping(address bidder => uint64)) private _units;
 
     /// @dev (collection, token) to auction id plus one, so the zero default reads as "none".
     ///      Set when the lot is escrowed and cleared when it leaves, which is `claimLot` rather
     ///      than settlement: the house still holds a settled lot until the winner takes it, and
     ///      it must not be listable again in the meantime.
     mapping(address nft => mapping(uint256 tokenId => uint256)) private _auctionIdByToken;
-
-    /// @dev Set only across the individual mint call inside `bid`, and read only by
-    ///      `onERC721Received`, which accepts a mint to the house (`from == address(0)`) and
-    ///      nothing else. An inbound `safeTransferFrom` is refused even during the window, so a
-    ///      token cannot be stranded here with no record of who owns it.
-    bool private _minting;
-
-    constructor(address shapes_) {
-        require(shapes_.code.length != 0, "shapes has no code");
-        shapes = shapes_;
-    }
 
     /* ---------------------------- creating ---------------------------- */
 
@@ -187,20 +159,11 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         if (msg.sender == a.seller) revert SellerCannotBid();
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
-        if (cardIds.length == 0 && ethBackingWei == 0) revert EmptyBid();
-        // Without this, ETH sent alongside a cards-only bid would sit here unreachable.
-        if (ethBackingWei == 0 && msg.value != 0) revert IncorrectPayment(0, msg.value);
-
-        uint256 added = _takeCards(auctionId, cardIds);
-        if (ethBackingWei != 0) added += _mintCards(auctionId, ethBackingWei);
-
-        // Every accepted card's backing is a whole number of UNITs, so this division is exact.
-        uint64 newUnits = _units[auctionId][msg.sender] + uint64(added / Denominations.UNIT);
+        uint64 newUnits = _takeBid(auctionId, cardIds, ethBackingWei);
 
         uint64 required = _minimumBid(a);
         if (newUnits < required) revert BidTooLow(newUnits, required);
 
-        _units[auctionId][msg.sender] = newUnits;
         a.highestUnits = newUnits;
         a.highestBidder = msg.sender;
 
@@ -213,66 +176,6 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         }
 
         emit BidPlaced(auctionId, msg.sender, newUnits, a.endTime);
-    }
-
-    /// @dev Pulls the caller's cards into escrow and returns their summed backing. `backingOf`
-    ///      returns zero for a Black Shape, which is how one is rejected: a Black Shape still
-    ///      carries the apex denomination internally, so valuing a bid off the denomination
-    ///      rather than the backing would price an unredeemable token at 100 ETH. A repeated id
-    ///      needs no check of its own, because the second `transferFrom` finds the caller no
-    ///      longer owns it.
-    function _takeCards(uint256 auctionId, uint256[] calldata cardIds) private returns (uint256 backing) {
-        uint256 n = cardIds.length;
-        uint256[] storage held = _escrow[auctionId][msg.sender];
-        // Bounds the escrow, not the call: a bidder tops up across transactions, and it is the
-        // total that `_release` later has to loop over.
-        if (held.length + n > MAX_CARDS_PER_BID) revert TooManyCards(held.length + n);
-        for (uint256 i = 0; i < n; ++i) {
-            uint256 id = cardIds[i];
-            uint256 value = IShapes(shapes).backingOf(id);
-            if (value == 0) revert WorthlessCard(id);
-
-            backing += value;
-            held.push(id);
-            IERC721(shapes).transferFrom(msg.sender, address(this), id);
-        }
-    }
-
-    /// @dev Mints the minimal card set for `backingWei` into escrow. The Shapes mint fee is
-    ///      charged on top and is exactly `backingWei * feeBps / 10000`: the fee is linear in
-    ///      backing and lands on a whole number of wei at every denomination.
-    function _mintCards(uint256 auctionId, uint256 backingWei) private returns (uint256) {
-        if (backingWei % Denominations.UNIT != 0) revert NotAUnitMultiple(backingWei);
-
-        uint256 expected = backingWei + IShapes(shapes).mintFeeFor(backingWei);
-        if (msg.value != expected) revert IncorrectPayment(expected, msg.value);
-
-        uint256[9] memory counts = _cardsFor(backingWei);
-        uint256[] storage held = _escrow[auctionId][msg.sender];
-        if (held.length + _total(counts) > MAX_CARDS_PER_BID) {
-            revert TooManyCards(held.length + _total(counts));
-        }
-
-        for (uint256 d = 0; d < Denominations.COUNT; ++d) {
-            uint256 count = counts[d];
-            if (count == 0) continue;
-
-            uint256 amount = Denominations.amountAt(d);
-            uint256 cost = (amount + IShapes(shapes).mintFeeFor(amount)) * count;
-            // The window is open only across the mint call that fills it, not across the whole
-            // loop, so nothing between two calls can slip a token in under the flag.
-            _minting = true;
-            // Take the ids the mint reports rather than predicting them from the counter: a batch
-            // is contiguous from its return value, which is the guarantee actually offered.
-            uint256 firstId = IShapes(shapes).mintBatchTo{value: cost}(amount, count, address(this));
-            _minting = false;
-            for (uint256 i = 0; i < count; ++i) {
-                held.push(firstId + i);
-            }
-        }
-
-        emit BidCardsMinted(auctionId, msg.sender, backingWei);
-        return backingWei;
     }
 
     /* ---------------------------- settling ---------------------------- */
@@ -329,37 +232,6 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
         emit ProceedsClaimed(auctionId, a.seller, count);
     }
 
-    /// @dev Clears an escrow entry and hands its cards to `to`. State is cleared before the
-    ///      transfers, so a receiver that calls back finds nothing left to claim twice.
-    function _release(uint256 auctionId, address from, address to) private returns (uint256) {
-        uint256[] storage held = _escrow[auctionId][from];
-        uint256 count = held.length;
-        if (count == 0) revert NothingToWithdraw(auctionId, from);
-
-        uint256[] memory ids = held;
-        delete _escrow[auctionId][from];
-        _units[auctionId][from] = 0;
-
-        for (uint256 i = 0; i < count; ++i) {
-            IERC721(shapes).transferFrom(address(this), to, ids[i]);
-        }
-        return count;
-    }
-
-    /* ----------------------------- receipt ---------------------------- */
-
-    /// @inheritdoc IERC721Receiver
-    /// @dev Accepts a Shape only when it is minted to the house (`from == address(0)`) while `bid`
-    ///      is minting one. An inbound `safeTransferFrom` carries a nonzero `from` and is refused:
-    ///      bidding by sending a card here directly is unsupported on purpose, since a bid must be
-    ///      one transaction, so that what it totals is compared against the standing bid exactly
-    ///      once. A contract fee recipient that gains control inside the mint cannot push its own
-    ///      Shape in through this path.
-    function onERC721Received(address, address from, uint256, bytes calldata) external view returns (bytes4) {
-        if (msg.sender != shapes || !_minting || from != address(0)) revert UnsolicitedToken(from);
-        return IERC721Receiver.onERC721Received.selector;
-    }
-
     /* ------------------------------ views ----------------------------- */
 
     function auctions(uint256 auctionId) external view returns (Auction memory) {
@@ -367,37 +239,14 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     }
 
     /// @inheritdoc IShapeAuctionHouse
-    function escrowedCards(uint256 auctionId, address bidder) external view returns (uint256[] memory) {
-        return _escrow[auctionId][bidder];
-    }
-
-    /// @inheritdoc IShapeAuctionHouse
-    function bidUnits(uint256 auctionId, address bidder) external view returns (uint64) {
-        return _units[auctionId][bidder];
-    }
-
-    /// @inheritdoc IShapeAuctionHouse
     function minimumBid(uint256 auctionId) external view returns (uint64) {
         return _minimumBid(_requireAuction(auctionId));
     }
 
-    /// @dev The reserve until someone bids, then the standing bid plus its increment. The
-    ///      increment is rounded up to a whole unit and floored at one, so the requirement always
-    ///      names an amount the ladder can express: every whole multiple of UNIT is assemblable,
-    ///      nothing between two units is, and a requirement landing between them would be
-    ///      unmeetable.
+    /// @dev Delegates the rounding to `ShapeCardEscrow`, which every card-denominated auction
+    ///      shares: an increment that landed between two units would name an unmeetable amount.
     function _minimumBid(Auction storage a) private view returns (uint64) {
-        if (a.highestBidder == address(0)) {
-            return a.reserveUnits == 0 ? 1 : a.reserveUnits;
-        }
-        uint256 step = (uint256(a.highestUnits) * a.minIncrementBps + 9999) / 10_000;
-        if (step == 0) step = 1;
-        return uint64(uint256(a.highestUnits) + step);
-    }
-
-    /// @inheritdoc IShapeAuctionHouse
-    function cardsFor(uint256 backingWei) external pure returns (uint256[9] memory) {
-        return _cardsFor(backingWei);
+        return _minimumFrom(a.highestBidder != address(0), a.highestUnits, a.minIncrementBps, a.reserveUnits);
     }
 
     /// @inheritdoc IShapeAuctionHouse
@@ -414,25 +263,6 @@ contract ShapeAuctionHouse is IShapeAuctionHouse, IERC721Receiver, ReentrancyGua
     /// @inheritdoc IShapeAuctionHouse
     function hasAuctionFor(address nft, uint256 tokenId) external view returns (bool) {
         return _auctionIdByToken[nft][tokenId] != 0;
-    }
-
-    /// @dev Largest denomination first, as many as fit, repeat. On this ladder that is provably
-    ///      the fewest cards for the amount, and it never exceeds twenty below 100 ETH.
-    function _cardsFor(uint256 backingWei) private pure returns (uint256[9] memory counts) {
-        if (backingWei % Denominations.UNIT != 0) revert NotAUnitMultiple(backingWei);
-
-        uint256 remaining = backingWei;
-        for (uint256 i = Denominations.COUNT; i > 0; --i) {
-            uint256 amount = Denominations.amountAt(i - 1);
-            counts[i - 1] = remaining / amount;
-            remaining %= amount;
-        }
-    }
-
-    function _total(uint256[9] memory counts) private pure returns (uint256 sum) {
-        for (uint256 i = 0; i < 9; ++i) {
-            sum += counts[i];
-        }
     }
 
     function _requireAuction(uint256 auctionId) private view returns (Auction storage a) {

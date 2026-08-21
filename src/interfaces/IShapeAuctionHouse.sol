@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+import {IShapeCardEscrow} from "./IShapeCardEscrow.sol";
+
 /// @title IShapeAuctionHouse
 /// @notice An English auction for any ERC721, with bids denominated in Shape cards.
 /// @dev A bid is a set of Shapes whose summed backing is the bid amount. Amounts are carried in
 ///      `UNIT` (0.01 ETH) multiples throughout, which is the finest granularity the denomination
 ///      ladder can express. Escrowed cards are never moved on an outbid; every payout is pulled.
-interface IShapeAuctionHouse {
+interface IShapeAuctionHouse is IShapeCardEscrow {
     /// @notice Emitted when a seller escrows a token and opens an auction.
     event AuctionCreated(
         uint256 indexed auctionId,
@@ -21,9 +23,6 @@ interface IShapeAuctionHouse {
     ///         not the increment, because a bidder may top up across several transactions.
     ///         `endTime` is the deadline after any anti-sniping extension this bid triggered.
     event BidPlaced(uint256 indexed auctionId, address indexed bidder, uint64 units, uint64 endTime);
-
-    /// @notice Emitted when the ETH path mints cards for a bidder who brought no Shapes.
-    event BidCardsMinted(uint256 indexed auctionId, address indexed bidder, uint256 backingWei);
 
     /// @notice Emitted when the outcome is recorded. Moves nothing: the lot and the winning
     ///         cards are both pulled afterwards, by the winner and the seller respectively.
@@ -70,33 +69,10 @@ interface IShapeAuctionHouse {
     error NotLotRecipient(uint256 auctionId, address caller);
     /// @dev The seller bid its own auction.
     error SellerCannotBid();
-    /// @dev A bid carried no cards and no ETH.
-    error EmptyBid();
-    /// @dev A card valued at zero: it does not exist, or it is Black and therefore unredeemable.
-    error WorthlessCard(uint256 tokenId);
-    /// @dev More cards in one bid than `MAX_CARDS_PER_BID`.
-    error TooManyCards(uint256 provided);
-    /// @dev The ETH path was given a backing that is not a whole multiple of `UNIT`.
-    error NotAUnitMultiple(uint256 backingWei);
-    error IncorrectPayment(uint256 expected, uint256 provided);
-    /// @dev The bid does not clear the reserve, or the standing bid plus its increment.
-    error BidTooLow(uint64 provided, uint64 required);
-    /// @dev The standing leader cannot withdraw, and a bidder with nothing escrowed has nothing
-    ///      to withdraw.
-    error NothingToWithdraw(uint256 auctionId, address bidder);
-    /// @dev The house accepts ERC721s only from `shapes`, and only while minting a bid.
-    error UnsolicitedToken(address from);
-
-    /// @notice The largest number of cards one bidder may have escrowed on one auction. A minimal set never needs more
-    ///         than twenty for any amount below 100 ETH, so this is headroom, not a constraint.
-    function MAX_CARDS_PER_BID() external view returns (uint256);
 
     /// @notice The longest an auction may run. `createAuction` rejects a longer duration, and an
     ///         `extensionWindow` larger than the duration.
     function MAX_DURATION() external view returns (uint64);
-
-    /// @notice The Shapes contract every bid is denominated in.
-    function shapes() external view returns (address);
 
     /// @notice Number of auctions ever created. Ids are issued from 0.
     function auctionCount() external view returns (uint256);
@@ -171,18 +147,8 @@ interface IShapeAuctionHouse {
 
     /* ----------------------------- views ------------------------------ */
 
-    /// @notice The cards a bidder currently has escrowed on an auction.
-    function escrowedCards(uint256 auctionId, address bidder) external view returns (uint256[] memory);
-
-    /// @notice A bidder's escrowed total, in `UNIT` multiples.
-    function bidUnits(uint256 auctionId, address bidder) external view returns (uint64);
-
     /// @notice The smallest bid that would take the lead right now, in `UNIT` multiples.
     function minimumBid(uint256 auctionId) external view returns (uint64);
-
-    /// @notice The minimal card set for `backingWei`: `counts[i]` cards at denomination `i`.
-    ///         Reverts unless `backingWei` is a whole multiple of `UNIT`.
-    function cardsFor(uint256 backingWei) external pure returns (uint256[9] memory counts);
 
     /// @notice The auction holding `tokenId` of `nft`, if the house currently holds it under one.
     /// @dev Paired with an existence flag because auction id 0 is a real id, and a bare zero
