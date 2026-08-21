@@ -64,6 +64,10 @@ for _ in $(seq 1 50); do
 done
 cast block-number --rpc-url "$RPC" >/dev/null 2>&1 || { echo "anvil never came up; see /tmp/shapes-anvil.log"; exit 1; }
 
+# Block height before the deploy: lower bound for the frontend's event-log scans (the
+# Deployment interface's optional fromBlock). 0 on a plain chain, fork head when forking.
+DEPLOY_BLOCK=$(cast block-number --rpc-url "$RPC")
+
 say "Deploying Shapes"
 # The deploy script only defaults the fee recipient to the deployer on chain id 31337; on any
 # other chain it requires SHAPES_FEE_RECIPIENT to be set explicitly. Pass a clean empty EOA
@@ -104,7 +108,8 @@ cat >"$DEPLOYMENT_FILE" <<JSON
   "renderer": "$RENDERER",
   "collection": "$COLLECTION",
   "auctionHouse": "$HOUSE",
-  "feeBps": "$FEE_BPS"
+  "feeBps": "$FEE_BPS",
+  "fromBlock": $DEPLOY_BLOCK
 }
 JSON
 
