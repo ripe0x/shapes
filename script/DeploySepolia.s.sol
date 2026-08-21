@@ -58,12 +58,37 @@ contract DeploySepolia is Script {
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == me, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
+        require(shapes.collection() == address(collection), "collection mismatch");
+        require(shapes.titleHolder() == titleHolder, "title holder mismatch");
+        // The house is wired to the token and holds no role on it.
+        require(house.shapes() == address(shapes), "auction house points at another token");
+        require(house.auctionCount() == 0, "auction house is not fresh");
+        // The seeded spread starts at id 0, so the genesis token is the auctionable one.
+        require(!seed || shapes.ownerOf(0) == me, "token 0 is not held by the deployer");
 
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));
+        console.log("ShapeCollection", address(collection));
         console.log("Shapes        ", address(shapes));
+        console.log("AuctionHouse  ", address(house));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", me);
+        console.log("title holder  ", titleHolder);
         console.log("total minted  ", shapes.totalMinted());
+
+        // Printed ready to paste: the site reads these four addresses from a deployment file, and
+        // transcribing them by hand is how a site ends up pointed at a contract that is not there.
+        console.log("");
+        console.log("--- web/public/deployment.json ---");
+        console.log("{");
+        console.log('  "rpc": "https://ethereum-sepolia-rpc.publicnode.com",');
+        console.log('  "chainId": 11155111,');
+        console.log(string.concat('  "shapes": "', vm.toString(address(shapes)), '",'));
+        console.log(string.concat('  "renderer": "', vm.toString(address(renderer)), '",'));
+        console.log(string.concat('  "collection": "', vm.toString(address(collection)), '",'));
+        console.log(string.concat('  "auctionHouse": "', vm.toString(address(house)), '",'));
+        console.log(string.concat('  "feeBps": "', vm.toString(feeBps), '",'));
+        console.log(string.concat('  "fromBlock": ', vm.toString(block.number)));
+        console.log("}");
     }
 }
