@@ -64,6 +64,13 @@ for _ in $(seq 1 50); do
 done
 cast block-number --rpc-url "$RPC" >/dev/null 2>&1 || { echo "anvil never came up; see /tmp/shapes-anvil.log"; exit 1; }
 
+# A plain chain starts at block 0, and the mint path reads `blockhash(block.number - 1)`, which
+# underflows there. `forge script` simulates at the current block, so the deploy (which mints
+# token 0) panics before broadcasting. A fork inherits a real block height and skips this.
+if [ "$(cast block-number --rpc-url "$RPC")" = "0" ]; then
+  cast rpc anvil_mine 1 --rpc-url "$RPC" >/dev/null
+fi
+
 say "Deploying Shapes"
 # The deploy script only defaults the fee recipient to the deployer on chain id 31337; on any
 # other chain it requires SHAPES_FEE_RECIPIENT to be set explicitly. Pass a clean empty EOA

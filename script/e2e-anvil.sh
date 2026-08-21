@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end check against a local Anvil chain: deploy, mint every denomination, read the
-# onchain metadata, transfer, redeem, and confirm the ETH returned is exactly the ETH wrapped.
+# onchain metadata, transfer, redeem, confirm the ETH returned is exactly the ETH wrapped, then
+# run a full auction: open, bid, settle, and both pulls.
 #
 #   anvil &                       # in another shell
 #   ./script/e2e-anvil.sh
@@ -14,6 +15,7 @@ ADDR1=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
 FEE_BPS=100 # 1% of backing, per token
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
+fail() { echo "  FAIL: $*" >&2; exit 1; }
 # bash integers are 64-bit signed; Shape denominations are not.
 big() { python3 -c "import sys;print(eval(sys.argv[1]))" "$1"; }
 
@@ -26,21 +28,42 @@ big() { python3 -c "import sys;print(eval(sys.argv[1]))" "$1"; }
 # transaction, so the estimate (which nets out the refund) is a touch below the gas the execution
 # actually needs mid-flight, and the tx reverts out of gas at the guard cleanup. Wallets add a
 # buffer for exactly this; scripts and programmatic callers must too.
+# GAS may be raised per call: the auction's ETH bid path mints a card set inside the bid and
+# needs more than the default.
 send_wait() {
   local hash
-  hash=$(cast send --gas-limit 600000 "$@" --json | python3 -c "import json,sys;print(json.load(sys.stdin)['transactionHash'])")
+  hash=$(cast send --gas-limit "${GAS:-600000}" "$@" --json | python3 -c "import json,sys;print(json.load(sys.stdin)['transactionHash'])")
   for _ in $(seq 1 100); do
     cast receipt "$hash" --rpc-url "$RPC" >/dev/null 2>&1 && { echo "$hash"; return 0; }
   done
   echo "  FAIL: tx $hash was not mined" >&2; exit 1
 }
 
+# A fresh Anvil sits at block 0, and the mint path reads `blockhash(block.number - 1)`, which
+# underflows there. `forge script` simulates the whole run at the current block, so the deploy
+# panics before it broadcasts anything. Only block 0 is affected; any real chain is far past it.
+if [ "$(cast block-number --rpc-url "$RPC")" = "0" ]; then
+  say "Mining one block (a fresh chain is at block 0, where the mint path underflows)"
+  cast rpc anvil_mine 1 --rpc-url "$RPC" >/dev/null
+fi
+
 say "Deploying"
-OUT=$(forge script script/DeployShapes.s.sol --rpc-url "$RPC" --private-key "$PK0" --broadcast 2>&1)
-SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+# Captured rather than streamed so the addresses can be parsed out, and printed in full on
+# failure: a bare `grep` miss would otherwise kill the script under `pipefail` with no output.
+OUT=$(forge script script/DeployShapes.s.sol --rpc-url "$RPC" --private-key "$PK0" --broadcast 2>&1) \
+  || { echo "$OUT" >&2; fail "deployment reverted"; }
+SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}') \
+  || { echo "$OUT" >&2; fail "no Shapes address in the deploy output"; }
 RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 echo "  Shapes        $SHAPES"
 echo "  ShapeRenderer $RENDERER"
+echo "  AuctionHouse  $HOUSE"
+
+# The deploy mints token 0 to the deployer, so the ids this script mints start after it. Read the
+# counter rather than assuming: ids issue from 0 and `totalMinted` is a count, not the highest id.
+FIRST_ID=$(cast call "$SHAPES" "totalMinted()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+echo "  token 0 minted at deploy; this run mints ids $FIRST_ID and up"
 
 say "Rejecting a plain ETH transfer"
 if cast send "$SHAPES" --value 1ether --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
@@ -73,8 +96,8 @@ echo "  redeemableBacking $TOTAL"
 echo "  contract balance  $BAL"
 [ "${TOTAL%% *}" = "$BAL" ] && echo "  ok: balance == redeemableBacking" || { echo "  FAIL"; exit 1; }
 
-# Tokens are minted 1..9 in denomination order, so 1 ETH (the fifth denomination) is token 5.
-ETH1_ID=5
+# The nine mints run in denomination order from FIRST_ID, so 1 ETH is the fifth of them.
+ETH1_ID=$((FIRST_ID + 4))
 
 say "Reading fully onchain metadata for token $ETH1_ID (1 ETH)"
 URI=$(cast call "$SHAPES" "tokenURI(uint256)(string)" "$ETH1_ID" --rpc-url "$RPC")
@@ -108,9 +131,11 @@ echo "  received $DELTA wei"
 [ "$DELTA" = "1000000000000000000" ] && echo "  ok: exactly the wrapped amount" || { echo "  FAIL"; exit 1; }
 
 say "Redeeming the rest"
-# Every token except the 1 ETH one, which was already redeemed above.
+# Every live token except the 1 ETH one, already redeemed above. Token 0 is included: the deploy
+# minted it, and leaving it out strands its backing and fails the reserve check below for a reason
+# unrelated to redemption.
 REST=""
-for t in 1 2 3 4 5 6 7 8 9; do [ "$t" = "$ETH1_ID" ] && continue; REST="$REST,$t"; done
+for t in $(seq 0 $((FIRST_ID + 8))); do [ "$t" = "$ETH1_ID" ] && continue; REST="$REST,$t"; done
 REST="[${REST#,}]"
 send_wait "$SHAPES" "redeemBatch(uint256[])" "$REST" \
   --private-key "$PK0" --rpc-url "$RPC" >/dev/null
@@ -120,5 +145,72 @@ echo "  redeemableBacking $FINAL_BACKING"
 echo "  contract balance  $FINAL_BAL"
 [ "${FINAL_BACKING%% *}" = "0" ] && [ "$FINAL_BAL" = "0" ] \
   && echo "  ok: reserve fully unwound" || { echo "  FAIL"; exit 1; }
+
+# ---------------------------------------------------------------------------------------------
+# The auction house. Mints its own lot, so nothing here depends on what the redemption left.
+# ---------------------------------------------------------------------------------------------
+
+say "Opening an auction"
+send_wait "$SHAPES" "mint(uint256)" 100000000000000000 \
+  --value "$(big "100000000000000000 + 100000000000000000*$FEE_BPS//10000")wei" \
+  --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+LOT=$(($(cast call "$SHAPES" "totalMinted()(uint256)" --rpc-url "$RPC" | awk '{print $1}') - 1))
+send_wait "$SHAPES" "setApprovalForAll(address,bool)" "$HOUSE" true \
+  --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+# createAuction(nft, tokenId, duration, reserveUnits, minIncrementBps, extensionWindow)
+send_wait "$HOUSE" "createAuction(address,uint256,uint64,uint64,uint16,uint32)" \
+  "$SHAPES" "$LOT" 86400 1 500 900 --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+[ "$(cast call "$SHAPES" "ownerOf(uint256)(address)" "$LOT" --rpc-url "$RPC")" = "$HOUSE" ] \
+  && echo "  ok: lot $LOT escrowed" || fail "lot was not escrowed"
+[ "$(cast call "$HOUSE" "hasAuctionFor(address,uint256)(bool)" "$SHAPES" "$LOT" --rpc-url "$RPC")" = "true" ] \
+  && echo "  ok: indexed against its collection" || fail "lot is not indexed"
+
+say "Bidding 1 ETH through the ETH path"
+# The bidder brings no Shapes; the house mints the minimal card set and charges the mint fee on top.
+GAS=3000000 send_wait "$HOUSE" "bid(uint256,uint256[],uint256)" 0 "[]" 1000000000000000000 \
+  --value "$(big "1000000000000000000 + 1000000000000000000*$FEE_BPS//10000")wei" \
+  --private-key "$PK1" --rpc-url "$RPC" >/dev/null
+UNITS=$(cast call "$HOUSE" "bidUnits(uint256,address)(uint64)" 0 "$ADDR1" --rpc-url "$RPC" | awk '{print $1}')
+[ "$UNITS" = "100" ] && echo "  ok: 100 units escrowed (1 ETH)" || fail "bid units were $UNITS, expected 100"
+
+say "The seller cannot bid its own lot"
+if cast send "$HOUSE" "bid(uint256,uint256[],uint256)" 0 "[]" 2000000000000000000 \
+     --value "$(big "2000000000000000000 + 2000000000000000000*$FEE_BPS//10000")wei" \
+     --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
+  fail "the seller bid its own auction"
+else
+  echo "  ok: reverted"
+fi
+
+say "Settling"
+cast rpc anvil_increaseTime 90000 --rpc-url "$RPC" >/dev/null
+cast rpc anvil_mine 1 --rpc-url "$RPC" >/dev/null
+send_wait "$HOUSE" "settle(uint256)" 0 --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+# Settlement records the outcome and moves nothing, so a lot that cannot be transferred cannot
+# hold the outcome, the seller's proceeds, or a losing bidder's escrow hostage.
+[ "$(cast call "$SHAPES" "ownerOf(uint256)(address)" "$LOT" --rpc-url "$RPC")" = "$HOUSE" ] \
+  && echo "  ok: settlement delivered nothing; the lot is still escrowed" \
+  || fail "settlement moved the lot"
+
+say "The seller cannot take a lot that sold"
+if cast send "$HOUSE" "claimLot(uint256)" 0 --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
+  fail "the seller claimed a sold lot"
+else
+  echo "  ok: reverted"
+fi
+
+say "The winner pulls the lot, the seller pulls the bid"
+send_wait "$HOUSE" "claimLot(uint256)" 0 --private-key "$PK1" --rpc-url "$RPC" >/dev/null
+[ "$(cast call "$SHAPES" "ownerOf(uint256)(address)" "$LOT" --rpc-url "$RPC")" = "$ADDR1" ] \
+  && echo "  ok: lot delivered to the winner" || fail "the winner did not receive the lot"
+[ "$(cast call "$HOUSE" "hasAuctionFor(address,uint256)(bool)" "$SHAPES" "$LOT" --rpc-url "$RPC")" = "false" ] \
+  && echo "  ok: the token index cleared, so it can be listed again" || fail "index was not cleared"
+
+send_wait "$HOUSE" "claimProceeds(uint256)" 0 --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+HOUSE_SHAPES=$(cast call "$SHAPES" "balanceOf(address)(uint256)" "$HOUSE" --rpc-url "$RPC" | awk '{print $1}')
+HOUSE_ETH=$(cast balance "$HOUSE" --rpc-url "$RPC")
+echo "  house holds $HOUSE_SHAPES Shapes and $HOUSE_ETH wei"
+[ "$HOUSE_SHAPES" = "0" ] && [ "$HOUSE_ETH" = "0" ] \
+  && echo "  ok: the house drained completely" || fail "the house retained something"
 
 say "All end-to-end checks passed."
