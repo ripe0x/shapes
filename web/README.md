@@ -23,7 +23,10 @@ Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
 Run `npm install` at the repo root (this is an npm workspace), then from `web/`:
 
 ```bash
+portless
+# or, on the plain port
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [https://shapes.localhost](https://shapes.localhost), or use
+[http://localhost:3000](http://localhost:3000) when running the plain Next dev server.

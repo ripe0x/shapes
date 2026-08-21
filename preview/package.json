@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "portless": { "name": "preview.shapes", "appPort": 5173 },
   "description": "Local generative preview harness for the Shapes ERC721 protocol",
   "scripts": {
     "dev": "vite",

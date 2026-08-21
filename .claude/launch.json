@@ -3,14 +3,14 @@
   "configurations": [
     {
       "name": "shapes-web",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "web", "run", "dev"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd web && exec portless run"],
       "port": 3000
     },
     {
       "name": "shapes-preview",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "preview", "run", "dev"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd preview && exec portless run"],
       "port": 5173
     },
     {
