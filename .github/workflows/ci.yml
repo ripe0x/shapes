@@ -5,9 +5,44 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    name: changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+      renderer: ${{ steps.filter.outputs.renderer }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            contracts:
+              - 'src/**'
+              - 'test/**'
+              - 'script/**'
+              - 'lib/**'
+              - 'foundry.toml'
+              - 'remappings.txt'
+              - '.github/workflows/ci.yml'
+            renderer:
+              - 'src/**'
+              - 'lib/**'
+              - 'preview/**'
+              - 'test/fixtures/**'
+              - 'foundry.toml'
+              - 'remappings.txt'
+              - '.github/workflows/ci.yml'
+
   contracts:
     name: contracts
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,6 +50,18 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+          cache: true
+
+      # compiled artifacts (out/, cache/), keyed on everything solc reads. A cache hit turns
+      # forge build into a no-op instead of a full recompile.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out
+            cache
+          key: forge-build-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'lib/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'remappings.txt') }}
+          restore-keys: |
+            forge-build-${{ runner.os }}-
 
       # forge build --sizes exits nonzero if any deployable contract exceeds the EIP-170
       # runtime size limit (24,576 bytes), so this step doubles as the CI size gate.
@@ -27,6 +74,8 @@ jobs:
 
   renderer:
     name: renderer parity
+    needs: changes
+    if: needs.changes.outputs.renderer == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +89,16 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out
+            cache
+          key: forge-build-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'lib/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'remappings.txt') }}
+          restore-keys: |
+            forge-build-${{ runner.os }}-
 
       # The lockfile lives at the repo root (npm workspaces: web + preview), so
       # install runs there; preview's deps hoist into the root node_modules.
