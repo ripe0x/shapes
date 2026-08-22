@@ -160,6 +160,11 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
         uint64 newUnits = _takeBid(auctionId, cardIds, ethBackingWei);
+        // `_takeBid` escrows the cards, which mints and pays the Shapes fee recipient, so control
+        // reaches an arbitrary contract between the check above and the writes below. `settle` and
+        // `cancelAuction` carry no reentrancy guard by design, so either can close the auction in
+        // that window. Re-read the flag rather than record a bid on a closed auction.
+        if (a.settled) revert AuctionAlreadySettled(auctionId);
 
         uint64 required = _minimumBid(a);
         if (newUnits < required) revert BidTooLow(newUnits, required);

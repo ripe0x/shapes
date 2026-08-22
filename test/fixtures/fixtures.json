@@ -2121,12 +2121,14 @@
  "sampleSplitWhy": [
   "split sampling: materialized parent, dust child",
   "split sampling: materialized parent, second child index",
-  "split sampling: materialized parent, childIndex wraps past uint8 (256 -> 0)",
+  "split sampling: materialized parent, childIndex 0 at the aliasing denomination",
+  "split sampling: materialized parent, childIndex 256, must not alias childIndex 0",
   "split sampling: seed-derived (original) parent",
   "split sampling: seed-derived apex parent, single-module donor",
-  "split sampling: seed-derived parent, childIndex wraps past uint8 (256 -> 0)"
+  "split sampling: seed-derived parent, childIndex 256 encodes as a full uint256"
  ],
  "sampleSplitParentSeed": [
+  "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
   "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
   "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
   "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
@@ -2138,11 +2140,13 @@
   "1",
   "1",
   "1",
+  "1",
   "4",
   "8",
   "2"
  ],
  "sampleSplitParentInkGene": [
+  "2",
   "2",
   "2",
   "2",
@@ -2154,6 +2158,7 @@
   "0x1853115647393209005211620226765843050100",
   "0x1853115647393209005211620226765843050100",
   "0x1853115647393209005211620226765843050100",
+  "0x1853115647393209005211620226765843050100",
   "0x",
   "0x",
   "0x"
@@ -2161,7 +2166,8 @@
  "sampleSplitChildDenomIndex": [
   "0",
   "4",
-  "8",
+  "4",
+  "4",
   "0",
   "7",
   "1"
@@ -2169,18 +2175,20 @@
  "sampleSplitChildIndex": [
   "0",
   "1",
+  "0",
   "256",
   "0",
   "3",
   "256"
  ],
  "sampleSplitExpected": [
-  "0x00624302260153525311583956015205562652110109320062",
-  "0x010139471139021847",
-  "0x52",
-  "0x10480314761018373703100310131013101010371818140303",
+  "0x00584718624356110009390026586253260032110000110000",
+  "0x260043581811096205",
+  "0x525826013252320011",
+  "0x000053115800115653",
+  "0x10181010370303133748131318101314481314184810187618",
   "0x6363",
-  "0x1515741512113838151136743936361015387412"
+  "0x3810361039361074151536101136381515153638"
  ],
  "sampledRenderWhy": [
   "sampled render: 1-module grid (100 ETH apex)",

@@ -58,16 +58,12 @@ function requireDenomIndex(index: number, label: string): void {
   }
 }
 
-/**
- * Truncate a non-negative integer to its low 8 bits, mirroring Solidity's `uint8(x)` explicit
- * narrowing cast (wraps, does not revert). `childIndex` in `sampleSplitChild` is conceptually a
- * uint256 loop counter narrowed at the hash site the same way, so this wraps rather than throws.
- */
-function toUint8(value: number, label: string): number {
+/** Reject a value that cannot be a uint256 loop counter. `childIndex` enters the split stream
+ *  untruncated, so out-of-range input is an error rather than a wrap. */
+function requireIndex(value: number, label: string): void {
   if (!Number.isInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative integer: ${value}`);
   }
-  return value & 0xff;
 }
 
 /** keccak256(abi.encodePacked(...)), reduced to a uint256 bigint. Mirrors the private helper in
@@ -246,16 +242,14 @@ export function sampleCompose(
   return sampleComposeTraced(survivor, burns, newIndex, p).bytes;
 }
 
-function splitSampleSeed(parentSeed: bigint, childDenomIndex: number, childIndexU8: number): bigint {
+function splitSampleSeed(parentSeed: bigint, childDenomIndex: number, childIndex: number): bigint {
   return packedKeccakUint(
-    ["string", "bytes32", "uint8", "uint8"],
-    [SPLIT_DOMAIN, seedHex(parentSeed), childDenomIndex, childIndexU8],
+    ["string", "bytes32", "uint8", "uint256"],
+    [SPLIT_DOMAIN, seedHex(parentSeed), childDenomIndex, BigInt(childIndex)],
   );
 }
 
-/** The split-child sample stream's seed inputs, for display and reproducibility. `childIndex`
- *  is truncated to its low 8 bits the same way sampling does; both the raw and truncated values
- *  are returned. */
+/** The split-child sample stream's seed inputs, for display and reproducibility. */
 export function splitSampleSeedInputs(
   parent: SampleDonor,
   childDenomIndex: number,
@@ -264,16 +258,14 @@ export function splitSampleSeedInputs(
   parentSeed: bigint;
   childDenomIndex: number;
   childIndex: number;
-  childIndexU8: number;
   sampleSeed: bigint;
 } {
-  const childIndexU8 = toUint8(childIndex, "childIndex");
+  requireIndex(childIndex, "childIndex");
   return {
     parentSeed: parent.seed,
     childDenomIndex,
     childIndex,
-    childIndexU8,
-    sampleSeed: splitSampleSeed(parent.seed, childDenomIndex, childIndexU8),
+    sampleSeed: splitSampleSeed(parent.seed, childDenomIndex, childIndex),
   };
 }
 
@@ -298,8 +290,8 @@ export interface SplitTraceResult {
  * `sampleSplitChild` is defined in terms of this function's output, so there is one draw-order
  * implementation. Single donor, so no units weighting: module choice is uniform, with
  * replacement. `childIndex` is the child's ordinal position within the split call (the same
- * loop counter `_childSeed` uses), truncated to its low 8 bits at the hash site like Solidity's
- * `uint8(childIndex)` cast. It is not itself required to already be in uint8 range.
+ * loop counter `_childSeed` uses), encoded into the stream as a full uint256. Encoding it as a
+ * uint8 would alias children 256 apart in the same split at the same denomination.
  */
 export function sampleSplitChildTraced(
   parent: SampleDonor,
@@ -309,10 +301,10 @@ export function sampleSplitChildTraced(
 ): SplitTraceResult {
   requireDenomIndex(parent.denomIndex, "parent.denomIndex");
   requireDenomIndex(childDenomIndex, "childDenomIndex");
-  const childIndexU8 = toUint8(childIndex, "childIndex");
+  requireIndex(childIndex, "childIndex");
 
   const parentBytes = effectiveModuleBytes(parent, p);
-  const sampleSeed = splitSampleSeed(parent.seed, childDenomIndex, childIndexU8);
+  const sampleSeed = splitSampleSeed(parent.seed, childDenomIndex, childIndex);
   const rand = new Round03Rand(seed32Of(sampleSeed));
 
   const childCellCount = cellCountAt(childDenomIndex);

@@ -122,15 +122,10 @@ test("sampleSplitChild: deterministic and depends on childIndex", () => {
   assert.equal(bytesEqual(a, c), false);
 });
 
-test("sampleSplitChild: childIndex truncates to uint8 like Solidity's cast, rather than throwing", () => {
+test("sampleSplitChild: childIndex 256 apart does not alias", () => {
   const parent: SampleDonor = {seed: 0x5555n, denomIndex: 2, inkGene: 5};
-  const a = sampleSplitChild(parent, 4, 0);
-  const wrapped = sampleSplitChild(parent, 4, 256); // 256 & 0xff === 0
-  assert.equal(bytesEqual(a, wrapped), true);
-
-  const b = sampleSplitChild(parent, 4, 1);
-  const wrappedB = sampleSplitChild(parent, 4, 257); // 257 & 0xff === 1
-  assert.equal(bytesEqual(b, wrappedB), true);
+  assert.equal(bytesEqual(sampleSplitChild(parent, 4, 0), sampleSplitChild(parent, 4, 256)), false);
+  assert.equal(bytesEqual(sampleSplitChild(parent, 4, 1), sampleSplitChild(parent, 4, 257)), false);
 });
 
 test("sampleSplitChild: cell count follows the child denomination's grid", () => {
@@ -273,7 +268,7 @@ test("composeSampleSeedInputs: burnSeedFold is order-invariant and matches the t
   assert.equal(inOrder.newIndex, 5);
 });
 
-test("sampleSplitChildTraced: bytes match sampleSplitChild, including the uint8 wrap case", () => {
+test("sampleSplitChildTraced: bytes match sampleSplitChild, including past the uint8 range", () => {
   const parent: SampleDonor = {seed: 0x5555n, denomIndex: 2, inkGene: 5};
 
   const untraced = sampleSplitChild(parent, 4, 0);
@@ -283,10 +278,10 @@ test("sampleSplitChildTraced: bytes match sampleSplitChild, including the uint8 
   assert.equal(parentCellCount, cellCountAt(2));
   for (let j = 0; j < bytes.length; j++) assert.equal(trace[j].byte, bytes[j]);
 
-  const untracedWrapped = sampleSplitChild(parent, 4, 256);
-  const tracedWrapped = sampleSplitChildTraced(parent, 4, 256);
-  assert.equal(bytesEqual(tracedWrapped.bytes, untracedWrapped), true);
-  assert.equal(bytesEqual(tracedWrapped.bytes, bytes), true); // 256 & 0xff === 0, same as childIndex 0
+  const untracedWide = sampleSplitChild(parent, 4, 256);
+  const tracedWide = sampleSplitChildTraced(parent, 4, 256);
+  assert.equal(bytesEqual(tracedWide.bytes, untracedWide), true);
+  assert.equal(bytesEqual(tracedWide.bytes, bytes), false);
 });
 
 test("sampleSplitChildTraced: a materialized 1-module parent traces every cell to moduleIndex 0", () => {
@@ -308,12 +303,12 @@ test("sampleSplitChildTraced: a materialized 1-module parent traces every cell t
   }
 });
 
-test("splitSampleSeedInputs: childIndexU8 truncates like the traced sampler", () => {
+test("splitSampleSeedInputs: the seed carries the untruncated childIndex", () => {
   const parent: SampleDonor = {seed: 0x5555n, denomIndex: 2, inkGene: 5};
   const a = splitSampleSeedInputs(parent, 4, 1);
-  const wrapped = splitSampleSeedInputs(parent, 4, 257); // 257 & 0xff === 1
-  assert.equal(a.childIndexU8, 1);
-  assert.equal(wrapped.childIndexU8, 1);
-  assert.equal(a.sampleSeed, wrapped.sampleSeed);
+  const wide = splitSampleSeedInputs(parent, 4, 257);
+  assert.equal(a.childIndex, 1);
+  assert.equal(wide.childIndex, 257);
+  assert.notEqual(a.sampleSeed, wide.sampleSeed);
   assert.equal(a.parentSeed, parent.seed);
 });

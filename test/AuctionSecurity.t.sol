@@ -88,6 +88,45 @@ contract MaliciousFeeRecipient is IERC721Receiver {
     }
 }
 
+/// @dev L-1: a contract that is both the Shapes fee recipient and an auction's seller. The mint
+///      fee forwarded during the house's bid-path mint hands it control mid-`bid`, and it uses
+///      that window to call `cancelAuction`, which carries no reentrancy guard so that settlement
+///      can never be blocked. `bid` must not then record a bid on the closed auction.
+contract ReentrantCancelSeller is IERC721Receiver {
+    Shapes public shapes;
+    ShapeAuctionHouse public house;
+    uint256 public auctionId;
+    bool public armed;
+    bool public cancelled;
+
+    function setTargets(Shapes shapes_, ShapeAuctionHouse house_) external {
+        shapes = shapes_;
+        house = house_;
+    }
+
+    function list(uint256 amount, uint64 duration) external returns (uint256) {
+        uint256 lot = shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount);
+        shapes.setApprovalForAll(address(house), true);
+        auctionId = house.createAuction(address(shapes), lot, duration, 0, 0, 0);
+        return auctionId;
+    }
+
+    function arm() external {
+        armed = true;
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return IERC721Receiver.onERC721Received.selector;
+    }
+
+    receive() external payable {
+        if (!armed) return;
+        armed = false; // one shot: the fee forwards once per denomination minted
+        house.cancelAuction(auctionId);
+        cancelled = true;
+    }
+}
+
 contract AuctionSecurityTest is Test {
     Shapes shapes;
     ShapeRenderer renderer;
@@ -253,5 +292,40 @@ contract AuctionSecurityTest is Test {
         assertEq(shapes2.ownerOf(pushed), address(mal), "the pushed Shape was refused, not stranded");
         // The honest bid still went through.
         assertEq(house2.bidUnits(a, carol), 100, "carol's 1 ETH bid stands at 100 units");
+    }
+
+    /// @notice L-1. `bid` checks `settled`, then escrows the bid, which mints and forwards the
+    ///         Shapes fee to an arbitrary contract. A fee recipient that is also the seller can
+    ///         cancel the auction in that window, so `bid` re-reads the flag after the escrow
+    ///         interaction and refuses to write a bid onto a closed auction. The revert unwinds
+    ///         the cancel with it, leaving the auction exactly as it was.
+    function test_L1_ABidCannotBeRecordedOnAnAuctionCancelledMidCall() public {
+        ReentrantCancelSeller mal = new ReentrantCancelSeller();
+        Shapes shapes3 = new Shapes(100, address(mal), address(renderer), address(collection));
+        ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
+        mal.setTargets(shapes3, house3);
+
+        vm.deal(address(mal), 10 ether);
+        uint256 a = mal.list(0.1 ether, 1 days);
+
+        address carol = makeAddr("carol");
+        vm.deal(carol, 10 ether);
+        mal.arm();
+        vm.prank(carol);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionAlreadySettled.selector, a));
+        house3.bid{value: 1.01 ether}(a, new uint256[](0), 1 ether);
+
+        // The revert unwound the reentrant cancel along with the bid.
+        assertEq(mal.cancelled(), false, "the cancel was rolled back with the bid");
+        ShapeAuctionHouse.Auction memory open = house3.auctions(a);
+        assertEq(open.settled, false, "the auction is still open");
+        assertEq(open.highestBidder, address(0), "no bidder was recorded");
+        assertEq(open.highestUnits, 0, "no units were recorded");
+        assertEq(house3.bidUnits(a, carol), 0, "no escrow was credited");
+
+        // The seller can still cancel on its own, outside a bid.
+        vm.prank(address(mal));
+        house3.cancelAuction(a);
+        assertEq(house3.auctions(a).settled, true, "a plain cancel still works");
     }
 }

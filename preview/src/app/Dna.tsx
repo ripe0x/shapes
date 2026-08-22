@@ -661,7 +661,7 @@ function SplitDna({ params }: { params: Params }) {
               <div style={{ ...mono, fontSize: 10, color: C.dim, marginBottom: 3 }}>child #{i}</div>
               <Row k="parent seed" v={hex64(s.parentSeed)} />
               <Row k="child denomIndex" v={s.childDenomIndex} />
-              <Row k="childIndex (raw / u8)" v={`${s.childIndex} / ${s.childIndexU8}`} />
+              <Row k="childIndex" v={s.childIndex} />
               <Row k="sample seed" v={hex64(s.sampleSeed)} />
             </div>
           ))}

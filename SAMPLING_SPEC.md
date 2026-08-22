@@ -124,8 +124,11 @@ geometry until the next compose/decompose/split.
 - **decompose**: pop the record; restore the survivor's bytes verbatim; re-mint each input with
   its bytes verbatim. A token round-trips to its exact prior look.
 - **split**: each child i samples its own array from the parent's effective modules — stream
-  `keccak256(abi.encodePacked("Shapes/sample-split/v1", parentSeed, uint8(childDenom), uint8(i)))`,
-  uniform module choice (single donor, so no units weighting), with replacement. A child grid
+  `keccak256(abi.encodePacked("Shapes/sample-split/v1", parentSeed, uint8(childDenom), uint256(i)))`,
+  uniform module choice (single donor, so no units weighting), with replacement. `i` is the
+  untruncated child index, the same value `_childSeed` takes. An earlier revision of this spec
+  specified `uint8(i)`, which aliased children 256 apart in one split at one denomination onto
+  an identical stream; the field is a full uint256 word. A child grid
   can exceed the parent's (100 ETH has 1 module; its 50 ETH children have 2), which with-
   replacement handles. Children of original mints also sample, so a split visibly divides the
   parent's look.

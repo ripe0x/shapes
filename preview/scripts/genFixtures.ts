@@ -505,9 +505,15 @@ const out = {
         childIndex: 1,
       },
       {
-        why: "split sampling: materialized parent, childIndex wraps past uint8 (256 -> 0)",
+        why: "split sampling: materialized parent, childIndex 0 at the aliasing denomination",
         parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
-        childDenomIndex: 8,
+        childDenomIndex: 4,
+        childIndex: 0,
+      },
+      {
+        why: "split sampling: materialized parent, childIndex 256, must not alias childIndex 0",
+        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        childDenomIndex: 4,
         childIndex: 256,
       },
       {
@@ -523,7 +529,7 @@ const out = {
         childIndex: 3,
       },
       {
-        why: "split sampling: seed-derived parent, childIndex wraps past uint8 (256 -> 0)",
+        why: "split sampling: seed-derived parent, childIndex 256 encodes as a full uint256",
         parent: {seed: productionSeed(603n), denomIndex: 2, inkGene: 6},
         childDenomIndex: 1,
         childIndex: 256,

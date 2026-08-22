@@ -584,6 +584,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         originCount = d.originCount;
 
         delete _shapes[tokenId];
+        delete _sampledModules[tokenId];
         _burn(tokenId);
     }
 

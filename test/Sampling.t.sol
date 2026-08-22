@@ -317,6 +317,52 @@ contract SamplingTest is ShapesBase {
         }
     }
 
+    /// @notice The split stream takes the untruncated child index (SAMPLING_SPEC.md §6). A uint8
+    ///         index would give children k and k + 256 of one split, at one denomination, the same
+    ///         stream and so byte-identical stored modules, while their token ids and seeds differ.
+    function test_SplitChildIndexDoesNotAliasEvery256() public {
+        uint256 parent = _mint(alice, 5 ether);
+        uint8[] memory outs = new uint8[](500); // 500 x 0.01 ETH, all denomination index 0
+
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+        assertEq(kids.length, 500, "split must produce one child per output denomination");
+
+        for (uint256 k = 0; k < 500 - 256; ++k) {
+            bytes memory a = lens.shapeState(kids[k]).modules;
+            bytes memory b = lens.shapeState(kids[k + 256]).modules;
+            assertEq(a.length, 25, "0.01 ETH grid is 5x5");
+            assertTrue(shapes.seedOf(kids[k]) != shapes.seedOf(kids[k + 256]), "child seeds differ");
+            assertTrue(keccak256(a) != keccak256(b), "children 256 apart share a sampling stream");
+        }
+    }
+
+    /* ------------------------------ burn clears materialized geometry ------------------------------ */
+
+    /// @dev Raw read of `_sampledModules[tokenId]` (storage slot 8). The public getter requires
+    ///      the token to exist, so a burned id's leftover state is only observable here. Every
+    ///      materialized array is at most 25 bytes, a short `bytes` that lives entirely in the
+    ///      mapping slot, so one `vm.load` is the whole value.
+    function _rawSampledModulesSlot(uint256 tokenId) internal view returns (bytes32) {
+        return vm.load(address(shapes), keccak256(abi.encode(tokenId, uint256(8))));
+    }
+
+    function test_RedeemClearsMaterializedModules() public {
+        uint256 parent = _mint(alice, 0.1 ether);
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 1; // 0.05
+        outs[1] = 1;
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+
+        assertGt(lens.shapeState(kids[0]).modules.length, 0, "split child must be materialized");
+        assertTrue(_rawSampledModulesSlot(kids[0]) != bytes32(0), "materialized slot is nonzero");
+
+        vm.prank(alice);
+        shapes.redeem(kids[0]);
+        assertEq(_rawSampledModulesSlot(kids[0]), bytes32(0), "redeem left materialized geometry behind");
+    }
+
     /// @notice D3: children of an original (never-composed) parent also materialize and sample
     ///         from the parent's grammar-v1 modules.
     function test_SplitChildrenOfOriginalParentAlsoMaterialize() public {
@@ -336,5 +382,55 @@ contract SamplingTest is ShapesBase {
                 assertTrue(_containsByte(parentMods, childMods[j]));
             }
         }
+    }
+
+    /* ------------------------------ materialized burned input round-trip ------------------------------ */
+
+    /// @notice Decompose restores a materialized burned input byte for byte, not just the
+    ///         survivor. A split child is materialized on creation, so burning one into a compose
+    ///         and decomposing exercises the `ComposeInput.modules` snapshot path end to end.
+    function test_DecomposeRestoresMaterializedBurnedInputBitExactly() public {
+        uint256 parent = _mint(alice, 0.1 ether);
+        uint8[] memory outs = new uint8[](10); // 10 x 0.01 ETH
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+
+        uint256 input = kids[3];
+        ShapeState memory before = lens.shapeState(input);
+        assertGt(before.modules.length, 0, "a split child is materialized");
+        uint256 faceValue = shapes.backingOf(input);
+
+        // 5 x 0.01 ETH compose to 0.05 ETH; `input` is one of the four burned inputs.
+        uint256 survivor = kids[0];
+        uint256[] memory burn = new uint256[](4);
+        burn[0] = kids[1];
+        burn[1] = kids[2];
+        burn[2] = input;
+        burn[3] = kids[4];
+        vm.prank(alice);
+        shapes.compose(survivor, burn);
+        vm.expectRevert();
+        shapes.ownerOf(input);
+
+        vm.prank(alice);
+        shapes.decompose(survivor);
+
+        ShapeState memory restored = lens.shapeState(input);
+        assertEq(shapes.ownerOf(input), alice, "decompose re-mints the input to the caller");
+        assertEq(restored.seed, before.seed, "seed");
+        assertEq(restored.denominationIndex, before.denominationIndex, "denomIndex");
+        assertEq(restored.originCount, before.originCount, "originCount");
+        assertEq(restored.inkGene, before.inkGene, "inkGene");
+        assertEq(restored.isBlack, before.isBlack, "isBlack");
+        assertEq(uint8(restored.formation), uint8(before.formation), "formation");
+        assertEq(restored.faceValueWei, before.faceValueWei, "faceValue");
+        assertEq(restored.redeemableValueWei, before.redeemableValueWei, "redeemableValue");
+        assertEq(restored.modules, before.modules, "materialized modules must return byte-identical");
+
+        uint256 balanceBefore = alice.balance;
+        vm.prank(alice);
+        shapes.redeem(input);
+        assertEq(alice.balance - balanceBefore, faceValue, "restored input redeems for its face value");
+        _assertSolvent();
     }
 }

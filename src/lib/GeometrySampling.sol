@@ -160,6 +160,10 @@ library GeometrySampling {
     /// @notice Sample one split child's module array from its parent's effective modules
     ///         (SAMPLING_SPEC.md §6). Uniform over the parent's modules, with replacement: a
     ///         single donor, so no units weighting.
+    /// @dev `childIndex` enters the stream as a full uint256, matching the untruncated index
+    ///      `Shapes._childSeed` uses. Encoding it as a uint8 would give children at index i and
+    ///      i + 256 of the same parent at the same denomination an identical stream, and so
+    ///      identical stored modules.
     function sampleSplitChild(
         bytes memory parentModules,
         bytes32 parentSeed,
@@ -167,7 +171,7 @@ library GeometrySampling {
         uint256 childIndex
     ) public pure returns (bytes memory result) {
         Round03Rand.Stream memory rnd = Round03Rand.init(
-            keccak256(abi.encodePacked("Shapes/sample-split/v1", parentSeed, childDenom, uint8(childIndex)))
+            keccak256(abi.encodePacked("Shapes/sample-split/v1", parentSeed, childDenom, childIndex))
         );
 
         (uint256 cols, uint256 rows) = Denominations.gridAt(childDenom);

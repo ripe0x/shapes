@@ -331,14 +331,11 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     /// @notice Resolve a token into its full geometric description.
     /// @dev Draw order, consensus critical (SPEC.md D5):
     ///        1. fill     — always (consumed and discarded; see below)
-    ///        2. wRatio   — always
     ///      then per cell, row-major:
-    ///        3. kind     — always
-    ///        3. solid probability — always
-    ///      then per cell:
-    ///        4. kind     — always
-    ///        5. solid    — always
-    ///        5. rotation — only when the kind takes more than one orientation
+    ///        2. kind     — always
+    ///        3. solid    — always
+    ///        4. rotation — only when the kind takes more than one orientation
+    ///      `wRatio` is the constant `WRATIO` and takes no draw.
     ///      The conditional consumption is load-bearing. Drawing unconditionally would
     ///      desynchronise the stream and change every subsequent cell on the card.
     ///
