@@ -851,18 +851,22 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
 
         ShapeData storage p = _requireCallerOwnsLive(tokenId);
 
-        uint256 parentBacking = Denominations.amountAt(p.denomIndex);
-        bytes32 parentSeed = p.seed;
-        uint8 parentGene = p.inkGene;
-        uint8 parentDenomIndex = p.denomIndex;
-        // The parent's effective modules (SAMPLING_SPEC.md §6): its stored bytes if
-        // materialized, otherwise the grammar v1 sequence derived from its seed. Read before the
-        // parent is burned below.
-        bytes memory parentModules = GeometrySampling.effectiveModulesOf(
-            _sampledModules[tokenId], parentSeed, parentDenomIndex, parentGene
-        );
+        // The parent's pre-burn state, held as the record it will be pushed as. Bundling these
+        // four values into one memory struct rather than four locals keeps `_splitTo` off the
+        // stack-too-deep limit under the non-optimized codegen `forge coverage` uses.
+        // `parentModules` is the parent's effective geometry (SAMPLING_SPEC.md §6): its stored
+        // bytes if materialized, otherwise the grammar v1 sequence from its seed. Read before
+        // the parent is burned below.
+        SplitRecord memory rec = SplitRecord({
+            parentSeed: p.seed,
+            parentDenomIndex: p.denomIndex,
+            parentInkGene: p.inkGene,
+            parentModules: GeometrySampling.effectiveModulesOf(
+                _sampledModules[tokenId], p.seed, p.denomIndex, p.inkGene
+            )
+        });
 
-        _requireSplitSumMatches(parentBacking, outDenoms);
+        _requireSplitSumMatches(Denominations.amountAt(rec.parentDenomIndex), outDenoms);
         uint32[] memory give = _allocateSplitOrigins(p.originCount, outDenoms);
 
         // -------- effects --------
@@ -873,14 +877,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         // One shared split-origin record per operation (SAMPLING_SPEC.md "Provenance views"):
         // the parent's pre-burn state and effective modules, referenced by every child below.
         uint64 splitRecordIndex = uint64(_splitRecords.length);
-        _splitRecords.push(
-            SplitRecord({
-                parentSeed: parentSeed,
-                parentDenomIndex: parentDenomIndex,
-                parentInkGene: parentGene,
-                parentModules: parentModules
-            })
-        );
+        _splitRecords.push(rec);
 
         uint256 firstId = totalMinted;
         totalMinted = firstId + k;
@@ -892,24 +889,25 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
             uint256 nid = firstId + i;
             newIds[i] = nid;
             _shapes[nid] = ShapeData({
-                seed: _childSeed(parentSeed, i),
+                seed: _childSeed(rec.parentSeed, i),
                 denomIndex: outDenoms[i],
                 originCount: give[i],
                 isBlack: false,
-                inkGene: parentGene
+                inkGene: rec.parentInkGene
             });
             // Every child samples from the parent's modules (SAMPLING_SPEC.md D3), including
             // children of an original (never-composed) parent.
-            childModules[i] = GeometrySampling.sampleSplitChild(parentModules, parentSeed, outDenoms[i], i);
+            childModules[i] =
+                GeometrySampling.sampleSplitChild(rec.parentModules, rec.parentSeed, outDenoms[i], i);
             _sampledModules[nid] = childModules[i];
             _splitOriginRef[nid] =
                 SplitOriginRef({exists: true, recordIndex: splitRecordIndex, childIndex: uint32(i)});
         }
 
-        emit Split(tokenId, parentSeed, newIds, outDenoms, give);
+        emit Split(tokenId, rec.parentSeed, newIds, outDenoms, give);
         for (uint256 i = 0; i < k; ++i) {
-            emit InkGene(newIds[i], parentGene);
-            emit ShapeFragmentCreated(tokenId, newIds[i], parentSeed, i);
+            emit InkGene(newIds[i], rec.parentInkGene);
+            emit ShapeFragmentCreated(tokenId, newIds[i], rec.parentSeed, i);
             emit ModulesSampled(newIds[i], childModules[i]);
         }
 

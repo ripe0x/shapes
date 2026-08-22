@@ -242,31 +242,48 @@ contract InkGenesParityTest is Test {
     /// @notice Multi-tier compose walk pinned to the TS canonical: vectors spanning every tier
     ///         span T = 1..8 with heterogeneous pool statistics. Closes the gap where only the
     ///         T = 1 survivor case cross-checked `geneAtCompose` against TypeScript.
-    function test_ComposeWalkVectorsMatchTypeScript() public view {
-        string[] memory seed = vm.parseJsonStringArray(json, ".inkWalkSurvivorSeed");
-        string[] memory fold = vm.parseJsonStringArray(json, ".inkWalkBurnFold");
-        string[] memory sg = vm.parseJsonStringArray(json, ".inkWalkSurvivorGene");
-        string[] memory oldI = vm.parseJsonStringArray(json, ".inkWalkOldIndex");
-        string[] memory newI = vm.parseJsonStringArray(json, ".inkWalkNewIndex");
-        string[] memory bst = vm.parseJsonStringArray(json, ".inkWalkBest");
-        string[] memory wst = vm.parseJsonStringArray(json, ".inkWalkWorst");
-        string[] memory ctr = vm.parseJsonStringArray(json, ".inkWalkCenter");
-        string[] memory exp = vm.parseJsonStringArray(json, ".inkWalkExpectedGene");
+    // Column arrays for the compose-walk fixture. Bundled into a struct rather than nine
+    // locals so the enclosing function stays off the stack-too-deep limit under the
+    // non-optimized codegen `forge coverage` uses.
+    struct ComposeWalkVectors {
+        string[] seed;
+        string[] fold;
+        string[] sg;
+        string[] oldI;
+        string[] newI;
+        string[] bst;
+        string[] wst;
+        string[] ctr;
+        string[] exp;
+    }
 
-        uint256 n = seed.length;
+    function test_ComposeWalkVectorsMatchTypeScript() public view {
+        ComposeWalkVectors memory v = ComposeWalkVectors({
+            seed: vm.parseJsonStringArray(json, ".inkWalkSurvivorSeed"),
+            fold: vm.parseJsonStringArray(json, ".inkWalkBurnFold"),
+            sg: vm.parseJsonStringArray(json, ".inkWalkSurvivorGene"),
+            oldI: vm.parseJsonStringArray(json, ".inkWalkOldIndex"),
+            newI: vm.parseJsonStringArray(json, ".inkWalkNewIndex"),
+            bst: vm.parseJsonStringArray(json, ".inkWalkBest"),
+            wst: vm.parseJsonStringArray(json, ".inkWalkWorst"),
+            ctr: vm.parseJsonStringArray(json, ".inkWalkCenter"),
+            exp: vm.parseJsonStringArray(json, ".inkWalkExpectedGene")
+        });
+
+        uint256 n = v.seed.length;
         assertEq(n, 40, "expected 40 compose-walk vectors");
         for (uint256 i = 0; i < n; ++i) {
             uint8 got = InkGenes.geneAtCompose(
-                vm.parseBytes32(seed[i]),
-                vm.parseUint(fold[i]),
-                uint8(vm.parseUint(sg[i])),
-                uint8(vm.parseUint(oldI[i])),
-                uint8(vm.parseUint(newI[i])),
-                uint8(vm.parseUint(bst[i])),
-                uint8(vm.parseUint(wst[i])),
-                uint8(vm.parseUint(ctr[i]))
+                vm.parseBytes32(v.seed[i]),
+                vm.parseUint(v.fold[i]),
+                uint8(vm.parseUint(v.sg[i])),
+                uint8(vm.parseUint(v.oldI[i])),
+                uint8(vm.parseUint(v.newI[i])),
+                uint8(vm.parseUint(v.bst[i])),
+                uint8(vm.parseUint(v.wst[i])),
+                uint8(vm.parseUint(v.ctr[i]))
             );
-            assertEq(got, uint8(vm.parseUint(exp[i])), "compose walk drifted from TS");
+            assertEq(got, uint8(vm.parseUint(v.exp[i])), "compose walk drifted from TS");
         }
     }
 }

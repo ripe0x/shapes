@@ -609,38 +609,22 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         if (m.kind == KIND_TRIANGLE) {
             uint256 hh = m.size.mulWad(TRI_HEIGHT);
             uint256 half = hh / 2;
-            bytes memory outer = abi.encodePacked(
-                "M",
-                m.cx.fmt(),
-                ",",
-                (m.cy - half).fmt(),
-                " L",
-                (m.cx + r).fmt(),
-                ",",
-                (m.cy + half).fmt(),
-                " L",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy + half).fmt(),
-                " Z"
+            bytes memory outer = bytes.concat(
+                abi.encodePacked("M", m.cx.fmt(), ",", (m.cy - half).fmt(), " L"),
+                abi.encodePacked((m.cx + r).fmt(), ",", (m.cy + half).fmt(), " L", (m.cx - r).fmt()),
+                abi.encodePacked(",", (m.cy + half).fmt(), " Z")
             );
             if (m.solid) {
-                return abi.encodePacked(
-                    '<polygon points="',
-                    m.cx.fmt(),
-                    ",",
-                    (m.cy - half).fmt(),
-                    " ",
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy + half).fmt(),
-                    " ",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy + half).fmt(),
-                    '"',
-                    _transform(m.rot, m.cx, m.cy),
-                    _style(true, m.weight, fg)
+                return bytes.concat(
+                    abi.encodePacked('<polygon points="', m.cx.fmt(), ",", (m.cy - half).fmt(), " "),
+                    abi.encodePacked((m.cx + r).fmt(), ",", (m.cy + half).fmt(), " ", (m.cx - r).fmt()),
+                    abi.encodePacked(
+                        ",",
+                        (m.cy + half).fmt(),
+                        '"',
+                        _transform(m.rot, m.cx, m.cy),
+                        _style(true, m.weight, fg)
+                    )
                 );
             }
             // Inner triangle: the outer scaled about the incenter, which offsets every edge
@@ -649,20 +633,16 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             uint256 rho = hh / 3;
             uint256 k = _insetScale(rho, m.weight);
             uint256 iy = m.cy + half - rho;
-            bytes memory inner = abi.encodePacked(
-                "M",
-                m.cx.fmt(),
-                ",",
-                (iy - k.mulWad(hh - rho)).fmt(),
-                " L",
-                (m.cx + k.mulWad(r)).fmt(),
-                ",",
-                (iy + k.mulWad(rho)).fmt(),
-                " L",
-                (m.cx - k.mulWad(r)).fmt(),
-                ",",
-                (iy + k.mulWad(rho)).fmt(),
-                " Z"
+            bytes memory inner = bytes.concat(
+                abi.encodePacked("M", m.cx.fmt(), ",", (iy - k.mulWad(hh - rho)).fmt(), " L"),
+                abi.encodePacked(
+                    (m.cx + k.mulWad(r)).fmt(),
+                    ",",
+                    (iy + k.mulWad(rho)).fmt(),
+                    " L",
+                    (m.cx - k.mulWad(r)).fmt()
+                ),
+                abi.encodePacked(",", (iy + k.mulWad(rho)).fmt(), " Z")
             );
             return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
         }
@@ -672,24 +652,11 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             // whose arc sweeps to the opposite two: a square with one corner rounded away.
             // The arc radius is the full footprint, not half of it.
             uint256 R = m.size;
-            bytes memory outer = abi.encodePacked(
-                "M",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                " L",
-                (m.cx + r).fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                " A",
-                R.fmt(),
-                ",",
-                R.fmt(),
-                " 0 0 0 ",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy - r).fmt(),
-                " Z"
+            bytes memory outer = bytes.concat(
+                abi.encodePacked("M", (m.cx - r).fmt(), ",", (m.cy + r).fmt(), " L"),
+                abi.encodePacked((m.cx + r).fmt(), ",", (m.cy + r).fmt(), " A", R.fmt()),
+                abi.encodePacked(",", R.fmt(), " 0 0 0 ", (m.cx - r).fmt(), ","),
+                abi.encodePacked((m.cy - r).fmt(), " Z")
             );
             if (m.solid) {
                 return abi.encodePacked(
@@ -700,24 +667,11 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             // same corner, meeting each offset leg where the circle crosses it.
             uint256 Ri = R - m.weight;
             uint256 q = (Ri * Ri - m.weight * m.weight).isqrt();
-            bytes memory inner = abi.encodePacked(
-                "M",
-                (m.cx - r + m.weight).fmt(),
-                ",",
-                (m.cy + r - m.weight).fmt(),
-                " L",
-                (m.cx - r + q).fmt(),
-                ",",
-                (m.cy + r - m.weight).fmt(),
-                " A",
-                Ri.fmt(),
-                ",",
-                Ri.fmt(),
-                " 0 0 0 ",
-                (m.cx - r + m.weight).fmt(),
-                ",",
-                (m.cy + r - q).fmt(),
-                " Z"
+            bytes memory inner = bytes.concat(
+                abi.encodePacked("M", (m.cx - r + m.weight).fmt(), ",", (m.cy + r - m.weight).fmt(), " L"),
+                abi.encodePacked((m.cx - r + q).fmt(), ",", (m.cy + r - m.weight).fmt(), " A", Ri.fmt()),
+                abi.encodePacked(",", Ri.fmt(), " 0 0 0 ", (m.cx - r + m.weight).fmt(), ","),
+                abi.encodePacked((m.cy + r - q).fmt(), " Z")
             );
             return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
         }
@@ -726,65 +680,24 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             if (m.solid) {
                 // The square on its diagonal, emitted as its four vertices so the geometry is
                 // explicit in one place. Never rotated.
-                return abi.encodePacked(
-                    '<polygon points="',
-                    m.cx.fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " ",
-                    (m.cx + r).fmt(),
-                    ",",
-                    m.cy.fmt(),
-                    " ",
-                    m.cx.fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    " ",
-                    (m.cx - r).fmt(),
-                    ",",
-                    m.cy.fmt(),
-                    '"',
-                    _style(true, m.weight, fg)
+                return bytes.concat(
+                    abi.encodePacked('<polygon points="', m.cx.fmt(), ",", (m.cy - r).fmt(), " "),
+                    abi.encodePacked((m.cx + r).fmt(), ",", m.cy.fmt(), " ", m.cx.fmt()),
+                    abi.encodePacked(",", (m.cy + r).fmt(), " ", (m.cx - r).fmt(), ","),
+                    abi.encodePacked(m.cy.fmt(), '"', _style(true, m.weight, fg))
                 );
             }
             // Inner diamond: edges offset inward by the weight shorten the half-diagonal by
             // w * sqrt(2).
             uint256 ri = r > SQRT2.mulWad(m.weight) ? r - SQRT2.mulWad(m.weight) : 0;
-            bytes memory d = abi.encodePacked(
-                "M",
-                m.cx.fmt(),
-                ",",
-                (m.cy - r).fmt(),
-                " L",
-                (m.cx + r).fmt(),
-                ",",
-                m.cy.fmt(),
-                " L",
-                m.cx.fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                " L",
-                (m.cx - r).fmt(),
-                ",",
-                m.cy.fmt(),
-                " Z ",
-                "M",
-                m.cx.fmt(),
-                ",",
-                (m.cy - ri).fmt(),
-                " L",
-                (m.cx + ri).fmt(),
-                ",",
-                m.cy.fmt(),
-                " L",
-                m.cx.fmt(),
-                ",",
-                (m.cy + ri).fmt(),
-                " L",
-                (m.cx - ri).fmt(),
-                ",",
-                m.cy.fmt(),
-                " Z"
+            bytes memory d = bytes.concat(
+                abi.encodePacked("M", m.cx.fmt(), ",", (m.cy - r).fmt(), " L"),
+                abi.encodePacked((m.cx + r).fmt(), ",", m.cy.fmt(), " L", m.cx.fmt()),
+                abi.encodePacked(",", (m.cy + r).fmt(), " L", (m.cx - r).fmt(), ","),
+                abi.encodePacked(m.cy.fmt(), " Z ", "M", m.cx.fmt(), ","),
+                abi.encodePacked((m.cy - ri).fmt(), " L", (m.cx + ri).fmt(), ",", m.cy.fmt()),
+                abi.encodePacked(" L", m.cx.fmt(), ",", (m.cy + ri).fmt(), " L"),
+                abi.encodePacked((m.cx - ri).fmt(), ",", m.cy.fmt(), " Z")
             );
             return _ring(d, 0, m.cx, m.cy, fg);
         }
@@ -811,22 +724,12 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             if (m.solid) {
                 // The square cut on its diagonal: right angle at the top-left footprint corner
                 // at rotation 0, hypotenuse from top-right to bottom-left.
-                return abi.encodePacked(
-                    '<polygon points="',
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " ",
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " ",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    '"',
-                    _transform(m.rot, m.cx, m.cy),
-                    _style(true, m.weight, fg)
+                return bytes.concat(
+                    abi.encodePacked('<polygon points="', (m.cx - r).fmt(), ",", (m.cy - r).fmt(), " "),
+                    abi.encodePacked((m.cx + r).fmt(), ",", (m.cy - r).fmt(), " ", (m.cx - r).fmt()),
+                    abi.encodePacked(
+                        ",", (m.cy + r).fmt(), '"', _transform(m.rot, m.cx, m.cy), _style(true, m.weight, fg)
+                    )
                 );
             }
             // Inner triangle: the outer scaled about the incenter, which offsets every edge
@@ -838,33 +741,13 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             uint256 iy = m.cy - r + rho;
             uint256 near = k.mulWad(rho); // incenter to the right-angle vertex, scaled
             uint256 far = k.mulWad(2 * r - rho); // incenter to each acute vertex, scaled
-            bytes memory d = abi.encodePacked(
-                "M",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy - r).fmt(),
-                " L",
-                (m.cx + r).fmt(),
-                ",",
-                (m.cy - r).fmt(),
-                " L",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                " Z ",
-                "M",
-                (ix - near).fmt(),
-                ",",
-                (iy - near).fmt(),
-                " L",
-                (ix + far).fmt(),
-                ",",
-                (iy - near).fmt(),
-                " L",
-                (ix - near).fmt(),
-                ",",
-                (iy + far).fmt(),
-                " Z"
+            bytes memory d = bytes.concat(
+                abi.encodePacked("M", (m.cx - r).fmt(), ",", (m.cy - r).fmt(), " L"),
+                abi.encodePacked((m.cx + r).fmt(), ",", (m.cy - r).fmt(), " L", (m.cx - r).fmt()),
+                abi.encodePacked(",", (m.cy + r).fmt(), " Z ", "M", (ix - near).fmt()),
+                abi.encodePacked(",", (iy - near).fmt(), " L", (ix + far).fmt(), ","),
+                abi.encodePacked((iy - near).fmt(), " L", (ix - near).fmt(), ",", (iy + far).fmt()),
+                abi.encodePacked(" Z")
             );
             return _ring(d, m.rot, m.cx, m.cy, fg);
         }
@@ -874,36 +757,13 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             // The outer curve has the footprint for its radius and connects two footprint
             // corners; the band's flat radial ends lie on the footprint edges.
             uint256 arcRi = m.size - m.weight;
-            return abi.encodePacked(
-                '<path d="M',
-                (m.cx + r).fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                " A",
-                m.size.fmt(),
-                ",",
-                m.size.fmt(),
-                " 0 0 0 ",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy - r).fmt(),
-                " L",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy - r + m.weight).fmt(),
-                " A",
-                arcRi.fmt(),
-                ",",
-                arcRi.fmt(),
-                " 0 0 1 ",
-                (m.cx + r - m.weight).fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                ' Z"',
-                _transform(m.rot, m.cx, m.cy),
-                ' fill="',
-                fg,
-                '"/>'
+            return bytes.concat(
+                abi.encodePacked('<path d="M', (m.cx + r).fmt(), ",", (m.cy + r).fmt(), " A"),
+                abi.encodePacked(m.size.fmt(), ",", m.size.fmt(), " 0 0 0 ", (m.cx - r).fmt()),
+                abi.encodePacked(",", (m.cy - r).fmt(), " L", (m.cx - r).fmt(), ","),
+                abi.encodePacked((m.cy - r + m.weight).fmt(), " A", arcRi.fmt(), ",", arcRi.fmt()),
+                abi.encodePacked(" 0 0 1 ", (m.cx + r - m.weight).fmt(), ",", (m.cy + r).fmt(), ' Z"'),
+                abi.encodePacked(_transform(m.rot, m.cx, m.cy), ' fill="', fg, '"/>')
             );
         }
 
@@ -913,47 +773,21 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             // so it reads as a bar with square-off ends rather than a point at the corner. Two
             // orientations.
             uint256 o = m.weight.mulWad(SQRT2) / 2;
-            return abi.encodePacked(
-                '<path d="M',
-                (m.cx - r + o).fmt(),
-                ",",
-                (m.cy - r).fmt(),
-                " L",
-                (m.cx + r).fmt(),
-                ",",
-                (m.cy + r - o).fmt(),
-                " L",
-                (m.cx + r - o).fmt(),
-                ",",
-                (m.cy + r).fmt(),
-                " L",
-                (m.cx - r).fmt(),
-                ",",
-                (m.cy - r + o).fmt(),
-                ' Z"',
-                _transform(m.rot, m.cx, m.cy),
-                ' fill="',
-                fg,
-                '"/>'
+            return bytes.concat(
+                abi.encodePacked('<path d="M', (m.cx - r + o).fmt(), ",", (m.cy - r).fmt(), " L"),
+                abi.encodePacked((m.cx + r).fmt(), ",", (m.cy + r - o).fmt(), " L", (m.cx + r - o).fmt()),
+                abi.encodePacked(",", (m.cy + r).fmt(), " L", (m.cx - r).fmt(), ","),
+                abi.encodePacked((m.cy - r + o).fmt(), ' Z"', _transform(m.rot, m.cx, m.cy), ' fill="', fg),
+                abi.encodePacked('"/>')
             );
         }
 
         // half circle: flat edge through the cell centre, filled half above at rotation 0
         {
-            bytes memory outer = abi.encodePacked(
-                "M",
-                (m.cx - r).fmt(),
-                ",",
-                m.cy.fmt(),
-                " A",
-                r.fmt(),
-                ",",
-                r.fmt(),
-                " 0 0 1 ",
-                (m.cx + r).fmt(),
-                ",",
-                m.cy.fmt(),
-                " Z"
+            bytes memory outer = bytes.concat(
+                abi.encodePacked("M", (m.cx - r).fmt(), ",", m.cy.fmt(), " A"),
+                abi.encodePacked(r.fmt(), ",", r.fmt(), " 0 0 1 ", (m.cx + r).fmt()),
+                abi.encodePacked(",", m.cy.fmt(), " Z")
             );
             if (m.solid) {
                 return abi.encodePacked(
@@ -965,20 +799,10 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             // flat edge.
             uint256 ri = r - m.weight;
             uint256 q = (ri * ri - m.weight * m.weight).isqrt();
-            bytes memory inner = abi.encodePacked(
-                "M",
-                (m.cx - q).fmt(),
-                ",",
-                (m.cy - m.weight).fmt(),
-                " A",
-                ri.fmt(),
-                ",",
-                ri.fmt(),
-                " 0 0 1 ",
-                (m.cx + q).fmt(),
-                ",",
-                (m.cy - m.weight).fmt(),
-                " Z"
+            bytes memory inner = bytes.concat(
+                abi.encodePacked("M", (m.cx - q).fmt(), ",", (m.cy - m.weight).fmt(), " A"),
+                abi.encodePacked(ri.fmt(), ",", ri.fmt(), " 0 0 1 ", (m.cx + q).fmt()),
+                abi.encodePacked(",", (m.cy - m.weight).fmt(), " Z")
             );
             return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
         }
@@ -1240,35 +1064,39 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         bool complete = !inverted && units > 1 && originCount == units;
 
         return string(
-            abi.encodePacked(
-                '{"name":"',
-                namePrefix,
-                FixedPoint.toString(tokenId),
-                '","description":"',
-                description,
-                '","image":"data:image/svg+xml;base64,',
-                Base64.encode(bytes(svg)),
-                '","attributes":[{"trait_type":"ETH Value","value":"',
-                Denominations.labelAt(card.denomIndex),
-                ' ETH"},{"trait_type":"Grid","value":"',
-                FixedPoint.toString(card.cols),
-                "x",
-                FixedPoint.toString(card.rows),
-                '"},{"trait_type":"Fill","value":"',
-                _fillClass(card),
-                '"},{"trait_type":"Ink","value":"',
-                InkGenes.geneNameAt(inkGene),
-                '"},{"trait_type":"Modules","value":"',
-                _moduleSequence(card),
-                '"},{"trait_type":"Module Count","value":"',
-                FixedPoint.toString(card.cols * card.rows),
-                '"',
-                _visualTraits(card, inkGene),
-                _provenanceTraits(units, originCount, complete, inverted),
-                ',{"trait_type":"Compose Depth","value":"',
-                FixedPoint.toString(composeDepth),
-                '"}',
-                "]}"
+            bytes.concat(
+                abi.encodePacked(
+                    '{"name":"', namePrefix, FixedPoint.toString(tokenId), '","description":"', description
+                ),
+                abi.encodePacked(
+                    '","image":"data:image/svg+xml;base64,',
+                    Base64.encode(bytes(svg)),
+                    '","attributes":[{"trait_type":"ETH Value","value":"',
+                    Denominations.labelAt(card.denomIndex),
+                    ' ETH"},{"trait_type":"Grid","value":"'
+                ),
+                abi.encodePacked(
+                    FixedPoint.toString(card.cols),
+                    "x",
+                    FixedPoint.toString(card.rows),
+                    '"},{"trait_type":"Fill","value":"',
+                    _fillClass(card)
+                ),
+                abi.encodePacked(
+                    '"},{"trait_type":"Ink","value":"',
+                    InkGenes.geneNameAt(inkGene),
+                    '"},{"trait_type":"Modules","value":"',
+                    _moduleSequence(card),
+                    '"},{"trait_type":"Module Count","value":"'
+                ),
+                abi.encodePacked(
+                    FixedPoint.toString(card.cols * card.rows),
+                    '"',
+                    _visualTraits(card, inkGene),
+                    _provenanceTraits(units, originCount, complete, inverted),
+                    ',{"trait_type":"Compose Depth","value":"'
+                ),
+                abi.encodePacked(FixedPoint.toString(composeDepth), '"}', "]}")
             )
         );
     }

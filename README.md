@@ -319,6 +319,12 @@ forge test
 forge test --mc Parity        # byte parity with the TypeScript renderer
 forge test --mc Invariant     # reserve solvency under fuzzed sequences
 FOUNDRY_PROFILE=ci forge test # heavier fuzzing
+
+# Line and branch coverage. --ir-minimum is required because coverage builds without the
+# optimizer and the renderer's string assembly exceeds the stack limit otherwise; --skip script
+# excludes the deploy scripts, which are tooling rather than audited contracts and carry the
+# same stack pressure.
+forge coverage --ir-minimum --skip script --report summary
 ```
 
 ### Against a mainnet fork
