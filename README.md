@@ -289,6 +289,8 @@ src/
     Round03Rand.sol           the deterministic random stream
 script/
   DeployShapes.s.sol
+  DeployLens.s.sol            replacement lens for an already-deployed Shapes
+  LensEquivalence.s.sol       deploy-time proof that a lens previews what the token executes
   e2e-anvil.sh                live end-to-end check against a local chain
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
 test/
@@ -548,6 +550,18 @@ forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
 The script refuses to proceed off a local chain without an explicit fee recipient, rejects a
 contract fee recipient unless you confirm it, smoke-tests the renderer, and asserts every
 immutable landed as intended before reporting success.
+
+It also proves the lens previews what the token executes. `ShapeLens.previewCompose` matches
+`Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the same
+deployment, so the script mints a probe token, splits it, composes it back, and requires the
+preview to equal the resulting core state byte for byte. The probe runs in the `forge script`
+simulation and is never broadcast: no probe token, no ETH, no token ids consumed.
+
+Redeploying the lens on its own runs the same check against the live token:
+
+```bash
+SHAPES_ADDRESS=0x... forge script script/DeployLens.s.sol --rpc-url $RPC   # dry run first
+```
 
 ## Deployed addresses
 

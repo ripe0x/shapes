@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
@@ -9,6 +9,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
+import {LensEquivalence} from "./LensEquivalence.s.sol";
 
 /// @notice Testnet deploy + seed: deploys the renderer and token, then mints a small spread so the
 ///         gallery has content, all in one broadcast (one keystore prompt).
@@ -24,7 +25,7 @@ import {Denominations} from "../src/lib/Denominations.sol";
 ///
 ///      forge script script/DeploySepolia.s.sol \
 ///        --rpc-url $SEPOLIA_RPC_URL --account ripe0x --broadcast --verify
-contract DeploySepolia is Script {
+contract DeploySepolia is LensEquivalence {
     uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
 
     function run()
@@ -41,6 +42,10 @@ contract DeploySepolia is Script {
         bool seed = vm.envOr("SEED_ETH", true);
         address me = msg.sender;
 
+        // Shapes.mint reads blockhash(block.number - 1), which underflows at genesis. Only a
+        // freshly started local chain sits at block 0; a real network is far past it.
+        if (block.number == 0) vm.roll(1);
+
         vm.startBroadcast();
 
         renderer = new ShapeRenderer();
@@ -51,6 +56,14 @@ contract DeploySepolia is Script {
         house = new ShapeAuctionHouse(address(shapes));
 
         if (seed) {
+            // Token 0 is the auction lot, minted before the spread so the listing is the
+            // collection's first token. 24 hour clock starting at the first bid, no reserve, 5%
+            // minimum increment, 15 minute extension window.
+            uint256 lotFee = (Denominations.amountAt(0) * feeBps) / 10_000;
+            uint256 lot = shapes.mint{value: Denominations.amountAt(0) + lotFee}(Denominations.amountAt(0));
+            shapes.approve(address(house), lot);
+            house.createAuction(address(shapes), lot, 1 days, 0, 500, 15 minutes);
+
             // A modest spread across the low denominations: five 0.01, two 0.05, one 0.1. Total
             // backing ~0.15 ETH; with the 1% fee and gas, fund the deployer with ~0.25 Sepolia ETH.
             uint8[3] memory counts = [5, 2, 1]; // by denomination index 0,1,2
@@ -83,5 +96,9 @@ contract DeploySepolia is Script {
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", me);
         console.log("total minted  ", shapes.totalMinted());
+
+        // Runs last: the probe advances simulated token state, so the counts logged above
+        // are the seeded mints alone.
+        _assertLensEquivalence(shapes, lens);
     }
 }

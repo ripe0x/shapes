@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
@@ -10,6 +10,7 @@ import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
+import {LensEquivalence} from "./LensEquivalence.s.sol";
 
 /// @notice Deploys the renderer, the collection metadata contract, the token, the read-only lens,
 ///         and the auction house.
@@ -27,7 +28,9 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 ///      `splitOriginOf`) that was moved off `Shapes` to keep the token's runtime bytecode under
 ///      the EIP-170 size limit (see IShapes.sol and IShapeLens.sol). It takes the deployed
 ///      `Shapes` address as its only constructor argument, holds no state of its own, and reads
-///      everything through `Shapes`'s getters.
+///      everything through `Shapes`'s getters. Its previews are bit-identical to what the token
+///      executes only while both link the same `ComposeCompute` deployment, so this script proves
+///      that with `_assertLensEquivalence` before reporting success (see LensEquivalence.s.sol).
 ///
 ///      The auction house is deployed alongside but wired only to `Shapes`: it holds no
 ///      privileged position over the token and the token knows nothing about it, so a broken
@@ -47,7 +50,7 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 ///        SHAPES_FEE_RECIPIENT=0x... forge script script/DeployShapes.s.sol --rpc-url $RPC
 ///        SHAPES_FEE_RECIPIENT=0x... forge script script/DeployShapes.s.sol --rpc-url $RPC \
 ///          --broadcast --verify
-contract DeployShapes is Script {
+contract DeployShapes is LensEquivalence {
     uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
     uint256 internal constant ANVIL_CHAIN_ID = 31337;
 
@@ -166,5 +169,9 @@ contract DeployShapes is Script {
         console.log("");
         console.log("Fee terms and reserve rules are immutable. Ownership is transferable.");
         console.log("Presentation and position resolver settings are independently lockable.");
+
+        // Runs last: the probe advances simulated token state, so every check and log above it
+        // reads a fresh collection.
+        _assertLensEquivalence(shapes, lens);
     }
 }
