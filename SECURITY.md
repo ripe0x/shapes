@@ -30,9 +30,14 @@ bypass `receive`: stated as an inequality and left permanently inaccessible.
 ## The threat model
 
 Shapes holds user ETH and has no administrator with any power over the reserve. The transferable
-owner can administer two value-inert configuration domains: presentation (renderer plus collection
-metadata, locked together) and the independently lockable optional position resolver. None is read
-by a reserve path. There is one
+owner can administer three value-inert configuration domains: presentation (renderer plus
+collection metadata, locked together), the independently lockable optional position resolver, and
+the independently lockable optional contract collector binding (a pointer to an ERC721 whose
+current owner is read as this contract's collector; provenance only, grants the collector no
+permissions). None is read
+by a reserve path. `ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
+ETH and no admin surface. `ShapeAuctionHouse` and the `ShapeCardEscrow` base it inherits hold
+escrowed cards and lots, not the reserve; `Shapes` has no knowledge of either. There is one
 thing that must never happen: a holder unable to redeem a live Shape for exactly the ETH it
 wraps. Everything else is secondary.
 
@@ -161,7 +166,7 @@ An independent AI auditor ran the refreshed `AUDIT_PROMPT_v2.md` against `main`.
 was found; no path removes ETH without the corresponding burn, forges origins, forges Complete, or
 bypasses Black terminality. Three low findings were fixed and pinned with regression tests:
 
-- **The split preview reported success for a Black Shape** while the split itself reverts `TokenIsBlack`. The preview is now `previewSplit`, which carries the same guard.
+- **The split preview reported success for a Black Shape** while the split itself reverts `TokenIsBlack`. The preview is now `previewSplit` (moved to `ShapeLens` since this finding), which carries the same guard.
   The preview now rejects Black tokens too (`test_SimulateDecomposeRejectsBlackToMatchDecompose`).
 - **`setRenderer` changed every token's metadata without an ERC-4906 signal.** It now emits
   `BatchMetadataUpdate(0, totalMinted - 1)` (ids start at 0) so marketplaces refresh
@@ -186,7 +191,7 @@ sizes stay uncapped (self-inflicted, per finding #7).
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
 | Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), the fee forward (money received in the same call, never counted as backing), and `sacrifice` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking`, backing conservation net of sacrifice, `valueOf == backingOf`, `sacrificedBacking == 100 ether * blackCount`, and a full drain of every live Shape. |
-| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. `Ownable` is inherited and transferable, but its powers reach only value-inert presentation and position-resolver configuration. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
+| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. `Ownable` is inherited and transferable, but its powers reach only value-inert presentation, position-resolver configuration, and the contract collector binding. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
 | Administrative isolation | The renderer and collection are called only by metadata reads; the resolver is called only by `positionOf`. A reverting resolver is regression-tested against the full token lifecycle and metadata. No owner function reaches ETH or token state. |
 | Draft ERC-8060 | `valueOf` exactly aliases `backingOf`; owner-only `burn` destroys a normal Shape for its exact value or a Black Shape for zero. Structural burns never settle ETH. The current draft interface ID is advertised through ERC-165; the proposal is not final and may change. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
@@ -195,6 +200,8 @@ sizes stay uncapped (self-inflicted, per finding #7).
 | DoS against the reserve | An owner that rejects ETH causes `_payRedemption` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
 | Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is owner-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only — never backing, redemption or ownership — and after locking it is fixed forever. |
 | Position resolver | The resolver starts at zero, may be replaced or cleared by the owner, and may be locked forever at any time including while zero. Its returned address is opaque and unvalidated. `positionOf` forwards a fixed gas cap and swallows any revert or out-of-gas to `address(0)`, so a hostile resolver can neither drain the caller nor make `positionOf` revert; its only power is to return a wrong address. Historical and nonexistent IDs are deliberately delegated without an existence check. |
+| Contract collector binding | `setContractCollectorToken` and `lockContractCollectorBinding` are owner-only and mutate only a token pointer and a lock flag; read by `ShapeLens.contractCollector` and related views, never by a reserve or redemption path. The relationship grants the collector no permissions over `Shapes`. |
+| Linked libraries | `GeometrySampling`, `ComposeCompute`, `InkGenes`, `CopyValidation` and `ContractCollectorOps` are external libraries; forge resolves and deploys each at build/deploy time and bakes its address into the linking contract's bytecode. There is no setter for a library address on any contract, so a compose, split or collector-binding result cannot be redirected to different logic after deployment. |
 
 ---
 
@@ -220,12 +227,18 @@ sizes stay uncapped (self-inflicted, per finding #7).
    can be replaced or cleared before locking, and can be permanently locked at zero. A configured
    resolver is a trust root for position discovery and may itself be upgradeable or malicious, but
    it has no authority over Shapes. Transfer ownership to the intended multisig before configuration.
-5. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
+5. **The owner can set and lock the contract collector binding.** `setContractCollectorToken`
+   points the contract at an ERC721 token whose current owner is read as this contract's
+   collector; `lockContractCollectorBinding` freezes the pointer permanently. The relationship is
+   provenance only: it grants the collector no permissions and is read by no reserve or
+   redemption path. The bound token's own contract is out of scope and may itself be upgradeable
+   or malicious; validate it before locking.
+6. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
    ERC-165 ID match the current proposal, but an immutable deployment cannot follow later changes.
-6. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
+7. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
    mint ordinal (`totalMinted`) by minting and redeeming dust in the same call, so the seed is
    grindable at roughly the mint fee per candidate, hundreds per block — not one attempt per block
    (§1). If trait rarity is intended to carry economic weight, this design is not sufficient — but
    for Shapes it does not, because redemption value is set by denomination alone.
-7. **This review is not a substitute for a professional audit** before mainnet deployment with
+8. **This review is not a substitute for a professional audit** before mainnet deployment with
    real value at risk.

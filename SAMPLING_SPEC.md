@@ -1,6 +1,6 @@
 # Geometry Sampling Spec
 
-Status: draft for review. Changes how a composed (and optionally split) token's geometry is
+Status: implemented, merged via PR #29. Changes how a composed (and split) token's geometry is
 derived: sampled from the modules of the cards that were merged, instead of re-reading the
 survivor's seed at the new denomination.
 
@@ -56,7 +56,7 @@ byte-identical).
 
 ```solidity
 /// Materialized geometry. Empty for original mints (geometry derives from `seed` under
-/// grammar v1). Nonempty for tokens produced by compose (and split, per D3): length equals
+/// grammar v1). Nonempty for tokens produced by compose or split: length equals
 /// the token's grid cell count and each byte encodes one module per section 3.
 mapping(uint256 tokenId => bytes) private _sampledModules;
 ```
@@ -123,13 +123,12 @@ geometry until the next compose/decompose/split.
   ink gene, escrow) is unchanged.
 - **decompose**: pop the record; restore the survivor's bytes verbatim; re-mint each input with
   its bytes verbatim. A token round-trips to its exact prior look.
-- **split** (per D3, recommended): each child i samples its own array from the parent's
-  effective modules — stream `keccak256(abi.encodePacked("Shapes/sample-split/v1", parentSeed, uint8(childDenom), uint8(i)))`,
+- **split**: each child i samples its own array from the parent's effective modules — stream
+  `keccak256(abi.encodePacked("Shapes/sample-split/v1", parentSeed, uint8(childDenom), uint8(i)))`,
   uniform module choice (single donor, so no units weighting), with replacement. A child grid
   can exceed the parent's (100 ETH has 1 module; its 50 ETH children have 2), which with-
   replacement handles. Children of original mints also sample, so a split visibly divides the
-  parent's look. If D3 is rejected, split keeps today's fresh `_childSeed` behavior and only
-  compose materializes.
+  parent's look.
 - **redeem / black**: unchanged; burned or terminal state, no geometry transition.
 
 ## 7. Renderer changes
@@ -184,19 +183,18 @@ The "Filled" metadata count already derives from the module list and works on bo
 5. No change to any value path: denominations, escrow, origin counts, and the existing
    conservation invariants are untouched by sampling.
 
-## 11. Open decisions
+## 11. Decisions
 
-- **D1 — weighting.** Recommended: units-weighted donor, uniform within donor, with
-  replacement (matches the ink-gene pool weighting; O(1) memory; handles every grid-size
-  case). Alternative: uniform over the pooled multiset without replacement (literal
-  conservation of modules, but weights big-value inputs down to their cell count and needs
-  reservoir bookkeeping).
-- **D2 — solid bits.** Recommended: copied verbatim, so ink is inherited literally and the
-  gene remains the pool statistic that drives labels and future composes. Alternative: re-draw
-  solids at the new gene's probability (gene stays visually authoritative, but breaks
-  module-level inheritance).
-- **D3 — split.** Recommended: children sample from the parent (look divides with value).
-  Alternative: keep fresh child seeds (split children read as new mints).
+- **D1 — weighting.** Units-weighted donor, uniform within donor, with replacement (matches
+  the ink-gene pool weighting; O(1) memory; handles every grid-size case). The rejected
+  alternative was uniform over the pooled multiset without replacement (literal conservation
+  of modules, but weights big-value inputs down to their cell count and needs reservoir
+  bookkeeping).
+- **D2 — solid bits.** Copied verbatim, so ink is inherited literally and the gene remains the
+  pool statistic that drives labels and future composes. The rejected alternative was
+  re-drawing solids at the new gene's probability.
+- **D3 — split.** Children sample from the parent, so look divides with value. The rejected
+  alternative was keeping fresh child seeds (split children reading as new mints).
 
 ## 12. Provenance views
 

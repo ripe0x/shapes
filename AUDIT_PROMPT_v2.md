@@ -92,15 +92,16 @@ two are the newest, externally unaudited surface):
 
 5. **Composability layer (new).** The external surface is segmented into ERC165-advertised
    capability interfaces (`IShapeValue`, `IShapeRecomposition`, `IShapeProvenance`,
-   `IShapeSimulation`, `IShapeGeometry`) with new members:
+   `IShapeGeometry`) with new members:
    - **Recipient-directed value flows:** `redeemTo` / `redeemBatchTo` (burn, pay ETH to an
      arbitrary recipient), `decomposeTo` / `splitTo` (reshape, mint outputs to a recipient).
      Each is a thin wrapper over the same private CEI-guarded impl its owner-directed form uses
      (`redeem` and `redeemTo` both call `_redeemTo`, etc.); only the destination is parameterised.
-   - **Structured reads:** `shapeState` returns full state in one call (`faceValueWei` vs
-     `redeemableValueWei`, the latter 0 for Black); a `ShapeFormation` enum with stable numeric
-     values; `previewCompose`/`previewSplit` return full result structs,
-     `view`, no ownership required.
+   - **Structured reads (as of this brief's commit, on `Shapes` itself; since PR #29 these live on
+     `ShapeLens`, a separate stateless periphery contract, and are no longer ERC165-advertised):**
+     `shapeState` returns full state in one call (`faceValueWei` vs `redeemableValueWei`, the
+     latter 0 for Black); a `ShapeFormation` enum with stable numeric values; `previewCompose`/
+     `previewSplit` return full result structs, `view`, no ownership required.
    - **Geometry:** `IShapeGeometry` (`cardGeometry`, `moduleAt`) exposes the renderer's
      module-level geometry, version-pinned by `grammarHash`.
 
@@ -112,7 +113,10 @@ The renderer (`ShapeRenderer.sol`) is a byte-for-byte port of a TypeScript canon
 renderer; a Foundry parity suite asserts identical output against generated fixtures.
 The renderer and collection metadata contract are owner-replaceable until `lockRenderer`, and are
 read only by metadata views. The optional independently lockable position resolver is read only by
-`positionOf`.
+`positionOf`. Since this brief's commit, the owner has gained one more value-inert, independently
+lockable power: `setContractCollectorToken`/`lockContractCollectorBinding` (`IContractCollector`)
+point the contract at an ERC721 whose current owner is read as its collector; the relationship is
+provenance only and grants the collector no permissions.
 
 ## The core invariants (these must never break)
 
@@ -136,11 +140,14 @@ read only by metadata views. The optional independently lockable position resolv
 ## Primary files (Solidity is the priority)
 
 - `src/Shapes.sol` — core: mint/redeem/burn (+`*To`), compose/decompose/split (+`*To`), sacrifice,
-  the `simulate`/`preview` views, accounting, guards.
+  accounting, guards. At this brief's commit the `simulate`/`preview` views were on `Shapes`
+  itself; since PR #29 they are on `src/ShapeLens.sol` (below).
+- `src/ShapeLens.sol` — stateless, ownerless, read-only periphery added in PR #29: `shapeState`,
+  `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt`, `splitOriginOf`.
 - `src/lib/InkGenes.sol` — the ink-gene mint lottery, compose walk, and units-weighted center.
 - `src/ShapeRenderer.sol` — SVG + metadata, provenance/ink traits, color inversion, `IShapeGeometry`.
 - `src/interfaces/IShapeCapabilities.sol` — the capability interfaces + `ShapeState`/`ShapeFormation`.
-- `src/interfaces/IShapes.sol`, `src/interfaces/IERC721Value.sol`,
+- `src/interfaces/IShapes.sol`, `src/interfaces/IShapeLens.sol`, `src/interfaces/IERC721Value.sol`,
   `src/interfaces/IShapePositionResolver.sol`, `src/interfaces/IShapeRenderer.sol`,
   `src/interfaces/IShapeGeometry.sol`
 - `src/lib/Denominations.sol` — the ladder, `unitsAt`, index lookups.

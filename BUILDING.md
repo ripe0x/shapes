@@ -28,16 +28,20 @@ and verify it at runtime:
 shapes.supportsInterface(type(IShapeValue).interfaceId);         // read state + redeem
 shapes.supportsInterface(type(IShapeRecomposition).interfaceId); // compose / decompose / split
 shapes.supportsInterface(type(IShapeProvenance).interfaceId);    // seeds, origins, formation
-shapes.supportsInterface(type(IShapeSimulation).interfaceId);    // deterministic previews
 renderer.supportsInterface(type(IShapeGeometry).interfaceId);    // module-level geometry
 ```
+
+Deterministic previews and full-state reads (`previewCompose`, `previewSplit`, `shapeState`) are
+not on `Shapes` and are not ERC165-advertised: they live on `ShapeLens`, a separate, stateless,
+ownerless periphery contract that takes the deployed `Shapes` address as its only constructor
+argument. Get its address from the deployment rather than probing `Shapes` for it.
 
 The interfaces are declared in [src/interfaces/IShapeCapabilities.sol](src/interfaces/IShapeCapabilities.sol)
 and [src/interfaces/IShapeGeometry.sol](src/interfaces/IShapeGeometry.sol).
 
 ## Reading a Shape
 
-`shapeState` returns everything about a live Shape in one call:
+`ShapeLens.shapeState` returns everything about a live Shape in one call:
 
 ```solidity
 struct ShapeState {
@@ -49,6 +53,7 @@ struct ShapeState {
     ShapeFormation formation;   // Fragment | Direct | Composed | Complete | Black (stable enum)
     uint256 faceValueWei;       // the denomination; survives sacrifice
     uint256 redeemableValueWei; // 0 for a Black Shape, otherwise equals faceValueWei
+    bytes modules;              // materialized module array, empty if geometry derives from seed
 }
 ```
 
@@ -67,7 +72,7 @@ The user approves your contract for their Shape first (standard ERC721 `approve`
 ```solidity
 // SomeMint charges a 0.1 ETH Shape as its mint fee.
 function mint(uint256 shapeId) external {
-    ShapeState memory s = shapes.shapeState(shapeId);
+    ShapeState memory s = lens.shapeState(shapeId);
     require(s.redeemableValueWei == 0.1 ether, "wrong denomination");
 
     shapes.transferFrom(msg.sender, address(this), shapeId); // pull the fee
@@ -100,12 +105,13 @@ invariant is fuzzed against reverting, non-receiving and reentrant recipients (S
 
 ## Previewing before you act
 
-Compose and decompose outcomes are deterministic and previewable off-chain and on-chain, so a UI or
-a contract can show or verify a result before committing:
+Compose and split outcomes are deterministic and previewable off-chain and on-chain, so a UI or
+a contract can show or verify a result before committing. Both previews are on `ShapeLens`, not
+`Shapes`:
 
 ```solidity
-shapes.previewCompose(survivorId, burnIds);   // returns the full ShapeState the compose would yield
-shapes.previewSplit(tokenId, outDenoms);      // returns a ShapeChildPreview[] for the children
+lens.previewCompose(survivorId, burnIds);   // returns the full ShapeState the compose would yield
+lens.previewSplit(tokenId, outDenoms);      // returns a ShapeChildPreview[] for the children
 ```
 
 These are `view` and require no ownership.
@@ -121,8 +127,10 @@ These are `view` and require no ownership.
 - **Redemption is owner-only, and pays out with a real call.** A recipient that reverts on ETH
   receipt reverts the redemption; it cannot corrupt anyone else's balance. Reentrancy is guarded.
 - **Everything is immutable.** No admin can move the reserve, change denominations, or alter
-  redemption. The only owner power is replacing the cosmetic renderer until it is locked. Build
-  against behaviour that cannot change under you.
+  redemption. The owner's remaining powers are all value-inert: replacing the renderer and
+  collection metadata (locked together), the independently lockable position resolver, and the
+  independently lockable contract collector binding. Build against behaviour that cannot change
+  under you.
 - **Black Shapes are non-redeemable by design.** `redeemableValueWei` is 0 and `isBlack` is true;
   never accept one as payment.
 - **Give value-moving calls gas headroom over the bare estimate.** Every state-changing function

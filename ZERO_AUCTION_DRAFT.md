@@ -7,6 +7,10 @@ Baseline: `origin/main` at `c9eb8a2`. This worktree branches from `0c17835` and 
 thirty commits behind; the gap renamed the old `decompose` to `split` and added a new
 `decompose` as compose's exact inverse. Read §6 before trusting any recomposition vocabulary.
 
+This draft also predates the `ShapeLens` split (PR #29): every `shapeState`/`previewCompose`/
+`previewSplit`/`unicodeCard` reference below that reads as a call on `Shapes` is now a call on
+`ShapeLens`, a separate stateless periphery contract, instead.
+
 Scope: a release mechanism for token 0 of the collection, in which bids arrive as Shape
 cards and the artist is paid in Shapes. Plus a general auction contract others can reuse,
 and a separate list of what this exercise revealed about `Shapes` itself.
