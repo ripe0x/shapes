@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2018" height="490" viewBox="0 0 807 196" font-family="Arial, sans-serif">
+  <defs>
+    <marker id="ah" viewBox="0 0 8 6" refX="8" refY="3"
+      markerWidth="4" markerHeight="3" orient="auto">
+      <path d="M0.5,0.5 L7,3 L0.5,5.5" fill="none" stroke="#94A3B8"
+        stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>
+    </marker>
+    <filter id="shadow" x="-6%" y="-8%" width="112%" height="128%">
+      <feDropShadow dx="0" dy="0.5" stdDeviation="0.8"
+        flood-color="#000" flood-opacity="0.05"/>
+    </filter>
+  </defs>
+  <rect width="807" height="196" fill="#F8F9FB" rx="3"/>
+  <text x="404" y="11" text-anchor="middle" font-size="6" font-weight="700" fill="#1E293B">Shapes Architecture</text>
+  <rect x="329" y="16" width="150" height="10" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.4"/>
+  <rect x="334" y="18.5" width="5" height="5" rx="2.5" fill="#fff" stroke="#E2E5EA" stroke-width="0.4"/>
+  <text x="342" y="22.5" font-size="3.5" fill="#1E293B">Actor</text>
+  <rect x="374" y="18.5" width="5" height="5" rx="1.5" fill="#fff" stroke="#E2E5EA" stroke-width="0.4"/>
+  <rect x="375" y="19.5" width="0.8" height="3" rx="0.4" fill="#3B82F6"/>
+  <text x="382" y="22.5" font-size="3.5" fill="#1E293B">Protocol</text>
+  <rect x="422" y="18.5" width="5" height="5" rx="1.5" fill="#fff" stroke="#E2E5EA" stroke-width="0.4"/>
+  <rect x="423" y="19.5" width="0.8" height="3" rx="0.4" fill="#F59E0B"/>
+  <text x="430" y="22.5" font-size="3.5" fill="#1E293B">External</text>
+  <path d="M133.1,46.0 C133.1,70.0 204.9,70.0 204.9,94.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <path d="M243.5,46.0 C243.5,70.0 204.9,70.0 204.9,94.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <path d="M364.1,46.0 C364.1,70.0 437.0,70.0 437.0,94.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <path d="M364.0,112.0 C340.9,126.0 310.0,126.0 286.9,114.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <path d="M204.9,114.0 C204.9,135.0 95.8,135.0 95.8,156.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <path d="M204.9,114.0 C204.9,135.0 344.8,135.0 344.8,156.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <path d="M204.9,114.0 C204.9,135.0 601.0,135.0 601.0,156.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <path d="M437.0,114.0 C437.0,135.0 736.6,135.0 736.6,156.0" fill="none" stroke="#94A3B8" stroke-width="0.5" marker-end="url(#ah)"/>
+  <g filter="url(#shadow)">
+    <rect x="87.1" y="32.0" width="92.0" height="14" rx="7" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <text x="133.1" y="40.8" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Minter / Holder</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="201.1" y="32.0" width="84.8" height="14" rx="7" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <text x="243.5" y="40.8" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Owner</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="308.5" y="32.0" width="111.2" height="14" rx="7" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <text x="364.1" y="40.8" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Auction Participant</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="122.9" y="94.0" width="164.0" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <rect x="125.9" y="97.0" width="1.4" height="14" rx="0.6" fill="#3B82F6"/>
+    <text x="204.9" y="103.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Shapes</text>
+    <text x="204.9" y="108.5" text-anchor="middle" font-size="3.5" fill="#64748B">Core token + reserve (+ ShapeLens reads)</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="364.0" y="94.0" width="146.0" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <rect x="367.0" y="97.0" width="1.4" height="14" rx="0.6" fill="#3B82F6"/>
+    <text x="437.0" y="103.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">ShapeAuctionHouse</text>
+    <text x="437.0" y="108.5" text-anchor="middle" font-size="3.5" fill="#64748B">English auction (+ ShapeCardEscrow)</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30.0" y="156.0" width="131.6" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <rect x="33.0" y="159.0" width="1.4" height="14" rx="0.6" fill="#3B82F6"/>
+    <text x="95.8" y="165.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Renderer &amp; Collection</text>
+    <text x="95.8" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">ShapeRenderer / ShapeCollection</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="183.6" y="156.0" width="322.4" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <rect x="186.6" y="159.0" width="1.4" height="14" rx="0.6" fill="#3B82F6"/>
+    <text x="344.8" y="165.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Linked Libraries</text>
+    <text x="344.8" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">GeometrySampling / ComposeCompute / InkGenes / ContractCollectorOps / CopyValidation</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="528.0" y="156.0" width="146.0" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <rect x="531.0" y="159.0" width="1.4" height="14" rx="0.6" fill="#F59E0B"/>
+    <text x="601.0" y="165.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Optional External Reads</text>
+    <text x="601.0" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">Position Resolver / Collector Token</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="696.0" y="156.0" width="81.2" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
+    <rect x="699.0" y="159.0" width="1.4" height="14" rx="0.6" fill="#F59E0B"/>
+    <text x="736.6" y="165.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Auction Lot</text>
+    <text x="736.6" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">Arbitrary ERC-721</text>
+  </g>
+  <rect x="137.0" y="65.0" width="64.0" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="169.0" y="70.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">mint / redeem / recompose</text>
+  <rect x="207.8" y="65.0" width="32.8" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="224.2" y="70.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">admin config</text>
+  <rect x="374.5" y="65.0" width="52.0" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="400.5" y="70.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">create / bid / claim</text>
+  <rect x="298.2" y="125.0" width="54.4" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="325.4" y="130.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">mint / transfer cards</text>
+  <rect x="121.9" y="130.0" width="56.8" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="150.3" y="135.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">tokenURI / contractURI</text>
+  <rect x="246.4" y="134.0" width="56.8" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="274.8" y="139.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">compose / split / gene</text>
+  <rect x="381.7" y="130.0" width="42.4" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="402.9" y="135.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">capped-gas reads</text>
+  <rect x="560.8" y="130.0" width="52.0" height="6.0" rx="1" fill="#F8F9FB"/>
+  <text x="586.8" y="135.0" font-size="4" fill="#1E293B" font-weight="500" text-anchor="middle">escrow / release lot</text>
+</svg>
