@@ -30,7 +30,10 @@ library FixedPoint {
     /// @notice Floor integer square root (Babylonian method).
     /// @dev Applied to a product of two WAD values, the result is WAD-scaled: isqrt(a * b)
     ///      with a, b in WAD gives sqrt(a*b) in WAD. Floor sqrt is unique, so this and the
-    ///      TypeScript implementation agree on every input.
+    ///      TypeScript implementation agree on every input this contract can reach. They differ
+    ///      at exactly one: n == type(uint256).max panics here on the (n + 1) / 2 seed, where the
+    ///      BigInt port returns 2**128 - 1. Both call sites pass Ri*Ri - weight*weight, which is
+    ///      bounded by the field size and cannot approach that value.
     function isqrt(uint256 n) internal pure returns (uint256) {
         if (n < 2) return n;
         uint256 x = n;

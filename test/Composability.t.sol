@@ -162,6 +162,117 @@ contract ComposabilityTest is Test {
         }
     }
 
+    /* ------------------------- preview validation ------------------------- */
+
+    /// @notice The lens holds no state, so a zero `shapes` would make every view a silent
+    ///         nothing rather than a revert. It is refused at construction.
+    function test_LensConstructorRejectsAZeroShapes() public {
+        vm.expectRevert(bytes("shapes is zero"));
+        new ShapeLens(address(0));
+    }
+
+    /// @notice `previewCompose` applies `Shapes`'s own validation before computing anything, so
+    ///         a preview reports exactly the rejection the execution would.
+    function test_PreviewComposeRejectsWhatComposeRejects() public {
+        uint256 first = _mintDust(6);
+
+        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        lens.previewCompose(first, new uint256[](0));
+        vm.prank(alice);
+        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        shapes.compose(first, new uint256[](0));
+
+        uint256[] memory self = new uint256[](1);
+        self[0] = first;
+        vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
+        lens.previewCompose(first, self);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
+        shapes.compose(first, self);
+    }
+
+    /// @notice `previewSplit` applies the same two structural checks `split` does: a split needs
+    ///         at least two outputs, and they must sum to the parent's backing exactly.
+    function test_PreviewSplitRejectsWhatSplitRejects() public {
+        uint256 parent = _mint(alice, 0.1 ether);
+
+        uint8[] memory single = new uint8[](1);
+        single[0] = 2; // the parent's own denomination
+        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        lens.previewSplit(parent, single);
+        vm.prank(alice);
+        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        shapes.split(parent, single);
+
+        uint8[] memory shortfall = new uint8[](2);
+        shortfall[0] = 1; // 0.05
+        shortfall[1] = 0; // 0.01, so 0.06 against a 0.1 parent
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitMismatch.selector, 0.1 ether, 0.06 ether));
+        lens.previewSplit(parent, shortfall);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitMismatch.selector, 0.1 ether, 0.06 ether));
+        shapes.split(parent, shortfall);
+    }
+
+    /// @notice The pool's worst gene is folded from the burn side, not merely seeded from the
+    ///         survivor. Composing under a survivor that already holds the pool's best gene is
+    ///         the case that only reaches `worst` through an input.
+    function test_PreviewComposeFoldsAWorseGeneFromTheBurnSide() public {
+        uint256 first = _mintDust(24);
+
+        uint256 hi = first;
+        uint256 lo = first;
+        for (uint256 i = 1; i < 24; ++i) {
+            uint256 id = first + i;
+            if (shapes.inkGeneOf(id) > shapes.inkGeneOf(hi)) hi = id;
+            if (shapes.inkGeneOf(id) < shapes.inkGeneOf(lo)) lo = id;
+        }
+        assertLt(shapes.inkGeneOf(lo), shapes.inkGeneOf(hi), "no gene spread to fold");
+
+        // Survivor carries the best gene, so `best` never moves and only `lo` can lower `worst`.
+        uint256[] memory burnIds = new uint256[](4);
+        burnIds[0] = lo;
+        uint256 filled = 1;
+        for (uint256 i = 0; filled < 4; ++i) {
+            uint256 id = first + i;
+            if (id != hi && id != lo) burnIds[filled++] = id;
+        }
+
+        ShapeState memory preview = lens.previewCompose(hi, burnIds);
+        vm.prank(alice);
+        shapes.compose(hi, burnIds);
+        assertEq(
+            keccak256(abi.encode(lens.shapeState(hi))),
+            keccak256(abi.encode(preview)),
+            "preview diverged from execution"
+        );
+    }
+
+    /// @notice Once a token carries materialized geometry its card renders from those modules,
+    ///         not from its seed. `Shapes.tokenURI` makes the same split on the same condition.
+    function test_UnicodeCardUsesStoredModulesOnceMaterialized() public {
+        uint256 first = _mintDust(5);
+        uint256[] memory burnIds = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burnIds[i] = first + i + 1;
+        }
+        vm.prank(alice);
+        shapes.compose(first, burnIds);
+
+        ShapeState memory state = lens.shapeState(first);
+        assertGt(state.modules.length, 0, "a compose survivor is materialized");
+        assertEq(
+            lens.unicodeCard(first),
+            renderer.renderUnicodeSampled(state.modules, state.faceValueWei, state.inkGene),
+            "card must come from the stored modules"
+        );
+        assertTrue(
+            keccak256(bytes(lens.unicodeCard(first)))
+                != keccak256(bytes(renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene))),
+            "the seed path would have rendered a different card"
+        );
+    }
+
     function test_RedeemToPaysRecipientWithoutRequiringItToOwnToken() public {
         uint256 id = _mint(alice, 1 ether);
         uint256 before = bob.balance;

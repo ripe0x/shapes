@@ -620,4 +620,62 @@ contract AuctionHouseTest is AuctionBase {
         vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionNotFound.selector, 7));
         house.minimumBid(7);
     }
+
+    /// @notice The cap bounds what the escrow holds, and a card the house mints for an ETH bid
+    ///         counts against it exactly as a deposited card does. Counting only deposits would
+    ///         let the mint path push `_release` past the loop the cap exists to bound.
+    function test_TheCapCountsMintedCardsNotOnlyDepositedOnes() public {
+        uint256 id = _open();
+
+        uint256[] memory ids = new uint256[](64);
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 64 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 64);
+        for (uint256 i = 0; i < 64; ++i) {
+            ids[i] = first + i;
+        }
+        vm.prank(alice);
+        house.bid(id, ids, 0);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.TooManyCards.selector, 65));
+        house.bid{value: 0.01 ether + feeOf(0.01 ether)}(id, _none(), 0.01 ether);
+
+        assertEq(house.escrowedCards(id, alice).length, 64, "the refused bid left the escrow alone");
+        assertEq(house.bidUnits(id, alice), 64, "and left the standing bid alone");
+    }
+
+    /// @notice A zero increment does not permit a tie. The step is floored at one unit, so the
+    ///         standing bid can only be displaced by a strictly larger one.
+    function test_AZeroIncrementStillDemandsOneMoreUnit() public {
+        vm.prank(seller);
+        uint256 id = house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, 0, EXTENSION);
+
+        uint256 a = _mintCard(alice, 1 ether); // 100 units
+        vm.prank(alice);
+        house.bid(id, _one(a), 0);
+        assertEq(house.minimumBid(id), 101, "a zero increment still steps by one unit");
+
+        uint256 tie = _mintCard(bob, 1 ether); // the same 100 units
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.BidTooLow.selector, 100, 101));
+        house.bid(id, _one(tie), 0);
+        assertEq(house.auctions(id).highestBidder, alice, "the standing bid held");
+    }
+
+    /// @notice `cardsFor` is a public quote, so it validates its own argument rather than
+    ///         relying on the bid path having checked first.
+    function test_CardsForRejectsAnOffLatticeAmount() public {
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NotAUnitMultiple.selector, 0.015 ether));
+        house.cardsFor(0.015 ether);
+    }
+
+    /// @notice Every custody rule here is enforced by calling `shapes`. An address with no code
+    ///         would accept those calls silently, so it is refused at construction.
+    function test_ConstructorRejectsAShapesAddressWithNoCode() public {
+        vm.expectRevert(bytes("shapes has no code"));
+        new ShapeAuctionHouse(address(0));
+
+        vm.expectRevert(bytes("shapes has no code"));
+        new ShapeAuctionHouse(alice); // an EOA
+    }
 }

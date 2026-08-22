@@ -14,6 +14,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {ShapeFormation, ShapeState} from "../src/interfaces/IShapeCapabilities.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {InkGenes} from "../src/lib/InkGenes.sol";
@@ -314,6 +315,24 @@ contract FeeTest is ShapesBase {
 
         vm.expectRevert(bytes("renderer is zero"));
         new Shapes(FEE_BPS, feeRecipient, address(0), address(collection));
+    }
+
+    /// @notice `feeBps` is bounded at 100% of the backing. The bound is inclusive, so the
+    ///         rejection starts one basis point above it.
+    function test_ConstructorBoundsTheFeeAtOneHundredPercent() public {
+        vm.expectRevert(bytes("fee exceeds 100%"));
+        new Shapes(10_001, feeRecipient, address(renderer), address(collection));
+
+        Shapes ceiling = new Shapes(10_000, feeRecipient, address(renderer), address(collection));
+        assertEq(ceiling.feeBps(), 10_000, "the ceiling itself is accepted");
+        assertEq(ceiling.mintFeeFor(1 ether), 1 ether, "a 100% fee doubles the mint price");
+
+        // And it is charged: the mint costs backing plus an equal fee, and only the backing
+        // joins the reserve.
+        vm.prank(alice);
+        ceiling.mint{value: 2 ether}(1 ether);
+        assertEq(ceiling.redeemableBacking(), 1 ether, "the fee never joins the reserve");
+        assertEq(feeRecipient.balance, 1 ether, "the fee reached the recipient");
     }
 
     function test_ImmutablesAreExposedAndFixed() public view {
@@ -721,6 +740,72 @@ contract ViewTest is ShapesBase {
     function test_BackingOfNonexistentReverts() public {
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
         shapes.backingOf(1);
+    }
+}
+
+/* ==================================================================== *
+ *  Formation classification
+ * ==================================================================== */
+
+contract FormationTest is ShapesBase {
+    /// @notice Every live formation, reached by the operation that produces it. The
+    ///         classification is a pure function of (denomination, origin count), so each case
+    ///         pins the origin count it depends on.
+    function test_FormationOfClassifiesEveryLiveFormation() public {
+        // Direct: one mint, one origin, capacity unfilled.
+        uint256 direct = _mint(alice, 0.05 ether);
+        assertEq(shapes.originCountOf(direct), 1);
+        assertEq(uint8(shapes.formationOf(direct)), uint8(ShapeFormation.Direct), "fresh mint");
+
+        // Complete: five 0.01 mints composed into a 0.05, whose capacity is five units.
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 5);
+        uint256[] memory four = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            four[i] = first + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, four);
+        assertEq(shapes.originCountOf(first), 5, "five origins fill a 0.05");
+        assertEq(uint8(shapes.formationOf(first)), uint8(ShapeFormation.Complete), "capacity filled");
+
+        // Composed: two 0.05 direct mints merged into a 0.1, two origins against ten units.
+        uint256 a = _mint(alice, 0.05 ether);
+        uint256 b = _mint(alice, 0.05 ether);
+        uint256[] memory one = new uint256[](1);
+        one[0] = b;
+        vm.prank(alice);
+        shapes.compose(a, one);
+        assertEq(shapes.originCountOf(a), 2, "origins are conserved, not capacity");
+        assertEq(uint8(shapes.formationOf(a)), uint8(ShapeFormation.Composed), "merged but unfilled");
+
+        // Fragment: splitting a one-origin 0.1 gives its single origin to the first child and
+        // nothing to the second.
+        uint256 parent = _mint(alice, 0.1 ether);
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 1; // 0.05
+        outs[1] = 1; // 0.05
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+        assertEq(shapes.originCountOf(kids[0]), 1);
+        assertEq(shapes.originCountOf(kids[1]), 0, "the parent's origin went to the first child");
+        assertEq(uint8(shapes.formationOf(kids[0])), uint8(ShapeFormation.Direct), "kept the origin");
+        assertEq(uint8(shapes.formationOf(kids[1])), uint8(ShapeFormation.Fragment), "no origin");
+
+        // `ShapeLens` recomputes the same classification from the core's getters.
+        uint256[5] memory all = [direct, first, a, kids[0], kids[1]];
+        for (uint256 i = 0; i < all.length; ++i) {
+            assertEq(
+                uint8(lens.shapeState(all[i]).formation),
+                uint8(shapes.formationOf(all[i])),
+                "lens disagreed with the core"
+            );
+        }
+    }
+
+    function test_FormationOfNonexistentReverts() public {
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
+        shapes.formationOf(1);
     }
 }
 
@@ -1597,8 +1682,9 @@ contract BlackShapeTest is ShapesBase {
         shapes.sacrifice(id);
     }
 
-    /// @notice `split` rejects a Black Shape, and `previewSplit` reports the same rejection.
-    function test_PreviewSplitRejectsBlackToMatchSplit() public {
+    /// @notice `split` and `compose` reject a Black Shape, and the previews report the same
+    ///         rejection from the same id, on either side of a compose.
+    function test_PreviewsRejectBlackToMatchExecution() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
         shapes.sacrifice(id);
@@ -1612,6 +1698,52 @@ contract BlackShapeTest is ShapesBase {
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         lens.previewSplit(id, outs);
+
+        // As a compose survivor.
+        uint256 live = _mint(alice, 0.01 ether);
+        uint256[] memory one = new uint256[](1);
+        one[0] = live;
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.compose(id, one);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        lens.previewCompose(id, one);
+
+        // As a compose input.
+        one[0] = id;
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        shapes.compose(live, one);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
+        lens.previewCompose(live, one);
+    }
+
+    /// @notice A Black Shape backs nothing, so `ShapeLens` cannot recover its denomination from
+    ///         `backingOf` and falls back on the apex invariant `sacrifice` enforces. The face
+    ///         value and the artwork survive the sacrifice; only the redeemable value goes.
+    function test_BlackShapeReadsAsApexWithNothingRedeemable() public {
+        uint256 id = _buildApexComplete();
+        string memory cardBefore = lens.unicodeCard(id);
+        uint8 geneBefore = shapes.inkGeneOf(id);
+
+        vm.prank(alice);
+        shapes.sacrifice(id);
+
+        assertEq(shapes.backingOf(id), 0, "a Black Shape backs nothing");
+        assertEq(uint8(shapes.formationOf(id)), uint8(ShapeFormation.Black), "sacrifice sets Black");
+        assertFalse(shapes.isComplete(id), "Black is terminal, not Complete");
+
+        ShapeState memory st = lens.shapeState(id);
+        assertTrue(st.isBlack);
+        assertEq(uint8(st.formation), uint8(ShapeFormation.Black), "lens agrees with the core");
+        assertEq(st.denominationIndex, 8, "the apex index survives the sacrifice");
+        assertEq(st.faceValueWei, 100 ether, "face value is the apex amount");
+        assertEq(st.redeemableValueWei, 0, "nothing is redeemable");
+        assertEq(st.originCount, 10_000, "origins are unchanged");
+        assertEq(st.inkGene, geneBefore, "the gene is unchanged");
+
+        // The card is a function of geometry, denomination and gene, none of which moved.
+        assertEq(lens.unicodeCard(id), cardBefore, "sacrifice must not change the artwork");
     }
 }
 

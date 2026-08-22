@@ -66,6 +66,22 @@ contract SamplingTest is ShapesBase {
         }
     }
 
+    /// @notice `decode` does not validate, so `isValid` is the only thing standing between a
+    ///         stray byte and a module the grammar does not define. It rejects a set bit 7, a
+    ///         kind past the ten defined kinds, and a rotation index the kind does not take.
+    function test_ModuleCodecRejectsEveryMalformedByteClass() public pure {
+        assertTrue(ModuleCodec.isValid(ModuleCodec.encode(9, true, 1)), "a byte from encode is valid");
+        assertTrue(ModuleCodec.isValid(ModuleCodec.encode(0, false, 0)), "circle at its only rotation");
+
+        assertFalse(ModuleCodec.isValid(bytes1(uint8(0x80))), "bit 7 set is never valid");
+        assertFalse(ModuleCodec.isValid(bytes1(uint8(0xFF))), "bit 7 wins over everything else");
+        assertFalse(ModuleCodec.isValid(bytes1(uint8(10))), "kind 10 is past the grammar");
+        assertFalse(ModuleCodec.isValid(bytes1(uint8(15))), "kind 15 is past the grammar");
+        assertFalse(ModuleCodec.isValid(bytes1(uint8((1 << 5) | 0))), "a circle has one rotation");
+        assertFalse(ModuleCodec.isValid(bytes1(uint8((2 << 5) | 9))), "the diagonal has two");
+        assertTrue(ModuleCodec.isValid(bytes1(uint8((1 << 5) | 9))), "and the second one is valid");
+    }
+
     /* ------------------------------ original mints ------------------------------ */
 
     function test_OriginalMintsAreNeverMaterialized() public {

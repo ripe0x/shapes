@@ -240,10 +240,10 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 |--------|-------|--------|
 | Test files | 21 (19 `.t.sol` + 2 helpers) | File scan (always reliable) |
 | Test functions | 399 | File scan (always reliable) |
-| Line coverage | Unavailable — `forge coverage` fails ("Stack too deep" in `Shapes.sol`) even under `--ir-minimum` | Coverage tool (requires compilation) |
-| Branch coverage | Unavailable — same reason | Coverage tool (requires compilation) |
+| Line coverage | 96.85% overall. `Shapes` 99.76%, `ShapeLens` 100%, `ShapeAuctionHouse` 100%, `ShapeCardEscrow` 97.33%, `ShapeRenderer` 96.26% | `forge coverage --ir-minimum --skip script` |
+| Branch coverage | 91.20% overall (373/409). `ShapeLens` 90.00%, `ShapeCardEscrow` 87.50%, `Shapes` 84.62%. Every remaining uncovered branch is a `require(cond, "string")`, which `forge coverage` cannot instrument, so those three figures are at their ceilings and no test can raise them | `forge coverage --ir-minimum --skip script` |
 
-Test *existence* is unaffected by the coverage-tool failure — 399 test functions across 19 dedicated test files were found by file scan regardless of whether `forge coverage` can compile.
+Coverage runs as of the stack-depth fixes in PR #35; the command needs `--ir-minimum` (coverage builds without the optimizer) and `--skip script` (the deploy scripts carry their own stack pressure and are tooling, not audited contracts). 431 tests pass, 4 skipped, the skips being RPC-gated fork tests.
 
 ### Test Depth
 

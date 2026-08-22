@@ -173,6 +173,26 @@ contract FixedPointTest is RendererTestBase {
         assertEq(FixedPoint.fmt(999_999_500_000_000_000), "1");
     }
 
+    /// @notice `isqrt` floors, and returns its argument unchanged below the Babylonian loop's
+    ///         entry condition, where the iteration would not converge.
+    function test_IsqrtFloorsAndHandlesItsSmallInputs() public pure {
+        assertEq(FixedPoint.isqrt(0), 0);
+        assertEq(FixedPoint.isqrt(1), 1);
+        assertEq(FixedPoint.isqrt(2), 1, "floors rather than rounds");
+        assertEq(FixedPoint.isqrt(3), 1);
+        assertEq(FixedPoint.isqrt(4), 2, "exact at a perfect square");
+        assertEq(FixedPoint.isqrt(99), 9);
+        // Applied to a product of two WAD values the result is WAD-scaled.
+        assertEq(FixedPoint.isqrt(FixedPoint.WAD * FixedPoint.WAD), FixedPoint.WAD);
+        assertEq(FixedPoint.isqrt(4e18 * FixedPoint.WAD), 2 * FixedPoint.WAD);
+    }
+
+    function testFuzz_IsqrtIsTheFloorOfTheRealRoot(uint128 n) public pure {
+        uint256 r = FixedPoint.isqrt(n);
+        assertLe(r * r, n, "root squared exceeded the input");
+        assertGt((r + 1) * (r + 1), n, "a larger root would also have fit");
+    }
+
     function test_NoTrailingZerosOrPoint() public pure {
         assertEq(FixedPoint.fmt(1.1e18), "1.1");
         assertEq(FixedPoint.fmt(1.01e18), "1.01");
