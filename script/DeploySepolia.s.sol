@@ -16,6 +16,9 @@ import {Denominations} from "../src/lib/Denominations.sol";
 /// @dev Fee recipient defaults to the deployer (fine on a throwaway testnet; on mainnet it is an
 ///      immutable decision — use DeployShapes.s.sol there with SHAPES_FEE_RECIPIENT set).
 ///
+///      The contract collector binding is not configured here. Configure the pointer later with
+///      `SetContractCollectorToken.s.sol` and lock it with `LockContractCollectorBinding.s.sol`.
+///
 ///        SHAPES_FEE_BPS   mint fee in basis points. Defaults to 100 (1%).
 ///        SEED_ETH         set to "false" to deploy without seeding any mints.
 ///
@@ -66,6 +69,12 @@ contract DeploySepolia is Script {
         require(shapes.feeRecipient() == me, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         require(address(lens.shapes()) == address(shapes), "lens points at another token");
+        {
+            (address collectorTokenContract, uint256 collectorTokenId,) = shapes.contractCollectorBinding();
+            require(collectorTokenContract == address(0), "collector token should start unset");
+            require(collectorTokenId == 0, "collector token id should start zero");
+            require(!lens.contractCollectorBindingLocked(), "collector binding should start unlocked");
+        }
 
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));

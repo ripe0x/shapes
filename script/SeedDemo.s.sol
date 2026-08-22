@@ -84,7 +84,7 @@ contract SeedDemo is Script {
         if (house == address(0)) return;
         uint256 lot = _mint(0);
         shapes.approve(house, lot);
-        ShapeAuctionHouse(house).createAuction(lot, 1 days, 0, 500, 15 minutes);
+        ShapeAuctionHouse(house).createAuction(address(shapes), lot, 1 days, 0, 500, 15 minutes);
     }
 
     /// @notice Incremental entry point: only the tiered builds, for a chain already seeded by

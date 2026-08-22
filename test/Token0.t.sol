@@ -7,6 +7,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
+import {IShapeCardEscrow} from "../src/interfaces/IShapeCardEscrow.sol";
 
 contract Token0Test is Test {
     Shapes shapes;
@@ -36,7 +37,7 @@ contract Token0Test is Test {
     /// Can a Shape be minted straight into the auction house?
     function test_CannotMintDirectlyToTheHouse() public {
         vm.prank(artist);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.UnsolicitedToken.selector, address(0)));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.UnsolicitedToken.selector, address(0)));
         shapes.mintTo{value: 0.0101 ether}(0.01 ether, address(house));
     }
 
@@ -49,7 +50,7 @@ contract Token0Test is Test {
         vm.prank(artist);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 a = house.createAuction(id, 24 hours, 1, 500, 15 minutes);
+        uint256 a = house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes);
 
         assertEq(shapes.ownerOf(id), address(house), "house escrows it");
         assertEq(house.auctions(a).seller, artist, "artist is the seller");
@@ -104,6 +105,6 @@ contract Token0Test is Test {
         uint256 id = shapes.mint{value: 0.0101 ether}(0.01 ether);
         vm.prank(stranger);
         vm.expectRevert();
-        house.createAuction(id, 24 hours, 1, 500, 15 minutes);
+        house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes);
     }
 }

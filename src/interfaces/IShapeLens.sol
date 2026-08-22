@@ -65,4 +65,19 @@ interface IShapeLens {
             bytes memory parentModules,
             uint256 childIndex
         );
+
+    /* --------------------------- contract collector --------------------------- */
+
+    /// @notice The configured collector token. `(address(0), 0)` until set.
+    function contractCollectorToken() external view returns (address tokenContract, uint256 tokenId);
+
+    /// @notice Current owner of the configured collector token, read live from the ERC-721.
+    /// @dev Never cached. Returns `address(0)` when no token is configured, and when
+    ///      `ownerOf(tokenId)` reverts, returns malformed data, or the token contract no longer has
+    ///      code. Callers distinguish "unset" from "configured but unresolvable" through
+    ///      `contractCollectorToken()`.
+    function contractCollector() external view returns (address collector);
+
+    /// @notice True once the binding is locked. Irreversible.
+    function contractCollectorBindingLocked() external view returns (bool locked);
 }

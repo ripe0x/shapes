@@ -33,6 +33,13 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 ///      privileged position over the token and the token knows nothing about it, so a broken
 ///      house costs an auction rather than the collection.
 ///
+///      The contract collector binding is not configured here. The contract deploys with no
+///      collector token, and the collector NFT itself is not deployed by this script. Configure
+///      the pointer later with `SetContractCollectorToken.s.sol` and lock it with
+///      `LockContractCollectorBinding.s.sol`. Both require `owner()`, so `owner()` must remain
+///      held until the token is set and the binding locked; renouncing or losing it beforehand
+///      makes configuration impossible.
+///
 ///      Local:
 ///        forge script script/DeployShapes.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
 ///
@@ -108,6 +115,13 @@ contract DeployShapes is Script {
         require(shapes.collection() == address(collection), "collection mismatch");
         require(collection.renderer() == address(renderer), "collection points at another renderer");
 
+        {
+            (address collectorTokenContract, uint256 collectorTokenId,) = shapes.contractCollectorBinding();
+            require(collectorTokenContract == address(0), "collector token should start unset");
+            require(collectorTokenId == 0, "collector token id should start zero");
+            require(!lens.contractCollectorBindingLocked(), "collector binding should start unlocked");
+        }
+
         // Smoke the renderer through the interface the token will actually use. A renderer
         // that cannot produce metadata would leave every token permanently unrenderable.
         require(
@@ -148,6 +162,7 @@ contract DeployShapes is Script {
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
         console.log("owner         ", shapes.owner());
+        console.log("collector token   unset (configure later with SetContractCollectorToken.s.sol)");
         console.log("");
         console.log("Fee terms and reserve rules are immutable. Ownership is transferable.");
         console.log("Presentation and position resolver settings are independently lockable.");

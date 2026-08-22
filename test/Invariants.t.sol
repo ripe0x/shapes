@@ -702,7 +702,9 @@ contract AuctionHandler is Test, IERC721Receiver {
         vm.prank(seller);
         try shapes.mint{value: cost}(0.1 ether) returns (uint256 lot) {
             vm.prank(seller);
-            try house.createAuction(lot, duration, reserve, 500, extensionWindow) returns (uint256 id) {
+            try house.createAuction(address(shapes), lot, duration, reserve, 500, extensionWindow) returns (
+                uint256 id
+            ) {
                 auctionIds.push(id);
                 lotOf[id] = lot;
                 sellerOf[id] = seller;
@@ -802,6 +804,17 @@ contract AuctionHandler is Test, IERC721Receiver {
         try house.cancelAuction(id) {} catch {}
     }
 
+    /// @dev Pulls the lot: the winner if a bid landed, the seller otherwise. Mirrors the house's
+    ///      own recipient rule so a settled or cancelled auction can actually be drained.
+    function claimLot(uint256 aSeed) public {
+        if (auctionIds.length == 0) return;
+        uint256 id = auctionIds[aSeed % auctionIds.length];
+        address highestBidder = house.auctions(id).highestBidder;
+        address recipient = highestBidder == address(0) ? sellerOf[id] : highestBidder;
+        vm.prank(recipient);
+        try house.claimLot(id) {} catch {}
+    }
+
     function warp(uint256 s) public {
         vm.warp(block.timestamp + bound(s, 1, 2 days));
     }
@@ -828,7 +841,7 @@ contract AuctionInvariantTest is StdInvariant, Test {
     function _wire() internal {
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](9);
+        bytes4[] memory selectors = new bytes4[](10);
         selectors[0] = AuctionHandler.createAuction.selector;
         selectors[1] = AuctionHandler.bidEth.selector;
         selectors[2] = AuctionHandler.bidCards.selector;
@@ -837,7 +850,8 @@ contract AuctionInvariantTest is StdInvariant, Test {
         selectors[5] = AuctionHandler.settle.selector;
         selectors[6] = AuctionHandler.claimProceeds.selector;
         selectors[7] = AuctionHandler.cancel.selector;
-        selectors[8] = AuctionHandler.warp.selector;
+        selectors[8] = AuctionHandler.claimLot.selector;
+        selectors[9] = AuctionHandler.warp.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -900,6 +914,13 @@ contract AuctionInvariantTest is StdInvariant, Test {
             }
             vm.prank(handler.sellerOf(id));
             try house.claimProceeds(id) {} catch {}
+
+            // settle/cancelAuction record the outcome and move nothing; claimLot is the only path
+            // that delivers the lot, to the winner if one exists, otherwise back to the seller.
+            address highestBidder = house.auctions(id).highestBidder;
+            address lotRecipient = highestBidder == address(0) ? handler.sellerOf(id) : highestBidder;
+            vm.prank(lotRecipient);
+            try house.claimLot(id) {} catch {}
         }
 
         assertEq(shapes.balanceOf(address(house)), 0, "house retained a Shape with no exit");

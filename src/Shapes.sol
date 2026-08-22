@@ -10,6 +10,7 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
+import {IContractCollector} from "./interfaces/IContractCollector.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {
@@ -24,6 +25,7 @@ import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {CopyValidation} from "./lib/CopyValidation.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
+import {ContractCollectorOps} from "./lib/ContractCollectorOps.sol";
 
 /// @title Shapes
 /// @notice ETH in, Shape out.
@@ -53,7 +55,7 @@ import {ComposeCompute} from "./lib/ComposeCompute.sol";
 ///      Reserve invariant: `address(this).balance >= redeemableBacking()`, with equality in
 ///      normal operation. The inequality accommodates ETH forced in through paths that bypass
 ///      `receive`; such a surplus is permanently inaccessible.
-contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906 {
+contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector, IERC2981, IERC4906 {
     /* ------------------------------ state ------------------------------ */
 
     /// @dev Per token: a visual seed, a denomination index, a provenance credit, a terminal
@@ -218,6 +220,13 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
     /// @inheritdoc IShapes
     bool public positionResolverLocked;
 
+    /* ------------------------- contract collector ------------------------ */
+
+    /// @dev The token pointer and lock state. Written and validated by `ContractCollectorOps`,
+    ///      called via `DELEGATECALL` so that library holds the mutating logic and this contract
+    ///      holds only the state and its `onlyOwner` wrappers.
+    ContractCollectorOps.Binding private _collectorBinding;
+
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
     ///        May be zero. Above BPS_DENOMINATOR (100%) is rejected.
     /// @param feeRecipient_ Where fees are forwarded. Immutable, and it MUST be able to receive
@@ -351,6 +360,31 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IERC2981, IERC4906
         if (!_supportsInterfaceOrFalse(collection_, type(IShapeCollection).interfaceId)) {
             revert UnsupportedCollection(collection_);
         }
+    }
+
+    /* --------------------------- contract collector --------------------------- */
+
+    /// @inheritdoc IContractCollector
+    function contractCollectorBinding()
+        external
+        view
+        returns (address tokenContract, uint256 tokenId, bool locked)
+    {
+        return (_collectorBinding.tokenContract, _collectorBinding.tokenId, _collectorBinding.locked);
+    }
+
+    /// @inheritdoc IContractCollector
+    /// @dev Validation and the storage write both run inside `ContractCollectorOps.setToken`,
+    ///      called via `DELEGATECALL` against `_collectorBinding`.
+    function setContractCollectorToken(address tokenContract, uint256 tokenId) external onlyOwner {
+        ContractCollectorOps.setToken(_collectorBinding, tokenContract, tokenId);
+    }
+
+    /// @inheritdoc IContractCollector
+    /// @dev Revalidation and the lock write both run inside `ContractCollectorOps.lock`, called
+    ///      via `DELEGATECALL` against `_collectorBinding`.
+    function lockContractCollectorBinding() external onlyOwner {
+        ContractCollectorOps.lock(_collectorBinding);
     }
 
     /* ------------------------------ minting ----------------------------- */

@@ -7,7 +7,13 @@ script = "script"
 solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
-optimizer_runs = 200
+# Lowered from 200: the contract collector binding (IContractCollector, ported from PR #30) pushed
+# Shapes over the EIP-170 runtime size limit at runs=200 even after moving its mutators into an
+# externally linked library (src/lib/ContractCollectorOps.sol) and its friendly read surface into
+# ShapeLens. 100 restores headroom (Shapes runtime margin ~174B at last measurement) at the cost of
+# marginally higher runtime gas on repeatedly called functions (mint, redeem, compose, split, bid);
+# deployment cost drops. Re-measure with `forge build --sizes` before raising this back toward 200.
+optimizer_runs = 100
 via_ir = true
 bytecode_hash = "none"
 cbor_metadata = false
