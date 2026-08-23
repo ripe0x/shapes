@@ -325,8 +325,11 @@ FOUNDRY_PROFILE=ci forge test # heavier fuzzing
 # Line and branch coverage. --ir-minimum is required because coverage builds without the
 # optimizer and the renderer's string assembly exceeds the stack limit otherwise; --skip script
 # excludes the deploy scripts, which are tooling rather than audited contracts and carry the
-# same stack pressure.
-forge coverage --ir-minimum --skip script --report summary
+# same stack pressure. test/legacy/ holds the pre-refactor renderer that RendererDiff.t.sol
+# compares against: it is deliberately the flat form, which is exactly what cannot survive
+# coverage's codegen, so it is excluded too.
+forge coverage --ir-minimum --skip script \
+  --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --report summary
 ```
 
 ### Against a mainnet fork

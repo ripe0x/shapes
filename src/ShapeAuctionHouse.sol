@@ -134,7 +134,11 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
     /// @inheritdoc IShapeAuctionHouse
     /// @dev Records the close and returns nothing. The seller pulls the lot back with `claimLot`,
     ///      which `highestBidder == address(0)` directs to them rather than to a winner.
-    function cancelAuction(uint256 auctionId) external {
+    ///      `nonReentrant` because `bid` holds a half-written auction across the fee-recipient
+    ///      callback in `_takeBid`, and this is the one mutator whose preconditions that window
+    ///      satisfies. The guard states that exclusion on the function, so a later change to
+    ///      `bid` cannot silently make it reachable again.
+    function cancelAuction(uint256 auctionId) external nonReentrant {
         Auction storage a = _requireAuction(auctionId);
         if (msg.sender != a.seller || a.highestBidder != address(0) || a.settled) {
             revert InvalidAuction();
@@ -161,9 +165,13 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
         uint64 newUnits = _takeBid(auctionId, cardIds, ethBackingWei);
         // `_takeBid` escrows the cards, which mints and pays the Shapes fee recipient, so control
-        // reaches an arbitrary contract between the check above and the writes below. `settle` and
-        // `cancelAuction` carry no reentrancy guard by design, so either can close the auction in
-        // that window. Re-read the flag rather than record a bid on a closed auction.
+        // reaches an arbitrary contract between the check above and the writes below. `settle`
+        // cannot close the auction in that window: it requires `a.endTime != 0 &&
+        // block.timestamp >= a.endTime`, the negation of the pre-check above, and
+        // `block.timestamp` is fixed for the transaction. `cancelAuction` can, and is barred by
+        // its own `nonReentrant`. Re-read the flag anyway rather than record a bid on a closed
+        // auction, so a mutator added later and reachable from that window is refused here even
+        // if it carries no guard of its own.
         if (a.settled) revert AuctionAlreadySettled(auctionId);
 
         uint64 required = _minimumBid(a);
@@ -187,8 +195,12 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
 
     /// @inheritdoc IShapeAuctionHouse
     /// @dev Touches no collection, so it cannot be made to revert by the lot and the outcome is
-    ///      always recordable. Needs no reentrancy guard for the same reason: it calls nothing.
-    function settle(uint256 auctionId) external {
+    ///      always recordable. `nonReentrant` bars entry from a call already inside the house.
+    ///      It calls nothing itself, so the guard is not load-bearing today: `bid`'s pre-check
+    ///      requires `a.endTime == 0 || block.timestamp < a.endTime` and this requires the
+    ///      negation, so no transaction can reach both. It holds the same rule on both
+    ///      auction-closing paths, at one cold storage slot per call.
+    function settle(uint256 auctionId) external nonReentrant {
         Auction storage a = _requireAuction(auctionId);
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime == 0 || block.timestamp < a.endTime) revert AuctionStillRunning(auctionId);

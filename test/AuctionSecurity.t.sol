@@ -9,6 +9,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
+import {IShapes} from "../src/interfaces/IShapes.sol";
 
 /// @dev H-01: transferFrom succeeds and moves nothing, and reports no ERC165 support. Now that
 ///      `createAuction` accepts any ERC721 collection, the exploit this used to demonstrate (a
@@ -90,8 +91,8 @@ contract MaliciousFeeRecipient is IERC721Receiver {
 
 /// @dev L-1: a contract that is both the Shapes fee recipient and an auction's seller. The mint
 ///      fee forwarded during the house's bid-path mint hands it control mid-`bid`, and it uses
-///      that window to call `cancelAuction`, which carries no reentrancy guard so that settlement
-///      can never be blocked. `bid` must not then record a bid on the closed auction.
+///      that window to call `cancelAuction`. The call is not wrapped, so whatever it reverts with
+///      propagates out through `bid`.
 contract ReentrantCancelSeller is IERC721Receiver {
     Shapes public shapes;
     ShapeAuctionHouse public house;
@@ -295,10 +296,13 @@ contract AuctionSecurityTest is Test {
     }
 
     /// @notice L-1. `bid` checks `settled`, then escrows the bid, which mints and forwards the
-    ///         Shapes fee to an arbitrary contract. A fee recipient that is also the seller can
-    ///         cancel the auction in that window, so `bid` re-reads the flag after the escrow
-    ///         interaction and refuses to write a bid onto a closed auction. The revert unwinds
-    ///         the cancel with it, leaving the auction exactly as it was.
+    ///         Shapes fee to an arbitrary contract. A fee recipient that is also the seller
+    ///         reaches `cancelAuction` in that window; `cancelAuction` is `nonReentrant`, so the
+    ///         reentrant call reverts inside the fee recipient's `receive`, the fee transfer
+    ///         fails, and `Shapes` surfaces that as `MintFeeTransferFailed`. The auction is left
+    ///         exactly as it was. `bid` also re-reads `settled` after the escrow interaction, so
+    ///         a mutator added later that closes the auction from that window is refused there
+    ///         even if it carries no guard of its own.
     function test_L1_ABidCannotBeRecordedOnAnAuctionCancelledMidCall() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
         Shapes shapes3 = new Shapes(100, address(mal), address(renderer), address(collection));
@@ -312,7 +316,9 @@ contract AuctionSecurityTest is Test {
         vm.deal(carol, 10 ether);
         mal.arm();
         vm.prank(carol);
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionAlreadySettled.selector, a));
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), 0.01 ether)
+        );
         house3.bid{value: 1.01 ether}(a, new uint256[](0), 1 ether);
 
         // The revert unwound the reentrant cancel along with the bid.
@@ -327,5 +333,56 @@ contract AuctionSecurityTest is Test {
         vm.prank(address(mal));
         house3.cancelAuction(a);
         assertEq(house3.auctions(a).settled, true, "a plain cancel still works");
+    }
+
+    /// @notice L-1, the theft the re-check and the guard close. Against the pre-fix code the
+    ///         sequence is: carol calls `bid`; `_takeBid` mints her cards, which forwards the
+    ///         Shapes fee to `mal`; `mal.receive` calls `cancelAuction`, which passes because
+    ///         `mal` is the seller, there is no highest bidder yet and the auction is not
+    ///         settled, and sets `settled = true`; the outer `bid` resumes and records carol as
+    ///         `highestBidder`; `mal` calls `claimProceeds`, which releases carol's escrow to
+    ///         `mal`. Carol cannot `withdraw`, because `withdraw` refuses the standing leader.
+    ///         The whole sequence must not get past the bid. `cancelAuction` is `nonReentrant`,
+    ///         so the reentrant call reverts inside `mal.receive`, the mint fee transfer fails
+    ///         with it, and the bid unwinds with `MintFeeTransferFailed`.
+    function test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid() public {
+        ReentrantCancelSeller mal = new ReentrantCancelSeller();
+        Shapes shapes3 = new Shapes(100, address(mal), address(renderer), address(collection));
+        ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
+        mal.setTargets(shapes3, house3);
+
+        vm.deal(address(mal), 10 ether);
+        uint256 a = mal.list(0.1 ether, 1 days);
+
+        address carol = makeAddr("carol");
+        vm.deal(carol, 10 ether);
+        uint256 carolBefore = carol.balance;
+        uint256 malBefore = address(mal).balance;
+        uint256 supplyBefore = shapes3.totalSupply();
+
+        mal.arm();
+        vm.prank(carol);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), 0.01 ether)
+        );
+        house3.bid{value: 1.01 ether}(a, new uint256[](0), 1 ether);
+
+        // Carol paid nothing and holds no cards: the mint that would have created them unwound.
+        assertEq(carol.balance, carolBefore, "carol's ETH is intact");
+        assertEq(shapes3.balanceOf(carol), 0, "carol holds no cards");
+        assertEq(shapes3.totalSupply(), supplyBefore, "no cards were minted");
+        assertEq(house3.bidUnits(a, carol), 0, "carol has no escrow in the house");
+
+        // The seller took neither the fee nor a bid it never cleared.
+        assertEq(address(mal).balance, malBefore, "the seller received no mint fee");
+        ShapeAuctionHouse.Auction memory open = house3.auctions(a);
+        assertEq(open.settled, false, "the auction is still open");
+        assertEq(open.highestBidder, address(0), "no bidder was recorded");
+
+        // The proceeds leg of the theft is unreachable: nothing settled, so there is nothing to
+        // release, and carol is not the leader so she is not locked out of anything.
+        vm.prank(address(mal));
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionStillRunning.selector, a));
+        house3.claimProceeds(a);
     }
 }
