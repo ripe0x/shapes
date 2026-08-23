@@ -49,6 +49,10 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   transfer: "Transferred",
 };
 
+/** Inputs one compose call can burn before a mainnet block cannot hold it. About 75k gas each
+ *  against a 60M limit is roughly 775; this leaves headroom for the survivor's own writes. */
+const MAX_COMPOSE_INPUTS = 700;
+
 interface DatedEvent extends HistEvent {
   date: string;
 }
@@ -358,7 +362,11 @@ export function TokenView({
   const pickedIds = pickedTokens.map((t) => t.id);
   const sumWei = token.backing + pickedTokens.reduce((a, t) => a + t.backing, 0n);
   const sumIdx = denomIndexOf(sumWei);
-  const composeValid = pickedIds.length >= 1 && sumIdx >= 0;
+  // Compose costs about 75k gas per burned input, so a mainnet block caps one call near 775.
+  // Hold well under that: a rejected selection here is cheaper than an out of gas revert the
+  // caller still pays for. A larger merge is done by composing in batches, which the survivor
+  // keeping its id makes safe to repeat.
+  const composeValid = pickedIds.length >= 1 && pickedIds.length <= MAX_COMPOSE_INPUTS && sumIdx >= 0;
 
   const errLine = (op: string) =>
     txErr && txErr.op === op ? (
@@ -738,9 +746,11 @@ export function TokenView({
               <div style={{marginTop: 22, fontSize: 13, color: C.muted}}>
                 {pickedIds.length === 0
                   ? "Select Shapes to compose."
-                  : composeValid
-                    ? `${formatEther(sumWei)} ETH → one ${DENOMINATIONS[sumIdx].label} ETH Shape.`
-                    : `${formatEther(sumWei)} ETH is not a denomination. The sum must be exactly one of the nine.`}
+                  : pickedIds.length > MAX_COMPOSE_INPUTS
+                    ? `${pickedIds.length} Shapes is more than one transaction can burn. Compose up to ${MAX_COMPOSE_INPUTS} at a time; this Shape keeps its id, so the next batch merges into the same one.`
+                    : composeValid
+                      ? `${formatEther(sumWei)} ETH → one ${DENOMINATIONS[sumIdx].label} ETH Shape.`
+                      : `${formatEther(sumWei)} ETH is not a denomination. The sum must be exactly one of the nine.`}
               </div>
             )}
             {composeValid && (
