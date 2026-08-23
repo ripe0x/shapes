@@ -111,37 +111,37 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `if (IERC721(nft).ownerOf(tokenId) != address(this)) revert LotNotReceived()` · `ShapeAuctionHouse.sol:131` · Confirms the lot transfer actually landed; catches a `transferFrom` that returns without moving anything.
 
 #### G-35
-`if (msg.sender != a.seller || a.highestBidder != address(0) || a.settled) revert InvalidAuction()` · `ShapeAuctionHouse.sol:139` · Cancellation is seller-only, only before any bid, only before settlement.
+`if (msg.sender != a.seller || a.highestBidder != address(0) || a.settled) revert InvalidAuction()` · `ShapeAuctionHouse.sol:143` · Cancellation is seller-only, only before any bid, only before settlement. `cancelAuction` itself is now `nonReentrant` (see G-37).
 
 #### G-36
-`if (msg.sender == a.seller) revert SellerCannotBid()` · `ShapeAuctionHouse.sol:159` · A seller cannot bid its own lot with a second address's Shapes (see I-8).
+`if (msg.sender == a.seller) revert SellerCannotBid()` · `ShapeAuctionHouse.sol:163` · A seller cannot bid its own lot with a second address's Shapes (see I-8).
 
 #### G-37
-`if (a.settled) revert AuctionAlreadySettled(auctionId)` · `ShapeAuctionHouse.sol:160,167` · Checked both before and after `_takeBid`; the second check is the fix for a bid landing on an auction settled via reentrancy from the Shapes fee recipient during card minting.
+`if (a.settled) revert AuctionAlreadySettled(auctionId)` · `ShapeAuctionHouse.sol:164,175` · Checked both before and after `_takeBid`. This re-check was originally the only defense against a bid landing on an auction settled via reentrancy from the Shapes fee recipient during card minting, and that gap was filed as a low. It was not: against a fee-recipient contract that is also the auction's seller, the sequence let the reentrant `cancelAuction` set `settled = true`, the outer `bid` then record the victim as `highestBidder` regardless, and the seller sweep the victim's escrowed cards through `claimProceeds` — a victim who cannot `withdraw` because they lead. `settle` and `cancelAuction` now both carry `nonReentrant` (SECURITY.md), closing the path structurally: the reentrant `cancelAuction` call reverts inside the fee recipient's own `receive`, which fails the mint fee transfer and unwinds the whole `bid` with `MintFeeTransferFailed`. This re-check remains as belt and braces. Pinned by `test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid` (`test/AuctionSecurity.t.sol`).
 
 #### G-38
-`if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId)` · `ShapeAuctionHouse.sol:161` · A bid cannot land after the auction's deadline.
+`if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId)` · `ShapeAuctionHouse.sol:165` · A bid cannot land after the auction's deadline.
 
 #### G-39
-`if (newUnits < required) revert BidTooLow(newUnits, required)` · `ShapeAuctionHouse.sol:170` · A bid must clear the reserve or the standing bid plus its minimum increment.
+`if (newUnits < required) revert BidTooLow(newUnits, required)` · `ShapeAuctionHouse.sol:178` · A bid must clear the reserve or the standing bid plus its minimum increment.
 
 #### G-40
-`if (a.settled) revert AuctionAlreadySettled` / `if (a.endTime == 0 || block.timestamp < a.endTime) revert AuctionStillRunning` · `ShapeAuctionHouse.sol:193-194` · `settle` requires the auction to have received a bid and to have actually ended.
+`if (a.settled) revert AuctionAlreadySettled` / `if (a.endTime == 0 || block.timestamp < a.endTime) revert AuctionStillRunning` · `ShapeAuctionHouse.sol:205-206` · `settle` requires the auction to have received a bid and to have actually ended. `settle` is now `nonReentrant` too (see G-37); the guard is not load-bearing today since `settle` calls nothing external, but it holds the same rule on both auction-closing paths.
 
 #### G-41
-`if (!a.settled) revert AuctionStillRunning` / `if (a.lotClaimed) revert LotAlreadyClaimed` · `ShapeAuctionHouse.sol:206-207` · `claimLot` requires settlement and blocks a second claim (see I-10).
+`if (!a.settled) revert AuctionStillRunning` / `if (a.lotClaimed) revert LotAlreadyClaimed` · `ShapeAuctionHouse.sol:218-219` · `claimLot` requires settlement and blocks a second claim (see I-10).
 
 #### G-42
-`if (msg.sender != recipient) revert NotLotRecipient(auctionId, msg.sender)` · `ShapeAuctionHouse.sol:210` · Only the winner (or the seller of an unsold, cancelled auction) may claim the lot.
+`if (msg.sender != recipient) revert NotLotRecipient(auctionId, msg.sender)` · `ShapeAuctionHouse.sol:222` · Only the winner (or the seller of an unsold, cancelled auction) may claim the lot.
 
 #### G-43
-`if (msg.sender == a.highestBidder) revert NothingToWithdraw` · `ShapeAuctionHouse.sol:224` · The standing leader's cards are the live bid and cannot be withdrawn early.
+`if (msg.sender == a.highestBidder) revert NothingToWithdraw` · `ShapeAuctionHouse.sol:236` · The standing leader's cards are the live bid and cannot be withdrawn early.
 
 #### G-44
-`if (!a.settled) revert AuctionStillRunning` / `if (msg.sender != a.seller) revert NothingToWithdraw` · `ShapeAuctionHouse.sol:233-234` · Proceeds are seller-only and only after settlement.
+`if (!a.settled) revert AuctionStillRunning` / `if (msg.sender != a.seller) revert NothingToWithdraw` · `ShapeAuctionHouse.sol:245-246` · Proceeds are seller-only and only after settlement.
 
 #### G-45
-`if (a.seller == address(0)) revert AuctionNotFound(auctionId)` · `ShapeAuctionHouse.sol:275` · An auction struct with a zero seller was never created.
+`if (a.seller == address(0)) revert AuctionNotFound(auctionId)` · `ShapeAuctionHouse.sol:287` · An auction struct with a zero seller was never created.
 
 #### G-46
 `if (held.length + n > MAX_CARDS_PER_BID) revert TooManyCards(...)` · `ShapeCardEscrow.sol:61` · Bounds a bidder's card-side escrow (see I-7).
@@ -279,11 +279,11 @@ Each block is classified `Conservation` · `Bound` · `Ratio` · `StateMachine` 
 
 > `Auction.highestBidder != Auction.seller`, always, for every auction.
 
-**Derivation** — guard-lift: the sole write site of `highestBidder` is `bid` (`ShapeAuctionHouse.sol:173`), preceded by `if (msg.sender == a.seller) revert SellerCannotBid()` (`ShapeAuctionHouse.sol:159`, G-36).
+**Derivation** — guard-lift: the sole write site of `highestBidder` is `bid` (`ShapeAuctionHouse.sol:181`), preceded by `if (msg.sender == a.seller) revert SellerCannotBid()` (`ShapeAuctionHouse.sol:163`, G-36).
 
 **If violated** — a seller could become its own auction's winner and claim its own lot back while holding the winning cards.
 
-**Note** — the contract's own NatSpec (`ShapeAuctionHouse.sol:156-158`) states this is a floor-setting deterrent, not a complete one: a seller controlling a second address defeats it economically. That is accepted design, not a code gap in this invariant.
+**Note** — the contract's own NatSpec (`ShapeAuctionHouse.sol:160-162`) states this is a floor-setting deterrent, not a complete one: a seller controlling a second address defeats it economically. That is accepted design, not a code gap in this invariant.
 
 ---
 
@@ -293,7 +293,7 @@ Each block is classified `Conservation` · `Bound` · `Ratio` · `StateMachine` 
 
 > `Auction.settled`: `false → true`, one-shot, no reverse edge.
 
-**Derivation** — edge: two write sites, `cancelAuction` (`ShapeAuctionHouse.sol:143`) and `settle` (`ShapeAuctionHouse.sol:196`), both preceded by `if (a.settled) revert AuctionAlreadySettled(...)` in every function that reads it as a precondition (G-35, G-37, G-40).
+**Derivation** — edge: two write sites, `cancelAuction` (`ShapeAuctionHouse.sol:147`) and `settle` (`ShapeAuctionHouse.sol:208`), both preceded by `if (a.settled) revert AuctionAlreadySettled(...)` in every function that reads it as a precondition (G-35, G-37, G-40); both functions are now also `nonReentrant`, so neither write site is reachable from inside another call into the house (G-37).
 
 **If violated** — `bid` could land on a closed auction, or an auction could be both cancelled and settled.
 
@@ -303,9 +303,9 @@ Each block is classified `Conservation` · `Bound` · `Ratio` · `StateMachine` 
 
 `StateMachine` · On-chain: **Yes**
 
-> `Auction.lotClaimed`: `false → true@ShapeAuctionHouse.sol:212`, one-shot.
+> `Auction.lotClaimed`: `false → true@ShapeAuctionHouse.sol:224`, one-shot.
 
-**Derivation** — edge: sole write site `claimLot` (`ShapeAuctionHouse.sol:212`), guarded by G-41; state is set before the `IERC721.transferFrom` interaction, so a lot collection that calls back finds nothing left to claim twice.
+**Derivation** — edge: sole write site `claimLot` (`ShapeAuctionHouse.sol:224`), guarded by G-41; state is set before the `IERC721.transferFrom` interaction, so a lot collection that calls back finds nothing left to claim twice.
 
 **If violated** — the lot could be transferred out of the house more than once.
 
@@ -365,7 +365,7 @@ Each block is classified `Conservation` · `Bound` · `Ratio` · `StateMachine` 
 
 > `Auction.endTime`, once nonzero, is monotonically non-decreasing — it only ever moves forward.
 
-**Derivation** — temporal predicate: the sole write site is `bid` (`ShapeAuctionHouse.sol:177-181`) — `endTime == 0` sets it to `block.timestamp + duration` (first bid starts the clock); otherwise it only advances further when `block.timestamp + extensionWindow > endTime`. No write site decreases `endTime` or resets it to zero.
+**Derivation** — temporal predicate: the sole write site is `bid` (`ShapeAuctionHouse.sol:185-189`) — `endTime == 0` sets it to `block.timestamp + duration` (first bid starts the clock); otherwise it only advances further when `block.timestamp + extensionWindow > endTime`. No write site decreases `endTime` or resets it to zero.
 
 **If violated** — an auction's deadline could be pulled earlier or reset, letting a late bidder be shut out unfairly or the clock restarted indefinitely.
 

@@ -124,13 +124,13 @@
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external |
+| Visibility | external, nonReentrant |
 | Caller | Any user, once the auction has ended |
 | Parameters | `auctionId` (user-controlled) |
 | Call chain | `→ Shapes._auctions[auctionId]` storage only — no external call |
 | State modified | `_auctions[auctionId].settled` |
 | Value flow | none |
-| Reentrancy guard | no (deliberate — calls nothing external, per contract NatSpec) |
+| Reentrancy guard | yes — added as a contract-level invariant rather than relying on `bid`'s own pre-check; not load-bearing today since `settle` calls nothing external and its precondition is the negation of `bid`'s, but it holds the same rule as `cancelAuction` (SECURITY.md) |
 
 ### `Shapes.redeem(uint256 tokenId)` / `burn(uint256 tokenId)` / `redeemBatch(uint256[] calldata tokenIds)` / `redeemTo(uint256 tokenId, address payable recipient)` / `redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)`
 
@@ -232,13 +232,13 @@ These five are grouped: each is *effectively* permissionless (any caller may inv
 
 | Aspect | Detail |
 |--------|--------|
-| Visibility | external |
+| Visibility | external, nonReentrant |
 | Caller | The auction's seller, only before any bid, only before settlement |
 | Parameters | `auctionId` (user-controlled) |
 | Call chain | storage only, no external call |
 | State modified | `_auctions[auctionId].settled` |
 | Value flow | none |
-| Reentrancy guard | no (calls nothing external) |
+| Reentrancy guard | yes — this is the one mutator reachable while `bid` holds a half-written auction across the fee-recipient callback in `_takeBid`; a fee-recipient-seller that reenters here now fails inside its own `receive`, surfacing as `MintFeeTransferFailed` from the outer `bid` rather than reaching this function (SECURITY.md) |
 
 #### `ShapeAuctionHouse.claimProceeds(uint256 auctionId)`
 

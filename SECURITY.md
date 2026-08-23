@@ -181,6 +181,32 @@ renderer, and a hostile renderer is cosmetic only — see the Renderer replaceab
 `grammarHash` geometry version is therefore only frozen once `lockRenderer` is called; and batch
 sizes stay uncapped (self-inflicted, per finding #7).
 
+### 11. A fee-recipient-seller could steal a bidder's escrowed cards — corrected from low to theft, fixed
+
+A delta audit over the changes made since finding 10 (no Critical or High at HEAD) re-examined a
+bug originally filed as a low, "a bid can be recorded on an already-settled auction," framed as
+mostly self-harm. It was not: against `ShapeAuctionHouse`, a contract that is both the `Shapes`
+fee recipient and the seller of one of its own auctions could steal a bidder's escrowed cards.
+
+*Confirmed, with a working proof of concept.* The path: the fee-recipient-seller lists a lot; a
+victim calls `bid`; `_takeBid` mints the victim's cards through `Shapes.mintBatchTo`, which pays
+the mint fee to the fee recipient and hands it control inside its own `receive()`; from there the
+seller calls `cancelAuction`, which passes — the caller is the seller, there is no highest bidder
+yet, and the auction is not settled — and sets `settled = true`; the outer `bid` call resumes and
+records the victim as `highestBidder` regardless; the seller then calls `claimProceeds`, which
+releases the highest bidder's escrow to the seller. The victim cannot `withdraw`, because
+`withdraw` refuses the standing leader.
+
+**Fix:** `settle` and `cancelAuction` now carry `nonReentrant`, so the protection is a
+contract-level invariant rather than the inline re-read of `a.settled` in `bid`. The re-check in
+`bid` is retained as belt and braces. This changes the surfaced error: a fee-recipient-seller that
+reentrantly cancels now fails inside its own `receive`, so the mint fee transfer fails and the
+whole `bid` unwinds with `MintFeeTransferFailed` rather than reaching `cancelAuction`'s
+`AuctionAlreadySettled` check. It reverts either way. Pinned by
+`test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid`, which asserts the revert and the victim's
+whole post-state, and separately verified to fail if both guards are removed
+(`test/AuctionSecurity.t.sol`).
+
 ---
 
 ## Verified safe
