@@ -612,7 +612,7 @@ export function TokenView({
             <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
               {canSplit
                 ? `Split this Shape into ${ratio} Shapes of ${DENOMINATIONS[di - 1].label} ETH. The outputs sum to exactly ${lbl} ETH.`
-                : "0.01 ETH is the smallest denomination. This Shape cannot be split."}
+                : `${DENOMINATIONS[0].label} ETH is the smallest denomination. This Shape cannot be split.`}
             </p>
             {canSplit && (
               <p style={{margin: "0 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>

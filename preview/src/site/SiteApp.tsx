@@ -51,7 +51,7 @@ export function SiteApp({
   const [view, setView] = React.useState<View>(initialView ?? "mint");
   const [tokenId, setTokenId] = React.useState<bigint | null>(initialTokenId ?? null);
   const [data, setData] = React.useState<SiteData | null>(null);
-  const [sel, setSel] = React.useState(0); // 0.01 ETH
+  const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
   const [mint, setMint] = React.useState<MintState>({status: "idle"});

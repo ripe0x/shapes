@@ -14,6 +14,7 @@ import {
   loadBidHistory,
   secondsLeft,
   unitsToEth,
+  parseBidEth,
   UNIT,
   type AuctionSlot,
   type BidHistoryEntry,
@@ -167,16 +168,9 @@ export function AuctionView({
   const pickedTokens = owned.filter((t) => picked.has(t.id.toString()));
   const cardsWei = pickedTokens.reduce((a, t) => a + t.backing, 0n);
 
-  // The ETH field is entered in ETH and must land on the 0.01 lattice; anything finer is not
+  // The ETH field is entered in ETH and must be a whole number of units; anything finer is not
   // expressible as cards and the contract would reject it.
-  const ethWei = (() => {
-    if (!ethAmount.trim()) return 0n;
-    const n = Number(ethAmount);
-    if (!Number.isFinite(n) || n < 0) return -1n;
-    const hundredths = Math.round(n * 100);
-    if (Math.abs(n * 100 - hundredths) > 1e-9) return -1n;
-    return BigInt(hundredths) * UNIT;
-  })();
+  const ethWei = parseBidEth(ethAmount);
   const ethInvalid = ethWei < 0n;
 
   // Only the active mode contributes to the bid; the other input's value, if any, is inert.
@@ -398,7 +392,7 @@ export function AuctionView({
                   </div>
                   {ethInvalid && (
                     <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
-                      Amounts step in 0.01 ETH.
+                      Amounts step in {unitsToEth(1n)} ETH.
                     </div>
                   )}
                   {!ethInvalid && ethWei > 0n && (
@@ -504,7 +498,7 @@ export function AuctionView({
                 A bid is Shapes, not a number. Pick cards you hold, or name an amount of ETH and
                 the house mints the cards for you. Your cards sit in escrow while you lead.
                 Outbid, you pull them back yourself; the house never sends anything unasked.
-                Amounts step in 0.01 ETH, the smallest denomination.
+                Amounts step in {unitsToEth(1n)} ETH, the smallest denomination.
               </p>
 
               {asking && (
@@ -661,7 +655,7 @@ export function AuctionView({
       <Section title="TERMS" last pad="26px 48px 34px 32px">
         <div style={{fontSize: 13, lineHeight: 1.9, color: C.bodyDim}}>
           <div>Reserve {unitsToEth(auction.reserveUnits)} ETH</div>
-          <div>Each bid clears the last by {auction.minIncrementBps / 100}%, at least 0.01 ETH</div>
+          <div>Each bid clears the last by {auction.minIncrementBps / 100}%, at least {unitsToEth(1n)} ETH</div>
           <div>
             Runs {Number(auction.duration) / 3600} hours from the first bid
           </div>

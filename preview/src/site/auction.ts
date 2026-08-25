@@ -1,4 +1,4 @@
-import {decodeEventLog, type PublicClient} from "viem";
+import {decodeEventLog, formatEther, parseEther, type PublicClient} from "viem";
 import {auctionHouseAbi, shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
 import {paginate} from "../chain/history";
 import {UNIT} from "../canonical/denominations";
@@ -48,11 +48,26 @@ export function getPhase(a: AuctionState, now: number): Phase {
 const ZERO = "0x0000000000000000000000000000000000000000";
 
 export function unitsToEth(units: bigint): string {
-  const wei = units * UNIT;
-  const whole = wei / 10n ** 18n;
-  const frac = (wei % 10n ** 18n) / 10n ** 16n; // hundredths
-  if (frac === 0n) return whole.toString();
-  return `${whole}.${frac.toString().padStart(2, "0").replace(/0$/, "")}`;
+  const s = formatEther(units * UNIT);
+  return s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s;
+}
+
+/**
+ * Parses an ETH amount typed into the bid field. Returns the amount in wei, or -1n when the
+ * string is not a number or does not land on a whole number of units. Amounts finer than a
+ * unit are not expressible as cards and the contract rejects them.
+ */
+export function parseBidEth(input: string): bigint {
+  const t = input.trim();
+  if (!t) return 0n;
+  let wei: bigint;
+  try {
+    wei = parseEther(t);
+  } catch {
+    return -1n;
+  }
+  if (wei < 0n || wei % UNIT !== 0n) return -1n;
+  return wei;
 }
 
 /** Seconds remaining, or null while the auction has not started. */
