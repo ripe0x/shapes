@@ -1,0 +1,48 @@
+# System
+
+How this project is run. The operating structure, the document map, and the session protocol.
+
+## Operating structure
+
+- One repository. Contracts, canonical TS renderer, site, and indexer are parity-coupled: `web/` imports `preview/src` at build time, CI diffs fixtures against the Solidity port, and the ladder constants must match across `src/lib/Denominations.sol`, `preview/src/canonical/denominations.ts`, and the site. Splitting repos would turn a compile-time coupling into a versioning problem. The Surface port, if adopted (D-04), also lives here until it demonstrably needs its own release cadence.
+- One Director session. The Director owns architecture, strategy, decomposition, integration, decision tracking, risk, and acceptance. The Director does not implement routine work inline; implementation, research sweeps, doc elaboration, and test-writing go to lower-cost worker agents with precise briefs and acceptance commands. Worker briefs open with a role override (hands-on implementer, no sub-delegation), name exact paths, and forbid scope creep.
+- Specialist workers, task-scoped, not standing: contract implementer, renderer/parity worker, site worker, indexer worker, docs worker. One worker per repo area at a time; never two workers on the same files.
+- Independent review: every non-trivial diff gets a reviewer pass separate from its implementer (in-repo review agent or /code-review). Contract changes additionally get the solidity-auditor pass. Mainnet is gated on an external human audit (D-16); in-repo x-ray and self-audits do not substitute.
+- Simulations: preview harness (`simulate.ts`, `inkTuning.ts`, collision sweep), Foundry fuzz/invariant profiles, and fork tests are the standing simulation layer. Decisions tagged "requires simulation" in DECISIONS.md must cite a run before resolution. Property-based tools beyond Foundry (Halmos or Medusa) are a P1 adoption decision (D-09).
+- Security review: continuous via reviewer passes; formal via the P2 external audit. The unlanded findings in the audit worktree are triaged in P0 before any other contract work merges (D-02).
+- Research workflow: read-only Explore scouts for repo/system questions; web research delegated; findings land as EXPERIMENT records or DECISIONS entries, never as chat-only knowledge.
+- Evidence gates: each roadmap phase ends in a gate (ROADMAP.md). No implementation for phase N+1 starts before phase N's gate passes. The merge checklist (templates/MERGE_CHECKLIST.md) is the per-change gate.
+
+## Document map
+
+All canonical docs live in `project/`. Legacy spec docs at repo root keep design rationale but their status lines are superseded by STATE.md.
+
+- CHARTER.md: what the product is, fixed principles, non-goals, success definition. Changes rarely; amendments are logged decisions.
+- SYSTEM.md (this file): operating structure, document map, session protocol. Changes when the process changes.
+- STATE.md: current phase, deployment reality, component status, at-risk work, known unknowns. The only "current status" authority. Updated before ending every Director session.
+- DECISIONS.md: append-only log of decided items plus the grouped backlog of open decisions. Every entry: context, decision or open question, why it matters, what resolves it. Rejected ideas stay listed so they are never silently revived.
+- ROADMAP.md: evidence-based phases with objectives, deliverables, acceptance criteria, required evidence, stop conditions.
+- RISKS.md: risk register. Id, description, severity, likelihood, mitigation, status.
+- templates/TASK_PACKET.md: the worker dispatch brief format.
+- templates/EXPERIMENT.md: hypothesis, method, evidence, conclusion format for simulations and research.
+- templates/REVIEW.md: reviewer output format.
+- templates/MERGE_CHECKLIST.md: per-merge gate.
+
+## Session protocol (Director)
+
+At the start of every session:
+1. Read `project/*.md` (this set).
+2. Inspect repo state: `git status`, `git log --oneline -10 main`, worktree list, CI status.
+3. Report: current phase, current gate, highest-leverage objective, outstanding decisions, recommended delegated tasks, top risks, single recommended next action.
+
+During the session: strategy and architecture stay in the Director session; routine work is delegated; all important work is personally reviewed before acceptance; implementation never outruns architecture.
+
+Before ending: update STATE.md (and DECISIONS/RISKS if touched), commit doc updates.
+
+## Standing constraints
+
+- Mainnet safety: never broadcast, deploy, or send value without an explicit user instruction for that specific transaction; decoded per-tx confirmation, pre/post-flight reads.
+- Commit hygiene: author is ripe0x noreply; verify `git log -1 --format='%an <%ae>'` before any push. Commit verified, coherent work; never a stream of mid-iteration fixes.
+- Never clobber WIP not created this session; check mtimes and ownership first.
+- Any `Shapes.sol` change runs `forge build --sizes`.
+- Ladder or renderer changes run the full parity chain (fixtures regen must be intentional, never incidental).
