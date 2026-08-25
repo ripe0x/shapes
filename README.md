@@ -581,3 +581,5 @@ sense if nothing is ever built on top of it.
 Wrapping ETH in a Shape is not an investment and earns nothing. The contract generates no yield
 and makes no promises about what a Shape might be worth to anyone else. It guarantees one
 thing: burn the token, receive the ETH.
+
+<!-- ci: auto-deploy verification 2026-08-25 -->
