@@ -8,7 +8,7 @@ Last updated: 2026-08-25 (Director setup session).
 
 Current phase: P0 Stabilize (see `project/ROADMAP.md`). Gate not yet passed.
 
-STOP CONDITION ACTIVE (2026-08-25): audit finding H-1 (High, CONFIRMED) — ShapeAuctionHouse settlement can permanently lock a winner's escrowed bid. Per ROADMAP P0 stop condition, no other contract work merges until H-1 has a Director-reviewed fix spec and remediation. H-2 (High) pending accept-after-reconcile (likely a doc overclaim vs the charter's accepted-grinding stance). Full triage in DECISIONS D-02.
+STOP CONDITION LIFTED (2026-08-25, same day raised): the landed audit's base commit 4e6b3d8 (2026-08-19) is 43 commits behind main; main already closed the findings (a0ff0af both Highs + 3 Lows, da1fa53 L-1, dabf2ad L-3, e20a1b3 M-2/L-2/L-4/I-6, 383be38 H-2 doc correction, 2167dc7, d2f2e59). Verified in current source: settlement is pull-based via claimLot (lot revert blocks only its own delivery), bid() has SellerCannotBid. The initial triage misread the audit checkout as current main. Residue tracked in D-02: M-1 gas asymmetry feeds D-08; PoC suite worth porting to main as regression tests.
 
 ## Deployments
 
