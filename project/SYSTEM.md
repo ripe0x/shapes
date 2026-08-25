@@ -17,6 +17,7 @@ How this project is run. The operating structure, the document map, and the sess
 
 All canonical docs live in `project/`. Legacy spec docs at repo root keep design rationale but their status lines are superseded by STATE.md.
 
+- DIRECTOR.md: the Director role prompt — mandate, division of labor, decision discipline, non-negotiables. A new session assumes the role by reading it.
 - CHARTER.md: what the product is, fixed principles, non-goals, success definition. Changes rarely; amendments are logged decisions.
 - SYSTEM.md (this file): operating structure, document map, session protocol. Changes when the process changes.
 - STATE.md: current phase, deployment reality, component status, at-risk work, known unknowns. The only "current status" authority. Updated before ending every Director session.
