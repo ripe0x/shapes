@@ -36,3 +36,8 @@ Branch: claude/project-director-setup-886e07 (worktree .claude/worktrees/project
 - Director owns plan and judgment calls; not just executor. Token discipline: load-bearing reading and tricky wiring inline; breadth work delegated in parallel to cheaper models, conclusions only kept in context.
 - Commit author must be ripe0x <109935398+ripe0x@users.noreply.github.com>; verify before push.
 - Keep this handoff current so a new session can resume without loss.
+
+## Post-cutover verification (2026-08-25)
+
+- Wallet-key sweep of the public repo, all branch tips + full history: CLEAN. Only anvil's canonical dev keys (accounts 0-7, universal test mnemonic) in e2e/fork-dev/simulate scripts, vendored library constants, multicall3 runtime bytecode, and fixture seeds. No .env ever committed beyond indexer/.env.example (placeholders).
+- Incident: first push from this fresh clone used global gitconfig (gmail author) — the fresh-clone footgun. Amended to ripe0x noreply and force-pushed within a minute (d400c8d); orphaned object held only handoff text. Fresh clones of this repo MUST set local user.name/user.email to ripe0x noreply before committing.
