@@ -13,6 +13,7 @@ Append-only. Two sections: decided (never silently revived if rejected) and open
 - 2026-08: Shapes split core/periphery (ShapeLens + externally linked libraries) to stay under EIP-170; lens/library addresses fixed in bytecode, not admin-settable.
 - 2026-08-20: Compose/split geometry sampled from input modules, materialized as bytes (SAMPLING_SPEC.md); originals stay seed-derived; GRAMMAR_VERSION 2.
 - 2026-08-25: Canonical project docs live in `project/`; STATE.md supersedes status lines in legacy spec docs (this session).
+- 2026-08-25: D-04 DECIDED by user: standalone Shapes is the mainnet architecture. The Surface-hosted alternative (pooled Surface clone + ShapesMinter extension owning economics, fork-tested against the live mainnet SurfaceFactory) is REJECTED — do not silently revive. Branch preserve/surface-port deleted deliberately with user approval; the design is documented here and in the port's history (commit ce4c7e4 recorded before deletion). The per-work lineage doctrine that came out of that work stands independently: lineage lives at the write authority, any global graph is a derived read layer, never an authoritative singleton.
 
 ## Open backlog
 
