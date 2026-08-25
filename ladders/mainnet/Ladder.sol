@@ -8,7 +8,8 @@ pragma solidity 0.8.28;
 ///      selected by `FOUNDRY_PROFILE=testnet`. Only this table varies between the two: unit counts,
 ///      grids, density, formation, and compose math are all unit-relative and live in
 ///      `src/lib/Denominations.sol`. `test/Ladder.t.sol` asserts the default profile carries these
-///      values, so a testnet table left here fails the suite rather than reaching a deploy.
+///      values, so a testnet table left here fails the suite rather than reaching a deploy, and
+///      DeployShapes asserts it again before broadcasting to any chain but anvil.
 library Ladder {
     error DenominationIndexOutOfRange(uint256 index);
 
