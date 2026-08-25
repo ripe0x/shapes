@@ -21,7 +21,7 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 contract TokenIdAllocationTest is ShapesBase {
     function _mintDust(uint256 k) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k);
+        first = shapes.mintBatch{value: k * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], k);
     }
 
     function _composeDust(uint256 first, uint256 k) internal returns (uint256 survivor) {
@@ -37,19 +37,19 @@ contract TokenIdAllocationTest is ShapesBase {
 
     function test_FirstIdIsZeroAndCounterIsACount() public {
         assertEq(shapes.totalMinted(), 0, "nothing issued yet");
-        assertEq(_mint(alice, 1 ether), 0, "the first Shape is #0");
+        assertEq(_mint(alice, DENOMS[4]), 0, "the first Shape is #0");
         assertEq(shapes.totalMinted(), 1, "one id issued, highest is 0");
-        assertEq(_mint(alice, 1 ether), 1, "the next fresh id is totalMinted");
+        assertEq(_mint(alice, DENOMS[4]), 1, "the next fresh id is totalMinted");
         assertEq(shapes.totalMinted(), 2);
     }
 
     /// @notice #0 is an ordinary token on every path, not a sentinel.
     function test_TokenZeroBehavesLikeAnyOther() public {
-        uint256 zero = _mint(alice, 0.05 ether);
+        uint256 zero = _mint(alice, DENOMS[1]);
         assertEq(zero, 0);
 
         assertEq(shapes.ownerOf(0), alice);
-        assertEq(shapes.backingOf(0), 0.05 ether);
+        assertEq(shapes.backingOf(0), DENOMS[1]);
         assertTrue(shapes.seedOf(0) != bytes32(0), "#0 has a seed");
 
         vm.prank(alice);
@@ -68,7 +68,7 @@ contract TokenIdAllocationTest is ShapesBase {
         assertEq(first, 0, "#0 is the survivor under test");
 
         _composeDust(first, 5);
-        assertEq(shapes.backingOf(0), 0.05 ether, "#0 survived the compose and grew");
+        assertEq(shapes.backingOf(0), DENOMS[1], "#0 survived the compose and grew");
 
         vm.prank(alice);
         uint256[] memory revived = shapes.decompose(0);
@@ -76,7 +76,7 @@ contract TokenIdAllocationTest is ShapesBase {
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(revived[i], i + 1, "originals came back");
         }
-        assertEq(shapes.backingOf(0), 0.01 ether, "#0 reverted");
+        assertEq(shapes.backingOf(0), DENOMS[0], "#0 reverted");
 
         uint8[] memory outs = new uint8[](0);
         vm.expectRevert(IShapes.EmptyRecomposition.selector);
@@ -90,7 +90,7 @@ contract TokenIdAllocationTest is ShapesBase {
     /// @notice mint, mintBatch and split all draw from the same counter, contiguously and in
     ///         order, and `totalMinted` tracks exactly how many ids they have issued.
     function test_FreshIdsAreContiguousAcrossEveryMintingPath() public {
-        uint256 a = _mint(alice, 1 ether);
+        uint256 a = _mint(alice, DENOMS[4]);
         assertEq(a, 0);
         assertEq(shapes.totalMinted(), 1);
 
@@ -99,7 +99,7 @@ contract TokenIdAllocationTest is ShapesBase {
         assertEq(shapes.totalMinted(), 7);
 
         // A split burns its input and issues k fresh ids from the counter.
-        uint256 parent = _mint(alice, 0.05 ether);
+        uint256 parent = _mint(alice, DENOMS[1]);
         assertEq(parent, 7);
         assertEq(shapes.totalMinted(), 8);
 
@@ -150,7 +150,7 @@ contract TokenIdAllocationTest is ShapesBase {
         uint256[] memory revived = shapes.decompose(survivor);
         assertEq(shapes.totalMinted(), counterBefore, "decompose must not advance the counter");
 
-        uint256 fresh = _mint(alice, 1 ether);
+        uint256 fresh = _mint(alice, DENOMS[4]);
         assertEq(fresh, counterBefore, "a fresh mint takes the counter");
         for (uint256 i = 0; i < revived.length; ++i) {
             assertLt(revived[i], fresh, "a revived id must sit below every fresh id");
@@ -170,7 +170,7 @@ contract TokenIdAllocationTest is ShapesBase {
         assertEq(revived[3], 4, "the high-water id came back");
         assertEq(shapes.totalMinted(), 5, "counter still unchanged");
 
-        uint256 fresh = _mint(alice, 1 ether);
+        uint256 fresh = _mint(alice, DENOMS[4]);
         assertEq(fresh, 5, "the next id is one past the revived high-water id");
         assertEq(shapes.ownerOf(4), alice, "the revived token is untouched by the fresh mint");
         _assertSolvent();
@@ -212,7 +212,7 @@ contract TokenIdAllocationTest is ShapesBase {
         vm.prank(alice);
         shapes.compose(first, outer);
 
-        assertEq(shapes.backingOf(first), 0.1 ether);
+        assertEq(shapes.backingOf(first), DENOMS[2]);
         assertEq(shapes.composeDepth(first), 2, "two stacked records");
 
         vm.prank(alice);

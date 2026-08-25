@@ -8,11 +8,23 @@ import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @notice Regression tests for the findings raised in the adversarial review.
 /// @dev Each test here exists because something was once wrong, or could plausibly be made
 ///      wrong by a later edit. See SECURITY.md.
 contract HardeningTest is Test {
+    uint256[9] internal DENOMS = [
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
+    ];
     uint256 internal constant FEE_BPS = 100; // 1%
 
     function feeOf(uint256 amount) internal pure returns (uint256) {
@@ -47,13 +59,13 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether);
+        uint256 id = shapes.mint{value: DENOMS[8] + feeOf(DENOMS[8])}(DENOMS[8]);
         bytes32 seedA = shapes.seedOf(id);
 
         vm.revertToState(snap);
 
         vm.prank(bob);
-        uint256 id2 = shapes.mintTo{value: 100 ether + feeOf(100 ether)}(100 ether, address(0xC0FFEE));
+        uint256 id2 = shapes.mintTo{value: DENOMS[8] + feeOf(DENOMS[8])}(DENOMS[8], address(0xC0FFEE));
         bytes32 seedB = shapes.seedOf(id2);
 
         assertEq(id, id2, "same token id");
@@ -65,7 +77,7 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 100 ether + feeOf(100 ether)}(100 ether);
+        uint256 id = shapes.mint{value: DENOMS[8] + feeOf(DENOMS[8])}(DENOMS[8]);
         string memory target = shapes.tokenURI(id);
         vm.revertToState(snap);
 
@@ -73,7 +85,7 @@ contract HardeningTest is Test {
             uint256 s = vm.snapshotState();
             address candidate = address(uint160(0x1000 + i));
             vm.prank(alice);
-            uint256 got = shapes.mintTo{value: 100 ether + feeOf(100 ether)}(100 ether, candidate);
+            uint256 got = shapes.mintTo{value: DENOMS[8] + feeOf(DENOMS[8])}(DENOMS[8], candidate);
             assertEq(shapes.tokenURI(got), target, "recipient choice changed the artwork");
             vm.revertToState(s);
         }
@@ -84,13 +96,13 @@ contract HardeningTest is Test {
         uint256 snap = vm.snapshotState();
 
         vm.prank(alice);
-        shapes.mintBatch{value: 1 * (1 ether + feeOf(1 ether))}(1 ether, 1);
+        shapes.mintBatch{value: 1 * (DENOMS[4] + feeOf(DENOMS[4]))}(DENOMS[4], 1);
         bytes32 solo = shapes.seedOf(0);
 
         vm.revertToState(snap);
 
         vm.prank(alice);
-        shapes.mintBatch{value: 7 * (1 ether + feeOf(1 ether))}(1 ether, 7);
+        shapes.mintBatch{value: 7 * (DENOMS[4] + feeOf(DENOMS[4]))}(DENOMS[4], 7);
         assertEq(shapes.seedOf(0), solo, "seed moved with batch size");
     }
 
@@ -98,8 +110,8 @@ contract HardeningTest is Test {
     ///         the same block.
     function test_SeedsRemainDistinctWithinAndAcrossBatches() public {
         vm.startPrank(alice);
-        shapes.mintBatchTo{value: 6 * (1 ether + feeOf(1 ether))}(1 ether, 6, alice);
-        shapes.mintBatchTo{value: 6 * (5 ether + feeOf(5 ether))}(5 ether, 6, alice);
+        shapes.mintBatchTo{value: 6 * (DENOMS[4] + feeOf(DENOMS[4]))}(DENOMS[4], 6, alice);
+        shapes.mintBatchTo{value: 6 * (DENOMS[5] + feeOf(DENOMS[5]))}(DENOMS[5], 6, alice);
         vm.stopPrank();
 
         bytes32[] memory seen = new bytes32[](12);
@@ -126,7 +138,7 @@ contract HardeningTest is Test {
 
     function test_CannotTransferAShapeToTheContractItself() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + feeOf(1 ether)}(1 ether);
+        uint256 id = shapes.mint{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4]);
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, id));
@@ -137,13 +149,13 @@ contract HardeningTest is Test {
         shapes.safeTransferFrom(alice, address(shapes), id);
 
         assertEq(shapes.ownerOf(id), alice, "token stayed put");
-        assertEq(shapes.backingOf(id), 1 ether, "backing still redeemable");
+        assertEq(shapes.backingOf(id), DENOMS[4], "backing still redeemable");
     }
 
     function test_CannotMintDirectlyIntoTheContract() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
-        shapes.mintTo{value: 1 ether + feeOf(1 ether)}(1 ether, address(shapes));
+        shapes.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], address(shapes));
 
         assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
@@ -158,7 +170,7 @@ contract HardeningTest is Test {
         BalanceProbe probe = new BalanceProbe(shapes);
 
         vm.prank(alice);
-        shapes.mintBatchTo{value: 4 * (1 ether + feeOf(1 ether))}(1 ether, 4, address(probe));
+        shapes.mintBatchTo{value: 4 * (DENOMS[4] + feeOf(DENOMS[4]))}(DENOMS[4], 4, address(probe));
 
         assertGt(probe.observations(), 0, "callback never ran");
         assertEq(

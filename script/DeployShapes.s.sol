@@ -10,6 +10,7 @@ import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 import {LensEquivalence} from "./LensEquivalence.s.sol";
 
 /// @notice Deploys the renderer, the collection metadata contract, the token, the read-only lens,
@@ -130,7 +131,7 @@ contract DeployShapes is LensEquivalence {
         require(
             bytes(
                 IShapeRenderer(address(renderer))
-                    .tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0, 0, "Shape ", "x")
+                    .tokenURI(bytes32(0), Denominations.amountAt(0), 1, 1, false, 0, 0, "Shape ", "x")
             )
             .length > 500,
             "renderer produced no metadata"
@@ -138,10 +139,20 @@ contract DeployShapes is LensEquivalence {
         require(
             bytes(
                 IShapeRenderer(address(renderer))
-                    .tokenURI(bytes32(uint256(1)), 100 ether, 10_000, 10_000, true, 6, 0, "Shape ", "x")
+                    .tokenURI(
+                        bytes32(uint256(1)),
+                        Denominations.amountAt(8),
+                        10_000,
+                        10_000,
+                        true,
+                        6,
+                        0,
+                        "Shape ",
+                        "x"
+                    )
             )
             .length > 500,
-            "renderer produced no metadata at 100 ETH"
+            "renderer produced no metadata at the apex"
         );
 
         // Contract-level metadata is what a marketplace reads for the collection itself.

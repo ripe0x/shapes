@@ -10,6 +10,7 @@ import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 import {DeployShapes} from "../script/DeployShapes.s.sol";
 import {Base64Decode} from "./utils/Base64Decode.sol";
 
@@ -54,7 +55,15 @@ contract ForkTest is Test {
     uint256 internal strayWei;
 
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
     ];
 
     function setUp() public {
@@ -113,7 +122,7 @@ contract ForkTest is Test {
         assertGt(address(r).code.length, 0, "renderer has no code");
         // Smoke the renderer through the interface the token uses; no mint needed.
         assertGt(
-            bytes(r.tokenURI(bytes32(0), 0.01 ether, 1, 1, false, 0, 0, "Shape ", "x")).length,
+            bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x")).length,
             500,
             "no metadata"
         );
@@ -149,7 +158,7 @@ contract ForkTest is Test {
         // which token this is.
         uint256 oneEthIdx;
         for (uint256 i = 0; i < DENOMS.length; i++) {
-            if (DENOMS[i] == 1 ether) oneEthIdx = i;
+            if (DENOMS[i] == DENOMS[4]) oneEthIdx = i;
         }
         uint256 oneEth = ids[oneEthIdx];
         vm.prank(alice);
@@ -165,7 +174,7 @@ contract ForkTest is Test {
         uint256 before = bob.balance;
         vm.prank(bob);
         shapes.redeem(oneEth);
-        assertEq(bob.balance - before, 1 ether, "payout not exact");
+        assertEq(bob.balance - before, DENOMS[4], "payout not exact");
         _assertSolvent();
 
         // Redeem the remaining eight in one batch; the reserve fully unwinds.
@@ -177,7 +186,7 @@ contract ForkTest is Test {
         }
         vm.prank(alice);
         uint256 total = shapes.redeemBatch(rest);
-        assertEq(total, _sumExcept(1 ether), "batch total wrong");
+        assertEq(total, _sumExcept(DENOMS[4]), "batch total wrong");
         assertEq(shapes.redeemableBacking(), 0, "backing remains");
         // Backing is fully unwound; only the pre-existing stray wei is left behind, stranded.
         assertEq(address(shapes).balance, strayWei, "reserve not unwound to stray");
@@ -190,7 +199,7 @@ contract ForkTest is Test {
 
         vm.prank(alice);
         uint256 g0 = gasleft();
-        uint256 id = shapes.mintTo{value: 1 ether + feeOf(1 ether)}(1 ether, alice);
+        uint256 id = shapes.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
         uint256 mintGas = g0 - gasleft();
 
         vm.prank(alice);

@@ -9,6 +9,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @notice A plain, unrelated ERC721 collection, standing in for any NFT a seller might list.
 contract PlainNFT is ERC721 {
@@ -25,6 +26,17 @@ contract PlainNFT is ERC721 {
 ///         (`LotHasNoCode`, `LotNotERC721`, `NotTokenOwnerOrApproved`, `AuctionAlreadyExistsForToken`,
 ///         `LotAlreadyClaimed`, `NotLotRecipient`) and the `getAuctionFor`/`hasAuctionFor` views.
 contract AuctionHouseArbitraryLotTest is Test {
+    uint256[9] internal DENOMS = [
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
+    ];
     Shapes internal shapes;
     ShapeRenderer internal renderer;
     ShapeCollection internal collection;
@@ -70,7 +82,7 @@ contract AuctionHouseArbitraryLotTest is Test {
         uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 500, 15 minutes);
         assertEq(nft.ownerOf(1), address(house), "lot escrowed");
 
-        uint256 card = _cardFor(alice, 1 ether);
+        uint256 card = _cardFor(alice, DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
         vm.prank(alice);
@@ -147,7 +159,7 @@ contract AuctionHouseArbitraryLotTest is Test {
     function test_ClaimLotTwiceIsRejected() public {
         vm.prank(seller);
         uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
-        uint256 card = _cardFor(alice, 1 ether);
+        uint256 card = _cardFor(alice, DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
         vm.prank(alice);
@@ -165,7 +177,7 @@ contract AuctionHouseArbitraryLotTest is Test {
     function test_ClaimLotByAnyoneElseIsRejected() public {
         vm.prank(seller);
         uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
-        uint256 card = _cardFor(alice, 1 ether);
+        uint256 card = _cardFor(alice, DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
         vm.prank(alice);

@@ -16,7 +16,7 @@ import {Denominations} from "../src/lib/Denominations.sol";
 contract SamplingTest is ShapesBase {
     function _mintDust(uint256 k) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k);
+        first = shapes.mintBatch{value: k * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], k);
     }
 
     /// @dev A token's effective module byte array: its materialized bytes if any, otherwise the
@@ -92,11 +92,11 @@ contract SamplingTest is ShapesBase {
     }
 
     function test_OriginalMintTokenUriMatchesGrammarV1Renderer() public {
-        uint256 id = _mint(alice, 1 ether);
+        uint256 id = _mint(alice, DENOMS[4]);
         bytes32 seed = shapes.seedOf(id);
         string memory expected = renderer.tokenURI(
             seed,
-            1 ether,
+            DENOMS[4],
             id,
             1,
             false,
@@ -154,7 +154,7 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         uint256 a = shapes.compose(firstA, burnA); // materialized 0.05
 
-        uint256 b = _mint(alice, 0.05 ether); // original 0.05
+        uint256 b = _mint(alice, DENOMS[1]); // original 0.05
 
         bytes memory modsA = _effectiveModules(a);
         bytes memory modsB = _effectiveModules(b);
@@ -165,7 +165,7 @@ contract SamplingTest is ShapesBase {
         shapes.compose(a, burnOuter); // 0.1, mixed donor set
 
         bytes memory got = lens.shapeState(a).modules;
-        (uint256 cols, uint256 rows) = shapes.gridForAmount(0.1 ether);
+        (uint256 cols, uint256 rows) = shapes.gridForAmount(DENOMS[2]);
         assertEq(got.length, cols * rows);
         for (uint256 i = 0; i < got.length; ++i) {
             assertTrue(ModuleCodec.isValid(got[i]));
@@ -286,7 +286,7 @@ contract SamplingTest is ShapesBase {
     /// @notice The 100 ETH -> 2x50 ETH case: the parent has exactly one module, so both children
     ///         (with replacement, per D3) must be uniformly that single module.
     function test_SplitChildrenDrawnFromSingleModuleParent_100to50x2() public {
-        uint256 parent = _mint(alice, 100 ether);
+        uint256 parent = _mint(alice, DENOMS[8]);
         bytes memory parentMods = _effectiveModules(parent);
         assertEq(parentMods.length, 1, "apex denomination has exactly one module");
 
@@ -296,7 +296,7 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
 
-        (uint256 cols, uint256 rows) = shapes.gridForAmount(50 ether);
+        (uint256 cols, uint256 rows) = shapes.gridForAmount(DENOMS[7]);
         for (uint256 i = 0; i < 2; ++i) {
             bytes memory childMods = lens.shapeState(kids[i]).modules;
             assertEq(childMods.length, cols * rows, "child length != 50 ETH grid cell count");
@@ -337,7 +337,7 @@ contract SamplingTest is ShapesBase {
     ///         index would give children k and k + 256 of one split, at one denomination, the same
     ///         stream and so byte-identical stored modules, while their token ids and seeds differ.
     function test_SplitChildIndexDoesNotAliasEvery256() public {
-        uint256 parent = _mint(alice, 5 ether);
+        uint256 parent = _mint(alice, DENOMS[5]);
         uint8[] memory outs = new uint8[](500); // 500 x 0.01 ETH, all denomination index 0
 
         vm.prank(alice);
@@ -364,7 +364,7 @@ contract SamplingTest is ShapesBase {
     }
 
     function test_RedeemClearsMaterializedModules() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1; // 0.05
         outs[1] = 1;
@@ -382,7 +382,7 @@ contract SamplingTest is ShapesBase {
     /// @notice D3: children of an original (never-composed) parent also materialize and sample
     ///         from the parent's grammar-v1 modules.
     function test_SplitChildrenOfOriginalParentAlsoMaterialize() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         bytes memory parentMods = _effectiveModules(parent);
 
         uint8[] memory outs = new uint8[](2);
@@ -406,7 +406,7 @@ contract SamplingTest is ShapesBase {
     ///         survivor. A split child is materialized on creation, so burning one into a compose
     ///         and decomposing exercises the `ComposeInput.modules` snapshot path end to end.
     function test_DecomposeRestoresMaterializedBurnedInputBitExactly() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         uint8[] memory outs = new uint8[](10); // 10 x 0.01 ETH
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);

@@ -11,6 +11,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
 import {IShapeCardEscrow} from "../src/interfaces/IShapeCardEscrow.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @dev Refuses ERC721s. Used to prove the house never pushes a card at anyone.
 contract HostileBidder is IERC721Receiver {
@@ -34,6 +35,17 @@ contract HostileBidder is IERC721Receiver {
 }
 
 abstract contract AuctionBase is Test {
+    uint256[9] internal DENOMS = [
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
+    ];
     Shapes internal shapes;
     ShapeRenderer internal renderer;
     ShapeCollection internal collection;
@@ -62,7 +74,7 @@ abstract contract AuctionBase is Test {
 
         // The lot is a Shape, which is the only collection the house will sell.
         vm.prank(seller);
-        lotId = shapes.mint{value: 0.1 ether + feeOf(0.1 ether)}(0.1 ether);
+        lotId = shapes.mint{value: DENOMS[2] + feeOf(DENOMS[2])}(DENOMS[2]);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(alice);
@@ -130,7 +142,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_SellerCancelsBeforeAnyBidAndNotAfter() public {
         uint256 id = _open();
-        uint256 card = _mintCard(alice, 1 ether);
+        uint256 card = _mintCard(alice, DENOMS[4]);
 
         vm.prank(alice);
         house.bid(id, _one(card), 0);
@@ -140,7 +152,7 @@ contract AuctionHouseTest is AuctionBase {
         house.cancelAuction(id);
 
         vm.prank(seller);
-        uint256 second = shapes.mint{value: 0.1 ether + feeOf(0.1 ether)}(0.1 ether);
+        uint256 second = shapes.mint{value: DENOMS[2] + feeOf(DENOMS[2])}(DENOMS[2]);
         vm.prank(seller);
         uint256 fresh =
             house.createAuction(address(shapes), second, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
@@ -163,7 +175,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_CardBidEscrowsAndCountsUnits() public {
         uint256 id = _open();
-        uint256 card = _mintCard(alice, 1 ether);
+        uint256 card = _mintCard(alice, DENOMS[4]);
 
         vm.prank(alice);
         house.bid(id, _one(card), 0);
@@ -181,7 +193,7 @@ contract AuctionHouseTest is AuctionBase {
         // Build an apex Complete and sacrifice it: 10,000 dust composed to 100 ETH.
         vm.prank(alice);
         uint256 first =
-            shapes.mintBatchTo{value: 10_000 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 10_000, alice);
+            shapes.mintBatchTo{value: 10_000 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 10_000, alice);
         uint256[] memory burn = new uint256[](9_999);
         for (uint256 i = 0; i < 9_999; ++i) {
             burn[i] = first + 1 + i;
@@ -215,18 +227,18 @@ contract AuctionHouseTest is AuctionBase {
     /// @notice ETH sent with a cards-only bid would otherwise be unreachable forever.
     function test_StrayEthIsRejected() public {
         uint256 id = _open();
-        uint256 card = _mintCard(alice, 1 ether);
+        uint256 card = _mintCard(alice, DENOMS[4]);
 
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, 0, 1 ether));
-        house.bid{value: 1 ether}(id, _one(card), 0);
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, 0, DENOMS[4]));
+        house.bid{value: DENOMS[4]}(id, _one(card), 0);
     }
 
     /* --------------------------- the ETH path -------------------------- */
 
     function test_EthBidMintsTheMinimalCardSet() public {
         uint256 id = _open();
-        uint256 backing = 1.5 ether;
+        uint256 backing = DENOMS[3] + DENOMS[4];
 
         vm.prank(alice);
         house.bid{value: backing + feeOf(backing)}(id, _none(), backing);
@@ -234,15 +246,15 @@ contract AuctionHouseTest is AuctionBase {
         // Minting walks the ladder upward, so the escrow lists ascending by denomination.
         uint256[] memory ids = house.escrowedCards(id, alice);
         assertEq(ids.length, 2, "1.5 ETH is a 0.5 and a 1");
-        assertEq(shapes.backingOf(ids[0]), 0.5 ether);
-        assertEq(shapes.backingOf(ids[1]), 1 ether);
+        assertEq(shapes.backingOf(ids[0]), DENOMS[3]);
+        assertEq(shapes.backingOf(ids[1]), DENOMS[4]);
         assertEq(house.bidUnits(id, alice), 150);
         assertEq(shapes.ownerOf(ids[0]), address(house));
     }
 
     function test_EthBidRequiresTheExactFee() public {
         uint256 id = _open();
-        uint256 backing = 1 ether;
+        uint256 backing = DENOMS[4];
         uint256 exact = backing + feeOf(backing);
 
         vm.prank(alice);
@@ -253,48 +265,50 @@ contract AuctionHouseTest is AuctionBase {
     function test_EthBidRejectsAnOffLatticeAmount() public {
         uint256 id = _open();
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NotAUnitMultiple.selector, 0.015 ether));
-        house.bid{value: 1 ether}(id, _none(), 0.015 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapeCardEscrow.NotAUnitMultiple.selector, (DENOMS[0] * 3) / 2)
+        );
+        house.bid{value: DENOMS[4]}(id, _none(), (DENOMS[0] * 3) / 2);
     }
 
     /// @notice The greedy breakdown is minimal on this ladder, and never exceeds twenty cards
     ///         below 100 ETH. 99.99 is the worst case.
     function test_CardsForIsMinimalAtTheWorstCase() public view {
-        uint256[9] memory counts = house.cardsFor(99.99 ether);
+        uint256[9] memory counts = house.cardsFor(DENOMS[8] - DENOMS[0]);
         uint256 total;
         uint256 backing;
         uint256[9] memory amounts = [
-            uint256(0.01 ether),
-            0.05 ether,
-            0.1 ether,
-            0.5 ether,
-            1 ether,
-            5 ether,
-            10 ether,
-            50 ether,
-            100 ether
+            uint256(DENOMS[0]),
+            DENOMS[1],
+            DENOMS[2],
+            DENOMS[3],
+            DENOMS[4],
+            DENOMS[5],
+            DENOMS[6],
+            DENOMS[7],
+            DENOMS[8]
         ];
         for (uint256 i = 0; i < 9; ++i) {
             total += counts[i];
             backing += counts[i] * amounts[i];
         }
-        assertEq(backing, 99.99 ether, "breakdown sums to the amount");
+        assertEq(backing, DENOMS[8] - DENOMS[0], "breakdown sums to the amount");
         assertEq(total, 20, "twenty cards is the worst case below 100 ETH");
     }
 
     function testFuzz_CardsForAlwaysSumsExactly(uint96 units) public view {
-        uint256 backing = uint256(units % 10_000) * 0.01 ether; // below 100 ETH
+        uint256 backing = uint256(units % 10_000) * DENOMS[0]; // below 100 ETH
         uint256[9] memory counts = house.cardsFor(backing);
         uint256[9] memory amounts = [
-            uint256(0.01 ether),
-            0.05 ether,
-            0.1 ether,
-            0.5 ether,
-            1 ether,
-            5 ether,
-            10 ether,
-            50 ether,
-            100 ether
+            uint256(DENOMS[0]),
+            DENOMS[1],
+            DENOMS[2],
+            DENOMS[3],
+            DENOMS[4],
+            DENOMS[5],
+            DENOMS[6],
+            DENOMS[7],
+            DENOMS[8]
         ];
         uint256 sum;
         uint256 total;
@@ -311,7 +325,7 @@ contract AuctionHouseTest is AuctionBase {
     function test_BidMustClearTheReserve() public {
         vm.prank(seller);
         uint256 id = house.createAuction(address(shapes), lotId, DURATION, 100, INCREMENT_BPS, EXTENSION);
-        uint256 card = _mintCard(alice, 0.5 ether); // 50 units, under a 100 unit reserve
+        uint256 card = _mintCard(alice, DENOMS[3]); // 50 units, under a 100 unit reserve
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.BidTooLow.selector, 50, 100));
@@ -320,7 +334,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_IncrementIsRoundedUpToAWholeUnit() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 0.01 ether); // 1 unit
+        uint256 a = _mintCard(alice, DENOMS[0]); // 1 unit
         vm.prank(alice);
         house.bid(id, _one(a), 0);
 
@@ -328,7 +342,7 @@ contract AuctionHouseTest is AuctionBase {
         // increment would demand only one and let a tie take the lead.
         assertEq(house.minimumBid(id), 2, "increment floored below a whole unit");
 
-        uint256 b = _mintCard(bob, 0.01 ether);
+        uint256 b = _mintCard(bob, DENOMS[0]);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.BidTooLow.selector, 1, 2));
         house.bid(id, _one(b), 0);
@@ -336,11 +350,11 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_TopUpAddsToAnExistingBid() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
 
-        uint256 more = _mintCard(alice, 0.5 ether);
+        uint256 more = _mintCard(alice, DENOMS[3]);
         vm.prank(alice);
         house.bid(id, _one(more), 0);
 
@@ -353,7 +367,7 @@ contract AuctionHouseTest is AuctionBase {
 
         uint256[] memory ids = new uint256[](64);
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 64 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 64);
+        uint256 first = shapes.mintBatch{value: 64 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 64);
         for (uint256 i = 0; i < 64; ++i) {
             ids[i] = first + i;
         }
@@ -362,7 +376,7 @@ contract AuctionHouseTest is AuctionBase {
         house.bid(id, ids, 0);
         assertEq(house.escrowedCards(id, alice).length, 64);
 
-        uint256 oneMore = _mintCard(alice, 0.01 ether);
+        uint256 oneMore = _mintCard(alice, DENOMS[0]);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.TooManyCards.selector, 65));
         house.bid(id, _one(oneMore), 0);
@@ -374,7 +388,7 @@ contract AuctionHouseTest is AuctionBase {
         uint256 id = _open();
         skip(365 days);
 
-        uint256 card = _mintCard(alice, 1 ether);
+        uint256 card = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(card), 0); // still live, however long it sat unbid
 
@@ -383,13 +397,13 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_ABidInsideTheWindowExtendsTheEnd() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
         uint64 firstEnd = house.auctions(id).endTime;
 
         skip(DURATION - 60); // one minute left, inside the 15 minute window
-        uint256 b = _mintCard(bob, 5 ether);
+        uint256 b = _mintCard(bob, DENOMS[5]);
         vm.prank(bob);
         house.bid(id, _one(b), 0);
 
@@ -399,13 +413,13 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_ABidOutsideTheWindowLeavesTheEndAlone() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
         uint64 firstEnd = house.auctions(id).endTime;
 
         skip(1 hours); // far from the end
-        uint256 b = _mintCard(bob, 5 ether);
+        uint256 b = _mintCard(bob, DENOMS[5]);
         vm.prank(bob);
         house.bid(id, _one(b), 0);
 
@@ -414,12 +428,12 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_BiddingStopsAtTheEnd() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
 
         skip(DURATION);
-        uint256 b = _mintCard(bob, 5 ether);
+        uint256 b = _mintCard(bob, DENOMS[5]);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionOver.selector, id));
         house.bid(id, _one(b), 0);
@@ -429,7 +443,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_SettleRecordsTheOutcomeAndClaimLotDeliversAndSellerPullsTheCards() public {
         uint256 id = _open();
-        uint256 card = _mintCard(alice, 1 ether);
+        uint256 card = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(card), 0);
 
@@ -449,7 +463,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_SettleIsRefusedBeforeTheEndAndTwice() public {
         uint256 id = _open();
-        uint256 card = _mintCard(alice, 1 ether);
+        uint256 card = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(card), 0);
 
@@ -473,11 +487,11 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_OutbidBidderPullsBackTheExactCards() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
 
-        uint256 b = _mintCard(bob, 5 ether);
+        uint256 b = _mintCard(bob, DENOMS[5]);
         vm.prank(bob);
         house.bid(id, _one(b), 0);
 
@@ -490,7 +504,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_TheLeaderCannotWithdraw() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
 
@@ -501,7 +515,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_TheWinnerCannotWithdrawAfterSettlement() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
 
@@ -515,10 +529,10 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_WithdrawingTwiceIsRefused() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
-        uint256 b = _mintCard(bob, 5 ether);
+        uint256 b = _mintCard(bob, DENOMS[5]);
         vm.prank(bob);
         house.bid(id, _one(b), 0);
 
@@ -531,7 +545,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_OnlySellerClaimsProceeds() public {
         uint256 id = _open();
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
         skip(DURATION);
@@ -550,16 +564,16 @@ contract AuctionHouseTest is AuctionBase {
         bidders[0] = alice;
         bidders[1] = bob;
 
-        uint256 a = _mintCard(alice, 1 ether);
+        uint256 a = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         house.bid(id, _one(a), 0);
         _assertEscrowExact(id, bidders);
 
         vm.prank(bob);
-        house.bid{value: 5 ether + feeOf(5 ether)}(id, _none(), 5 ether);
+        house.bid{value: DENOMS[5] + feeOf(DENOMS[5])}(id, _none(), DENOMS[5]);
         _assertEscrowExact(id, bidders);
 
-        uint256 a2 = _mintCard(alice, 10 ether);
+        uint256 a2 = _mintCard(alice, DENOMS[6]);
         vm.prank(alice);
         house.bid(id, _one(a2), 0);
         _assertEscrowExact(id, bidders);
@@ -587,7 +601,7 @@ contract AuctionHouseTest is AuctionBase {
         uint256 id = _open();
         HostileBidder hostile = new HostileBidder(house);
 
-        uint256 h = _mintCard(alice, 1 ether);
+        uint256 h = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         shapes.transferFrom(alice, address(hostile), h);
         hostile.approve(address(shapes));
@@ -595,7 +609,7 @@ contract AuctionHouseTest is AuctionBase {
         assertEq(house.auctions(id).highestBidder, address(hostile));
 
         // Outbidding does not push anything at the hostile contract, so it cannot revert.
-        uint256 b = _mintCard(bob, 5 ether);
+        uint256 b = _mintCard(bob, DENOMS[5]);
         vm.prank(bob);
         house.bid(id, _one(b), 0);
         assertEq(house.auctions(id).highestBidder, bob, "the auction moved on");
@@ -610,7 +624,7 @@ contract AuctionHouseTest is AuctionBase {
     /// @notice Unsolicited Shapes are refused, so a token cannot be stranded here with no escrow
     ///         entry naming its owner.
     function test_UnsolicitedShapeIsRefused() public {
-        uint256 card = _mintCard(alice, 1 ether);
+        uint256 card = _mintCard(alice, DENOMS[4]);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.UnsolicitedToken.selector, alice));
         shapes.safeTransferFrom(alice, address(house), card);
@@ -629,7 +643,7 @@ contract AuctionHouseTest is AuctionBase {
 
         uint256[] memory ids = new uint256[](64);
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 64 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 64);
+        uint256 first = shapes.mintBatch{value: 64 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 64);
         for (uint256 i = 0; i < 64; ++i) {
             ids[i] = first + i;
         }
@@ -638,7 +652,7 @@ contract AuctionHouseTest is AuctionBase {
 
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.TooManyCards.selector, 65));
-        house.bid{value: 0.01 ether + feeOf(0.01 ether)}(id, _none(), 0.01 ether);
+        house.bid{value: DENOMS[0] + feeOf(DENOMS[0])}(id, _none(), DENOMS[0]);
 
         assertEq(house.escrowedCards(id, alice).length, 64, "the refused bid left the escrow alone");
         assertEq(house.bidUnits(id, alice), 64, "and left the standing bid alone");
@@ -650,12 +664,12 @@ contract AuctionHouseTest is AuctionBase {
         vm.prank(seller);
         uint256 id = house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, 0, EXTENSION);
 
-        uint256 a = _mintCard(alice, 1 ether); // 100 units
+        uint256 a = _mintCard(alice, DENOMS[4]); // 100 units
         vm.prank(alice);
         house.bid(id, _one(a), 0);
         assertEq(house.minimumBid(id), 101, "a zero increment still steps by one unit");
 
-        uint256 tie = _mintCard(bob, 1 ether); // the same 100 units
+        uint256 tie = _mintCard(bob, DENOMS[4]); // the same 100 units
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.BidTooLow.selector, 100, 101));
         house.bid(id, _one(tie), 0);
@@ -665,8 +679,10 @@ contract AuctionHouseTest is AuctionBase {
     /// @notice `cardsFor` is a public quote, so it validates its own argument rather than
     ///         relying on the bid path having checked first.
     function test_CardsForRejectsAnOffLatticeAmount() public {
-        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NotAUnitMultiple.selector, 0.015 ether));
-        house.cardsFor(0.015 ether);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapeCardEscrow.NotAUnitMultiple.selector, (DENOMS[0] * 3) / 2)
+        );
+        house.cardsFor((DENOMS[0] * 3) / 2);
     }
 
     /// @notice Every custody rule here is enforced by calling `shapes`. An address with no code

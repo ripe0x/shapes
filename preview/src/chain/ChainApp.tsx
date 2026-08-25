@@ -4,17 +4,17 @@ import {useAccount, usePublicClient, useWriteContract} from "wagmi";
 import {ConnectButton} from "@rainbow-me/rainbowkit";
 import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "./abi";
 import {renderShape, CANONICAL} from "../canonical/render";
+import {UNIT} from "../canonical/denominations";
 import {geneAtCompose, centerGene} from "../canonical/ink";
 import {geneIndexOfName} from "../previewGene";
 import {splitChildSeed} from "../splitSeed";
 import {loadHistory, type HistEvent} from "./history";
 
-const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
 
 interface OwnedToken {
   id: bigint;
   backing: bigint; // redeemable backing; 0 for Black
-  denomWei: bigint; // the stored denomination for display (Black keeps its 100 ETH apex denom)
+  denomWei: bigint; // the stored denomination for display (Black keeps its apex denom)
   seed: bigint;
   originCount: bigint;
   complete: boolean;

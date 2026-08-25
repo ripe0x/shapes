@@ -27,7 +27,15 @@ contract RendererTestBase is Test {
 
     ShapeCollection internal collection;
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
     ];
 
     function setUp() public virtual {
@@ -451,8 +459,8 @@ contract GeometryTest is RendererTestBase {
     }
 
     function test_ComposeRevertsForUnsupportedAmount() public {
-        vm.expectRevert(abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, 2 ether));
-        renderer.compose(bytes32(uint256(1)), 2 ether, 0);
+        vm.expectRevert(abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, DENOMS[4] * 2));
+        renderer.compose(bytes32(uint256(1)), DENOMS[4] * 2, 0);
     }
 }
 
@@ -488,15 +496,19 @@ contract OutputTest is RendererTestBase {
     /// @notice The denomination reads correctly in metadata, with no trailing zeros. It is no
     ///         longer on the card face, so this is where it has to be right.
     function test_EthLabelHasNoTrailingZeros() public view {
-        string[9] memory expected = ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
         for (uint256 i = 0; i < 9; ++i) {
+            string memory label = Denominations.labelAt(i);
+            bytes memory raw = bytes(label);
+            if (_contains(label, ".")) {
+                assertTrue(raw[raw.length - 1] != bytes1("0"), label);
+            }
             string memory json = renderer.metadataJSON(
                 bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
             );
             assertEq(
                 vm.parseJsonString(json, ".attributes[0].value"),
-                string(abi.encodePacked(expected[i], " ETH")),
-                expected[i]
+                string(abi.encodePacked(label, " ETH")),
+                label
             );
         }
     }
@@ -504,10 +516,10 @@ contract OutputTest is RendererTestBase {
     /// @notice The token number lives in the metadata name, not on the card.
     function test_TokenNumberIsInMetadataOnly() public view {
         string memory json = renderer.metadataJSON(
-            bytes32(uint256(1)), 1 ether, 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
         );
         assertEq(vm.parseJsonString(json, ".name"), "Shape 123");
-        assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), 1 ether, false, 0), "123"));
+        assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), DENOMS[4], false, 0), "123"));
     }
 
     /// @notice tokenURI must decode to real JSON containing a real inline SVG.
@@ -693,8 +705,6 @@ contract TokenMetadataTest is RendererTestBase {
 
     /// @notice The ETH value shown in metadata must equal the ETH the token actually returns.
     function test_MetadataValueMatchesOnchainBacking() public {
-        string[9] memory labels = ["0.01", "0.05", "0.1", "0.5", "1", "5", "10", "50", "100"];
-
         for (uint256 i = 0; i < 9; ++i) {
             vm.prank(alice);
             uint256 id = shapes.mint{value: DENOMS[i] + DENOMS[i] / 100}(DENOMS[i]);
@@ -703,7 +713,8 @@ contract TokenMetadataTest is RendererTestBase {
                 string(Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,")));
 
             assertEq(
-                vm.parseJsonString(json, ".attributes[0].value"), string(abi.encodePacked(labels[i], " ETH"))
+                vm.parseJsonString(json, ".attributes[0].value"),
+                string(abi.encodePacked(Denominations.labelAt(i), " ETH"))
             );
             assertEq(shapes.backingOf(id), DENOMS[i]);
 
@@ -723,7 +734,7 @@ contract TokenMetadataTest is RendererTestBase {
     function test_ProvenanceTraitsReflectOnchainState() public {
         // Direct: one 1 ETH mint. units 100, originCount 1.
         vm.prank(alice);
-        uint256 direct = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        uint256 direct = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
         string memory dj = _decodeJson(direct);
         // attributes[6..8] are Primitive/Variety/Ink Tier, [9..13] are the provenance block.
         assertEq(vm.parseJsonString(dj, ".attributes[9].value"), "Direct", "direct formation");
@@ -734,7 +745,7 @@ contract TokenMetadataTest is RendererTestBase {
 
         // Complete: five 0.01 direct mints composed into one 0.05. units 5, originCount 5.
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5);
+        uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + DENOMS[0] / 100)}(DENOMS[0], 5);
         uint256[] memory burn = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
             burn[i] = first + 1 + i;
@@ -750,7 +761,7 @@ contract TokenMetadataTest is RendererTestBase {
         // Fragment: split a Direct 100 ETH into two 50s. Origins partition survivor-first, so the
         // first child takes the lone origin and the second is a zero-origin Fragment.
         vm.prank(alice);
-        uint256 whole = shapes.mint{value: 100 ether + 1 ether}(100 ether);
+        uint256 whole = shapes.mint{value: DENOMS[8] + DENOMS[4]}(DENOMS[8]);
         uint8[] memory halves = new uint8[](2);
         halves[0] = 7; // 50 ETH
         halves[1] = 7;
@@ -770,7 +781,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         the matching `decompose`.
     function test_ComposeDepthTraitTracksComposeAndDecompose() public {
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 5 * (0.01 ether + 0.0001 ether)}(0.01 ether, 5);
+        uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + DENOMS[0] / 100)}(DENOMS[0], 5);
 
         assertEq(shapes.composeDepth(first), 0, "fresh mint has no compose record");
         assertEq(vm.parseJsonString(_decodeJson(first), ".attributes[14].trait_type"), "Compose Depth");
@@ -807,18 +818,20 @@ contract TokenMetadataTest is RendererTestBase {
 
     function test_TokenUriUsesTheStoredSeed() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
         bytes32 seed = shapes.seedOf(id);
         assertEq(
             shapes.tokenURI(id),
-            renderer.tokenURI(seed, 1 ether, id, 1, false, shapes.inkGeneOf(id), 0, NAME_PREFIX, DESCRIPTION)
+            renderer.tokenURI(
+                seed, DENOMS[4], id, 1, false, shapes.inkGeneOf(id), 0, NAME_PREFIX, DESCRIPTION
+            )
         );
     }
 
     /// @dev Artwork is fixed at mint. Nothing about later chain state may change it.
     function test_ArtworkIsStableForTheLifeOfTheToken() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 5 ether + 0.05 ether}(5 ether);
+        uint256 id = shapes.mint{value: DENOMS[5] + DENOMS[1]}(DENOMS[5]);
         string memory atMint = shapes.tokenURI(id);
 
         vm.roll(block.number + 100_000);
@@ -840,7 +853,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         token's metadata immediately.
     function test_OwnerCanUpdateTokenCopy() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
         string memory idStr = vm.toString(id);
         assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat("Shape ", idStr), "default name");
 
@@ -878,7 +891,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         whole supply so marketplaces re-read every token.
     function test_TokenCopyUpdateEmitsRefresh() public {
         vm.prank(alice);
-        shapes.mint{value: 1 ether + 0.01 ether}(1 ether); // totalMinted == 1
+        shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]); // totalMinted == 1
 
         vm.expectEmit(true, true, true, true, address(shapes));
         emit IShapes.TokenCopyUpdated("P ", "D");
@@ -993,7 +1006,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         and back out of the parsed metadata. Guards against a future tightening to ASCII-only.
     function test_CopyAcceptsValidUtf8() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
 
         string memory prefix = unicode"Formeß ";
         string memory desc = unicode"Formes — «carrés» 形 🜂";
@@ -1016,7 +1029,7 @@ contract TokenMetadataTest is RendererTestBase {
     /// @notice Empty copy is allowed: the name is the bare token id, the description empty.
     function test_EmptyCopyIsValidJson() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
         shapes.setTokenCopy("", "");
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".name"), vm.toString(id), "name is the bare id");
@@ -1038,12 +1051,12 @@ contract TokenMetadataTest is RendererTestBase {
     /// @notice A copy edit is presentation only: it moves no backing, seed or artwork bytes.
     function test_CopyEditLeavesValueStateUntouched() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: 1 ether + 0.01 ether}(1 ether);
+        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
 
         uint256 backing = shapes.backingOf(id);
         uint256 reserve = shapes.redeemableBacking();
         bytes32 seed = shapes.seedOf(id);
-        string memory svg = renderer.renderSVG(seed, 1 ether, false, shapes.inkGeneOf(id));
+        string memory svg = renderer.renderSVG(seed, DENOMS[4], false, shapes.inkGeneOf(id));
 
         shapes.setTokenCopy("Renamed ", "A different description entirely.");
         shapes.setCollectionCopy("Renamed Collection", "Also different.");
@@ -1051,7 +1064,7 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(shapes.backingOf(id), backing, "backing moved");
         assertEq(shapes.redeemableBacking(), reserve, "reserve moved");
         assertEq(shapes.seedOf(id), seed, "seed moved");
-        assertEq(renderer.renderSVG(seed, 1 ether, false, shapes.inkGeneOf(id)), svg, "artwork moved");
+        assertEq(renderer.renderSVG(seed, DENOMS[4], false, shapes.inkGeneOf(id)), svg, "artwork moved");
     }
 
     /// @dev ERC-4906 batch refresh, declared locally so the test can assert it.

@@ -13,7 +13,7 @@ contract DecomposeTest is ShapesBase {
     /// @dev Mint `k` 0.01 dust to alice; ids are `first .. first + k - 1`.
     function _mintDust(uint256 k) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k);
+        first = shapes.mintBatch{value: k * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], k);
     }
 
     /// @dev Compose the `k` dust starting at `first` into survivor `first`.
@@ -43,7 +43,7 @@ contract DecomposeTest is ShapesBase {
 
         uint256 survivor = _composeDust(first, 5);
         assertEq(survivor, first, "survivor keeps its id");
-        assertEq(shapes.backingOf(survivor), 0.05 ether, "grew to 0.05");
+        assertEq(shapes.backingOf(survivor), DENOMS[1], "grew to 0.05");
         assertEq(shapes.composeDepth(survivor), 1, "one record pushed");
         assertEq(shapes.totalSupply(), 1, "four inputs burned");
 
@@ -51,7 +51,7 @@ contract DecomposeTest is ShapesBase {
         uint256[] memory restored = shapes.decompose(survivor);
 
         // Survivor reverted exactly.
-        assertEq(shapes.backingOf(survivor), 0.01 ether, "survivor back to 0.01");
+        assertEq(shapes.backingOf(survivor), DENOMS[0], "survivor back to 0.01");
         assertEq(shapes.originCountOf(survivor), 1, "survivor origins restored");
         assertEq(shapes.seedOf(survivor), survivorSeed, "survivor seed never changed");
         assertEq(shapes.inkGeneOf(survivor), survivorGene, "survivor gene restored");
@@ -64,13 +64,13 @@ contract DecomposeTest is ShapesBase {
             assertEq(shapes.ownerOf(first + 1 + i), alice, "re-minted to caller");
             assertEq(shapes.seedOf(first + 1 + i), seeds[i], "original seed restored");
             assertEq(shapes.inkGeneOf(first + 1 + i), genes[i], "original gene restored");
-            assertEq(shapes.backingOf(first + 1 + i), 0.01 ether, "original denom restored");
+            assertEq(shapes.backingOf(first + 1 + i), DENOMS[0], "original denom restored");
             assertEq(shapes.originCountOf(first + 1 + i), 1, "original origins restored");
         }
 
         assertEq(shapes.totalSupply(), 5, "all five live again");
         assertEq(shapes.totalMinted(), 5, "totalMinted not bumped: ids reused");
-        assertEq(shapes.redeemableBacking(), 0.05 ether, "backing conserved");
+        assertEq(shapes.redeemableBacking(), DENOMS[1], "backing conserved");
         _assertSolvent();
     }
 
@@ -103,22 +103,22 @@ contract DecomposeTest is ShapesBase {
         burn[0] = second;
         vm.prank(alice);
         shapes.compose(survivor, burn); // 0.1, depth 2
-        assertEq(shapes.backingOf(survivor), 0.1 ether);
+        assertEq(shapes.backingOf(survivor), DENOMS[2]);
         assertEq(shapes.composeDepth(survivor), 2, "two stacked records");
 
         // First pop: reverse the newest merge -> back to 0.05, `second` re-minted (still 0.05).
         vm.prank(alice);
         shapes.decompose(survivor);
-        assertEq(shapes.backingOf(survivor), 0.05 ether, "reverted one tier");
+        assertEq(shapes.backingOf(survivor), DENOMS[1], "reverted one tier");
         assertEq(shapes.composeDepth(survivor), 1, "one record left");
         assertEq(shapes.ownerOf(second), alice, "second re-minted");
-        assertEq(shapes.backingOf(second), 0.05 ether, "second at its merged denom");
+        assertEq(shapes.backingOf(second), DENOMS[1], "second at its merged denom");
         assertEq(shapes.composeDepth(second), 1, "second's own record survived");
 
         // Second pop: reverse the original build -> back to 0.01, the four dust re-minted.
         vm.prank(alice);
         shapes.decompose(survivor);
-        assertEq(shapes.backingOf(survivor), 0.01 ether, "back to dust");
+        assertEq(shapes.backingOf(survivor), DENOMS[0], "back to dust");
         assertEq(shapes.composeDepth(survivor), 0);
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(first + 1 + i), alice, "original dust re-minted");
@@ -149,13 +149,13 @@ contract DecomposeTest is ShapesBase {
         vm.prank(alice);
         shapes.decompose(c);
         assertEq(shapes.ownerOf(a), alice, "A re-minted");
-        assertEq(shapes.backingOf(a), 0.05 ether, "A restored to its merged denom");
+        assertEq(shapes.backingOf(a), DENOMS[1], "A restored to its merged denom");
         assertEq(shapes.composeDepth(a), 1, "A still reversible");
 
         // Now unwind A itself.
         vm.prank(alice);
         shapes.decompose(a);
-        assertEq(shapes.backingOf(a), 0.01 ether, "A back to dust");
+        assertEq(shapes.backingOf(a), DENOMS[0], "A back to dust");
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(firstA + 1 + i), alice, "A's dust re-minted");
         }
@@ -173,7 +173,7 @@ contract DecomposeTest is ShapesBase {
     }
 
     function test_RevertsWithNoRecord() public {
-        uint256 id = _mint(alice, 1 ether); // never composed
+        uint256 id = _mint(alice, DENOMS[4]); // never composed
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NoComposeRecord.selector, id));
         shapes.decompose(id);
@@ -214,7 +214,7 @@ contract DecomposeTest is ShapesBase {
 
         // A fresh mint takes `totalMinted`, above every id already issued; no collision with the
         // reused ids.
-        uint256 fresh = _mint(alice, 1 ether);
+        uint256 fresh = _mint(alice, DENOMS[4]);
         assertEq(fresh, 5, "fresh mint takes totalMinted");
         assertEq(shapes.totalMinted(), 6);
     }
@@ -234,7 +234,7 @@ contract DecomposeTest is ShapesBase {
         uint256 balBefore = alice.balance;
         vm.prank(alice);
         shapes.redeem(first + 1);
-        assertEq(alice.balance, balBefore + 0.01 ether, "re-minted input redeems normally");
+        assertEq(alice.balance, balBefore + DENOMS[0], "re-minted input redeems normally");
         _assertSolvent();
     }
 
@@ -251,7 +251,7 @@ contract DecomposeTest is ShapesBase {
         assertEq(shapes.composeDepth(survivor), 1, "new record after re-compose");
         vm.prank(alice);
         shapes.decompose(survivor);
-        assertEq(shapes.backingOf(survivor), 0.01 ether, "reversible again");
+        assertEq(shapes.backingOf(survivor), DENOMS[0], "reversible again");
         _assertSolvent();
     }
 
@@ -277,7 +277,7 @@ contract DecomposeTest is ShapesBase {
         shapes.decomposeMany(ids);
 
         assertEq(shapes.composeDepth(survivor), 0, "both records popped");
-        assertEq(shapes.backingOf(survivor), 0.01 ether, "fully unwound");
+        assertEq(shapes.backingOf(survivor), DENOMS[0], "fully unwound");
         assertEq(shapes.ownerOf(second), alice, "second re-minted");
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(first + 1 + i), alice, "original dust re-minted");
@@ -302,8 +302,8 @@ contract DecomposeTest is ShapesBase {
         vm.prank(alice);
         shapes.decomposeMany(ids);
 
-        assertEq(shapes.backingOf(a), 0.01 ether, "A fully unwound");
-        assertEq(shapes.backingOf(c), 0.05 ether, "C reverted one tier");
+        assertEq(shapes.backingOf(a), DENOMS[0], "A fully unwound");
+        assertEq(shapes.backingOf(c), DENOMS[1], "C reverted one tier");
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(firstA + 1 + i), alice, "A's dust re-minted");
         }
@@ -313,7 +313,7 @@ contract DecomposeTest is ShapesBase {
     function test_DecomposeManyRevertsWholeBatchOnBadItem() public {
         uint256 first = _mintDust(5);
         uint256 survivor = _composeDust(first, 5);
-        uint256 plain = _mint(alice, 1 ether); // no record
+        uint256 plain = _mint(alice, DENOMS[4]); // no record
 
         uint256[] memory ids = new uint256[](2);
         ids[0] = survivor;
@@ -324,7 +324,7 @@ contract DecomposeTest is ShapesBase {
 
         // Atomic: the first item did not persist.
         assertEq(shapes.composeDepth(survivor), 1, "batch rolled back");
-        assertEq(shapes.backingOf(survivor), 0.05 ether);
+        assertEq(shapes.backingOf(survivor), DENOMS[1]);
     }
 
     function test_ComposeManyBuildsUpLadderInOneTx() public {
@@ -351,7 +351,7 @@ contract DecomposeTest is ShapesBase {
 
         assertEq(outIds[0], firstA);
         assertEq(outIds[1], firstA);
-        assertEq(shapes.backingOf(firstA), 0.1 ether, "built to 0.1 in one tx");
+        assertEq(shapes.backingOf(firstA), DENOMS[2], "built to 0.1 in one tx");
         assertEq(shapes.composeDepth(firstA), 2, "two records, both reversible");
 
         // And the whole thing unwinds in one batch.
@@ -360,7 +360,7 @@ contract DecomposeTest is ShapesBase {
         ids[1] = firstA;
         vm.prank(alice);
         shapes.decomposeMany(ids);
-        assertEq(shapes.backingOf(firstA), 0.01 ether, "round-trips fully");
+        assertEq(shapes.backingOf(firstA), DENOMS[0], "round-trips fully");
         assertEq(shapes.ownerOf(secondFive), alice, "second 0.05 re-minted");
         _assertSolvent();
     }
@@ -462,7 +462,7 @@ contract LadderMatrixTest is ShapesBase {
     ///      to the exact 100 dust under their original ids and seeds.
     function test_MultiTierJumpComposeDecomposeRoundTrip() public {
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 100 * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, 100);
+        uint256 first = shapes.mintBatch{value: 100 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 100);
 
         bytes32[] memory seeds = new bytes32[](99);
         for (uint256 j = 0; j < 99; ++j) {
@@ -476,18 +476,18 @@ contract LadderMatrixTest is ShapesBase {
 
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn);
-        assertEq(shapes.backingOf(survivor), 1 ether, "100 x 0.01 -> 1 ETH");
+        assertEq(shapes.backingOf(survivor), DENOMS[4], "100 x 0.01 -> 1 ETH");
         assertEq(shapes.originCountOf(survivor), 100, "all 100 origins on the survivor");
 
         vm.prank(alice);
         uint256[] memory restored = shapes.decompose(survivor);
 
-        assertEq(shapes.backingOf(survivor), 0.01 ether, "survivor back to dust");
+        assertEq(shapes.backingOf(survivor), DENOMS[0], "survivor back to dust");
         assertEq(restored.length, 99);
         for (uint256 j = 0; j < 99; ++j) {
             assertEq(restored[j], first + 1 + j, "original id restored");
             assertEq(shapes.seedOf(first + 1 + j), seeds[j], "original seed restored");
-            assertEq(shapes.backingOf(first + 1 + j), 0.01 ether, "back to 0.01");
+            assertEq(shapes.backingOf(first + 1 + j), DENOMS[0], "back to 0.01");
         }
         assertEq(shapes.totalSupply(), 100, "all 100 live again");
         assertEq(shapes.totalMinted(), 100, "no fresh ids issued");

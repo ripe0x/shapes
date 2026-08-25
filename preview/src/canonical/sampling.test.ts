@@ -2,7 +2,7 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 
 import {composeShape, KIND_ORDER} from "./render";
-import {cellCountAt} from "./denominations";
+import {DENOMINATIONS, cellCountAt} from "./denominations";
 import {encodeModuleByte, kindIndexOf} from "./moduleCodec";
 import {
   composeSampledShape,
@@ -100,7 +100,7 @@ test("sampleCompose: every donor is reachable under units weighting", () => {
 test("sampleCompose: an original (unmaterialized) donor derives modules from composeShape", () => {
   // A single-donor compose (no burns) is a resample of the donor's own grammar-v1 modules:
   // every output byte must appear in the donor's own encoded module list.
-  const amountWei = 500_000_000_000_000_000n; // denomIndex 3
+  const amountWei = DENOMINATIONS[survivor.denomIndex];
   const composition = composeShape(survivor.seed, amountWei, survivor.inkGene);
   const derivedBytes = new Set(
     composition.modules.map((m) => encodeModuleByte(kindIndexOf(m.kind), m.solid, m.rot)),

@@ -21,7 +21,7 @@ import {
   vocabulary,
 } from "../src/canonical/render";
 import { fmt } from "../src/canonical/wad";
-import { DENOMINATIONS, LABELS, cellCountAt, denominationIndex } from "../src/canonical/denominations";
+import { DENOMINATIONS, LABELS, UNIT, cellCountAt, denominationIndex } from "../src/canonical/denominations";
 import { CANONICAL, paramsEqualCanonical } from "../src/canonical/params";
 import { productionSeed } from "../src/seeds";
 import { splitChildSeed } from "../src/splitSeed";
@@ -49,7 +49,6 @@ if (!paramsEqualCanonical(CANONICAL)) {
 }
 
 const MAX_U256 = (1n << 256n) - 1n;
-const UNIT = 10_000_000_000_000_000n; // 0.01 ETH
 
 interface Case {
   seed: bigint;

@@ -1,9 +1,10 @@
 import {decodeEventLog, type PublicClient} from "viem";
 import {auctionHouseAbi, shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
 import {paginate} from "../chain/history";
+import {UNIT} from "../canonical/denominations";
 
-/** 0.01 ETH: the smallest denomination, and the unit every bid amount is carried in. */
-export const UNIT = 10_000_000_000_000_000n;
+/** The smallest denomination, and the unit every bid amount is carried in. */
+export {UNIT};
 
 export interface AuctionState {
   id: bigint;

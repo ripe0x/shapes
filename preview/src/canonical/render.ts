@@ -796,9 +796,7 @@ export function seedHex(seed: bigint): string {
   return "0x" + seed.toString(16).padStart(64, "0");
 }
 
-const UNIT = 100_000_000_000_000n; // 0.0001 ETH (testnet scale; mirrors Denominations.UNIT)
-
-/** The backing's 0.01-unit count for a composition. */
+/** The backing's UNIT count for a composition. */
 export function unitsOf(c: Composition): bigint {
   return unitsAt(c.denomIndex);
 }

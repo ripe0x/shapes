@@ -17,7 +17,7 @@ contract ProvenanceTest is ShapesBase {
     /// @dev Mint `k` 0.01 dust to alice; ids are `first .. first + k - 1`.
     function _mintDust(uint256 k) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: k * (0.01 ether + feeOf(0.01 ether))}(0.01 ether, k);
+        first = shapes.mintBatch{value: k * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], k);
     }
 
     /* ==================================================================== *
@@ -174,7 +174,7 @@ contract ProvenanceTest is ShapesBase {
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn); // materialized 0.05
 
-        uint256 extra = _mint(alice, 0.05 ether);
+        uint256 extra = _mint(alice, DENOMS[1]);
         uint256[] memory burnOuter = new uint256[](1);
         burnOuter[0] = extra;
         vm.prank(alice);
@@ -235,7 +235,7 @@ contract ProvenanceTest is ShapesBase {
      * ==================================================================== */
 
     function test_SplitOriginOfChildrenOfOriginalParent() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         bytes32 parentSeed = shapes.seedOf(parent);
         uint8 parentGene = shapes.inkGeneOf(parent);
         bytes memory expectedParentModules = GrammarV1Modules.all(parentSeed, 2, parentGene);
@@ -287,7 +287,7 @@ contract ProvenanceTest is ShapesBase {
 
     /// @notice The 100 ETH -> 2x50 ETH case: the parent has exactly one module.
     function test_SplitOriginOfChildrenOf100EthOneModuleParent() public {
-        uint256 parent = _mint(alice, 100 ether);
+        uint256 parent = _mint(alice, DENOMS[8]);
         bytes32 parentSeed = shapes.seedOf(parent);
         uint8 parentGene = shapes.inkGeneOf(parent);
         bytes memory expectedParentModules = GrammarV1Modules.all(parentSeed, 8, parentGene);
@@ -315,7 +315,7 @@ contract ProvenanceTest is ShapesBase {
     ///         `childDenom` is the child's own live denomination index, valid here because none of
     ///         the children have been mutated since the split.
     function test_SplitOriginOfReconstructionMatchesStoredChildModules() public {
-        uint256 parent = _mint(alice, 0.5 ether);
+        uint256 parent = _mint(alice, DENOMS[3]);
         uint8[] memory outs = new uint8[](5);
         for (uint256 i = 0; i < 5; ++i) {
             outs[i] = 2; // 5 x 0.1 ETH = 0.5 ETH
@@ -335,7 +335,7 @@ contract ProvenanceTest is ShapesBase {
     }
 
     function test_SplitOriginOfRevertsForNonSplitChild() public {
-        uint256 original = _mint(alice, 1 ether);
+        uint256 original = _mint(alice, DENOMS[4]);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotASplitChild.selector, original));
         lens.splitOriginOf(original);
 
@@ -375,7 +375,7 @@ contract ProvenanceTest is ShapesBase {
     ///         split origin, even though its live materialized modules have since moved on to the
     ///         later compose's result.
     function test_SplitOriginOfSurvivesChildLaterUsedAsComposeSurvivor() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1; // 0.05
         outs[1] = 1;
@@ -392,7 +392,7 @@ contract ProvenanceTest is ShapesBase {
         ) = lens.splitOriginOf(child);
         bytes memory splitModules = lens.shapeState(child).modules;
 
-        uint256 extra = _mint(alice, 0.05 ether);
+        uint256 extra = _mint(alice, DENOMS[1]);
         uint256[] memory burnList = new uint256[](1);
         burnList[0] = extra;
         vm.prank(alice);
@@ -417,7 +417,7 @@ contract ProvenanceTest is ShapesBase {
     ///         the same id, still answers with its original split origin: the mapping is never
     ///         deleted, and the id is never reissued to a different creation event.
     function test_SplitOriginOfSurvivesChildBurnedAsComposeInputThenDecomposed() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1;
         outs[1] = 1;
@@ -433,7 +433,7 @@ contract ProvenanceTest is ShapesBase {
             uint256 idxBefore
         ) = lens.splitOriginOf(child0);
 
-        uint256 other = _mint(alice, 0.05 ether);
+        uint256 other = _mint(alice, DENOMS[1]);
         uint256[] memory burnList = new uint256[](1);
         burnList[0] = child0;
         vm.prank(alice);
@@ -459,7 +459,7 @@ contract ProvenanceTest is ShapesBase {
     ///         report captures the measured absolute cost for a 2-way split so the reviewer can
     ///         see the marginal overhead of the new record and mapping write.
     function test_GasSplitWithProvenanceRecordIsBounded() public {
-        uint256 parent = _mint(alice, 100 ether);
+        uint256 parent = _mint(alice, DENOMS[8]);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 7;
         outs[1] = 7;

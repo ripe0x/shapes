@@ -22,6 +22,7 @@ import {
 } from "../src/interfaces/IShapeCapabilities.sol";
 import {IShapeGeometry} from "../src/interfaces/IShapeGeometry.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 contract ComposableReceiver is IERC721Receiver {
     receive() external payable {}
@@ -32,6 +33,17 @@ contract ComposableReceiver is IERC721Receiver {
 }
 
 contract ComposabilityTest is Test {
+    uint256[9] internal DENOMS = [
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
+    ];
     /// @dev Default collection copy Shapes seeds at construction, for direct collection calls.
     string internal constant COLLECTION_NAME = "Shapes";
     string internal constant COLLECTION_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
@@ -68,7 +80,7 @@ contract ComposabilityTest is Test {
 
     function _mintDust(uint256 count) internal returns (uint256 first) {
         vm.prank(alice);
-        first = shapes.mintBatch{value: count * (0.01 ether + _fee(0.01 ether))}(0.01 ether, count);
+        first = shapes.mintBatch{value: count * (DENOMS[0] + _fee(DENOMS[0]))}(DENOMS[0], count);
     }
 
     /// @notice The deterministic-preview capability (previewCompose/previewSplit) moved off
@@ -90,7 +102,7 @@ contract ComposabilityTest is Test {
     }
 
     function test_CanonicalStateAndDenominationReads() public {
-        uint256 id = _mint(alice, 1 ether);
+        uint256 id = _mint(alice, DENOMS[4]);
         ShapeState memory state = lens.shapeState(id);
 
         assertEq(state.seed, shapes.seedOf(id));
@@ -99,18 +111,18 @@ contract ComposabilityTest is Test {
         assertEq(state.inkGene, shapes.inkGeneOf(id));
         assertFalse(state.isBlack);
         assertEq(uint8(state.formation), uint8(ShapeFormation.Direct));
-        assertEq(state.faceValueWei, 1 ether);
-        assertEq(state.redeemableValueWei, 1 ether);
+        assertEq(state.faceValueWei, DENOMS[4]);
+        assertEq(state.redeemableValueWei, DENOMS[4]);
         assertEq(uint8(shapes.formationOf(id)), uint8(ShapeFormation.Direct));
 
         assertEq(shapes.denominationCount(), 9);
-        assertEq(shapes.unit(), 0.01 ether);
-        assertEq(shapes.denominationAt(0), 0.01 ether);
-        assertEq(shapes.denominationAt(8), 100 ether);
+        assertEq(shapes.unit(), DENOMS[0]);
+        assertEq(shapes.denominationAt(0), DENOMS[0]);
+        assertEq(shapes.denominationAt(8), DENOMS[8]);
     }
 
     function test_TokenUnicodeCardMatchesCanonicalRenderer() public {
-        uint256 id = _mint(alice, 1 ether);
+        uint256 id = _mint(alice, DENOMS[4]);
         ShapeState memory state = lens.shapeState(id);
         assertEq(lens.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene));
     }
@@ -127,8 +139,8 @@ contract ComposabilityTest is Test {
         assertEq(preview.denominationIndex, 1);
         assertEq(preview.originCount, 5);
         assertEq(uint8(preview.formation), uint8(ShapeFormation.Complete));
-        assertEq(preview.faceValueWei, 0.05 ether);
-        assertEq(preview.redeemableValueWei, 0.05 ether);
+        assertEq(preview.faceValueWei, DENOMS[1]);
+        assertEq(preview.redeemableValueWei, DENOMS[1]);
 
         vm.prank(alice);
         shapes.compose(first, burnIds);
@@ -137,7 +149,7 @@ contract ComposabilityTest is Test {
     }
 
     function test_PreviewSplitReturnsExactChildren() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         bytes32 parentSeed = shapes.seedOf(parent);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1;
@@ -149,7 +161,7 @@ contract ComposabilityTest is Test {
         assertEq(preview[1].seed, shapes.childSeed(parentSeed, 1));
         assertEq(preview[0].originCount, 1);
         assertEq(preview[1].originCount, 0);
-        assertEq(preview[0].faceValueWei, 0.05 ether);
+        assertEq(preview[0].faceValueWei, DENOMS[1]);
 
         vm.prank(alice);
         uint256[] memory children = shapes.split(parent, outs);
@@ -194,7 +206,7 @@ contract ComposabilityTest is Test {
     /// @notice `previewSplit` applies the same two structural checks `split` does: a split needs
     ///         at least two outputs, and they must sum to the parent's backing exactly.
     function test_PreviewSplitRejectsWhatSplitRejects() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
 
         uint8[] memory single = new uint8[](1);
         single[0] = 2; // the parent's own denomination
@@ -207,10 +219,14 @@ contract ComposabilityTest is Test {
         uint8[] memory shortfall = new uint8[](2);
         shortfall[0] = 1; // 0.05
         shortfall[1] = 0; // 0.01, so 0.06 against a 0.1 parent
-        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitMismatch.selector, 0.1 ether, 0.06 ether));
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
+        );
         lens.previewSplit(parent, shortfall);
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitMismatch.selector, 0.1 ether, 0.06 ether));
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
+        );
         shapes.split(parent, shortfall);
     }
 
@@ -274,18 +290,18 @@ contract ComposabilityTest is Test {
     }
 
     function test_RedeemToPaysRecipientWithoutRequiringItToOwnToken() public {
-        uint256 id = _mint(alice, 1 ether);
+        uint256 id = _mint(alice, DENOMS[4]);
         uint256 before = bob.balance;
 
         vm.prank(alice);
         shapes.redeemTo(id, payable(bob));
-        assertEq(bob.balance - before, 1 ether);
+        assertEq(bob.balance - before, DENOMS[4]);
     }
 
     /// @notice `redeemTo`/`redeemBatchTo` reject the zero address, so the payout can never be burned
     ///         by an accidental zero recipient. The token survives the revert.
     function test_RedeemToRejectsZeroRecipient() public {
-        uint256 id = _mint(alice, 1 ether);
+        uint256 id = _mint(alice, DENOMS[4]);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidRecipient.selector, address(0)));
         shapes.redeemTo(id, payable(address(0)));
@@ -307,12 +323,12 @@ contract ComposabilityTest is Test {
 
         vm.prank(alice);
         uint256 paid = shapes.redeemBatchTo(ids, payable(bob));
-        assertEq(paid, 0.02 ether);
-        assertEq(bob.balance - before, 0.02 ether);
+        assertEq(paid, DENOMS[0] * 2);
+        assertEq(bob.balance - before, DENOMS[0] * 2);
     }
 
     function test_SplitToMintsChildrenDirectlyToRecipient() public {
-        uint256 parent = _mint(alice, 0.1 ether);
+        uint256 parent = _mint(alice, DENOMS[2]);
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1;
         outs[1] = 1;
@@ -360,7 +376,7 @@ contract ComposabilityTest is Test {
         vm.expectRevert();
         shapes.decomposeTo(survivor, nonReceiver);
 
-        assertEq(shapes.backingOf(survivor), 0.05 ether, "survivor unchanged");
+        assertEq(shapes.backingOf(survivor), DENOMS[1], "survivor unchanged");
         assertEq(shapes.composeDepth(survivor), 1, "record intact after atomic revert");
     }
 
@@ -411,7 +427,7 @@ contract ComposabilityTest is Test {
     function test_StructuredGeometryMatchesCanonicalCard() public view {
         bytes32 seed = keccak256("geometry-test");
         uint8 gene = 3;
-        ShapeRenderer.Card memory card = renderer.compose(seed, 1 ether, gene);
+        ShapeRenderer.Card memory card = renderer.compose(seed, DENOMS[4], gene);
 
         (
             uint8 denominationIndex,
@@ -422,7 +438,7 @@ contract ComposabilityTest is Test {
             uint256 weight,
             uint256 solidProbability,
             uint256 moduleCount
-        ) = renderer.cardGeometry(seed, 1 ether, gene);
+        ) = renderer.cardGeometry(seed, DENOMS[4], gene);
 
         assertEq(denominationIndex, card.denomIndex);
         assertEq(cols, card.cols);
@@ -434,7 +450,7 @@ contract ComposabilityTest is Test {
         assertEq(moduleCount, card.modules.length);
 
         (uint8 kind, bool solid, uint16 rotation, uint256 cx, uint256 cy, uint256 size, uint256 w) =
-            renderer.moduleAt(seed, 1 ether, gene, 0);
+            renderer.moduleAt(seed, DENOMS[4], gene, 0);
         ShapeRenderer.Module memory module = card.modules[0];
         assertEq(kind, module.kind);
         assertEq(solid, module.solid);
@@ -449,7 +465,7 @@ contract ComposabilityTest is Test {
 
     function test_ModuleAtRejectsOutOfRangeIndex() public {
         vm.expectRevert(abi.encodeWithSelector(IShapeGeometry.ModuleIndexOutOfRange.selector, 9, 9));
-        renderer.moduleAt(bytes32(0), 1 ether, 3, 9);
+        renderer.moduleAt(bytes32(0), DENOMS[4], 3, 9);
     }
 
     /// @notice `contractURI` is the collection contract's metadata, served unchanged by the token.
@@ -513,7 +529,7 @@ contract ComposabilityTest is Test {
     /// @notice EIP-2981 is answered, at zero, rather than left to a marketplace default.
     function test_RoyaltyIsDeclaredAndZero() public view {
         assertTrue(shapes.supportsInterface(type(IERC2981).interfaceId), "2981 not advertised");
-        (address royaltyTo, uint256 amount) = shapes.royaltyInfo(1, 100 ether);
+        (address royaltyTo, uint256 amount) = shapes.royaltyInfo(1, DENOMS[8]);
         assertEq(royaltyTo, address(0));
         assertEq(amount, 0);
     }

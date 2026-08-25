@@ -10,6 +10,7 @@ import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 /* ==================================================================== *
  *  Hostile recipients for the `*To` value-flow paths (PR #1).
@@ -83,7 +84,15 @@ contract Handler is Test, IERC721Receiver {
     mapping(uint256 => uint256) private _indexOfToken;
 
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
     ];
 
     constructor(Shapes shapes_) {
@@ -307,12 +316,12 @@ contract Handler is Test, IERC721Receiver {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
         if (shapes.isBlack(id)) return;
-        if (shapes.backingOf(id) != 100 ether || shapes.originCountOf(id) != 10_000) return;
+        if (shapes.backingOf(id) != DENOMS[8] || shapes.originCountOf(id) != 10_000) return;
 
         address owner = shapes.ownerOf(id);
         vm.prank(owner);
         try shapes.sacrifice(id) {
-            ghostSacrificed += 100 ether;
+            ghostSacrificed += DENOMS[8];
         } catch {}
     }
 
@@ -506,7 +515,11 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
     /// @notice Sacrificed backing is monotonic and always exactly 100 ETH per Black Shape.
     function invariant_SacrificeAccounting() public view {
-        assertEq(shapes.sacrificedBacking(), 100 ether * shapes.blackCount(), "sacrifice per Black drifted");
+        assertEq(
+            shapes.sacrificedBacking(),
+            Denominations.amountAt(8) * shapes.blackCount(),
+            "sacrifice per Black drifted"
+        );
         assertEq(shapes.sacrificedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
     }
 
@@ -550,7 +563,9 @@ contract ShapesInvariantTest is StdInvariant, Test {
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
             assertLe(
-                shapes.originCountOf(id), shapes.backingOf(id) / 0.01 ether, "origin count exceeds capacity"
+                shapes.originCountOf(id),
+                shapes.backingOf(id) / Denominations.UNIT,
+                "origin count exceeds capacity"
             );
         }
     }
@@ -651,7 +666,15 @@ contract AuctionHandler is Test, IERC721Receiver {
     mapping(uint256 => mapping(address => bool)) private _isBidder;
 
     uint256[9] internal DENOMS = [
-        uint256(0.01 ether), 0.05 ether, 0.1 ether, 0.5 ether, 1 ether, 5 ether, 10 ether, 50 ether, 100 ether
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
     ];
 
     constructor(Shapes shapes_, ShapeAuctionHouse house_) {
@@ -698,9 +721,9 @@ contract AuctionHandler is Test, IERC721Receiver {
 
         // Hoist the fee query out of the prank window; an external call inside `{value:}` consumes
         // the prank and the mint would run as the handler.
-        uint256 cost = 0.1 ether + shapes.mintFeeFor(0.1 ether);
+        uint256 cost = DENOMS[2] + shapes.mintFeeFor(DENOMS[2]);
         vm.prank(seller);
-        try shapes.mint{value: cost}(0.1 ether) returns (uint256 lot) {
+        try shapes.mint{value: cost}(DENOMS[2]) returns (uint256 lot) {
             vm.prank(seller);
             try house.createAuction(address(shapes), lot, duration, reserve, 500, extensionWindow) returns (
                 uint256 id
@@ -716,7 +739,7 @@ contract AuctionHandler is Test, IERC721Receiver {
         if (auctionIds.length == 0) return;
         uint256 id = auctionIds[aSeed % auctionIds.length];
         address bidder = _actor(actorSeed);
-        uint256 backing = bound(unitsSeed, 1, 200) * 0.01 ether;
+        uint256 backing = bound(unitsSeed, 1, 200) * Denominations.UNIT;
         uint256 cost = backing + shapes.mintFeeFor(backing);
 
         vm.prank(bidder);
@@ -978,7 +1001,7 @@ contract AuctionInvariantHostileFeeTest is AuctionInvariantTest {
 
         // The recipient acquires a Shape it will try to push in on every fee it later receives.
         vm.deal(address(hostile), 100 ether);
-        hostile.acquire(0.1 ether);
+        hostile.acquire(Denominations.amountAt(2));
 
         handler = new AuctionHandler(shapes, house);
         _wire();

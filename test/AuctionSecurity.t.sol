@@ -10,6 +10,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @dev H-01: transferFrom succeeds and moves nothing, and reports no ERC165 support. Now that
 ///      `createAuction` accepts any ERC721 collection, the exploit this used to demonstrate (a
@@ -129,6 +130,17 @@ contract ReentrantCancelSeller is IERC721Receiver {
 }
 
 contract AuctionSecurityTest is Test {
+    uint256[9] internal DENOMS = [
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
+    ];
     Shapes shapes;
     ShapeRenderer renderer;
     ShapeCollection collection;
@@ -169,14 +181,14 @@ contract AuctionSecurityTest is Test {
     ///         Delivery is `claimLot`, called separately by the winner.
     function test_H02_SettlementCannotBeBlockedByTheLot() public {
         vm.prank(seller);
-        uint256 lot = shapes.mint{value: 0.101 ether}(0.1 ether);
+        uint256 lot = shapes.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
         uint256 a = house.createAuction(address(shapes), lot, 1, 100, 0, 0);
 
         vm.prank(alice);
-        uint256 card = shapes.mint{value: 1.01 ether}(1 ether);
+        uint256 card = shapes.mint{value: (DENOMS[4] * 101) / 100}(DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
         vm.prank(alice);
@@ -199,14 +211,14 @@ contract AuctionSecurityTest is Test {
     ///         it later withdraws intact is refused at the source.
     function test_M02_SellerCannotBidItsOwnAuction() public {
         vm.prank(seller);
-        uint256 lot = shapes.mint{value: 0.101 ether}(0.1 ether);
+        uint256 lot = shapes.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
         uint256 a = house.createAuction(address(shapes), lot, 1 days, 1, 0, 0);
 
         vm.prank(seller);
-        uint256 card = shapes.mint{value: 1.01 ether}(1 ether);
+        uint256 card = shapes.mint{value: (DENOMS[4] * 101) / 100}(DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
 
@@ -220,7 +232,7 @@ contract AuctionSecurityTest is Test {
     ///         the duration it extends.
     function test_L04_DurationAndExtensionAreBounded() public {
         vm.prank(seller);
-        uint256 lot = shapes.mint{value: 0.101 ether}(0.1 ether);
+        uint256 lot = shapes.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
 
@@ -268,14 +280,14 @@ contract AuctionSecurityTest is Test {
 
         // The fee recipient acquires a Shape it will later try to push in.
         vm.deal(address(mal), 10 ether);
-        uint256 pushed = mal.acquire(1 ether);
+        uint256 pushed = mal.acquire(DENOMS[4]);
         assertEq(shapes2.ownerOf(pushed), address(mal), "fee recipient owns its Shape");
 
         // Seller opens an auction on the second house.
         address seller2 = makeAddr("seller2");
         vm.deal(seller2, 10 ether);
         vm.prank(seller2);
-        uint256 lot = shapes2.mint{value: 0.101 ether}(0.1 ether);
+        uint256 lot = shapes2.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
         vm.prank(seller2);
         shapes2.setApprovalForAll(address(house2), true);
         vm.prank(seller2);
@@ -287,7 +299,7 @@ contract AuctionSecurityTest is Test {
         vm.deal(carol, 10 ether);
         mal.arm();
         vm.prank(carol);
-        house2.bid{value: 1.01 ether}(a, new uint256[](0), 1 ether);
+        house2.bid{value: (DENOMS[4] * 101) / 100}(a, new uint256[](0), DENOMS[4]);
 
         // The push was refused: the Shape stayed with the fee recipient, not the house.
         assertEq(shapes2.ownerOf(pushed), address(mal), "the pushed Shape was refused, not stranded");
@@ -310,16 +322,16 @@ contract AuctionSecurityTest is Test {
         mal.setTargets(shapes3, house3);
 
         vm.deal(address(mal), 10 ether);
-        uint256 a = mal.list(0.1 ether, 1 days);
+        uint256 a = mal.list(DENOMS[2], 1 days);
 
         address carol = makeAddr("carol");
         vm.deal(carol, 10 ether);
         mal.arm();
         vm.prank(carol);
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), 0.01 ether)
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), DENOMS[0])
         );
-        house3.bid{value: 1.01 ether}(a, new uint256[](0), 1 ether);
+        house3.bid{value: (DENOMS[4] * 101) / 100}(a, new uint256[](0), DENOMS[4]);
 
         // The revert unwound the reentrant cancel along with the bid.
         assertEq(mal.cancelled(), false, "the cancel was rolled back with the bid");
@@ -352,7 +364,7 @@ contract AuctionSecurityTest is Test {
         mal.setTargets(shapes3, house3);
 
         vm.deal(address(mal), 10 ether);
-        uint256 a = mal.list(0.1 ether, 1 days);
+        uint256 a = mal.list(DENOMS[2], 1 days);
 
         address carol = makeAddr("carol");
         vm.deal(carol, 10 ether);
@@ -363,9 +375,9 @@ contract AuctionSecurityTest is Test {
         mal.arm();
         vm.prank(carol);
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), 0.01 ether)
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), DENOMS[0])
         );
-        house3.bid{value: 1.01 ether}(a, new uint256[](0), 1 ether);
+        house3.bid{value: (DENOMS[4] * 101) / 100}(a, new uint256[](0), DENOMS[4]);
 
         // Carol paid nothing and holds no cards: the mint that would have created them unwound.
         assertEq(carol.balance, carolBefore, "carol's ETH is intact");

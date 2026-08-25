@@ -21,15 +21,15 @@ export const DENOMINATIONS: readonly bigint[] = [
 
 /** [cols, rows] per denomination index. */
 export const GRIDS: readonly (readonly [number, number])[] = [
-  [5, 5], // 0.01 -> 25 modules
-  [4, 5], // 0.05 -> 20
-  [4, 4], // 0.1  -> 16
-  [3, 4], // 0.5  -> 12
-  [3, 3], // 1    ->  9
-  [2, 3], // 5    ->  6
-  [2, 2], // 10   ->  4
-  [1, 2], // 50   ->  2
-  [1, 1], // 100  ->  1
+  [5, 5], // index 0 -> 25 modules
+  [4, 5], // index 1 -> 20
+  [4, 4], // index 2 -> 16
+  [3, 4], // index 3 -> 12
+  [3, 3], // index 4 ->  9
+  [2, 3], // index 5 ->  6
+  [2, 2], // index 6 ->  4
+  [1, 2], // index 7 ->  2
+  [1, 1], // index 8 ->  1
 ];
 
 /** Exact display strings. No trailing zeros, by construction. */
@@ -72,7 +72,7 @@ export function moduleCountForAmount(amountWei: bigint): number {
  *  Denominations.sol UNIT. */
 export const UNIT = 100_000_000_000_000n; // 0.0001 ETH (testnet scale)
 
-/** Backing amount for a denomination index, in UNIT (0.01 ETH) multiples. Mirrors
+/** Backing amount for a denomination index, in UNIT multiples. Mirrors
  *  Denominations.sol unitsAt. */
 export function unitsAt(index: number): bigint {
   return DENOMINATIONS[index] / UNIT;

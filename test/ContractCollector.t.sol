@@ -15,6 +15,7 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 import {IContractCollector} from "../src/interfaces/IContractCollector.sol";
 import {IShapeProvenance, IShapeRecomposition, IShapeValue} from "../src/interfaces/IShapeCapabilities.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 import {
     MockCollectorERC721,
@@ -30,6 +31,17 @@ import {
 ///         `contractCollector()`'s live `ownerOf` resolution is validated here through the lens,
 ///         not through `Shapes` directly.
 contract ContractCollectorTest is Test {
+    uint256[9] internal DENOMS = [
+        Denominations.amountAt(0),
+        Denominations.amountAt(1),
+        Denominations.amountAt(2),
+        Denominations.amountAt(3),
+        Denominations.amountAt(4),
+        Denominations.amountAt(5),
+        Denominations.amountAt(6),
+        Denominations.amountAt(7),
+        Denominations.amountAt(8)
+    ];
     Shapes internal shapes;
     ShapeLens internal lens;
     ShapeRenderer internal renderer;
@@ -385,7 +397,7 @@ contract ContractCollectorTest is Test {
         shapes.setContractCollectorToken(address(token), 1);
         shapes.lockContractCollectorBinding();
 
-        uint256 backing = 1 ether;
+        uint256 backing = DENOMS[4];
         uint256 balanceBefore = alice.balance;
         uint256 cost = backing + shapes.mintFeeFor(backing);
 
