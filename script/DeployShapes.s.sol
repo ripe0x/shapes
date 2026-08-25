@@ -60,6 +60,18 @@ contract DeployShapes is LensEquivalence {
     ///      certainly a mistake. Override deliberately if you really mean it.
     uint256 internal constant MAX_SANE_FEE_BPS = 1000;
 
+    error WrongLadder(string compiled, string expected);
+
+    /// @dev The ladder is compiled in and the backing amounts it names are permanent once deployed.
+    ///      Any chain that carries real value must get the mainnet ladder; anvil may use either,
+    ///      since a local chain funds any rung.
+    function _requireMainnetLadderOffAnvil() internal view {
+        if (block.chainid == ANVIL_CHAIN_ID) return;
+        if (keccak256(bytes(Denominations.LADDER_NAME)) != keccak256("mainnet")) {
+            revert WrongLadder(Denominations.LADDER_NAME, "mainnet");
+        }
+    }
+
     function run()
         external
         returns (
@@ -70,6 +82,8 @@ contract DeployShapes is LensEquivalence {
             ShapeAuctionHouse house
         )
     {
+        _requireMainnetLadderOffAnvil();
+
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));

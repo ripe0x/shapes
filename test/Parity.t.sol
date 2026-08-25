@@ -87,7 +87,7 @@ contract ParityTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        json = vm.readFile("test/fixtures/fixtures.json");
+        json = vm.readFile(string.concat("test/fixtures/fixtures.", Denominations.LADDER_NAME, ".json"));
 
         why = vm.parseJsonStringArray(json, ".why");
         expectedSvg = vm.parseJsonStringArray(json, ".svg");

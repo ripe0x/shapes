@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 
 import {InkGenes} from "../src/lib/InkGenes.sol";
 import {FixedPoint} from "../src/lib/FixedPoint.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @notice The pure Ink Genes library: constant-table parity against the canonical TypeScript
 ///         (`preview/src/canonical/ink.ts`), frozen mint vectors, the compose walk's
@@ -17,7 +18,7 @@ contract InkGenesParityTest is Test {
     string internal json;
 
     function setUp() public {
-        json = vm.readFile("test/fixtures/fixtures.json");
+        json = vm.readFile(string.concat("test/fixtures/fixtures.", Denominations.LADDER_NAME, ".json"));
     }
 
     /* ------------------------------------------------------------------ *

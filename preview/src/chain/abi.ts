@@ -1,4 +1,5 @@
 import {parseAbi} from "viem";
+import {DENOMINATIONS as CANONICAL_AMOUNTS, LABELS as CANONICAL_LABELS} from "../canonical/denominations";
 
 // The subset of the Shapes ERC721 the chain tester calls. Human-readable form; viem parses it
 // to the full ABI at import. `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`,
@@ -122,20 +123,13 @@ export interface Deployment {
   fromBlock?: number;
 }
 
-// The nine denominations, in wei, with their display labels. Mirrors src/lib/Denominations.sol.
-// TESTNET SCALE (sepolia-scaled branch): 100x smaller than mainnet so the apex is 1 ETH, not 100.
-// Restore the mainnet ladder before any mainnet deploy.
-export const DENOMINATIONS: {label: string; wei: bigint}[] = [
-  {label: "0.0001", wei: 100_000_000_000_000n},
-  {label: "0.0005", wei: 500_000_000_000_000n},
-  {label: "0.001", wei: 1_000_000_000_000_000n},
-  {label: "0.005", wei: 5_000_000_000_000_000n},
-  {label: "0.01", wei: 10_000_000_000_000_000n},
-  {label: "0.05", wei: 50_000_000_000_000_000n},
-  {label: "0.1", wei: 100_000_000_000_000_000n},
-  {label: "0.5", wei: 500_000_000_000_000_000n},
-  {label: "1", wei: 1_000_000_000_000_000_000n},
-];
+// The nine denominations, in wei, with their display labels. Derived from the canonical table so
+// the two cannot drift; that table is ladder-selected at build time and parity-tested against
+// src/lib/Denominations.sol.
+export const DENOMINATIONS: {label: string; wei: bigint}[] = CANONICAL_AMOUNTS.map((wei, i) => ({
+  label: CANONICAL_LABELS[i],
+  wei,
+}));
 
 // Index of a supported denomination amount, or -1.
 export function denomIndexOf(wei: bigint): number {

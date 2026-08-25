@@ -1,4 +1,7 @@
 [profile.default]
+# The mainnet denomination ladder. `FOUNDRY_PROFILE=testnet` swaps in the 100x-smaller one;
+# see src/lib/Denominations.sol.
+remappings = ["ladder/=ladders/mainnet/"]
 src = "src"
 out = "out"
 libs = ["lib"]
@@ -25,6 +28,15 @@ gas_reports = ["Shapes", "ShapeRenderer"]
 # block gas limit), not a contract limit. See DECOMPOSE_SPEC.md.
 gas_limit = "18446744073709551615"
 block_gas_limit = 30_000_000_000
+
+# Builds and tests against the 100x-smaller ladder, which is what public testnet deploys use.
+# Inherits every other setting from the default profile.
+[profile.testnet]
+remappings = ["ladder/=ladders/testnet/"]
+# Separate artifact and cache directories. Sharing the default profile's would let a build resolve
+# `ladder/` to one table and then reuse artifacts compiled against the other.
+out = "out-testnet"
+cache_path = "cache-testnet"
 
 [profile.default.fuzz]
 runs = 512

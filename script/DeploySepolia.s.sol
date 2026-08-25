@@ -27,10 +27,22 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///        ETHERSCAN_API_KEY=... script/deploy-sepolia.sh
 ///
 ///      Or directly (keep --verify so the contracts land verified):
-///        ETHERSCAN_API_KEY=... forge script script/DeploySepolia.s.sol \
+///        FOUNDRY_PROFILE=testnet ETHERSCAN_API_KEY=... forge script script/DeploySepolia.s.sol \
 ///          --rpc-url $SEPOLIA_RPC_URL --account ripe0x --broadcast --verify
+///
+///      FOUNDRY_PROFILE=testnet selects the 100x-smaller ladder. The run reverts without it.
 contract DeploySepolia is LensEquivalence {
     uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
+
+    error WrongLadder(string compiled, string expected);
+
+    /// @dev The ladder is compiled in, so a run without FOUNDRY_PROFILE=testnet would put mainnet
+    ///      amounts on a testnet where nobody can fund the upper rungs. Stop before broadcasting.
+    function _requireTestnetLadder() internal pure {
+        if (keccak256(bytes(Denominations.LADDER_NAME)) != keccak256("testnet")) {
+            revert WrongLadder(Denominations.LADDER_NAME, "testnet");
+        }
+    }
 
     function run()
         external
@@ -42,6 +54,8 @@ contract DeploySepolia is LensEquivalence {
             ShapeAuctionHouse house
         )
     {
+        _requireTestnetLadder();
+
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         bool seed = vm.envOr("SEED_ETH", true);
         address me = msg.sender;

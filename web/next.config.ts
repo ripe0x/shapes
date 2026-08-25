@@ -7,6 +7,11 @@ import { resolve } from "node:path";
 // `@shared/*` alias (mirrored in tsconfig) points at them.
 const shared = resolve(__dirname, "../preview/src");
 const nextConfig: NextConfig = {
+  // Selects the denomination ladder at build time, pairing with the foundry profile of the same
+  // name. Unset means mainnet; see preview/src/canonical/denominations.ts.
+  env: {
+    SHAPES_LADDER: process.env.SHAPES_LADDER ?? "",
+  },
   experimental: {
     externalDir: true,
   },

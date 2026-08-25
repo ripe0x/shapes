@@ -21,7 +21,7 @@ import {
   vocabulary,
 } from "../src/canonical/render";
 import { fmt } from "../src/canonical/wad";
-import { DENOMINATIONS, LABELS, UNIT, cellCountAt, denominationIndex } from "../src/canonical/denominations";
+import { DENOMINATIONS, LABELS, LADDER_NAME, UNIT, cellCountAt, denominationIndex } from "../src/canonical/denominations";
 import { CANONICAL, paramsEqualCanonical } from "../src/canonical/params";
 import { productionSeed } from "../src/seeds";
 import { splitChildSeed } from "../src/splitSeed";
@@ -718,7 +718,12 @@ const out = {
   })(),
 };
 
-const target = resolve(import.meta.dirname, "../../test/fixtures/fixtures.json");
+// One fixture file per ladder, named for it, so the parity suite can pick the file matching the
+// foundry profile it runs under.
+const target = resolve(
+  import.meta.dirname,
+  `../../test/fixtures/fixtures.${LADDER_NAME}.json`,
+);
 mkdirSync(dirname(target), { recursive: true });
 writeFileSync(target, JSON.stringify(out, null, 1) + "\n");
 
