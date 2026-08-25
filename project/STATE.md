@@ -31,7 +31,9 @@ STOP CONDITION LIFTED (2026-08-25, same day raised): the landed audit's base com
 - RESOLVED 2026-08-25: Surface port committed to branch preserve/surface-port (commit ce4c7e4, 6 files, renderer WIP left untouched). R2 closed.
 - RESOLVED 2026-08-25: audit artifacts committed to branch claude/shapes-security-audit-fa49c8 (commit 6480f1c); triaged in D-02. Two Highs confirmed (H-1 must-fix, H-2 reconcile).
 - RESOLVED 2026-08-25: gasmeasure test committed to branch preserve/split-gas-measure (commit 95cdc28).
-- Still at risk: renderer WIP (render.ts + ShapeRenderer.sol + fixtures) in shapes-surface-protocol-df87db remains uncommitted on a stale base. D-03 open.
+- RESOLVED 2026-08-25: renderer WIP preserved on preserve/renderer-wip (074fc30); superseded vs novel triage in D-03; novel bits queued as W-1/W-2. Stray untracked indexer/ in that worktree is a superseded early draft (contains a .env.local; never commit it); delete in hygiene pass with user approval.
+- P0 remaining: worktree/branch hygiene (13 worktrees, ~45 branches, _to_delete/), W-3 PoC regression port, D-01 final branch-layout decision (interim chain-1 guard landed, commit f7fd92b).
+- D-06 doc truth pass landed (8c30e51): README deployment table and repo map current, spec status lines point here, ladder corrected in WEBSITE_DESIGN_PROMPT.md, web/README rewritten.
 - Stash on main: one trivial .gitignore change (3 lines). Low risk.
 - ~45 local branches, 13 worktrees. Hygiene pass tracked in P0.
 
