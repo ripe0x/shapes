@@ -160,7 +160,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
 
     /// @dev The apex denomination (100 ETH) and its origin count, gating `sacrifice`.
     uint256 private constant APEX_INDEX = 8;
-    uint256 private constant APEX_BACKING = 100 ether;
     /// @dev Where sacrificed ETH is sent: an address with no known key. Provably unspendable.
     address private constant UNSPENDABLE = 0x000000000000000000000000000000000000dEaD;
 
@@ -1041,18 +1040,21 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         if (d.denomIndex != APEX_INDEX || d.originCount != Denominations.unitsAt(APEX_INDEX)) {
             revert NotApexComplete(tokenId);
         }
+        // The apex backing, from the ladder rather than a separate literal, so it cannot drift from
+        // the denomination table (e.g. a scaled testnet build).
+        uint256 apexBacking = Denominations.amountAt(APEX_INDEX);
 
         // -------- effects --------
         d.isBlack = true;
-        redeemableBacking -= APEX_BACKING;
-        sacrificedBacking += APEX_BACKING;
+        redeemableBacking -= apexBacking;
+        sacrificedBacking += apexBacking;
         blackCount += 1;
 
-        emit Blackened(tokenId, APEX_BACKING);
+        emit Blackened(tokenId, apexBacking);
         emit MetadataUpdate(tokenId);
 
         // -------- interactions --------
-        _sendEth(UNSPENDABLE, APEX_BACKING);
+        _sendEth(UNSPENDABLE, apexBacking);
     }
 
     /* ------------------------------- views ------------------------------ */

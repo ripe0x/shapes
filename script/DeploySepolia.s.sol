@@ -23,8 +23,12 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///        SHAPES_FEE_BPS   mint fee in basis points. Defaults to 100 (1%).
 ///        SEED_ETH         set to "false" to deploy without seeding any mints.
 ///
-///      forge script script/DeploySepolia.s.sol \
-///        --rpc-url $SEPOLIA_RPC_URL --account ripe0x --broadcast --verify
+///      Prefer the wrapper, which always verifies on Etherscan (deploy + verify in one step):
+///        ETHERSCAN_API_KEY=... script/deploy-sepolia.sh
+///
+///      Or directly (keep --verify so the contracts land verified):
+///        ETHERSCAN_API_KEY=... forge script script/DeploySepolia.s.sol \
+///          --rpc-url $SEPOLIA_RPC_URL --account ripe0x --broadcast --verify
 contract DeploySepolia is LensEquivalence {
     uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
 

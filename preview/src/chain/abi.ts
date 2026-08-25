@@ -123,16 +123,18 @@ export interface Deployment {
 }
 
 // The nine denominations, in wei, with their display labels. Mirrors src/lib/Denominations.sol.
+// TESTNET SCALE (sepolia-scaled branch): 100x smaller than mainnet so the apex is 1 ETH, not 100.
+// Restore the mainnet ladder before any mainnet deploy.
 export const DENOMINATIONS: {label: string; wei: bigint}[] = [
+  {label: "0.0001", wei: 100_000_000_000_000n},
+  {label: "0.0005", wei: 500_000_000_000_000n},
+  {label: "0.001", wei: 1_000_000_000_000_000n},
+  {label: "0.005", wei: 5_000_000_000_000_000n},
   {label: "0.01", wei: 10_000_000_000_000_000n},
   {label: "0.05", wei: 50_000_000_000_000_000n},
   {label: "0.1", wei: 100_000_000_000_000_000n},
   {label: "0.5", wei: 500_000_000_000_000_000n},
   {label: "1", wei: 1_000_000_000_000_000_000n},
-  {label: "5", wei: 5_000_000_000_000_000_000n},
-  {label: "10", wei: 10_000_000_000_000_000_000n},
-  {label: "50", wei: 50_000_000_000_000_000_000n},
-  {label: "100", wei: 100_000_000_000_000_000_000n},
 ];
 
 // Index of a supported denomination amount, or -1.
