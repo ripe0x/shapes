@@ -8,6 +8,8 @@ Last updated: 2026-08-25 (Director setup session).
 
 Current phase: P0 Stabilize (see `project/ROADMAP.md`). Gate not yet passed.
 
+STOP CONDITION ACTIVE (2026-08-25): audit finding H-1 (High, CONFIRMED) — ShapeAuctionHouse settlement can permanently lock a winner's escrowed bid. Per ROADMAP P0 stop condition, no other contract work merges until H-1 has a Director-reviewed fix spec and remediation. H-2 (High) pending accept-after-reconcile (likely a doc overclaim vs the charter's accepted-grinding stance). Full triage in DECISIONS D-02.
+
 ## Deployments
 
 - Mainnet: none. `foundry.toml` has no chain-1 rpc/etherscan entries. `indexer/.env.example` marks mainnet TODO.
@@ -26,8 +28,10 @@ Current phase: P0 Stabilize (see `project/ROADMAP.md`). Gate not yet passed.
 ## Uncommitted work at risk
 
 - `.claude/worktrees/shapes-surface-protocol-df87db`: the entire Surface-protocol port exists ONLY as untracked files here — `src/surface/` (ISurface, ShapesMinter, ShapesSurfaceRenderer, ILineage, LineageStore) and `test/surface/ShapesOnSurface.t.sol` (mainnet-fork tested against the live SurfaceFactory). Committed nowhere; the `shapes-on-surface` branch itself contains only ink prototypes and is fully merged into main. One `git clean` destroys the port. Same worktree also has uncommitted modifications to the parity-critical pair (`preview/src/canonical/render.ts` + `src/ShapeRenderer.sol`) and `test/fixtures/fixtures.json`, on a base 97 commits behind main. Tracked as R2 / D-03 / D-04.
-- `.claude/worktrees/shapes-security-audit-fa49c8`: untracked AUDIT_FINDINGS.md, 5 AuditPoC test files, and an unapplied patch (`auction-handler-prank-fix.patch`). Findings not triaged. Tracked as R3 / D-02.
-- `.claude/worktrees/gasmeasure`: untracked `test/SplitGasMeasure.t.sol`.
+- RESOLVED 2026-08-25: Surface port committed to branch preserve/surface-port (commit ce4c7e4, 6 files, renderer WIP left untouched). R2 closed.
+- RESOLVED 2026-08-25: audit artifacts committed to branch claude/shapes-security-audit-fa49c8 (commit 6480f1c); triaged in D-02. Two Highs confirmed (H-1 must-fix, H-2 reconcile).
+- RESOLVED 2026-08-25: gasmeasure test committed to branch preserve/split-gas-measure (commit 95cdc28).
+- Still at risk: renderer WIP (render.ts + ShapeRenderer.sol + fixtures) in shapes-surface-protocol-df87db remains uncommitted on a stale base. D-03 open.
 - Stash on main: one trivial .gitignore change (3 lines). Low risk.
 - ~45 local branches, 13 worktrees. Hygiene pass tracked in P0.
 
