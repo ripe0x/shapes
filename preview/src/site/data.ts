@@ -11,6 +11,7 @@ export interface SiteToken {
   id: bigint;
   backing: bigint;
   di: number; // denomination index
+  black: boolean; // blackened (sacrificed) apex; backing is 0 but it lists as a 100
   seed: bigint;
   owner: `0x${string}`;
   image: string; // svg data URI from tokenURI
@@ -18,7 +19,7 @@ export interface SiteToken {
 }
 
 export interface SiteData {
-  tokens: SiteToken[]; // live, non-Black, newest first
+  tokens: SiteToken[]; // live, newest first (blackened apexes included, listed as 100s)
   reserve: bigint; // redeemableBacking()
   supply: bigint; // totalSupply()
   fees: bigint[]; // mintFeeFor() per denomination index
@@ -48,7 +49,8 @@ function parseUri(uri: string): {image: string; meta: TokenMeta} {
  * dev chain; a mainnet deployment needs an indexer (or at minimum a deploy-block floor on the
  * log scan in chain/history.ts) before this ships publicly.
  *
- * Black tokens are skipped: the sacrifice mechanics are out of scope for this site.
+ * Blackened tokens are included: they list with the other 100s (blacken only works on the
+ * apex Complete), carrying their inverted art and zero backing.
  */
 export async function loadSite(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
@@ -76,9 +78,11 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
       publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
       publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
     ]);
-    if (black) continue;
     const {image, meta} = parseUri(uri);
-    tokens.push({id, backing, di: denomIndexOf(backing), seed: BigInt(seed), owner, image, meta});
+    // A blackened token has zero backing but is always an apex (blacken only works on the
+    // 100 ETH Complete), so give it the apex index and let it list with the other 100s.
+    const di = black ? DENOMINATIONS.length - 1 : denomIndexOf(backing);
+    tokens.push({id, backing, di, black, seed: BigInt(seed), owner, image, meta});
   }
 
   tokens.sort((a, b) => (a.id > b.id ? -1 : 1));

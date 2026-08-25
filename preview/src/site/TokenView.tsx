@@ -214,7 +214,8 @@ export function TokenView({
   const lbl = DENOMINATIONS[di].label;
   const [cols, rows] = GRIDS[di];
   const owned = !!address && token.owner.toLowerCase() === address.toLowerCase();
-  const comp = composeShape(token.seed, token.backing);
+  // A blackened token has zero backing; its art is still a function of its denomination.
+  const comp = composeShape(token.seed, DENOMINATIONS[di].wei);
 
   const tokRows: {k: string; v: React.ReactNode; size?: number; wrap?: "anywhere" | "normal"}[] = [
     {k: "denomination", v: `${lbl} ETH`},
@@ -288,9 +289,11 @@ export function TokenView({
         <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
           <Art src={token.image} alt={`Shape #${token.id}`} width={340} />
           <div style={{flex: "1 1 320px", minWidth: 0}}>
-            <div style={{fontSize: 40, lineHeight: 1}}>{lbl} ETH</div>
+            <div style={{fontSize: 40, lineHeight: 1}}>{token.black ? "Black" : `${lbl} ETH`}</div>
             <p style={{margin: "20px 0 0", fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "48ch"}}>
-              This Shape holds {lbl} ETH. Its owner can burn it and receive {lbl} ETH.
+              {token.black
+                ? `A Black Shape: an apex Complete whose ${lbl} ETH was sacrificed to an unspendable address. It is terminal and cannot be redeemed, composed or decomposed.`
+                : `This Shape holds ${lbl} ETH. Its owner can burn it and receive ${lbl} ETH.`}
             </p>
             <div style={{margin: "32px 0 0"}}>
               {tokRows.map((r) => (
@@ -356,7 +359,7 @@ export function TokenView({
         ))}
       </Section>
 
-      {owned && (
+      {owned && !token.black && (
         <>
           <Section title="REDEEM" pad="26px 48px 34px 32px">
             <div style={{fontSize: 15, lineHeight: 1.6}}>
@@ -640,6 +643,26 @@ function ProvTree({
   onOpen: (id: bigint) => void;
 }) {
   const w = treeWidth(depth);
+  // Rollup placeholder for a wide merge/split: the remaining contributors as a "+N" chip.
+  if (node.more) {
+    return (
+      <div
+        title={`${node.more} more, not shown`}
+        style={{
+          width: w,
+          height: Math.round(w * 1.35),
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          border: `1px dashed ${C.border}`,
+          color: C.muted,
+          fontSize: w >= 52 ? 12 : 10,
+        }}
+      >
+        +{node.more}
+      </div>
+    );
+  }
   const isLive = live.some((t) => t.id === node.id);
   // A repeated ancestor's subtree already hangs under its first occurrence; drop the echo.
   const kids = node.contributors.filter((c) => !c.repeat);
