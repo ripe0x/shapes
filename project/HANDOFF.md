@@ -15,10 +15,10 @@ Branch: claude/project-director-setup-886e07 (worktree .claude/worktrees/project
 
 ## In flight
 
-- D-04 DECIDED standalone (user, 2026-08-25). preserve/surface-port branch deleted deliberately; decision + rationale recorded in DECISIONS.md.
-- Hygiene pass largely executed. Done: TITLE_MARKET_RESEARCH_PROMPT.md committed on claude/contract-title (180037c); 5 clean worktrees removed (beautiful-allen, gasmeasure, scaled, shapes-security-audit, token-0-card-auction); dev-config drift discarded in the 3 drift worktrees (now clean but dirs still present, ignored files block plain remove); inkDemo.ts in _to_delete verified as superseded model-B prototype, safe to delete.
-- BLOCKED on permission classifier (bulk deletion): removal of the 3 drift worktree dirs + shapes-surface-protocol-df87db (holds only untracked superseded indexer/ draft with a .env.local) + rm -rf _to_delete (53.6M). Exact commands handed to user as run-blocks; after they run, `git worktree prune` if needed.
-- Branch kill-list reported to user, awaiting approval: MERGED group (zero loss) + UNMERGED-ON-ORIGIN group (origin retains). UNMERGED-LOCAL-ONLY (~20 branches, mostly 8-9 day old audit/doc one-offs) needs a judgment triage pass — offered as follow-up. Codex worktrees (~/.codex/worktrees/*) left alone.
+- D-04 DECIDED standalone (user, 2026-08-25). preserve/surface-port deleted deliberately; recorded in DECISIONS.md.
+- Hygiene COMPLETE (see STATE.md). 10 local branches remain, each justified. User ran the classifier-blocked deletions themselves.
+- P0 gate blocked solely on R15: GitHub Actions billing dead since 2026-08-08, zero CI on 17 days of main pushes. USER ACTION: fix billing in GitHub settings. Then: re-run CI on main tip, land W-4 (CI cost fixes from claude/docs-truth-and-size-gate), declare P0 gate, open P1.
+- Open user decisions: D-23 (title-auction product line on claude/contract-title — pursue/park/kill), D-05 (mainnet keys/fee, needed by P2).
 
 ## Next after hygiene
 
