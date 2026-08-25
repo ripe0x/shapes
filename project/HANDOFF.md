@@ -24,6 +24,13 @@ Branch: claude/project-director-setup-886e07 (worktree .claude/worktrees/project
 
 - P0 gate check, then P1 per ROADMAP.md: W-1 (Black Shape site UI + node.more rollup rendering bug live on main's TokenView), D-12 RPC fallback transport, D-10 indexer prototype, D-08 gas ceilings, D-07 ink tuning.
 
+## Go-public cutover: EXECUTED 2026-08-25
+
+- Old repo renamed ripe0x/shapes-archive (PRIVATE — must stay private forever; its object store carries the pre-scrub identity). Local checkout's origin re-pointed at the archive so an accidental push cannot recontaminate the clean repo.
+- New ripe0x/shapes created, rewritten mirror pushed, server pruned to the canonical 10 branches (filter-repo had promoted stale remote-tracking refs to branches; 30 extra refs deleted, codex checkpoint refs and stash included).
+- Attribution verified via API: all commits author as ripe0x (merge committers web-flow). Flipped PUBLIC. CI triggered via PR #1 (director branch -> main) and RUNNING — first run since 2026-08-08. R15 resolution in progress.
+- REMAINING: (a) CI conclusion on PR #1 -> then land W-4 cost fixes; (b) user re-links Netlify git-CD to the new repo (dashboard); (c) local migration: fresh clone of the clean repo replaces the old-history checkout + worktrees (old checkout's origin points at the archive meanwhile); (d) delete shapes-archive when confident.
+
 ## Standing user directives (this session)
 
 - Director owns plan and judgment calls; not just executor. Token discipline: load-bearing reading and tricky wiring inline; breadth work delegated in parallel to cheaper models, conclusions only kept in context.
