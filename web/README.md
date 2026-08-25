@@ -7,7 +7,7 @@ Chain target comes from `web/public/deployment.json`, with env overrides `SHAPES
 `SHAPES_CHAIN_ID`, and `SHAPES_ADDRESS` for the server-side deployment target (see
 `app/lib/deployment.ts`).
 
-Deployed via Netlify git auto-deploy from `main` (`web/netlify.toml`).
+Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
 
 ## Development
 

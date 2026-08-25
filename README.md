@@ -320,6 +320,7 @@ test/
   Fork.t.sol                  full lifecycle against a mainnet fork (env-gated)
   fixtures/fixtures.json      generated corpus, do not hand-edit
 preview/                      the generative preview harness + chain tester
+netlify.toml                  repository-root Netlify config; builds the web workspace
 SPEC.md                       implementation plan and every rendering decision
 SECURITY.md                   adversarial review
 BUILDING.md                   integrator's guide: accept, unwrap and reshape Shapes from a contract

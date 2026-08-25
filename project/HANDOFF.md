@@ -17,19 +17,19 @@ Branch: claude/project-director-setup-886e07 in canonical clone `/Users/dd/Casca
 
 - P0 gate PASSED. PR #1 is mergeable and awaits user review/merge; P1 does not open before that merge.
 - Independent review found stale status contradictions in STATE/DECISIONS/RISKS/HANDOFF; corrected in the resumed session. Executable PR diff received an independent accept verdict.
-- Current pre-fix PR tip: contracts and renderer parity checks passed. Netlify deploy preview failed with build exit code 2; local diagnosis found `web/eslint.config.mjs` used flat-config imports against `eslint-config-next` 15's legacy exports. The FlatCompat fix passes web lint/build locally and will rerun all remote checks when pushed.
+- Current PR tip `62ecd69`: GitHub Actions rerunning; Netlify again failed in 14 seconds. Root cause: Netlify's site settings build from the repository root (`base = ""`, command `npm run build`), but the root package has no build script and the config was invisible at `web/netlify.toml`. The reviewed fix moves it to repository root with `base = "web"`; `netlify build --offline --context deploy-preview --filter web` completes locally. The separate FlatCompat fix also passes web lint/build.
 - Open user decisions: D-23 (title-auction product line on claude/contract-title — pursue/park/kill), D-05 (mainnet keys/fee, needed by P2).
 
 ## Next
 
-- Push the reviewed Netlify/docs fixes and confirm the new PR tip green; user reviews/merges PR #1. Then dispatch W-1, D-12, and W-4 as separate P1 packets, with D-08 as the first experiment.
+- Push the repository-root Netlify config and confirm the new PR tip green; user reviews/merges PR #1. Then dispatch W-1, D-12, and W-4 as separate P1 packets, with D-08 as the first experiment.
 
 ## Go-public cutover: EXECUTED 2026-08-25
 
 - Old repo renamed ripe0x/shapes-archive (PRIVATE — must stay private forever; its object store carries the pre-scrub identity). Local checkout's origin re-pointed at the archive so an accidental push cannot recontaminate the clean repo.
 - New ripe0x/shapes created, rewritten mirror pushed, server pruned to the canonical 10 branches (filter-repo had promoted stale remote-tracking refs to branches; 30 extra refs deleted, codex checkpoint refs and stash included).
 - Attribution verified via API: all commits author as ripe0x (merge committers web-flow). Flipped PUBLIC. GitHub Actions resumed and passed both jobs on PR #1; R15 closed.
-- Canonical local migration is complete at `/Users/dd/CascadeProjects/shapes-clean`. The archive remains private permanently for its pre-scrub history and merged-PR discussions. Netlify is connected to the new public repo and is reporting deploy-preview status on PR #1; its current failed preview is under diagnosis.
+- Canonical local migration is complete at `/Users/dd/CascadeProjects/shapes-clean`. The archive remains private permanently for its pre-scrub history and merged-PR discussions. Netlify is connected to the new public repo; its repository-root build configuration fix is pending remote verification on PR #1.
 
 ## Standing user directives (this session)
 
