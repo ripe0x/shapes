@@ -2,13 +2,13 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-08-25 (Director setup session).
+Last updated: 2026-08-25 (resumed Director session).
 
 ## Phase
 
-Current phase: P0 Stabilize (see `project/ROADMAP.md`). Gate not yet passed.
+Current phase: P0 Stabilize complete, awaiting user review and merge of PR #1 before P1 opens (see `project/ROADMAP.md`).
 
-P0 GATE PASSED 2026-08-25: all acceptance items met — at-risk work preserved or landed, audit findings dispositioned, hygiene complete, docs truthful, and CI fully green on the clean public repo (first green run since 2026-08-08; renderer job fixed for the workspace lockfile move). P1 opens when PR #1 (director branch) merges to main after user review.
+P0 GATE PASSED 2026-08-25: all acceptance items met — at-risk work preserved or landed, audit findings dispositioned, hygiene complete, docs truthful, and GitHub Actions green on the clean public repo (first green run since 2026-08-08; renderer job fixed for the workspace lockfile move). P1 opens when PR #1 (director branch) merges to main after user review. The current PR tip must be green before merge; its Netlify deploy preview is under review after a failed build on 2026-08-25.
 
 Historical note — STOP CONDITION LIFTED (2026-08-25, same day raised): the landed audit's base commit 4e6b3d8 (2026-08-19) is 43 commits behind main; main already closed the findings (a0ff0af both Highs + 3 Lows, da1fa53 L-1, dabf2ad L-3, e20a1b3 M-2/L-2/L-4/I-6, 383be38 H-2 doc correction, 2167dc7, d2f2e59). Verified in current source: settlement is pull-based via claimLot (lot revert blocks only its own delivery), bid() has SellerCannotBid. The initial triage misread the audit checkout as current main. Residue tracked in D-02: M-1 gas asymmetry feeds D-08; PoC suite worth porting to main as regression tests.
 
@@ -25,21 +25,19 @@ Historical note — STOP CONDITION LIFTED (2026-08-25, same day raised): the lan
 - Site (`web/`): Next.js 15 on Netlify (git auto-deploy from main, verified 2026-08-25). Imports all UI/chain logic from `preview/src` via `@shared` alias so the site cannot drift from the contract renderer. Reads chain directly via multicall against the free publicnode Sepolia RPC; no indexer wired in, no RPC fallback, injected wallets only (WalletConnect projectId is a placeholder).
 - Preview (`preview/`): canonical TS renderer + parity/fixture/sweep/simulation tooling. `preview/scripts/inkTuning.ts` exists (ink-gene tuning harness).
 - Indexer (`indexer/`): Ponder, self-contained, builds token + lineage_edge tables. Built but not deployed and not consumed by the site.
-- Docs: extensive but with stale status lines and a stale ladder in WEBSITE_DESIGN_PROMPT.md (lists 25 ETH rung); `web/README.md` is create-next-app boilerplate; README repo map missing 14 files. Cleanup tracked as D-06.
+- Docs: canonical status and operating docs live in `project/`; the D-06 truth pass updated the root status lines, ladder, repo map, deployment table, and `web/README.md`.
 
-## Uncommitted work at risk
+## Stabilization record
 
-- `.claude/worktrees/shapes-surface-protocol-df87db`: the entire Surface-protocol port exists ONLY as untracked files here — `src/surface/` (ISurface, ShapesMinter, ShapesSurfaceRenderer, ILineage, LineageStore) and `test/surface/ShapesOnSurface.t.sol` (mainnet-fork tested against the live SurfaceFactory). Committed nowhere; the `shapes-on-surface` branch itself contains only ink prototypes and is fully merged into main. One `git clean` destroys the port. Same worktree also has uncommitted modifications to the parity-critical pair (`preview/src/canonical/render.ts` + `src/ShapeRenderer.sol`) and `test/fixtures/fixtures.json`, on a base 97 commits behind main. Tracked as R2 / D-03 / D-04.
-- RESOLVED 2026-08-25: Surface port committed to branch preserve/surface-port (commit ce4c7e4, 6 files, renderer WIP left untouched). R2 closed.
+- RESOLVED 2026-08-25: Surface port committed to branch preserve/surface-port (commit ce4c7e4, 6 files), then deliberately rejected under D-04 and the preservation branch deleted with user approval. R2 closed.
 - RESOLVED 2026-08-25: audit artifacts committed to branch claude/shapes-security-audit-fa49c8 (commit 6480f1c); triaged in D-02. Two Highs confirmed (H-1 must-fix, H-2 reconcile).
 - RESOLVED 2026-08-25: gasmeasure test committed to branch preserve/split-gas-measure (commit 95cdc28).
-- RESOLVED 2026-08-25: renderer WIP preserved on preserve/renderer-wip (074fc30); superseded vs novel triage in D-03; novel bits queued as W-1/W-2. Stray untracked indexer/ in that worktree is a superseded early draft (contains a .env.local; never commit it); delete in hygiene pass with user approval.
+- RESOLVED 2026-08-25: renderer WIP preserved on preserve/renderer-wip (074fc30); superseded vs novel triage in D-03; novel bits queued as W-1/W-2. The superseded stray indexer draft was deleted during hygiene.
 - Hygiene pass COMPLETE 2026-08-25: worktrees down to main checkout + director worktree + 3 codex worktrees (left alone); ~45 local branches down to 10, all with a reason (main, director, 2 preserve/*, audit record, codex checked-out, and 4 UNIQUE: contract-title, docs-truth-and-size-gate, jovial-goodall, portless-local-setup — queued as D-23/W-4/W-5/W-6); _to_delete/ and stray indexer/ draft deleted by user (classifier blocks bulk deletion for the agent). Triage evidence: 17 branches proven superseded via empty diffs against landed squash merges.
 - R15 RESOLVED via go-public cutover: repo public at github.com/ripe0x/shapes, Actions free, CI green (contracts + renderer parity) on PR #1. W-4 cost fixes remain queued for P1.
 - D-01 final branch-layout decision deferred to P2 entry; interim chain-1 guard landed (f7fd92b).
 - D-06 doc truth pass landed (8c30e51): README deployment table and repo map current, spec status lines point here, ladder corrected in WEBSITE_DESIGN_PROMPT.md, web/README rewritten.
-- Stash on main: one trivial .gitignore change (3 lines). Low risk.
-- ~45 local branches, 13 worktrees. Hygiene pass tracked in P0.
+- The old checkout's trivial `.gitignore` stash remains low risk and is not part of the canonical clone.
 
 ## Known unknowns
 

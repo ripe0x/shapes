@@ -2,7 +2,7 @@
 
 Evidence-based phases. No phase-N+1 implementation before phase N's gate passes. Stop conditions halt the phase and force a Director review.
 
-## P0 Stabilize (current)
+## P0 Stabilize (gate passed; PR #1 merge pending)
 
 Objective: nothing valuable is uncommitted, nothing dangerous is undecided-by-accident, docs match reality.
 

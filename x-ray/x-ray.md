@@ -270,7 +270,7 @@ Coverage runs as of PR #38; the command needs `--ir-minimum` (coverage builds wi
 
 > Repo shape: normal_dev — 130 commits over a 14-day history (2026-08-08 → 2026-08-22), 42 of which touch source files.
 
-**Analyzed branch:** `HEAD` (detached, matching `origin/main` at `2167dc7`) — all git signals below reflect only commits reachable from this commit.
+**Historical analyzed revision:** pre-publication `origin/main` at old hash `2167dc7` (rewritten hash `fbc0b8d`; see `project/HASHMAP.md`). All git signals below reflect only commits reachable from that revision, not the current branch tip.
 
 ### Contributors
 
