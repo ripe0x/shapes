@@ -70,6 +70,8 @@ contract DeployShapes is LensEquivalence {
             ShapeAuctionHouse house
         )
     {
+        _guardMainnetLadder();
+
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));

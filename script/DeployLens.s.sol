@@ -26,6 +26,8 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///          --broadcast --verify
 contract DeployLens is LensEquivalence {
     function run() external returns (ShapeLens lens) {
+        _guardMainnetLadder();
+
         address shapesAddress = vm.envAddress("SHAPES_ADDRESS");
         require(shapesAddress.code.length != 0, "SHAPES_ADDRESS has no code");
         Shapes shapes = Shapes(payable(shapesAddress));

@@ -42,6 +42,8 @@ contract DeploySepolia is LensEquivalence {
             ShapeAuctionHouse house
         )
     {
+        _guardMainnetLadder();
+
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
         bool seed = vm.envOr("SEED_ETH", true);
         address me = msg.sender;
