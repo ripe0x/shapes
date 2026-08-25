@@ -1,0 +1,36 @@
+--- /tmp/inv.orig.sol	2026-08-20 12:21:36
++++ test/Invariants.t.sol	2026-08-20 12:21:36
+@@ -692,8 +692,9 @@
+         uint32 extensionWindow = uint32(bound(extSeed, 0, duration));
+         uint64 reserve = uint64(bound(resSeed, 1, 10));
+ 
++        uint256 cost = 0.1 ether + shapes.mintFeeFor(0.1 ether);
+         vm.prank(seller);
+-        try shapes.mint{value: 0.1 ether + shapes.mintFeeFor(0.1 ether)}(0.1 ether) returns (uint256 lot) {
++        try shapes.mint{value: cost}(0.1 ether) returns (uint256 lot) {
+             vm.prank(seller);
+             try house.createAuction(lot, duration, reserve, 500, extensionWindow) returns (uint256 id) {
+                 auctionIds.push(id);
+@@ -709,8 +710,9 @@
+         address bidder = _actor(actorSeed);
+         uint256 backing = bound(unitsSeed, 1, 200) * 0.01 ether;
+ 
++        uint256 cost = backing + shapes.mintFeeFor(backing);
+         vm.prank(bidder);
+-        try house.bid{value: backing + shapes.mintFeeFor(backing)}(id, new uint256[](0), backing) {
++        try house.bid{value: cost}(id, new uint256[](0), backing) {
+             _recordBidder(id, bidder);
+         } catch {}
+     }
+@@ -721,9 +723,10 @@
+         address bidder = _actor(actorSeed);
+         uint256 amount = DENOMS[denomSeed % 7]; // cap at 10 ETH to keep fuzzing cheap
+ 
++        uint256 cost = amount + shapes.mintFeeFor(amount);
+         vm.prank(bidder);
+         uint256 card;
+-        try shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount) returns (uint256 c) {
++        try shapes.mint{value: cost}(amount) returns (uint256 c) {
+             card = c;
+         } catch {
+             return;
