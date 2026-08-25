@@ -1,5 +1,8 @@
 # Ink Genes — Implementation Spec (v1.0)
 
+Status: implemented; design rationale preserved as written. Current project status:
+project/STATE.md.
+
 Audience: an implementation agent. Follow this document exactly. Where this document and
 your own judgment differ, this document wins. Where this document and the actual code
 differ (a line anchor doesn't match, a signature moved), STOP and report the mismatch

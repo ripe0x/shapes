@@ -1,7 +1,7 @@
 # Shapes v2 — Composition, Provenance, Black Shape
 
-**Status:** proposal, pre-implementation. This is a design spec for review, not yet built.
-The current contracts (v1) are pre-deployment (no remote, no deployment anywhere).
+**Status:** implemented; design rationale preserved as written. Current project status:
+project/STATE.md.
 
 This document is written to be reviewed independently. It states the design, the locked
 decisions, and — for the non-obvious parts — *why* the design is safe.
