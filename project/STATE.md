@@ -8,7 +8,9 @@ Last updated: 2026-08-25 (Director setup session).
 
 Current phase: P0 Stabilize (see `project/ROADMAP.md`). Gate not yet passed.
 
-STOP CONDITION LIFTED (2026-08-25, same day raised): the landed audit's base commit 4e6b3d8 (2026-08-19) is 43 commits behind main; main already closed the findings (a0ff0af both Highs + 3 Lows, da1fa53 L-1, dabf2ad L-3, e20a1b3 M-2/L-2/L-4/I-6, 383be38 H-2 doc correction, 2167dc7, d2f2e59). Verified in current source: settlement is pull-based via claimLot (lot revert blocks only its own delivery), bid() has SellerCannotBid. The initial triage misread the audit checkout as current main. Residue tracked in D-02: M-1 gas asymmetry feeds D-08; PoC suite worth porting to main as regression tests.
+P0 GATE PASSED 2026-08-25: all acceptance items met — at-risk work preserved or landed, audit findings dispositioned, hygiene complete, docs truthful, and CI fully green on the clean public repo (first green run since 2026-08-08; renderer job fixed for the workspace lockfile move). P1 opens when PR #1 (director branch) merges to main after user review.
+
+Historical note — STOP CONDITION LIFTED (2026-08-25, same day raised): the landed audit's base commit 4e6b3d8 (2026-08-19) is 43 commits behind main; main already closed the findings (a0ff0af both Highs + 3 Lows, da1fa53 L-1, dabf2ad L-3, e20a1b3 M-2/L-2/L-4/I-6, 383be38 H-2 doc correction, 2167dc7, d2f2e59). Verified in current source: settlement is pull-based via claimLot (lot revert blocks only its own delivery), bid() has SellerCannotBid. The initial triage misread the audit checkout as current main. Residue tracked in D-02: M-1 gas asymmetry feeds D-08; PoC suite worth porting to main as regression tests.
 
 ## Deployments
 
@@ -33,7 +35,7 @@ STOP CONDITION LIFTED (2026-08-25, same day raised): the landed audit's base com
 - RESOLVED 2026-08-25: gasmeasure test committed to branch preserve/split-gas-measure (commit 95cdc28).
 - RESOLVED 2026-08-25: renderer WIP preserved on preserve/renderer-wip (074fc30); superseded vs novel triage in D-03; novel bits queued as W-1/W-2. Stray untracked indexer/ in that worktree is a superseded early draft (contains a .env.local; never commit it); delete in hygiene pass with user approval.
 - Hygiene pass COMPLETE 2026-08-25: worktrees down to main checkout + director worktree + 3 codex worktrees (left alone); ~45 local branches down to 10, all with a reason (main, director, 2 preserve/*, audit record, codex checked-out, and 4 UNIQUE: contract-title, docs-truth-and-size-gate, jovial-goodall, portless-local-setup — queued as D-23/W-4/W-5/W-6); _to_delete/ and stray indexer/ draft deleted by user (classifier blocks bulk deletion for the agent). Triage evidence: 17 branches proven superseded via empty diffs against landed squash merges.
-- P0 gate BLOCKED on one item: CI billing-dead since 2026-08-08 (R15). User must fix GitHub Actions billing; then re-run CI on main tip and land W-4 cost fixes. Everything else in the P0 acceptance list is done.
+- R15 RESOLVED via go-public cutover: repo public at github.com/ripe0x/shapes, Actions free, CI green (contracts + renderer parity) on PR #1. W-4 cost fixes remain queued for P1.
 - D-01 final branch-layout decision deferred to P2 entry; interim chain-1 guard landed (f7fd92b).
 - D-06 doc truth pass landed (8c30e51): README deployment table and repo map current, spec status lines point here, ladder corrected in WEBSITE_DESIGN_PROMPT.md, web/README rewritten.
 - Stash on main: one trivial .gitignore change (3 lines). Low risk.
