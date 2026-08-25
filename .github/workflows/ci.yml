@@ -35,14 +35,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: preview/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
 
+      # The lockfile lives at the repo root (npm workspaces: web + preview), so
+      # install runs there; preview's deps hoist into the root node_modules.
       - name: install
-        working-directory: preview
         run: npm ci
 
       - name: typecheck
