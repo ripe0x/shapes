@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. A fresh session picks up here: read project/*.md (STATE.md first), then this file for what was mid-flight. Updated at every significant step, not just session end.
 
 Session: resumed Director session, 2026-08-26.
-Branch: `main` at `bf5ae6b` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`; PR #3 merged.
+Branch: `codex/artist-attribution` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`; implementation through `30cafec`, draft PR #4 open.
 
 ## Done this session
 
@@ -15,6 +15,11 @@ Branch: `main` at `bf5ae6b` in canonical clone `/Users/dd/CascadeProjects/shapes
 
 ## In flight
 
+- D-26 is implemented and pushed in draft PR #4. `artist()` permanently records the deployer; Shapes creates a bound `ShapesArtistAttribution` child whose one-time EIP-712 signature binds chain, child, Shapes, artist and release hash. It grants no authority or economics, stores no statement, and does not change the one-step admin transfer selected by the user.
+- The direct-core implementation was measured first and rejected at 25,611 runtime bytes, 1,035 over EIP-170. The adopted child design leaves Shapes at 24,289 bytes with 287 bytes of margin; the child is 3,028 bytes. `IShapes` is pinned at `0xca355cbe`.
+- Attribution security coverage includes independent domain/type/message reconstruction, wrong signer/hash/chain rejection, cross-deployment replay rejection, one-time storage, EIP-7702 delegated-EOA ECDSA, conventional ERC-1271, and a valid empty ERC-1271 signature. The final full suite is 438 passed, 0 failed, 4 fork-only skipped. An independent review accepts the branch as a draft.
+- PR #4 MUST NOT MERGE before the fresh Sepolia deployment and site metadata change land atomically. The new site reads are intentionally incompatible with the retired Sepolia address in `web/public/deployment.json`; no fallback was added because the user confirmed Sepolia will be redeployed. Netlify auto-deploys main, so merging early would break the live site.
+- No Sepolia transaction has been broadcast. `ETHERSCAN_API_KEY` is unset in the Director environment, and the irreversible `releaseHash` has not been selected. The new Sepolia-only signing script prints and simulates the exact digest, requires two confirmations, waits for receipt, and performs postflight reads.
 - P0 gate PASSED. PR #1 merged green as `5eec83d`; PR #2 merged green as `7fca2b2`; corrective PR #3 merged as `bf5ae6b`. The intended `owner()` API is restored, and P1 entry now waits only for a fresh Sepolia deployment/readback.
 - Independent review found stale status contradictions in STATE/DECISIONS/RISKS/HANDOFF; corrected in the resumed session. Executable PR diff received an independent accept verdict.
 - PR #1's last standalone tip `41a36b3` was fully green: contracts, renderer parity, Netlify deploy preview, header rules, and redirect rules passed; the pages-changed check correctly skipped. Two later main commits (`ef228f0`, `1020730`) implemented build-time ladder selection and made PR #1 conflict in DeployShapes/DeploySepolia. The Director merged current main into the PR branch and selected main's stronger profile-aware guards. Re-run the combined checks before merge.
@@ -27,7 +32,7 @@ Branch: `main` at `bf5ae6b` in canonical clone `/Users/dd/CascadeProjects/shapes
 
 ## Next
 
-- Perform a fresh Sepolia deploy/readback only with the user's explicit deployment approval. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
+- Obtain the exact user-approved `releaseHash` definition/value and an available `ETHERSCAN_API_KEY`; then deploy and verify the full suite to Sepolia, run the guarded artist attestation, replace every address/fromBlock in `web/public/deployment.json`, rerun live site/CI checks, and only then make PR #4 mergeable. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
 
 ## Go-public cutover: EXECUTED 2026-08-25
 
