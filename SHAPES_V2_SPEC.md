@@ -32,7 +32,7 @@ fixed 100 ETH to `0x…dEaD`.
 
 ## 1. How Shapes works today (v1 summary)
 
-- ERC721 (`Shapes`) + `ReentrancyGuard` + `Ownable`. Per token it stores only
+- ERC721 (`Shapes`) + `ReentrancyGuard` + a separate value-inert admin role. Per token it stores only
   `ShapeData { bytes32 seed; uint8 denomIndex }`. Backing is derived from `denomIndex` against a
   fixed denomination table — an off-ladder wei amount is not representable in storage.
 - Accounting: `totalBacking`, `totalSupply`, `totalMinted`. Reserve invariant
@@ -45,7 +45,7 @@ fixed 100 ETH to `0x…dEaD`.
 - Redemption is owner-only, all-or-nothing, `nonReentrant`, checks-effects-interactions; the token
   is burned before any ETH moves.
 - Renderer (`ShapeRenderer`) is `pure`/`view`-only, byte-parity with a canonical TypeScript
-  renderer (10 primitive kinds, 52 module appearances), and is owner-replaceable until
+  renderer (10 primitive kinds, 52 module appearances), and is admin-replaceable until
   `lockRenderer` (a cosmetic power only; the renderer never touches ETH).
 - Token IDs are sequential from 0 (`firstTokenId = totalMinted`), so lower ID ⟺ minted earlier.
 
@@ -238,7 +238,7 @@ uint256 public blackCount;          // monotonic; number of Shapes ever made Bla
 uint256 public totalSupply;         // live tokens, INCLUDING Black
 uint256 public totalMinted;         // ids issued; the highest is totalMinted-1 (bumped by split mints; NOT by decompose, which reuses ids)
 
-// unchanged: feeBps, feeRecipient (immutable); renderer, rendererLocked (owner, lockable); Ownable
+// unchanged: feeBps, feeRecipient (immutable); renderer, rendererLocked (admin, lockable)
 
 // per-survivor LIFO stack of self-contained compose records, enabling decompose (§9.3)
 struct ComposeInput {           // one burned input, everything needed to re-mint it verbatim
@@ -655,12 +655,13 @@ tokens exist anywhere.
 - Fresh token IDs use the monotonic `totalMinted` count as the next id. Decompose may revive only
   the exact inputs recorded by the compose it reverses; redemption, public burn and split do not
   recycle retired IDs.
-- `positionResolver` starts at zero. The transferable owner may set, replace or clear it while
+- `positionResolver` starts at zero. The transferable admin may set, replace or clear it while
   unlocked. `lockPositionResolver` permanently freezes its current value and may be called at any
   time, including while zero. Renderer and resolver locks are independent.
 - `positionOf(tokenId)` returns zero without a resolver. Otherwise it delegates without checking
   token existence, backing, result code or position status, and propagates resolver failures.
 - The returned address is opaque discovery data. The future position protocol defines its claim,
   authorization, settlement and lifecycle. No core Shapes operation calls the resolver.
-- Renouncing ownership permanently ends any remaining renderer or resolver administration; a prior
-  ownership transfer moves all still-unlocked authority to the new owner.
+- Renouncing admin permanently ends any remaining renderer or resolver administration; a prior
+  admin transfer moves all still-unlocked authority to the new admin. Shape #0 title holding is
+  independent and moves no authority.

@@ -7,7 +7,7 @@ import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
@@ -61,10 +61,19 @@ abstract contract ShapesBase is Test {
         Denominations.amountAt(8)
     ];
 
+    function _keepGenesisShape() internal pure virtual returns (bool) {
+        return false;
+    }
+
     function setUp() public virtual {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, feeRecipient, address(renderer), address(collection)
+        );
+        // Most legacy subsystem tests need an otherwise-empty collection. ContractOwnership.t.sol
+        // exercises the live genesis token itself; burn it here while preserving issued id 0.
+        if (!_keepGenesisShape()) shapes.redeemTo(0, payable(address(0xD15CA4D)));
         lens = new ShapeLens(address(shapes));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
@@ -96,22 +105,22 @@ contract MintTest is ShapesBase {
             uint256 id = _mint(alice, DENOMS[i]);
             expectedBacking += DENOMS[i];
 
-            assertEq(id, i, "token ids are sequential from 0");
+            assertEq(id, i + 1, "permissionless token ids are sequential from 1");
             assertEq(shapes.ownerOf(id), alice);
             assertEq(shapes.backingOf(id), DENOMS[i]);
             assertEq(shapes.redeemableBacking(), expectedBacking);
             assertEq(shapes.totalSupply(), i + 1);
-            assertEq(shapes.totalMinted(), i + 1);
+            assertEq(shapes.totalMinted(), i + 2);
         }
         assertEq(address(shapes).balance, expectedBacking, "balance equals backing exactly");
         _assertSolvent();
     }
 
-    function test_TokenIdsStartAtZero() public {
-        assertEq(shapes.totalMinted(), 0);
-        assertEq(_mint(alice, DENOMS[4]), 0, "the first Shape is #0");
-        assertEq(shapes.totalMinted(), 1, "totalMinted counts ids issued, not the highest one");
-        assertEq(_mint(alice, DENOMS[4]), 1);
+    function test_PermissionlessTokenIdsStartAtOne() public {
+        assertEq(shapes.totalMinted(), 1);
+        assertEq(_mint(alice, DENOMS[4]), 1, "the first permissionless Shape is #1");
+        assertEq(shapes.totalMinted(), 2, "totalMinted counts genesis plus public ids");
+        assertEq(_mint(alice, DENOMS[4]), 2);
     }
 
     function test_MintToAnotherAddress() public {
@@ -212,8 +221,8 @@ contract MintTest is ShapesBase {
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: required}(DENOMS[4], qty);
 
-        assertEq(first, 0);
-        assertEq(shapes.totalMinted(), qty);
+        assertEq(first, 1);
+        assertEq(shapes.totalMinted(), qty + 1);
         assertEq(shapes.totalSupply(), qty);
         assertEq(shapes.redeemableBacking(), qty * DENOMS[4], "fees are not part of backing");
         assertEq(address(shapes).balance, qty * DENOMS[4]);
@@ -300,7 +309,9 @@ contract FeeTest is ShapesBase {
     }
 
     function test_ZeroFeeIsSupported() public {
-        Shapes free = new Shapes(0, feeRecipient, address(renderer), address(collection));
+        Shapes free = new Shapes{value: Denominations.amountAt(0)}(
+            0, feeRecipient, address(renderer), address(collection)
+        );
         vm.prank(alice);
         uint256 id = free.mintTo{value: DENOMS[4]}(DENOMS[4], alice);
         assertEq(free.backingOf(id), DENOMS[4]);
@@ -309,7 +320,9 @@ contract FeeTest is ShapesBase {
 
     function test_RevertingFeeRecipientBlocksMintingButNotRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
-        Shapes s = new Shapes(FEE_BPS, address(bad), address(renderer), address(collection));
+        Shapes s = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, address(bad), address(renderer), address(collection)
+        );
 
         vm.prank(alice);
         vm.expectRevert(
@@ -319,7 +332,9 @@ contract FeeTest is ShapesBase {
 
         // With a zero fee there is no transfer at all, so the same recipient is harmless and
         // redemption is provably independent of the fee path.
-        Shapes s0 = new Shapes(0, address(bad), address(renderer), address(collection));
+        Shapes s0 = new Shapes{value: Denominations.amountAt(0)}(
+            0, address(bad), address(renderer), address(collection)
+        );
         vm.startPrank(alice);
         uint256 id = s0.mintTo{value: DENOMS[4]}(DENOMS[4], alice);
         uint256 before = alice.balance;
@@ -330,19 +345,25 @@ contract FeeTest is ShapesBase {
 
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(bytes("fee recipient is zero"));
-        new Shapes(FEE_BPS, address(0), address(renderer), address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, address(0), address(renderer), address(collection)
+        );
 
         vm.expectRevert(bytes("renderer is zero"));
-        new Shapes(FEE_BPS, feeRecipient, address(0), address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(FEE_BPS, feeRecipient, address(0), address(collection));
     }
 
     /// @notice `feeBps` is bounded at 100% of the backing. The bound is inclusive, so the
     ///         rejection starts one basis point above it.
     function test_ConstructorBoundsTheFeeAtOneHundredPercent() public {
         vm.expectRevert(bytes("fee exceeds 100%"));
-        new Shapes(10_001, feeRecipient, address(renderer), address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(
+            10_001, feeRecipient, address(renderer), address(collection)
+        );
 
-        Shapes ceiling = new Shapes(10_000, feeRecipient, address(renderer), address(collection));
+        Shapes ceiling = new Shapes{value: Denominations.amountAt(0)}(
+            10_000, feeRecipient, address(renderer), address(collection)
+        );
         assertEq(ceiling.feeBps(), 10_000, "the ceiling itself is accepted");
         assertEq(ceiling.mintFeeFor(DENOMS[4]), DENOMS[4], "a 100% fee doubles the mint price");
 
@@ -350,7 +371,7 @@ contract FeeTest is ShapesBase {
         // joins the reserve.
         vm.prank(alice);
         ceiling.mint{value: DENOMS[4] * 2}(DENOMS[4]);
-        assertEq(ceiling.redeemableBacking(), DENOMS[4], "the fee never joins the reserve");
+        assertEq(ceiling.redeemableBacking(), DENOMS[0] + DENOMS[4], "genesis and mint backing only");
         assertEq(feeRecipient.balance, DENOMS[4], "the fee reached the recipient");
     }
 
@@ -377,7 +398,7 @@ contract RedeemTest is ShapesBase {
         assertEq(alice.balance - before, DENOMS[5], "exactly the wrapped amount, no fee taken");
         assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
-        assertEq(shapes.totalMinted(), 1, "totalMinted is monotonic");
+        assertEq(shapes.totalMinted(), 2, "genesis plus the redeemed public id remain issued");
         assertEq(address(shapes).balance, 0);
     }
 
@@ -680,7 +701,7 @@ contract ReserveTest is ShapesBase {
         assertTrue(m.attempted(), "the receiver callback ran");
         assertTrue(m.reentryReverted(), "re-entry into mint must revert");
         assertEq(shapes.totalSupply(), 1, "exactly one token exists");
-        assertEq(shapes.totalMinted(), 1);
+        assertEq(shapes.totalMinted(), 2);
         assertEq(shapes.redeemableBacking(), DENOMS[4]);
         assertEq(address(shapes).balance, DENOMS[4]);
         _assertSolvent();
@@ -688,7 +709,10 @@ contract ReserveTest is ShapesBase {
 
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
-        Shapes s = new Shapes(FEE_BPS, address(fr), address(renderer), address(collection));
+        Shapes s = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, address(fr), address(renderer), address(collection)
+        );
+        s.redeemTo(0, payable(address(0xD15CA4D)));
         fr.configure(IShapes(address(s)), DENOMS[4]);
         vm.deal(address(fr), 10 ether);
 
@@ -954,21 +978,21 @@ contract ValueDiscoveryTest is ShapesBase {
 
     function test_TerminalIdsStayRetiredWhileDecomposeRevivesComposeInputs() public {
         uint256 redeemed = _mint(alice, DENOMS[0]);
-        assertEq(redeemed, 0);
+        assertEq(redeemed, 1);
         vm.prank(alice);
         shapes.redeem(redeemed);
 
         uint256 parent = _mint(alice, DENOMS[1]);
-        assertEq(parent, 1);
+        assertEq(parent, 2);
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
-        assertEq(kids[0], 2);
-        assertEq(kids[4], 6);
+        assertEq(kids[0], 3);
+        assertEq(kids[4], 7);
 
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 5);
-        assertEq(first, 7);
+        assertEq(first, 8);
         uint256[] memory burnIds = new uint256[](4);
         for (uint256 i = 0; i < 4; ++i) {
             burnIds[i] = first + 1 + i;
@@ -983,11 +1007,11 @@ contract ValueDiscoveryTest is ShapesBase {
         for (uint256 i = 0; i < revived.length; ++i) {
             assertEq(revived[i], burnIds[i]);
         }
-        assertEq(shapes.totalMinted(), 12);
+        assertEq(shapes.totalMinted(), 13);
 
         uint256 next = _mint(alice, DENOMS[0]);
-        assertEq(next, 12, "redeem and split never recycle a retired id");
-        assertEq(shapes.totalMinted(), 13);
+        assertEq(next, 13, "redeem and split never recycle a retired id");
+        assertEq(shapes.totalMinted(), 14);
     }
 }
 
@@ -1003,7 +1027,7 @@ contract PositionResolverTest is ShapesBase {
         assertEq(shapes.positionOf(type(uint256).max), address(0));
     }
 
-    function test_OwnerSetsExactResolverResultsAndEvent() public {
+    function test_AdminSetsExactResolverResultsAndEvent() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setPosition(1, alice);
         resolver.setPosition(99, address(renderer));
@@ -1038,17 +1062,17 @@ contract PositionResolverTest is ShapesBase {
         shapes.setPositionResolver(alice);
     }
 
-    function test_ResolverAdminIsOwnerOnly() public {
+    function test_ResolverIsAdminOnly() public {
         MockPositionResolver resolver = new MockPositionResolver();
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setPositionResolver(address(resolver));
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.lockPositionResolver();
     }
 
-    function test_OwnerMayPermanentlyLockZero() public {
+    function test_AdminMayPermanentlyLockZero() public {
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.PositionResolverLocked(address(0));
         shapes.lockPositionResolver();
@@ -1086,31 +1110,35 @@ contract PositionResolverTest is ShapesBase {
         assertTrue(shapes.positionResolverLocked());
     }
 
-    function test_OwnershipTransferMovesAllRemainingAdminAuthority() public {
+    function test_AdminTransferMovesAllRemainingAdminAuthority() public {
         MockPositionResolver resolver = new MockPositionResolver();
-        shapes.transferOwnership(alice);
-        assertEq(shapes.owner(), alice);
+        shapes.transferAdmin(alice);
+        assertEq(shapes.admin(), alice);
 
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
+        );
         shapes.setPositionResolver(address(resolver));
 
         vm.startPrank(alice);
         shapes.setRenderer(address(new ShapeRenderer()));
         shapes.setPositionResolver(address(resolver));
         shapes.lockPositionResolver();
-        shapes.transferOwnership(bob);
+        shapes.transferAdmin(bob);
         vm.stopPrank();
 
-        assertEq(shapes.owner(), bob);
+        assertEq(shapes.admin(), bob);
         assertEq(shapes.positionResolver(), address(resolver));
         assertTrue(shapes.positionResolverLocked());
     }
 
     function test_RenouncingBeforeInstallLeavesResolverUnset() public {
-        shapes.renounceOwnership();
-        assertEq(shapes.owner(), address(0));
+        shapes.renounceAdmin();
+        assertEq(shapes.admin(), address(0));
         MockPositionResolver resolver = new MockPositionResolver();
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
+        );
         shapes.setPositionResolver(address(resolver));
         assertEq(shapes.positionResolver(), address(0));
     }
@@ -1119,7 +1147,7 @@ contract PositionResolverTest is ShapesBase {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setPosition(7, alice);
         shapes.setPositionResolver(address(resolver));
-        shapes.renounceOwnership();
+        shapes.renounceAdmin();
         assertEq(shapes.positionResolver(), address(resolver));
         assertEq(shapes.positionOf(7), alice);
     }
@@ -1210,14 +1238,14 @@ contract PositionResolverTest is ShapesBase {
  * ==================================================================== */
 
 contract RendererAdminTest is ShapesBase {
-    // ShapesBase deploys `shapes` from this test contract, so it is the owner.
-    function test_DeployerIsOwnerAndRendererStartsUnlocked() public view {
-        assertEq(shapes.owner(), address(this));
+    // ShapesBase deploys `shapes` from this test contract, so it is the admin.
+    function test_DeployerIsAdminAndRendererStartsUnlocked() public view {
+        assertEq(shapes.admin(), address(this));
         assertEq(shapes.renderer(), address(renderer));
         assertFalse(shapes.rendererLocked());
     }
 
-    function test_OwnerCanReplaceTheRenderer() public {
+    function test_AdminCanReplaceTheRenderer() public {
         uint256 id = _mint(alice, DENOMS[4]);
         string memory before = shapes.tokenURI(id);
 
@@ -1233,10 +1261,10 @@ contract RendererAdminTest is ShapesBase {
         assertGt(bytes(shapes.tokenURI(id)).length, 0);
     }
 
-    function test_SetRendererIsOwnerOnly() public {
+    function test_SetRendererIsAdminOnly() public {
         ShapeRenderer next = new ShapeRenderer();
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setRenderer(address(next));
     }
 
@@ -1275,9 +1303,9 @@ contract RendererAdminTest is ShapesBase {
         shapes.lockRenderer();
     }
 
-    function test_LockIsOwnerOnly() public {
+    function test_LockIsAdminOnly() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.lockRenderer();
     }
 
@@ -1297,14 +1325,16 @@ contract RendererAdminTest is ShapesBase {
         _assertSolvent();
     }
 
-    function test_OwnerCanRenounce() public {
-        shapes.renounceOwnership();
-        assertEq(shapes.owner(), address(0));
+    function test_AdminCanRenounce() public {
+        shapes.renounceAdmin();
+        assertEq(shapes.admin(), address(0));
 
-        // With no owner, the renderer can no longer be changed — same as locking, via a
+        // With no admin, the renderer can no longer be changed, same as locking via a
         // different route.
         ShapeRenderer next = new ShapeRenderer();
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
+        );
         shapes.setRenderer(address(next));
     }
 }

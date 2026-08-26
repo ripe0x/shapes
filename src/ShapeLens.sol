@@ -4,7 +4,6 @@ pragma solidity 0.8.28;
 import {IShapes} from "./interfaces/IShapes.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {IShapeLens} from "./interfaces/IShapeLens.sol";
-import {IContractCollector} from "./interfaces/IContractCollector.sol";
 import {
     ComposeInputView,
     ComposeRecordView,
@@ -16,7 +15,6 @@ import {Denominations} from "./lib/Denominations.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
-import {ContractCollectorOps} from "./lib/ContractCollectorOps.sol";
 
 /// @title ShapeLens
 /// @notice Read-only periphery for `Shapes`, deployed separately to keep the core token's runtime
@@ -349,25 +347,5 @@ contract ShapeLens is IShapeLens {
         )
     {
         return shapes.splitOriginRaw(childId);
-    }
-
-    /* --------------------------- contract collector --------------------------- */
-
-    /// @inheritdoc IShapeLens
-    function contractCollectorToken() external view returns (address tokenContract, uint256 tokenId) {
-        (tokenContract, tokenId,) = IContractCollector(address(shapes)).contractCollectorBinding();
-    }
-
-    /// @inheritdoc IShapeLens
-    function contractCollector() external view returns (address collector) {
-        (address tokenContract, uint256 tokenId,) =
-            IContractCollector(address(shapes)).contractCollectorBinding();
-        if (tokenContract == address(0)) return address(0);
-        return ContractCollectorOps.ownerOfCapped(tokenContract, tokenId);
-    }
-
-    /// @inheritdoc IShapeLens
-    function contractCollectorBindingLocked() external view returns (bool locked) {
-        (,, locked) = IContractCollector(address(shapes)).contractCollectorBinding();
     }
 }

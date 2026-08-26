@@ -80,7 +80,9 @@ contract ForkTest is Test {
         live = true;
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, feeRecipient, address(renderer), address(collection)
+        );
         strayWei = address(shapes).balance;
     }
 

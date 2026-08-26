@@ -111,12 +111,10 @@ backing), and the `sacrifice` call (fixed 100 ETH to the burn address).
 
 The renderer (`ShapeRenderer.sol`) is a byte-for-byte port of a TypeScript canonical
 renderer; a Foundry parity suite asserts identical output against generated fixtures.
-The renderer and collection metadata contract are owner-replaceable until `lockRenderer`, and are
+The renderer and collection metadata contract are admin-replaceable until `lockRenderer`, and are
 read only by metadata views. The optional independently lockable position resolver is read only by
-`positionOf`. Since this brief's commit, the owner has gained one more value-inert, independently
-lockable power: `setContractCollectorToken`/`lockContractCollectorBinding` (`IContractCollector`)
-point the contract at an ERC721 whose current owner is read as its collector; the relationship is
-provenance only and grants the collector no permissions.
+`positionOf`. Shape #0 is the backed collectible title exposed by `titleHolder()` and carries no admin
+permissions; all authorization uses the separate transferable and renounceable `admin()` role.
 
 ## The core invariants (these must never break)
 
@@ -235,7 +233,7 @@ removes ETH without an equal burn, forges provenance, or breaks an invariant.
 7. **ERC-4906 / metadata.** `MetadataUpdate` emission correctness on compose/decompose/
    sacrifice. Renderer inversion (Black) and the provenance traits — can metadata assert
    something false about a token (the Fragment label was one such case; look for others)?
-8. **Renderer trust boundary.** The renderer is owner-replaceable until locked. Confirm
+8. **Renderer trust boundary.** The renderer is admin-replaceable until locked. Confirm
    it can never touch ETH/backing/ownership, that `tokenURI` is its only caller, and that
    a hostile renderer's worst case is cosmetic. Constructor/`setRenderer` codeless-address
    guard.

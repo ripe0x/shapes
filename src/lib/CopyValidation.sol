@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 /// @title CopyValidation
-/// @notice UTF-8 and JSON-safety validation for the owner-editable copy fields
+/// @notice UTF-8 and JSON-safety validation for the admin-editable copy fields
 ///         (`Shapes.setTokenCopy`, `Shapes.setCollectionCopy`).
 /// @dev External library: forge deploys this separately and links its address into `Shapes` at
 ///      deploy time, the same mechanism as `GeometrySampling`. Not consensus-critical: this gates

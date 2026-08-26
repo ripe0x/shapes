@@ -78,16 +78,10 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `revert DirectDepositRejected()` · `Shapes.sol:1337,1341` · `receive`/`fallback` both revert; the only way ETH enters the reserve is through `mint`/`mintBatch`.
 
 #### G-24
-`CopyValidation.requireJsonSafe(...)` · `Shapes.sol:290-291,302-303` · Keeps owner-editable copy (name/description) from breaking or restructuring the token/collection metadata JSON, and requires well-formed UTF-8.
+`CopyValidation.requireJsonSafe(...)` · `Shapes.sol:290-291,302-303` · Keeps admin-editable copy (name/description) from breaking or restructuring the token/collection metadata JSON, and requires well-formed UTF-8.
 
 #### G-25
 `if (resolver_ != address(0) && resolver_.code.length == 0) revert InvalidPositionResolver()` · `Shapes.sol:323-325` · A configured (nonzero) resolver must carry code; Shapes never calls or inspects that code further.
-
-#### G-26
-`if (b.locked) revert ContractCollectorBindingIsLocked()` · `ContractCollectorOps.sol:30,49` · Enforces the one-shot collector-binding lock in both `setToken` and `lock` (see I-5).
-
-#### G-27
-`if (ownerOfCapped(tokenContract, tokenId) == address(0)) revert InvalidContractCollectorToken` · `ContractCollectorOps.sol:31-33,52-54` · The collector token must currently resolve to a real owner; a sanity check only, not full ERC721 conformance — re-checked at both set-time and lock-time.
 
 #### G-28
 `if (nft.code.length == 0) revert LotHasNoCode(nft)` · `ShapeAuctionHouse.sol:90` · Names the reason a void-call collection would otherwise appear to accept a transfer.
@@ -234,18 +228,6 @@ Each block is classified `Conservation` · `Bound` · `Ratio` · `StateMachine` 
 **Derivation** — edge: sole write site `lockPositionResolver` (`Shapes.sol:333`), guarded by G-8.
 
 **If violated** — the resolver pointer could still be redirected after a permanent-lock claim.
-
----
-
-#### I-5
-
-`StateMachine` · On-chain: **Yes**
-
-> `ContractCollectorOps.Binding.locked`: `false → true@ContractCollectorOps.sol:56`, one-shot.
-
-**Derivation** — edge: sole write site is `lock()` (`ContractCollectorOps.sol:56`), guarded by G-26; executes via `DELEGATECALL` against `Shapes`'s own `_collectorBinding` slot, so this is `Shapes`'s persistent state despite living in a library file.
-
-**If violated** — the collector token pointer could be redirected after a claimed-permanent lock.
 
 ---
 

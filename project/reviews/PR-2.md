@@ -1,33 +1,35 @@
 # PR #2 review
 
-- Target: `origin/main...origin/codex/token-zero-contract-title` at `a64a339`.
+- Target: rebased `origin/main...codex/token-zero-contract-title` candidate on `5eec83d`; remote head update pending.
 - Reviewers: Director review of architecture, authorization, standards semantics, deployment, and integration order; independent read-only reviews of ABI/deploy compatibility, Shape #0 lifecycle/tests, and project-plan impact.
 
 ## Findings
 
-- P1: `Shapes.owner()` is repurposed from the widespread administrative-owner meaning to the current holder of Shape #0, including the auction house during escrow and zero while the token is burned. No on-chain authorization reads it, so the holder is powerless inside Shapes, but ERC-173 defines `owner()` as the contract ownership/control identity and motivates registries, exchanges, and UIs that consume it. Selector-only integrations can therefore misattribute control or grant off-chain privileges. Director recommendation: use an explicit `titleHolder()`-style selector. Literal `owner()` requires D-24 user acceptance of the compatibility/security risk. Reference: https://eips.ethereum.org/EIPS/eip-173
-- P1: adding `owner()` to `IShapes` changes its advertised ERC-165 id from `0xbdcee955` to `0x306b220e`; the legacy surface is still implemented but no longer detected. The new `IAdminControl` id `0x067e35a5` is also not returned by `supportsInterface`. Preserve the legacy id, advertise the admin capability, and pin all three expectations in tests.
-- P1: `test_RecipientDoesNotMoveTheSeed` mints Shape #1 in both branches but compares `seedOf(0)`, the unchanged constructor token. The test passes without testing recipient-independent mint entropy. Capture each returned id and compare those seeds.
-- P2: successful Shape #0 split is not tested. The only direct split call uses an empty output array and exercises the generic revert. Add a valid split with conservation, child owner, and `owner()`/title readback assertions.
-- P2: Shape #0 safe transfer and self-custody rejection are not tested directly. The implementation is id-agnostic and appears correct; add explicit coverage because #0 now drives a contract-level read.
-- P2: `x-ray/x-ray.md` and `x-ray/architecture.svg` retain collector-domain language after the interface, library, scripts, lens reads, mocks, and 39 collector tests are removed.
-- P2: the payable exact-value constructor mints Shape #0 and assigns `admin` to `msg.sender`. Repository scripts use direct deployment correctly. Any future factory would receive both roles and must explicitly transfer them; the current no-factory charter makes this a documented integration constraint, not a present defect.
+- CLOSED P1: ERC-173 ambiguity. The collectible read is now `IContractTitle.titleHolder()`; no `owner()` selector is exposed. Shape #0 can move, enter escrow, burn, and revive without being mistaken for administrative control.
+- CLOSED P1: capability discovery. Legacy `IShapes` remains `0xbdcee955`; `IAdminControl` is `0x067e35a5`; `IContractTitle` is `0xe1ca0602`. `supportsInterface` and regression tests pin all three, and reject ERC-173 plus the bare `owner()` selector.
+- CLOSED P1: the recipient-independent seed test captures the returned mint ids and compares those seeds.
+- CLOSED P2: a valid Shape #0 split now checks title extinction, child ids/owners/backing, supply, reserve conservation, and solvency.
+- CLOSED P2: direct Shape #0 transfer, safe transfer to a receiver, and self-custody rejection are covered.
+- CLOSED P2: collector-domain residue is removed from executable source, the x-ray, and the repository map.
+- ACCEPTED CONSTRAINT: direct deployment assigns Shape #0 and admin to the deployer. A future factory must explicitly hand both roles off; no factory exists in the adopted architecture.
+- CLOSED integration defect found during final verification: genesis construction no longer underflows when Forge simulates at block 0, with a regression test.
+- CLOSED integration defect found during final verification: `e2e-anvil.sh` now accounts for genesis Shape #0 when selecting and redeeming public-mint ids.
 
 ## Architecture and integration disposition
 
 - The reserve/accounting and ordinary Shape #0 lifecycle wiring reviewed as coherent. Constructor backing, transfer, auction escrow, redemption, compose-as-input, decomposition revival, admin transfer, and admin renunciation have no confirmed implementation defect.
-- This is a charter-level architecture delta, not P1 cleanup. It changes constructor value flow, token numbering, authorization, ABI, deployment addresses, and removes a capability domain named by Charter principle 5.
-- Merge order: merge PR #1 first, rebase PR #2 onto the result, then rerun the combined review. PR #2 is based on current main's build-time ladder commits but lacks PR #1's CI root-lockfile and Netlify/director work.
+- This charter-level architecture delta was approved as D-24. It changes constructor value flow, token numbering, authorization, ABI, deployment addresses, and removes the collector capability domain.
+- Merge order is satisfied: PR #1 merged as `5eec83d`, then PR #2 was rebased onto it and the combined local gate rerun.
 - If adopted, the existing Sepolia address remains the old immutable architecture. Deploy a fresh implementation, replace deployment metadata/fromBlock, and collect P1 evidence only against the new system.
 
 ## Verification
 
-- GitHub contracts job: pass, including build and 425-test claim at the reviewed head.
-- GitHub renderer job: failed before install at `actions/setup-node`, because `cache-dependency-path` names deleted `preview/package-lock.json`. This is the known main workflow defect already fixed in PR #1; no renderer/parity assertion ran.
-- Director compiled temporary Solidity probes with 0.8.28 to measure interface ids: old `IShapes` `0xbdcee955`; PR #2 `IShapes` `0x306b220e`; `IAdminControl` `0x067e35a5`.
-- Collector removal sweep: clean in executable source; only the two stale x-ray references remain.
-- Lifecycle review: no confirmed implementation bug; one false-positive security test and three direct coverage gaps.
+- Solidity: formatting/build pass; 428 tests pass, 0 fail, 4 fork-only skip; testnet-profile title/token/ladder packet passes; Shapes runtime 24,125 bytes with 451-byte EIP-170 margin.
+- Deployment: Sepolia-profile dry-run passes without broadcast. Fresh local Anvil broadcast passes deploy, nine-denomination minting, title-inclusive full reserve unwind, transfer, exact redemption, auction settlement, and zero residual house balance.
+- Renderer/site: 39 preview tests, TypeScript typecheck, stream verification, 500-per-denomination sweep, fixture freshness, web lint, and production build pass.
+- Documentation: selector check and stale collector/current-owner terminology sweep pass.
+- Remote combined CI is pending the rebased force-with-lease update.
 
 ## Verdict
 
-Request changes. Adopt the Shape #0 + separate-admin direction only after D-24 is explicit; the Director recommends renaming the ceremonial ownership read. Do not merge until every P1 finding is fixed, canonical docs/Charter are reconciled, PR #2 is rebased after PR #1, and the full combined check set is green.
+Accept locally. D-24 is explicit, every review finding is closed, canonical docs and Charter are reconciled, PR #2 is rebased after PR #1, and the full local gate is green. Push the rebased candidate, require remote CI green, then merge. A fresh Sepolia deployment/readback is the separate post-merge entry condition for P1.

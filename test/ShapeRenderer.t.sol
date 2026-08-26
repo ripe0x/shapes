@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 import {Vm} from "forge-std/Vm.sol";
 
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
@@ -699,7 +699,9 @@ contract TokenMetadataTest is RendererTestBase {
 
     function setUp() public override {
         super.setUp();
-        shapes = new Shapes(100, address(0xFEE), address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            100, address(0xFEE), address(renderer), address(collection)
+        );
         vm.deal(alice, 1_000 ether);
     }
 
@@ -851,7 +853,7 @@ contract TokenMetadataTest is RendererTestBase {
 
     /// @notice The owner rewrites the per-token name prefix and description, and it shows in every
     ///         token's metadata immediately.
-    function test_OwnerCanUpdateTokenCopy() public {
+    function test_AdminCanUpdateTokenCopy() public {
         vm.prank(alice);
         uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
         string memory idStr = vm.toString(id);
@@ -871,7 +873,7 @@ contract TokenMetadataTest is RendererTestBase {
     }
 
     /// @notice The owner rewrites the collection name and description, and `contractURI` reflects it.
-    function test_OwnerCanUpdateCollectionCopy() public {
+    function test_AdminCanUpdateCollectionCopy() public {
         assertTrue(_contains(_decodeContract(), '"name":"Shapes"'), "default collection name");
 
         shapes.setCollectionCopy("The Collection", "A rewritten collection description.");
@@ -891,12 +893,12 @@ contract TokenMetadataTest is RendererTestBase {
     ///         whole supply so marketplaces re-read every token.
     function test_TokenCopyUpdateEmitsRefresh() public {
         vm.prank(alice);
-        shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]); // totalMinted == 1
+        shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]); // genesis #0 plus public #1
 
         vm.expectEmit(true, true, true, true, address(shapes));
         emit IShapes.TokenCopyUpdated("P ", "D");
         vm.expectEmit(true, true, true, true, address(shapes));
-        emit BatchMetadataUpdate(0, 0);
+        emit BatchMetadataUpdate(0, 1);
         shapes.setTokenCopy("P ", "D");
     }
 
@@ -908,12 +910,12 @@ contract TokenMetadataTest is RendererTestBase {
         shapes.setCollectionCopy("N", "D");
     }
 
-    /// @notice Copy is owner-gated. A non-owner cannot touch either the token or collection copy.
-    function test_NonOwnerCannotUpdateCopy() public {
+    /// @notice Copy is admin-gated. A non-admin cannot touch either token or collection copy.
+    function test_NonAdminCannotUpdateCopy() public {
         vm.startPrank(alice);
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setTokenCopy("x ", "y");
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, alice));
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setCollectionCopy("x", "y");
         vm.stopPrank();
     }
@@ -1036,16 +1038,21 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(vm.parseJsonString(j, ".description"), "", "empty description");
     }
 
-    /// @notice At zero supply, setting token copy emits no ERC-4906 refresh (and does not underflow).
-    function test_TokenCopyAtZeroSupplyEmitsNoRefresh() public {
-        assertEq(shapes.totalMinted(), 0, "precondition: nothing minted");
+    /// @notice Genesis means an issued range always exists; even after #0 is redeemed, copy edits
+    ///         refresh the historical range without underflowing.
+    function test_TokenCopyAfterGenesisBurnRefreshesIssuedRange() public {
+        shapes.redeemTo(0, payable(address(0xD15CA4D)));
+        assertEq(shapes.totalSupply(), 0, "precondition: no live tokens");
+        assertEq(shapes.totalMinted(), 1, "genesis id remains issued");
         vm.recordLogs();
         shapes.setTokenCopy("P ", "D");
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 batchSig = keccak256("BatchMetadataUpdate(uint256,uint256)");
+        bool found;
         for (uint256 i = 0; i < logs.length; ++i) {
-            assertTrue(logs[i].topics[0] != batchSig, "no refresh should fire at zero supply");
+            if (logs[i].topics[0] == batchSig) found = true;
         }
+        assertTrue(found, "issued range should refresh even at zero live supply");
     }
 
     /// @notice A copy edit is presentation only: it moves no backing, seed or artwork bytes.

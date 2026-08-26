@@ -6,11 +6,11 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IERC2981} from "@openzeppelin/contracts/interfaces/IERC2981.sol";
 import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
+import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
-import {IContractCollector} from "./interfaces/IContractCollector.sol";
+import {IContractTitle} from "./interfaces/IContractTitle.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {
@@ -25,7 +25,6 @@ import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {CopyValidation} from "./lib/CopyValidation.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
-import {ContractCollectorOps} from "./lib/ContractCollectorOps.sol";
 
 /// @title Shapes
 /// @notice ETH in, Shape out.
@@ -36,14 +35,18 @@ import {ContractCollectorOps} from "./lib/ContractCollectorOps.sol";
 ///      `sacrifice`, which sends a fixed 100 ETH to an unspendable address. `compose`, `decompose`
 ///      and `split` reshape tokens at constant summed backing and leave the reserve unchanged.
 ///
-///      The owner may replace the renderer via `setRenderer` and the collection metadata
+///      The admin may replace the renderer via `setRenderer` and the collection metadata
 ///      contract via `setCollection`, and freeze both via `lockRenderer`. The renderer is read
-///      only by `tokenURI`, the collection only by `contractURI`. The owner also holds the
+///      only by `tokenURI`, the collection only by `contractURI`. The admin also holds the
 ///      metadata copy: `setTokenCopy` sets the per-token name prefix and description, and
 ///      `setCollectionCopy` the collection name and description; both remain editable after
-///      `lockRenderer`. Independently, the owner may set, clear and permanently lock an optional
-///      position resolver; core token and reserve operations never call it. Ownership is
+///      `lockRenderer`. Independently, the admin may set, clear and permanently lock an optional
+///      position resolver; core token and reserve operations never call it. The admin role is
 ///      transferable and may be renounced. None of these touch ETH, backing or redeemability.
+///
+///      Shape #0 is the collectible title to this contract. `titleHolder()` follows its holder and
+///      returns zero while #0 is burned. Shape #0 is otherwise a normal backed Shape and carries
+///      no administrative permissions; all authorization uses the separate `admin()` role.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
 ///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
@@ -55,7 +58,7 @@ import {ContractCollectorOps} from "./lib/ContractCollectorOps.sol";
 ///      Reserve invariant: `address(this).balance >= redeemableBacking()`, with equality in
 ///      normal operation. The inequality accommodates ETH forced in through paths that bypass
 ///      `receive`; such a surplus is permanently inaccessible.
-contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector, IERC2981, IERC4906 {
+contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* ------------------------------ state ------------------------------ */
 
     /// @dev Per token: a visual seed, a denomination index, a provenance credit, a terminal
@@ -174,7 +177,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     address public immutable feeRecipient;
 
     /// @inheritdoc IShapes
-    /// @dev Not immutable: the owner may replace it via `setRenderer` to fix a rendering bug,
+    /// @dev Not immutable: the admin may replace it via `setRenderer` to fix a rendering bug,
     ///      until `lockRenderer` freezes it permanently. It is read only by `tokenURI`, so it
     ///      never touches ETH, backing, redemption or ownership.
     address public renderer;
@@ -183,7 +186,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     bool public rendererLocked;
 
     /// @inheritdoc IShapes
-    /// @dev Read only by `contractURI`. Replaceable by the owner until `lockRenderer` freezes
+    /// @dev Read only by `contractURI`. Replaceable by the admin until `lockRenderer` freezes
     ///      both presentation pointers.
     address public collection;
 
@@ -196,13 +199,13 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     string private constant DEFAULT_COLLECTION_NAME = "Shapes";
 
     /// @inheritdoc IShapes
-    /// @dev Editorial copy, owner-editable via `setTokenCopy`, written verbatim into every token's
+    /// @dev Editorial copy, admin-editable via `setTokenCopy`, written verbatim into every token's
     ///      metadata by the renderer. Independent of `rendererLocked`.
     string public tokenNamePrefix;
     /// @inheritdoc IShapes
     string public tokenDescription;
     /// @inheritdoc IShapes
-    /// @dev Editorial copy, owner-editable via `setCollectionCopy`, passed to the collection
+    /// @dev Editorial copy, admin-editable via `setCollectionCopy`, passed to the collection
     ///      contract by `contractURI`.
     string public collectionName;
     /// @inheritdoc IShapes
@@ -219,12 +222,11 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     /// @inheritdoc IShapes
     bool public positionResolverLocked;
 
-    /* ------------------------- contract collector ------------------------ */
+    /* -------------------------- ownership/admin -------------------------- */
 
-    /// @dev The token pointer and lock state. Written and validated by `ContractCollectorOps`,
-    ///      called via `DELEGATECALL` so that library holds the mutating logic and this contract
-    ///      holds only the state and its `onlyOwner` wrappers.
-    ContractCollectorOps.Binding private _collectorBinding;
+    /// @dev Administrative authority is deliberately separate from `titleHolder()`, which resolves
+    ///      the holder of backed Shape #0. No authorization check reads the collectible title.
+    address private _admin;
 
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
     ///        May be zero. Above BPS_DENOMINATOR (100%) is rejected.
@@ -232,11 +234,14 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     ///        ETH: a recipient that reverts on receipt disables minting permanently, leaving the
     ///        contract redeem-only. Prefer an EOA, or a splitter audited for a non-reverting,
     ///        low-gas `receive`.
-    /// @param renderer_ The onchain renderer. Replaceable by the owner until locked. An address
+    /// @param renderer_ The onchain renderer. Replaceable by the admin until locked. An address
     ///        with no renderer code is refused here and by `setRenderer`.
+    /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-title
+    ///      Shape is fee-exempt and minted atomically to `msg.sender`, so permissionless artwork
+    ///      minting begins at #1.
     constructor(uint256 feeBps_, address feeRecipient_, address renderer_, address collection_)
+        payable
         ERC721("Shapes", "SHAPE")
-        Ownable(msg.sender)
     {
         require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%");
         require(feeRecipient_ != address(0), "fee recipient is zero");
@@ -250,6 +255,66 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         tokenDescription = DEFAULT_DESCRIPTION;
         collectionName = DEFAULT_COLLECTION_NAME;
         collectionDescription = DEFAULT_DESCRIPTION;
+
+        _admin = msg.sender;
+        emit AdminTransferred(address(0), msg.sender);
+
+        uint256 genesisBacking = Denominations.amountAt(0);
+        if (msg.value != genesisBacking) revert IncorrectPayment(genesisBacking, msg.value);
+
+        bytes32 batchRoot = keccak256(
+            abi.encodePacked(
+                block.prevrandao,
+                _previousBlockHash(),
+                block.number,
+                block.timestamp,
+                block.chainid,
+                address(this),
+                uint256(0)
+            )
+        );
+        bytes32 seed = keccak256(abi.encodePacked(batchRoot, uint256(0)));
+        uint8 gene = InkGenes.geneAtMint(seed, 0);
+
+        totalMinted = 1;
+        totalSupply = 1;
+        redeemableBacking = genesisBacking;
+        _shapes[0] = ShapeData({seed: seed, denomIndex: 0, originCount: 1, isBlack: false, inkGene: gene});
+
+        emit ShapeMinted(0, msg.sender, genesisBacking, seed, 1);
+        emit InkGene(0, gene);
+        _mint(msg.sender, 0);
+    }
+
+    /// @inheritdoc IContractTitle
+    /// @dev Returns zero after #0 is burned or split. This address has no administrative rights.
+    function titleHolder() public view returns (address) {
+        return _ownerOf(0);
+    }
+
+    /// @inheritdoc IAdminControl
+    function admin() public view returns (address) {
+        return _admin;
+    }
+
+    modifier onlyAdmin() {
+        if (msg.sender != _admin) revert AdminUnauthorizedAccount(msg.sender);
+        _;
+    }
+
+    /// @inheritdoc IAdminControl
+    function transferAdmin(address newAdmin) external onlyAdmin {
+        if (newAdmin == address(0)) revert AdminInvalidAdmin(address(0));
+        address previousAdmin = _admin;
+        _admin = newAdmin;
+        emit AdminTransferred(previousAdmin, newAdmin);
+    }
+
+    /// @inheritdoc IAdminControl
+    function renounceAdmin() external onlyAdmin {
+        address previousAdmin = _admin;
+        _admin = address(0);
+        emit AdminTransferred(previousAdmin, address(0));
     }
 
     /// @inheritdoc IShapes
@@ -258,8 +323,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     }
 
     /// @inheritdoc IShapes
-    /// @dev Owner only, and only while unlocked. The new renderer must carry code.
-    function setRenderer(address newRenderer) external onlyOwner {
+    /// @dev Admin only, and only while unlocked. The new renderer must carry code.
+    function setRenderer(address newRenderer) external onlyAdmin {
         if (rendererLocked) revert RendererIsLocked();
         _requireRendererHasCode(newRenderer);
         renderer = newRenderer;
@@ -269,9 +334,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     }
 
     /// @inheritdoc IShapes
-    /// @dev Owner only, one way. After this the renderer can never change again. The optional
+    /// @dev Admin only, one way. After this the renderer can never change again. The optional
     ///      position resolver remains independently configurable until its own lock or renunciation.
-    function lockRenderer() external onlyOwner {
+    function lockRenderer() external onlyAdmin {
         if (rendererLocked) revert RendererIsLocked();
         rendererLocked = true;
         emit RendererLocked();
@@ -283,9 +348,9 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
 
     /// @inheritdoc IShapes
-    /// @dev Owner only. Both arguments are validated (`_requireJsonSafe`) so copy cannot break or
+    /// @dev Admin only. Both arguments are validated (`_requireJsonSafe`) so copy cannot break or
     ///      restructure the metadata JSON. Not gated by `rendererLocked`.
-    function setTokenCopy(string calldata namePrefix, string calldata description) external onlyOwner {
+    function setTokenCopy(string calldata namePrefix, string calldata description) external onlyAdmin {
         CopyValidation.requireJsonSafe(namePrefix, MAX_NAME_BYTES, 0);
         CopyValidation.requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
         tokenNamePrefix = namePrefix;
@@ -296,8 +361,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     }
 
     /// @inheritdoc IShapes
-    /// @dev Owner only. Same validation as `setTokenCopy`. Not gated by `rendererLocked`.
-    function setCollectionCopy(string calldata name, string calldata description) external onlyOwner {
+    /// @dev Admin only. Same validation as `setTokenCopy`. Not gated by `rendererLocked`.
+    function setCollectionCopy(string calldata name, string calldata description) external onlyAdmin {
         CopyValidation.requireJsonSafe(name, MAX_NAME_BYTES, 0);
         CopyValidation.requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
         collectionName = name;
@@ -307,8 +372,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     }
 
     /// @inheritdoc IShapes
-    /// @dev Owner only, and only while unlocked. The new collection must carry code.
-    function setCollection(address newCollection) external onlyOwner {
+    /// @dev Admin only, and only while unlocked. The new collection must carry code.
+    function setCollection(address newCollection) external onlyAdmin {
         if (rendererLocked) revert RendererIsLocked();
         _requireCollectionHasCode(newCollection);
         collection = newCollection;
@@ -317,7 +382,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
 
     /// @dev Zero clears the resolver. Nonzero values must carry code when configured, but Shapes
     ///      intentionally does not inspect or call that code and makes no claim about its mutability.
-    function setPositionResolver(address resolver_) external onlyOwner {
+    function setPositionResolver(address resolver_) external onlyAdmin {
         if (positionResolverLocked) revert PositionResolverIsLocked();
         if (resolver_ != address(0) && resolver_.code.length == 0) {
             revert InvalidPositionResolver();
@@ -327,7 +392,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     }
 
     /// @inheritdoc IShapes
-    function lockPositionResolver() external onlyOwner {
+    function lockPositionResolver() external onlyAdmin {
         if (positionResolverLocked) revert PositionResolverIsLocked();
         positionResolverLocked = true;
         emit PositionResolverLocked(positionResolver);
@@ -359,31 +424,6 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         if (!_supportsInterfaceOrFalse(collection_, type(IShapeCollection).interfaceId)) {
             revert UnsupportedCollection(collection_);
         }
-    }
-
-    /* --------------------------- contract collector --------------------------- */
-
-    /// @inheritdoc IContractCollector
-    function contractCollectorBinding()
-        external
-        view
-        returns (address tokenContract, uint256 tokenId, bool locked)
-    {
-        return (_collectorBinding.tokenContract, _collectorBinding.tokenId, _collectorBinding.locked);
-    }
-
-    /// @inheritdoc IContractCollector
-    /// @dev Validation and the storage write both run inside `ContractCollectorOps.setToken`,
-    ///      called via `DELEGATECALL` against `_collectorBinding`.
-    function setContractCollectorToken(address tokenContract, uint256 tokenId) external onlyOwner {
-        ContractCollectorOps.setToken(_collectorBinding, tokenContract, tokenId);
-    }
-
-    /// @inheritdoc IContractCollector
-    /// @dev Revalidation and the lock write both run inside `ContractCollectorOps.lock`, called
-    ///      via `DELEGATECALL` against `_collectorBinding`.
-    function lockContractCollectorBinding() external onlyOwner {
-        ContractCollectorOps.lock(_collectorBinding);
     }
 
     /* ------------------------------ minting ----------------------------- */
@@ -452,7 +492,7 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
-                blockhash(block.number - 1),
+                _previousBlockHash(),
                 block.number,
                 block.timestamp,
                 block.chainid,
@@ -574,8 +614,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         private
         returns (uint256 amountWei, uint256 originCount)
     {
-        address owner = _requireOwned(tokenId);
-        if (owner != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
+        address tokenOwner = _requireOwned(tokenId);
+        if (tokenOwner != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
         ShapeData storage d = _shapes[tokenId];
         if (d.isBlack && !allowBlack) revert TokenIsBlack(tokenId);
 
@@ -1222,6 +1262,12 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
         return keccak256(abi.encodePacked(parentSeed, childIndex));
     }
 
+    /// @dev A fresh local EVM may execute at genesis. Production transactions cannot, but making
+    ///      the entropy input total keeps constructor simulation and local deployment reliable.
+    function _previousBlockHash() private view returns (bytes32) {
+        return block.number == 0 ? bytes32(0) : blockhash(block.number - 1);
+    }
+
     /// @inheritdoc IShapes
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32) {
         return _childSeed(parentSeed, childIndex);
@@ -1321,7 +1367,8 @@ contract Shapes is ERC721, ReentrancyGuard, Ownable, IShapes, IContractCollector
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, IERC165) returns (bool) {
-        return interfaceId == type(IShapes).interfaceId || interfaceId == type(IShapeValue).interfaceId
+        return interfaceId == type(IShapes).interfaceId || interfaceId == type(IAdminControl).interfaceId
+            || interfaceId == type(IContractTitle).interfaceId || interfaceId == type(IShapeValue).interfaceId
             || interfaceId == type(IShapeRecomposition).interfaceId
             || interfaceId == type(IShapeProvenance).interfaceId
             || interfaceId == type(IERC721Value).interfaceId || interfaceId == type(IERC2981).interfaceId

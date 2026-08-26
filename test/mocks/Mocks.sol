@@ -2,9 +2,6 @@
 pragma solidity 0.8.28;
 
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
-import {ERC721} from "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IShapes} from "../../src/interfaces/IShapes.sol";
 import {IShapePositionResolver} from "../../src/interfaces/IShapePositionResolver.sol";
 
@@ -211,78 +208,5 @@ contract ReentrantMinter is IERC721Receiver {
             }
         }
         return IERC721Receiver.onERC721Received.selector;
-    }
-}
-
-/// @notice A plain ERC721 used as a contract collector token candidate.
-contract MockCollectorERC721 is ERC721 {
-    constructor() ERC721("MockCollector", "COLLECT") {}
-
-    function mint(address to, uint256 tokenId) external {
-        _mint(to, tokenId);
-    }
-
-    function burn(uint256 tokenId) external {
-        _burn(tokenId);
-    }
-}
-
-/// @notice An ERC721 whose `ownerOf` reverts on demand, to exercise the collector token's
-///         gas-capped staticcall failure path.
-contract RevertingOwnerOfERC721 is ERC721 {
-    bool public shouldRevert;
-
-    constructor() ERC721("RevertingOwner", "REVERT") {}
-
-    function mint(address to, uint256 tokenId) external {
-        _mint(to, tokenId);
-    }
-
-    function setShouldRevert(bool value) external {
-        shouldRevert = value;
-    }
-
-    function ownerOf(uint256 tokenId) public view override returns (address) {
-        if (shouldRevert) revert("ownerOf reverted");
-        return super.ownerOf(tokenId);
-    }
-}
-
-/// @notice Claims no ERC-165 interface at all and has no `ownerOf`. Any call to it, including the
-///         collector binding's gas-capped `ownerOf` staticcall, reverts with no return data.
-contract NotAnERC721 {
-    function transferFrom(address, address, uint256) external pure {
-        revert("not an ERC721");
-    }
-}
-
-/// @notice Answers `ownerOf` with a nonzero address but implements no other part of ERC-721 and
-///         claims no ERC-165 interface. The collector binding validates a candidate purely by
-///         whether `ownerOf(tokenId)` resolves, not by ERC-165 conformance, so this is accepted.
-contract NonConformingOwnerOfContract {
-    address public owner = address(0xBEEF);
-
-    function ownerOf(uint256) external view returns (address) {
-        return owner;
-    }
-}
-
-/// @notice Answers `ownerOf` with a clean address until `setShouldMalform` is toggled, after which
-///         it returns a uint256 with dirty upper bits instead of a clean address.
-contract MalformedOwnerOfERC721 is IERC165 {
-    address public owner = address(0xBEEF);
-    bool public shouldMalform;
-
-    function supportsInterface(bytes4 interfaceId) public pure returns (bool) {
-        return interfaceId == type(IERC165).interfaceId || interfaceId == type(IERC721).interfaceId;
-    }
-
-    function setShouldMalform(bool value) external {
-        shouldMalform = value;
-    }
-
-    function ownerOf(uint256) external view returns (uint256) {
-        if (shouldMalform) return type(uint256).max;
-        return uint256(uint160(owner));
     }
 }

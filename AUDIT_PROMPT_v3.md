@@ -166,10 +166,12 @@ Read the comments as claims to be falsified, not as documentation.
 
 ## Known and accepted, do not report as findings
 
-- **Token id 0 is first-come.** Minting is permissionless; nothing reserves it. Deliberate.
+- **Token id 0 is the backed contract-title Shape.** It is minted atomically to the deployer,
+  carries no permissions, and otherwise follows the ordinary Shape lifecycle. The first
+  permissionless artwork is #1. Deliberate.
 - **The winner can burn the lot.** If the lot is a Shape, `redeem` destroys it for its backing.
   Deliberate.
-- **The renderer is not locked at launch**, so the owner can change every token's artwork and the
+- **The renderer is not locked at launch**, so the admin can change every token's artwork and the
   collection metadata until they choose to lock. Deliberate, and disclosed.
 - **The ETH bidding path costs the 1% Shapes mint fee**; the card path does not. Deliberate.
 - **The house charges no fee.** A percentage of a card set is not representable on the

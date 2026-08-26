@@ -151,7 +151,9 @@ contract AuctionSecurityTest is Test {
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(100, makeAddr("fee"), address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            100, makeAddr("fee"), address(renderer), address(collection)
+        );
         vm.deal(seller, 10 ether);
         house = new ShapeAuctionHouse(address(shapes));
         vm.deal(alice, 100 ether);
@@ -274,7 +276,9 @@ contract AuctionSecurityTest is Test {
     function test_L02_FeeRecipientCannotStrandAShapeInTheHouse() public {
         MaliciousFeeRecipient mal = new MaliciousFeeRecipient();
         // A separate Shapes whose fee recipient is the malicious contract.
-        Shapes shapes2 = new Shapes(100, address(mal), address(renderer), address(collection));
+        Shapes shapes2 = new Shapes{value: Denominations.amountAt(0)}(
+            100, address(mal), address(renderer), address(collection)
+        );
         ShapeAuctionHouse house2 = new ShapeAuctionHouse(address(shapes2));
         mal.setTargets(shapes2, address(house2));
 
@@ -317,7 +321,9 @@ contract AuctionSecurityTest is Test {
     ///         even if it carries no guard of its own.
     function test_L1_ABidCannotBeRecordedOnAnAuctionCancelledMidCall() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
-        Shapes shapes3 = new Shapes(100, address(mal), address(renderer), address(collection));
+        Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
+            100, address(mal), address(renderer), address(collection)
+        );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
 
@@ -359,7 +365,9 @@ contract AuctionSecurityTest is Test {
     ///         with it, and the bid unwinds with `MintFeeTransferFailed`.
     function test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
-        Shapes shapes3 = new Shapes(100, address(mal), address(renderer), address(collection));
+        Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
+            100, address(mal), address(renderer), address(collection)
+        );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
 

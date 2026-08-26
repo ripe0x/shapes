@@ -17,8 +17,8 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 /// @dev Fee recipient defaults to the deployer (fine on a throwaway testnet; on mainnet it is an
 ///      immutable decision — use DeployShapes.s.sol there with SHAPES_FEE_RECIPIENT set).
 ///
-///      The contract collector binding is not configured here. Configure the pointer later with
-///      `SetContractCollectorToken.s.sol` and lock it with `LockContractCollectorBinding.s.sol`.
+///      Backed Shape #0 is minted atomically to the deployer as the powerless contract-title
+///      token. When seeding is enabled, the launch auction therefore lists Shape #1.
 ///
 ///        SHAPES_FEE_BPS   mint fee in basis points. Defaults to 100 (1%).
 ///        SEED_ETH         set to "false" to deploy without seeding any mints.
@@ -69,16 +69,18 @@ contract DeploySepolia is LensEquivalence {
         renderer = new ShapeRenderer();
 
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(feeBps, me, address(renderer), address(collection));
+        shapes =
+            new Shapes{value: Denominations.amountAt(0)}(feeBps, me, address(renderer), address(collection));
         lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
 
         if (seed) {
-            // Token 0 is the auction lot, minted before the spread so the listing is the
-            // collection's first token. 24 hour clock starting at the first bid, no reserve, 5%
-            // minimum increment, 15 minute extension window.
+            // Shape #0 already carries contract title. Shape #1 is the first ordinary artwork
+            // and the launch lot. 24 hour clock from the first bid, no reserve, 5% minimum
+            // increment, 15 minute extension window.
             uint256 lotFee = (Denominations.amountAt(0) * feeBps) / 10_000;
             uint256 lot = shapes.mint{value: Denominations.amountAt(0) + lotFee}(Denominations.amountAt(0));
+            require(lot == 1, "launch lot must be Shape #1");
             shapes.approve(address(house), lot);
             house.createAuction(address(shapes), lot, 1 days, 0, 500, 15 minutes);
 
@@ -100,12 +102,10 @@ contract DeploySepolia is LensEquivalence {
         require(shapes.feeRecipient() == me, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         require(address(lens.shapes()) == address(shapes), "lens points at another token");
-        {
-            (address collectorTokenContract, uint256 collectorTokenId,) = shapes.contractCollectorBinding();
-            require(collectorTokenContract == address(0), "collector token should start unset");
-            require(collectorTokenId == 0, "collector token id should start zero");
-            require(!lens.contractCollectorBindingLocked(), "collector binding should start unlocked");
-        }
+        require(shapes.ownerOf(0) == me, "Shape #0 not minted to deployer");
+        require(shapes.titleHolder() == me, "title holder mismatch");
+        require(shapes.admin() == me, "admin mismatch");
+        require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
 
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));

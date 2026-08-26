@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 import {ShapesBase} from "./Shapes.t.sol";
-import {IShapes} from "../src/interfaces/IShapes.sol";
 
 /// @notice The id allocator, in one place.
 ///
@@ -19,6 +18,10 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 ///      `_mint` reverts on an existing token — it would brick `decompose` or minting outright,
 ///      which is why every path that touches the counter is pinned here.
 contract TokenIdAllocationTest is ShapesBase {
+    function _keepGenesisShape() internal pure override returns (bool) {
+        return true;
+    }
+
     function _mintDust(uint256 k) internal returns (uint256 first) {
         vm.prank(alice);
         first = shapes.mintBatch{value: k * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], k);
@@ -35,25 +38,21 @@ contract TokenIdAllocationTest is ShapesBase {
 
     /* --------------------------- the base case --------------------------- */
 
-    function test_FirstIdIsZeroAndCounterIsACount() public {
-        assertEq(shapes.totalMinted(), 0, "nothing issued yet");
-        assertEq(_mint(alice, DENOMS[4]), 0, "the first Shape is #0");
-        assertEq(shapes.totalMinted(), 1, "one id issued, highest is 0");
-        assertEq(_mint(alice, DENOMS[4]), 1, "the next fresh id is totalMinted");
-        assertEq(shapes.totalMinted(), 2);
+    function test_GenesisIsZeroAndPublicIdsBeginAtOne() public {
+        assertEq(shapes.totalMinted(), 1, "genesis #0 issued in construction");
+        assertEq(_mint(alice, DENOMS[4]), 1, "the first public Shape is #1");
+        assertEq(shapes.totalMinted(), 2, "two ids issued, highest is 1");
+        assertEq(_mint(alice, DENOMS[4]), 2, "the next fresh id is totalMinted");
+        assertEq(shapes.totalMinted(), 3);
     }
 
     /// @notice #0 is an ordinary token on every path, not a sentinel.
     function test_TokenZeroBehavesLikeAnyOther() public {
-        uint256 zero = _mint(alice, DENOMS[1]);
-        assertEq(zero, 0);
-
-        assertEq(shapes.ownerOf(0), alice);
-        assertEq(shapes.backingOf(0), DENOMS[1]);
+        assertEq(shapes.ownerOf(0), address(this));
+        assertEq(shapes.backingOf(0), DENOMS[0]);
         assertTrue(shapes.seedOf(0) != bytes32(0), "#0 has a seed");
 
-        vm.prank(alice);
-        shapes.transferFrom(alice, bob, 0);
+        shapes.transferFrom(address(this), bob, 0);
         assertEq(shapes.ownerOf(0), bob, "#0 transfers");
 
         vm.prank(bob);
@@ -64,10 +63,16 @@ contract TokenIdAllocationTest is ShapesBase {
     }
 
     function test_TokenZeroComposesSplitsAndDecomposes() public {
-        uint256 first = _mintDust(5);
-        assertEq(first, 0, "#0 is the survivor under test");
+        shapes.transferFrom(address(this), alice, 0);
+        uint256 first = _mintDust(4);
+        assertEq(first, 1, "public dust follows genesis");
 
-        _composeDust(first, 5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = i + 1;
+        }
+        vm.prank(alice);
+        shapes.compose(0, burn);
         assertEq(shapes.backingOf(0), DENOMS[1], "#0 survived the compose and grew");
 
         vm.prank(alice);
@@ -78,10 +83,26 @@ contract TokenIdAllocationTest is ShapesBase {
         }
         assertEq(shapes.backingOf(0), DENOMS[0], "#0 reverted");
 
-        uint8[] memory outs = new uint8[](0);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
         vm.prank(alice);
-        shapes.split(0, outs);
+        shapes.compose(0, burn);
+        assertEq(shapes.backingOf(0), DENOMS[1], "#0 grew again before split");
+
+        uint256 backingBefore = shapes.redeemableBacking();
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory children = shapes.split(0, outs);
+
+        assertEq(shapes.titleHolder(), address(0), "split must extinguish the title until #0 is revived");
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));
+        shapes.ownerOf(0);
+        assertEq(children.length, 5);
+        for (uint256 i = 0; i < children.length; ++i) {
+            assertEq(children[i], 5 + i, "split ids continue after the original batch");
+            assertEq(shapes.ownerOf(children[i]), alice, "split child went to another owner");
+            assertEq(shapes.backingOf(children[i]), DENOMS[0], "split child backing changed");
+        }
+        assertEq(shapes.redeemableBacking(), backingBefore, "split changed aggregate backing");
+        assertEq(shapes.totalSupply(), 5, "split burns one parent and mints five children");
         _assertSolvent();
     }
 
@@ -91,32 +112,32 @@ contract TokenIdAllocationTest is ShapesBase {
     ///         order, and `totalMinted` tracks exactly how many ids they have issued.
     function test_FreshIdsAreContiguousAcrossEveryMintingPath() public {
         uint256 a = _mint(alice, DENOMS[4]);
-        assertEq(a, 0);
-        assertEq(shapes.totalMinted(), 1);
+        assertEq(a, 1);
+        assertEq(shapes.totalMinted(), 2);
 
         uint256 b = _mintDust(6);
-        assertEq(b, 1, "batch continues from the counter");
-        assertEq(shapes.totalMinted(), 7);
+        assertEq(b, 2, "batch continues from the counter");
+        assertEq(shapes.totalMinted(), 8);
 
         // A split burns its input and issues k fresh ids from the counter.
         uint256 parent = _mint(alice, DENOMS[1]);
-        assertEq(parent, 7);
-        assertEq(shapes.totalMinted(), 8);
+        assertEq(parent, 8);
+        assertEq(shapes.totalMinted(), 9);
 
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
         for (uint256 i = 0; i < 5; ++i) {
-            assertEq(kids[i], 8 + i, "split ids continue the sequence");
+            assertEq(kids[i], 9 + i, "split ids continue the sequence");
         }
-        assertEq(shapes.totalMinted(), 13, "counter advanced by the child count");
+        assertEq(shapes.totalMinted(), 14, "counter advanced by the child count");
     }
 
     /// @notice Across a long mixed history, every fresh id is strictly greater than every id
     ///         issued before it, and the counter never runs backwards.
     function test_CounterIsMonotonicAcrossAMixedHistory() public {
         uint256 highestSeen;
-        uint256 previousCounter;
+        uint256 previousCounter = shapes.totalMinted();
 
         for (uint256 round = 0; round < 6; ++round) {
             uint256 first = _mintDust(5);
@@ -163,16 +184,16 @@ contract TokenIdAllocationTest is ShapesBase {
         uint256 first = _mintDust(5); // ids 0..4; #4 is the highest issued
         _composeDust(first, 5); // burns 1..4, including the high-water id
 
-        assertEq(shapes.totalMinted(), 5, "counter unchanged by compose");
+        assertEq(shapes.totalMinted(), 6, "counter unchanged by compose");
 
         vm.prank(alice);
         uint256[] memory revived = shapes.decompose(first);
-        assertEq(revived[3], 4, "the high-water id came back");
-        assertEq(shapes.totalMinted(), 5, "counter still unchanged");
+        assertEq(revived[3], 5, "the high-water id came back");
+        assertEq(shapes.totalMinted(), 6, "counter still unchanged");
 
         uint256 fresh = _mint(alice, DENOMS[4]);
-        assertEq(fresh, 5, "the next id is one past the revived high-water id");
-        assertEq(shapes.ownerOf(4), alice, "the revived token is untouched by the fresh mint");
+        assertEq(fresh, 6, "the next id is one past the revived high-water id");
+        assertEq(shapes.ownerOf(5), alice, "the revived token is untouched by the fresh mint");
         _assertSolvent();
     }
 
@@ -188,7 +209,7 @@ contract TokenIdAllocationTest is ShapesBase {
             for (uint256 i = 0; i < 4; ++i) {
                 assertEq(revived[i], first + 1 + i, "same ids every cycle");
             }
-            assertEq(shapes.totalMinted(), 5, "no cycle ever advances the counter");
+            assertEq(shapes.totalMinted(), 6, "no cycle ever advances the counter");
         }
         _assertSolvent();
     }
@@ -229,8 +250,8 @@ contract TokenIdAllocationTest is ShapesBase {
             assertEq(back2[i], first + 1 + i);
         }
 
-        assertEq(shapes.totalMinted(), 10, "ten ids issued, ten still the count");
-        for (uint256 id = 0; id < 10; ++id) {
+        assertEq(shapes.totalMinted(), 11, "genesis plus ten public ids issued");
+        for (uint256 id = first; id < first + 10; ++id) {
             assertEq(shapes.ownerOf(id), alice, "every id is live again, exactly once");
         }
         _assertSolvent();
@@ -252,7 +273,7 @@ contract TokenIdAllocationTest is ShapesBase {
         }
         vm.prank(alice);
         shapes.compose(first + 5, burn);
-        assertEq(shapes.totalMinted(), 10, "still ten ids issued");
+        assertEq(shapes.totalMinted(), 11, "genesis plus ten public ids issued");
 
         vm.prank(alice);
         uint256[] memory again = shapes.decompose(first + 5);
@@ -260,7 +281,7 @@ contract TokenIdAllocationTest is ShapesBase {
             assertEq(again[i], first + 1 + i, "the same ids came back from a different survivor");
             assertEq(shapes.ownerOf(first + 1 + i), alice);
         }
-        assertEq(shapes.totalMinted(), 10);
+        assertEq(shapes.totalMinted(), 11);
         _assertSolvent();
     }
 
@@ -271,32 +292,31 @@ contract TokenIdAllocationTest is ShapesBase {
         uint256 first = _mintDust(5); // ids 0..4
         _composeDust(first, 5); // burns 1..4; #0 becomes 0.05
 
-        assertEq(shapes.totalMinted(), 5, "compose issued nothing");
+        assertEq(shapes.totalMinted(), 6, "compose issued nothing");
 
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
         uint256[] memory kids = shapes.split(first, outs);
 
         for (uint256 i = 0; i < 5; ++i) {
-            assertEq(kids[i], 5 + i, "split took fresh ids, not the burned 1..4");
+            assertEq(kids[i], 6 + i, "split took fresh ids, not the burned inputs");
         }
-        assertEq(shapes.totalMinted(), 10);
+        assertEq(shapes.totalMinted(), 11);
         _assertSolvent();
     }
 
     /* ------------------------- counter-derived events ------------------------ */
 
     /// @notice `setRenderer` refreshes the whole issued range, `0 .. totalMinted - 1`, and emits
-    ///         nothing at all when no id has been issued. The guard is what keeps the subtraction
-    ///         from underflowing.
-    function test_RendererRefreshSpansTheIssuedRangeAndSkipsAnEmptyCollection() public {
+    ///         genesis means the issued range is never empty.
+    function test_RendererRefreshSpansTheIssuedRangeFromGenesis() public {
         vm.recordLogs();
         shapes.setRenderer(address(renderer));
-        assertEq(vm.getRecordedLogs().length, 1, "only RendererUpdated on an empty collection");
+        assertEq(vm.getRecordedLogs().length, 2, "renderer update plus genesis refresh");
 
         _mintDust(3);
         vm.expectEmit(false, false, false, true, address(shapes));
-        emit IERC4906Like.BatchMetadataUpdate(0, 2);
+        emit IERC4906Like.BatchMetadataUpdate(0, 3);
         shapes.setRenderer(address(renderer));
     }
 }
