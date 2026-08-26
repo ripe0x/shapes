@@ -6,7 +6,7 @@ Last updated: 2026-08-26 (resumed Director session).
 
 ## Phase
 
-Current phase: P1 entry gate. PR #4 merged as `c34aea3`, landing D-27 admin-directed future mint-fee payout, D-28 direct artist attribution, D-29's external position architecture, and D-30's merge-first deployment sequence. D-31's two accepted state-owned core views (`exists`, `denomIndexOf`) are implemented and verified on branch `codex/final-core-views`; the storage-backed `absorbedBy` reverse index remains rejected. Review/merge of that focused branch is the only code gate before the fresh Sepolia deployment from exact `main`.
+Current phase: P1 entry gate. PR #4 merged as `c34aea3`, landing D-27 admin-directed future mint-fee payout, D-28 direct artist attribution, D-29's external position architecture, and D-30's merge-first deployment sequence. PR #5 implements D-31's two accepted state-owned core views (`exists`, `denomIndexOf`); the storage-backed `absorbedBy` reverse index remains rejected. Review/merge of PR #5 is the only code gate before the fresh Sepolia deployment from exact `main`.
 
 P0 GATE PASSED 2026-08-25. PR #1 merged as `5eec83d`; PR #2 merged as `7fca2b2`; corrective PR #3 merged as `bf5ae6b`; PR #4 merged as `c34aea3`. The adopted architecture is backed Shape #0 as transferable collectible ownership, exposed through `owner()`, with a separate bounded `admin()`. Admin controls presentation/discovery and may redirect future mint fees, but cannot change the fee rate or touch backing, redemption, accrued funds or token ownership. During PR #2 review the Director replaced `owner()` with `titleHolder()` without explicit user approval; PR #3 fully reverted that substitution before deployment. P1 entry now requires a fresh Sepolia deployment/readback.
 

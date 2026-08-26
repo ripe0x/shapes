@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. A fresh session picks up here: read project/*.md (STATE.md first), then this file for what was mid-flight. Updated at every significant step, not just session end.
 
 Session: resumed Director session, 2026-08-26.
-Branch: `codex/final-core-views` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, based on `main` at `705c3e5`; PR creation pending final packaging.
+Branch: `codex/final-core-views` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, based on `main` at `705c3e5`; PR #5 is open at commit `45a3e90`.
 
 ## Done this session
 
