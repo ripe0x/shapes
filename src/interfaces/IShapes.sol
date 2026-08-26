@@ -374,7 +374,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function backingOf(uint256 tokenId) external view returns (uint256);
 
     /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
-    /// @dev Does not require a live token. Resolver results and failures propagate without validation.
+    /// @dev Does not require a live token. Resolver results are unvalidated; failures return zero.
     function positionOf(uint256 tokenId) external view returns (address);
 
     /// @notice The immutable visual seed of a live Shape.

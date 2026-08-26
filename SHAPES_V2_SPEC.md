@@ -661,7 +661,7 @@ tokens exist anywhere.
   unlocked. `lockPositionResolver` permanently freezes its current value and may be called at any
   time, including while zero. Renderer and resolver locks are independent.
 - `positionOf(tokenId)` returns zero without a resolver. Otherwise it delegates without checking
-  token existence, backing, result code or position status, and propagates resolver failures.
+  token existence, backing, result code or position status; resolver failures return zero.
 - The returned address is opaque discovery data. The future position protocol defines its claim,
   authorization, settlement and lifecycle. No core Shapes operation calls the resolver.
 - Renouncing admin permanently ends any remaining renderer or resolver administration; a prior
