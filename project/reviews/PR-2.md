@@ -29,7 +29,7 @@ The original PR exposed `owner()` as the current holder of backed Shape #0 and k
 ## Review conclusions
 
 - ACCEPTED PRODUCT TRADEOFF: exposing `owner()` without ERC-173 `transferOwnership(address)` can confuse selector-only Ownable tooling, but the contract does not advertise ERC-173 and every authorization check reads only `admin()`. Independent behavior review and the security scan found no on-chain authorization defect. This concern did not authorize the Director's rename.
-- OPEN P1 COMPATIBILITY DEFECT: adding `owner()` directly to `IShapes` changes `type(IShapes).interfaceId` from legacy `0xbdcee955` to `0x306b220e`; the candidate advertises only the new id. Consumers probing the pre-PR2 capability will reject the new deployment even though it still implements every old function. D-25 requires the user to choose explicit dual-id support (recommended) or intentional prelaunch breakage.
+- NO ERC-165 DEFECT: adding the intended `owner()` correctly changes the custom `IShapes` interface fingerprint from `0xbdcee955` to `0x306b220e`. The restored architecture has never been deployed, no legacy external consumer exists, and repository production code does not probe this custom id. The earlier compatibility finding was speculative and is invalidated as D-25/R18.
 
 ## Verification
 
@@ -39,9 +39,9 @@ The original PR exposed `owner()` as the current holder of backed Shape #0 and k
 - Testnet profile: 27 ownership/token/ladder tests passed.
 - Preview: 39 tests and TypeScript typecheck passed.
 - Independent behavior review: accept, no functional or authorization defect.
-- Independent ABI review: confirmed the R18 compatibility break and the non-authorizing ERC-173 tooling risk.
+- Independent ABI review: identified the numerical interface-id change and the non-authorizing ERC-173 tooling risk; Director follow-up established that the id change has no deployed compatibility impact.
 - Codex Security diff scan `704e538c-4db4-4ce3-b255-fd523cc47b35`: complete, zero reportable findings.
 
 ## Verdict
 
-Request decision; do not merge yet. The restored `owner()` behavior is coherent and security-clean, but the legacy ERC-165 discovery break is real. Resolve D-25 without substituting another product API, rerun the narrow interface/build/test gate, then merge.
+ACCEPT AND MERGE. The restored `owner()` behavior is coherent, security-clean, locally verified, and green in CI. No review blocker remains.

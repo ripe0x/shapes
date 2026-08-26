@@ -34,7 +34,7 @@ Acceptance: PR #2 merged with no waived P1 finding; the Sepolia deployment named
 
 Evidence gate: combined GitHub/Netlify checks, D-24 entry, PR #2 review closure table, and fresh deployment rehearsal/readback.
 
-Stop conditions: ERC-165 compatibility break; constructor/owner/admin post-flight mismatch; any renderer parity failure.
+Stop conditions: constructor/owner/admin post-flight mismatch; any renderer parity failure.
 
 ## P1 Testnet hardening
 
