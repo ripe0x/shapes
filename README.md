@@ -276,17 +276,35 @@ and so the artwork, permanent.
 
 ```
 src/
-  Shapes.sol                  ERC721 + the reserve
-  ShapeRenderer.sol           fully onchain SVG and metadata
+  Shapes.sol             ERC721 + the reserve
+  ShapeRenderer.sol      fully onchain SVG and metadata
+  ShapeLens.sol          read-only periphery, split out to stay under the EIP-170 limit
+  ShapeCollection.sol    collection-level presentation, seeded previews of unminted cards
+  ShapeAuctionHouse.sol  English auction for any ERC721, bids denominated in Shape cards
+  ShapeCardEscrow.sol    custody and valuation for bids made of Shape cards
   interfaces/
     IShapes.sol
     IERC721Value.sol
     IShapeRenderer.sol
     IShapePositionResolver.sol
+    IShapeLens.sol
+    IShapeCollection.sol
+    IShapeAuctionHouse.sol
+    IShapeCardEscrow.sol
+    IShapeGeometry.sol
+    IShapeCapabilities.sol
+    IContractCollector.sol
   lib/
     Denominations.sol         the nine amounts and their grids
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
+    ComposeCompute.sol        module sampling and ink gene assignment in one call
+    ContractCollectorOps.sol  state-mutating logic for IContractCollector
+    CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
+    GeometrySampling.sol      the compose and split module-sampling procedures
+    GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1
+    InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
+    ModuleCodec.sol           one-byte encoding for a module's kind, solid, and rotation
 script/
   DeployShapes.s.sol
   DeployLens.s.sol            replacement lens for an already-deployed Shapes
@@ -302,6 +320,7 @@ test/
   Fork.t.sol                  full lifecycle against a mainnet fork (env-gated)
   fixtures/fixtures.json      generated corpus, do not hand-edit
 preview/                      the generative preview harness + chain tester
+netlify.toml                  repository-root Netlify config; builds the web workspace
 SPEC.md                       implementation plan and every rendering decision
 SECURITY.md                   adversarial review
 BUILDING.md                   integrator's guide: accept, unwrap and reshape Shapes from a contract
@@ -571,7 +590,11 @@ SHAPES_ADDRESS=0x... forge script script/DeployLens.s.sol --rpc-url $RPC   # dry
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
 | Mainnet | not deployed | not deployed |
-| Sepolia | not deployed | not deployed |
+| Sepolia | `0x57443FDbfA5BA02156977B5dEB53814f50a580ac` | `0xFF7775e67DD329b09cd1deC30a6bE09ab0728bD2` |
+
+The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
+mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in
+`web/public/deployment.json`, the machine-readable record the site reads from.
 
 ---
 
@@ -581,5 +604,3 @@ sense if nothing is ever built on top of it.
 Wrapping ETH in a Shape is not an investment and earns nothing. The contract generates no yield
 and makes no promises about what a Shape might be worth to anyone else. It guarantees one
 thing: burn the token, receive the ETH.
-
-<!-- ci: auto-deploy verification 2026-08-25 -->

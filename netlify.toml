@@ -1,0 +1,9 @@
+# The site lives in web/ but imports the parity-tested canonical renderer from preview/src.
+# Netlify reads this file from the repository root, then builds inside the web workspace.
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

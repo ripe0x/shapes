@@ -1,7 +1,7 @@
 # Token 0 and the Shape Auction House — Draft Spec (v0.3, for discussion)
 
-Status: DRAFT. Strawman numbers are marked ⚙ (tunable before freeze, immutable after). No
-code written yet.
+Status: implemented; design rationale preserved as written. Current project status:
+project/STATE.md.
 
 Baseline: `origin/main` at `c9eb8a2`. This worktree branches from `0c17835` and is about
 thirty commits behind; the gap renamed the old `decompose` to `split` and added a new

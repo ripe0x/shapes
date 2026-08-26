@@ -120,15 +120,14 @@ export function geometryAt(denomIndex: number, p: Params = CANONICAL): CardGeome
  *   then, for each cell in row-major order:
  *   2. kind              (always)
  *   3. solid             (always)
- *   4. rotation          ONLY when kind is "triangle" or "half"
+ *   4. rotation          ONLY when the selected kind has multiple orientations
  *
  * Size and stroke are NOT drawn. They are collection constants scaled by the cell, so every
  * Shape reads at the same proportion whatever its denomination or seed.
  *
  * Note the conditional consumption of the rotation draw. Round 03 evaluates
- * `rot` inside a JavaScript object literal with a ternary, so a circle or square
- * never draws for it. Consuming unconditionally would desynchronise the stream
- * and change every downstream cell.
+ * `rot` conditionally, so rotation-invariant kinds never draw for it. Consuming
+ * unconditionally would desynchronise the stream and change every downstream cell.
  *
  * Ink genes (INK_GENES_IMPL_SPEC.md §4.1): the card-level fill draw is superseded by
  * `inkGene`. The draw still happens — the stream must keep consuming it (SPEC.md D5) — but

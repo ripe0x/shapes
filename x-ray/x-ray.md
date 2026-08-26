@@ -270,14 +270,14 @@ Coverage runs as of PR #38; the command needs `--ir-minimum` (coverage builds wi
 
 > Repo shape: normal_dev — 130 commits over a 14-day history (2026-08-08 → 2026-08-22), 42 of which touch source files.
 
-**Analyzed branch:** `HEAD` (detached, matching `origin/main` at `2167dc7`) — all git signals below reflect only commits reachable from this commit.
+**Historical analyzed revision:** pre-publication `origin/main` at old hash `2167dc7` (rewritten hash `fbc0b8d`; see `project/HASHMAP.md`). All git signals below reflect only commits reachable from that revision, not the current branch tip.
 
 ### Contributors
 
 | Author | Commits | Source Lines Added | % of Source Changes |
 |--------|--------:|--------------------|--------------------:|
 | ripe0x | 56 | +4,236 | 64.6% |
-| dave | 74 | +2,320 | 35.4% |
+| dev-2 | 74 | +2,320 | 35.4% |
 
 Two-developer repo; no single contributor exceeds the 90% concentration threshold, and no ghost (1-commit) contributors.
 
@@ -313,7 +313,7 @@ Two-developer repo; no single contributor exceeds the 90% concentration threshol
 | `a0ff0af` | 2026-08-19 | Audit fixes: close both High findings, three of the five Low | 16 | adds a runtime guard, spans 3 security domains, focused |
 | `c784d23` | 2026-08-19 | ShapeAuctionHouse: bids denominated in Shape cards | 15 | tightens access control, large (467 lines) — a feature commit, not a fix, flagged by the same heuristics |
 | `808477d` | 2026-08-19 | Add value and position discovery interfaces | 14 | spans 5 security domains — a feature commit |
-| `5979de1` | 2026-08-12 | Shapes: restore — reassemble a split's complete child set (dave) | 14 | later fully removed by `db33139` within one week |
+| `5979de1` | 2026-08-12 | Shapes: restore — reassemble a split's complete child set (dev-2) | 14 | later fully removed by `db33139` within one week |
 | `db33139` | 2026-08-19 | Remove restore: a split is final | 13 | net code removal, loosens access control (−2) |
 | `071ce37` | 2026-08-12 | Shapes v2 review fixes: Fragment label, seed-rule tests, type/wording nits | 13 | genuine post-hoc correction |
 | `27c080a` | 2026-08-10 | v2 Phase 3: compose and decompose | 13 | feature-phase commit |
@@ -344,7 +344,7 @@ Internalizing a vendored library means upstream security patches will not auto-p
 
 ### Security Observations
 
-- **Two-developer concentration** — ripe0x (64.6%) + dave (35.4%) = 100% of source-line authorship.
+- **Two-developer concentration** — ripe0x (64.6%) + dev-2 (35.4%) = 100% of source-line authorship.
 - **Repo is 14 days old with 42 "late" (30-day-window) source commits** — reflects a genuinely young, fast-moving codebase rather than a last-minute pre-audit rewrite.
 - **`Shapes.sol`/`IShapes.sol` top both churn and attack-surface priority** — 30+24 modifications against every value-moving entrypoint.
 - **The auction subsystem is newest and carries its own internal audit trail** — `e20a1b3`, `a7fb9ed`, `a0ff0af` already closed an M-2/L-2/L-4/I-6 internal round before the commit this tree is built from.
@@ -366,7 +366,7 @@ Internalizing a vendored library means upstream security patches will not auto-p
 
 **Structural facts:**
 1. 3,066 nSLOC across 7 in-scope subsystems (3,583 nSLOC including 517 nSLOC of interfaces), 26 source files.
-2. Two developers (ripe0x 64.6%, dave 35.4% of source line additions) over a 14-day, 130-commit history with 13 merges.
+2. Two developers (ripe0x 64.6%, dev-2 35.4% of source line additions) over a 14-day, 130-commit history with 13 merges.
 3. 21 test files / 399 test functions / 34 stateless-fuzz functions / 16 stateful-invariant functions; 0 fix-scored commits shipped without a paired test change.
 4. `Shapes`'s runtime bytecode carries 128 bytes of EIP-170 headroom at the currently committed build settings, the tightest in-scope contract; `ShapeRenderer` carries 1,877 bytes, restored from a 349-byte low by re-chunking its string assembly and pinned against regression by a differential harness comparing it byte-for-byte to the pre-refactor renderer. Five libraries (`ComposeCompute`, `ContractCollectorOps`, `CopyValidation`, `GeometrySampling`, `InkGenes`) are externally linked, each a separate deployment.
 5. No proxy/upgrade pattern, no oracle/price feed, and no ERC20 integration exist anywhere in scope; the owner role's every power is documented as value-inert (cannot reach ETH, backing, redemption or ownership).

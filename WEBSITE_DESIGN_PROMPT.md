@@ -4,7 +4,7 @@
 
 Shapes is an ERC721 token that wraps an exact amount of ETH. Mint a Shape by sending ETH; burn it and the same ETH comes back. Not a share of a pool — the same amount, exactly. Between mint and burn it is an ordinary NFT: transfer it, sell it, hold it.
 
-There are exactly nine denominations, permanent: 0.01, 0.1, 0.5, 1, 5, 10, 25, 50, 100 ETH. Every other amount is rejected. The mint fee is 1% of the backing, paid on top. Redemption always returns the full backing.
+There are exactly nine denominations, permanent: 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100 ETH. Every other amount is rejected. The mint fee is 1% of the backing, paid on top. Redemption always returns the full backing.
 
 The artwork is fully onchain SVG. Black background, white marks, nothing else — no color, no gradients, no text on the face. Each card is a 2.5 × 3.5 trading-card proportion (250 × 350 viewBox). The marks are simple geometric primitives — circle, square, triangle, half circle, quarter circle, diamond, half square, right triangle, arc, line — placed on a grid. Value controls density, inverted: a 0.01 ETH Shape is a dense 5 × 5 grid of 25 marks; a 100 ETH Shape is a single mark alone on a black field. The more ETH a Shape holds, the less is drawn.
 

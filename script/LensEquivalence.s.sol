@@ -49,6 +49,20 @@ abstract contract LensEquivalence is Script {
     uint8 internal constant PROBE_CHILD_INDEX = 0;
     uint256 internal constant PROBE_CHILD_COUNT = 5;
 
+    /// @notice Reverts a chain-id-1 broadcast if the source still carries the testnet-scaled ladder.
+    /// @dev Every deploy script here shares this check by inheriting from `LensEquivalence`, so the
+    ///      guard lives once instead of once per script. Denominations.sol is scaled 100x for
+    ///      sepolia (UNIT = 0.0001 ether); a mainnet deploy from that source would ship the wrong
+    ///      immutable economics with no other signal to catch it.
+    function _guardMainnetLadder() internal view {
+        if (block.chainid == 1) {
+            require(
+                Denominations.UNIT == 0.01 ether,
+                "mainnet deploy blocked: Denominations carries the testnet-scaled ladder; restore UNIT = 0.01 ether"
+            );
+        }
+    }
+
     /// @notice Reverts unless `lens` previews `shapes`'s own compose and split results exactly.
     /// @param shapes The deployed token.
     /// @param lens The lens under test. Must already point at `shapes`.

@@ -1,8 +1,9 @@
 # Ink Genes — Draft Spec (v0.1, for discussion)
 
-Status: DRAFT. Nothing here is committed. Strawman numbers are marked ⚙ (tunable before
-freeze, immutable after). Reference: Checks – VV Originals
-(`0x036721e5A769Cc48B3189EFbb9CCe4471E8A48B1`), whose composite-gene design this adapts.
+Status: implemented; design rationale preserved as written. Current project status:
+project/STATE.md. Strawman numbers are marked ⚙ (tunable before freeze, immutable
+after). Reference: Checks – VV Originals (`0x036721e5A769Cc48B3189EFbb9CCe4471E8A48B1`),
+whose composite-gene design this adapts.
 
 ## Design goals
 

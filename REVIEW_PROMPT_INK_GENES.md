@@ -93,39 +93,39 @@ regenerate, parity green.
    probability table. Build a simulation in `preview/` that models real players — who
    preview every candidate set off-chain, exploit survivor choice (~n+1 shots per set),
    and only execute winners — and tune against a headline target like "a Solid 100 takes
-   roughly X ETH parked and Y dust mints of hunting." Present the tradeoff curves to Dave
+   roughly X ETH parked and Y dust mints of hunting." Present the tradeoff curves to the maintainer
    for the final call; constants are immutable after deploy.
 2. **Epoch commit-reveal decision (draft §6 of INK_GENES_DRAFT.md).** Currently seeds are
    grindable at ~1 revert-attempt/block (accepted risk D3e). With genes, grinding dust
    jackpots is gas-priced rather than fee-priced. Checks' scheme (mint first, reveal
    blockhash+50 later, anyone can reveal) closes it. Present the tradeoff (50-block
-   unrevealed window, contract surface) to Dave; implement only if he says yes.
+   unrevealed window, contract surface) to the maintainer; implement only if he says yes.
 3. **Mega-compose gas note.** A single-tx 10,000-dust → 100 compose costs ~70.8M gas —
    over any block limit. Pre-existing O(n) burn loop, fine for the game (ladder through
    intermediate composes), but record it in SPEC.md so nobody designs around one-tx apexes.
 4. **Sacrifice lore (open, cosmetic).** Should `sacrifice` record the gene the apex died with
    (a Solid Black vs a Void Black), even though isBlack overrides rendering? Zero protocol
-   cost. Ask Dave; one-line change + trait if yes.
+   cost. Ask the maintainer; one-line change + trait if yes.
 5. **Stale numbers/docs.** INK_GENES_IMPL_SPEC.md §5 says "66 fixtures"; the harness has
    produced 78 since before ink genes — correct the doc. Check README.md (22KB) and
    WEBSITE_DESIGN_PROMPT.md for anything describing the old fill-band behavior or the
    deleted `inkDemo.ts`; update descriptions of traits to include Ink.
 6. **Preview/site UX (nice-to-have).** The preview app and site views don't surface genes
    yet beyond compiling. Consider: gene readout in Inspect, a simulateCompose planner in
-   the chain app. Ask Dave before building.
+   the chain app. Ask the maintainer before building.
 
 ## Task 4 — Cleanup
 
 - `_to_delete/` at repo root holds the removed `inkDemo.ts` and stray git lock files (a
   prior session couldn't delete on this machine). Delete the folder.
-- `.claude/settings.local.json` is untracked — leave or gitignore, Dave's call.
+- `.claude/settings.local.json` is untracked — leave or gitignore, the maintainer's call.
 - Commits `0e94b69`/`a333b1b` are LOCAL ONLY. Push to `origin/main`
   (github.com/ripe0x/shapes) after Task 1 passes locally.
 - If any `.git/*.lock` files reappear and block git, they're leftovers — remove them.
 
 ## Task 5 — Deploy readiness checklist
 
-Work through, reporting status on each; do irreversible things only with Dave's explicit
+Work through, reporting status on each; do irreversible things only with the maintainer's explicit
 go:
 
 1. All of Task 1 green locally + CI green on push.
@@ -141,7 +141,7 @@ go:
    including a tokenURI smoke check showing the Ink trait.
 6. Testnet (sepolia) deploy + manual walkthrough: mint dust, mint 1 ETH, compose with
    simulate-preview parity, decompose/split, redeem. Verify contracts on Etherscan.
-7. Post-deploy policy decisions documented for Dave: when/whether to `lockRenderer`, and
+7. Post-deploy policy decisions documented for the maintainer: when/whether to `lockRenderer`, and
    when/whether to `renounceOwnership` (the only admin power is the renderer swap).
 8. Items 1–2 of Task 3 resolved (tuned constants, epoch decision) — these are the two
    blockers that must be settled BEFORE any deploy, since both are immutable.
@@ -152,6 +152,6 @@ go:
   `forge test --mc Parity` and `npm run sweep` after any change there (project rule).
 - Never batch-render from consecutive integer seeds (D3d). Seed entropy must contain
   nothing caller-controlled (D3e).
-- Dave prefers short, bullet-driven, plain-language updates. Delegate mechanical work to
+- The maintainer prefers short, bullet-driven, plain-language updates. Delegate mechanical work to
   cheaper models where sensible; keep judgment calls in the main thread. Ask before
   anything irreversible, and before building nice-to-haves.
