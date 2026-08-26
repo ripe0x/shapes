@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. A fresh session picks up here: read project/*.md (STATE.md first), then this file for what was mid-flight. Updated at every significant step, not just session end.
 
 Session: resumed Director session, 2026-08-25.
-Branch: claude/project-director-setup-886e07 in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, tracking origin.
+Branch: main at `7fca2b2` plus the post-merge continuity update in canonical clone `/Users/dd/CascadeProjects/shapes-clean`.
 
 ## Done this session
 
@@ -15,18 +15,18 @@ Branch: claude/project-director-setup-886e07 in canonical clone `/Users/dd/Casca
 
 ## In flight
 
-- P0 gate PASSED. PR #1 merged green to main as `5eec83d`. P1 entry is paused only while the adopted PR #2 architecture is finalized and freshly deployed to Sepolia.
+- P0 gate PASSED. PR #1 merged green as `5eec83d`; PR #2 merged green as `7fca2b2`. P1 entry is paused only for a fresh Sepolia deployment and post-flight readback of the adopted architecture.
 - Independent review found stale status contradictions in STATE/DECISIONS/RISKS/HANDOFF; corrected in the resumed session. Executable PR diff received an independent accept verdict.
 - PR #1's last standalone tip `41a36b3` was fully green: contracts, renderer parity, Netlify deploy preview, header rules, and redirect rules passed; the pages-changed check correctly skipped. Two later main commits (`ef228f0`, `1020730`) implemented build-time ladder selection and made PR #1 conflict in DeployShapes/DeploySepolia. The Director merged current main into the PR branch and selected main's stronger profile-aware guards. Re-run the combined checks before merge.
 - User approved D-24 with the Director recommendation: backed Shape #0 + separate admin, exposed through `titleHolder()` rather than the ERC-173-conflicting `owner()`. D-23's old non-tokenized title-auction product is superseded; its branch remains untouched as history.
-- PR #2 was rebased onto merged main. The candidate fixes the title selector, preserves legacy `IShapes` ERC-165 discovery, advertises `IAdminControl` and `IContractTitle`, repairs the false-positive seed test, adds valid Shape #0 split and safe-transfer/self-custody coverage, and removes stale collector references. It also fixes two integration defects exposed by the architecture change: genesis-block constructor simulation underflow and stale pre-genesis token IDs in `e2e-anvil.sh`. Charter principle 5 and canonical docs are amended.
-- PR #2 combined local verification is green: 428 contracts tests pass with 4 fork-only skips; Shapes has a 451-byte EIP-170 margin; testnet-profile title/token/ladder tests pass; Sepolia deployment dry-run passes; fresh-Anvil deploy, all denominations, transfer, exact redemption, full reserve unwind, and auction flow pass; preview has 39 tests, typecheck, parity, 500-per-denomination sweep, and fresh fixtures; docs selector check, web lint, and production build pass. Remote CI/re-review and merge remain.
+- PR #2 fixes the title selector, preserves legacy `IShapes` ERC-165 discovery, advertises `IAdminControl` and `IContractTitle`, repairs the false-positive seed test, adds valid Shape #0 split and safe-transfer/self-custody coverage, and removes stale collector references. It also fixes genesis-block constructor simulation, genesis-aware Anvil/SeedDemo token IDs, and reconciles Charter principle 5 plus canonical docs.
+- PR #2 combined verification is green: 428 contract tests pass with 4 fork-only skips; Shapes has a 451-byte EIP-170 margin; testnet-profile title/token/ladder tests, Sepolia dry-run, fresh-Anvil deploy/reserve unwind/auction, preview tests/typecheck/parity/sweep/fixtures, docs selector check, web lint/build, both GitHub CI jobs, two independent re-reviews, and the security diff scan pass. No reportable security finding remains.
 - Combined local verification after current-main reconciliation: docs selector check, preview typecheck/stream verification/500-per-denomination collision sweep/fixture freshness, web lint/build, `forge fmt --check`, `forge build --sizes`, and full `forge test` pass. Result: 454 passed, 0 failed, 4 fork-only skipped; Shapes EIP-170 margin 145 bytes. The sweep exposed and this branch fixed an existing rotation-accounting bug that produced negative percentages after the vocabulary expanded; it now counts every active rotatable primitive and asserts totals.
 - Open user decision: D-05 (mainnet admin/title custody, immutable fee recipient, and lock/renounce timing, needed by P2).
 
 ## Next
 
-- Finish full PR #2 verification, push the rebased branch, get combined CI/re-review green, and merge. Then perform a fresh Sepolia deploy/readback before opening P1. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
+- Perform a fresh Sepolia deploy/readback and replace deployment metadata/fromBlock before opening P1. This is an explicit later deployment step, not performed during the PR #2 merge. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
 
 ## Go-public cutover: EXECUTED 2026-08-25
 

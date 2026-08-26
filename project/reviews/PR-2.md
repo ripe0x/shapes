@@ -1,6 +1,6 @@
 # PR #2 review
 
-- Target: rebased `origin/main...codex/token-zero-contract-title` candidate on `5eec83d`; remote head update pending.
+- Target: PR #2 merged to main as `7fca2b2` after review head `8b2b133` passed required checks.
 - Reviewers: Director review of architecture, authorization, standards semantics, deployment, and integration order; independent read-only reviews of ABI/deploy compatibility, Shape #0 lifecycle/tests, and project-plan impact.
 
 ## Findings
@@ -20,7 +20,7 @@
 - The reserve/accounting and ordinary Shape #0 lifecycle wiring reviewed as coherent. Constructor backing, transfer, auction escrow, redemption, compose-as-input, decomposition revival, admin transfer, and admin renunciation have no confirmed implementation defect.
 - This charter-level architecture delta was approved as D-24. It changes constructor value flow, token numbering, authorization, ABI, deployment addresses, and removes the collector capability domain.
 - Merge order is satisfied: PR #1 merged as `5eec83d`, then PR #2 was rebased onto it and the combined local gate rerun.
-- If adopted, the existing Sepolia address remains the old immutable architecture. Deploy a fresh implementation, replace deployment metadata/fromBlock, and collect P1 evidence only against the new system.
+- The existing Sepolia address remains the old immutable architecture. Deploy a fresh implementation, replace deployment metadata/fromBlock, and collect P1 evidence only against the new system.
 
 ## Verification
 
@@ -28,8 +28,8 @@
 - Deployment: Sepolia-profile dry-run passes without broadcast. Fresh local Anvil broadcast passes deploy, nine-denomination minting, title-inclusive full reserve unwind, transfer, exact redemption, auction settlement, and zero residual house balance.
 - Renderer/site: 39 preview tests, TypeScript typecheck, stream verification, 500-per-denomination sweep, fixture freshness, web lint, and production build pass.
 - Documentation: selector check and stale collector/current-owner terminology sweep pass.
-- Remote combined CI is pending the rebased force-with-lease update.
+- Remote contracts and renderer-parity CI passed at review head `8b2b133`. Two independent re-reviews accepted the repaired candidate. The Codex Security diff scan found zero reportable findings.
 
 ## Verdict
 
-Accept locally. D-24 is explicit, every review finding is closed, canonical docs and Charter are reconciled, PR #2 is rebased after PR #1, and the full local gate is green. Push the rebased candidate, require remote CI green, then merge. A fresh Sepolia deployment/readback is the separate post-merge entry condition for P1.
+Accepted and merged as `7fca2b2`. D-24 is explicit, every review finding is closed, canonical docs and Charter are reconciled, and the full local and remote gate is green. A fresh Sepolia deployment/readback is the remaining entry condition for P1.
