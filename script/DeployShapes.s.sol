@@ -38,7 +38,7 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      house costs an auction rather than the collection.
 ///
 ///      Deployment sends the minimum denomination to `Shapes`, which atomically mints backed
-///      Shape #0 to the deployer. Its holder is returned by `titleHolder()` but receives no
+///      Shape #0 to the deployer. Its holder is returned by `owner()` but receives no
 ///      administrative permissions.
 ///      Permissionless artwork minting therefore begins at #1. The deployer is also the initial
 ///      `admin()` and may transfer or renounce that separate value-inert role.
@@ -140,7 +140,7 @@ contract DeployShapes is LensEquivalence {
         require(collection.renderer() == address(renderer), "collection points at another renderer");
 
         require(shapes.ownerOf(0) == msg.sender, "Shape #0 not minted to deployer");
-        require(shapes.titleHolder() == msg.sender, "title holder mismatch");
+        require(shapes.owner() == msg.sender, "contract owner mismatch");
         require(shapes.admin() == msg.sender, "admin mismatch");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
         require(shapes.totalMinted() == 1, "permissionless minting should begin at #1");
@@ -194,10 +194,10 @@ contract DeployShapes is LensEquivalence {
         console.log("AuctionHouse  ", address(house));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
-        console.log("title holder    ", shapes.titleHolder());
+        console.log("contract owner ", shapes.owner());
         console.log("admin         ", shapes.admin());
         console.log("");
-        console.log("Fee terms and reserve rules are immutable. Shape #0 carries the collectible title.");
+        console.log("Fee terms and reserve rules are immutable. Shape #0 represents collectible ownership.");
         console.log("Presentation and position resolver settings are independently lockable.");
 
         // Runs last: the probe advances simulated token state, so every check and log above it

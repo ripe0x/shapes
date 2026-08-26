@@ -2,15 +2,15 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-08-25 (resumed Director session).
+Last updated: 2026-08-26 (resumed Director session).
 
 ## Phase
 
-Current phase: P1 entry gate, with the adopted Shape #0 contract-title architecture merged and awaiting a fresh Sepolia deployment/readback (see `project/ROADMAP.md`).
+Current phase: P1 entry gate, merging the corrected PR #2 owner/admin ABI before a fresh Sepolia deployment/readback (see `project/ROADMAP.md`).
 
-P0 GATE PASSED 2026-08-25. PR #1 merged as `5eec83d`. The user then approved D-24: backed Shape #0 as the transferable contract title, an explicit `titleHolder()` read with no ERC-173 `owner()` collision, and a separate value-inert `admin()`. PR #2 passed its combined gate and merged as `7fca2b2`. P1 does not begin until this architecture has a fresh Sepolia deployment and post-flight readback.
+P0 GATE PASSED 2026-08-25. PR #1 merged as `5eec83d`; PR #2 merged as `7fca2b2`. The intended PR #2 architecture is backed Shape #0 as transferable collectible ownership, exposed through `owner()`, with a separate value-inert `admin()`. During review the Director replaced `owner()` with `titleHolder()` without explicit user approval. That substitution is being reverted and re-reviewed before deployment. P1 does not begin until the corrected architecture passes its gate and has a fresh Sepolia deployment/readback.
 
-PR #2 is merged. The Director's requested changes are closed: `owner()` was replaced by the separately advertised `IContractTitle.titleHolder()` capability; legacy `IShapes` id `0xbdcee955` is preserved; `IAdminControl` and `IContractTitle` discovery are pinned; the false-positive seed test reads the minted ids; valid Shape #0 split plus safe-transfer/self-custody paths are covered; and stale collector references are removed. The combined local gate, independent re-reviews, security diff scan, contracts CI, and renderer-parity CI are green. Full closure evidence lives in `project/reviews/PR-2.md`.
+PR #2's unrelated fixes remain accepted: the false-positive seed test reads the minted ids; valid Shape #0 split plus safe-transfer/self-custody paths are covered; genesis-block constructor simulation and genesis-aware scripts are fixed; and stale collector references are removed. The owner/admin correction is committed as `ab9db38` on `codex/restore-pr2-owner` and opened as PR #3. Build succeeds with a 445-byte EIP-170 margin; 428 contract tests pass with 4 fork-only skips; the testnet ownership packet, 39 preview tests, TypeScript check, independent behavior review, CI, and replacement security diff scan pass with zero reportable security findings. D-25/R18 were invalidated: the expected custom `IShapes` interface-id change cannot break a legacy consumer because this architecture has not been deployed and no such consumer exists. PR #3 has no remaining review blocker. Full review evidence lives in `project/reviews/PR-2.md`.
 
 Historical note — STOP CONDITION LIFTED (2026-08-25, same day raised): the landed audit's base commit 4e6b3d8 (2026-08-19) is 43 commits behind main; main already closed the findings (a0ff0af both Highs + 3 Lows, da1fa53 L-1, dabf2ad L-3, e20a1b3 M-2/L-2/L-4/I-6, 383be38 H-2 doc correction, 2167dc7, d2f2e59). Verified in current source: settlement is pull-based via claimLot (lot revert blocks only its own delivery), bid() has SellerCannotBid. The initial triage misread the audit checkout as current main. Residue tracked in D-02: M-1 gas asymmetry feeds D-08; PoC suite worth porting to main as regression tests.
 

@@ -32,7 +32,7 @@ bypass `receive`: stated as an inequality and left permanently inaccessible.
 Shapes holds user ETH and has no administrator with any power over the reserve. A separate,
 transferable admin can administer two value-inert configuration domains: presentation (renderer
 plus collection metadata, locked together) and the independently lockable optional position
-resolver. Shape #0 is the backed collectible title exposed through `titleHolder()`, but its holder has no
+resolver. Shape #0 represents backed collectible ownership exposed through `owner()`, but its holder has no
 administrative authority. Neither configuration domain is read
 by a reserve path. `ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
 ETH and no admin surface. `ShapeAuctionHouse` and the `ShapeCardEscrow` base it inherits hold
@@ -216,7 +216,7 @@ whole post-state, and separately verified to fail if both guards are removed
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
 | Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), the fee forward (money received in the same call, never counted as backing), and `sacrifice` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking`, backing conservation net of sacrifice, `valueOf == backingOf`, `sacrificedBacking == 100 ether * blackCount`, and a full drain of every live Shape. |
-| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. The separate admin's powers reach only value-inert presentation and position-resolver configuration. Shape #0 title holding grants no permissions. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
+| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. The separate admin's powers reach only value-inert presentation and position-resolver configuration. Shape #0 ownership grants no permissions. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
 | Administrative isolation | The renderer and collection are called only by metadata reads; the resolver is called only by `positionOf`. A reverting resolver is regression-tested against the full token lifecycle and metadata. No admin function reaches ETH or token state. |
 | Draft ERC-8060 | `valueOf` exactly aliases `backingOf`; owner-only `burn` destroys a normal Shape for its exact value or a Black Shape for zero. Structural burns never settle ETH. The current draft interface ID is advertised through ERC-165; the proposal is not final and may change. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
@@ -225,7 +225,7 @@ whole post-state, and separately verified to fail if both guards are removed
 | DoS against the reserve | An owner that rejects ETH causes `_payRedemption` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
 | Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is admin-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only, never backing, redemption or ownership, and after locking it is fixed forever. |
 | Position resolver | The resolver starts at zero, may be replaced or cleared by the admin, and may be locked forever at any time including while zero. Its returned address is opaque and unvalidated. `positionOf` forwards a fixed gas cap and swallows any revert or out-of-gas to `address(0)`, so a hostile resolver can neither drain the caller nor make `positionOf` revert; its only power is to return a wrong address. Historical and nonexistent IDs are deliberately delegated without an existence check. |
-| Contract title | Shape #0 is atomically backed and minted to the deployer. `titleHolder()` follows `ownerOf(0)`, returning zero whenever #0 is burned. Transfer, redemption, composition, decomposition and split affect it exactly like any other Shape; no authorization check reads `titleHolder()`. |
+| Contract ownership | Shape #0 is atomically backed and minted to the deployer. `owner()` follows `ownerOf(0)`, returning zero whenever #0 is burned. Transfer, redemption, composition, decomposition and split affect it exactly like any other Shape; no authorization check reads `owner()`. |
 | Linked libraries | `GeometrySampling`, `ComposeCompute`, `InkGenes` and `CopyValidation` are external libraries; forge resolves and deploys each at build/deploy time and bakes its address into the linking contract's bytecode. There is no setter for a library address on any contract, so compose, split, validation or gene logic cannot be redirected after deployment. |
 
 ---
@@ -253,8 +253,8 @@ whole post-state, and separately verified to fail if both guards are removed
    resolver is a trust root for position discovery and may itself be upgradeable or malicious, but
    it has no authority over Shapes. Transfer admin to the intended multisig before configuration.
 5. **Shape #0 can temporarily cease to exist.** Because it is an ordinary backed Shape, redeeming,
-   splitting or consuming #0 as a compose input makes `titleHolder()` return zero. Decomposition can
-   later restore the same ID. This affects the public title signal only, never administration.
+   splitting or consuming #0 as a compose input makes `owner()` return zero. Decomposition can
+   later restore the same ID. This affects the public ownership signal only, never administration.
 6. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
    ERC-165 ID match the current proposal, but an immutable deployment cannot follow later changes.
 7. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the

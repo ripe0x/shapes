@@ -25,6 +25,7 @@ The Director delegates:
 ## Decision discipline
 
 - Every important decision is recorded in DECISIONS.md with context and what resolved it. Rejected ideas are recorded and never silently revived.
+- Never change, rename, remove, or substitute fundamental product behavior, contract semantics, public ABI, or a PR's architectural intent based on inferred approval. Surface the concern and obtain the user's explicit confirmation before making the change, even when the Director believes the alternative is safer or more coherent. A general instruction to proceed, review, or "go" is not approval for a specific product or architecture change.
 - Decisions tagged as needing simulation, prototype, live users, legal, or security review are not resolved by argument alone — they cite the experiment or review that resolved them.
 - Charter principles (CHARTER.md) change only by explicit charter amendment with user sign-off.
 - Open questions that belong to the user (product direction, money, keys, irreversibles) are surfaced plainly and parked in DECISIONS.md — never defaulted.

@@ -7,11 +7,10 @@ import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
-import {IContractTitle} from "../src/interfaces/IContractTitle.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
-contract ContractTitleTest is Test {
+contract ContractOwnershipTest is Test {
     Shapes internal shapes;
     ShapeRenderer internal renderer;
     ShapeCollection internal collection;
@@ -42,7 +41,7 @@ contract ContractTitleTest is Test {
 
     function test_ConstructorMintsBackedShapeZeroToDeployer() public view {
         assertEq(shapes.ownerOf(0), address(this));
-        assertEq(shapes.titleHolder(), address(this));
+        assertEq(shapes.owner(), address(this));
         assertEq(shapes.admin(), address(this));
         assertEq(shapes.backingOf(0), Denominations.amountAt(0));
         assertEq(shapes.redeemableBacking(), Denominations.amountAt(0));
@@ -84,18 +83,18 @@ contract ContractTitleTest is Test {
         assertEq(shapes.ownerOf(1), alice);
     }
 
-    function test_TitleHolderTracksShapeZeroTransferWithoutMovingAdmin() public {
+    function test_OwnerTracksShapeZeroTransferWithoutMovingAdmin() public {
         shapes.transferFrom(address(this), alice, 0);
-        assertEq(shapes.titleHolder(), alice);
+        assertEq(shapes.owner(), alice);
         assertEq(shapes.admin(), address(this));
 
         vm.prank(alice);
         shapes.transferFrom(alice, bob, 0);
-        assertEq(shapes.titleHolder(), bob);
+        assertEq(shapes.owner(), bob);
         assertEq(shapes.admin(), address(this));
     }
 
-    function test_TitleHolderHasNoAdminPermissions() public {
+    function test_OwnerHasNoAdminPermissions() public {
         shapes.transferFrom(address(this), alice, 0);
 
         vm.startPrank(alice);
@@ -108,10 +107,10 @@ contract ContractTitleTest is Test {
         vm.stopPrank();
     }
 
-    function test_AdminTransfersIndependentlyOfTitle() public {
+    function test_AdminTransfersIndependentlyOfOwnership() public {
         shapes.transferAdmin(alice);
         assertEq(shapes.admin(), alice);
-        assertEq(shapes.titleHolder(), address(this));
+        assertEq(shapes.owner(), address(this));
 
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
@@ -122,10 +121,10 @@ contract ContractTitleTest is Test {
         shapes.setTokenCopy("x", "y");
     }
 
-    function test_AdminCanRenounceWithoutChangingTitle() public {
+    function test_AdminCanRenounceWithoutChangingOwnership() public {
         shapes.renounceAdmin();
         assertEq(shapes.admin(), address(0));
-        assertEq(shapes.titleHolder(), address(this));
+        assertEq(shapes.owner(), address(this));
 
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
@@ -133,11 +132,11 @@ contract ContractTitleTest is Test {
         shapes.setTokenCopy("x", "y");
     }
 
-    function test_RedeemingShapeZeroExtinguishesTitleAndReturnsBacking() public {
+    function test_RedeemingShapeZeroClearsOwnershipAndReturnsBacking() public {
         uint256 balanceBefore = address(this).balance;
         shapes.redeem(0);
 
-        assertEq(shapes.titleHolder(), address(0));
+        assertEq(shapes.owner(), address(0));
         assertEq(address(this).balance - balanceBefore, Denominations.amountAt(0));
         assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
@@ -156,25 +155,22 @@ contract ContractTitleTest is Test {
 
         vm.prank(alice);
         shapes.compose(1, burnIds);
-        assertEq(shapes.titleHolder(), address(0));
+        assertEq(shapes.owner(), address(0));
 
         vm.prank(alice);
         shapes.decompose(1);
-        assertEq(shapes.titleHolder(), alice);
+        assertEq(shapes.owner(), alice);
         assertEq(shapes.ownerOf(0), alice);
         assertEq(shapes.backingOf(0), Denominations.amountAt(0));
     }
 
-    function test_AdvertisesLegacyShapesAdminAndTitleInterfaces() public view {
-        assertEq(type(IShapes).interfaceId, bytes4(0xbdcee955), "legacy IShapes id changed");
+    function test_AdvertisesShapesAndAdminInterfaces() public view {
+        assertEq(type(IShapes).interfaceId, bytes4(0x306b220e), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x067e35a5), "admin interface id changed");
-        assertEq(type(IContractTitle).interfaceId, bytes4(0xe1ca0602), "title interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));
         assertTrue(shapes.supportsInterface(type(IAdminControl).interfaceId));
-        assertTrue(shapes.supportsInterface(type(IContractTitle).interfaceId));
         assertFalse(shapes.supportsInterface(bytes4(0x7f5828d0)), "ERC-173 must not be advertised");
-        assertFalse(shapes.supportsInterface(bytes4(0x8da5cb5b)), "owner selector must not be advertised");
     }
 
     receive() external payable {}

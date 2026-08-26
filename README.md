@@ -224,10 +224,10 @@ and the narrow compose/decompose identity-revival exception.
 
 ## Immutability
 
-Shape #0 is the collectible title to the contract. It is minted atomically to the deployer with
-minimum-denomination backing, and `titleHolder()` always returns its current holder. It is otherwise a
+Shape #0 represents ownership of the contract as a collectible object. It is minted atomically to the
+deployer with minimum-denomination backing, and `owner()` always returns its current holder. It is otherwise a
 normal Shape: it can be transferred, redeemed, composed, decomposed, or split. While #0 does not
-exist, `titleHolder()` returns zero. Holding it grants no administrative rights. Permissionless artwork
+exist, `owner()` returns zero. Holding it grants no administrative rights. Permissionless artwork
 minting starts at #1, which is the launch-auction lot.
 
 A separate `admin()` role controls two independent, value-inert configuration domains. It can be
@@ -302,7 +302,6 @@ src/
     IShapeGeometry.sol
     IShapeCapabilities.sol
     IAdminControl.sol
-    IContractTitle.sol
   lib/
     Denominations.sol         the nine amounts and their grids
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter

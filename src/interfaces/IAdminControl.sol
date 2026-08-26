@@ -2,9 +2,9 @@
 pragma solidity 0.8.28;
 
 /// @title IAdminControl
-/// @notice Explicit temporary administration, separate from the collectible contract title.
+/// @notice Explicit temporary administration, separate from collectible contract ownership.
 /// @dev The admin may configure only the value-inert surfaces documented by `Shapes`. The
-///      title holder returned by `titleHolder()` receives none of these permissions.
+///      contract owner returned by `owner()` receives none of these permissions.
 interface IAdminControl {
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
 

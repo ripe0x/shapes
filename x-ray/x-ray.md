@@ -8,11 +8,11 @@
 
 **What it does:** Shapes is an ERC721 that wraps an exact amount of ETH at one of nine fixed denominations (0.01–100 ETH); burning the token returns exactly that ETH to its owner.
 
-- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers value-inert presentation and position discovery. Shape #0 is the backed collectible title and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
+- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers value-inert presentation and position discovery. Shape #0 represents backed collectible ownership and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
 - **Core flow**: `mint` (ETH in, token out) and `redeem`/`burn` (token in, exact ETH out) are the whole economic surface; `compose`/`split`/`decompose` reshape tokens without moving ETH.
 - **Key mechanism**: A fixed reserve invariant — `address(this).balance >= redeemableBacking()` — with no admin path that can reach it. No oracle, no market pricing: value is denomination-fixed, not price-discovered.
 - **Token model**: One ERC721 collection (`Shapes`). No fungible token, no governance token, no LP token. `ShapeAuctionHouse` mints/holds Shapes as bid collateral but issues nothing of its own.
-- **Admin model**: A single transferable `admin()` controls presentation (renderer + collection metadata, one-way lockable) and an optional position-discovery resolver (independently one-way lockable, may lock at zero). Neither domain can touch ETH, backing, redemption or token ownership. `titleHolder()` instead follows Shape #0 and is never consulted for authorization.
+- **Admin model**: A single transferable `admin()` controls presentation (renderer + collection metadata, one-way lockable) and an optional position-discovery resolver (independently one-way lockable, may lock at zero). Neither domain can touch ETH, backing, redemption or token ownership. `owner()` instead follows Shape #0 and is never consulted for authorization.
 
 For a visual overview of the protocol's architecture, see the [architecture diagram](architecture.svg).
 
@@ -111,7 +111,7 @@ Shapes matches the Stablecoin profile's core shape — mint against exact collat
 | Actor | Trust Level | Capabilities |
 |-------|-------------|--------------|
 | Admin | Bounded (value-inert) | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), and set/clear/lock the position resolver. These powers reach only presentation or discovery pointers; none can touch ETH, backing, redemption or token ownership. |
-| Shape #0 holder | Untrusted, self-scoped | Reported by `titleHolder()` as the collectible contract title. Has exactly the same lifecycle rights as any Shape holder and no administrative permissions. |
+| Shape #0 holder | Untrusted, self-scoped | Reported by `owner()` as collectible contract ownership. Has exactly the same lifecycle rights as any Shape holder and no administrative permissions. |
 | Shape Owner (any user) | Untrusted, self-scoped | mint/redeem/compose/split/decompose/sacrifice on tokens they own; cannot affect any other holder's tokens or the reserve beyond their own mint/redeem flow. |
 | Fee Recipient | Trusted by construction, immutable | Receives every mint fee; a reverting recipient permanently disables minting (accepted design, SECURITY.md #6). |
 | Auction Seller | Untrusted, self-scoped | Lists any ERC721 it owns/is approved for; cannot bid its own auction (G-36/I-8) or affect another auction. |
@@ -131,7 +131,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 ### Trust Boundaries
 
-**Admin → presentation/resolver** — no timelock or multisig is enforced at the contract level; presentation and resolver are independently one-way lockable and neither reaches ETH, backing or token ownership. Shape #0's title holder has no administrative capability. *Git signal: `access_control`-tagged commits touch `Shapes.sol` in 15 of the last 20 commits — elevated churn, but every change is additive validation (renderer/collection code checks, copy validation), not a widening of the admin's reach.*
+**Admin → presentation/resolver** — no timelock or multisig is enforced at the contract level; presentation and resolver are independently one-way lockable and neither reaches ETH, backing or token ownership. Shape #0's holder has no administrative capability. *Git signal: `access_control`-tagged commits touch `Shapes.sol` in 15 of the last 20 commits — elevated churn, but every change is additive validation (renderer/collection code checks, copy validation), not a widening of the admin's reach.*
 
 **Shapes ↔ fee recipient** — immutable, single trust point; a reverting recipient's worst case is a permanent redeem-only mode, never fund loss (SECURITY.md #6).
 
