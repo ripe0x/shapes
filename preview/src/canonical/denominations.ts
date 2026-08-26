@@ -1,23 +1,25 @@
 /**
  * The nine canonical Shape denominations and the grid each one maps to.
- * These are permanent protocol rules. The table is duplicated verbatim in
- * src/lib/Denominations.sol.
+ * These are permanent protocol rules, mirrored in src/lib/Denominations.sol and asserted equal
+ * by the parity suite.
+ *
+ * The amounts, their unit, and their labels come from one of two ladder tables, selected at build
+ * time by SHAPES_LADDER: "testnet" picks the 100x-smaller table, anything else picks mainnet. It
+ * pairs with the foundry profile of the same name, so a testnet site is built against the same
+ * ladder as the testnet contracts. Everything else in this file is unit-relative and identical
+ * under both.
  */
 
-// TESTNET SCALE (sepolia-scaled branch): 100x smaller than the mainnet ladder so the whole system
-// is exercisable with faucet ETH — top is 1 ETH, not 100. Mirrors src/lib/Denominations.sol on this
-// branch. Restore the mainnet ladder before any mainnet deploy.
-export const DENOMINATIONS: readonly bigint[] = [
-  100_000_000_000_000n, //   0.0001 ETH
-  500_000_000_000_000n, //   0.0005 ETH
-  1_000_000_000_000_000n, //  0.001  ETH
-  5_000_000_000_000_000n, //  0.005  ETH
-  10_000_000_000_000_000n, //  0.01  ETH
-  50_000_000_000_000_000n, //  0.05  ETH
-  100_000_000_000_000_000n, // 0.1   ETH
-  500_000_000_000_000_000n, // 0.5   ETH
-  1_000_000_000_000_000_000n, // 1   ETH
-];
+import * as mainnet from "./ladders/mainnet";
+import * as testnet from "./ladders/testnet";
+
+/** Reading process.env directly keeps this inlinable by every bundler that defines it. */
+const ladder =
+  typeof process !== "undefined" && process.env?.SHAPES_LADDER === "testnet" ? testnet : mainnet;
+
+export const LADDER_NAME: "mainnet" | "testnet" = ladder === testnet ? "testnet" : "mainnet";
+
+export const DENOMINATIONS: readonly bigint[] = ladder.AMOUNTS;
 
 /** [cols, rows] per denomination index. */
 export const GRIDS: readonly (readonly [number, number])[] = [
@@ -33,17 +35,7 @@ export const GRIDS: readonly (readonly [number, number])[] = [
 ];
 
 /** Exact display strings. No trailing zeros, by construction. */
-export const LABELS: readonly string[] = [
-  "0.0001",
-  "0.0005",
-  "0.001",
-  "0.005",
-  "0.01",
-  "0.05",
-  "0.1",
-  "0.5",
-  "1",
-];
+export const LABELS: readonly string[] = ladder.LABELS;
 
 /** Index of a supported denomination, or -1. */
 export function denominationIndex(amountWei: bigint): number {
@@ -70,7 +62,7 @@ export function moduleCountForAmount(amountWei: bigint): number {
 
 /** The minimum denomination, in wei. Every denomination is a whole multiple of it. Mirrors
  *  Denominations.sol UNIT. */
-export const UNIT = 100_000_000_000_000n; // 0.0001 ETH (testnet scale)
+export const UNIT = ladder.UNIT;
 
 /** Backing amount for a denomination index, in UNIT multiples. Mirrors
  *  Denominations.sol unitsAt. */

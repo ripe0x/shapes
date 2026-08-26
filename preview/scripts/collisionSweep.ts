@@ -13,6 +13,7 @@ import {
   LABELS,
 } from "../src/canonical/denominations";
 import { CANONICAL } from "../src/canonical/params";
+import { ROT_COUNT } from "../src/canonical/render";
 import { buildBatch, analyseBatch } from "../src/analysis";
 
 const N = Number(process.argv[2] ?? 500);
@@ -62,20 +63,28 @@ for (let i = 0; i < DENOMINATIONS.length; i++) {
   }
 }
 
-// rotation distribution is only meaningful over the rotatable primitives
-console.log("\nRotation distribution over triangle + half circle, all bands pooled:");
+// Rotation zero is also the forced value for invariant kinds. Remove those modules so this
+// distribution covers exactly the active vocabulary entries with two or four orientations.
+console.log("\nRotation distribution over all rotatable primitives, all bands pooled:");
 const rot: Record<number, number> = { 0: 0, 90: 0, 180: 0, 270: 0 };
 let rotTotal = 0;
 for (let i = 0; i < DENOMINATIONS.length; i++) {
   const cards = buildBatch(DENOMINATIONS[i], SEED_START, N, CANONICAL, MODE);
   const st = analyseBatch(cards, DENOMINATIONS[i]);
-  const rotatable = st.kindCounts.triangle + st.kindCounts.half;
+  let rotatable = 0;
+  for (const kind of CANONICAL.kinds) {
+    if (ROT_COUNT[kind] > 1) rotatable += st.kindCounts[kind];
+  }
   rotTotal += rotatable;
-  // rotationCounts includes the forced 0 of non-rotatable kinds; subtract them
+  // rotationCounts includes the forced zero of rotation-invariant kinds; subtract them.
   rot[0] += st.rotationCounts[0] - (st.moduleTotal - rotatable);
   rot[90] += st.rotationCounts[90];
   rot[180] += st.rotationCounts[180];
   rot[270] += st.rotationCounts[270];
+}
+const countedRotations = Object.values(rot).reduce((sum, count) => sum + count, 0);
+if (Object.values(rot).some((count) => count < 0) || countedRotations !== rotTotal) {
+  throw new Error(`rotation accounting mismatch: counted ${countedRotations}, expected ${rotTotal}`);
 }
 for (const deg of [0, 90, 180, 270]) {
   console.log(

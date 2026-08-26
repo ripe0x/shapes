@@ -2,7 +2,7 @@ import React from "react";
 import {formatEther} from "viem";
 import {useAccount, useBalance} from "wagmi";
 import {DENOMINATIONS} from "../chain/abi";
-import {GRIDS} from "../canonical/denominations";
+import {GRIDS, LABELS} from "../canonical/denominations";
 import {C} from "./theme";
 import {Section, Art, txUrl} from "./ui";
 import {localArt, sampleSeed} from "./art";
@@ -159,7 +159,7 @@ export function MintView({
         </div>
         <p style={{margin: "34px 0 0", fontSize: 14, lineHeight: 1.75, maxWidth: "62ch", color: C.bodyDim}}>
           A Shape holds an exact amount of ETH and gives back the same amount, exactly. Nine
-          denominations, 0.0001 to 1 ETH. Higher value, fewer marks.
+          denominations, {LABELS[0]} to {LABELS[LABELS.length - 1]} ETH. Higher value, fewer marks.
         </p>
       </div>
 

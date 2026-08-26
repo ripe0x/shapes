@@ -13,3 +13,7 @@ shapes-preview.html
 shapes-demo.gif
 *.tar.gz
 preview/public/ink-demo.html
+
+# Testnet-profile build artifacts (foundry.toml [profile.testnet]).
+out-testnet/
+cache-testnet/

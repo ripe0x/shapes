@@ -15,14 +15,16 @@ Branch: claude/project-director-setup-886e07 in canonical clone `/Users/dd/Casca
 
 ## In flight
 
-- P0 gate PASSED. PR #1 is mergeable and awaits user review/merge; P1 does not open before that merge.
+- P0 gate PASSED for the reviewed architecture. P1 entry is now paused on the architecture-delta gate: PR #1 must merge cleanly, and PR #2 must be explicitly accepted or rejected under D-24 before hardening begins.
 - Independent review found stale status contradictions in STATE/DECISIONS/RISKS/HANDOFF; corrected in the resumed session. Executable PR diff received an independent accept verdict.
-- PR #1 implementation tip `c543df2` is fully green: contracts, renderer parity, Netlify deploy preview, header rules, and redirect rules passed; the pages-changed check correctly skipped. Root cause of the prior Netlify failure was the invisible nested config: the linked site checks out the repository root, but `netlify.toml` lived under `web/`. The reviewed fix moved it to root with `base = "web"`; local Netlify build and remote preview both pass. The separate FlatCompat fix also passes web lint/build.
-- Open user decisions: D-23 (title-auction product line on claude/contract-title — pursue/park/kill), D-05 (mainnet keys/fee, needed by P2).
+- PR #1's last standalone tip `41a36b3` was fully green: contracts, renderer parity, Netlify deploy preview, header rules, and redirect rules passed; the pages-changed check correctly skipped. Two later main commits (`ef228f0`, `1020730`) implemented build-time ladder selection and made PR #1 conflict in DeployShapes/DeploySepolia. The Director merged current main into the PR branch and selected main's stronger profile-aware guards. Re-run the combined checks before merge.
+- PR #2 (`a64a339`, Shape #0 contract title) received a Director plus three independent read-only reviews. Verdict: REQUEST CHANGES, with the design promising but charter-level. Blocking findings are the `owner()`/ERC-173 semantic collision, ERC-165 compatibility break, and false-positive seed test. Coverage and stale x-ray findings are also recorded in `project/reviews/PR-2.md`. Contracts CI passed; renderer CI failed only at the stale lockfile cache path already fixed by PR #1.
+- Combined local verification after current-main reconciliation: docs selector check, preview typecheck/stream verification/500-per-denomination collision sweep/fixture freshness, web lint/build, `forge fmt --check`, `forge build --sizes`, and full `forge test` pass. Result: 454 passed, 0 failed, 4 fork-only skipped; Shapes EIP-170 margin 145 bytes. The sweep exposed and this branch fixed an existing rotation-accounting bug that produced negative percentages after the vocabulary expanded; it now counts every active rotatable primitive and asserts totals.
+- Open user decisions: D-24 (whether to adopt the Shape #0/title + separate-admin architecture, and whether the title may use `owner()`), D-23 (fate of the older non-tokenized title-auction branch), D-05 (mainnet keys/fee, needed by P2).
 
 ## Next
 
-- User reviews and merges PR #1. Then dispatch W-1, D-12, and W-4 as separate P1 packets, with D-08 as the first experiment.
+- Get the reconciled PR #1 green and merge it. User then resolves D-24. If rejected, close PR #2 and open P1. If adopted, rebase PR #2 onto merged main, fix every review finding, amend the charter/canonical docs, rerun full CI and deployment simulation, merge it, and deploy a fresh Sepolia implementation before P1 evidence work. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
 
 ## Go-public cutover: EXECUTED 2026-08-25
 
