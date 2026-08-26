@@ -230,6 +230,16 @@ normal Shape: it can be transferred, redeemed, composed, decomposed, or split. W
 exist, `owner()` returns zero. Holding it grants no administrative rights. Permissionless artwork
 minting starts at #1, which is the launch-auction lot.
 
+The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move
+ETH, administer metadata, receive fees, control Shape #0, or authorize any operation. Shapes creates
+a dedicated `ShapesArtistAttribution` child in its constructor and exposes it through
+`artistAttribution()`. The artist may submit one EIP-712 signature there, directly or through a
+relayer, approving the exact chain, Shapes address, attribution-contract address, artist address,
+and a chosen `releaseHash`. The raw signature and release hash then remain onchain permanently,
+along with proof that the signature was valid when the attestation transaction executed.
+EOA signatures and ERC-1271 smart-wallet signatures are supported. There is no artist statement or
+artist-controlled mutable text.
+
 A separate `admin()` role controls two independent, value-inert configuration domains. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
 of Shape #0:
@@ -285,6 +295,7 @@ and so the artwork, permanent.
 ```
 src/
   Shapes.sol             ERC721 + the reserve
+  ShapesArtistAttribution.sol  immutable artist binding + one-time EIP-712 release signature
   ShapeRenderer.sol      fully onchain SVG and metadata
   ShapeLens.sol          read-only periphery, split out to stay under the EIP-170 limit
   ShapeCollection.sol    collection-level presentation, seeded previews of unminted cards
@@ -395,8 +406,9 @@ cd preview && npm run dev
 
 `fork-dev.sh` boots Anvil on `:8545` (chain id `31337`), deploys Shapes and the renderer through
 the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLETS` /
-`SEED_ETH` to change), and writes `preview/public/deployment.json`, which both frontends read on
-load. Every run is a fresh chain; prior tokens are gone.
+`SEED_ETH` to change), and writes `preview/public/deployment.json`, which the Vite preview reads
+on load. The Next site reads `web/public/deployment.json`, which is updated only for a real public
+deployment. Every local run is a fresh chain; prior tokens are gone.
 
 To browse the collection in a lived-in state, seed the running chain with simulated activity —
 mints across every denomination, compositions up to two 100 ETH apexes (one fully built, one
@@ -490,7 +502,7 @@ ETH, read the resulting artwork back from the chain's own `tokenURI`, and redeem
 development harness, not the launch surface — Shapes ships contracts-only — but it exercises the
 real deposit and withdraw paths and renders the actual onchain SVG rather than the TypeScript
 one. `fork-dev.sh` boots a local Anvil, deploys through the real deploy script, and writes the
-deployed address to `preview/public/deployment.json`, which the page reads on load. The page
+deployed address to `preview/public/deployment.json`, which the Vite page reads on load. The page
 shows the reserve invariant live — contract balance against `redeemableBacking()` — alongside every
 Shape the connected account holds.
 
@@ -578,7 +590,16 @@ forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
 
 The script refuses to proceed off a local chain without an explicit fee recipient, rejects a
 contract fee recipient unless you confirm it, smoke-tests the renderer, and asserts every
-immutable landed as intended before reporting success.
+immutable landed as intended before reporting success. It also verifies that `artist()` is the
+deployer and that the fresh, unsigned attribution child points back to the exact Shapes address.
+The signature is submitted only after deployment because its EIP-712 domain includes the child
+contract's final address.
+
+For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
+digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
+Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the already-decided
+32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. Never issue
+multiple valid signatures for competing hashes because any relayer holding one can submit it first.
 
 It also proves the lens previews what the token executes. `ShapeLens.previewCompose` matches
 `Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the same

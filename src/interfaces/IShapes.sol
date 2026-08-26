@@ -169,7 +169,6 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev `splitOriginRaw` requires `tokenId` to have been minted as a split child. Original
     ///      mints and re-minted decompose outputs never carry an entry.
     error NotASplitChild(uint256 tokenId);
-
     /* --------------------------- immutables --------------------------- */
 
     /// @notice The mint fee in basis points of the backing, charged on top of it. 100 is 1%.
@@ -181,6 +180,14 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Where mint fees are forwarded. Set at construction, never changeable.
     function feeRecipient() external view returns (address);
+
+    /// @notice Permanent creator attribution: the address that deployed Shapes.
+    /// @dev Attribution only. It grants no ownership, administration, fee rights or other authority.
+    function artist() external view returns (address);
+
+    /// @notice Permanent child contract that verifies and stores the artist's cryptographic signature.
+    /// @dev Attribution only. It grants no authority over Shapes.
+    function artistAttribution() external view returns (address);
 
     /// @notice The current holder of Shape #0, or zero while #0 does not exist.
     /// @dev This collectible ownership carries no administrative authority.

@@ -12,7 +12,7 @@
 - **Core flow**: `mint` (ETH in, token out) and `redeem`/`burn` (token in, exact ETH out) are the whole economic surface; `compose`/`split`/`decompose` reshape tokens without moving ETH.
 - **Key mechanism**: A fixed reserve invariant — `address(this).balance >= redeemableBacking()` — with no admin path that can reach it. No oracle, no market pricing: value is denomination-fixed, not price-discovered.
 - **Token model**: One ERC721 collection (`Shapes`). No fungible token, no governance token, no LP token. `ShapeAuctionHouse` mints/holds Shapes as bid collateral but issues nothing of its own.
-- **Admin model**: A single transferable `admin()` controls presentation (renderer + collection metadata, one-way lockable) and an optional position-discovery resolver (independently one-way lockable, may lock at zero). Neither domain can touch ETH, backing, redemption or token ownership. `owner()` instead follows Shape #0 and is never consulted for authorization.
+- **Admin model**: A single transferable `admin()` controls presentation (renderer + collection metadata, one-way lockable) and an optional position-discovery resolver (independently one-way lockable, may lock at zero). Neither domain can touch ETH, backing, redemption or token ownership. `owner()` instead follows Shape #0 and is never consulted for authorization. Immutable `artist()` and its one-time signature child are attribution only and likewise confer no authority.
 
 For a visual overview of the protocol's architecture, see the [architecture diagram](architecture.svg).
 
@@ -27,8 +27,9 @@ For a visual overview of the protocol's architecture, see the [architecture diag
 | Auction | `ShapeAuctionHouse`, `ShapeCardEscrow` | 270 | English auction for any ERC-721, bids denominated in and settled with Shape cards |
 | Linked libraries | `ComposeCompute`, `CopyValidation`, `GeometrySampling`, `InkGenes` | 304 | Externally linked deployments; consensus-critical compose/split sampling and ink-gene logic |
 | Internal libraries | `Denominations`, `FixedPoint`, `Round03Rand`, `ModuleCodec`, `GrammarV1Modules` | 211 | Inlined pure math/encoding helpers, not separately deployed |
+| Artist attribution | `ShapesArtistAttribution` | — | Immutable parent/artist binding plus a one-time EIP-712 signature; no authority or economics |
 
-`Shapes`'s runtime bytecode carries **128 bytes of EIP-170 headroom** at the currently committed build settings (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
+`Shapes`'s runtime bytecode carries **287 bytes of EIP-170 headroom** at the current artist-attribution build settings (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
 
 ### How It Fits Together
 
@@ -319,7 +320,7 @@ Note: the scorer applies the same fix-pattern heuristics to feature and refactor
 
 ### Dangerous Area Evolution
 
-Filtered to in-scope files only — the raw git-security scan's file lists were otherwise dominated by vendored OpenZeppelin files matched on generic keywords (e.g. "oracle_price" matched `ERC4626.sol`, `ERC2981.sol`; "signatures" matched `ECDSA.sol`, `EIP712.sol` — none of which are used or imported by anything in this repo's own scope).
+Filtered to in-scope files only. The historical raw scan's file lists were otherwise dominated by vendored OpenZeppelin files matched on generic keywords (e.g. "oracle_price" matched `ERC4626.sol`, `ERC2981.sol`). The scan predates the artist-attribution child, which now deliberately imports OpenZeppelin's EIP-712 and signature-verification utilities.
 
 | Security Area | Commits | Key Files (in-scope only) |
 |--------------|--------:|-----------|
@@ -327,7 +328,7 @@ Filtered to in-scope files only — the raw git-security scan's file lists were 
 | access_control | 30 | `Shapes.sol` |
 | state_machines | 29 | `ShapeLens.sol`, `IShapeAuctionHouse.sol`, `IShapePositionResolver.sol`, `IShapes.sol` |
 | oracle_price* | 34 | `ShapeCardEscrow.sol`, `Shapes.sol`, `IShapeAuctionHouse.sol`, `IShapes.sol` — *keyword match on `backingOf`/`valueOf` naming; no actual price oracle exists in scope* |
-| signatures* | 30 | `Shapes.sol` — *keyword match, likely on "seed"/hash terminology; no signature verification exists in scope* |
+| signatures* | 30 | `ShapesArtistAttribution.sol` — *historical count predates D-26; the live child now performs one-time EIP-712 verification through `SignatureChecker`* |
 
 ### Forked Dependencies
 

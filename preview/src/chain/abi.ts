@@ -27,6 +27,8 @@ export const shapesAbi = parseAbi([
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
   "function owner() view returns (address)",
+  "function artist() view returns (address)",
+  "function artistAttribution() view returns (address)",
   "function admin() view returns (address)",
   "function transferAdmin(address newAdmin)",
   "function renounceAdmin()",
@@ -84,6 +86,17 @@ export const shapesAbi = parseAbi([
   "error DuplicateComposeInput(uint256 tokenId)",
 ]);
 
+export const artistAttributionAbi = parseAbi([
+  "function shapes() view returns (address)",
+  "function artist() view returns (address)",
+  "function attested() view returns (bool)",
+  "function releaseHash() view returns (bytes32)",
+  "function signature() view returns (bytes)",
+  "function attestationDigest(bytes32 releaseHash) view returns (bytes32)",
+  "function attest(bytes32 releaseHash, bytes signature)",
+  "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
+]);
+
 // ShapeLens: the read-only periphery holding `shapeState`, `previewCompose`, `previewSplit`,
 // `unicodeCard`, `composeRecordAt` and `splitOriginOf`, moved off `Shapes` to keep the token's
 // runtime bytecode under the EIP-170 size limit. Deployed separately; see `Deployment.lens`.
@@ -114,6 +127,8 @@ export interface Deployment {
   rpc: string;
   chainId: number;
   shapes: `0x${string}`;
+  artist: `0x${string}`;
+  artistAttribution: `0x${string}`;
   /** ShapeLens: the read-only periphery contract. The DNA/provenance section and other
    *  lens-backed reads have nothing to call without it; see the per-call fallbacks in
    *  `site/dna.ts` and `site/TokenView.tsx` for what happens when it is absent from

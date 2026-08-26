@@ -46,9 +46,23 @@ SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -o
   || { echo "$OUT" >&2; fail "no Shapes address in the deploy output"; }
 RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+ATTRIBUTION=$(echo "$OUT" | grep -oE 'ArtistAttribution\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 echo "  Shapes        $SHAPES"
 echo "  ShapeRenderer $RENDERER"
 echo "  AuctionHouse  $HOUSE"
+echo "  ArtistAttribution $ATTRIBUTION"
+
+say "Signing the deployment as artist"
+RELEASE_HASH=$(cast keccak "shapes-e2e-release")
+DIGEST=$(cast call "$ATTRIBUTION" "attestationDigest(bytes32)(bytes32)" "$RELEASE_HASH" --rpc-url "$RPC")
+SIGNATURE=$(cast wallet sign --no-hash "$DIGEST" --private-key "$PK0")
+send_wait "$ATTRIBUTION" "attest(bytes32,bytes)" "$RELEASE_HASH" "$SIGNATURE" \
+  --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+[ "$(cast call "$ATTRIBUTION" "attested()(bool)" --rpc-url "$RPC")" = "true" ] \
+  || fail "artist signature was not stored"
+[ "$(cast call "$ATTRIBUTION" "releaseHash()(bytes32)" --rpc-url "$RPC")" = "$RELEASE_HASH" ] \
+  || fail "artist release hash mismatch"
+echo "  ok: artist signature stored and bound to this deployment"
 
 say "Rejecting a plain ETH transfer"
 if cast send "$SHAPES" --value 1ether --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then

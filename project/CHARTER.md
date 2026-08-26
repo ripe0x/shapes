@@ -18,13 +18,14 @@ These are constitutional. Changing any of them is a charter amendment, recorded 
 1. Reserve invariant: `address(this).balance >= redeemableBacking()` at all times. ETH enters only via mint; direct transfers revert.
 2. Redemption is exact and unconditional: same wei out as in, no fee, no pool share, no appraisal.
 3. The nine denominations are the only representable backing values, stored as an index so off-ladder backing is unrepresentable.
-4. No upgradeability, no proxy, no pause, no treasury withdrawal, no emergency escape hatch. `feeBps` (100 = 1%) and `feeRecipient` are immutable.
+4. No upgradeability, no proxy, no pause, no treasury withdrawal, no emergency escape hatch. `feeBps` (100 = 1%), `feeRecipient`, `artist`, and the artist-attribution child are immutable.
 5. Admin powers are value-inert: renderer, collection metadata, copy text, and position resolver. None can touch ETH, backing, redemption, token ownership, or Shape #0. Presentation pointers and the resolver are independently one-way lockable; admin itself is transferable and renounceable. Shape #0's holder has no administrative capability.
 6. Entropy enters only at mint, from block data, excluding minter identity. Every downstream transformation (compose walk, split child seeds, decompose restore, ink walks) is deterministic from on-chain state. Seed/gene grinding is an accepted residual, not a bug: redemption value never depends on the seed.
 7. Origin count is conserved: created only by fresh mints, never fabricated by compose/split/decompose.
 8. The TypeScript renderer (`preview/src/canonical/render.ts`) is the specification; `src/ShapeRenderer.sol` is a byte-parity port. All geometry is WAD integer arithmetic. Parity is CI-enforced (fixtures + ParityTest).
-9. `Shapes.sol` stays under EIP-170. Any core addition requires a `forge build --sizes` check; the adopted PR #2 candidate has a 451-byte runtime margin.
+9. `Shapes.sol` stays under EIP-170. Any core addition requires a `forge build --sizes` check; the artist-attribution design leaves a measured 287-byte runtime margin.
 10. The auction house takes no protocol fee (a percentage of a card-lattice amount need not land on the lattice; structurally excluded, per ZERO_AUCTION_DRAFT.md).
+11. Artist attribution is permanent and powerless. The deployer remains `artist()` after collectible ownership or admin moves; one release signature may be stored in the immutable child, but artist status grants no authority or economics.
 
 ## Non-goals
 

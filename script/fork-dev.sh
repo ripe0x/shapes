@@ -88,10 +88,12 @@ SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -o
 RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 COLLECTION=$(echo "$OUT" | grep -oE 'ShapeCollection\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 LENS=$(echo "$OUT" | grep -oE 'ShapeLens\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+ATTRIBUTION=$(echo "$OUT" | grep -oE 'ArtistAttribution\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 FEE_BPS=$(cast call "$SHAPES" "feeBps()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+ARTIST=$(cast call "$SHAPES" "artist()(address)" --rpc-url "$RPC")
 
-[ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
+[ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] && [ -n "$ATTRIBUTION" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
 
 if [ -n "$SEED_WALLETS" ]; then
   say "Seeding wallets with $SEED_ETH ETH each"
@@ -114,6 +116,8 @@ cat >"$DEPLOYMENT_FILE" <<JSON
   "rpc": "$RPC",
   "chainId": $CHAIN_ID,
   "shapes": "$SHAPES",
+  "artist": "$ARTIST",
+  "artistAttribution": "$ATTRIBUTION",
   "lens": "$LENS",
   "renderer": "$RENDERER",
   "collection": "$COLLECTION",
@@ -125,6 +129,8 @@ JSON
 
 say "Ready"
 echo "  Shapes        $SHAPES"
+echo "  Artist        $ARTIST"
+echo "  ArtistAttribution $ATTRIBUTION"
 echo "  ShapeLens     $LENS"
 echo "  ShapeRenderer $RENDERER"
 echo "  ShapeCollection $COLLECTION"

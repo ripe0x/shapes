@@ -9,7 +9,11 @@
 
 ### Deployment (Deployer)
 
-`new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
+`new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful; internally creates `ShapesArtistAttribution(artist=deployer)` bound to the exact Shapes address → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
+
+### Artist attestation (Artist signature / any relayer)
+
+`ShapesArtistAttribution.attest(releaseHash, signature)` ◄── one valid EIP-712 EOA/ERC-1271 signature from immutable `artist`; digest binds chain, child, Shapes, artist and release hash; succeeds once.
 
 ### Minting (User)
 
@@ -305,4 +309,4 @@ check. None of these functions reach ETH, backing, redemption or token ownership
 
 ## Initialization
 
-No proxy pattern is used anywhere in scope; every contract (`Shapes`, `ShapeRenderer`, `ShapeLens`, `ShapeCollection`, `ShapeAuctionHouse`) is a plain, non-upgradeable deployment configured entirely through its constructor. There is no separate `initialize()` entry point and therefore no front-runnable initialization window beyond the constructor call itself.
+No proxy pattern is used anywhere in scope; every contract (`Shapes`, `ShapesArtistAttribution`, `ShapeRenderer`, `ShapeLens`, `ShapeCollection`, `ShapeAuctionHouse`) is a plain, non-upgradeable deployment configured entirely through its constructor. There is no separate `initialize()` entry point. The attribution child has one post-deployment attestation, but it accepts only the immutable artist's deployment-bound signature and grants no authority.

@@ -34,7 +34,8 @@ transferable admin can administer two value-inert configuration domains: present
 plus collection metadata, locked together) and the independently lockable optional position
 resolver. Shape #0 represents backed collectible ownership exposed through `owner()`, but its holder has no
 administrative authority. Neither configuration domain is read
-by a reserve path. `ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
+by a reserve path. The immutable `artist()` and its one-time signature child are attribution only
+and are never read for authorization, fees, ownership or reserve accounting. `ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
 ETH and no admin surface. `ShapeAuctionHouse` and the `ShapeCardEscrow` base it inherits hold
 escrowed cards and lots, not the reserve; `Shapes` has no knowledge of either. There is one
 thing that must never happen: a holder unable to redeem a live Shape for exactly the ETH it
@@ -226,6 +227,7 @@ whole post-state, and separately verified to fail if both guards are removed
 | Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is admin-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only, never backing, redemption or ownership, and after locking it is fixed forever. |
 | Position resolver | The resolver starts at zero, may be replaced or cleared by the admin, and may be locked forever at any time including while zero. Its returned address is opaque and unvalidated. `positionOf` forwards a fixed gas cap and swallows any revert or out-of-gas to `address(0)`, so a hostile resolver can neither drain the caller nor make `positionOf` revert; its only power is to return a wrong address. Historical and nonexistent IDs are deliberately delegated without an existence check. |
 | Contract ownership | Shape #0 is atomically backed and minted to the deployer. `owner()` follows `ownerOf(0)`, returning zero whenever #0 is burned. Transfer, redemption, composition, decomposition and split affect it exactly like any other Shape; no authorization check reads `owner()`. |
+| Artist attribution | `artist()` and `artistAttribution()` are constructor-set immutables. The child is created by Shapes and records Shapes as its immutable parent. Its one-time EIP-712 digest binds chain id, child address, exact Shapes address, artist and release hash. Canonical ECDSA is checked first so an EIP-7702 delegated EOA can still sign; ERC-1271 is the fallback for contract wallets. Anyone may relay, but nobody can replace or clear a successful attestation. For ERC-1271, the permanent proof is validity at execution time because wallet policy may later change. Neither contract exposes an artist-authorized call into Shapes. |
 | Linked libraries | `GeometrySampling`, `ComposeCompute`, `InkGenes` and `CopyValidation` are external libraries; forge resolves and deploys each at build/deploy time and bakes its address into the linking contract's bytecode. There is no setter for a library address on any contract, so compose, split, validation or gene logic cannot be redirected after deployment. |
 
 ---
@@ -255,12 +257,17 @@ whole post-state, and separately verified to fail if both guards are removed
 5. **Shape #0 can temporarily cease to exist.** Because it is an ordinary backed Shape, redeeming,
    splitting or consuming #0 as a compose input makes `owner()` return zero. Decomposition can
    later restore the same ID. This affects the public ownership signal only, never administration.
-6. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
+6. **Artist attestation is one-time and release-bound.** The deployer remains `artist()` forever,
+   even after Shape #0 or admin moves. The artist should verify the final chain, Shapes address,
+   attribution address and chosen release hash before signing; a mistaken valid attestation cannot
+   be replaced. Losing the artist key before signing leaves the child permanently unsigned but does
+   not affect any token or reserve behavior.
+7. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
    ERC-165 ID match the current proposal, but an immutable deployment cannot follow later changes.
-7. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
+8. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
    mint ordinal (`totalMinted`) by minting and redeeming dust in the same call, so the seed is
    grindable at roughly the mint fee per candidate, hundreds per block — not one attempt per block
    (§1). If trait rarity is intended to carry economic weight, this design is not sufficient — but
    for Shapes it does not, because redemption value is set by denomination alone.
-8. **This review is not a substitute for a professional audit** before mainnet deployment with
+9. **This review is not a substitute for a professional audit** before mainnet deployment with
    real value at risk.

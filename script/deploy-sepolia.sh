@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Shapes + ShapeRenderer to Sepolia AND verify both on Etherscan, in one step, so
+# Deploy the full Shapes suite to Sepolia AND verify every contract on Etherscan in one step, so
 # verification is never a forgotten follow-up. Verification runs inline via forge's --verify
 # (constructor args are taken from the broadcast automatically); the [etherscan] block in
 # foundry.toml maps sepolia to $ETHERSCAN_API_KEY.

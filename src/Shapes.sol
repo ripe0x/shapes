@@ -24,6 +24,7 @@ import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {CopyValidation} from "./lib/CopyValidation.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
+import {ShapesArtistAttribution} from "./ShapesArtistAttribution.sol";
 
 /// @title Shapes
 /// @notice ETH in, Shape out.
@@ -46,6 +47,10 @@ import {ComposeCompute} from "./lib/ComposeCompute.sol";
 ///      Shape #0 represents ownership of this contract as a collectible object. `owner()` follows
 ///      its holder and returns zero while #0 is burned. Shape #0 is otherwise a normal backed
 ///      Shape and carries no administrative permissions; authorization uses the separate `admin()` role.
+///
+///      `artist()` permanently attributes the deployment to its deployer. The constructor also
+///      creates `artistAttribution()`, a child contract where that artist may store one EIP-712
+///      signature approving the exact deployment and a release hash. Neither value grants authority.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
 ///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
@@ -176,6 +181,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     address public immutable feeRecipient;
 
     /// @inheritdoc IShapes
+    address public immutable artist;
+
+    /// @inheritdoc IShapes
+    address public immutable artistAttribution;
+
+    /// @inheritdoc IShapes
     /// @dev Not immutable: the admin may replace it via `setRenderer` to fix a rendering bug,
     ///      until `lockRenderer` freezes it permanently. It is read only by `tokenURI`, so it
     ///      never touches ETH, backing, redemption or ownership.
@@ -248,6 +259,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _requireCollectionHasCode(collection_);
         feeBps = feeBps_;
         feeRecipient = feeRecipient_;
+        artist = msg.sender;
+        artistAttribution = address(new ShapesArtistAttribution(msg.sender));
         renderer = renderer_;
         collection = collection_;
         tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;

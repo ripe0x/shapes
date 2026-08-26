@@ -606,6 +606,12 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   deliberately not covered by the renderer lock; it stays editable until admin is renounced.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
   or renounced without transferring Shape #0.
+- **Permanent artist attribution, separate from ownership and admin.** `artist()` records the
+  deployer forever and grants no authority or economics. The Shapes constructor creates a
+  dedicated `ShapesArtistAttribution` child bound to the exact Shapes address. That child accepts
+  one EIP-712 signature, relayed by anyone, over the exact chain, child, Shapes address, artist and
+  `releaseHash`; it stores the raw signature and hash permanently. EOA and ERC-1271 artists are
+  supported. No artist statement, mutable artist metadata or artist-only control surface exists.
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.

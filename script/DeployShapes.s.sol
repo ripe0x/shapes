@@ -8,13 +8,14 @@ import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {ShapesArtistAttribution} from "../src/ShapesArtistAttribution.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {LensEquivalence} from "./LensEquivalence.s.sol";
 
-/// @notice Deploys the renderer, the collection metadata contract, the token, the read-only lens,
-///         and the auction house.
+/// @notice Deploys the renderer, collection metadata, token with its artist-attribution child,
+///         read-only lens, and auction house.
 ///
 /// @dev The mint fee and the fee recipient are deployment parameters, not source constants:
 ///      both are `immutable` on the deployed contract and can never be changed afterwards, so
@@ -142,6 +143,12 @@ contract DeployShapes is LensEquivalence {
         require(shapes.ownerOf(0) == msg.sender, "Shape #0 not minted to deployer");
         require(shapes.owner() == msg.sender, "contract owner mismatch");
         require(shapes.admin() == msg.sender, "admin mismatch");
+        require(shapes.artist() == msg.sender, "artist mismatch");
+        ShapesArtistAttribution attribution = ShapesArtistAttribution(shapes.artistAttribution());
+        require(address(attribution).code.length != 0, "artist attribution has no code");
+        require(attribution.shapes() == address(shapes), "artist attribution points elsewhere");
+        require(attribution.artist() == shapes.artist(), "attribution artist mismatch");
+        require(!attribution.attested(), "artist attribution should start unsigned");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
         require(shapes.totalMinted() == 1, "permissionless minting should begin at #1");
 
@@ -190,12 +197,14 @@ contract DeployShapes is LensEquivalence {
         console.log("ShapeRenderer ", address(renderer));
         console.log("ShapeCollection", address(collection));
         console.log("Shapes        ", address(shapes));
+        console.log("ArtistAttribution", address(attribution));
         console.log("ShapeLens     ", address(lens));
         console.log("AuctionHouse  ", address(house));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
         console.log("contract owner ", shapes.owner());
         console.log("admin         ", shapes.admin());
+        console.log("artist        ", shapes.artist());
         console.log("");
         console.log("Fee terms and reserve rules are immutable. Shape #0 represents collectible ownership.");
         console.log("Presentation and position resolver settings are independently lockable.");
