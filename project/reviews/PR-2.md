@@ -1,7 +1,7 @@
 # PR #2 review
 
 - Original PR: merged to main as `7fca2b2` after review head `8b2b133` passed required checks.
-- Corrective review: `codex/restore-pr2-owner` from main `a1f34fd`, restoring PR #2's intended `owner()` API before any deployment.
+- Corrective review: commit `ab9db38` on `codex/restore-pr2-owner`, opened as draft PR #3 from main `a1f34fd`, restoring PR #2's intended `owner()` API before any deployment.
 - Reviewers: Director review of architecture, authorization, standards semantics, deployment, and integration order; independent read-only reviews of ABI compatibility, Shape #0 lifecycle, terminology, and security.
 
 ## Review incident
