@@ -214,7 +214,8 @@ pre-deployment funding. Any such surplus is permanently inaccessible. That is th
 outcome: stranding a few stray wei is strictly better than opening a withdrawal path that could
 reach the reserve.
 
-Direct ETH transfers to the contract revert. ETH arrives only through `mint`.
+Direct ETH transfers to the contract revert. ETH arrives through the constructor-backed mint of
+Shape #0 and through later permissionless mints.
 
 Every wei counted by `redeemableBacking()` corresponds to a live non-Black Shape. Stateful
 invariants cover minting, transfer, redemption, burn, composition, decomposition, splitting,
@@ -223,21 +224,28 @@ and the narrow compose/decompose identity-revival exception.
 
 ## Immutability
 
-Ownership is transferable through `transferOwnership` and renounceable through `renounceOwnership`.
-The current owner controls two independent, value-inert configuration domains:
+Shape #0 is the collectible title to the contract. It is minted atomically to the deployer with
+minimum-denomination backing, and `owner()` always returns its current holder. It is otherwise a
+normal Shape: it can be transferred, redeemed, composed, decomposed, or split. While #0 does not
+exist, `owner()` returns zero. Holding it grants no administrative rights. Permissionless artwork
+minting starts at #1, which is the launch-auction lot.
+
+A separate `admin()` role controls two independent, value-inert configuration domains. It can be
+transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
+of Shape #0:
 
 - Presentation: the renderer and collection metadata contracts may be replaced until
   `lockRenderer` permanently freezes both pointers. The metadata copy — the token name prefix and
-  description, the collection name and description — is separate owner-set state, edited via
+  description, the collection name and description — is separate admin-set state, edited via
   `setTokenCopy` and `setCollectionCopy`, and is not covered by `lockRenderer`; it stays editable
-  for as long as the owner holds the contract. Copy is validated so it cannot break the metadata
+  for as long as an admin remains. Copy is validated so it cannot break the metadata
   JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
 - The optional position resolver may be set, replaced or cleared until `lockPositionResolver`
   permanently freezes its current value. It may be locked while zero, permanently opting out.
 
 The resolver pointer is permanent after locking, but its target code and trust model are not
-guaranteed immutable. Renouncing ownership leaves any unlocked settings practically frozen because
-no caller can pass `onlyOwner` afterward.
+guaranteed immutable. Renouncing admin leaves any unlocked settings practically frozen because
+no caller can pass the admin check afterward.
 
 `feeBps` and `feeRecipient` are `immutable`. The reserve, the denominations and the redemption
 path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
@@ -266,7 +274,7 @@ marks. The value and the number live in the metadata. One consequence: artwork i
 function of seed and denomination, so `renderSVG` does not take a token id at all.
 
 A token's artwork is a pure function of its seed and denomination for a given renderer, and both
-are fixed at mint. The owner can replace the renderer to correct a rendering bug — which would
+are fixed at mint. The admin can replace the renderer to correct a rendering bug — which would
 re-derive every token's artwork through the new code — until `lockRenderer` makes the renderer,
 and so the artwork, permanent.
 

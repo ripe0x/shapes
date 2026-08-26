@@ -541,10 +541,10 @@ sanctioned escape is the D3e residual: mint through a contract that reverts unle
 suits, one attempt per block, gas per attempt. Decide before launch whether that is acceptable
 or whether the first draw stands.
 
-**R14. The owner can change every token's artwork for as long as they hold ownership.** The
+**R14. The admin can change every token's artwork for as long as that role remains active.** The
 renderer is deliberately not locked at launch, so `setRenderer` and `setCollection` stay live.
 Backing, redeemability and ownership are untouchable either way, but artwork mutability is a real
-power and an auditor will name it. Disclose it, and either renounce ownership or lock at a moment
+power and an auditor will name it. Disclose it, and either renounce admin or lock at a moment
 of your choosing once the renderer has proven itself.
 
 **R12. Marketplaces cache metadata.** Not load-bearing now that nothing about token 0 changes

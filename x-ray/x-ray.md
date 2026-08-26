@@ -8,11 +8,11 @@
 
 **What it does:** Shapes is an ERC721 that wraps an exact amount of ETH at one of nine fixed denominations (0.01–100 ETH); burning the token returns exactly that ETH to its owner.
 
-- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. An `Owner` (transferable `Ownable`) administers three value-inert configuration domains. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
+- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers value-inert presentation and position discovery. Shape #0 is the backed collectible title and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
 - **Core flow**: `mint` (ETH in, token out) and `redeem`/`burn` (token in, exact ETH out) are the whole economic surface; `compose`/`split`/`decompose` reshape tokens without moving ETH.
 - **Key mechanism**: A fixed reserve invariant — `address(this).balance >= redeemableBacking()` — with no admin path that can reach it. No oracle, no market pricing: value is denomination-fixed, not price-discovered.
 - **Token model**: One ERC721 collection (`Shapes`). No fungible token, no governance token, no LP token. `ShapeAuctionHouse` mints/holds Shapes as bid collateral but issues nothing of its own.
-- **Admin model**: A single transferable `Owner` controls presentation (renderer + collection metadata, one-way lockable), an optional position-discovery resolver (independently one-way lockable, may lock at zero), and an optional "contract collector" provenance pointer (independently one-way lockable). None of these three domains can touch ETH, backing, redemption or token ownership.
+- **Admin model**: A single transferable `admin()` controls presentation (renderer + collection metadata, one-way lockable) and an optional position-discovery resolver (independently one-way lockable, may lock at zero). Neither domain can touch ETH, backing, redemption or token ownership. `owner()` instead follows Shape #0 and is never consulted for authorization.
 
 For a visual overview of the protocol's architecture, see the [architecture diagram](architecture.svg).
 
@@ -25,7 +25,7 @@ For a visual overview of the protocol's architecture, see the [architecture diag
 | Renderer | `ShapeRenderer` | 1,053 | Fully onchain SVG + metadata; seed-based (grammar v1) and materialized-byte (grammar v2) geometry |
 | Collection metadata | `ShapeCollection` | 94 | Contract-level metadata + seeded/animated preview cards, no token involved |
 | Auction | `ShapeAuctionHouse`, `ShapeCardEscrow` | 270 | English auction for any ERC-721, bids denominated in and settled with Shape cards |
-| Linked libraries | `ComposeCompute`, `ContractCollectorOps`, `CopyValidation`, `GeometrySampling`, `InkGenes` | 304 | Externally linked (5 separate deployments); consensus-critical compose/split sampling and ink-gene logic |
+| Linked libraries | `ComposeCompute`, `CopyValidation`, `GeometrySampling`, `InkGenes` | 304 | Externally linked deployments; consensus-critical compose/split sampling and ink-gene logic |
 | Internal libraries | `Denominations`, `FixedPoint`, `Round03Rand`, `ModuleCodec`, `GrammarV1Modules` | 211 | Inlined pure math/encoding helpers, not separately deployed |
 
 `Shapes`'s runtime bytecode carries **128 bytes of EIP-170 headroom** at the currently committed build settings (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
@@ -110,20 +110,21 @@ Shapes matches the Stablecoin profile's core shape — mint against exact collat
 
 | Actor | Trust Level | Capabilities |
 |-------|-------------|--------------|
-| Owner | Bounded (value-inert) | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), set/clear/lock the position resolver, set/lock the contract-collector binding. Every power reaches only presentation or discovery pointers — none can touch ETH, backing, redemption or ownership; all except copy are independently one-way lockable, none are timelocked. |
+| Admin | Bounded (value-inert) | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), and set/clear/lock the position resolver. These powers reach only presentation or discovery pointers; none can touch ETH, backing, redemption or token ownership. |
+| Shape #0 holder | Untrusted, self-scoped | Reported by `owner()` as the collectible contract title. Has exactly the same lifecycle rights as any Shape holder and no administrative permissions. |
 | Shape Owner (any user) | Untrusted, self-scoped | mint/redeem/compose/split/decompose/sacrifice on tokens they own; cannot affect any other holder's tokens or the reserve beyond their own mint/redeem flow. |
 | Fee Recipient | Trusted by construction, immutable | Receives every mint fee; a reverting recipient permanently disables minting (accepted design, SECURITY.md #6). |
 | Auction Seller | Untrusted, self-scoped | Lists any ERC721 it owns/is approved for; cannot bid its own auction (G-36/I-8) or affect another auction. |
 | Auction Bidder | Untrusted, self-scoped | Escrows Shape cards and/or ETH; can only withdraw its own escrow, never another bidder's. |
-| Position Resolver / Collector Token (optional, owner-configured) | Untrusted, gas-capped, fail-safe | Both are pure discovery reads (`positionOf`, `contractCollector`); reverts/out-of-gas/malformed data are swallowed to a default, with zero effect on core state. |
+| Position Resolver (optional, admin-configured) | Untrusted, gas-capped, fail-safe | A pure discovery read through `positionOf`; reverts or out-of-gas are swallowed to a default, with zero effect on core state. |
 | Auction Lot (arbitrary ERC-721) | Untrusted | Called from exactly two functions (`createAuction`, `claimLot`); per the contract's own NatSpec, a lot that lies about `ownerOf`/`transferFrom` can only harm the bidder who chose to trust it. |
 
 **Adversary Ranking** (adjusted by git evidence — see §6):
 
-1. **Reentrant external-call adversary** (fee recipient, lot NFT, position resolver, collector token) — every value-moving external call target is either attacker-chosen (auction lot) or reaches into arbitrary code (fee forwarding, resolver, collector); the one confirmed historical finding here (fee-recipient reentrancy into `bid`) was fixed twice. The commit this tree is built from (`2167dc7`) added a re-check of `a.settled` after the escrow call. A subsequent delta audit found that fix incomplete: against a fee-recipient contract that is also the auction's seller, the same window let the seller record a victim as `highestBidder` on a reentrantly-cancelled auction and then sweep their escrowed cards through `claimProceeds` — theft, not the self-harm a low implies. `settle` and `cancelAuction` now carry `nonReentrant`, closing the class structurally rather than at the `bid` call site alone (PR #38, `d2f2e59`).
+1. **Reentrant external-call adversary** (fee recipient, lot NFT, position resolver) — every value-moving external call target is either attacker-chosen (auction lot) or reaches into arbitrary code (fee forwarding, resolver); the one confirmed historical finding here (fee-recipient reentrancy into `bid`) was fixed twice. The commit this tree is built from (`2167dc7`) added a re-check of `a.settled` after the escrow call. A subsequent delta audit found that fix incomplete: against a fee-recipient contract that is also the auction's seller, the same window let the seller record a victim as `highestBidder` on a reentrantly-cancelled auction and then sweep their escrowed cards through `claimProceeds` — theft, not the self-harm a low implies. `settle` and `cancelAuction` now carry `nonReentrant`, closing the class structurally rather than at the `bid` call site alone (PR #38, `d2f2e59`).
 2. **Malicious or dishonest auction lot/collection contract** — the only adversary the house's own documentation explicitly declines to fully defend against; bounded to the parties who chose that auction.
 3. **Seed/mint-ordinal grinder** — a minter can advance `totalMinted` inside one transaction (mint-then-redeem dust) to select among a small candidate-seed space, most impactful at 50/100 ETH where the composition space is tiny (2,704 / 52 archetypes); accepted design since redemption value never depends on the seed (SPEC.md D3e).
-4. **Compromised owner** — broad surface (renderer, collection, copy, resolver, collector) but every power is value-inert by construction; the practical damage ceiling is misleading metadata/artwork until locked, or a wrong discovery pointer.
+4. **Compromised admin** — broad surface (renderer, collection, copy, resolver) but every power is value-inert by construction; the practical damage ceiling is misleading metadata/artwork until locked, or a wrong discovery pointer.
 5. **Griefing via a permanently-reverting counterparty** — a bricked `feeRecipient` disables minting forever (accepted); a reverting redemption recipient only reverts its own transaction, never another holder's.
 
 See [entry-points.md](entry-points.md) for the full permissionless entry point map.
@@ -152,9 +153,9 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 - **Compose/split conservation under adversarial input ordering** &nbsp;[[I-11](invariants.md#i-11), [I-12](invariants.md#i-12), [I-14](invariants.md#i-14)] — `Shapes.sol:687-769` (compose) and `:845-920` (split) are the largest and newest rewritten surfaces in the repo. Worth independently re-deriving that `GeometrySampling.sortDonorsById`'s bottom-up merge sort (`GeometrySampling.sol:62-95`) is stable and order-independent under every burn-count and duplicate-id shape, not only the cases the existing fuzz suite happens to hit.
 
-- **Gas-capped external reads treated as authoritative downstream** — `Shapes.sol:1104-1114`, `ContractCollectorOps.sol:60-75` both fail safely for `Shapes` itself, but any off-chain integrator (site, indexer) that treats `positionOf`/`contractCollector` as more than an unvalidated hint inherits whatever a hostile resolver/collector-token contract chooses to report.
+- **Gas-capped external reads treated as authoritative downstream** — `Shapes.positionOf` fails safely for `Shapes` itself, but any off-chain integrator (site, indexer) that treats the returned position as more than an unvalidated hint inherits whatever a hostile resolver chooses to report.
 
-- **Owner-editable metadata copy, never locked** — `Shapes.sol:200-210,289-307` — `setTokenCopy`/`setCollectionCopy` are explicitly not covered by `lockRenderer`; SECURITY.md's own caveat already flags un-escaped HTML in `description`. Worth confirming `CopyValidation.requireJsonSafe`'s UTF-8 walk (`CopyValidation.sol:19-48`) has no bypass that still breaks a downstream JSON/HTML consumer despite passing the `"`/`\`/C0 check.
+- **Admin-editable metadata copy, never locked** — `setTokenCopy`/`setCollectionCopy` are explicitly not covered by `lockRenderer`; SECURITY.md's own caveat already flags un-escaped HTML in `description`. Worth confirming `CopyValidation.requireJsonSafe`'s UTF-8 walk has no bypass that still breaks a downstream JSON/HTML consumer despite passing the `"`/`\`/C0 check.
 
 ### Protocol-Type Concerns
 
@@ -170,7 +171,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 **Deployment & Initialization:**
 - No proxy or `initialize()` pattern exists anywhere in scope (see entry-points.md, Initialization) — the standard front-run-the-initializer threat does not apply.
 - `feeBps`/`feeRecipient` are immutable and unrecoverable if misconfigured (SECURITY.md caveats #1–#2); `DeployShapes.s.sol` is described as refusing a contract fee recipient without an explicit override, but that script sits outside `src/` and was not read as part of this scope.
-- Library linking at deploy time (five externally-linked libraries, independently re-linked into `ShapeLens`) is the one deployment-ordering risk with no on-chain enforcement. `DeployLens.s.sol` now runs a pre-broadcast behavioral probe that refuses a divergent lens (PR #37), but that is deploy-script discipline, not a contract-level guarantee — see the linked-library-drift attack surface above.
+- Library linking at deploy time (four externally-linked libraries, independently re-linked into `ShapeLens`) is the one deployment-ordering risk with no on-chain enforcement. `DeployLens.s.sol` now runs a pre-broadcast behavioral probe that refuses a divergent lens (PR #37), but that is deploy-script discipline, not a contract-level guarantee — see the linked-library-drift attack surface above.
 
 ### Composability & Dependency Risks
 
@@ -185,14 +186,8 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 > **Position Resolver** — via `Shapes.positionOf` (`Shapes.sol:1104-1114`)
 > - Assumes: nothing — explicitly untrusted
 > - Validates: gas-capped at 50,000; any revert/out-of-gas/return swallowed to `address(0)`
-> - Mutability: Owner-replaceable until `lockPositionResolver`; may be locked at zero
+> - Mutability: Admin-replaceable until `lockPositionResolver`; may be locked at zero
 > - On failure: fails open to `address(0)`, never reverts the caller
-
-> **Contract Collector Token** — via `ContractCollectorOps.ownerOfCapped` (`ContractCollectorOps.sol:66-75`)
-> - Assumes: a well-formed `ownerOf(uint256)` return
-> - Validates: gas-capped staticcall (100,000); rejects non-32-byte returns and dirty upper bits
-> - Mutability: Owner-replaceable until `lockContractCollectorBinding`
-> - On failure: resolves to `address(0)`, treated as unset
 
 > **Auction Lot (arbitrary ERC-721)** — via `ShapeAuctionHouse.createAuction`/`claimLot` (`ShapeAuctionHouse.sol:80-131,204-216`)
 > - Assumes: honest `ownerOf`/`getApproved`/`isApprovedForAll`/`transferFrom`/ERC165 self-report
@@ -251,7 +246,7 @@ Coverage runs as of PR #38; the command needs `--ir-minimum` (coverage builds wi
 
 | Category | Count | Contracts Covered |
 |----------|-------|-------------------|
-| Unit | broad (majority of 430) | Every subsystem — `Shapes.t.sol`, `ShapeRenderer.t.sol`, `Decompose.t.sol`, `Provenance.t.sol`, `TokenIds.t.sol`, `Token0.t.sol`, `InkGenes.t.sol`, `Sampling.t.sol`, `Collection.t.sol`, `ContractCollector.t.sol` |
+| Unit | broad (majority of 430) | Every subsystem — `Shapes.t.sol`, `ShapeRenderer.t.sol`, `Decompose.t.sol`, `Provenance.t.sol`, `TokenIds.t.sol`, `Token0.t.sol`, `InkGenes.t.sol`, `Sampling.t.sol`, `Collection.t.sol`, `ContractOwnership.t.sol` |
 | Integration | broad | `Composability.t.sol`, `AuctionHouseArbitraryLot.t.sol`, `AuctionSecurity.t.sol` — cross-contract flows |
 | Differential | 14, ~9,200 fuzzed + exhaustive comparisons | `RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol` — byte-for-byte equality (including revert data) between the current and pre-refactor renderer, added in PR #38 to pin the renderer re-chunk output-neutral |
 | Fork | 4 | `Fork.t.sol`, gated on `MAINNET_RPC_URL`, skipped by default (matches the 4 skipped tests reported for this suite) |
@@ -362,11 +357,11 @@ Internalizing a vendored library means upstream security patches will not auto-p
 
 ## X-Ray Verdict
 
-**ADEQUATE** — test coverage is hardened (unit + stateless fuzz + stateful Foundry invariant, zero fix-without-test commits) and documentation is fortified (extensive purpose-oriented NatSpec plus a full spec/decision-log and adversarial-review document), but access control caps the tier: the owner role is a single transferable `Ownable` with no timelock or multisig anywhere in scope.
+**ADEQUATE** — test coverage is hardened (unit + stateless fuzz + stateful Foundry invariant, zero fix-without-test commits) and documentation is fortified (extensive purpose-oriented NatSpec plus a full spec/decision-log and adversarial-review document). The value-inert admin role is a single transferable address with no timelock or multisig enforced on-chain.
 
 **Structural facts:**
 1. 3,066 nSLOC across 7 in-scope subsystems (3,583 nSLOC including 517 nSLOC of interfaces), 26 source files.
 2. Two developers (ripe0x 64.6%, dev-2 35.4% of source line additions) over a 14-day, 130-commit history with 13 merges.
 3. 21 test files / 399 test functions / 34 stateless-fuzz functions / 16 stateful-invariant functions; 0 fix-scored commits shipped without a paired test change.
-4. `Shapes`'s runtime bytecode carries 128 bytes of EIP-170 headroom at the currently committed build settings, the tightest in-scope contract; `ShapeRenderer` carries 1,877 bytes, restored from a 349-byte low by re-chunking its string assembly and pinned against regression by a differential harness comparing it byte-for-byte to the pre-refactor renderer. Five libraries (`ComposeCompute`, `ContractCollectorOps`, `CopyValidation`, `GeometrySampling`, `InkGenes`) are externally linked, each a separate deployment.
-5. No proxy/upgrade pattern, no oracle/price feed, and no ERC20 integration exist anywhere in scope; the owner role's every power is documented as value-inert (cannot reach ETH, backing, redemption or ownership).
+4. `Shapes`'s runtime bytecode remains the tightest in-scope contract; `ShapeRenderer` is pinned against regression by a differential harness comparing it byte-for-byte to the pre-refactor renderer. Four libraries (`ComposeCompute`, `CopyValidation`, `GeometrySampling`, `InkGenes`) are externally linked, each a separate deployment.
+5. No proxy/upgrade pattern, no oracle/price feed, and no ERC20 integration exist anywhere in scope; the admin role's every power is documented as value-inert (cannot reach ETH, backing, redemption or token ownership).

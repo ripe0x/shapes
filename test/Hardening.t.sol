@@ -43,7 +43,10 @@ contract HardeningTest is Test {
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, feeRecipient, address(renderer), address(collection)
+        );
+        shapes.redeemTo(0, payable(address(0xD15CA4D)));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
     }
@@ -97,13 +100,13 @@ contract HardeningTest is Test {
 
         vm.prank(alice);
         shapes.mintBatch{value: 1 * (DENOMS[4] + feeOf(DENOMS[4]))}(DENOMS[4], 1);
-        bytes32 solo = shapes.seedOf(0);
+        bytes32 solo = shapes.seedOf(1);
 
         vm.revertToState(snap);
 
         vm.prank(alice);
         shapes.mintBatch{value: 7 * (DENOMS[4] + feeOf(DENOMS[4]))}(DENOMS[4], 7);
-        assertEq(shapes.seedOf(0), solo, "seed moved with batch size");
+        assertEq(shapes.seedOf(1), solo, "seed moved with batch size");
     }
 
     /// @notice Distinct token ids still give distinct seeds, including across batches mined in
@@ -116,7 +119,7 @@ contract HardeningTest is Test {
 
         bytes32[] memory seen = new bytes32[](12);
         for (uint256 i = 0; i < 12; ++i) {
-            seen[i] = shapes.seedOf(i);
+            seen[i] = shapes.seedOf(i + 1);
             for (uint256 j = 0; j < i; ++j) {
                 assertTrue(seen[i] != seen[j], "seed collision");
             }
@@ -127,11 +130,13 @@ contract HardeningTest is Test {
 
     function test_RendererWithoutCodeIsRejected() public {
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, address(0xDEAD), address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, feeRecipient, address(0xDEAD), address(collection)
+        );
 
         // an EOA is equally unacceptable
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes(FEE_BPS, feeRecipient, alice, address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(FEE_BPS, feeRecipient, alice, address(collection));
     }
 
     /* ---------------- self-custody ---------------- */
@@ -154,7 +159,7 @@ contract HardeningTest is Test {
 
     function test_CannotMintDirectlyIntoTheContract() public {
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 1));
         shapes.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], address(shapes));
 
         assertEq(shapes.redeemableBacking(), 0);

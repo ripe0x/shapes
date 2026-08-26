@@ -69,7 +69,7 @@ contract DecomposeTest is ShapesBase {
         }
 
         assertEq(shapes.totalSupply(), 5, "all five live again");
-        assertEq(shapes.totalMinted(), 5, "totalMinted not bumped: ids reused");
+        assertEq(shapes.totalMinted(), 6, "genesis plus five public ids; decompose issued none");
         assertEq(shapes.redeemableBacking(), DENOMS[1], "backing conserved");
         _assertSolvent();
     }
@@ -215,8 +215,8 @@ contract DecomposeTest is ShapesBase {
         // A fresh mint takes `totalMinted`, above every id already issued; no collision with the
         // reused ids.
         uint256 fresh = _mint(alice, DENOMS[4]);
-        assertEq(fresh, 5, "fresh mint takes totalMinted");
-        assertEq(shapes.totalMinted(), 6);
+        assertEq(fresh, 6, "fresh mint takes totalMinted after genesis plus five public ids");
+        assertEq(shapes.totalMinted(), 7);
     }
 
     function test_ReMintedInputIsFullyUsable() public {
@@ -490,7 +490,7 @@ contract LadderMatrixTest is ShapesBase {
             assertEq(shapes.backingOf(first + 1 + j), DENOMS[0], "back to 0.01");
         }
         assertEq(shapes.totalSupply(), 100, "all 100 live again");
-        assertEq(shapes.totalMinted(), 100, "no fresh ids issued");
+        assertEq(shapes.totalMinted(), 101, "genesis plus 100 public ids; decompose issued none");
         _assertSolvent();
     }
 }

@@ -37,12 +37,11 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      privileged position over the token and the token knows nothing about it, so a broken
 ///      house costs an auction rather than the collection.
 ///
-///      The contract collector binding is not configured here. The contract deploys with no
-///      collector token, and the collector NFT itself is not deployed by this script. Configure
-///      the pointer later with `SetContractCollectorToken.s.sol` and lock it with
-///      `LockContractCollectorBinding.s.sol`. Both require `owner()`, so `owner()` must remain
-///      held until the token is set and the binding locked; renouncing or losing it beforehand
-///      makes configuration impossible.
+///      Deployment sends the minimum denomination to `Shapes`, which atomically mints backed
+///      Shape #0 to the deployer. Its holder is returned by `owner()` but receives no
+///      administrative permissions.
+///      Permissionless artwork minting therefore begins at #1. The deployer is also the initial
+///      `admin()` and may transfer or renounce that separate value-inert role.
 ///
 ///      Local:
 ///        forge script script/DeployShapes.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
@@ -114,14 +113,16 @@ contract DeployShapes is LensEquivalence {
 
         collection = new ShapeCollection(address(renderer));
 
-        shapes = new Shapes(feeBps, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            feeBps, feeRecipient, address(renderer), address(collection)
+        );
         lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
 
         vm.stopBroadcast();
 
         // Prove the constructor configuration and discovery defaults landed as intended.
-        // The fee terms are immutable; the owner may replace the renderer and position resolver
+        // The fee terms are immutable; the admin may replace the renderer and position resolver
         // until each independent lock is used.
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
@@ -133,12 +134,11 @@ contract DeployShapes is LensEquivalence {
         require(shapes.collection() == address(collection), "collection mismatch");
         require(collection.renderer() == address(renderer), "collection points at another renderer");
 
-        {
-            (address collectorTokenContract, uint256 collectorTokenId,) = shapes.contractCollectorBinding();
-            require(collectorTokenContract == address(0), "collector token should start unset");
-            require(collectorTokenId == 0, "collector token id should start zero");
-            require(!lens.contractCollectorBindingLocked(), "collector binding should start unlocked");
-        }
+        require(shapes.ownerOf(0) == msg.sender, "Shape #0 not minted to deployer");
+        require(shapes.owner() == msg.sender, "contract owner mismatch");
+        require(shapes.admin() == msg.sender, "admin mismatch");
+        require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
+        require(shapes.totalMinted() == 1, "permissionless minting should begin at #1");
 
         // Smoke the renderer through the interface the token will actually use. A renderer
         // that cannot produce metadata would leave every token permanently unrenderable.
@@ -189,10 +189,10 @@ contract DeployShapes is LensEquivalence {
         console.log("AuctionHouse  ", address(house));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
-        console.log("owner         ", shapes.owner());
-        console.log("collector token   unset (configure later with SetContractCollectorToken.s.sol)");
+        console.log("owner (#0)    ", shapes.owner());
+        console.log("admin         ", shapes.admin());
         console.log("");
-        console.log("Fee terms and reserve rules are immutable. Ownership is transferable.");
+        console.log("Fee terms and reserve rules are immutable. Shape #0 carries ownership.");
         console.log("Presentation and position resolver settings are independently lockable.");
 
         // Runs last: the probe advances simulated token state, so every check and log above it

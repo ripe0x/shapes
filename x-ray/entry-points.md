@@ -1,12 +1,13 @@
 # Entry Point Map
 
-> Shapes | 33 entry points | 11 permissionless | 20 role-gated | 2 admin-only
+> Shapes entry points: permissionless token operations, holder-gated lifecycle operations, and a
+> separate value-inert admin surface.
 
 ---
 
 ## Protocol Flow Paths
 
-### Deployment (Owner)
+### Deployment (Deployer)
 
 `new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
 
@@ -27,12 +28,12 @@
 `[mint above]` → `Shapes.split()` / `splitTo()` ◄── caller owns the token, not Black, ≥2 outputs summing to its backing
 `[mint above]` → `Shapes.sacrifice()` ◄── caller owns an apex (100 ETH) Complete Shape (`originCount == unitsAt(8)`), not Black
 
-### Presentation & Governance (Owner)
+### Presentation & Governance (Admin)
 
 `Shapes.setRenderer()` / `setCollection()` (◄── `!rendererLocked`) → `Shapes.lockRenderer()` (one-way)
 `Shapes.setTokenCopy()` / `setCollectionCopy()` — independent of the renderer lock, always editable
 `Shapes.setPositionResolver()` (◄── `!positionResolverLocked`) → `Shapes.lockPositionResolver()` (one-way)
-`Shapes.setContractCollectorToken()` (◄── binding unlocked) → `Shapes.lockContractCollectorBinding()` (one-way)
+`Shapes.transferAdmin()` / `renounceAdmin()` — independent of Shape #0 ownership
 
 ### Auction Flow (Seller / Bidder)
 
@@ -284,7 +285,9 @@ These five are grouped: each is *effectively* permissionless (any caller may inv
 
 ## Admin-Only
 
-Gated by `Ownable.onlyOwner` on `Shapes`. None of these functions reach ETH, backing, redemption or token ownership (SECURITY.md, "Verified safe" table).
+Gated by the separate `onlyAdmin` check on `Shapes`. Shape #0 ownership does not satisfy this
+check. None of these functions reach ETH, backing, redemption or token ownership (SECURITY.md,
+"Verified safe" table).
 
 | Contract | Function | Parameters | State Modified |
 |----------|----------|------------|----------------|
@@ -295,10 +298,8 @@ Gated by `Ownable.onlyOwner` on `Shapes`. None of these functions reach ETH, bac
 | Shapes | `setCollectionCopy(string name, string description)` | validated UTF-8/JSON-safe, length-capped | `collectionName`, `collectionDescription` |
 | Shapes | `setPositionResolver(address resolver_)` | zero clears; nonzero must carry code | `positionResolver` |
 | Shapes | `lockPositionResolver()` | — | `positionResolverLocked` (one-way, may lock at zero) |
-| Shapes | `setContractCollectorToken(address tokenContract, uint256 tokenId)` | must resolve to a nonzero `ownerOf` | `_collectorBinding.tokenContract/tokenId` |
-| Shapes | `lockContractCollectorBinding()` | — | `_collectorBinding.locked` (one-way) |
-| Shapes (inherited `Ownable`) | `transferOwnership(address newOwner)` | new owner address | `owner` |
-| Shapes (inherited `Ownable`) | `renounceOwnership()` | — | `owner` → zero, permanently disabling every function above |
+| Shapes | `transferAdmin(address newAdmin)` | nonzero new admin | `_admin` |
+| Shapes | `renounceAdmin()` | — | `_admin` → zero, permanently disabling every function above |
 
 ---
 

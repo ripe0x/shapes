@@ -47,7 +47,7 @@ contract SamplingTest is ShapesBase {
     }
 
     /// @dev `GrammarV1Modules` duplicates the renderer's module-identity draws so compose
-    ///      sampling cannot depend on the owner-replaceable renderer address. This pins the two
+    ///      sampling cannot depend on the admin-replaceable renderer address. This pins the two
     ///      implementations to each other across every denomination and gene.
     function testFuzz_GrammarV1MirrorMatchesRenderer(bytes32 seed, uint8 denomIndex, uint8 inkGene)
         public
@@ -355,12 +355,12 @@ contract SamplingTest is ShapesBase {
 
     /* ------------------------------ burn clears materialized geometry ------------------------------ */
 
-    /// @dev Raw read of `_sampledModules[tokenId]` (storage slot 8). The public getter requires
+    /// @dev Raw read of `_sampledModules[tokenId]` (storage slot 7). The public getter requires
     ///      the token to exist, so a burned id's leftover state is only observable here. Every
     ///      materialized array is at most 25 bytes, a short `bytes` that lives entirely in the
     ///      mapping slot, so one `vm.load` is the whole value.
     function _rawSampledModulesSlot(uint256 tokenId) internal view returns (bytes32) {
-        return vm.load(address(shapes), keccak256(abi.encode(tokenId, uint256(8))));
+        return vm.load(address(shapes), keccak256(abi.encode(tokenId, uint256(7))));
     }
 
     function test_RedeemClearsMaterializedModules() public {

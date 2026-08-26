@@ -126,11 +126,11 @@ These are `view` and require no ownership.
   value. Do not price a Shape by its traits; price it by `redeemableValueWei`.
 - **Redemption is owner-only, and pays out with a real call.** A recipient that reverts on ETH
   receipt reverts the redemption; it cannot corrupt anyone else's balance. Reentrancy is guarded.
-- **Everything is immutable.** No admin can move the reserve, change denominations, or alter
-  redemption. The owner's remaining powers are all value-inert: replacing the renderer and
-  collection metadata (locked together), the independently lockable position resolver, and the
-  independently lockable contract collector binding. Build against behaviour that cannot change
-  under you.
+- **Everything economic is immutable.** No admin can move the reserve, change denominations, or
+  alter redemption. The separate admin's powers are all value-inert: replacing the renderer and
+  collection metadata (locked together), editing copy, and configuring the independently lockable
+  position resolver. Shape #0's holder has no permissions. Build against behaviour that cannot
+  change under you.
 - **Black Shapes are non-redeemable by design.** `redeemableValueWei` is 0 and `isBlack` is true;
   never accept one as payment.
 - **Give value-moving calls gas headroom over the bare estimate.** Every state-changing function

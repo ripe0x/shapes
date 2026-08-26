@@ -63,7 +63,7 @@
     <rect x="183.6" y="156.0" width="322.4" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
     <rect x="186.6" y="159.0" width="1.4" height="14" rx="0.6" fill="#3B82F6"/>
     <text x="344.8" y="165.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Linked Libraries</text>
-    <text x="344.8" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">GeometrySampling / ComposeCompute / InkGenes / ContractCollectorOps / CopyValidation</text>
+    <text x="344.8" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">GeometrySampling / ComposeCompute / InkGenes / CopyValidation</text>
   </g>
   <g filter="url(#shadow)">
     <rect x="528.0" y="156.0" width="146.0" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>

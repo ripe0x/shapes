@@ -10,7 +10,7 @@ pragma solidity 0.8.28;
 ///
 ///      `KIND_COUNT` and `rotCount` mirror `ShapeRenderer`'s KIND_* ordering and `_rotCount`.
 ///      Duplicated here rather than shared by reference because module sampling runs inside
-///      `Shapes`, which must not depend on the mutable, owner-replaceable renderer address for a
+///      `Shapes`, which must not depend on the mutable, admin-replaceable renderer address for a
 ///      consensus-critical state change.
 library ModuleCodec {
     uint256 internal constant KIND_COUNT = 10;

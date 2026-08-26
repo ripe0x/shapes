@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import {IAdminControl} from "./IAdminControl.sol";
 import {ShapeFormation} from "./IShapeCapabilities.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
@@ -11,8 +12,10 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      returns exactly that amount to its owner. The other reserve outflow is `sacrifice`, which
 ///      sends a fixed 100 ETH to an unspendable address and is callable only by an apex Complete
 ///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
-///      The owner may administer and independently lock the value-inert renderer and optional
-///      position resolver; ownership itself is transferable and renounceable.
+///      Shape #0 is the collectible title to the contract: `owner()` follows its current holder,
+///      including returning zero while #0 is burned. That title grants no permissions. A separate
+///      `admin()` role may administer and independently lock the value-inert renderer and optional
+///      position resolver, and may be transferred or renounced without moving Shape #0.
 ///
 ///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
 ///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
@@ -20,7 +23,7 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      contract's runtime bytecode under the EIP-170 size limit. `modulesOf`,
 ///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the minimal
 ///      raw accessors `ShapeLens` reads to reconstruct them.
-interface IShapes is IERC721, IERC721Value {
+interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Emitted when a Shape is minted. `originCount` is always 1: a mint is the sole
     ///         source of new origins. A strict origin-creation signal; recomposition does not
     ///         emit it.
@@ -36,25 +39,25 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice Emitted once per mint call, when the aggregate fee is forwarded.
     event MintFeePaid(address indexed recipient, uint256 amountWei, uint256 quantity);
 
-    /// @notice Emitted when the owner replaces the onchain renderer.
+    /// @notice Emitted when the admin replaces the onchain renderer.
     event RendererUpdated(address indexed renderer);
 
-    /// @notice Emitted when the owner replaces the collection metadata contract.
+    /// @notice Emitted when the admin replaces the collection metadata contract.
     event CollectionUpdated(address indexed collection);
 
     /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
     event RendererLocked();
 
-    /// @notice Emitted when the owner updates the per-token metadata copy (name prefix, description).
+    /// @notice Emitted when the admin updates the per-token metadata copy (name prefix, description).
     event TokenCopyUpdated(string namePrefix, string description);
 
-    /// @notice Emitted when the owner updates the collection metadata copy (name, description).
+    /// @notice Emitted when the admin updates the collection metadata copy (name, description).
     event CollectionCopyUpdated(string name, string description);
 
     /// @notice Standard contract-level metadata refresh signal, emitted when the collection copy changes.
     event ContractURIUpdated();
 
-    /// @notice Emitted when the owner sets, replaces or clears the optional position resolver.
+    /// @notice Emitted when the admin sets, replaces or clears the optional position resolver.
     event PositionResolverSet(address indexed resolver);
 
     /// @notice Emitted when the current resolver value is permanently locked, including zero.
@@ -178,14 +181,18 @@ interface IShapes is IERC721, IERC721Value {
     /// @notice Where mint fees are forwarded. Set at construction, never changeable.
     function feeRecipient() external view returns (address);
 
-    /// @notice The onchain renderer. Replaceable by the owner via `setRenderer` until locked.
+    /// @notice The current holder of Shape #0, or zero while #0 does not exist.
+    /// @dev This collectible title carries no administrative authority.
+    function owner() external view returns (address);
+
+    /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until locked.
     function renderer() external view returns (address);
 
     /// @notice Whether the renderer has been permanently locked.
     function rendererLocked() external view returns (bool);
 
     /// @notice The collection metadata contract, read only by `contractURI`. Replaceable by the
-    ///         owner via `setCollection` until `lockRenderer` freezes it.
+    ///         admin via `setCollection` until `lockRenderer` freezes it.
     function collection() external view returns (address);
 
     /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
@@ -208,22 +215,22 @@ interface IShapes is IERC721, IERC721Value {
 
     /* ----------------------------- renderer ---------------------------- */
 
-    /// @notice Replace the onchain renderer. Owner only, and only while unlocked. The renderer
+    /// @notice Replace the onchain renderer. Admin only, and only while unlocked. The renderer
     ///         is read only by `tokenURI`; changing it affects how a Shape looks, never its
     ///         backing, redeemability or owner. `newRenderer` must carry code.
     function setRenderer(address newRenderer) external;
 
-    /// @notice Replace the collection metadata contract. Owner only, and only while unlocked.
+    /// @notice Replace the collection metadata contract. Admin only, and only while unlocked.
     ///         Read only by `contractURI`; it can never touch ETH, backing or ownership.
     ///         `newCollection` must carry code and support `IShapeCollection`.
     function setCollection(address newCollection) external;
 
-    /// @notice Permanently lock presentation. Owner only, one way. After this neither the
+    /// @notice Permanently lock presentation. Admin only, one way. After this neither the
     ///         renderer nor the collection can change again. Does not freeze the metadata copy,
-    ///         which the owner keeps editing via `setTokenCopy` / `setCollectionCopy`.
+    ///         which the admin keeps editing via `setTokenCopy` / `setCollectionCopy`.
     function lockRenderer() external;
 
-    /// @notice Set the per-token metadata copy: the `name` prefix and the `description`. Owner
+    /// @notice Set the per-token metadata copy: the `name` prefix and the `description`. Admin
     ///         only. Emits ERC-4906 `BatchMetadataUpdate` so marketplaces refresh every token.
     /// @dev Written verbatim into each token's metadata JSON, so both arguments are validated:
     ///      each must be well-formed UTF-8 within its length cap (64-byte prefix, 2048-byte
@@ -234,17 +241,17 @@ interface IShapes is IERC721, IERC721Value {
     function setTokenCopy(string calldata namePrefix, string calldata description) external;
 
     /// @notice Set the collection metadata copy: the `name` and the `description` used by
-    ///         `contractURI`. Owner only. Emits `ContractURIUpdated`.
+    ///         `contractURI`. Admin only. Emits `ContractURIUpdated`.
     /// @dev Same validation and length caps as `setTokenCopy`; reverts `InvalidCopy` otherwise.
     function setCollectionCopy(string calldata name, string calldata description) external;
 
     /* ---------------------- position resolver admin -------------------- */
 
-    /// @notice Set, replace or clear the optional resolver. Owner only, while unlocked.
+    /// @notice Set, replace or clear the optional resolver. Admin only, while unlocked.
     /// @dev Zero clears it; a nonzero resolver must contain deployed code. No resolver call occurs.
     function setPositionResolver(address resolver_) external;
 
-    /// @notice Permanently freeze the current resolver value. Owner only; may lock while zero.
+    /// @notice Permanently freeze the current resolver value. Admin only; may lock while zero.
     function lockPositionResolver() external;
 
     /* ---------------------------- minting ----------------------------- */

@@ -8,6 +8,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapeCollection} from "../src/interfaces/IShapeCollection.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {Denominations} from "../src/lib/Denominations.sol";
 
 contract CollectionTest is Test {
     ShapeRenderer internal renderer;
@@ -19,7 +20,9 @@ contract CollectionTest is Test {
     function setUp() public {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes(100, feeRecipient, address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            100, feeRecipient, address(renderer), address(collection)
+        );
     }
 
     /* ------------------------------ seeding ----------------------------- */

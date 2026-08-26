@@ -593,17 +593,19 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
   flat radial ends lie on the footprint edges.
 
-- **Value-inert admin only, no economic admin.** `Ownable` is inherited and transferable.
-  The owner can replace and permanently lock the renderer and collection metadata contracts,
+- **Collectible title, separate value-inert admin.** Shape #0 is minted to the deployer with
+  minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
+  holding #0 grants no permissions. The separate `admin()` role can replace and permanently lock
+  the renderer and collection metadata contracts,
   can set, replace, clear and permanently lock the optional position resolver — including
   locking it forever at zero — and can edit the metadata copy (token name prefix and
   description, collection name and description) via `setTokenCopy`/`setCollectionCopy`. The
   renderer and collection are read only by `tokenURI`/`contractURI`; the resolver only by
   `positionOf`; the copy only by those metadata views, and it is validated on set so it cannot
   break the JSON. None reach ETH, backing, redemption or token ownership. The copy is
-  deliberately not covered by the renderer lock; it stays editable until ownership is renounced.
-  There is no pause, upgrade path, proxy or administrative reserve path. The owner may renounce
-  at any time.
+  deliberately not covered by the renderer lock; it stays editable until admin is renounced.
+  There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
+  or renounced without transferring Shape #0.
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.
@@ -696,10 +698,11 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   resolver and returns its address unchanged. Shapes deliberately performs no token-existence,
   result-code or backing check: the resolver may describe historical/nonexistent IDs, and its
   revert or misleading result affects only callers of `positionOf`.
-- **Replaceable, clearable, independently lockable.** The transferable owner may set or replace
+- **Replaceable, clearable, independently lockable.** The transferable admin may set or replace
   the resolver with a contract address, clear it to zero, or permanently lock its current value at
   any time — including locking zero. Renderer and resolver locks are independent. Ownership
-  transfer moves all still-unlocked authority; renunciation ends it. Neither pointer can change
+  transfer moves all still-unlocked authority; renunciation ends it. Shape #0 ownership moves none
+  of this authority. Neither pointer can change
   backing, ownership, redemption, composition or reserve accounting.
 
 ---
