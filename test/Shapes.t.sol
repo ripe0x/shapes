@@ -108,6 +108,8 @@ contract MintTest is ShapesBase {
             assertEq(id, i + 1, "permissionless token ids are sequential from 1");
             assertEq(shapes.ownerOf(id), alice);
             assertEq(shapes.backingOf(id), DENOMS[i]);
+            assertTrue(shapes.exists(id), "freshly minted Shape exists");
+            assertEq(shapes.denomIndexOf(id), i, "stored denomination index");
             assertEq(shapes.redeemableBacking(), expectedBacking);
             assertEq(shapes.totalSupply(), i + 1);
             assertEq(shapes.totalMinted(), i + 2);
@@ -782,6 +784,76 @@ contract ViewTest is ShapesBase {
     function test_BackingOfNonexistentReverts() public {
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 1));
         shapes.backingOf(1);
+    }
+}
+
+/* ==================================================================== *
+ *  Core state discovery
+ * ==================================================================== */
+
+contract CoreStateDiscoveryTest is ShapesBase {
+    function test_ExistsTracksEveryTokenLifecycle() public {
+        assertFalse(shapes.exists(999), "never-issued id is not live");
+
+        vm.prank(alice);
+        uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 5);
+        assertTrue(shapes.exists(first), "minted id is live");
+
+        vm.prank(alice);
+        shapes.transferFrom(alice, bob, first);
+        assertTrue(shapes.exists(first), "transfer does not change liveness");
+        vm.prank(bob);
+        shapes.transferFrom(bob, alice, first);
+
+        uint256[] memory burnIds = new uint256[](4);
+        for (uint256 i = 0; i < burnIds.length; ++i) {
+            burnIds[i] = first + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(first, burnIds);
+        assertTrue(shapes.exists(first), "compose survivor remains live");
+        assertEq(shapes.denomIndexOf(first), 1, "compose updates stored denomination");
+        for (uint256 i = 0; i < burnIds.length; ++i) {
+            assertFalse(shapes.exists(burnIds[i]), "compose input is consumed");
+        }
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, burnIds[0]));
+        shapes.denomIndexOf(burnIds[0]);
+
+        vm.prank(alice);
+        shapes.decompose(first);
+        assertEq(shapes.denomIndexOf(first), 0, "decompose restores survivor denomination");
+        for (uint256 i = 0; i < burnIds.length; ++i) {
+            assertTrue(shapes.exists(burnIds[i]), "decompose revives input identity");
+            assertEq(shapes.denomIndexOf(burnIds[i]), 0, "decompose restores input denomination");
+        }
+
+        vm.prank(alice);
+        shapes.compose(first, burnIds);
+        uint8[] memory outDenoms = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory children = shapes.split(first, outDenoms);
+        assertFalse(shapes.exists(first), "split retires parent");
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, first));
+        shapes.denomIndexOf(first);
+        for (uint256 i = 0; i < children.length; ++i) {
+            assertTrue(shapes.exists(children[i]), "split child is live");
+            assertEq(shapes.denomIndexOf(children[i]), 0, "split child exposes output denomination");
+        }
+
+        vm.prank(alice);
+        shapes.redeem(children[0]);
+        assertFalse(shapes.exists(children[0]), "redeem retires id");
+
+        vm.prank(alice);
+        shapes.burn(children[1]);
+        assertFalse(shapes.exists(children[1]), "burn retires id");
+    }
+
+    function test_DenomIndexOfNonexistentRevertsWhileExistsDoesNot() public {
+        uint256 tokenId = 777;
+        assertFalse(shapes.exists(tokenId));
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId));
+        shapes.denomIndexOf(tokenId);
     }
 }
 
@@ -1646,6 +1718,8 @@ contract BlackShapeTest is ShapesBase {
         shapes.sacrifice(id);
 
         assertTrue(shapes.isBlack(id), "now Black");
+        assertTrue(shapes.exists(id), "Black remains a live ERC721");
+        assertEq(shapes.denomIndexOf(id), 8, "Black retains its apex denomination index");
         assertEq(shapes.blackCount(), 1);
         assertEq(shapes.sacrificedBacking(), DENOMS[8]);
         assertEq(shapes.redeemableBacking(), 0, "backing left the reserve");
@@ -1701,6 +1775,7 @@ contract BlackShapeTest is ShapesBase {
         assertEq(alice.balance, balanceBefore, "zero-value burn transfers no ETH");
         assertEq(shapes.sacrificedBacking(), DENOMS[8], "historical sacrifice remains counted");
         assertEq(shapes.blackCount(), 1, "blackCount is cumulative");
+        assertFalse(shapes.exists(id), "burn retires the Black id");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
         shapes.ownerOf(id);
 

@@ -370,8 +370,17 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Whether a live token is Black.
     function isBlack(uint256 tokenId) external view returns (bool);
 
+    /// @notice Whether `tokenId` is currently a live Shape.
+    /// @dev Never reverts. False for never-issued and burned ids, including ids consumed by
+    ///      compose or replaced by split; true for live Black Shapes.
+    function exists(uint256 tokenId) external view returns (bool);
+
     /// @notice ETH backing a live Shape.
     function backingOf(uint256 tokenId) external view returns (uint256);
+
+    /// @notice The denomination-ladder index (0..8) currently stored by a live Shape.
+    /// @dev Reverts for a nonexistent id. Black Shapes retain and return apex index 8.
+    function denomIndexOf(uint256 tokenId) external view returns (uint8);
 
     /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
     /// @dev Does not require a live token. Resolver results are unvalidated; failures return zero.
@@ -388,11 +397,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice A live Shape's raw materialized module array (`ModuleCodec`), empty when its
     ///         geometry derives from `seed` under grammar v1. The minimal raw accessor
-    ///         `ShapeLens` reads to assemble the rich views moved off this contract; the other
-    ///         field those views need, denomination index, is recoverable from `backingOf` for a
-    ///         non-Black Shape (`sacrifice` requires the apex denomination and no path changes a
-    ///         live token's denomination after it turns Black, so a Black Shape's denomination
-    ///         index is always the apex one, `denominationCount() - 1`).
+    ///         `ShapeLens` reads to assemble the rich views moved off this contract; the lens reads
+    ///         the other required state-owned fact directly through `denomIndexOf`.
     function modulesOf(uint256 tokenId) external view returns (bytes memory);
 
     /// @notice Collection-level metadata URI, read from the renderer.

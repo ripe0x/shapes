@@ -88,6 +88,7 @@ contract ComposabilityTest is Test {
     /// @notice The deterministic-preview capability (previewCompose/previewSplit) moved off
     ///         `Shapes` onto `ShapeLens`; `Shapes` no longer advertises it.
     function test_AdvertisesGranularCapabilities() public view {
+        assertEq(type(IShapeValue).interfaceId, bytes4(0xd07d718a), "IShapeValue id changed");
         assertTrue(shapes.supportsInterface(type(IShapeValue).interfaceId));
         assertTrue(shapes.supportsInterface(type(IShapeRecomposition).interfaceId));
         assertTrue(shapes.supportsInterface(type(IShapeProvenance).interfaceId));

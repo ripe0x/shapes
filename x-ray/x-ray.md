@@ -29,11 +29,14 @@ For a visual overview of the protocol's architecture, see the [architecture diag
 | Internal libraries | `Denominations`, `FixedPoint`, `Round03Rand`, `ModuleCodec`, `GrammarV1Modules` | 211 | Inlined pure math/encoding helpers, not separately deployed |
 | Artist attribution | `ArtistAttribution` | — | Reusable immutable subject/artist binding plus a one-time EIP-712 signature; no authority or economics |
 
-`Shapes`'s runtime bytecode carries **207 bytes of EIP-170 headroom** in the default build and **228 bytes** in the testnet build at the current artist-attribution plus admin-directed fee-recipient settings (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
+`Shapes`'s runtime bytecode carries **341 bytes of EIP-170 headroom** in the default build and **362 bytes** in the testnet build after D-31's `exists` and `denomIndexOf` views (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
 
 ### How It Fits Together
 
-**The core trick:** an ERC721 stores only a denomination index and a seed; `backingOf` derives the redeemable ETH from the index against a fixed, immutable ladder, so an out-of-ladder backing value is unrepresentable in storage.
+**The core trick:** an ERC721 stores a denomination index rather than an arbitrary backing amount;
+`denomIndexOf` exposes that 0..8 state directly and `backingOf` derives redeemable ETH from it
+against a fixed, immutable ladder, so an off-ladder backing value is unrepresentable. `exists`
+provides non-reverting liveness without adding storage or an external call.
 
 ### Mint → Redeem
 

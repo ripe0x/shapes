@@ -409,7 +409,10 @@ on a survivor abandon its compose stack (the records become inert), consistent w
 to un-merge first" (DECOMPOSE_SPEC.md).
 
 ### 9.8 Views
-`backingOf(id)` → 0 if Black else `amountAt(denomIndex)`; `originCountOf`, `isBlack`, `isComplete`
+`exists(id)` → a non-reverting ERC-721 liveness check, true for every live token including Black and
+false for never-issued or retired ids; `denomIndexOf(id)` → the stored 0..8 ladder index for a live
+token (including 8 for Black), reverting for a nonexistent id; `backingOf(id)` → 0 if Black else
+`amountAt(denomIndex)`; `originCountOf`, `isBlack`, `isComplete`
 (`!Black && units > 1 && originCount == units`, `units = backing/UNIT`), `redeemableBacking`,
 `sacrificedBacking`, `blackCount`, `composeDepth(survivorId)` → `_composeStack[survivorId].length`
 (how many stacked composes `decompose` can still reverse). `tokenURI` passes
@@ -647,6 +650,11 @@ tokens exist anywhere.
 
 ## 19. Final value and position discovery amendment
 
+- `exists(tokenId)` exposes the core's ERC-721 liveness without reverting. It is true for any live
+  Shape, including Black, and false for never-issued, redeemed/burned, split-parent and
+  compose-consumed ids. Decompose can make a compose-consumed id live again.
+- `denomIndexOf(tokenId)` exposes the stored denomination index directly, returns 0..8 for a live
+  Shape (8 for Black), and reverts for a nonexistent id like the other token-state getters.
 - `valueOf(tokenId)` exactly aliases `backingOf(tokenId)`. It returns the native ETH the current
   owner would receive by burning now, returns zero for Black, and reverts for nonexistent IDs.
 - Shapes implements the current draft ERC-8060 `IERC721Value` interface (`valueOf` + owner-only
@@ -664,6 +672,9 @@ tokens exist anywhere.
   token existence, backing, result code or position status; resolver failures return zero.
 - The returned address is opaque discovery data. The future position protocol defines its claim,
   authorization, settlement and lifecycle. No core Shapes operation calls the resolver.
+- Reverse compose ancestry is not stored as a separate core mapping. On-chain code can inspect a
+  survivor's compose records; historical reverse lookup remains event/indexer territory unless a
+  concrete protocol later establishes semantics that justify permanent per-input storage.
 - Renouncing admin permanently ends any remaining renderer or resolver administration; a prior
   admin transfer moves all still-unlocked authority to the new admin. Shape #0 ownership is
   independent and moves no authority.

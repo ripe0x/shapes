@@ -53,6 +53,19 @@ Integrators must never use artist status or attestation as authorization over Sh
 
 ## Reading a Shape
 
+For cheap direct checks on core state, use:
+
+```solidity
+shapes.exists(shapeId);       // never reverts: true for every live Shape, including Black
+shapes.denomIndexOf(shapeId); // stored 0..8 ladder index; reverts when the token is not live
+shapes.valueOf(shapeId);      // redeemable ETH now; zero for Black, reverts when not live
+```
+
+`denomIndexOf` is part of the denomination-oriented `IShapeValue` capability as well as `IShapes`.
+`exists` stays on the full `IShapes` surface because generic ERC721 liveness is broader than that
+capability. In particular, do not infer denomination from `valueOf` or `backingOf`: a live Black
+Shape has denomination index 8 but redeemable value zero.
+
 `ShapeLens.shapeState` returns everything about a live Shape in one call:
 
 ```solidity
@@ -71,6 +84,9 @@ struct ShapeState {
 
 For a payment check, `redeemableValueWei` is the number to trust: it is the ETH you will actually
 receive on redemption, and it is 0 for a Black (sacrificed) Shape.
+
+The lens aggregates these state-owned core facts; it reads the stored denomination through
+`denomIndexOf` rather than reconstructing it from backing.
 
 ## Accepting a Shape as payment
 

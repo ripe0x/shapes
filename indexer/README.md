@@ -194,14 +194,9 @@ The eight events and what each does to the two tables (`src/index.ts`):
 
 ## ABI
 
-`abis/Shapes.ts` is the curated subset of the compiled ABI
-(`out/Shapes.sol/Shapes.json`, built by `forge build` at the repo root) — the
-eight events plus the functions and errors the frontend calls. It mirrors the
-human-readable signatures in `preview/src/chain/abi.ts` with one addition, the
-`InkGene` event, which the indexer decodes but the frontend does not (the
-frontend reads the gene from the tokenURI "Ink" trait). It is extracted from
-the compiled artifact rather than hand-transcribed, so field names, types, and
-`indexed` flags are guaranteed to match the deployed bytecode. Regenerate it if
-`Shapes.sol`'s events change: rebuild the contract (`forge build` at the repo
-root), then re-filter `out/Shapes.sol/Shapes.json`'s `abi` array down to the
-entries listed in `preview/src/chain/abi.ts`, plus `InkGene`.
+`abis/Shapes.ts` is a curated ABI for the indexer's event handlers and retained
+read calls, not a mirror of the larger browser ABI in `preview/src/chain/abi.ts`.
+New core views such as `exists` and `denomIndexOf` belong here only if the
+indexer starts calling them. When a consumed event or read changes, rebuild the
+contracts and copy that exact entry from the relevant compiled Shapes or lens
+artifact so field names, types, and `indexed` flags match deployed bytecode.
