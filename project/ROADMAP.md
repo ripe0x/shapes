@@ -32,7 +32,7 @@ Deliverables:
 - IN PROGRESS: D-28 supersedes D-26's child implementation before launch. Artist attribution and its one-time cryptographic release signature now live directly in Shapes; only stateless digest/signature-checking code is externally linked. The shared token/collection description simplification creates enough EIP-170 headroom without changing collection artwork.
 - COMPLETE IN DRAFT: D-27 admin-directed future mint-fee recipient, with immutable `feeBps`, no reserve authority, and exact Sepolia payout/admin post-flight checks.
 - RESOLVED ARCHITECTURALLY, PARKED POST-LAUNCH: D-29 defines positions as a fully escrowed external exchange-option protocol. Shapes retains discovery only and gains no freeze, wrapper, custody or execution logic.
-- PENDING: deploy the D-28 implementation fresh to Sepolia, submit the artist signature directly to Shapes only after verifying the final addresses and exact Shapes creation transaction hash, replace deployment metadata with new addresses/fromBlock, rerun live checks, then merge PR #4. Never relabel either older immutable deployment.
+- PREFLIGHT COMPLETE, BROADCAST PENDING: deploy the D-28 implementation fresh to Sepolia, submit the artist signature directly to Shapes only after verifying the final addresses and exact Shapes creation transaction hash, replace deployment metadata with new addresses/fromBlock, rerun live checks, then merge PR #4. Never relabel either older immutable deployment.
 
 Acceptance: PR #2 and the D-28 attribution change merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture, and its artist attestation verifies directly on Shapes against the recorded release hash.
 
