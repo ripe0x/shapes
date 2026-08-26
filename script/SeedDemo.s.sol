@@ -30,7 +30,7 @@ contract SeedDemo is Script {
 
         vm.startBroadcast();
 
-        // First mint on a fresh chain, so the auction lot is token 0.
+        // First public mint on a fresh deployment, so the auction lot is Shape #1 after genesis #0.
         _seedAuction();
 
         // Small spread: a stacked compose, a split, and loose originals.
@@ -78,7 +78,7 @@ contract SeedDemo is Script {
 
     /// @dev With AUCTION_HOUSE set, mints a 0.01 ETH Shape and lists it: 24 hour duration, no
     ///      reserve, 5% minimum increment, 15 minute extension window. Called before any other
-    ///      mint so the lot is token 0 on a fresh chain. Skipped when the env var is absent.
+    ///      public mint so the lot is Shape #1 on a fresh deployment. Skipped when the env var is absent.
     function _seedAuction() internal {
         address house = vm.envOr("AUCTION_HOUSE", address(0));
         if (house == address(0)) return;
