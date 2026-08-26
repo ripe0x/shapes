@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. A fresh session picks up here: read project/*.md (STATE.md first), then this file for what was mid-flight. Updated at every significant step, not just session end.
 
 Session: resumed Director session, 2026-08-26.
-Branch: `codex/restore-pr2-owner` from main `a1f34fd` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`; PR #3 green and cleared for merge.
+Branch: `main` at `bf5ae6b` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`; PR #3 merged.
 
 ## Done this session
 
@@ -15,11 +15,11 @@ Branch: `codex/restore-pr2-owner` from main `a1f34fd` in canonical clone `/Users
 
 ## In flight
 
-- P0 gate PASSED. PR #1 merged green as `5eec83d`; PR #2 merged green as `7fca2b2`. P1 entry is paused while the unauthorized `titleHolder()` substitution is reverted to PR #2's intended `owner()` API and re-reviewed, then for a fresh Sepolia deployment/readback.
+- P0 gate PASSED. PR #1 merged green as `5eec83d`; PR #2 merged green as `7fca2b2`; corrective PR #3 merged as `bf5ae6b`. The intended `owner()` API is restored, and P1 entry now waits only for a fresh Sepolia deployment/readback.
 - Independent review found stale status contradictions in STATE/DECISIONS/RISKS/HANDOFF; corrected in the resumed session. Executable PR diff received an independent accept verdict.
 - PR #1's last standalone tip `41a36b3` was fully green: contracts, renderer parity, Netlify deploy preview, header rules, and redirect rules passed; the pages-changed check correctly skipped. Two later main commits (`ef228f0`, `1020730`) implemented build-time ladder selection and made PR #1 conflict in DeployShapes/DeploySepolia. The Director merged current main into the PR branch and selected main's stronger profile-aware guards. Re-run the combined checks before merge.
 - Incident: the Director raised an ERC-173 concern, then treated a general “go” as approval to replace PR #2's `owner()` API with `titleHolder()`. The user did not approve that product/ABI change. DIRECTOR.md now explicitly forbids changing fundamental behavior or ABI on inferred approval.
-- Correction restored and pushed as `ab9db38`; draft PR #3: `owner()` is the Shape #0 holder; `titleHolder()`/`IContractTitle` are removed; the separate `admin()` role and all unrelated PR #2 fixes remain. Active contract, scripts, preview ABI, tests, and product docs are reconciled. Historical incident references are explicitly labeled.
+- Correction restored and merged in PR #3 as `bf5ae6b`: `owner()` is the Shape #0 holder; `titleHolder()`/`IContractTitle` are removed; the separate `admin()` role and all unrelated PR #2 fixes remain. Active contract, scripts, preview ABI, tests, and product docs are reconciled. Historical incident references are explicitly labeled.
 - Verification: Shapes runtime 24,131 bytes with a 445-byte EIP-170 margin; 428 contract tests pass, 0 fail, 4 fork-only skip; 27 testnet-profile ownership/token/ladder tests pass; 39 preview tests and TypeScript pass; independent behavior review accepts; security diff scan `704e538c-4db4-4ce3-b255-fd523cc47b35` has zero reportable findings.
 - Correction to the review record: D-25/R18 were invented blockers. The expected custom `IShapes` interface-id change has no compatibility impact because the restored architecture has never been deployed, no legacy external consumer exists, and repository production code does not probe that id. No dual-id code is warranted.
 - Combined local verification after current-main reconciliation: docs selector check, preview typecheck/stream verification/500-per-denomination collision sweep/fixture freshness, web lint/build, `forge fmt --check`, `forge build --sizes`, and full `forge test` pass. Result: 454 passed, 0 failed, 4 fork-only skipped; Shapes EIP-170 margin 145 bytes. The sweep exposed and this branch fixed an existing rotation-accounting bug that produced negative percentages after the vocabulary expanded; it now counts every active rotatable primitive and asserts totals.
@@ -27,7 +27,7 @@ Branch: `codex/restore-pr2-owner` from main `a1f34fd` in canonical clone `/Users
 
 ## Next
 
-- Merge PR #3, then perform a fresh Sepolia deploy/readback only with the user's explicit deployment approval. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
+- Perform a fresh Sepolia deploy/readback only with the user's explicit deployment approval. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
 
 ## Go-public cutover: EXECUTED 2026-08-25
 

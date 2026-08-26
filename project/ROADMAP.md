@@ -28,6 +28,7 @@ Deliverables:
 - COMPLETE: PR #1 merged green as `5eec83d`, including build-time ladder separation and the root-lockfile CI fix.
 - COMPLETE: D-24 adopted Shape #0 + separate admin with explicit `owner()`; D-23's competing non-tokenized title product is superseded.
 - COMPLETE: PR #2 rebased after PR #1, closed every finding in `project/reviews/PR-2.md`, passed full local/remote checks, and merged as `7fca2b2`.
+- COMPLETE: corrective PR #3 restored PR #2's intended `owner()` API, removed the unauthorized `titleHolder()` substitution, passed review and CI, and merged as `bf5ae6b`.
 - PENDING: deploy a fresh Sepolia implementation and replace deployment metadata with new addresses/fromBlock. Never relabel the existing immutable deployment.
 
 Acceptance: PR #2 merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture.
