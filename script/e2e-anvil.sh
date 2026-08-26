@@ -50,6 +50,18 @@ echo "  Shapes        $SHAPES"
 echo "  ShapeRenderer $RENDERER"
 echo "  AuctionHouse  $HOUSE"
 
+say "Signing the deployment as artist"
+RELEASE_HASH=$(cast keccak "shapes-e2e-release")
+DIGEST=$(cast call "$SHAPES" "artistAttestationDigest(bytes32)(bytes32)" "$RELEASE_HASH" --rpc-url "$RPC")
+SIGNATURE=$(cast wallet sign --no-hash "$DIGEST" --private-key "$PK0")
+send_wait "$SHAPES" "attestArtist(bytes32,bytes)" "$RELEASE_HASH" "$SIGNATURE" \
+  --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+[ "$(cast call "$SHAPES" "artistReleaseHash()(bytes32)" --rpc-url "$RPC")" = "$RELEASE_HASH" ] \
+  || fail "artist release hash mismatch"
+[ "$(cast call "$SHAPES" "artistSignature()(bytes)" --rpc-url "$RPC")" = "$SIGNATURE" ] \
+  || fail "artist signature was not stored"
+echo "  ok: artist signature stored and bound to this deployment"
+
 say "Rejecting a plain ETH transfer"
 if cast send "$SHAPES" --value 1ether --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
   echo "  FAIL: direct transfer was accepted"; exit 1

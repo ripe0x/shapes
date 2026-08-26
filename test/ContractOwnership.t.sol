@@ -9,6 +9,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
+import {RevertingFeeRecipient} from "./mocks/Mocks.sol";
 
 contract ContractOwnershipTest is Test {
     Shapes internal shapes;
@@ -49,6 +50,10 @@ contract ContractOwnershipTest is Test {
         assertEq(shapes.totalMinted(), 1);
         assertEq(shapes.totalSupply(), 1);
         assertEq(shapes.originCountOf(0), 1);
+        assertEq(shapes.artist(), address(this));
+
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
+        assertEq(shapes.artistSignature(), bytes(""));
     }
 
     function test_ConstructorRequiresExactGenesisBacking() public {
@@ -87,11 +92,15 @@ contract ContractOwnershipTest is Test {
         shapes.transferFrom(address(this), alice, 0);
         assertEq(shapes.owner(), alice);
         assertEq(shapes.admin(), address(this));
+        assertEq(shapes.artist(), address(this));
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
 
         vm.prank(alice);
         shapes.transferFrom(alice, bob, 0);
         assertEq(shapes.owner(), bob);
         assertEq(shapes.admin(), address(this));
+        assertEq(shapes.artist(), address(this));
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
     }
 
     function test_OwnerHasNoAdminPermissions() public {
@@ -99,9 +108,11 @@ contract ContractOwnershipTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.setTokenCopy("x", "y");
+        shapes.setMetadataCopy("x", "y");
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.lockRenderer();
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
+        shapes.setFeeRecipient(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.transferAdmin(alice);
         vm.stopPrank();
@@ -111,25 +122,74 @@ contract ContractOwnershipTest is Test {
         shapes.transferAdmin(alice);
         assertEq(shapes.admin(), alice);
         assertEq(shapes.owner(), address(this));
+        assertEq(shapes.artist(), address(this));
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
 
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
         );
-        shapes.setTokenCopy("x", "y");
+        shapes.setFeeRecipient(bob);
 
         vm.prank(alice);
-        shapes.setTokenCopy("x", "y");
+        shapes.setMetadataCopy("x", "y");
+        vm.prank(alice);
+        shapes.setFeeRecipient(bob);
+        assertEq(shapes.feeRecipient(), bob);
     }
 
     function test_AdminCanRenounceWithoutChangingOwnership() public {
         shapes.renounceAdmin();
         assertEq(shapes.admin(), address(0));
         assertEq(shapes.owner(), address(this));
+        assertEq(shapes.artist(), address(this));
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
 
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
         );
-        shapes.setTokenCopy("x", "y");
+        shapes.setFeeRecipient(bob);
+    }
+
+    function test_AdminRedirectsOnlyFutureMintFees() public {
+        uint256 backing = Denominations.amountAt(0);
+        uint256 fee = shapes.mintFeeFor(backing);
+
+        _mintDust(alice, 1);
+        assertEq(feeRecipient.balance, fee);
+
+        vm.expectEmit(true, true, false, true, address(shapes));
+        emit IAdminControl.FeeRecipientUpdated(feeRecipient, bob);
+        shapes.setFeeRecipient(bob);
+        _mintDust(alice, 1);
+
+        assertEq(shapes.feeRecipient(), bob);
+        assertEq(feeRecipient.balance, fee, "old recipient keeps only its prior fee");
+        assertEq(bob.balance, 100 ether + fee, "new recipient receives the next fee");
+        assertEq(shapes.redeemableBacking(), Denominations.amountAt(0) + backing * 2);
+    }
+
+    function test_AdminCannotSetZeroFeeRecipient() public {
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0)));
+        shapes.setFeeRecipient(address(0));
+    }
+
+    function test_AdminCanRecoverMintingFromRevertingFeeRecipient() public {
+        RevertingFeeRecipient revertingRecipient = new RevertingFeeRecipient();
+        Shapes recoverable = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, address(revertingRecipient), address(renderer), address(collection)
+        );
+        uint256 backing = Denominations.amountAt(0);
+        uint256 fee = recoverable.mintFeeFor(backing);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(revertingRecipient), fee)
+        );
+        recoverable.mintTo{value: backing + fee}(backing, alice);
+
+        recoverable.setFeeRecipient(bob);
+        recoverable.mintTo{value: backing + fee}(backing, alice);
+        assertEq(bob.balance, 100 ether + fee);
+        assertEq(recoverable.redeemableBacking(), Denominations.amountAt(0) + backing);
     }
 
     function test_RedeemingShapeZeroClearsOwnershipAndReturnsBacking() public {
@@ -141,6 +201,8 @@ contract ContractOwnershipTest is Test {
         assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
         assertEq(shapes.admin(), address(this));
+        assertEq(shapes.artist(), address(this));
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
     }
 
     function test_ShapeZeroCanBeAbsorbedAndRevivedLikeAnyOtherShape() public {
@@ -165,8 +227,8 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_AdvertisesShapesAndAdminInterfaces() public view {
-        assertEq(type(IShapes).interfaceId, bytes4(0x306b220e), "IShapes id changed");
-        assertEq(type(IAdminControl).interfaceId, bytes4(0x067e35a5), "admin interface id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x926c1806), "IShapes id changed");
+        assertEq(type(IAdminControl).interfaceId, bytes4(0xe135adbe), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));
         assertTrue(shapes.supportsInterface(type(IAdminControl).interfaceId));

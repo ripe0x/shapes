@@ -406,7 +406,7 @@ export function SiteApp({
           onOpenToken={openToken}
         />
       )}
-      {view === "about" && <AboutView />}
+      {view === "about" && <AboutView dep={dep} data={data} />}
 
       <footer style={{borderTop: `1px solid ${C.rule}`}}>
         <div

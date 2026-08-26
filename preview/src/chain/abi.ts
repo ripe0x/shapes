@@ -27,9 +27,16 @@ export const shapesAbi = parseAbi([
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
   "function owner() view returns (address)",
+  "function artist() view returns (address)",
+  "function artistReleaseHash() view returns (bytes32)",
+  "function artistSignature() view returns (bytes)",
+  "function artistAttestationDigest(bytes32 releaseHash) view returns (bytes32)",
+  "function attestArtist(bytes32 releaseHash, bytes signature)",
   "function admin() view returns (address)",
   "function transferAdmin(address newAdmin)",
   "function renounceAdmin()",
+  "function feeRecipient() view returns (address)",
+  "function setFeeRecipient(address newRecipient)",
   "function positionResolver() view returns (address)",
   "function positionResolverLocked() view returns (bool)",
   "function setPositionResolver(address resolver)",
@@ -60,11 +67,16 @@ export const shapesAbi = parseAbi([
   "event PositionResolverSet(address indexed resolver)",
   "event PositionResolverLocked(address indexed resolver)",
   "event AdminTransferred(address indexed previousAdmin, address indexed newAdmin)",
+  "event FeeRecipientUpdated(address indexed previousRecipient, address indexed newRecipient)",
+  "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
   "error UnsupportedDenomination(uint256 amountWei)",
   "error IncorrectPayment(uint256 expected, uint256 provided)",
   "error ZeroQuantity()",
+  "error ArtistAlreadyAttested()",
+  "error InvalidArtistReleaseHash()",
+  "error InvalidArtistSignature()",
   "error NotShapeOwner(uint256 tokenId, address caller)",
   "error EthTransferFailed(address to, uint256 amountWei)",
   "error MintFeeTransferFailed(address recipient, uint256 amountWei)",
@@ -74,6 +86,7 @@ export const shapesAbi = parseAbi([
   "error TokenIsBlack(uint256 tokenId)",
   "error InvalidPositionResolver()",
   "error PositionResolverIsLocked()",
+  "error AdminInvalidFeeRecipient(address recipient)",
   "error EmptyRecomposition()",
   "error CannotComposeWithSelf(uint256 tokenId)",
   "error SplitMismatch(uint256 inputBacking, uint256 outputSum)",
@@ -114,6 +127,9 @@ export interface Deployment {
   rpc: string;
   chainId: number;
   shapes: `0x${string}`;
+  /** Permanent deployer attribution. Optional while deployment metadata still targets a
+   *  pre-attribution contract; the site also attempts to read it directly from Shapes. */
+  artist?: `0x${string}`;
   /** ShapeLens: the read-only periphery contract. The DNA/provenance section and other
    *  lens-backed reads have nothing to call without it; see the per-call fallbacks in
    *  `site/dna.ts` and `site/TokenView.tsx` for what happens when it is absent from

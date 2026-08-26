@@ -12,7 +12,7 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%")` · `Shapes.sol:242` · Bounds the immutable mint fee at construction so it can never exceed 100% of backing; no setter exists afterward.
 
 #### G-2
-`require(feeRecipient_ != address(0), "fee recipient is zero")` · `Shapes.sol:243` · A reverting or zero fee recipient is immutable and unrecoverable; this only catches the zero case, not a reverting EOA/contract.
+`require(feeRecipient_ != address(0), "fee recipient is zero")` · `Shapes.sol:243` · The initial recipient cannot be zero. Admin may later redirect future fees, also only to a nonzero address; a reverting target blocks minting until corrected or forever after renunciation.
 
 #### G-3
 `require(renderer_.code.length != 0) / UnsupportedRenderer` · `Shapes.sol:349-355` · Prevents `tokenURI` from pointing at a codeless or non-`IShapeRenderer` address, applied at construction and on every `setRenderer`.

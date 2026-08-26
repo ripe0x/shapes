@@ -115,7 +115,8 @@ its own seed.
 ## The mint fee
 
 Shapes charges a mint fee of 1% of the backing, on top of it. `feeBps` (100 basis points = 1%)
-and `feeRecipient` are `immutable`, chosen at deployment. The fee scales with the amount wrapped:
+is immutable. The initial `feeRecipient` is chosen at deployment, and `admin()` may redirect only
+future fees. The fee scales with the amount wrapped:
 a 100 ETH Shape pays 1 ETH, a 0.01 ETH Shape pays 0.0001 ETH. One percent of every denomination
 is a whole number of wei, so the fee is exact at each — no rounding.
 
@@ -194,9 +195,16 @@ Zero means the resolver reports no canonical position. A nonzero address only an
 I look?”; the future protocol defines what lives there and how it can be used.
 
 No core Shapes operation calls the resolver. A broken or malicious resolver can make `positionOf`
-revert or return misleading data, but cannot affect ownership, backing, redemption, burn,
+return zero or misleading data, but cannot make the read revert and cannot affect ownership, backing, redemption, burn,
 recomposition, rendering or reserve solvency. Historical or not-yet-minted IDs may resolve; callers
 that require a live Shape must separately call `ownerOf(tokenId)`.
+
+The intended future protocol is an external exchange-option layer. A creator escrows claim assets
+against a live Shape, records its current `valueOf` and an expiry, but keeps the Shape itself as an
+ordinary transferable NFT. The current Shape holder may later transfer that Shape to the creator
+in exchange for the escrowed claim. A missing Shape, value mismatch or expiry prevents exercise and
+lets the creator recover the claim. A gacha can separately custody the Shape while offering it as a
+prize. Shapes itself never freezes tokens, escrows claims, wraps ownership or executes positions.
 
 ---
 
@@ -230,25 +238,37 @@ normal Shape: it can be transferred, redeemed, composed, decomposed, or split. W
 exist, `owner()` returns zero. Holding it grants no administrative rights. Permissionless artwork
 minting starts at #1, which is the launch-auction lot.
 
-A separate `admin()` role controls two independent, value-inert configuration domains. It can be
+The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move
+ETH, administer metadata, receive fees, control Shape #0, or authorize any operation. The artist may
+submit one EIP-712 signature directly to Shapes, or have anyone relay it, approving the exact chain,
+Shapes address, artist address and chosen `releaseHash`. `artistSignature()` and
+`artistReleaseHash()` then remain onchain permanently, along with proof that the signature was valid
+when `attestArtist` executed. Stateless digest and signature checking live in the reusable linked
+`EIP712Signature` library; all attribution state remains in Shapes.
+EOA signatures and ERC-1271 smart-wallet signatures are supported. There is no artist statement or
+artist-controlled mutable text.
+
+A separate `admin()` role controls presentation/discovery configuration and the destination of
+future mint fees. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
 of Shape #0:
 
 - Presentation: the renderer and collection metadata contracts may be replaced until
-  `lockRenderer` permanently freezes both pointers. The metadata copy — the token name prefix and
-  description, the collection name and description — is separate admin-set state, edited via
-  `setTokenCopy` and `setCollectionCopy`, and is not covered by `lockRenderer`; it stays editable
+  `lockRenderer` permanently freezes both pointers. The metadata copy, the token name prefix and
+  description shared by token and collection metadata, is edited via `setMetadataCopy` and is not covered by `lockRenderer`; it stays editable
   for as long as an admin remains. Copy is validated so it cannot break the metadata
   JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
 - The optional position resolver may be set, replaced or cleared until `lockPositionResolver`
   permanently freezes its current value. It may be locked while zero, permanently opting out.
+- `setFeeRecipient` redirects only subsequent mint fees. It cannot change `feeBps`, recover fees
+  already paid, withdraw ETH, or reach backing or redemption.
 
 The resolver pointer is permanent after locking, but its target code and trust model are not
 guaranteed immutable. Renouncing admin leaves any unlocked settings practically frozen because
 no caller can pass the admin check afterward.
 
-`feeBps` and `feeRecipient` are `immutable`. The reserve, the denominations and the redemption
-path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
+`feeBps` is immutable. Renouncing admin freezes the current fee recipient along with any unlocked
+settings. The reserve, denominations and redemption path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
 withdrawal, redemption pause, asset recovery, backing modification, token seizure,
 fee change, upgradeability, proxies, allowlists, supply caps, royalties.
 
@@ -308,6 +328,7 @@ src/
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
+    EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
     GeometrySampling.sol      the compose and split module-sampling procedures
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
@@ -395,8 +416,9 @@ cd preview && npm run dev
 
 `fork-dev.sh` boots Anvil on `:8545` (chain id `31337`), deploys Shapes and the renderer through
 the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLETS` /
-`SEED_ETH` to change), and writes `preview/public/deployment.json`, which both frontends read on
-load. Every run is a fresh chain; prior tokens are gone.
+`SEED_ETH` to change), and writes `preview/public/deployment.json`, which the Vite preview reads
+on load. The Next site reads `web/public/deployment.json`, which is updated only for a real public
+deployment. Every local run is a fresh chain; prior tokens are gone.
 
 To browse the collection in a lived-in state, seed the running chain with simulated activity —
 mints across every denomination, compositions up to two 100 ETH apexes (one fully built, one
@@ -490,7 +512,7 @@ ETH, read the resulting artwork back from the chain's own `tokenURI`, and redeem
 development harness, not the launch surface — Shapes ships contracts-only — but it exercises the
 real deposit and withdraw paths and renders the actual onchain SVG rather than the TypeScript
 one. `fork-dev.sh` boots a local Anvil, deploys through the real deploy script, and writes the
-deployed address to `preview/public/deployment.json`, which the page reads on load. The page
+deployed address to `preview/public/deployment.json`, which the Vite page reads on load. The page
 shows the reserve invariant live — contract balance against `redeemableBacking()` — alongside every
 Shape the connected account holds.
 
@@ -568,7 +590,8 @@ forge script script/DeployShapes.s.sol \
 ./script/e2e-anvil.sh                        # mint all nine, transfer, redeem, verify
 ```
 
-For a live deployment, both parameters are permanent, so set them explicitly:
+For a live deployment, set both parameters explicitly. The fee rate is permanent; admin may later
+redirect only future fees:
 
 ```bash
 SHAPES_FEE_BPS=100 \
@@ -578,7 +601,19 @@ forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
 
 The script refuses to proceed off a local chain without an explicit fee recipient, rejects a
 contract fee recipient unless you confirm it, smoke-tests the renderer, and asserts every
-immutable landed as intended before reporting success.
+deployment value landed as intended before reporting success. It also verifies that `artist()` is the
+deployer and that Shapes begins with an empty artist release hash and signature. The signature is
+submitted only after deployment because its EIP-712 domain includes Shapes' final address.
+
+The Sepolia wrapper forces the `testnet` Foundry profile, verifies every deployment, then repeats
+the artist, unsigned-attestation, admin and payout readbacks directly against Shapes.
+Its reported Shapes deployment transaction hash is the `releaseHash` used by the signing ceremony.
+
+For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
+digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
+Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the already-decided
+32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. Never issue
+multiple valid signatures for competing hashes because any relayer holding one can submit it first.
 
 It also proves the lens previews what the token executes. `ShapeLens.previewCompose` matches
 `Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the same

@@ -3,10 +3,10 @@ pragma solidity 0.8.28;
 
 /// @title CopyValidation
 /// @notice UTF-8 and JSON-safety validation for the admin-editable copy fields
-///         (`Shapes.setTokenCopy`, `Shapes.setCollectionCopy`).
+///         (`Shapes.setMetadataCopy`).
 /// @dev External library: forge deploys this separately and links its address into `Shapes` at
 ///      deploy time, the same mechanism as `GeometrySampling`. Not consensus-critical: this gates
-///      owner-submitted copy strings and has no bearing on token geometry or gene assignment.
+///      admin-submitted copy strings and has no bearing on token geometry or gene assignment.
 library CopyValidation {
     error InvalidCopy(uint8 field);
 

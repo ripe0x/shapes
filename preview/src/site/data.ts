@@ -1,5 +1,10 @@
 import type {PublicClient} from "viem";
-import {shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
+import {
+  shapesAbi,
+  DENOMINATIONS,
+  denomIndexOf,
+  type Deployment,
+} from "../chain/abi";
 import {geneIndexOfName} from "../previewGene";
 
 export interface TokenMeta {
@@ -31,6 +36,10 @@ export interface SiteData {
   reserve: bigint; // redeemableBacking()
   supply: bigint; // totalSupply()
   fees: bigint[]; // mintFeeFor() per denomination index
+  artist: `0x${string}` | null;
+  artistAttested: boolean;
+  /** Null when deployment metadata targets a pre-attribution Shapes contract. */
+  artistReleaseHash: `0x${string}` | null;
 }
 
 function parseUri(uri: string): {image: string; meta: TokenMeta} {
@@ -97,10 +106,13 @@ async function batchRead(
   const parts = await Promise.all(
     chunk(calls, chunkSize).map((part): Promise<ReadResult[]> => {
       if (viaMulticall) {
-        return publicClient.multicall({
-          contracts: part,
-          allowFailure: true,
-        }) as Promise<ReadResult[]>;
+        // Keep Viem's recursive ABI inference out of this deliberately dynamic batch. The
+        // runtime result is normalized to ReadResult immediately below either way.
+        const multicall = publicClient.multicall as unknown as (args: {
+          contracts: ReadCall[];
+          allowFailure: true;
+        }) => Promise<ReadResult[]>;
+        return multicall({contracts: part, allowFailure: true});
       }
       return Promise.all(
         part.map((call) =>
@@ -130,15 +142,26 @@ const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as
 export async function loadSite(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-  const [minted, reserve, supply, viaMulticall, ...fees] = await Promise.all([
+  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, ...fees] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "totalMinted"}),
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
+    publicClient
+      .readContract({...shapes, functionName: "artist"})
+      .then((value) => value as `0x${string}`)
+      .catch(() => dep.artist ?? null),
+    publicClient
+      .readContract({...shapes, functionName: "artistReleaseHash"})
+      .then((value) => value as `0x${string}`)
+      .catch(() => null),
     hasMulticall3(publicClient),
     ...DENOMINATIONS.map((d) =>
       publicClient.readContract({...shapes, functionName: "mintFeeFor", args: [d.wei]}),
     ),
   ]);
+
+  const artistAttested =
+    artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
 
   const ids = Array.from({length: Number(minted)}, (_, i) => BigInt(i));
   const owners = await batchRead(
@@ -187,5 +210,13 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
   }
 
   tokens.sort((a, b) => (a.id > b.id ? -1 : 1));
-  return {tokens, reserve, supply, fees};
+  return {
+    tokens,
+    reserve,
+    supply,
+    fees,
+    artist,
+    artistAttested,
+    artistReleaseHash,
+  };
 }

@@ -13,12 +13,11 @@ import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {LensEquivalence} from "./LensEquivalence.s.sol";
 
-/// @notice Deploys the renderer, the collection metadata contract, the token, the read-only lens,
-///         and the auction house.
+/// @notice Deploys the renderer, collection metadata, token, read-only lens, and auction house.
 ///
-/// @dev The mint fee and the fee recipient are deployment parameters, not source constants:
-///      both are `immutable` on the deployed contract and can never be changed afterwards, so
-///      they must be chosen deliberately here.
+/// @dev The mint fee and initial fee recipient are deployment parameters, not source constants.
+///      `feeBps` is immutable. The initial admin is the deployer and may redirect future fees,
+///      so the initial recipient still must be chosen deliberately here.
 ///
 ///        SHAPES_FEE_BPS        mint fee in basis points of backing. Defaults to 100 (1%).
 ///        SHAPES_FEE_RECIPIENT  where fees are forwarded. Must be set off local chains.
@@ -41,7 +40,8 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      Shape #0 to the deployer. Its holder is returned by `owner()` but receives no
 ///      administrative permissions.
 ///      Permissionless artwork minting therefore begins at #1. The deployer is also the initial
-///      `admin()` and may transfer or renounce that separate value-inert role.
+///      `admin()` and may transfer or renounce that separate role. Admin can redirect only future
+///      mint fees; it cannot change the rate, touch backing, or alter redemption.
 ///
 ///      Local:
 ///        forge script script/DeployShapes.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
@@ -89,11 +89,8 @@ contract DeployShapes is LensEquivalence {
 
         if (feeRecipient == address(0)) {
             // On a local chain, defaulting to the deployer keeps `forge script` a one-liner.
-            // Anywhere else, an unset recipient is almost certainly a mistake, and it would be
-            // permanent.
-            require(
-                block.chainid == ANVIL_CHAIN_ID, "set SHAPES_FEE_RECIPIENT: it is immutable once deployed"
-            );
+            // Anywhere else, an unset initial recipient is almost certainly a mistake.
+            require(block.chainid == ANVIL_CHAIN_ID, "set initial SHAPES_FEE_RECIPIENT");
             feeRecipient = msg.sender;
         }
 
@@ -103,7 +100,7 @@ contract DeployShapes is LensEquivalence {
         );
         require(
             feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
-            "fee recipient is a contract: a reverting receive would brick minting forever. "
+            "fee recipient is a contract: a reverting receive would block minting until admin updates it. "
             "Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is audited to always accept ETH"
         );
 
@@ -127,8 +124,8 @@ contract DeployShapes is LensEquivalence {
         vm.stopBroadcast();
 
         // Prove the constructor configuration and discovery defaults landed as intended.
-        // The fee terms are immutable; the admin may replace the renderer and position resolver
-        // until each independent lock is used.
+        // The fee rate is immutable. Admin may redirect future fees and may replace the renderer
+        // and position resolver until each independent lock is used.
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
@@ -142,6 +139,9 @@ contract DeployShapes is LensEquivalence {
         require(shapes.ownerOf(0) == msg.sender, "Shape #0 not minted to deployer");
         require(shapes.owner() == msg.sender, "contract owner mismatch");
         require(shapes.admin() == msg.sender, "admin mismatch");
+        require(shapes.artist() == msg.sender, "artist mismatch");
+        require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
+        require(shapes.artistSignature().length == 0, "artist signature should start empty");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
         require(shapes.totalMinted() == 1, "permissionless minting should begin at #1");
 
@@ -196,8 +196,10 @@ contract DeployShapes is LensEquivalence {
         console.log("fee recipient ", feeRecipient);
         console.log("contract owner ", shapes.owner());
         console.log("admin         ", shapes.admin());
+        console.log("artist        ", shapes.artist());
         console.log("");
-        console.log("Fee terms and reserve rules are immutable. Shape #0 represents collectible ownership.");
+        console.log("Fee rate and reserve rules are immutable. Admin may redirect future mint fees.");
+        console.log("Shape #0 represents collectible ownership.");
         console.log("Presentation and position resolver settings are independently lockable.");
 
         // Runs last: the probe advances simulated token state, so every check and log above it

@@ -9,8 +9,15 @@ import {GENE_NAMES} from "../canonical/ink";
 const SHAPES = "0x000000000000000000000000000000000000dEaD" as `0x${string}`;
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`;
 const OWNER = "0x1111111111111111111111111111111111111111" as `0x${string}`;
+const ARTIST = "0x2222222222222222222222222222222222222222" as `0x${string}`;
+const RELEASE_HASH = `0x${"44".repeat(32)}` as `0x${string}`;
 
-const dep = {shapes: SHAPES, rpc: "http://localhost", chainId: 31337} as unknown as Deployment;
+const dep = {
+  shapes: SHAPES,
+  artist: ARTIST,
+  rpc: "http://localhost",
+  chainId: 31337,
+} as unknown as Deployment;
 
 interface FakeToken {
   backing: bigint;
@@ -34,7 +41,12 @@ function tokenUriFor(id: bigint, t: FakeToken): string {
  * Fake PublicClient over a fixed token map. Counts multicall and readContract invocations so
  * tests can assert which path loadSite took and how it chunked.
  */
-function makeClient(opts: {minted: bigint; live: Map<bigint, FakeToken>; multicall3: boolean}) {
+function makeClient(opts: {
+  minted: bigint;
+  live: Map<bigint, FakeToken>;
+  multicall3: boolean;
+  attribution?: boolean;
+}) {
   const counts = {multicall: 0, readContract: 0};
 
   function resolve(functionName: string, args: readonly unknown[] | undefined): unknown {
@@ -47,6 +59,12 @@ function makeClient(opts: {minted: bigint; live: Map<bigint, FakeToken>; multica
         return 42n;
       case "totalSupply":
         return BigInt(opts.live.size);
+      case "artist":
+        if (opts.attribution === false) throw new Error("function selector was not recognized");
+        return ARTIST;
+      case "artistReleaseHash":
+        if (opts.attribution === false) throw new Error("function selector was not recognized");
+        return RELEASE_HASH;
       case "mintFeeFor":
         return (id as bigint) / 100n; // arg is the denomination wei
       case "ownerOf":
@@ -128,11 +146,14 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
   assert.equal(site.reserve, 42n);
   assert.equal(site.supply, 3n);
   assert.equal(site.fees.length, DENOMINATIONS.length);
+  assert.equal(site.artist, ARTIST);
+  assert.equal(site.artistAttested, true);
+  assert.equal(site.artistReleaseHash, RELEASE_HASH);
 
   // 1203 ownerOf calls in 500-call chunks = 3 multicalls, plus 1 for the per-token fields.
   assert.equal(counts.multicall, 4);
-  // Only the header reads (totalMinted, redeemableBacking, totalSupply, 9 fees) go one-by-one.
-  assert.equal(counts.readContract, 3 + DENOMINATIONS.length);
+  // Header and fee reads go one-by-one.
+  assert.equal(counts.readContract, 5 + DENOMINATIONS.length);
 });
 
 test("loadSite: falls back to single reads when the chain has no Multicall3", async () => {
@@ -146,6 +167,24 @@ test("loadSite: falls back to single reads when the chain has no Multicall3", as
     [1n],
   );
   assert.equal(counts.multicall, 0);
-  // Header reads + 3 ownerOf + 5 per-token fields.
-  assert.equal(counts.readContract, 3 + DENOMINATIONS.length + 3 + 5);
+  // Header reads, then 3 ownerOf + 5 per-token fields.
+  assert.equal(counts.readContract, 5 + DENOMINATIONS.length + 3 + 5);
+});
+
+test("loadSite: pre-attribution deployments still load", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const legacyDep = {...dep, artist: undefined};
+  const {client} = makeClient({
+    minted: 2n,
+    live,
+    multicall3: false,
+    attribution: false,
+  });
+
+  const site = await loadSite(client, legacyDep);
+
+  assert.deepEqual(site.tokens.map((t) => t.id), [1n]);
+  assert.equal(site.artist, null);
+  assert.equal(site.artistReleaseHash, null);
+  assert.equal(site.artistAttested, false);
 });

@@ -103,7 +103,7 @@ contract SamplingTest is ShapesBase {
             shapes.inkGeneOf(id),
             0,
             shapes.tokenNamePrefix(),
-            shapes.tokenDescription()
+            shapes.description()
         );
         assertEq(shapes.tokenURI(id), expected, "an unmaterialized token must render via grammar v1");
     }

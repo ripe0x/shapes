@@ -90,6 +90,7 @@ COLLECTION=$(echo "$OUT" | grep -oE 'ShapeCollection\s+0x[0-9a-fA-F]{40}' | tail
 LENS=$(echo "$OUT" | grep -oE 'ShapeLens\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 FEE_BPS=$(cast call "$SHAPES" "feeBps()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+ARTIST=$(cast call "$SHAPES" "artist()(address)" --rpc-url "$RPC")
 
 [ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
 
@@ -114,6 +115,7 @@ cat >"$DEPLOYMENT_FILE" <<JSON
   "rpc": "$RPC",
   "chainId": $CHAIN_ID,
   "shapes": "$SHAPES",
+  "artist": "$ARTIST",
   "lens": "$LENS",
   "renderer": "$RENDERER",
   "collection": "$COLLECTION",
@@ -125,6 +127,7 @@ JSON
 
 say "Ready"
 echo "  Shapes        $SHAPES"
+echo "  Artist        $ARTIST"
 echo "  ShapeLens     $LENS"
 echo "  ShapeRenderer $RENDERER"
 echo "  ShapeCollection $COLLECTION"

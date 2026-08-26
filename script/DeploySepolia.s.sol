@@ -14,8 +14,8 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 /// @notice Testnet deploy + seed: deploys the renderer and token, then mints a small spread so the
 ///         gallery has content, all in one broadcast (one keystore prompt).
 ///
-/// @dev Fee recipient defaults to the deployer (fine on a throwaway testnet; on mainnet it is an
-///      immutable decision — use DeployShapes.s.sol there with SHAPES_FEE_RECIPIENT set).
+/// @dev The initial Sepolia fee recipient is pinned below. The deployer starts as `admin()` and
+///      may redirect only future mint fees; the fee rate and reserve rules remain immutable.
 ///
 ///      Backed Shape #0 is minted atomically to the deployer as the powerless contract-ownership
 ///      token. When seeding is enabled, the launch auction therefore lists Shape #1.
@@ -33,6 +33,7 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      FOUNDRY_PROFILE=testnet selects the 100x-smaller ladder. The run reverts without it.
 contract DeploySepolia is LensEquivalence {
     uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
+    address internal constant SEPOLIA_FEE_RECIPIENT = 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4;
 
     error WrongLadder(string compiled, string expected);
 
@@ -69,8 +70,9 @@ contract DeploySepolia is LensEquivalence {
         renderer = new ShapeRenderer();
 
         collection = new ShapeCollection(address(renderer));
-        shapes =
-            new Shapes{value: Denominations.amountAt(0)}(feeBps, me, address(renderer), address(collection));
+        shapes = new Shapes{value: Denominations.amountAt(0)}(
+            feeBps, SEPOLIA_FEE_RECIPIENT, address(renderer), address(collection)
+        );
         lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
 
@@ -99,12 +101,15 @@ contract DeploySepolia is LensEquivalence {
         vm.stopBroadcast();
 
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
-        require(shapes.feeRecipient() == me, "fee recipient mismatch");
+        require(shapes.feeRecipient() == SEPOLIA_FEE_RECIPIENT, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         require(address(lens.shapes()) == address(shapes), "lens points at another token");
         require(shapes.ownerOf(0) == me, "Shape #0 not minted to deployer");
         require(shapes.owner() == me, "contract owner mismatch");
         require(shapes.admin() == me, "admin mismatch");
+        require(shapes.artist() == me, "artist mismatch");
+        require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
+        require(shapes.artistSignature().length == 0, "artist signature should start empty");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
 
         console.log("chain id      ", block.chainid);
@@ -112,7 +117,8 @@ contract DeploySepolia is LensEquivalence {
         console.log("Shapes        ", address(shapes));
         console.log("ShapeLens     ", address(lens));
         console.log("fee (bps)     ", feeBps);
-        console.log("fee recipient ", me);
+        console.log("fee recipient ", shapes.feeRecipient());
+        console.log("artist        ", shapes.artist());
         console.log("total minted  ", shapes.totalMinted());
 
         // Runs last: the probe advances simulated token state, so the counts logged above

@@ -86,8 +86,8 @@ contract EthRejectingReceiver is IERC721Receiver {
     }
 }
 
-/// @notice A fee recipient that reverts on receipt. Minting is expected to become impossible;
-///         redemption must remain unaffected.
+/// @notice A fee recipient that reverts on receipt. Minting is blocked while it remains selected;
+///         admin may redirect future fees, and redemption remains unaffected.
 contract RevertingFeeRecipient {
     receive() external payable {
         revert("no fees");

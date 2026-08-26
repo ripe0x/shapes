@@ -2,8 +2,20 @@ import {C} from "./theme";
 import {Section} from "./ui";
 import {DenomLadder} from "./MintView";
 import {ABOUT_FACTS} from "./copy";
+import type {Deployment} from "../chain/abi";
+import type {SiteData} from "./data";
+import {addrUrl, short} from "./ui";
 
-export function AboutView() {
+export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null}) {
+  const artist = data?.artist ?? dep.artist ?? null;
+  const deployedOn = (chainId: number) =>
+    dep.chainId === chainId ? (
+      <a href={addrUrl(dep.shapes, chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
+        {short(dep.shapes)}
+      </a>
+    ) : (
+      "not deployed"
+    );
   return (
     <main>
       <div style={{padding: "64px 48px 56px", borderBottom: `1px solid ${C.rule}`}}>
@@ -31,9 +43,33 @@ export function AboutView() {
       <Section title="CONTRACT" pad="24px 48px 72px 32px" last>
         <div style={{display: "grid", gridTemplateColumns: "110px minmax(0, 1fr)", gap: "10px 24px", fontSize: 13}}>
           <div style={{color: C.muted}}>mainnet</div>
-          <div>not deployed</div>
+          <div>{deployedOn(1)}</div>
           <div style={{color: C.muted}}>sepolia</div>
-          <div>not deployed</div>
+          <div>{deployedOn(11155111)}</div>
+          <div style={{color: C.muted}}>artist</div>
+          <div>
+            {artist === null ? (
+              "not available on this deployment"
+            ) : (
+              <a href={addrUrl(artist, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
+                {short(artist)}
+              </a>
+            )}
+          </div>
+          <div style={{color: C.muted}}>signature</div>
+          <div>
+            {data == null ? (
+              "loading"
+            ) : data.artistReleaseHash === null ? (
+              "not available on this deployment"
+            ) : (
+              <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
+                {data.artistAttested
+                  ? `signed · ${short(data.artistReleaseHash)}`
+                  : "not signed yet"}
+              </a>
+            )}
+          </div>
           <div style={{color: C.muted}}>source</div>
           <div>
             <a href="https://github.com/ripe0x/shapes" target="_blank" rel="noreferrer" style={{fontSize: 13}}>

@@ -29,9 +29,12 @@ Deliverables:
 - COMPLETE: D-24 adopted Shape #0 + separate admin with explicit `owner()`; D-23's competing non-tokenized title product is superseded.
 - COMPLETE: PR #2 rebased after PR #1, closed every finding in `project/reviews/PR-2.md`, passed full local/remote checks, and merged as `7fca2b2`.
 - COMPLETE: corrective PR #3 restored PR #2's intended `owner()` API, removed the unauthorized `titleHolder()` substitution, passed review and CI, and merged as `bf5ae6b`.
-- PENDING: deploy a fresh Sepolia implementation and replace deployment metadata with new addresses/fromBlock. Never relabel the existing immutable deployment.
+- COMPLETE IN DRAFT: D-28 supersedes D-26's child implementation before launch. Artist attribution and its one-time cryptographic release signature now live directly in Shapes; only stateless digest/signature-checking code is externally linked. The shared token/collection description simplification creates enough EIP-170 headroom without changing collection artwork.
+- COMPLETE IN DRAFT: D-27 admin-directed future mint-fee recipient, with immutable `feeBps`, no reserve authority, and exact Sepolia payout/admin post-flight checks.
+- RESOLVED ARCHITECTURALLY, PARKED POST-LAUNCH: D-29 defines positions as a fully escrowed external exchange-option protocol. Shapes retains discovery only and gains no freeze, wrapper, custody or execution logic.
+- MERGE PENDING, DEPLOY PREFLIGHT COMPLETE: the site tolerates missing attribution selectors on the current Sepolia deployment, so merge PR #4 first. Then deploy the exact `main` commit fresh to Sepolia, submit the artist signature directly to Shapes only after verifying the final addresses and exact Shapes creation transaction hash, and land new addresses/fromBlock in a small follow-up cutover. Never relabel either older immutable deployment.
 
-Acceptance: PR #2 merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture.
+Acceptance: PR #2 and the D-28 attribution change merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture, and its artist attestation verifies directly on Shapes against the recorded release hash.
 
 Evidence gate: combined GitHub/Netlify checks, D-24 entry, PR #2 review closure table, and fresh deployment rehearsal/readback.
 
@@ -64,12 +67,12 @@ Deliverables:
 - Release build explicitly pinned to the default mainnet ladder; mainnet fixtures, full parity chain, and deploy-profile assertions revalidated (D-01).
 - External security audit completed; findings closed or accepted with rationale (D-16, D-17 folded in).
 - Legal review completed (D-15).
-- Key ceremony plan: admin structure, feeRecipient, Shape #0 custody, and lock/renounce timing (D-05).
+- Key ceremony plan: admin structure, initial/final fee recipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
 - Deploy rehearsal: full deploy + seed + lens-probe dry run on a mainnet fork, then Sepolia at mainnet scale if warranted.
 
 Acceptance: signed merge checklist for the release commit; audit report on file; rehearsal transcript recorded.
 
-Evidence gate: every Immediate/security/legal decision id closed. User explicitly signs off on immutable values.
+Evidence gate: every Immediate/security/legal decision id closed. User explicitly signs off on immutable values and initial mutable configuration.
 
 Stop conditions: audit finds high-severity issue (fix, re-audit delta); legal review raises a blocking characterization.
 
@@ -79,7 +82,7 @@ Objective: deploy once, correctly.
 
 Deliverables: mainnet deploy (each broadcast individually user-confirmed per standing mainnet protocol), contract verification, deployment.json + indexer mainnet config, site cutover, post-deploy invariant spot-checks, lens behavioral probe against live addresses.
 
-Acceptance: post-flight reads match intended config (ladder, feeBps, feeRecipient, admin, and owner); site serves mainnet; indexer synced.
+Acceptance: post-flight reads match intended config (ladder, feeBps, feeRecipient, admin, owner, artist and verified artist attestation); site serves mainnet; indexer synced.
 
 Evidence gate: launch report in STATE.md with all addresses and verification links.
 

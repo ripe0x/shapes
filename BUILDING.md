@@ -28,7 +28,7 @@ and verify it at runtime:
 shapes.supportsInterface(type(IShapeValue).interfaceId);         // read state + redeem
 shapes.supportsInterface(type(IShapeRecomposition).interfaceId); // compose / decompose / split
 shapes.supportsInterface(type(IShapeProvenance).interfaceId);    // seeds, origins, formation
-shapes.supportsInterface(type(IAdminControl).interfaceId);       // value-inert administration
+shapes.supportsInterface(type(IAdminControl).interfaceId);       // bounded administration
 renderer.supportsInterface(type(IShapeGeometry).interfaceId);    // module-level geometry
 ```
 
@@ -40,6 +40,16 @@ argument. Get its address from the deployment rather than probing `Shapes` for i
 The interfaces are declared under [src/interfaces](src/interfaces), including the segmented
 Shape capabilities, admin control, and renderer geometry surfaces. `owner()` reports the holder of
 Shape #0 and is part of `IShapes`; it carries no administrative authority.
+
+`artist()` is permanent creator attribution and likewise carries no authority. Its paired
+attestation is stored directly in Shapes through `artistSignature()` and `artistReleaseHash()`.
+The signed struct is `ArtistAttribution(address shapes,address artist,bytes32 releaseHash)`; the
+EIP-712 domain also binds the chain id and exact Shapes contract. The stateless linked
+`EIP712Signature` library computes the digest and checks EOA/ERC-1271 signatures but stores no
+attribution. Integrators can verify the stored signature
+against an EOA at any time. For ERC-1271 artists, the permanent fact is that the wallet validated
+it when `attestArtist` executed; later wallet upgrades or signer changes can make a fresh check fail.
+Integrators must never use artist status or attestation as authorization over Shapes.
 
 ## Reading a Shape
 
@@ -128,11 +138,11 @@ These are `view` and require no ownership.
   value. Do not price a Shape by its traits; price it by `redeemableValueWei`.
 - **Redemption is owner-only, and pays out with a real call.** A recipient that reverts on ETH
   receipt reverts the redemption; it cannot corrupt anyone else's balance. Reentrancy is guarded.
-- **Everything economic is immutable.** No admin can move the reserve, change denominations, or
-  alter redemption. The separate admin's powers are all value-inert: replacing the renderer and
-  collection metadata (locked together), editing copy, and configuring the independently lockable
-  position resolver. Shape #0's holder has no permissions. Build against behaviour that cannot
-  change under you.
+- **Backing economics are immutable.** No admin can move the reserve, change denominations, alter
+  redemption, or change `feeBps`. The separate admin may redirect future mint fees, replace the
+  renderer and collection metadata (locked together), edit copy, and configure the independently
+  lockable position resolver. Shape #0's holder has no permissions. Renouncing admin freezes the
+  final fee recipient and any unlocked presentation settings.
 - **Black Shapes are non-redeemable by design.** `redeemableValueWei` is 0 and `isBlack` is true;
   never accept one as payment.
 - **Give value-moving calls gas headroom over the bare estimate.** Every state-changing function

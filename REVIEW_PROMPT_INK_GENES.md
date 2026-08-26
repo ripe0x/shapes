@@ -133,16 +133,17 @@ go:
 3. Refresh `AUDIT_PROMPT_v2.md` to cover ink genes (new attack surface: gene walk,
    simulate views, InkGene event) and run a full audit pass against it — at minimum a
    thorough self-audit; recommend an external reviewer before mainnet given immutability.
-4. Constructor arguments decided and double-checked: `feeBps` (committed 1%?),
-   `feeRecipient` — MUST be an EOA or audited non-reverting receiver; it is immutable and
-   a reverting recipient bricks minting forever (SECURITY.md). Renderer address deployed
-   first and verified.
+4. Constructor arguments decided and double-checked: `feeBps` (committed 1%?), initial
+   `feeRecipient` (prefer an EOA or audited non-reverting receiver), and admin. A reverting
+   recipient blocks minting until admin redirects future fees; renouncing admin freezes the final
+   recipient (SECURITY.md). Renderer address deployed first and verified.
 5. `script/DeployShapes.s.sol` + `script/e2e-anvil.sh` run clean end-to-end on anvil,
    including a tokenURI smoke check showing the Ink trait.
 6. Testnet (sepolia) deploy + manual walkthrough: mint dust, mint 1 ETH, compose with
    simulate-preview parity, decompose/split, redeem. Verify contracts on Etherscan.
-7. Post-deploy policy decisions documented for the maintainer: when/whether to `lockRenderer`, and
-   when/whether to `renounceAdmin` (the only relevant admin power is the renderer swap).
+7. Post-deploy policy decisions documented for the maintainer: final fee recipient,
+   when/whether to `lockRenderer`, and when/whether to `renounceAdmin`. Admin also controls
+   metadata copy and the independently lockable position resolver.
 8. Items 1–2 of Task 3 resolved (tuned constants, epoch decision) — these are the two
    blockers that must be settled BEFORE any deploy, since both are immutable.
 

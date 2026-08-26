@@ -116,6 +116,9 @@ contract ForkTest is Test {
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
         assertEq(s.renderer(), address(r), "renderer mismatch");
         assertEq(s.collection(), address(c), "collection mismatch");
+        assertEq(s.artist(), s.admin(), "artist should be the deployer");
+        assertEq(s.artistReleaseHash(), bytes32(0), "attribution should start unsigned");
+        assertEq(s.artistSignature(), bytes(""), "signature should start empty");
         assertEq(address(l.shapes()), address(s), "lens mismatch");
         assertEq(h.shapes(), address(s), "auction house mismatch");
         assertEq(s.positionResolver(), address(0), "resolver should start empty");
