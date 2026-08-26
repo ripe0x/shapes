@@ -595,6 +595,10 @@ deployer and that the fresh, unsigned attribution child points back to the exact
 The signature is submitted only after deployment because its EIP-712 domain includes the child
 contract's final address.
 
+The Sepolia wrapper forces the `testnet` Foundry profile, verifies every top-level deployment, then
+explicitly verifies the internally created attribution child and repeats its binding readbacks.
+Its reported Shapes deployment transaction hash is the `releaseHash` used by the signing ceremony.
+
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
 digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
 Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the already-decided
