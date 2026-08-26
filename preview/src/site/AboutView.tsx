@@ -8,7 +8,6 @@ import {addrUrl, short} from "./ui";
 
 export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null}) {
   const artist = data?.artist ?? dep.artist;
-  const attribution = data?.artistAttribution ?? dep.artistAttribution;
   const deployedOn = (chainId: number) =>
     dep.chainId === chainId ? (
       <a href={addrUrl(dep.shapes, chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
@@ -55,7 +54,7 @@ export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null})
           </div>
           <div style={{color: C.muted}}>signature</div>
           <div>
-            <a href={addrUrl(attribution, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
+            <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
               {data == null
                 ? "loading"
                 : data.artistAttested

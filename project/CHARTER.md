@@ -18,14 +18,14 @@ These are constitutional. Changing any of them is a charter amendment, recorded 
 1. Reserve invariant: `address(this).balance >= redeemableBacking()` at all times. ETH enters only via mint; direct transfers revert.
 2. Redemption is exact and unconditional: same wei out as in, no fee, no pool share, no appraisal.
 3. The nine denominations are the only representable backing values, stored as an index so off-ladder backing is unrepresentable.
-4. No upgradeability, no proxy, no pause, no treasury withdrawal, no emergency escape hatch. `feeBps` (100 = 1%), `artist`, and the artist-attribution child are immutable. Admin may redirect only future mint fees; it cannot change the rate or recover funds.
+4. No upgradeability, no proxy, no pause, no treasury withdrawal, no emergency escape hatch. `feeBps` (100 = 1%) and `artist` are immutable; the one direct artist attestation cannot be replaced. Admin may redirect only future mint fees; it cannot change the rate or recover funds.
 5. Admin powers are bounded to renderer, collection metadata, copy text, position resolver, and the destination of future mint fees. None can touch backing, redemption, token ownership, Shape #0, accrued fees, or ETH already held by Shapes. Presentation pointers and the resolver are independently one-way lockable; admin itself is transferable and renounceable, which also freezes the final fee recipient. Shape #0's holder has no administrative capability.
 6. Entropy enters only at mint, from block data, excluding minter identity. Every downstream transformation (compose walk, split child seeds, decompose restore, ink walks) is deterministic from on-chain state. Seed/gene grinding is an accepted residual, not a bug: redemption value never depends on the seed.
 7. Origin count is conserved: created only by fresh mints, never fabricated by compose/split/decompose.
 8. The TypeScript renderer (`preview/src/canonical/render.ts`) is the specification; `src/ShapeRenderer.sol` is a byte-parity port. All geometry is WAD integer arithmetic. Parity is CI-enforced (fixtures + ParityTest).
-9. `Shapes.sol` stays under EIP-170. Any core addition requires a `forge build --sizes` check; the artist-attribution plus admin-directed fee recipient design leaves a measured 207-byte runtime margin.
+9. `Shapes.sol` stays under EIP-170. Any core addition requires a `forge build --sizes` check; direct artist attribution plus admin-directed fee recipient leaves a measured 473-byte runtime margin.
 10. The auction house takes no protocol fee (a percentage of a card-lattice amount need not land on the lattice; structurally excluded, per ZERO_AUCTION_DRAFT.md).
-11. Artist attribution is permanent and powerless. The deployer remains `artist()` after collectible ownership or admin moves; one release signature may be stored in the immutable child, but artist status grants no authority or economics.
+11. Artist attribution is permanent and powerless. The deployer remains `artist()` after collectible ownership or admin moves; one release signature may be stored directly in Shapes, but artist status grants no authority or economics.
 
 ## Non-goals
 

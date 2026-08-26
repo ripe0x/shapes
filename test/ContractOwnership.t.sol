@@ -6,7 +6,6 @@ import {Test} from "forge-std/Test.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
-import {ShapesArtistAttribution} from "../src/ShapesArtistAttribution.sol";
 import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
@@ -53,10 +52,8 @@ contract ContractOwnershipTest is Test {
         assertEq(shapes.originCountOf(0), 1);
         assertEq(shapes.artist(), address(this));
 
-        ShapesArtistAttribution attribution = ShapesArtistAttribution(shapes.artistAttribution());
-        assertEq(attribution.shapes(), address(shapes));
-        assertEq(attribution.artist(), address(this));
-        assertFalse(attribution.attested());
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
+        assertEq(shapes.artistSignature(), bytes(""));
     }
 
     function test_ConstructorRequiresExactGenesisBacking() public {
@@ -92,19 +89,18 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_OwnerTracksShapeZeroTransferWithoutMovingAdmin() public {
-        address attribution = shapes.artistAttribution();
         shapes.transferFrom(address(this), alice, 0);
         assertEq(shapes.owner(), alice);
         assertEq(shapes.admin(), address(this));
         assertEq(shapes.artist(), address(this));
-        assertEq(shapes.artistAttribution(), attribution);
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
 
         vm.prank(alice);
         shapes.transferFrom(alice, bob, 0);
         assertEq(shapes.owner(), bob);
         assertEq(shapes.admin(), address(this));
         assertEq(shapes.artist(), address(this));
-        assertEq(shapes.artistAttribution(), attribution);
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
     }
 
     function test_OwnerHasNoAdminPermissions() public {
@@ -112,7 +108,7 @@ contract ContractOwnershipTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.setTokenCopy("x", "y");
+        shapes.setMetadataCopy("x", "y");
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.lockRenderer();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
@@ -123,12 +119,11 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_AdminTransfersIndependentlyOfOwnership() public {
-        address attribution = shapes.artistAttribution();
         shapes.transferAdmin(alice);
         assertEq(shapes.admin(), alice);
         assertEq(shapes.owner(), address(this));
         assertEq(shapes.artist(), address(this));
-        assertEq(shapes.artistAttribution(), attribution);
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
 
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
@@ -136,19 +131,18 @@ contract ContractOwnershipTest is Test {
         shapes.setFeeRecipient(bob);
 
         vm.prank(alice);
-        shapes.setTokenCopy("x", "y");
+        shapes.setMetadataCopy("x", "y");
         vm.prank(alice);
         shapes.setFeeRecipient(bob);
         assertEq(shapes.feeRecipient(), bob);
     }
 
     function test_AdminCanRenounceWithoutChangingOwnership() public {
-        address attribution = shapes.artistAttribution();
         shapes.renounceAdmin();
         assertEq(shapes.admin(), address(0));
         assertEq(shapes.owner(), address(this));
         assertEq(shapes.artist(), address(this));
-        assertEq(shapes.artistAttribution(), attribution);
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
 
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
@@ -199,7 +193,6 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_RedeemingShapeZeroClearsOwnershipAndReturnsBacking() public {
-        address attribution = shapes.artistAttribution();
         uint256 balanceBefore = address(this).balance;
         shapes.redeem(0);
 
@@ -209,7 +202,7 @@ contract ContractOwnershipTest is Test {
         assertEq(shapes.totalSupply(), 0);
         assertEq(shapes.admin(), address(this));
         assertEq(shapes.artist(), address(this));
-        assertEq(shapes.artistAttribution(), attribution);
+        assertEq(shapes.artistReleaseHash(), bytes32(0));
     }
 
     function test_ShapeZeroCanBeAbsorbedAndRevivedLikeAnyOtherShape() public {
@@ -234,7 +227,7 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_AdvertisesShapesAndAdminInterfaces() public view {
-        assertEq(type(IShapes).interfaceId, bytes4(0xca355cbe), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x926c1806), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0xe135adbe), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

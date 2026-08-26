@@ -40,6 +40,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Emitted once per mint call, when the aggregate fee is forwarded.
     event MintFeePaid(address indexed recipient, uint256 amountWei, uint256 quantity);
 
+    /// @notice Emitted once when the artist cryptographically approves this deployment and release.
+    event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature);
+
     /// @notice Emitted when the admin replaces the onchain renderer.
     event RendererUpdated(address indexed renderer);
 
@@ -48,12 +51,6 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
     event RendererLocked();
-
-    /// @notice Emitted when the admin updates the per-token metadata copy (name prefix, description).
-    event TokenCopyUpdated(string namePrefix, string description);
-
-    /// @notice Emitted when the admin updates the collection metadata copy (name, description).
-    event CollectionCopyUpdated(string name, string description);
 
     /// @notice Standard contract-level metadata refresh signal, emitted when the collection copy changes.
     event ContractURIUpdated();
@@ -123,6 +120,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
     error ZeroQuantity();
+    error ArtistAlreadyAttested();
+    error InvalidArtistReleaseHash();
+    error InvalidArtistSignature();
     error NotShapeOwner(uint256 tokenId, address caller);
     error EthTransferFailed(address to, uint256 amountWei);
     /// @notice A recipient-directed redemption named the zero address, which would burn the payout.
@@ -185,9 +185,19 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Attribution only. It grants no ownership, administration, fee rights or other authority.
     function artist() external view returns (address);
 
-    /// @notice Permanent child contract that verifies and stores the artist's cryptographic signature.
-    /// @dev Attribution only. It grants no authority over Shapes.
-    function artistAttribution() external view returns (address);
+    /// @notice Release or artifact hash permanently approved by the artist.
+    /// @dev Zero means the one permitted attestation has not yet been stored.
+    function artistReleaseHash() external view returns (bytes32);
+
+    /// @notice Raw EIP-712 signature permanently stored by the artist; empty before attestation.
+    function artistSignature() external view returns (bytes memory);
+
+    /// @notice EIP-712 digest the artist signs for `releaseHash`.
+    function artistAttestationDigest(bytes32 releaseHash) external view returns (bytes32);
+
+    /// @notice Permanently store the artist's approval of this deployment and release.
+    /// @dev Anyone may relay the signature. Supports EOAs, EIP-7702 delegated EOAs and ERC-1271 wallets.
+    function attestArtist(bytes32 releaseHash, bytes calldata signature) external;
 
     /// @notice The current holder of Shape #0, or zero while #0 does not exist.
     /// @dev This collectible ownership carries no administrative authority.
@@ -206,14 +216,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
     function tokenNamePrefix() external view returns (string memory);
 
-    /// @notice The per-token metadata description, emitted verbatim in every token's metadata.
-    function tokenDescription() external view returns (string memory);
-
-    /// @notice The collection `name` used by `contractURI`.
-    function collectionName() external view returns (string memory);
-
-    /// @notice The collection `description` used by `contractURI`.
-    function collectionDescription() external view returns (string memory);
+    /// @notice The shared description emitted by both token metadata and `contractURI`.
+    function description() external view returns (string memory);
 
     /// @notice Optional canonical resolver for external Shape positions. Zero means none configured.
     function positionResolver() external view returns (address);
@@ -235,23 +239,15 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Permanently lock presentation. Admin only, one way. After this neither the
     ///         renderer nor the collection can change again. Does not freeze the metadata copy,
-    ///         which the admin keeps editing via `setTokenCopy` / `setCollectionCopy`.
+    ///         which the admin keeps editing via `setMetadataCopy`.
     function lockRenderer() external;
 
-    /// @notice Set the per-token metadata copy: the `name` prefix and the `description`. Admin
-    ///         only. Emits ERC-4906 `BatchMetadataUpdate` so marketplaces refresh every token.
-    /// @dev Written verbatim into each token's metadata JSON, so both arguments are validated:
-    ///      each must be well-formed UTF-8 within its length cap (64-byte prefix, 2048-byte
-    ///      description) and free of the bytes JSON forbids unescaped (`"`, `\`, C0 controls);
-    ///      anything else reverts `InvalidCopy`. This keeps copy from breaking the document and
-    ///      from producing bytes a conformant consumer would reject. Not affected by
-    ///      `lockRenderer`; copy is never frozen.
-    function setTokenCopy(string calldata namePrefix, string calldata description) external;
-
-    /// @notice Set the collection metadata copy: the `name` and the `description` used by
-    ///         `contractURI`. Admin only. Emits `ContractURIUpdated`.
-    /// @dev Same validation and length caps as `setTokenCopy`; reverts `InvalidCopy` otherwise.
-    function setCollectionCopy(string calldata name, string calldata description) external;
+    /// @notice Atomically set the token name prefix and the description shared with `contractURI`.
+    ///         Admin only. Emits both ERC-4906 `BatchMetadataUpdate` and `ContractURIUpdated`.
+    /// @dev Written verbatim into metadata JSON, so all arguments must be well-formed UTF-8,
+    ///      length-capped (64-byte names, 2048-byte description), and free of bytes JSON forbids
+    ///      unescaped (`"`, `\`, C0 controls). Not affected by `lockRenderer`; copy is never frozen.
+    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external;
 
     /* ---------------------- position resolver admin -------------------- */
 

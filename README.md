@@ -195,9 +195,16 @@ Zero means the resolver reports no canonical position. A nonzero address only an
 I look?”; the future protocol defines what lives there and how it can be used.
 
 No core Shapes operation calls the resolver. A broken or malicious resolver can make `positionOf`
-revert or return misleading data, but cannot affect ownership, backing, redemption, burn,
+return zero or misleading data, but cannot make the read revert and cannot affect ownership, backing, redemption, burn,
 recomposition, rendering or reserve solvency. Historical or not-yet-minted IDs may resolve; callers
 that require a live Shape must separately call `ownerOf(tokenId)`.
+
+The intended future protocol is an external exchange-option layer. A creator escrows claim assets
+against a live Shape, records its current `valueOf` and an expiry, but keeps the Shape itself as an
+ordinary transferable NFT. The current Shape holder may later transfer that Shape to the creator
+in exchange for the escrowed claim. A missing Shape, value mismatch or expiry prevents exercise and
+lets the creator recover the claim. A gacha can separately custody the Shape while offering it as a
+prize. Shapes itself never freezes tokens, escrows claims, wraps ownership or executes positions.
 
 ---
 
@@ -232,12 +239,12 @@ exist, `owner()` returns zero. Holding it grants no administrative rights. Permi
 minting starts at #1, which is the launch-auction lot.
 
 The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move
-ETH, administer metadata, receive fees, control Shape #0, or authorize any operation. Shapes creates
-a dedicated `ShapesArtistAttribution` child in its constructor and exposes it through
-`artistAttribution()`. The artist may submit one EIP-712 signature there, directly or through a
-relayer, approving the exact chain, Shapes address, attribution-contract address, artist address,
-and a chosen `releaseHash`. The raw signature and release hash then remain onchain permanently,
-along with proof that the signature was valid when the attestation transaction executed.
+ETH, administer metadata, receive fees, control Shape #0, or authorize any operation. The artist may
+submit one EIP-712 signature directly to Shapes, or have anyone relay it, approving the exact chain,
+Shapes address, artist address and chosen `releaseHash`. `artistSignature()` and
+`artistReleaseHash()` then remain onchain permanently, along with proof that the signature was valid
+when `attestArtist` executed. Stateless digest and signature checking live in the reusable linked
+`EIP712Signature` library; all attribution state remains in Shapes.
 EOA signatures and ERC-1271 smart-wallet signatures are supported. There is no artist statement or
 artist-controlled mutable text.
 
@@ -247,9 +254,8 @@ transferred through `transferAdmin` or permanently removed through `renounceAdmi
 of Shape #0:
 
 - Presentation: the renderer and collection metadata contracts may be replaced until
-  `lockRenderer` permanently freezes both pointers. The metadata copy — the token name prefix and
-  description, the collection name and description — is separate admin-set state, edited via
-  `setTokenCopy` and `setCollectionCopy`, and is not covered by `lockRenderer`; it stays editable
+  `lockRenderer` permanently freezes both pointers. The metadata copy, the token name prefix and
+  description shared by token and collection metadata, is edited via `setMetadataCopy` and is not covered by `lockRenderer`; it stays editable
   for as long as an admin remains. Copy is validated so it cannot break the metadata
   JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
 - The optional position resolver may be set, replaced or cleared until `lockPositionResolver`
@@ -299,7 +305,6 @@ and so the artwork, permanent.
 ```
 src/
   Shapes.sol             ERC721 + the reserve
-  ShapesArtistAttribution.sol  immutable artist binding + one-time EIP-712 release signature
   ShapeRenderer.sol      fully onchain SVG and metadata
   ShapeLens.sol          read-only periphery, split out to stay under the EIP-170 limit
   ShapeCollection.sol    collection-level presentation, seeded previews of unminted cards
@@ -323,6 +328,7 @@ src/
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
+    EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
     GeometrySampling.sol      the compose and split module-sampling procedures
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
@@ -596,12 +602,11 @@ forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
 The script refuses to proceed off a local chain without an explicit fee recipient, rejects a
 contract fee recipient unless you confirm it, smoke-tests the renderer, and asserts every
 deployment value landed as intended before reporting success. It also verifies that `artist()` is the
-deployer and that the fresh, unsigned attribution child points back to the exact Shapes address.
-The signature is submitted only after deployment because its EIP-712 domain includes the child
-contract's final address.
+deployer and that Shapes begins with an empty artist release hash and signature. The signature is
+submitted only after deployment because its EIP-712 domain includes Shapes' final address.
 
-The Sepolia wrapper forces the `testnet` Foundry profile, verifies every top-level deployment, then
-explicitly verifies the internally created attribution child and repeats its binding readbacks.
+The Sepolia wrapper forces the `testnet` Foundry profile, verifies every deployment, then repeats
+the artist, unsigned-attestation, admin and payout readbacks directly against Shapes.
 Its reported Shapes deployment transaction hash is the `releaseHash` used by the signing ceremony.
 
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712

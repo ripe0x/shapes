@@ -6,11 +6,11 @@ by `ShapeRenderer.sol`. The TypeScript canonical (`preview/src/canonical/render.
 default copy; `test/Parity.t.sol` asserts the two agree exactly at that default copy. No off-chain
 metadata service exists, so nothing here can rot or be withheld.
 
-The `name` (a prefix followed by the token id) and `description` are owner-set copy, stored on
-`Shapes` and passed into the renderer. The owner edits them via `setTokenCopy`; the collection
-`name`/`description` via `setCollectionCopy`. Both default to the copy the TypeScript canonical
-uses and are validated on set so they cannot break the JSON (`"`, `\`, C0 control bytes and
-over-length values revert). Everything else in the document is fixed on chain.
+The token `name` prefix and shared `description` are admin-set copy, stored on Shapes and passed
+into the renderer. `setMetadataCopy` edits both atomically. `contractURI` uses the immutable
+ERC-721 name `Shapes` and that same description, so collection and token descriptions cannot
+diverge. Copy defaults to the TypeScript canonical and is validated on set so it cannot break the
+JSON (`"`, `\`, C0 control bytes and over-length values revert). Everything else is fixed on chain.
 
 The document has `name`, `description`, `image` (an inline SVG `data:image/svg+xml` URI), and a
 fixed `attributes` array. Every attribute `value` is a **string**. There are no numeric traits:

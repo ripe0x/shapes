@@ -8,7 +8,6 @@ import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
-import {ShapesArtistAttribution} from "../src/ShapesArtistAttribution.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {LensEquivalence} from "./LensEquivalence.s.sol";
 
@@ -109,16 +108,13 @@ contract DeploySepolia is LensEquivalence {
         require(shapes.owner() == me, "contract owner mismatch");
         require(shapes.admin() == me, "admin mismatch");
         require(shapes.artist() == me, "artist mismatch");
-        ShapesArtistAttribution attribution = ShapesArtistAttribution(shapes.artistAttribution());
-        require(attribution.shapes() == address(shapes), "artist attribution points elsewhere");
-        require(attribution.artist() == me, "attribution artist mismatch");
-        require(!attribution.attested(), "artist attribution should start unsigned");
+        require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
+        require(shapes.artistSignature().length == 0, "artist signature should start empty");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
 
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));
         console.log("Shapes        ", address(shapes));
-        console.log("ArtistAttribution", address(attribution));
         console.log("ShapeLens     ", address(lens));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", shapes.feeRecipient());

@@ -9,11 +9,11 @@
 
 ### Deployment (Deployer)
 
-`new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful; internally creates `ShapesArtistAttribution(artist=deployer)` bound to the exact Shapes address → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
+`new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful; internally creates the reusable `ArtistAttribution(artist=deployer)` primitive with `subject=Shapes` → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
 
 ### Artist attestation (Artist signature / any relayer)
 
-`ShapesArtistAttribution.attest(releaseHash, signature)` ◄── one valid EIP-712 EOA/ERC-1271 signature from immutable `artist`; digest binds chain, child, Shapes, artist and release hash; succeeds once.
+`ArtistAttribution.attest(releaseHash, signature)` ◄── one valid EIP-712 EOA/ERC-1271 signature from immutable `artist`; digest binds chain, primitive, immutable `subject`, artist and release hash; succeeds once. Any EOA may deploy it directly; any contract may create it for itself.
 
 `Shapes.setFeeRecipient(newRecipient)` ◄── current `admin()` only; redirects future mint fees, cannot change the rate or move backing/accrued funds; renunciation freezes the final recipient.
 
@@ -37,7 +37,7 @@
 ### Presentation & Governance (Admin)
 
 `Shapes.setRenderer()` / `setCollection()` (◄── `!rendererLocked`) → `Shapes.lockRenderer()` (one-way)
-`Shapes.setTokenCopy()` / `setCollectionCopy()` — independent of the renderer lock, always editable
+`Shapes.setMetadataCopy()` — independent of the renderer lock, always editable
 `Shapes.setPositionResolver()` (◄── `!positionResolverLocked`) → `Shapes.lockPositionResolver()` (one-way)
 `Shapes.transferAdmin()` / `renounceAdmin()` — independent of Shape #0 ownership
 
@@ -300,8 +300,7 @@ check. None of these functions reach ETH, backing, redemption or token ownership
 | Shapes | `setRenderer(address newRenderer)` | `newRenderer` (must carry code + `IShapeRenderer`) | `renderer` |
 | Shapes | `lockRenderer()` | — | `rendererLocked` (one-way) |
 | Shapes | `setCollection(address newCollection)` | `newCollection` (must carry code + `IShapeCollection`) | `collection` |
-| Shapes | `setTokenCopy(string namePrefix, string description)` | validated UTF-8/JSON-safe, length-capped | `tokenNamePrefix`, `tokenDescription` |
-| Shapes | `setCollectionCopy(string name, string description)` | validated UTF-8/JSON-safe, length-capped | `collectionName`, `collectionDescription` |
+| Shapes | `setMetadataCopy(string tokenNamePrefix, string description)` | validated UTF-8/JSON-safe, length-capped | `tokenNamePrefix`, shared `description` |
 | Shapes | `setPositionResolver(address resolver_)` | zero clears; nonzero must carry code | `positionResolver` |
 | Shapes | `lockPositionResolver()` | — | `positionResolverLocked` (one-way, may lock at zero) |
 | Shapes | `transferAdmin(address newAdmin)` | nonzero new admin | `_admin` |
@@ -311,4 +310,4 @@ check. None of these functions reach ETH, backing, redemption or token ownership
 
 ## Initialization
 
-No proxy pattern is used anywhere in scope; every contract (`Shapes`, `ShapesArtistAttribution`, `ShapeRenderer`, `ShapeLens`, `ShapeCollection`, `ShapeAuctionHouse`) is a plain, non-upgradeable deployment configured entirely through its constructor. There is no separate `initialize()` entry point. The attribution child has one post-deployment attestation, but it accepts only the immutable artist's deployment-bound signature and grants no authority.
+No proxy pattern is used anywhere in scope; every contract (`Shapes`, `ShapeRenderer`, `ShapeLens`, `ShapeCollection`, `ShapeAuctionHouse`) is a plain, non-upgradeable deployment configured entirely through its constructor. There is no separate `initialize()` entry point. Shapes has one post-deployment artist attestation, but it accepts only the immutable artist's deployment-bound signature and grants no authority.

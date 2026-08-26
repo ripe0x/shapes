@@ -24,7 +24,7 @@ import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {CopyValidation} from "./lib/CopyValidation.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
-import {ShapesArtistAttribution} from "./ShapesArtistAttribution.sol";
+import {EIP712Signature} from "./lib/EIP712Signature.sol";
 
 /// @title Shapes
 /// @notice ETH in, Shape out.
@@ -38,9 +38,9 @@ import {ShapesArtistAttribution} from "./ShapesArtistAttribution.sol";
 ///      The admin may replace the renderer via `setRenderer` and the collection metadata
 ///      contract via `setCollection`, and freeze both via `lockRenderer`. The renderer is read
 ///      only by `tokenURI`, the collection only by `contractURI`. The admin also holds the
-///      metadata copy: `setTokenCopy` sets the per-token name prefix and description, and
-///      `setCollectionCopy` the collection name and description; both remain editable after
-///      `lockRenderer`. Independently, the admin may set, clear and permanently lock an optional
+///      metadata copy: `setMetadataCopy` atomically sets the token name prefix and the description
+///      shared with `contractURI`, and remains editable after `lockRenderer`. Independently,
+///      the admin may set, clear and permanently lock an optional
 ///      position resolver; core token and reserve operations never call it. The admin role is
 ///      transferable and may be renounced. None of these touch ETH, backing or redeemability.
 ///
@@ -48,9 +48,9 @@ import {ShapesArtistAttribution} from "./ShapesArtistAttribution.sol";
 ///      its holder and returns zero while #0 is burned. Shape #0 is otherwise a normal backed
 ///      Shape and carries no administrative permissions; authorization uses the separate `admin()` role.
 ///
-///      `artist()` permanently attributes the deployment to its deployer. The constructor also
-///      creates `artistAttribution()`, a child contract where that artist may store one EIP-712
-///      signature approving the exact deployment and a release hash. Neither value grants authority.
+///      `artist()` permanently attributes the deployment to its deployer. That artist may store
+///      one EIP-712 signature approving this exact contract and a release hash. The attribution
+///      is stored directly in Shapes and grants no authority.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
 ///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
@@ -184,7 +184,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     address public immutable artist;
 
     /// @inheritdoc IShapes
-    address public immutable artistAttribution;
+    bytes32 public artistReleaseHash;
+
+    /// @inheritdoc IShapes
+    bytes public artistSignature;
 
     /// @inheritdoc IShapes
     /// @dev Not immutable: the admin may replace it via `setRenderer` to fix a rendering bug,
@@ -206,20 +209,14 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
         "Burning it returns exactly that amount to its owner. Higher denominations resolve "
         "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
-    string private constant DEFAULT_COLLECTION_NAME = "Shapes";
-
     /// @inheritdoc IShapes
-    /// @dev Editorial copy, admin-editable via `setTokenCopy`, written verbatim into every token's
+    /// @dev Editorial copy, admin-editable via `setMetadataCopy`, written verbatim into every token's
     ///      metadata by the renderer. Independent of `rendererLocked`.
     string public tokenNamePrefix;
     /// @inheritdoc IShapes
-    string public tokenDescription;
-    /// @inheritdoc IShapes
-    /// @dev Editorial copy, admin-editable via `setCollectionCopy`, passed to the collection
-    ///      contract by `contractURI`.
-    string public collectionName;
-    /// @inheritdoc IShapes
-    string public collectionDescription;
+    /// @dev Shared by token and collection metadata so the collection cannot describe itself
+    ///      differently from its tokens.
+    string public description;
 
     /// @inheritdoc IShapes
     /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
@@ -259,13 +256,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         feeBps = feeBps_;
         feeRecipient = feeRecipient_;
         artist = msg.sender;
-        artistAttribution = address(new ShapesArtistAttribution(msg.sender));
         renderer = renderer_;
         collection = collection_;
         tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
-        tokenDescription = DEFAULT_DESCRIPTION;
-        collectionName = DEFAULT_COLLECTION_NAME;
-        collectionDescription = DEFAULT_DESCRIPTION;
+        description = DEFAULT_DESCRIPTION;
 
         _admin = msg.sender;
         emit AdminTransferred(address(0), msg.sender);
@@ -301,6 +295,23 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev Returns zero after #0 is burned or split. This address has no administrative rights.
     function owner() public view returns (address) {
         return _ownerOf(0);
+    }
+
+    /// @inheritdoc IShapes
+    function artistAttestationDigest(bytes32 releaseHash) public view returns (bytes32) {
+        return EIP712Signature.artistDigest(artist, releaseHash);
+    }
+
+    /// @inheritdoc IShapes
+    function attestArtist(bytes32 releaseHash, bytes calldata signature_) external {
+        if (artistReleaseHash != bytes32(0)) revert ArtistAlreadyAttested();
+        if (releaseHash == bytes32(0)) revert InvalidArtistReleaseHash();
+        bytes32 digest = artistAttestationDigest(releaseHash);
+        if (!EIP712Signature.isValidNow(artist, digest, signature_)) revert InvalidArtistSignature();
+
+        artistReleaseHash = releaseHash;
+        artistSignature = signature_;
+        emit ArtistAttested(artist, releaseHash, signature_);
     }
 
     /// @inheritdoc IAdminControl
@@ -367,26 +378,17 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
 
     /// @inheritdoc IShapes
-    /// @dev Admin only. Both arguments are validated (`_requireJsonSafe`) so copy cannot break or
-    ///      restructure the metadata JSON. Not gated by `rendererLocked`.
-    function setTokenCopy(string calldata namePrefix, string calldata description) external onlyAdmin {
-        CopyValidation.requireJsonSafe(namePrefix, MAX_NAME_BYTES, 0);
-        CopyValidation.requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
-        tokenNamePrefix = namePrefix;
-        tokenDescription = description;
-        emit TokenCopyUpdated(namePrefix, description);
-        // The copy appears in every token's metadata; ERC-4906 signals the refresh.
+    /// @dev Admin only. All arguments are validated so copy cannot break or restructure metadata
+    ///      JSON. Token and collection descriptions deliberately share one value.
+    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_)
+        external
+        onlyAdmin
+    {
+        CopyValidation.requireJsonSafe(tokenNamePrefix_, MAX_NAME_BYTES, 0);
+        CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
+        tokenNamePrefix = tokenNamePrefix_;
+        description = description_;
         if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev Admin only. Same validation as `setTokenCopy`. Not gated by `rendererLocked`.
-    function setCollectionCopy(string calldata name, string calldata description) external onlyAdmin {
-        CopyValidation.requireJsonSafe(name, MAX_NAME_BYTES, 0);
-        CopyValidation.requireJsonSafe(description, MAX_DESCRIPTION_BYTES, 1);
-        collectionName = name;
-        collectionDescription = description;
-        emit CollectionCopyUpdated(name, description);
         emit ContractURIUpdated();
     }
 
@@ -1336,7 +1338,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function contractURI() external view returns (string memory) {
-        return IShapeCollection(collection).contractURI(collectionName, collectionDescription);
+        return IShapeCollection(collection).contractURI(name(), description);
     }
 
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.
@@ -1360,7 +1362,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                     d.inkGene,
                     depth,
                     tokenNamePrefix,
-                    tokenDescription
+                    description
                 );
         }
         return IShapeRenderer(renderer)
@@ -1373,7 +1375,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 d.inkGene,
                 depth,
                 tokenNamePrefix,
-                tokenDescription
+                description
             );
     }
 

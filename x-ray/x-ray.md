@@ -27,7 +27,7 @@ For a visual overview of the protocol's architecture, see the [architecture diag
 | Auction | `ShapeAuctionHouse`, `ShapeCardEscrow` | 270 | English auction for any ERC-721, bids denominated in and settled with Shape cards |
 | Linked libraries | `ComposeCompute`, `CopyValidation`, `GeometrySampling`, `InkGenes` | 304 | Externally linked deployments; consensus-critical compose/split sampling and ink-gene logic |
 | Internal libraries | `Denominations`, `FixedPoint`, `Round03Rand`, `ModuleCodec`, `GrammarV1Modules` | 211 | Inlined pure math/encoding helpers, not separately deployed |
-| Artist attribution | `ShapesArtistAttribution` | — | Immutable parent/artist binding plus a one-time EIP-712 signature; no authority or economics |
+| Artist attribution | `ArtistAttribution` | — | Reusable immutable subject/artist binding plus a one-time EIP-712 signature; no authority or economics |
 
 `Shapes`'s runtime bytecode carries **207 bytes of EIP-170 headroom** in the default build and **228 bytes** in the testnet build at the current artist-attribution plus admin-directed fee-recipient settings (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
 
@@ -156,7 +156,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 - **Gas-capped external reads treated as authoritative downstream** — `Shapes.positionOf` fails safely for `Shapes` itself, but any off-chain integrator (site, indexer) that treats the returned position as more than an unvalidated hint inherits whatever a hostile resolver chooses to report.
 
-- **Admin-editable metadata copy, never locked** — `setTokenCopy`/`setCollectionCopy` are explicitly not covered by `lockRenderer`; SECURITY.md's own caveat already flags un-escaped HTML in `description`. Worth confirming `CopyValidation.requireJsonSafe`'s UTF-8 walk has no bypass that still breaks a downstream JSON/HTML consumer despite passing the `"`/`\`/C0 check.
+- **Admin-editable metadata copy, never locked** — `setMetadataCopy` is explicitly not covered by `lockRenderer`; SECURITY.md's own caveat already flags un-escaped HTML in `description`. Worth confirming `CopyValidation.requireJsonSafe`'s UTF-8 walk has no bypass that still breaks a downstream JSON/HTML consumer despite passing the `"`/`\`/C0 check.
 
 ### Protocol-Type Concerns
 
@@ -172,7 +172,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 **Deployment & Initialization:**
 - No proxy or `initialize()` pattern exists anywhere in scope (see entry-points.md, Initialization) — the standard front-run-the-initializer threat does not apply.
 - `feeBps` is immutable. Admin may repair a misconfigured `feeRecipient` until renunciation (SECURITY.md caveats #1–#2); `DeployShapes.s.sol` refuses an initial contract fee recipient without an explicit override, but that script sits outside `src/` and was not read as part of this scope.
-- Library linking at deploy time (four externally-linked libraries, independently re-linked into `ShapeLens`) is the one deployment-ordering risk with no on-chain enforcement. `DeployLens.s.sol` now runs a pre-broadcast behavioral probe that refuses a divergent lens (PR #37), but that is deploy-script discipline, not a contract-level guarantee — see the linked-library-drift attack surface above.
+- Library linking at deploy time (four computation libraries independently re-linked into `ShapeLens`, plus Shapes-only `EIP712Signature`) is the one deployment-ordering risk with no on-chain enforcement. `DeployLens.s.sol` now runs a pre-broadcast behavioral probe that refuses a divergent lens (PR #37), but that is deploy-script discipline, not a contract-level guarantee — see the linked-library-drift attack surface above.
 
 ### Composability & Dependency Risks
 
@@ -320,7 +320,7 @@ Note: the scorer applies the same fix-pattern heuristics to feature and refactor
 
 ### Dangerous Area Evolution
 
-Filtered to in-scope files only. The historical raw scan's file lists were otherwise dominated by vendored OpenZeppelin files matched on generic keywords (e.g. "oracle_price" matched `ERC4626.sol`, `ERC2981.sol`). The scan predates the artist-attribution child, which now deliberately imports OpenZeppelin's EIP-712 and signature-verification utilities.
+Filtered to in-scope files only. The historical raw scan's file lists were otherwise dominated by vendored OpenZeppelin files matched on generic keywords (e.g. "oracle_price" matched `ERC4626.sol`, `ERC2981.sol`). The scan predates direct artist attribution and its linked signature-verification library.
 
 | Security Area | Commits | Key Files (in-scope only) |
 |--------------|--------:|-----------|
@@ -328,7 +328,7 @@ Filtered to in-scope files only. The historical raw scan's file lists were other
 | access_control | 30 | `Shapes.sol` |
 | state_machines | 29 | `ShapeLens.sol`, `IShapeAuctionHouse.sol`, `IShapePositionResolver.sol`, `IShapes.sol` |
 | oracle_price* | 34 | `ShapeCardEscrow.sol`, `Shapes.sol`, `IShapeAuctionHouse.sol`, `IShapes.sol` — *keyword match on `backingOf`/`valueOf` naming; no actual price oracle exists in scope* |
-| signatures* | 30 | `ShapesArtistAttribution.sol` — *historical count predates D-26; the live child now performs one-time EIP-712 verification through `SignatureChecker`* |
+| signatures* | 30 | `Shapes.sol`, `EIP712Signature.sol` — *historical count predates direct attribution; Shapes stores the one-time attestation and the linked library verifies it* |
 
 ### Forked Dependencies
 

@@ -25,27 +25,16 @@ if [ "$CHAIN_ID" != "11155111" ]; then
 fi
 
 ARTIST=$(cast call "$SHAPES_ADDRESS" "artist()(address)" --rpc-url "$SEPOLIA_RPC_URL")
-ATTRIBUTION=$(cast call "$SHAPES_ADDRESS" "artistAttribution()(address)" --rpc-url "$SEPOLIA_RPC_URL")
-BOUND_SHAPES=$(cast call "$ATTRIBUTION" "shapes()(address)" --rpc-url "$SEPOLIA_RPC_URL")
-BOUND_ARTIST=$(cast call "$ATTRIBUTION" "artist()(address)" --rpc-url "$SEPOLIA_RPC_URL")
-ATTESTED=$(cast call "$ATTRIBUTION" "attested()(bool)" --rpc-url "$SEPOLIA_RPC_URL")
+STORED_HASH=$(cast call "$SHAPES_ADDRESS" "artistReleaseHash()(bytes32)" --rpc-url "$SEPOLIA_RPC_URL")
+[ "$STORED_HASH" = "0x0000000000000000000000000000000000000000000000000000000000000000" ] \
+  || { echo "artist attribution is already signed" >&2; exit 1; }
 
-BOUND_SHAPES_LOWER=$(printf '%s' "$BOUND_SHAPES" | tr '[:upper:]' '[:lower:]')
-SHAPES_ADDRESS_LOWER=$(printf '%s' "$SHAPES_ADDRESS" | tr '[:upper:]' '[:lower:]')
-BOUND_ARTIST_LOWER=$(printf '%s' "$BOUND_ARTIST" | tr '[:upper:]' '[:lower:]')
-ARTIST_LOWER=$(printf '%s' "$ARTIST" | tr '[:upper:]' '[:lower:]')
-
-[ "$BOUND_SHAPES_LOWER" = "$SHAPES_ADDRESS_LOWER" ] || { echo "attribution points at another Shapes" >&2; exit 1; }
-[ "$BOUND_ARTIST_LOWER" = "$ARTIST_LOWER" ] || { echo "attribution artist mismatch" >&2; exit 1; }
-[ "$ATTESTED" = "false" ] || { echo "artist attribution is already signed" >&2; exit 1; }
-
-DIGEST=$(cast call "$ATTRIBUTION" "attestationDigest(bytes32)(bytes32)" \
+DIGEST=$(cast call "$SHAPES_ADDRESS" "artistAttestationDigest(bytes32)(bytes32)" \
   "$SHAPES_RELEASE_HASH" --rpc-url "$SEPOLIA_RPC_URL")
 
 echo "One-time Sepolia artist attestation"
 echo "  chain id       $CHAIN_ID"
 echo "  Shapes         $SHAPES_ADDRESS"
-echo "  attribution    $ATTRIBUTION"
 echo "  artist         $ARTIST"
 echo "  release hash   $SHAPES_RELEASE_HASH"
 echo "  EIP-712 digest $DIGEST"
@@ -58,24 +47,24 @@ SIGNATURE=$(cast wallet sign --account "$ARTIST_ACCOUNT" --no-hash "$DIGEST")
 
 # Simulate the exact call before broadcasting. The account may be an EIP-7702 delegated EOA;
 # the attribution contract checks its ECDSA key before falling back to ERC-1271.
-cast call "$ATTRIBUTION" "attest(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNATURE" \
+cast call "$SHAPES_ADDRESS" "attestArtist(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNATURE" \
   --from "$ARTIST" --rpc-url "$SEPOLIA_RPC_URL" >/dev/null
 
 read -r -p "Type SIGN to broadcast the irreversible Sepolia attestation: " CONFIRM_SEND
 [ "$CONFIRM_SEND" = "SIGN" ] || { echo "not submitted"; exit 1; }
 
-TX_JSON=$(cast send "$ATTRIBUTION" "attest(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNATURE" \
+TX_JSON=$(cast send "$SHAPES_ADDRESS" "attestArtist(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNATURE" \
   --account "$ARTIST_ACCOUNT" --rpc-url "$SEPOLIA_RPC_URL" --json)
 TX_HASH=$(printf '%s' "$TX_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['transactionHash'])")
 cast receipt "$TX_HASH" --confirmations 1 --rpc-url "$SEPOLIA_RPC_URL" >/dev/null
 echo "  transaction    $TX_HASH"
 
-[ "$(cast call "$ATTRIBUTION" "attested()(bool)" --rpc-url "$SEPOLIA_RPC_URL")" = "true" ] \
-  || { echo "postflight attested read failed" >&2; exit 1; }
-STORED_HASH=$(cast call "$ATTRIBUTION" "releaseHash()(bytes32)" --rpc-url "$SEPOLIA_RPC_URL")
+STORED_HASH=$(cast call "$SHAPES_ADDRESS" "artistReleaseHash()(bytes32)" --rpc-url "$SEPOLIA_RPC_URL")
 STORED_HASH_LOWER=$(printf '%s' "$STORED_HASH" | tr '[:upper:]' '[:lower:]')
 RELEASE_HASH_LOWER=$(printf '%s' "$SHAPES_RELEASE_HASH" | tr '[:upper:]' '[:lower:]')
 [ "$STORED_HASH_LOWER" = "$RELEASE_HASH_LOWER" ] \
   || { echo "postflight release hash mismatch" >&2; exit 1; }
+[ "$(cast call "$SHAPES_ADDRESS" "artistSignature()(bytes)" --rpc-url "$SEPOLIA_RPC_URL")" = "$SIGNATURE" ] \
+  || { echo "postflight artist signature mismatch" >&2; exit 1; }
 
 echo "Artist attestation stored and read back successfully."

@@ -10,13 +10,11 @@ const SHAPES = "0x000000000000000000000000000000000000dEaD" as `0x${string}`;
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`;
 const OWNER = "0x1111111111111111111111111111111111111111" as `0x${string}`;
 const ARTIST = "0x2222222222222222222222222222222222222222" as `0x${string}`;
-const ATTRIBUTION = "0x3333333333333333333333333333333333333333" as `0x${string}`;
 const RELEASE_HASH = `0x${"44".repeat(32)}` as `0x${string}`;
 
 const dep = {
   shapes: SHAPES,
   artist: ARTIST,
-  artistAttribution: ATTRIBUTION,
   rpc: "http://localhost",
   chainId: 31337,
 } as unknown as Deployment;
@@ -58,11 +56,7 @@ function makeClient(opts: {minted: bigint; live: Map<bigint, FakeToken>; multica
         return BigInt(opts.live.size);
       case "artist":
         return ARTIST;
-      case "artistAttribution":
-        return ATTRIBUTION;
-      case "attested":
-        return true;
-      case "releaseHash":
+      case "artistReleaseHash":
         return RELEASE_HASH;
       case "mintFeeFor":
         return (id as bigint) / 100n; // arg is the denomination wei
@@ -146,14 +140,13 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
   assert.equal(site.supply, 3n);
   assert.equal(site.fees.length, DENOMINATIONS.length);
   assert.equal(site.artist, ARTIST);
-  assert.equal(site.artistAttribution, ATTRIBUTION);
   assert.equal(site.artistAttested, true);
   assert.equal(site.artistReleaseHash, RELEASE_HASH);
 
   // 1203 ownerOf calls in 500-call chunks = 3 multicalls, plus 1 for the per-token fields.
   assert.equal(counts.multicall, 4);
-  // Header, attribution, and fee reads go one-by-one.
-  assert.equal(counts.readContract, 7 + DENOMINATIONS.length);
+  // Header and fee reads go one-by-one.
+  assert.equal(counts.readContract, 5 + DENOMINATIONS.length);
 });
 
 test("loadSite: falls back to single reads when the chain has no Multicall3", async () => {
@@ -167,6 +160,6 @@ test("loadSite: falls back to single reads when the chain has no Multicall3", as
     [1n],
   );
   assert.equal(counts.multicall, 0);
-  // Header + attribution reads, then 3 ownerOf + 5 per-token fields.
-  assert.equal(counts.readContract, 7 + DENOMINATIONS.length + 3 + 5);
+  // Header reads, then 3 ownerOf + 5 per-token fields.
+  assert.equal(counts.readContract, 5 + DENOMINATIONS.length + 3 + 5);
 });

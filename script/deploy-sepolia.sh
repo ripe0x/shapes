@@ -7,7 +7,7 @@
 # Requires:
 #   ETHERSCAN_API_KEY   Etherscan v2 key (one key covers Sepolia).
 #   the `ripe0x` foundry keystore (you are prompted for its password).
-#   jq                   reads the broadcast artifact for child verification.
+#   jq                   reads the broadcast artifact and mined receipts.
 #
 # Optional env:
 #   SEPOLIA_RPC_URL     defaults to the publicnode endpoint.
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 : "${ETHERSCAN_API_KEY:?set ETHERSCAN_API_KEY (Etherscan v2 key)}"
-command -v jq >/dev/null || { echo "jq is required to verify the attribution child" >&2; exit 1; }
+command -v jq >/dev/null || { echo "jq is required to inspect the deployment" >&2; exit 1; }
 RPC="${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
 SENDER="${DEPLOYER:-0xCB43078C32423F5348Cab5885911C3B5faE217F9}"
 PAYOUT="0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4"
@@ -32,37 +32,31 @@ FOUNDRY_PROFILE=testnet SEED_ETH="${SEED_ETH:-false}" forge script script/Deploy
   --broadcast \
   --verify
 
-# Shapes creates the attribution child inside its constructor, so it is not a top-level script
-# deployment for Foundry to verify automatically. Resolve it from the freshly deployed Shapes,
-# verify it explicitly, then repeat the immutable binding checks against Sepolia.
+# Resolve the freshly deployed Shapes address and its actual mined creation transaction.
 BROADCAST_FILE="broadcast/DeploySepolia.s.sol/11155111/run-latest.json"
 SHAPES=$(jq -r '.transactions[] | select(.contractName == "Shapes") | .contractAddress' "$BROADCAST_FILE" | tail -1)
-SHAPES_TX=$(jq -r '.transactions[] | select(.contractName == "Shapes") | .hash' "$BROADCAST_FILE" | tail -1)
 
 [[ "$SHAPES" =~ ^0x[0-9a-fA-F]{40}$ ]] || { echo "could not resolve Shapes from $BROADCAST_FILE" >&2; exit 1; }
+# Foundry may broadcast independent CREATE transactions in a different order from the simulated
+# `transactions` array. Resolve the creation hash from the mined receipt whose contract address is
+# the actual Shapes address; pairing `contractName` with `.hash` can select another deployment.
+SHAPES_TX=$(jq -r --arg shapes "$SHAPES" \
+  '.receipts[] | select((.contractAddress | ascii_downcase) == ($shapes | ascii_downcase)) | .transactionHash' \
+  "$BROADCAST_FILE" | tail -1)
 [[ "$SHAPES_TX" =~ ^0x[0-9a-fA-F]{64}$ ]] || { echo "could not resolve Shapes transaction" >&2; exit 1; }
+SHAPES_RECEIPT=$(cast receipt "$SHAPES_TX" --rpc-url "$RPC" --json)
+[ "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.status')" = "0x1" ] \
+  || { echo "Shapes creation transaction did not succeed" >&2; exit 1; }
+[ "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.contractAddress' | tr '[:upper:]' '[:lower:]')" \
+    = "$(printf '%s' "$SHAPES" | tr '[:upper:]' '[:lower:]')" ] \
+  || { echo "Shapes creation transaction created another address" >&2; exit 1; }
 
 ARTIST=$(cast call "$SHAPES" "artist()(address)" --rpc-url "$RPC")
-ATTRIBUTION=$(cast call "$SHAPES" "artistAttribution()(address)" --rpc-url "$RPC")
-CONSTRUCTOR_ARGS=$(cast abi-encode "constructor(address)" "$ARTIST")
-
-FOUNDRY_PROFILE=testnet forge verify-contract "$ATTRIBUTION" \
-  src/ShapesArtistAttribution.sol:ShapesArtistAttribution \
-  --chain sepolia \
-  --rpc-url "$RPC" \
-  --etherscan-api-key "$ETHERSCAN_API_KEY" \
-  --constructor-args "$CONSTRUCTOR_ARGS" \
-  --creation-transaction-hash "$SHAPES_TX" \
-  --watch
-
-[ "$(cast call "$ATTRIBUTION" "shapes()(address)" --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" \
-    = "$(printf '%s' "$SHAPES" | tr '[:upper:]' '[:lower:]')" ] \
-  || { echo "artist attribution points at another Shapes" >&2; exit 1; }
-[ "$(cast call "$ATTRIBUTION" "artist()(address)" --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" \
-    = "$(printf '%s' "$ARTIST" | tr '[:upper:]' '[:lower:]')" ] \
-  || { echo "artist attribution artist mismatch" >&2; exit 1; }
-[ "$(cast call "$ATTRIBUTION" "attested()(bool)" --rpc-url "$RPC")" = "false" ] \
+[ "$(cast call "$SHAPES" "artistReleaseHash()(bytes32)" --rpc-url "$RPC")" \
+    = "0x0000000000000000000000000000000000000000000000000000000000000000" ] \
   || { echo "artist attribution unexpectedly signed during deployment" >&2; exit 1; }
+[ "$(cast call "$SHAPES" "artistSignature()(bytes)" --rpc-url "$RPC")" = "0x" ] \
+  || { echo "artist signature unexpectedly populated during deployment" >&2; exit 1; }
 [ "$(cast call "$SHAPES" "admin()(address)" --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" \
     = "$(printf '%s' "$SENDER" | tr '[:upper:]' '[:lower:]')" ] \
   || { echo "admin is not the deployer" >&2; exit 1; }
@@ -74,6 +68,6 @@ echo "Fresh Sepolia deployment verified"
 echo "  Shapes             $SHAPES"
 echo "  deployment tx      $SHAPES_TX"
 echo "  artist             $ARTIST"
-echo "  artist attribution $ATTRIBUTION"
+echo "  artist signature   unsigned"
 echo "  admin              $SENDER"
 echo "  fee recipient      $PAYOUT"

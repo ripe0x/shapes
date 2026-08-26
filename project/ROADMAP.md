@@ -29,11 +29,12 @@ Deliverables:
 - COMPLETE: D-24 adopted Shape #0 + separate admin with explicit `owner()`; D-23's competing non-tokenized title product is superseded.
 - COMPLETE: PR #2 rebased after PR #1, closed every finding in `project/reviews/PR-2.md`, passed full local/remote checks, and merged as `7fca2b2`.
 - COMPLETE: corrective PR #3 restored PR #2's intended `owner()` API, removed the unauthorized `titleHolder()` substitution, passed review and CI, and merged as `bf5ae6b`.
-- IN PROGRESS: D-26 artist attribution and one-time cryptographic release signature, with signature machinery isolated in an immutable child to preserve EIP-170 headroom.
-- IN PROGRESS: D-27 admin-directed future mint-fee recipient, with immutable `feeBps`, no reserve authority, and exact Sepolia payout/admin post-flight checks.
-- PENDING: merge D-26, deploy a fresh Sepolia implementation, submit the artist signature only after verifying the final addresses/release hash, and replace deployment metadata with new addresses/fromBlock. Never relabel the existing immutable deployment.
+- IN PROGRESS: D-28 supersedes D-26's child implementation before launch. Artist attribution and its one-time cryptographic release signature now live directly in Shapes; only stateless digest/signature-checking code is externally linked. The shared token/collection description simplification creates enough EIP-170 headroom without changing collection artwork.
+- COMPLETE IN DRAFT: D-27 admin-directed future mint-fee recipient, with immutable `feeBps`, no reserve authority, and exact Sepolia payout/admin post-flight checks.
+- RESOLVED ARCHITECTURALLY, PARKED POST-LAUNCH: D-29 defines positions as a fully escrowed external exchange-option protocol. Shapes retains discovery only and gains no freeze, wrapper, custody or execution logic.
+- PENDING: deploy the D-28 implementation fresh to Sepolia, submit the artist signature directly to Shapes only after verifying the final addresses and exact Shapes creation transaction hash, replace deployment metadata with new addresses/fromBlock, rerun live checks, then merge PR #4. Never relabel either older immutable deployment.
 
-Acceptance: PR #2 and the D-26 attribution change merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture, and its artist attestation verifies against the recorded release hash.
+Acceptance: PR #2 and the D-28 attribution change merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture, and its artist attestation verifies directly on Shapes against the recorded release hash.
 
 Evidence gate: combined GitHub/Netlify checks, D-24 entry, PR #2 review closure table, and fresh deployment rehearsal/readback.
 

@@ -42,12 +42,13 @@ Shape capabilities, admin control, and renderer geometry surfaces. `owner()` rep
 Shape #0 and is part of `IShapes`; it carries no administrative authority.
 
 `artist()` is permanent creator attribution and likewise carries no authority. Its paired
-`artistAttribution()` child stores, at most once, the artist's EIP-712 signature and release hash.
-The signed struct is
-`ShapesArtistAttribution(address shapes,address artist,bytes32 releaseHash)`; the EIP-712 domain
-also binds the chain id and exact child contract. Integrators can verify the stored signature
+attestation is stored directly in Shapes through `artistSignature()` and `artistReleaseHash()`.
+The signed struct is `ArtistAttribution(address shapes,address artist,bytes32 releaseHash)`; the
+EIP-712 domain also binds the chain id and exact Shapes contract. The stateless linked
+`EIP712Signature` library computes the digest and checks EOA/ERC-1271 signatures but stores no
+attribution. Integrators can verify the stored signature
 against an EOA at any time. For ERC-1271 artists, the permanent fact is that the wallet validated
-it when `attest` executed; later wallet upgrades or signer changes can make a fresh check fail.
+it when `attestArtist` executed; later wallet upgrades or signer changes can make a fresh check fail.
 Integrators must never use artist status or attestation as authorization over Shapes.
 
 ## Reading a Shape

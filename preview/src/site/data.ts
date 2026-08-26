@@ -1,7 +1,6 @@
 import type {PublicClient} from "viem";
 import {
   shapesAbi,
-  artistAttributionAbi,
   DENOMINATIONS,
   denomIndexOf,
   type Deployment,
@@ -38,7 +37,6 @@ export interface SiteData {
   supply: bigint; // totalSupply()
   fees: bigint[]; // mintFeeFor() per denomination index
   artist: `0x${string}`;
-  artistAttribution: `0x${string}`;
   artistAttested: boolean;
   artistReleaseHash: `0x${string}`;
 }
@@ -143,23 +141,19 @@ const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as
 export async function loadSite(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-  const [minted, reserve, supply, artist, artistAttribution, viaMulticall, ...fees] = await Promise.all([
+  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, ...fees] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "totalMinted"}),
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
     publicClient.readContract({...shapes, functionName: "artist"}),
-    publicClient.readContract({...shapes, functionName: "artistAttribution"}),
+    publicClient.readContract({...shapes, functionName: "artistReleaseHash"}),
     hasMulticall3(publicClient),
     ...DENOMINATIONS.map((d) =>
       publicClient.readContract({...shapes, functionName: "mintFeeFor", args: [d.wei]}),
     ),
   ]);
 
-  const attribution = {address: artistAttribution, abi: artistAttributionAbi} as const;
-  const [artistAttested, artistReleaseHash] = await Promise.all([
-    publicClient.readContract({...attribution, functionName: "attested"}),
-    publicClient.readContract({...attribution, functionName: "releaseHash"}),
-  ]);
+  const artistAttested = artistReleaseHash !== `0x${"00".repeat(32)}`;
 
   const ids = Array.from({length: Number(minted)}, (_, i) => BigInt(i));
   const owners = await batchRead(
@@ -214,7 +208,6 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
     supply,
     fees,
     artist,
-    artistAttribution,
     artistAttested,
     artistReleaseHash,
   };

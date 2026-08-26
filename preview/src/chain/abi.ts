@@ -28,7 +28,10 @@ export const shapesAbi = parseAbi([
   "function valueOf(uint256 tokenId) view returns (uint256)",
   "function owner() view returns (address)",
   "function artist() view returns (address)",
-  "function artistAttribution() view returns (address)",
+  "function artistReleaseHash() view returns (bytes32)",
+  "function artistSignature() view returns (bytes)",
+  "function artistAttestationDigest(bytes32 releaseHash) view returns (bytes32)",
+  "function attestArtist(bytes32 releaseHash, bytes signature)",
   "function admin() view returns (address)",
   "function transferAdmin(address newAdmin)",
   "function renounceAdmin()",
@@ -65,11 +68,15 @@ export const shapesAbi = parseAbi([
   "event PositionResolverLocked(address indexed resolver)",
   "event AdminTransferred(address indexed previousAdmin, address indexed newAdmin)",
   "event FeeRecipientUpdated(address indexed previousRecipient, address indexed newRecipient)",
+  "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
   "error UnsupportedDenomination(uint256 amountWei)",
   "error IncorrectPayment(uint256 expected, uint256 provided)",
   "error ZeroQuantity()",
+  "error ArtistAlreadyAttested()",
+  "error InvalidArtistReleaseHash()",
+  "error InvalidArtistSignature()",
   "error NotShapeOwner(uint256 tokenId, address caller)",
   "error EthTransferFailed(address to, uint256 amountWei)",
   "error MintFeeTransferFailed(address recipient, uint256 amountWei)",
@@ -88,17 +95,6 @@ export const shapesAbi = parseAbi([
   "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
   "error NotASplitChild(uint256 tokenId)",
   "error DuplicateComposeInput(uint256 tokenId)",
-]);
-
-export const artistAttributionAbi = parseAbi([
-  "function shapes() view returns (address)",
-  "function artist() view returns (address)",
-  "function attested() view returns (bool)",
-  "function releaseHash() view returns (bytes32)",
-  "function signature() view returns (bytes)",
-  "function attestationDigest(bytes32 releaseHash) view returns (bytes32)",
-  "function attest(bytes32 releaseHash, bytes signature)",
-  "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
 ]);
 
 // ShapeLens: the read-only periphery holding `shapeState`, `previewCompose`, `previewSplit`,
@@ -132,7 +128,6 @@ export interface Deployment {
   chainId: number;
   shapes: `0x${string}`;
   artist: `0x${string}`;
-  artistAttribution: `0x${string}`;
   /** ShapeLens: the read-only periphery contract. The DNA/provenance section and other
    *  lens-backed reads have nothing to call without it; see the per-call fallbacks in
    *  `site/dna.ts` and `site/TokenView.tsx` for what happens when it is absent from
