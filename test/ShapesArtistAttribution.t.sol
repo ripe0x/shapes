@@ -118,6 +118,9 @@ contract ShapesArtistAttributionTest is Test {
     }
 
     function test_DigestMatchesIndependentEIP712Encoding() public view {
+        bytes32 attributionTypehash =
+            keccak256("ShapesArtistAttribution(address shapes,address artist,bytes32 releaseHash)");
+        assertEq(attribution.ATTRIBUTION_TYPEHASH(), attributionTypehash);
         bytes32 domainTypehash =
             keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
         bytes32 domainSeparator = keccak256(
@@ -129,8 +132,7 @@ contract ShapesArtistAttributionTest is Test {
                 address(attribution)
             )
         );
-        bytes32 structHash =
-            keccak256(abi.encode(attribution.ATTRIBUTION_TYPEHASH(), address(shapes), artist, RELEASE_HASH));
+        bytes32 structHash = keccak256(abi.encode(attributionTypehash, address(shapes), artist, RELEASE_HASH));
         bytes32 expected = keccak256(abi.encodePacked(hex"1901", domainSeparator, structHash));
 
         assertEq(attribution.attestationDigest(RELEASE_HASH), expected);

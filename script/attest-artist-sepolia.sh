@@ -30,8 +30,13 @@ BOUND_SHAPES=$(cast call "$ATTRIBUTION" "shapes()(address)" --rpc-url "$SEPOLIA_
 BOUND_ARTIST=$(cast call "$ATTRIBUTION" "artist()(address)" --rpc-url "$SEPOLIA_RPC_URL")
 ATTESTED=$(cast call "$ATTRIBUTION" "attested()(bool)" --rpc-url "$SEPOLIA_RPC_URL")
 
-[ "${BOUND_SHAPES,,}" = "${SHAPES_ADDRESS,,}" ] || { echo "attribution points at another Shapes" >&2; exit 1; }
-[ "${BOUND_ARTIST,,}" = "${ARTIST,,}" ] || { echo "attribution artist mismatch" >&2; exit 1; }
+BOUND_SHAPES_LOWER=$(printf '%s' "$BOUND_SHAPES" | tr '[:upper:]' '[:lower:]')
+SHAPES_ADDRESS_LOWER=$(printf '%s' "$SHAPES_ADDRESS" | tr '[:upper:]' '[:lower:]')
+BOUND_ARTIST_LOWER=$(printf '%s' "$BOUND_ARTIST" | tr '[:upper:]' '[:lower:]')
+ARTIST_LOWER=$(printf '%s' "$ARTIST" | tr '[:upper:]' '[:lower:]')
+
+[ "$BOUND_SHAPES_LOWER" = "$SHAPES_ADDRESS_LOWER" ] || { echo "attribution points at another Shapes" >&2; exit 1; }
+[ "$BOUND_ARTIST_LOWER" = "$ARTIST_LOWER" ] || { echo "attribution artist mismatch" >&2; exit 1; }
 [ "$ATTESTED" = "false" ] || { echo "artist attribution is already signed" >&2; exit 1; }
 
 DIGEST=$(cast call "$ATTRIBUTION" "attestationDigest(bytes32)(bytes32)" \
@@ -59,12 +64,18 @@ cast call "$ATTRIBUTION" "attest(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNAT
 read -r -p "Type SIGN to broadcast the irreversible Sepolia attestation: " CONFIRM_SEND
 [ "$CONFIRM_SEND" = "SIGN" ] || { echo "not submitted"; exit 1; }
 
-cast send "$ATTRIBUTION" "attest(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNATURE" \
-  --account "$ARTIST_ACCOUNT" --rpc-url "$SEPOLIA_RPC_URL"
+TX_JSON=$(cast send "$ATTRIBUTION" "attest(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNATURE" \
+  --account "$ARTIST_ACCOUNT" --rpc-url "$SEPOLIA_RPC_URL" --json)
+TX_HASH=$(printf '%s' "$TX_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['transactionHash'])")
+cast receipt "$TX_HASH" --confirmations 1 --rpc-url "$SEPOLIA_RPC_URL" >/dev/null
+echo "  transaction    $TX_HASH"
 
 [ "$(cast call "$ATTRIBUTION" "attested()(bool)" --rpc-url "$SEPOLIA_RPC_URL")" = "true" ] \
   || { echo "postflight attested read failed" >&2; exit 1; }
-[ "$(cast call "$ATTRIBUTION" "releaseHash()(bytes32)" --rpc-url "$SEPOLIA_RPC_URL")" = "$SHAPES_RELEASE_HASH" ] \
+STORED_HASH=$(cast call "$ATTRIBUTION" "releaseHash()(bytes32)" --rpc-url "$SEPOLIA_RPC_URL")
+STORED_HASH_LOWER=$(printf '%s' "$STORED_HASH" | tr '[:upper:]' '[:lower:]')
+RELEASE_HASH_LOWER=$(printf '%s' "$SHAPES_RELEASE_HASH" | tr '[:upper:]' '[:lower:]')
+[ "$STORED_HASH_LOWER" = "$RELEASE_HASH_LOWER" ] \
   || { echo "postflight release hash mismatch" >&2; exit 1; }
 
 echo "Artist attestation stored and read back successfully."
