@@ -30,9 +30,10 @@ fixed 100 ETH to `0x…dEaD`.
 
 ---
 
-## 1. How Shapes works today (v1 summary)
+## 1. Historical v1 baseline
 
-- ERC721 (`Shapes`) + `ReentrancyGuard` + a separate value-inert admin role. Per token it stores only
+- ERC721 (`Shapes`) + `ReentrancyGuard` + a separate presentation admin. D-27 later added bounded
+  authority to redirect future mint fees without reaching the reserve. Per token it stores only
   `ShapeData { bytes32 seed; uint8 denomIndex }`. Backing is derived from `denomIndex` against a
   fixed denomination table — an off-ladder wei amount is not representable in storage.
 - Accounting: `totalBacking`, `totalSupply`, `totalMinted`. Reserve invariant
@@ -238,7 +239,8 @@ uint256 public blackCount;          // monotonic; number of Shapes ever made Bla
 uint256 public totalSupply;         // live tokens, INCLUDING Black
 uint256 public totalMinted;         // ids issued; the highest is totalMinted-1 (bumped by split mints; NOT by decompose, which reuses ids)
 
-// unchanged: feeBps, feeRecipient (immutable); renderer, rendererLocked (admin, lockable)
+// feeBps is immutable; feeRecipient is admin-updateable for future mints;
+// renderer and rendererLocked are admin-controlled and one-way lockable
 
 // per-survivor LIFO stack of self-contained compose records, enabling decompose (§9.3)
 struct ComposeInput {           // one burned input, everything needed to re-mint it verbatim

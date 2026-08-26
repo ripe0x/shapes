@@ -28,7 +28,7 @@ and verify it at runtime:
 shapes.supportsInterface(type(IShapeValue).interfaceId);         // read state + redeem
 shapes.supportsInterface(type(IShapeRecomposition).interfaceId); // compose / decompose / split
 shapes.supportsInterface(type(IShapeProvenance).interfaceId);    // seeds, origins, formation
-shapes.supportsInterface(type(IAdminControl).interfaceId);       // value-inert administration
+shapes.supportsInterface(type(IAdminControl).interfaceId);       // bounded administration
 renderer.supportsInterface(type(IShapeGeometry).interfaceId);    // module-level geometry
 ```
 
@@ -137,11 +137,11 @@ These are `view` and require no ownership.
   value. Do not price a Shape by its traits; price it by `redeemableValueWei`.
 - **Redemption is owner-only, and pays out with a real call.** A recipient that reverts on ETH
   receipt reverts the redemption; it cannot corrupt anyone else's balance. Reentrancy is guarded.
-- **Everything economic is immutable.** No admin can move the reserve, change denominations, or
-  alter redemption. The separate admin's powers are all value-inert: replacing the renderer and
-  collection metadata (locked together), editing copy, and configuring the independently lockable
-  position resolver. Shape #0's holder has no permissions. Build against behaviour that cannot
-  change under you.
+- **Backing economics are immutable.** No admin can move the reserve, change denominations, alter
+  redemption, or change `feeBps`. The separate admin may redirect future mint fees, replace the
+  renderer and collection metadata (locked together), edit copy, and configure the independently
+  lockable position resolver. Shape #0's holder has no permissions. Renouncing admin freezes the
+  final fee recipient and any unlocked presentation settings.
 - **Black Shapes are non-redeemable by design.** `redeemableValueWei` is 0 and `isBlack` is true;
   never accept one as payment.
 - **Give value-moving calls gas headroom over the bare estimate.** Every state-changing function

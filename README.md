@@ -115,7 +115,8 @@ its own seed.
 ## The mint fee
 
 Shapes charges a mint fee of 1% of the backing, on top of it. `feeBps` (100 basis points = 1%)
-and `feeRecipient` are `immutable`, chosen at deployment. The fee scales with the amount wrapped:
+is immutable. The initial `feeRecipient` is chosen at deployment, and `admin()` may redirect only
+future fees. The fee scales with the amount wrapped:
 a 100 ETH Shape pays 1 ETH, a 0.01 ETH Shape pays 0.0001 ETH. One percent of every denomination
 is a whole number of wei, so the fee is exact at each — no rounding.
 
@@ -240,7 +241,8 @@ along with proof that the signature was valid when the attestation transaction e
 EOA signatures and ERC-1271 smart-wallet signatures are supported. There is no artist statement or
 artist-controlled mutable text.
 
-A separate `admin()` role controls two independent, value-inert configuration domains. It can be
+A separate `admin()` role controls presentation/discovery configuration and the destination of
+future mint fees. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
 of Shape #0:
 
@@ -252,13 +254,15 @@ of Shape #0:
   JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
 - The optional position resolver may be set, replaced or cleared until `lockPositionResolver`
   permanently freezes its current value. It may be locked while zero, permanently opting out.
+- `setFeeRecipient` redirects only subsequent mint fees. It cannot change `feeBps`, recover fees
+  already paid, withdraw ETH, or reach backing or redemption.
 
 The resolver pointer is permanent after locking, but its target code and trust model are not
 guaranteed immutable. Renouncing admin leaves any unlocked settings practically frozen because
 no caller can pass the admin check afterward.
 
-`feeBps` and `feeRecipient` are `immutable`. The reserve, the denominations and the redemption
-path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
+`feeBps` is immutable. Renouncing admin freezes the current fee recipient along with any unlocked
+settings. The reserve, denominations and redemption path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
 withdrawal, redemption pause, asset recovery, backing modification, token seizure,
 fee change, upgradeability, proxies, allowlists, supply caps, royalties.
 
@@ -580,7 +584,8 @@ forge script script/DeployShapes.s.sol \
 ./script/e2e-anvil.sh                        # mint all nine, transfer, redeem, verify
 ```
 
-For a live deployment, both parameters are permanent, so set them explicitly:
+For a live deployment, set both parameters explicitly. The fee rate is permanent; admin may later
+redirect only future fees:
 
 ```bash
 SHAPES_FEE_BPS=100 \
@@ -590,7 +595,7 @@ forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
 
 The script refuses to proceed off a local chain without an explicit fee recipient, rejects a
 contract fee recipient unless you confirm it, smoke-tests the renderer, and asserts every
-immutable landed as intended before reporting success. It also verifies that `artist()` is the
+deployment value landed as intended before reporting success. It also verifies that `artist()` is the
 deployer and that the fresh, unsigned attribution child points back to the exact Shapes address.
 The signature is submitted only after deployment because its EIP-712 domain includes the child
 contract's final address.

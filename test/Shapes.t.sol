@@ -375,7 +375,7 @@ contract FeeTest is ShapesBase {
         assertEq(feeRecipient.balance, DENOMS[4], "the fee reached the recipient");
     }
 
-    function test_ImmutablesAreExposedAndFixed() public view {
+    function test_FeeConfigurationIsExposed() public view {
         assertEq(shapes.feeBps(), FEE_BPS);
         assertEq(shapes.mintFeeFor(DENOMS[4]), DENOMS[0]);
         assertEq(shapes.feeRecipient(), feeRecipient);
@@ -601,13 +601,12 @@ contract ReserveTest is ShapesBase {
         // The only administrative power is the cosmetic renderer (owned, lockable). No function
         // reaches the reserve, the fee terms, or a holder's token. This is a sample of the
         // economic administrative surface Shapes deliberately lacks.
-        string[8] memory absent = [
+        string[7] memory absent = [
             "withdraw()",
             "withdrawAll()",
             "emergencyWithdraw()",
             "pause()",
             "setFeeBps(uint256)",
-            "setFeeRecipient(address)",
             "rescueETH(address,uint256)",
             "seize(uint256)"
         ];

@@ -593,7 +593,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
   flat radial ends lie on the footprint edges.
 
-- **Collectible ownership, separate value-inert admin.** Shape #0 is minted to the deployer with
+- **Collectible ownership, separate bounded admin.** Shape #0 is minted to the deployer with
   minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
   holding #0 grants no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
@@ -602,7 +602,8 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   description, collection name and description) via `setTokenCopy`/`setCollectionCopy`. The
   renderer and collection are read only by `tokenURI`/`contractURI`; the resolver only by
   `positionOf`; the copy only by those metadata views, and it is validated on set so it cannot
-  break the JSON. None reach ETH, backing, redemption or token ownership. The copy is
+  break the JSON. Admin may also redirect future mint fees, but cannot change the fee rate or
+  reach backing, redemption, accrued funds or token ownership. The copy is
   deliberately not covered by the renderer lock; it stays editable until admin is renounced.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
   or renounced without transferring Shape #0.
@@ -615,7 +616,8 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.
-- `feeBps` and `feeRecipient` are `immutable`, set at construction. `renderer` is
+- `feeBps` is immutable and the initial `feeRecipient` is set at construction. Admin may redirect
+  subsequent mint fees. `renderer` is
   mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
 - The mint fee is `feeBps` basis points of the backing (the committed value is

@@ -30,9 +30,10 @@ bypass `receive`: stated as an inequality and left permanently inaccessible.
 ## The threat model
 
 Shapes holds user ETH and has no administrator with any power over the reserve. A separate,
-transferable admin can administer two value-inert configuration domains: presentation (renderer
-plus collection metadata, locked together) and the independently lockable optional position
-resolver. Shape #0 represents backed collectible ownership exposed through `owner()`, but its holder has no
+transferable admin can administer presentation (renderer plus collection metadata, locked
+together), the independently lockable optional position resolver, and the destination of future
+mint fees. It cannot change the fee rate or reach backing, redemption, accrued fees, or token
+ownership. Shape #0 represents backed collectible ownership exposed through `owner()`, but its holder has no
 administrative authority. Neither configuration domain is read
 by a reserve path. The immutable `artist()` and its one-time signature child are attribution only
 and are never read for authorization, fees, ownership or reserve accounting. `ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
@@ -125,17 +126,15 @@ are now forwarded **before** the mint loop, so `address(this).balance == redeema
 during every callback (`test_ReserveIsConsistentInsideReceiverCallback`). The `totalSupply`
 skew is inherent to batched `_safeMint` and is documented at the call site.
 
-### 6. A reverting fee recipient permanently disables minting — accepted, documented
+### 6. A reverting fee recipient disables minting until admin redirects fees — mitigated
 
-*Confirmed.* Because `feeRecipient` is immutable, a recipient that reverts on receipt makes
-every `mint` revert forever. Redemption is unaffected and no funds are at risk — the contract
-becomes redeem-only. A pull-based fee escrow would remove this, at the cost of extra surface
-area in a contract whose whole argument is that it has almost none.
+*Confirmed.* A recipient that reverts on receipt makes every `mint` revert while it remains the
+target. Redemption is unaffected and no funds are at risk. The admin may redirect subsequent fees
+to a non-reverting recipient; tests prove minting then resumes without changing reserve accounting.
 
-**Mitigation chosen:** make the mistake hard to make rather than recoverable. The constructor
-NatSpec states the requirement in the strongest terms, and the deploy script refuses a
-contract fee recipient unless `SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true` is set explicitly.
-Prefer an EOA.
+**Mitigation chosen:** the deploy script still refuses an initial contract recipient unless
+`SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true` is set explicitly. Prefer an EOA. Renouncing admin
+freezes the final recipient, so its ability to accept ETH must be confirmed first.
 
 ### 7. No batch size cap — accepted, documented
 
@@ -217,8 +216,8 @@ whole post-state, and separately verified to fail if both guards are removed
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
 | Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), the fee forward (money received in the same call, never counted as backing), and `sacrifice` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking`, backing conservation net of sacrifice, `valueOf == backingOf`, `sacrificedBacking == 100 ether * blackCount`, and a full drain of every live Shape. |
-| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. The separate admin's powers reach only value-inert presentation and position-resolver configuration. Shape #0 ownership grants no permissions. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
-| Administrative isolation | The renderer and collection are called only by metadata reads; the resolver is called only by `positionOf`. A reverting resolver is regression-tested against the full token lifecycle and metadata. No admin function reaches ETH or token state. |
+| ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. Admin can select the recipient of fees entering in future mint calls, but cannot withdraw ETH already held by Shapes or alter the reserve. Shape #0 ownership grants no permissions. No `delegatecall`, no `selfdestruct`, no assembly in `Shapes.sol`. |
+| Administrative isolation | The renderer and collection are called only by metadata reads; the resolver is called only by `positionOf`. A reverting resolver is regression-tested against the full token lifecycle and metadata. `setFeeRecipient` changes one address used for future fee forwarding; it cannot change `feeBps`, move accrued funds, or touch backing, redemption or token ownership. |
 | Draft ERC-8060 | `valueOf` exactly aliases `backingOf`; owner-only `burn` destroys a normal Shape for its exact value or a Black Shape for zero. Structural burns never settle ETH. The current draft interface ID is advertised through ERC-165; the proposal is not final and may change. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
 | Denomination validation | Exact `==` comparisons, no ranges, no rounding, no fallthrough. Because the *index* is stored rather than a wei amount, an off-ladder backing value is unrepresentable in storage. |
@@ -234,8 +233,8 @@ whole post-state, and separately verified to fail if both guards are removed
 
 ## Standing caveats for anyone deploying this
 
-1. **`feeRecipient` should be an EOA.** It is immutable and a reverting recipient is a
-   permanent brick on minting.
+1. **`feeRecipient` should be an EOA.** A reverting recipient blocks minting until admin redirects
+   future fees. Renouncing admin freezes the current recipient permanently.
 2. **The mint fee is immutable.** It is `feeBps` basis points of backing (default 100 = 1%). The
    deploy script's sanity ceiling is 1000 bps (10%); overriding it requires an explicit
    environment variable.

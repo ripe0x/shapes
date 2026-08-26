@@ -8,7 +8,7 @@
 
 **What it does:** Shapes is an ERC721 that wraps an exact amount of ETH at one of nine fixed denominations (0.01–100 ETH); burning the token returns exactly that ETH to its owner.
 
-- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers value-inert presentation and position discovery. Shape #0 represents backed collectible ownership and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
+- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers presentation, position discovery and the destination of future mint fees. Shape #0 represents backed collectible ownership and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
 - **Core flow**: `mint` (ETH in, token out) and `redeem`/`burn` (token in, exact ETH out) are the whole economic surface; `compose`/`split`/`decompose` reshape tokens without moving ETH.
 - **Key mechanism**: A fixed reserve invariant — `address(this).balance >= redeemableBacking()` — with no admin path that can reach it. No oracle, no market pricing: value is denomination-fixed, not price-discovered.
 - **Token model**: One ERC721 collection (`Shapes`). No fungible token, no governance token, no LP token. `ShapeAuctionHouse` mints/holds Shapes as bid collateral but issues nothing of its own.
@@ -29,7 +29,7 @@ For a visual overview of the protocol's architecture, see the [architecture diag
 | Internal libraries | `Denominations`, `FixedPoint`, `Round03Rand`, `ModuleCodec`, `GrammarV1Modules` | 211 | Inlined pure math/encoding helpers, not separately deployed |
 | Artist attribution | `ShapesArtistAttribution` | — | Immutable parent/artist binding plus a one-time EIP-712 signature; no authority or economics |
 
-`Shapes`'s runtime bytecode carries **287 bytes of EIP-170 headroom** at the current artist-attribution build settings (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
+`Shapes`'s runtime bytecode carries **207 bytes of EIP-170 headroom** in the default build and **228 bytes** in the testnet build at the current artist-attribution plus admin-directed fee-recipient settings (`forge build --sizes`, measured directly against this tree), making it the tightest in-scope contract. `ShapeRenderer` carries **1,877 bytes of headroom**, restored from a low of 349 bytes: the `bytes.concat` re-association that made its string assembly fit `forge coverage`'s Yul stack limit had cost 1,500 bytes of permanent runtime as a byproduct of a dev-tool constraint, and was re-chunked at 16 arguments instead of 5 (the measured global minimum over the chunk-size curve), landing 28 bytes below the pre-refactor size. A permanent differential harness (`test/RendererDiff.t.sol` against `test/legacy/ShapeRendererLegacy.sol`) proves the re-chunking output-neutral by byte-for-byte comparison against the pre-refactor renderer, including revert data, over thousands of fuzzed and exhaustive calls; it is excluded from the coverage command (README.md) because the legacy file is deliberately the flat form that cannot compile under coverage's codegen.
 
 ### How It Fits Together
 
@@ -43,7 +43,7 @@ User.mint(amountWei) [payable]
        ├─ Denominations.indexOf(amountWei)        — reverts on any non-ladder amount
        ├─ InkGenes.geneAtMint(seed, denomIndex)    — external library call, linked
        ├─ redeemableBacking += backing             — *the reserve-bound write*
-       ├─ feeRecipient.call{value: fees}("")        — *forwarded before minting, immutable target*
+       ├─ feeRecipient.call{value: fees}("")        — *forwarded before minting to current target*
        └─ _safeMint(to, tokenId)  ×quantity
 
 User.redeem(tokenId)
@@ -111,10 +111,10 @@ Shapes matches the Stablecoin profile's core shape — mint against exact collat
 
 | Actor | Trust Level | Capabilities |
 |-------|-------------|--------------|
-| Admin | Bounded (value-inert) | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), and set/clear/lock the position resolver. These powers reach only presentation or discovery pointers; none can touch ETH, backing, redemption or token ownership. |
+| Admin | Bounded | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), set/clear/lock the position resolver, and redirect future mint fees. It cannot change the fee rate, withdraw ETH, alter backing/redemption, recover accrued fees or affect token ownership. |
 | Shape #0 holder | Untrusted, self-scoped | Reported by `owner()` as collectible contract ownership. Has exactly the same lifecycle rights as any Shape holder and no administrative permissions. |
 | Shape Owner (any user) | Untrusted, self-scoped | mint/redeem/compose/split/decompose/sacrifice on tokens they own; cannot affect any other holder's tokens or the reserve beyond their own mint/redeem flow. |
-| Fee Recipient | Trusted by construction, immutable | Receives every mint fee; a reverting recipient permanently disables minting (accepted design, SECURITY.md #6). |
+| Fee Recipient | Admin-selected | Receives future mint fees; a reverting recipient blocks minting until admin redirects it. Renouncing admin freezes the final address (SECURITY.md #6). |
 | Auction Seller | Untrusted, self-scoped | Lists any ERC721 it owns/is approved for; cannot bid its own auction (G-36/I-8) or affect another auction. |
 | Auction Bidder | Untrusted, self-scoped | Escrows Shape cards and/or ETH; can only withdraw its own escrow, never another bidder's. |
 | Position Resolver (optional, admin-configured) | Untrusted, gas-capped, fail-safe | A pure discovery read through `positionOf`; reverts or out-of-gas are swallowed to a default, with zero effect on core state. |
@@ -125,8 +125,8 @@ Shapes matches the Stablecoin profile's core shape — mint against exact collat
 1. **Reentrant external-call adversary** (fee recipient, lot NFT, position resolver) — every value-moving external call target is either attacker-chosen (auction lot) or reaches into arbitrary code (fee forwarding, resolver); the one confirmed historical finding here (fee-recipient reentrancy into `bid`) was fixed twice. The commit this tree is built from (`2167dc7`) added a re-check of `a.settled` after the escrow call. A subsequent delta audit found that fix incomplete: against a fee-recipient contract that is also the auction's seller, the same window let the seller record a victim as `highestBidder` on a reentrantly-cancelled auction and then sweep their escrowed cards through `claimProceeds` — theft, not the self-harm a low implies. `settle` and `cancelAuction` now carry `nonReentrant`, closing the class structurally rather than at the `bid` call site alone (PR #38, `d2f2e59`).
 2. **Malicious or dishonest auction lot/collection contract** — the only adversary the house's own documentation explicitly declines to fully defend against; bounded to the parties who chose that auction.
 3. **Seed/mint-ordinal grinder** — a minter can advance `totalMinted` inside one transaction (mint-then-redeem dust) to select among a small candidate-seed space, most impactful at 50/100 ETH where the composition space is tiny (2,704 / 52 archetypes); accepted design since redemption value never depends on the seed (SPEC.md D3e).
-4. **Compromised admin** — broad surface (renderer, collection, copy, resolver) but every power is value-inert by construction; the practical damage ceiling is misleading metadata/artwork until locked, or a wrong discovery pointer.
-5. **Griefing via a permanently-reverting counterparty** — a bricked `feeRecipient` disables minting forever (accepted); a reverting redemption recipient only reverts its own transaction, never another holder's.
+4. **Compromised admin** — can redirect future mint-fee revenue and can set misleading metadata/artwork or a wrong discovery pointer. It cannot change the fee rate, touch the reserve/redemption, move accrued funds or seize tokens.
+5. **Griefing via a reverting counterparty** — a reverting `feeRecipient` disables minting until admin redirects fees; after admin renunciation the choice is permanent. A reverting redemption recipient only reverts its own transaction, never another holder's.
 
 See [entry-points.md](entry-points.md) for the full permissionless entry point map.
 
@@ -134,7 +134,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 **Admin → presentation/resolver** — no timelock or multisig is enforced at the contract level; presentation and resolver are independently one-way lockable and neither reaches ETH, backing or token ownership. Shape #0's holder has no administrative capability. *Git signal: `access_control`-tagged commits touch `Shapes.sol` in 15 of the last 20 commits — elevated churn, but every change is additive validation (renderer/collection code checks, copy validation), not a widening of the admin's reach.*
 
-**Shapes ↔ fee recipient** — immutable, single trust point; a reverting recipient's worst case is a permanent redeem-only mode, never fund loss (SECURITY.md #6).
+**Shapes ↔ fee recipient** — admin-selected destination for future fees; a reverting recipient causes a recoverable minting outage while admin exists, never reserve loss (SECURITY.md #6).
 
 **ShapeAuctionHouse ↔ arbitrary lot NFT** — fully untrusted; the house verifies code presence, a self-reported ERC165 claim, and a post-transfer `ownerOf` read, none of which bind a collection written to lie about its own state.
 
@@ -171,7 +171,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 **Deployment & Initialization:**
 - No proxy or `initialize()` pattern exists anywhere in scope (see entry-points.md, Initialization) — the standard front-run-the-initializer threat does not apply.
-- `feeBps`/`feeRecipient` are immutable and unrecoverable if misconfigured (SECURITY.md caveats #1–#2); `DeployShapes.s.sol` is described as refusing a contract fee recipient without an explicit override, but that script sits outside `src/` and was not read as part of this scope.
+- `feeBps` is immutable. Admin may repair a misconfigured `feeRecipient` until renunciation (SECURITY.md caveats #1–#2); `DeployShapes.s.sol` refuses an initial contract fee recipient without an explicit override, but that script sits outside `src/` and was not read as part of this scope.
 - Library linking at deploy time (four externally-linked libraries, independently re-linked into `ShapeLens`) is the one deployment-ordering risk with no on-chain enforcement. `DeployLens.s.sol` now runs a pre-broadcast behavioral probe that refuses a divergent lens (PR #37), but that is deploy-script discipline, not a contract-level guarantee — see the linked-library-drift attack surface above.
 
 ### Composability & Dependency Risks
@@ -358,11 +358,11 @@ Internalizing a vendored library means upstream security patches will not auto-p
 
 ## X-Ray Verdict
 
-**ADEQUATE** — test coverage is hardened (unit + stateless fuzz + stateful Foundry invariant, zero fix-without-test commits) and documentation is fortified (extensive purpose-oriented NatSpec plus a full spec/decision-log and adversarial-review document). The value-inert admin role is a single transferable address with no timelock or multisig enforced on-chain.
+**ADEQUATE** — test coverage is hardened (unit + stateless fuzz + stateful Foundry invariant, zero fix-without-test commits) and documentation is fortified (extensive purpose-oriented NatSpec plus a full spec/decision-log and adversarial-review document). The bounded admin role is a single transferable address with no timelock or multisig enforced on-chain; it can redirect future mint-fee revenue.
 
 **Structural facts:**
 1. 3,066 nSLOC across 7 in-scope subsystems (3,583 nSLOC including 517 nSLOC of interfaces), 26 source files.
 2. Two developers (ripe0x 64.6%, dev-2 35.4% of source line additions) over a 14-day, 130-commit history with 13 merges.
 3. 21 test files / 399 test functions / 34 stateless-fuzz functions / 16 stateful-invariant functions; 0 fix-scored commits shipped without a paired test change.
 4. `Shapes`'s runtime bytecode remains the tightest in-scope contract; `ShapeRenderer` is pinned against regression by a differential harness comparing it byte-for-byte to the pre-refactor renderer. Four libraries (`ComposeCompute`, `CopyValidation`, `GeometrySampling`, `InkGenes`) are externally linked, each a separate deployment.
-5. No proxy/upgrade pattern, no oracle/price feed, and no ERC20 integration exist anywhere in scope; the admin role's every power is documented as value-inert (cannot reach ETH, backing, redemption or token ownership).
+5. No proxy/upgrade pattern, no oracle/price feed, and no ERC20 integration exist anywhere in scope; admin cannot reach backing, redemption, token ownership, accrued fees or ETH held by Shapes, but can choose the recipient for future mint fees.

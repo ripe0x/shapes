@@ -30,6 +30,7 @@ Deliverables:
 - COMPLETE: PR #2 rebased after PR #1, closed every finding in `project/reviews/PR-2.md`, passed full local/remote checks, and merged as `7fca2b2`.
 - COMPLETE: corrective PR #3 restored PR #2's intended `owner()` API, removed the unauthorized `titleHolder()` substitution, passed review and CI, and merged as `bf5ae6b`.
 - IN PROGRESS: D-26 artist attribution and one-time cryptographic release signature, with signature machinery isolated in an immutable child to preserve EIP-170 headroom.
+- IN PROGRESS: D-27 admin-directed future mint-fee recipient, with immutable `feeBps`, no reserve authority, and exact Sepolia payout/admin post-flight checks.
 - PENDING: merge D-26, deploy a fresh Sepolia implementation, submit the artist signature only after verifying the final addresses/release hash, and replace deployment metadata with new addresses/fromBlock. Never relabel the existing immutable deployment.
 
 Acceptance: PR #2 and the D-26 attribution change merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture, and its artist attestation verifies against the recorded release hash.
@@ -65,12 +66,12 @@ Deliverables:
 - Release build explicitly pinned to the default mainnet ladder; mainnet fixtures, full parity chain, and deploy-profile assertions revalidated (D-01).
 - External security audit completed; findings closed or accepted with rationale (D-16, D-17 folded in).
 - Legal review completed (D-15).
-- Key ceremony plan: admin structure, feeRecipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
+- Key ceremony plan: admin structure, initial/final fee recipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
 - Deploy rehearsal: full deploy + seed + lens-probe dry run on a mainnet fork, then Sepolia at mainnet scale if warranted.
 
 Acceptance: signed merge checklist for the release commit; audit report on file; rehearsal transcript recorded.
 
-Evidence gate: every Immediate/security/legal decision id closed. User explicitly signs off on immutable values.
+Evidence gate: every Immediate/security/legal decision id closed. User explicitly signs off on immutable values and initial mutable configuration.
 
 Stop conditions: audit finds high-severity issue (fix, re-audit delta); legal review raises a blocking characterization.
 

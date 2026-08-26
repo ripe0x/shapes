@@ -178,7 +178,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     uint256 public immutable feeBps;
     /// @inheritdoc IShapes
-    address public immutable feeRecipient;
+    address public feeRecipient;
 
     /// @inheritdoc IShapes
     address public immutable artist;
@@ -240,10 +240,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
     ///        May be zero. Above BPS_DENOMINATOR (100%) is rejected.
-    /// @param feeRecipient_ Where fees are forwarded. Immutable, and it MUST be able to receive
-    ///        ETH: a recipient that reverts on receipt disables minting permanently, leaving the
-    ///        contract redeem-only. Prefer an EOA, or a splitter audited for a non-reverting,
-    ///        low-gas `receive`.
+    /// @param feeRecipient_ Initial destination for mint fees. The admin may redirect future fees.
+    ///        It MUST be able to receive ETH: a recipient that reverts disables minting until the
+    ///        admin replaces it. Prefer an EOA, or a splitter audited for a non-reverting `receive`.
     /// @param renderer_ The onchain renderer. Replaceable by the admin until locked. An address
     ///        with no renderer code is refused here and by `setRenderer`.
     /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-ownership
@@ -327,6 +326,14 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         address previousAdmin = _admin;
         _admin = address(0);
         emit AdminTransferred(previousAdmin, address(0));
+    }
+
+    /// @inheritdoc IAdminControl
+    function setFeeRecipient(address newRecipient) external onlyAdmin {
+        if (newRecipient == address(0)) revert AdminInvalidFeeRecipient(address(0));
+        address previousRecipient = feeRecipient;
+        feeRecipient = newRecipient;
+        emit FeeRecipientUpdated(previousRecipient, newRecipient);
     }
 
     /// @inheritdoc IShapes
@@ -534,9 +541,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         // loop means `address(this).balance` already equals `redeemableBacking` by the time any
         // ERC721 receiver callback runs.
         if (fees != 0) {
-            (bool sent,) = feeRecipient.call{value: fees}("");
-            if (!sent) revert MintFeeTransferFailed(feeRecipient, fees);
-            emit MintFeePaid(feeRecipient, fees, quantity);
+            // Snapshot before the external call. An admin contract may also be the fee recipient
+            // and redirect later fees from its receive hook; this mint and its event must still
+            // name the address that actually received this payment.
+            address recipient = feeRecipient;
+            (bool sent,) = recipient.call{value: fees}("");
+            if (!sent) revert MintFeeTransferFailed(recipient, fees);
+            emit MintFeePaid(recipient, fees, quantity);
         }
 
         // Minting after all storage writes, behind the reentrancy guard.

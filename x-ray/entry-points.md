@@ -1,7 +1,7 @@
 # Entry Point Map
 
 > Shapes entry points: permissionless token operations, holder-gated lifecycle operations, and a
-> separate value-inert admin surface.
+> separate bounded admin surface.
 
 ---
 
@@ -14,6 +14,8 @@
 ### Artist attestation (Artist signature / any relayer)
 
 `ShapesArtistAttribution.attest(releaseHash, signature)` ◄── one valid EIP-712 EOA/ERC-1271 signature from immutable `artist`; digest binds chain, child, Shapes, artist and release hash; succeeds once.
+
+`Shapes.setFeeRecipient(newRecipient)` ◄── current `admin()` only; redirects future mint fees, cannot change the rate or move backing/accrued funds; renunciation freezes the final recipient.
 
 ### Minting (User)
 

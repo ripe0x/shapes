@@ -14,9 +14,9 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
 ///      Shape #0 represents ownership of the contract as a collectible object: `owner()` follows
 ///      its current holder, including returning zero while #0 is burned. Ownership grants no
-///      permissions. A separate
-///      `admin()` role may administer and independently lock the value-inert renderer and optional
-///      position resolver, and may be transferred or renounced without moving Shape #0.
+///      permissions. A separate `admin()` role may administer and independently lock the renderer
+///      and optional position resolver, and may redirect future mint fees without changing the fee
+///      rate or touching backing. It may be transferred or renounced without moving Shape #0.
 ///
 ///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
 ///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
@@ -169,7 +169,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev `splitOriginRaw` requires `tokenId` to have been minted as a split child. Original
     ///      mints and re-minted decompose outputs never carry an entry.
     error NotASplitChild(uint256 tokenId);
-    /* --------------------------- immutables --------------------------- */
+    /* ----------------------- fee and deployment reads ----------------------- */
 
     /// @notice The mint fee in basis points of the backing, charged on top of it. 100 is 1%.
     ///         Never enters backing. Set at construction, never changeable.
@@ -178,7 +178,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The mint fee in wei for a given backing amount: `amountWei * feeBps / 10000`.
     function mintFeeFor(uint256 amountWei) external view returns (uint256);
 
-    /// @notice Where mint fees are forwarded. Set at construction, never changeable.
+    /// @notice Where mint fees are currently forwarded. Admin-updateable for future mints.
     function feeRecipient() external view returns (address);
 
     /// @notice Permanent creator attribution: the address that deployed Shapes.

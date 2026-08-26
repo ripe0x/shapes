@@ -23,6 +23,7 @@ set -euo pipefail
 command -v jq >/dev/null || { echo "jq is required to verify the attribution child" >&2; exit 1; }
 RPC="${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
 SENDER="${DEPLOYER:-0xCB43078C32423F5348Cab5885911C3B5faE217F9}"
+PAYOUT="0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4"
 
 FOUNDRY_PROFILE=testnet SEED_ETH="${SEED_ETH:-false}" forge script script/DeploySepolia.s.sol \
   --rpc-url "$RPC" \
@@ -62,9 +63,17 @@ FOUNDRY_PROFILE=testnet forge verify-contract "$ATTRIBUTION" \
   || { echo "artist attribution artist mismatch" >&2; exit 1; }
 [ "$(cast call "$ATTRIBUTION" "attested()(bool)" --rpc-url "$RPC")" = "false" ] \
   || { echo "artist attribution unexpectedly signed during deployment" >&2; exit 1; }
+[ "$(cast call "$SHAPES" "admin()(address)" --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" \
+    = "$(printf '%s' "$SENDER" | tr '[:upper:]' '[:lower:]')" ] \
+  || { echo "admin is not the deployer" >&2; exit 1; }
+[ "$(cast call "$SHAPES" "feeRecipient()(address)" --rpc-url "$RPC" | tr '[:upper:]' '[:lower:]')" \
+    = "$(printf '%s' "$PAYOUT" | tr '[:upper:]' '[:lower:]')" ] \
+  || { echo "fee recipient mismatch" >&2; exit 1; }
 
 echo "Fresh Sepolia deployment verified"
 echo "  Shapes             $SHAPES"
 echo "  deployment tx      $SHAPES_TX"
 echo "  artist             $ARTIST"
 echo "  artist attribution $ATTRIBUTION"
+echo "  admin              $SENDER"
+echo "  fee recipient      $PAYOUT"
