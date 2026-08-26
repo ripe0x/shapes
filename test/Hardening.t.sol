@@ -157,6 +157,26 @@ contract HardeningTest is Test {
         assertEq(shapes.backingOf(id), DENOMS[4], "backing still redeemable");
     }
 
+    function test_ShapeZeroSafeTransferAndSelfCustodyGuard() public {
+        ShapeRenderer titleRenderer = new ShapeRenderer();
+        ShapeCollection titleCollection = new ShapeCollection(address(titleRenderer));
+        Shapes titleShapes = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, feeRecipient, address(titleRenderer), address(titleCollection)
+        );
+
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
+        titleShapes.transferFrom(address(this), address(titleShapes), 0);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
+        titleShapes.safeTransferFrom(address(this), address(titleShapes), 0);
+        assertEq(titleShapes.ownerOf(0), address(this), "rejected transfer moved Shape #0");
+        assertEq(titleShapes.titleHolder(), address(this), "rejected transfer moved the title");
+
+        BalanceProbe receiver = new BalanceProbe(titleShapes);
+        titleShapes.safeTransferFrom(address(this), address(receiver), 0);
+        assertEq(titleShapes.ownerOf(0), address(receiver), "safe transfer did not move Shape #0");
+        assertEq(titleShapes.titleHolder(), address(receiver), "title did not follow Shape #0");
+    }
+
     function test_CannotMintDirectlyIntoTheContract() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 1));

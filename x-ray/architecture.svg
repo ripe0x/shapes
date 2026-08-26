@@ -35,7 +35,7 @@
   </g>
   <g filter="url(#shadow)">
     <rect x="201.1" y="32.0" width="84.8" height="14" rx="7" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
-    <text x="243.5" y="40.8" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Owner</text>
+    <text x="243.5" y="40.8" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Admin</text>
   </g>
   <g filter="url(#shadow)">
     <rect x="308.5" y="32.0" width="111.2" height="14" rx="7" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
@@ -69,7 +69,7 @@
     <rect x="528.0" y="156.0" width="146.0" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>
     <rect x="531.0" y="159.0" width="1.4" height="14" rx="0.6" fill="#F59E0B"/>
     <text x="601.0" y="165.5" text-anchor="middle" font-size="4.8" font-weight="600" fill="#1E293B">Optional External Reads</text>
-    <text x="601.0" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">Position Resolver / Collector Token</text>
+    <text x="601.0" y="170.5" text-anchor="middle" font-size="3.5" fill="#64748B">Position Resolver</text>
   </g>
   <g filter="url(#shadow)">
     <rect x="696.0" y="156.0" width="81.2" height="20" rx="3" fill="#fff" stroke="#E2E5EA" stroke-width="0.5"/>

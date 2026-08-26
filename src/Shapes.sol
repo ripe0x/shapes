@@ -10,6 +10,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
+import {IContractTitle} from "./interfaces/IContractTitle.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {
@@ -43,7 +44,7 @@ import {ComposeCompute} from "./lib/ComposeCompute.sol";
 ///      position resolver; core token and reserve operations never call it. The admin role is
 ///      transferable and may be renounced. None of these touch ETH, backing or redeemability.
 ///
-///      Shape #0 is the collectible title to this contract. `owner()` follows its holder and
+///      Shape #0 is the collectible title to this contract. `titleHolder()` follows its holder and
 ///      returns zero while #0 is burned. Shape #0 is otherwise a normal backed Shape and carries
 ///      no administrative permissions; all authorization uses the separate `admin()` role.
 ///
@@ -223,8 +224,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /* -------------------------- ownership/admin -------------------------- */
 
-    /// @dev Administrative authority is deliberately separate from `owner()`, which resolves the
-    ///      holder of backed Shape #0. No authorization check reads collectible ownership.
+    /// @dev Administrative authority is deliberately separate from `titleHolder()`, which resolves
+    ///      the holder of backed Shape #0. No authorization check reads the collectible title.
     address private _admin;
 
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
@@ -264,7 +265,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
-                blockhash(block.number - 1),
+                _previousBlockHash(),
                 block.number,
                 block.timestamp,
                 block.chainid,
@@ -285,9 +286,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _mint(msg.sender, 0);
     }
 
-    /// @notice The owner of Shapes as a collectible object: the current holder of Shape #0.
+    /// @inheritdoc IContractTitle
     /// @dev Returns zero after #0 is burned or split. This address has no administrative rights.
-    function owner() public view returns (address) {
+    function titleHolder() public view returns (address) {
         return _ownerOf(0);
     }
 
@@ -491,7 +492,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
-                blockhash(block.number - 1),
+                _previousBlockHash(),
                 block.number,
                 block.timestamp,
                 block.chainid,
@@ -1261,6 +1262,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return keccak256(abi.encodePacked(parentSeed, childIndex));
     }
 
+    /// @dev A fresh local EVM may execute at genesis. Production transactions cannot, but making
+    ///      the entropy input total keeps constructor simulation and local deployment reliable.
+    function _previousBlockHash() private view returns (bytes32) {
+        return block.number == 0 ? bytes32(0) : blockhash(block.number - 1);
+    }
+
     /// @inheritdoc IShapes
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32) {
         return _childSeed(parentSeed, childIndex);
@@ -1360,7 +1367,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, IERC165) returns (bool) {
-        return interfaceId == type(IShapes).interfaceId || interfaceId == type(IShapeValue).interfaceId
+        return interfaceId == type(IShapes).interfaceId || interfaceId == type(IAdminControl).interfaceId
+            || interfaceId == type(IContractTitle).interfaceId || interfaceId == type(IShapeValue).interfaceId
             || interfaceId == type(IShapeRecomposition).interfaceId
             || interfaceId == type(IShapeProvenance).interfaceId
             || interfaceId == type(IERC721Value).interfaceId || interfaceId == type(IERC2981).interfaceId

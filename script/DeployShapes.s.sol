@@ -38,7 +38,7 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      house costs an auction rather than the collection.
 ///
 ///      Deployment sends the minimum denomination to `Shapes`, which atomically mints backed
-///      Shape #0 to the deployer. Its holder is returned by `owner()` but receives no
+///      Shape #0 to the deployer. Its holder is returned by `titleHolder()` but receives no
 ///      administrative permissions.
 ///      Permissionless artwork minting therefore begins at #1. The deployer is also the initial
 ///      `admin()` and may transfer or renounce that separate value-inert role.
@@ -107,6 +107,11 @@ contract DeployShapes is LensEquivalence {
             "Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is audited to always accept ETH"
         );
 
+        // Shapes derives the genesis seed from the previous block. A fresh local Anvil chain is
+        // still at block 0 during forge's simulation, although the broadcast transaction mines in
+        // block 1. Advance only that simulation so the constructor cannot underflow.
+        if (block.number == 0) vm.roll(1);
+
         vm.startBroadcast();
 
         renderer = existingRenderer == address(0) ? new ShapeRenderer() : ShapeRenderer(existingRenderer);
@@ -135,7 +140,7 @@ contract DeployShapes is LensEquivalence {
         require(collection.renderer() == address(renderer), "collection points at another renderer");
 
         require(shapes.ownerOf(0) == msg.sender, "Shape #0 not minted to deployer");
-        require(shapes.owner() == msg.sender, "contract owner mismatch");
+        require(shapes.titleHolder() == msg.sender, "title holder mismatch");
         require(shapes.admin() == msg.sender, "admin mismatch");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
         require(shapes.totalMinted() == 1, "permissionless minting should begin at #1");
@@ -189,10 +194,10 @@ contract DeployShapes is LensEquivalence {
         console.log("AuctionHouse  ", address(house));
         console.log("fee (bps)     ", feeBps);
         console.log("fee recipient ", feeRecipient);
-        console.log("owner (#0)    ", shapes.owner());
+        console.log("title holder    ", shapes.titleHolder());
         console.log("admin         ", shapes.admin());
         console.log("");
-        console.log("Fee terms and reserve rules are immutable. Shape #0 carries ownership.");
+        console.log("Fee terms and reserve rules are immutable. Shape #0 carries the collectible title.");
         console.log("Presentation and position resolver settings are independently lockable.");
 
         // Runs last: the probe advances simulated token state, so every check and log above it

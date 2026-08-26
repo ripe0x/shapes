@@ -28,6 +28,8 @@ and verify it at runtime:
 shapes.supportsInterface(type(IShapeValue).interfaceId);         // read state + redeem
 shapes.supportsInterface(type(IShapeRecomposition).interfaceId); // compose / decompose / split
 shapes.supportsInterface(type(IShapeProvenance).interfaceId);    // seeds, origins, formation
+shapes.supportsInterface(type(IContractTitle).interfaceId);      // Shape #0 title holder
+shapes.supportsInterface(type(IAdminControl).interfaceId);       // value-inert administration
 renderer.supportsInterface(type(IShapeGeometry).interfaceId);    // module-level geometry
 ```
 
@@ -36,8 +38,8 @@ not on `Shapes` and are not ERC165-advertised: they live on `ShapeLens`, a separ
 ownerless periphery contract that takes the deployed `Shapes` address as its only constructor
 argument. Get its address from the deployment rather than probing `Shapes` for it.
 
-The interfaces are declared in [src/interfaces/IShapeCapabilities.sol](src/interfaces/IShapeCapabilities.sol)
-and [src/interfaces/IShapeGeometry.sol](src/interfaces/IShapeGeometry.sol).
+The interfaces are declared under [src/interfaces](src/interfaces), including the segmented
+Shape capabilities, contract title, admin control, and renderer geometry surfaces.
 
 ## Reading a Shape
 

@@ -225,9 +225,9 @@ and the narrow compose/decompose identity-revival exception.
 ## Immutability
 
 Shape #0 is the collectible title to the contract. It is minted atomically to the deployer with
-minimum-denomination backing, and `owner()` always returns its current holder. It is otherwise a
+minimum-denomination backing, and `titleHolder()` always returns its current holder. It is otherwise a
 normal Shape: it can be transferred, redeemed, composed, decomposed, or split. While #0 does not
-exist, `owner()` returns zero. Holding it grants no administrative rights. Permissionless artwork
+exist, `titleHolder()` returns zero. Holding it grants no administrative rights. Permissionless artwork
 minting starts at #1, which is the launch-auction lot.
 
 A separate `admin()` role controls two independent, value-inert configuration domains. It can be
@@ -301,13 +301,13 @@ src/
     IShapeCardEscrow.sol
     IShapeGeometry.sol
     IShapeCapabilities.sol
-    IContractCollector.sol
+    IAdminControl.sol
+    IContractTitle.sol
   lib/
     Denominations.sol         the nine amounts and their grids
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
-    ContractCollectorOps.sol  state-mutating logic for IContractCollector
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
     GeometrySampling.sol      the compose and split module-sampling procedures
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1

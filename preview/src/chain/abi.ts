@@ -26,6 +26,10 @@ export const shapesAbi = parseAbi([
   "function sacrifice(uint256 tokenId)",
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
+  "function titleHolder() view returns (address)",
+  "function admin() view returns (address)",
+  "function transferAdmin(address newAdmin)",
+  "function renounceAdmin()",
   "function positionResolver() view returns (address)",
   "function positionResolverLocked() view returns (bool)",
   "function setPositionResolver(address resolver)",
@@ -55,6 +59,7 @@ export const shapesAbi = parseAbi([
   "event Blackened(uint256 indexed tokenId, uint256 sacrificedWei)",
   "event PositionResolverSet(address indexed resolver)",
   "event PositionResolverLocked(address indexed resolver)",
+  "event AdminTransferred(address indexed previousAdmin, address indexed newAdmin)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
   "error UnsupportedDenomination(uint256 amountWei)",

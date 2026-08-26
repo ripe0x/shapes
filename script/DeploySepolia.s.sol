@@ -17,7 +17,7 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 /// @dev Fee recipient defaults to the deployer (fine on a throwaway testnet; on mainnet it is an
 ///      immutable decision — use DeployShapes.s.sol there with SHAPES_FEE_RECIPIENT set).
 ///
-///      Backed Shape #0 is minted atomically to the deployer as the powerless contract-ownership
+///      Backed Shape #0 is minted atomically to the deployer as the powerless contract-title
 ///      token. When seeding is enabled, the launch auction therefore lists Shape #1.
 ///
 ///        SHAPES_FEE_BPS   mint fee in basis points. Defaults to 100 (1%).
@@ -75,7 +75,7 @@ contract DeploySepolia is LensEquivalence {
         house = new ShapeAuctionHouse(address(shapes));
 
         if (seed) {
-            // Shape #0 already carries contract ownership. Shape #1 is the first ordinary artwork
+            // Shape #0 already carries contract title. Shape #1 is the first ordinary artwork
             // and the launch lot. 24 hour clock from the first bid, no reserve, 5% minimum
             // increment, 15 minute extension window.
             uint256 lotFee = (Denominations.amountAt(0) * feeBps) / 10_000;
@@ -103,7 +103,7 @@ contract DeploySepolia is LensEquivalence {
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         require(address(lens.shapes()) == address(shapes), "lens points at another token");
         require(shapes.ownerOf(0) == me, "Shape #0 not minted to deployer");
-        require(shapes.owner() == me, "contract owner mismatch");
+        require(shapes.titleHolder() == me, "title holder mismatch");
         require(shapes.admin() == me, "admin mismatch");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
 

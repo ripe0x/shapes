@@ -42,7 +42,7 @@ contract Token0Test is Test {
     /// Genesis #0 is atomic and permissionless artwork minting begins at #1.
     function test_DeployerGetsTokenZeroAndFirstPublicMintIsOne() public {
         assertEq(shapes.ownerOf(0), address(this));
-        assertEq(shapes.owner(), address(this));
+        assertEq(shapes.titleHolder(), address(this));
 
         vm.prank(stranger);
         uint256 id = shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
@@ -52,18 +52,18 @@ contract Token0Test is Test {
     }
 
     /// Shape #0 can be auctioned later through the ordinary lot path. While escrowed, its literal
-    /// ERC721 owner, and therefore `Shapes.owner()`, is the house; admin remains independent.
+    /// ERC721 owner, and therefore `Shapes.titleHolder()`, is the house; admin remains independent.
     function test_DeployerCanAuctionShapeZeroLater() public {
         shapes.approve(address(house), 0);
         uint256 auctionId = house.createAuction(address(shapes), 0, 24 hours, 0, 500, 15 minutes);
 
-        assertEq(shapes.owner(), address(house));
+        assertEq(shapes.titleHolder(), address(house));
         assertEq(shapes.admin(), address(this));
 
         house.cancelAuction(auctionId);
         house.claimLot(auctionId);
 
-        assertEq(shapes.owner(), address(this));
+        assertEq(shapes.titleHolder(), address(this));
         assertEq(shapes.admin(), address(this));
     }
 
@@ -123,13 +123,14 @@ contract Token0Test is Test {
     function test_RecipientDoesNotMoveTheSeed() public {
         uint256 snap = vm.snapshotState();
         vm.prank(artist);
-        shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
-        bytes32 toSelf = shapes.seedOf(0);
+        uint256 selfId = shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
+        bytes32 toSelf = shapes.seedOf(selfId);
 
         vm.revertToState(snap);
         vm.prank(artist);
-        shapes.mintTo{value: (DENOMS[0] * 101) / 100}(DENOMS[0], stranger);
-        assertEq(shapes.seedOf(0), toSelf, "the recipient changed the seed");
+        uint256 recipientId = shapes.mintTo{value: (DENOMS[0] * 101) / 100}(DENOMS[0], stranger);
+        assertEq(recipientId, selfId, "snapshot did not reproduce the token id");
+        assertEq(shapes.seedOf(recipientId), toSelf, "the recipient changed the seed");
     }
 
     /// Could someone open an auction on a token they do not own?

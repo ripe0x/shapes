@@ -594,7 +594,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   flat radial ends lie on the footprint edges.
 
 - **Collectible title, separate value-inert admin.** Shape #0 is minted to the deployer with
-  minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
+  minimum-denomination backing. `titleHolder()` follows its holder, or returns zero while #0 is burned;
   holding #0 grants no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
   can set, replace, clear and permanently lock the optional position resolver — including
@@ -700,8 +700,8 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   revert or misleading result affects only callers of `positionOf`.
 - **Replaceable, clearable, independently lockable.** The transferable admin may set or replace
   the resolver with a contract address, clear it to zero, or permanently lock its current value at
-  any time — including locking zero. Renderer and resolver locks are independent. Ownership
-  transfer moves all still-unlocked authority; renunciation ends it. Shape #0 ownership moves none
+  any time — including locking zero. Renderer and resolver locks are independent. Admin transfer
+  moves all still-unlocked authority; renunciation ends it. Shape #0 title holding moves none
   of this authority. Neither pointer can change
   backing, ownership, redemption, composition or reserve accounting.
 

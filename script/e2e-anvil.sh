@@ -81,9 +81,9 @@ echo "  redeemableBacking $TOTAL"
 echo "  contract balance  $BAL"
 [ "${TOTAL%% *}" = "$BAL" ] && echo "  ok: balance == redeemableBacking" || { echo "  FAIL"; exit 1; }
 
-# Tokens are minted 0..8 in denomination order (nothing is minted at deploy, so ids start at 0),
-# so 1 ETH (the fifth denomination) is token 4.
-ETH1_ID=4
+# Backed Shape #0 is minted at deploy. The nine public mints are therefore ids 1..9 in
+# denomination order, so 1 ETH (the fifth denomination) is token 5.
+ETH1_ID=5
 
 say "Reading fully onchain metadata for token $ETH1_ID (1 ETH)"
 URI=$(cast call "$SHAPES" "tokenURI(uint256)(string)" "$ETH1_ID" --rpc-url "$RPC")
@@ -117,9 +117,9 @@ echo "  received $DELTA wei"
 [ "$DELTA" = "1000000000000000000" ] && echo "  ok: exactly the wrapped amount" || { echo "  FAIL"; exit 1; }
 
 say "Redeeming the rest"
-# Every token except the 1 ETH one, which was already redeemed above.
+# Shape #0 plus every public mint except the 1 ETH one, which was already redeemed above.
 REST=""
-for t in 0 1 2 3 4 5 6 7 8; do [ "$t" = "$ETH1_ID" ] && continue; REST="$REST,$t"; done
+for t in 0 1 2 3 4 5 6 7 8 9; do [ "$t" = "$ETH1_ID" ] && continue; REST="$REST,$t"; done
 REST="[${REST#,}]"
 send_wait "$SHAPES" "redeemBatch(uint256[])" "$REST" \
   --private-key "$PK0" --rpc-url "$RPC" >/dev/null

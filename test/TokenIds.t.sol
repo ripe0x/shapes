@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 import {ShapesBase} from "./Shapes.t.sol";
-import {IShapes} from "../src/interfaces/IShapes.sol";
 
 /// @notice The id allocator, in one place.
 ///
@@ -84,10 +83,26 @@ contract TokenIdAllocationTest is ShapesBase {
         }
         assertEq(shapes.backingOf(0), DENOMS[0], "#0 reverted");
 
-        uint8[] memory outs = new uint8[](0);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
         vm.prank(alice);
-        shapes.split(0, outs);
+        shapes.compose(0, burn);
+        assertEq(shapes.backingOf(0), DENOMS[1], "#0 grew again before split");
+
+        uint256 backingBefore = shapes.redeemableBacking();
+        uint8[] memory outs = new uint8[](5);
+        vm.prank(alice);
+        uint256[] memory children = shapes.split(0, outs);
+
+        assertEq(shapes.titleHolder(), address(0), "split must extinguish the title until #0 is revived");
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));
+        shapes.ownerOf(0);
+        assertEq(children.length, 5);
+        for (uint256 i = 0; i < children.length; ++i) {
+            assertEq(children[i], 5 + i, "split ids continue after the original batch");
+            assertEq(shapes.ownerOf(children[i]), alice, "split child went to another owner");
+            assertEq(shapes.backingOf(children[i]), DENOMS[0], "split child backing changed");
+        }
+        assertEq(shapes.redeemableBacking(), backingBefore, "split changed aggregate backing");
+        assertEq(shapes.totalSupply(), 5, "split burns one parent and mints five children");
         _assertSolvent();
     }
 
