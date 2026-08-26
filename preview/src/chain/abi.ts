@@ -127,7 +127,9 @@ export interface Deployment {
   rpc: string;
   chainId: number;
   shapes: `0x${string}`;
-  artist: `0x${string}`;
+  /** Permanent deployer attribution. Optional while deployment metadata still targets a
+   *  pre-attribution contract; the site also attempts to read it directly from Shapes. */
+  artist?: `0x${string}`;
   /** ShapeLens: the read-only periphery contract. The DNA/provenance section and other
    *  lens-backed reads have nothing to call without it; see the per-call fallbacks in
    *  `site/dna.ts` and `site/TokenView.tsx` for what happens when it is absent from

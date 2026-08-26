@@ -7,7 +7,7 @@ import type {SiteData} from "./data";
 import {addrUrl, short} from "./ui";
 
 export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null}) {
-  const artist = data?.artist ?? dep.artist;
+  const artist = data?.artist ?? dep.artist ?? null;
   const deployedOn = (chainId: number) =>
     dep.chainId === chainId ? (
       <a href={addrUrl(dep.shapes, chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
@@ -48,19 +48,27 @@ export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null})
           <div>{deployedOn(11155111)}</div>
           <div style={{color: C.muted}}>artist</div>
           <div>
-            <a href={addrUrl(artist, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
-              {short(artist)}
-            </a>
+            {artist === null ? (
+              "not available on this deployment"
+            ) : (
+              <a href={addrUrl(artist, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
+                {short(artist)}
+              </a>
+            )}
           </div>
           <div style={{color: C.muted}}>signature</div>
           <div>
-            <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
-              {data == null
-                ? "loading"
-                : data.artistAttested
+            {data == null ? (
+              "loading"
+            ) : data.artistReleaseHash === null ? (
+              "not available on this deployment"
+            ) : (
+              <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 13}}>
+                {data.artistAttested
                   ? `signed · ${short(data.artistReleaseHash)}`
                   : "not signed yet"}
-            </a>
+              </a>
+            )}
           </div>
           <div style={{color: C.muted}}>source</div>
           <div>

@@ -36,9 +36,10 @@ export interface SiteData {
   reserve: bigint; // redeemableBacking()
   supply: bigint; // totalSupply()
   fees: bigint[]; // mintFeeFor() per denomination index
-  artist: `0x${string}`;
+  artist: `0x${string}` | null;
   artistAttested: boolean;
-  artistReleaseHash: `0x${string}`;
+  /** Null when deployment metadata targets a pre-attribution Shapes contract. */
+  artistReleaseHash: `0x${string}` | null;
 }
 
 function parseUri(uri: string): {image: string; meta: TokenMeta} {
@@ -145,15 +146,22 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
     publicClient.readContract({...shapes, functionName: "totalMinted"}),
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
-    publicClient.readContract({...shapes, functionName: "artist"}),
-    publicClient.readContract({...shapes, functionName: "artistReleaseHash"}),
+    publicClient
+      .readContract({...shapes, functionName: "artist"})
+      .then((value) => value as `0x${string}`)
+      .catch(() => dep.artist ?? null),
+    publicClient
+      .readContract({...shapes, functionName: "artistReleaseHash"})
+      .then((value) => value as `0x${string}`)
+      .catch(() => null),
     hasMulticall3(publicClient),
     ...DENOMINATIONS.map((d) =>
       publicClient.readContract({...shapes, functionName: "mintFeeFor", args: [d.wei]}),
     ),
   ]);
 
-  const artistAttested = artistReleaseHash !== `0x${"00".repeat(32)}`;
+  const artistAttested =
+    artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
 
   const ids = Array.from({length: Number(minted)}, (_, i) => BigInt(i));
   const owners = await batchRead(

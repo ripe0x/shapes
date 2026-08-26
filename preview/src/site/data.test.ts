@@ -41,7 +41,12 @@ function tokenUriFor(id: bigint, t: FakeToken): string {
  * Fake PublicClient over a fixed token map. Counts multicall and readContract invocations so
  * tests can assert which path loadSite took and how it chunked.
  */
-function makeClient(opts: {minted: bigint; live: Map<bigint, FakeToken>; multicall3: boolean}) {
+function makeClient(opts: {
+  minted: bigint;
+  live: Map<bigint, FakeToken>;
+  multicall3: boolean;
+  attribution?: boolean;
+}) {
   const counts = {multicall: 0, readContract: 0};
 
   function resolve(functionName: string, args: readonly unknown[] | undefined): unknown {
@@ -55,8 +60,10 @@ function makeClient(opts: {minted: bigint; live: Map<bigint, FakeToken>; multica
       case "totalSupply":
         return BigInt(opts.live.size);
       case "artist":
+        if (opts.attribution === false) throw new Error("function selector was not recognized");
         return ARTIST;
       case "artistReleaseHash":
+        if (opts.attribution === false) throw new Error("function selector was not recognized");
         return RELEASE_HASH;
       case "mintFeeFor":
         return (id as bigint) / 100n; // arg is the denomination wei
@@ -162,4 +169,22 @@ test("loadSite: falls back to single reads when the chain has no Multicall3", as
   assert.equal(counts.multicall, 0);
   // Header reads, then 3 ownerOf + 5 per-token fields.
   assert.equal(counts.readContract, 5 + DENOMINATIONS.length + 3 + 5);
+});
+
+test("loadSite: pre-attribution deployments still load", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const legacyDep = {...dep, artist: undefined};
+  const {client} = makeClient({
+    minted: 2n,
+    live,
+    multicall3: false,
+    attribution: false,
+  });
+
+  const site = await loadSite(client, legacyDep);
+
+  assert.deepEqual(site.tokens.map((t) => t.id), [1n]);
+  assert.equal(site.artist, null);
+  assert.equal(site.artistReleaseHash, null);
+  assert.equal(site.artistAttested, false);
 });
