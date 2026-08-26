@@ -3,7 +3,6 @@ pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IAdminControl} from "./IAdminControl.sol";
-import {IContractTitle} from "./IContractTitle.sol";
 import {ShapeFormation} from "./IShapeCapabilities.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
@@ -13,8 +12,9 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      returns exactly that amount to its owner. The other reserve outflow is `sacrifice`, which
 ///      sends a fixed 100 ETH to an unspendable address and is callable only by an apex Complete
 ///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
-///      Shape #0 is the collectible title to the contract: `titleHolder()` follows its current holder,
-///      including returning zero while #0 is burned. That title grants no permissions. A separate
+///      Shape #0 represents ownership of the contract as a collectible object: `owner()` follows
+///      its current holder, including returning zero while #0 is burned. Ownership grants no
+///      permissions. A separate
 ///      `admin()` role may administer and independently lock the value-inert renderer and optional
 ///      position resolver, and may be transferred or renounced without moving Shape #0.
 ///
@@ -24,7 +24,7 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      contract's runtime bytecode under the EIP-170 size limit. `modulesOf`,
 ///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the minimal
 ///      raw accessors `ShapeLens` reads to reconstruct them.
-interface IShapes is IERC721, IERC721Value, IAdminControl, IContractTitle {
+interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Emitted when a Shape is minted. `originCount` is always 1: a mint is the sole
     ///         source of new origins. A strict origin-creation signal; recomposition does not
     ///         emit it.
@@ -181,6 +181,10 @@ interface IShapes is IERC721, IERC721Value, IAdminControl, IContractTitle {
 
     /// @notice Where mint fees are forwarded. Set at construction, never changeable.
     function feeRecipient() external view returns (address);
+
+    /// @notice The current holder of Shape #0, or zero while #0 does not exist.
+    /// @dev This collectible ownership carries no administrative authority.
+    function owner() external view returns (address);
 
     /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until locked.
     function renderer() external view returns (address);

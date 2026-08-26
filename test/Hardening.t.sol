@@ -158,23 +158,23 @@ contract HardeningTest is Test {
     }
 
     function test_ShapeZeroSafeTransferAndSelfCustodyGuard() public {
-        ShapeRenderer titleRenderer = new ShapeRenderer();
-        ShapeCollection titleCollection = new ShapeCollection(address(titleRenderer));
-        Shapes titleShapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(titleRenderer), address(titleCollection)
+        ShapeRenderer ownershipRenderer = new ShapeRenderer();
+        ShapeCollection ownershipCollection = new ShapeCollection(address(ownershipRenderer));
+        Shapes ownershipShapes = new Shapes{value: Denominations.amountAt(0)}(
+            FEE_BPS, feeRecipient, address(ownershipRenderer), address(ownershipCollection)
         );
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
-        titleShapes.transferFrom(address(this), address(titleShapes), 0);
+        ownershipShapes.transferFrom(address(this), address(ownershipShapes), 0);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
-        titleShapes.safeTransferFrom(address(this), address(titleShapes), 0);
-        assertEq(titleShapes.ownerOf(0), address(this), "rejected transfer moved Shape #0");
-        assertEq(titleShapes.titleHolder(), address(this), "rejected transfer moved the title");
+        ownershipShapes.safeTransferFrom(address(this), address(ownershipShapes), 0);
+        assertEq(ownershipShapes.ownerOf(0), address(this), "rejected transfer moved Shape #0");
+        assertEq(ownershipShapes.owner(), address(this), "rejected transfer moved contract ownership");
 
-        BalanceProbe receiver = new BalanceProbe(titleShapes);
-        titleShapes.safeTransferFrom(address(this), address(receiver), 0);
-        assertEq(titleShapes.ownerOf(0), address(receiver), "safe transfer did not move Shape #0");
-        assertEq(titleShapes.titleHolder(), address(receiver), "title did not follow Shape #0");
+        BalanceProbe receiver = new BalanceProbe(ownershipShapes);
+        ownershipShapes.safeTransferFrom(address(this), address(receiver), 0);
+        assertEq(ownershipShapes.ownerOf(0), address(receiver), "safe transfer did not move Shape #0");
+        assertEq(ownershipShapes.owner(), address(receiver), "ownership did not follow Shape #0");
     }
 
     function test_CannotMintDirectlyIntoTheContract() public {

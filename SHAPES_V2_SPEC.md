@@ -663,5 +663,5 @@ tokens exist anywhere.
 - The returned address is opaque discovery data. The future position protocol defines its claim,
   authorization, settlement and lifecycle. No core Shapes operation calls the resolver.
 - Renouncing admin permanently ends any remaining renderer or resolver administration; a prior
-  admin transfer moves all still-unlocked authority to the new admin. Shape #0 title holding is
+  admin transfer moves all still-unlocked authority to the new admin. Shape #0 ownership is
   independent and moves no authority.

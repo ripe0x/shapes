@@ -92,7 +92,7 @@ contract TokenIdAllocationTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory children = shapes.split(0, outs);
 
-        assertEq(shapes.titleHolder(), address(0), "split must extinguish the title until #0 is revived");
+        assertEq(shapes.owner(), address(0), "split must clear ownership until #0 is revived");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));
         shapes.ownerOf(0);
         assertEq(children.length, 5);

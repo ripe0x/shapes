@@ -10,7 +10,6 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
-import {IContractTitle} from "./interfaces/IContractTitle.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {
@@ -44,9 +43,9 @@ import {ComposeCompute} from "./lib/ComposeCompute.sol";
 ///      position resolver; core token and reserve operations never call it. The admin role is
 ///      transferable and may be renounced. None of these touch ETH, backing or redeemability.
 ///
-///      Shape #0 is the collectible title to this contract. `titleHolder()` follows its holder and
-///      returns zero while #0 is burned. Shape #0 is otherwise a normal backed Shape and carries
-///      no administrative permissions; all authorization uses the separate `admin()` role.
+///      Shape #0 represents ownership of this contract as a collectible object. `owner()` follows
+///      its holder and returns zero while #0 is burned. Shape #0 is otherwise a normal backed
+///      Shape and carries no administrative permissions; authorization uses the separate `admin()` role.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
 ///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
@@ -224,8 +223,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /* -------------------------- ownership/admin -------------------------- */
 
-    /// @dev Administrative authority is deliberately separate from `titleHolder()`, which resolves
-    ///      the holder of backed Shape #0. No authorization check reads the collectible title.
+    /// @dev Administrative authority is deliberately separate from `owner()`, which resolves the
+    ///      holder of backed Shape #0. No authorization check reads collectible ownership.
     address private _admin;
 
     /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
@@ -236,7 +235,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///        low-gas `receive`.
     /// @param renderer_ The onchain renderer. Replaceable by the admin until locked. An address
     ///        with no renderer code is refused here and by `setRenderer`.
-    /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-title
+    /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-ownership
     ///      Shape is fee-exempt and minted atomically to `msg.sender`, so permissionless artwork
     ///      minting begins at #1.
     constructor(uint256 feeBps_, address feeRecipient_, address renderer_, address collection_)
@@ -286,9 +285,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _mint(msg.sender, 0);
     }
 
-    /// @inheritdoc IContractTitle
+    /// @notice The owner of Shapes as a collectible object: the current holder of Shape #0.
     /// @dev Returns zero after #0 is burned or split. This address has no administrative rights.
-    function titleHolder() public view returns (address) {
+    function owner() public view returns (address) {
         return _ownerOf(0);
     }
 
@@ -1368,7 +1367,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     function supportsInterface(bytes4 interfaceId) public view override(ERC721, IERC165) returns (bool) {
         return interfaceId == type(IShapes).interfaceId || interfaceId == type(IAdminControl).interfaceId
-            || interfaceId == type(IContractTitle).interfaceId || interfaceId == type(IShapeValue).interfaceId
+            || interfaceId == type(IShapeValue).interfaceId
             || interfaceId == type(IShapeRecomposition).interfaceId
             || interfaceId == type(IShapeProvenance).interfaceId
             || interfaceId == type(IERC721Value).interfaceId || interfaceId == type(IERC2981).interfaceId

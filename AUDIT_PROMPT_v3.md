@@ -166,7 +166,7 @@ Read the comments as claims to be falsified, not as documentation.
 
 ## Known and accepted, do not report as findings
 
-- **Token id 0 is the backed contract-title Shape.** It is minted atomically to the deployer,
+- **Token id 0 represents backed collectible ownership of the contract.** It is minted atomically to the deployer,
   carries no permissions, and otherwise follows the ordinary Shape lifecycle. The first
   permissionless artwork is #1. Deliberate.
 - **The winner can burn the lot.** If the lot is a Shape, `redeem` destroys it for its backing.

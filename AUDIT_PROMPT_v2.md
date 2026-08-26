@@ -113,7 +113,7 @@ The renderer (`ShapeRenderer.sol`) is a byte-for-byte port of a TypeScript canon
 renderer; a Foundry parity suite asserts identical output against generated fixtures.
 The renderer and collection metadata contract are admin-replaceable until `lockRenderer`, and are
 read only by metadata views. The optional independently lockable position resolver is read only by
-`positionOf`. Shape #0 is the backed collectible title exposed by `titleHolder()` and carries no admin
+`positionOf`. Shape #0 represents backed collectible ownership exposed by `owner()` and carries no admin
 permissions; all authorization uses the separate transferable and renounceable `admin()` role.
 
 ## The core invariants (these must never break)

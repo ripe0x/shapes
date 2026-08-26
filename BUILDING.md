@@ -28,7 +28,6 @@ and verify it at runtime:
 shapes.supportsInterface(type(IShapeValue).interfaceId);         // read state + redeem
 shapes.supportsInterface(type(IShapeRecomposition).interfaceId); // compose / decompose / split
 shapes.supportsInterface(type(IShapeProvenance).interfaceId);    // seeds, origins, formation
-shapes.supportsInterface(type(IContractTitle).interfaceId);      // Shape #0 title holder
 shapes.supportsInterface(type(IAdminControl).interfaceId);       // value-inert administration
 renderer.supportsInterface(type(IShapeGeometry).interfaceId);    // module-level geometry
 ```
@@ -39,7 +38,8 @@ ownerless periphery contract that takes the deployed `Shapes` address as its onl
 argument. Get its address from the deployment rather than probing `Shapes` for it.
 
 The interfaces are declared under [src/interfaces](src/interfaces), including the segmented
-Shape capabilities, contract title, admin control, and renderer geometry surfaces.
+Shape capabilities, admin control, and renderer geometry surfaces. `owner()` reports the holder of
+Shape #0 and is part of `IShapes`; it carries no administrative authority.
 
 ## Reading a Shape
 

@@ -33,7 +33,7 @@
 `Shapes.setRenderer()` / `setCollection()` (◄── `!rendererLocked`) → `Shapes.lockRenderer()` (one-way)
 `Shapes.setTokenCopy()` / `setCollectionCopy()` — independent of the renderer lock, always editable
 `Shapes.setPositionResolver()` (◄── `!positionResolverLocked`) → `Shapes.lockPositionResolver()` (one-way)
-`Shapes.transferAdmin()` / `renounceAdmin()` — independent of Shape #0 title holding
+`Shapes.transferAdmin()` / `renounceAdmin()` — independent of Shape #0 ownership
 
 ### Auction Flow (Seller / Bidder)
 
@@ -285,7 +285,7 @@ These five are grouped: each is *effectively* permissionless (any caller may inv
 
 ## Admin-Only
 
-Gated by the separate `onlyAdmin` check on `Shapes`. Shape #0 title holding does not satisfy this
+Gated by the separate `onlyAdmin` check on `Shapes`. Shape #0 ownership does not satisfy this
 check. None of these functions reach ETH, backing, redemption or token ownership (SECURITY.md,
 "Verified safe" table).
 

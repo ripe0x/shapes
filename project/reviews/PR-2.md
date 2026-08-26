@@ -1,35 +1,47 @@
 # PR #2 review
 
-- Target: PR #2 merged to main as `7fca2b2` after review head `8b2b133` passed required checks.
-- Reviewers: Director review of architecture, authorization, standards semantics, deployment, and integration order; independent read-only reviews of ABI/deploy compatibility, Shape #0 lifecycle/tests, and project-plan impact.
+- Original PR: merged to main as `7fca2b2` after review head `8b2b133` passed required checks.
+- Corrective review: `codex/restore-pr2-owner` from main `a1f34fd`, restoring PR #2's intended `owner()` API before any deployment.
+- Reviewers: Director review of architecture, authorization, standards semantics, deployment, and integration order; independent read-only reviews of ABI compatibility, Shape #0 lifecycle, terminology, and security.
 
-## Findings
+## Review incident
 
-- CLOSED P1: ERC-173 ambiguity. The collectible read is now `IContractTitle.titleHolder()`; no `owner()` selector is exposed. Shape #0 can move, enter escrow, burn, and revive without being mistaken for administrative control.
-- CLOSED P1: capability discovery. Legacy `IShapes` remains `0xbdcee955`; `IAdminControl` is `0x067e35a5`; `IContractTitle` is `0xe1ca0602`. `supportsInterface` and regression tests pin all three, and reject ERC-173 plus the bare `owner()` selector.
-- CLOSED P1: the recipient-independent seed test captures the returned mint ids and compares those seeds.
-- CLOSED P2: a valid Shape #0 split now checks title extinction, child ids/owners/backing, supply, reserve conservation, and solvency.
-- CLOSED P2: direct Shape #0 transfer, safe transfer to a receiver, and self-custody rejection are covered.
-- CLOSED P2: collector-domain residue is removed from executable source, the x-ray, and the repository map.
+The original PR exposed `owner()` as the current holder of backed Shape #0 and kept all authority in a separate `admin()` role. The Director raised an ERC-173 compatibility concern, then incorrectly treated a general instruction to proceed as approval to replace that product API with `IContractTitle.titleHolder()`. The user did not approve the substitution. It is being reverted. DIRECTOR.md now forbids changing fundamental behavior, contract semantics, public ABI, or PR architecture on inferred approval.
+
+## Retained PR #2 findings and fixes
+
+- CLOSED: the recipient-independent seed test captures the returned mint ids and compares those seeds.
+- CLOSED: a valid Shape #0 split checks child ids, owners, backing, supply, reserve conservation, solvency, and the temporary zero `owner()` state.
+- CLOSED: direct Shape #0 transfer, safe transfer to a receiver, and self-custody rejection are covered.
+- CLOSED: collector-domain residue is removed from executable source, the x-ray, and the repository map.
 - ACCEPTED CONSTRAINT: direct deployment assigns Shape #0 and admin to the deployer. A future factory must explicitly hand both roles off; no factory exists in the adopted architecture.
-- CLOSED integration defect found during final verification: genesis construction no longer underflows when Forge simulates at block 0, with a regression test.
-- CLOSED integration defect found during final verification: `e2e-anvil.sh` now accounts for genesis Shape #0 when selecting and redeeming public-mint ids.
+- CLOSED: genesis construction no longer underflows when Forge simulates at block 0, with a regression test.
+- CLOSED: `e2e-anvil.sh` and SeedDemo account for genesis Shape #0 when selecting public-mint ids.
 
-## Architecture and integration disposition
+## Restored architecture under review
 
-- The reserve/accounting and ordinary Shape #0 lifecycle wiring reviewed as coherent. Constructor backing, transfer, auction escrow, redemption, compose-as-input, decomposition revival, admin transfer, and admin renunciation have no confirmed implementation defect.
-- This charter-level architecture delta was approved as D-24. It changes constructor value flow, token numbering, authorization, ABI, deployment addresses, and removes the collector capability domain.
-- Merge order is satisfied: PR #1 merged as `5eec83d`, then PR #2 was rebased onto it and the combined local gate rerun.
-- The existing Sepolia address remains the old immutable architecture. Deploy a fresh implementation, replace deployment metadata/fromBlock, and collect P1 evidence only against the new system.
+- `owner()` returns `ownerOf(0)` without reverting, or zero while Shape #0 is burned or split.
+- Shape #0 is otherwise an ordinary backed ERC-721 and may move, enter auction escrow, redeem, compose, decompose, and split.
+- `owner()` grants no authority. Every configuration authorization check reads the separate transferable and renounceable `admin()` role.
+- No `titleHolder()` selector or `IContractTitle` interface remains.
+- The existing Sepolia address is the old immutable architecture. Do not deploy or relabel it as this architecture.
+
+## Review conclusions
+
+- ACCEPTED PRODUCT TRADEOFF: exposing `owner()` without ERC-173 `transferOwnership(address)` can confuse selector-only Ownable tooling, but the contract does not advertise ERC-173 and every authorization check reads only `admin()`. Independent behavior review and the security scan found no on-chain authorization defect. This concern did not authorize the Director's rename.
+- OPEN P1 COMPATIBILITY DEFECT: adding `owner()` directly to `IShapes` changes `type(IShapes).interfaceId` from legacy `0xbdcee955` to `0x306b220e`; the candidate advertises only the new id. Consumers probing the pre-PR2 capability will reject the new deployment even though it still implements every old function. D-25 requires the user to choose explicit dual-id support (recommended) or intentional prelaunch breakage.
 
 ## Verification
 
-- Solidity: formatting/build pass; 428 tests pass, 0 fail, 4 fork-only skip; testnet-profile title/token/ladder packet passes; Shapes runtime 24,125 bytes with 451-byte EIP-170 margin.
-- Deployment: Sepolia-profile dry-run passes without broadcast. Fresh local Anvil broadcast passes deploy, nine-denomination minting, title-inclusive full reserve unwind, transfer, exact redemption, auction settlement, and zero residual house balance.
-- Renderer/site: 39 preview tests, TypeScript typecheck, stream verification, 500-per-denomination sweep, fixture freshness, web lint, and production build pass.
-- Documentation: selector check and stale collector/current-owner terminology sweep pass.
-- Remote contracts and renderer-parity CI passed at review head `8b2b133`. Two independent re-reviews accepted the repaired candidate. The Codex Security diff scan found zero reportable findings.
+- `forge fmt`: pass.
+- `forge build --sizes`: pass; Shapes runtime 24,131 bytes, 445-byte EIP-170 margin.
+- `forge test`: 428 passed, 0 failed, 4 fork-only skipped.
+- Testnet profile: 27 ownership/token/ladder tests passed.
+- Preview: 39 tests and TypeScript typecheck passed.
+- Independent behavior review: accept, no functional or authorization defect.
+- Independent ABI review: confirmed the R18 compatibility break and the non-authorizing ERC-173 tooling risk.
+- Codex Security diff scan `704e538c-4db4-4ce3-b255-fd523cc47b35`: complete, zero reportable findings.
 
 ## Verdict
 
-Accepted and merged as `7fca2b2`. D-24 is explicit, every review finding is closed, canonical docs and Charter are reconciled, and the full local and remote gate is green. A fresh Sepolia deployment/readback is the remaining entry condition for P1.
+Request decision; do not merge yet. The restored `owner()` behavior is coherent and security-clean, but the legacy ERC-165 discovery break is real. Resolve D-25 without substituting another product API, rerun the narrow interface/build/test gate, then merge.

@@ -26,7 +26,7 @@ export const shapesAbi = parseAbi([
   "function sacrifice(uint256 tokenId)",
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
-  "function titleHolder() view returns (address)",
+  "function owner() view returns (address)",
   "function admin() view returns (address)",
   "function transferAdmin(address newAdmin)",
   "function renounceAdmin()",
