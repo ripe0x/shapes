@@ -132,7 +132,7 @@ contract GasCeilingsTest is ShapesBase {
     }
 
     /// @notice Builds a 10,000-origin apex through 3,333 legal, bounded compositions.
-    /// @dev The per-rung measurements establish the worst individual call at 985,826 gas. This
+    /// @dev The per-rung measurements establish the worst individual call at 985,862 gas. This
     ///      test establishes that the exact tree reaches an apex Complete without relying on the
     ///      infeasible 9,999-input shortcut. `composeMany` may batch multiple tree calls, but the
     ///      tree's 3,333 call count is not a claim about a minimum transaction count.

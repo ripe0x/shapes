@@ -27,7 +27,7 @@
   },
   "compilation": {
     "platform": "crytic-compile",
-    "platformConfig": {"target": "test/MedusaReserveHarness.sol", "solcVersion": "", "exportDirectory": "", "args": []}
+    "platformConfig": {"target": "medusa/MedusaReserveHarness.sol", "solcVersion": "", "exportDirectory": "/tmp/shapes-p1-medusa-crytic-export", "args": []}
   },
   "slither": {"useSlither": false, "cachePath": "/tmp/shapes-p1-medusa-slither.json", "args": []},
   "logging": {"level": "info", "logDirectory": "/tmp/shapes-p1-medusa-logs", "noColor": true}

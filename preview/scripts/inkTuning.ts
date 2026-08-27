@@ -193,8 +193,7 @@ function homogeneousBaseline(k: Knobs) {
 // ---------------------------------------------------------------------------
 // Part 2 — rescue discount, measured. How reliably does ONE group of `ratio` children compose
 // UP to Solid, given the group already contains a Solid `best` but a non-Solid center? This
-// bounds how far a player can substitute cheap fillers for Solid dust and still climb, i.e. how
-// much cheaper than the homogeneous baseline the real optimum is.
+// demonstrates how far a player can substitute cheap fillers for Solid dust and still climb.
 // ---------------------------------------------------------------------------
 
 /** Units-weighted center over a group of (gene, units) pairs, half-up (mirrors InkGenes.center). */
@@ -219,7 +218,7 @@ function pGroupToSolid(ratio: number, solids: number, filler: number, oldIndex: 
     const seeds = genes.map(() => randSeed(rng));
     const best = Math.max(...genes);
     const worst = Math.min(...genes);
-    // try each child as survivor (the n+1 shots); keep the best result gene.
+    // Try each of the `ratio` children as survivor; keep the best result gene.
     let bestResult = 0;
     for (let s = 0; s < ratio; s++) {
       const survivorGene = genes[s];
@@ -384,7 +383,7 @@ function main() {
   }
   out.rescueTierP = rescueTable;
 
-  // --- Direct factory: real optimum vs the homogeneous upper bound ---
+  // --- Direct factory: measured retained-gene heuristic vs the homogeneous upper bound ---
   console.log("\n2b. Direct factory — dust actually minted to reach a Solid at the target denom");
   console.log("    One retained-gene heuristic, not a global optimizer. Redeems below threshold; searches survivors.\n");
   console.log("    target   keep≥     avg dust    homog. baseline   discount");

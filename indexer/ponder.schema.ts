@@ -1,8 +1,8 @@
 import { index, onchainTable } from "ponder";
 
 // One row per live-or-dead token id ever minted. A token stops being `live` on redemption,
-// composition into a survivor or decomposition; it is never deleted, so
-// history stays queryable.
+// split, or composition into a survivor; decompose may revive a consumed id. Rows are never
+// deleted, so history stays queryable.
 export const token = onchainTable(
   "token",
   (t) => ({

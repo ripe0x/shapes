@@ -17,7 +17,7 @@
   | --- | ---: | ---: |
   | `mint(0.01)` / `redeem` | 207,133 / 23,639 | fits |
   | `mintBatch(10)` / `redeemBatch(10)` | 839,002 / 120,310 | fits |
-  | bounded `compose` rungs 0→1 through 7→8 | 985,826 max | fits, 29.0M headroom |
+  | bounded `compose` rungs 0→1 through 7→8 | 985,862 max | fits, 29.0M headroom |
   | bounded `decompose` rungs 0→1 through 7→8 | 309,800 max | fits |
   | `composeMany(10 × 5-to-1)` / `decomposeMany(...)` | 9,773,061 / 3,054,864 | fits for this measured batch |
   | `split` to 10 / 100 / 500 / 1,000 dust | 1,556,305 / 14,143,316 / 70,503,012 / 141,397,046 | 100 fits, 500+ do not |

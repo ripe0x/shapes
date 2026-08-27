@@ -26,6 +26,7 @@ jobs:
             contracts:
               - 'src/**'
               - 'test/**'
+              - 'medusa/**'
               - 'script/**'
               - 'lib/**'
               - 'project/experiments/medusa-reserve.json'
