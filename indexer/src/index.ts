@@ -64,11 +64,12 @@ ponder.on("Shapes:Composed", async ({ event, context }) => {
   const { survivorId, burnedIds, denomIndex: denomIndexRaw, originCount } = event.args;
   const denomIndex = Number(denomIndexRaw);
 
-  await context.db.update(token, { id: survivorId }).set({
+  await context.db.update(token, { id: survivorId }).set((row) => ({
     denomIndex,
     backingWei: backingForDenomIndex(denomIndex),
     originCount: Number(originCount),
-  });
+    composeDepth: row.composeDepth + 1,
+  }));
 
   for (let i = 0; i < burnedIds.length; i++) {
     const burnedId = burnedIds[i]!;
@@ -143,11 +144,12 @@ ponder.on("Shapes:Decomposed", async ({ event, context }) => {
 
   const owner = event.transaction.from;
 
-  await context.db.update(token, { id: survivorId }).set({
+  await context.db.update(token, { id: survivorId }).set((row) => ({
     denomIndex,
     backingWei: backingForDenomIndex(denomIndex),
     originCount: Number(survivorOriginCount),
-  });
+    composeDepth: row.composeDepth - 1,
+  }));
 
   for (let i = 0; i < restoredIds.length; i++) {
     const revivedId = restoredIds[i]!;
@@ -190,13 +192,14 @@ ponder.on("Shapes:ShapeRedeemed", async ({ event, context }) => {
   await context.db.update(token, { id: tokenId }).set({ live: false });
 });
 
-// Ordinary ownership changes. Mint and burn transfers (from/to the zero address) are ignored
-// here: ShapeMinted and Decomposed already set the initial owner on the rows they
-// create, and a redeemed/consumed token's owner is no longer meaningful.
+// Every non-burn transfer establishes the canonical owner. This deliberately includes mint
+// transfers: splitTo/decomposeTo only expose the recipient in ERC721 Transfer, not in their
+// aggregate structural event, so transaction.from is insufficient for contracts and delegated
+// recipients. The matching row has been inserted/revived before _safeMint emits this event.
 ponder.on("Shapes:Transfer", async ({ event, context }) => {
   const { from, to, tokenId } = event.args;
 
-  if (from === zeroAddress || to === zeroAddress) {
+  if (to === zeroAddress) {
     return;
   }
 

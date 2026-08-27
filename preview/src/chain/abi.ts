@@ -129,6 +129,9 @@ export interface Deployment {
   rpc: string;
   chainId: number;
   shapes: `0x${string}`;
+  /** Optional Ponder GraphQL origin. When healthy and within the site's freshness budget,
+   *  gallery rows come from this indexer while chain reads remain the correctness fallback. */
+  indexerUrl?: string;
   /** Permanent deployer attribution. Optional while deployment metadata still targets a
    *  pre-attribution contract; the site also attempts to read it directly from Shapes. */
   artist?: `0x${string}`;

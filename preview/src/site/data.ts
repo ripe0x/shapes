@@ -42,6 +42,62 @@ export interface SiteData {
   artistReleaseHash: `0x${string}` | null;
 }
 
+/** The indexer is advisory: a source this far behind the connected chain is rejected. */
+export const MAX_INDEXER_LAG_BLOCKS = 2n;
+
+export interface SiteLoadMetrics {
+  source: "chain" | "indexer";
+  /** JSON/GraphQL requests, not RPC calls. */
+  indexerRequests: number;
+}
+
+export interface LoadSiteOptions {
+  /** Overrides deployment metadata, useful for previews and deterministic integration tests. */
+  indexerUrl?: string;
+  fetch?: typeof fetch;
+  maxIndexerLagBlocks?: bigint;
+  onMetrics?: (metrics: SiteLoadMetrics) => void;
+}
+
+interface IndexedToken {
+  id: string;
+  seed: string;
+  denomIndex: number;
+  backingWei: string;
+  inkGene: number;
+  composeDepth: number;
+  isBlack: boolean;
+  owner: `0x${string}`;
+}
+
+interface IndexerPage {
+  items: IndexedToken[];
+  pageInfo: {hasNextPage: boolean; endCursor: string | null};
+}
+
+interface IndexerResponse {
+  data?: {
+    __meta?: {status?: Record<string, {id: number; block: {number: number}}>};
+    tokens?: IndexerPage;
+  };
+  errors?: {message?: string}[];
+}
+
+const INDEXER_PAGE_SIZE = 500;
+const INDEXER_QUERY = `query SiteTokens($limit: Int!, $after: String) {
+  __meta { status }
+  tokens(
+    where: { live: true }
+    orderBy: "mintedAtBlock"
+    orderDirection: "desc"
+    limit: $limit
+    after: $after
+  ) {
+    items { id seed denomIndex backingWei inkGene composeDepth isBlack owner }
+    pageInfo { hasNextPage endCursor }
+  }
+}`;
+
 function parseUri(uri: string): {image: string; meta: TokenMeta} {
   // atob alone maps each byte to a code unit and garbles multi-byte UTF-8 (the module glyphs);
   // decode the byte string properly.
@@ -130,6 +186,116 @@ async function batchRead(
 // Per-token reads, in call order within each token's chunk slice.
 const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as const;
 
+async function fetchIndexedTokens(
+  url: string,
+  fetcher: typeof fetch,
+  chainId: number,
+): Promise<{tokens: IndexedToken[]; indexedBlock: bigint; requests: number}> {
+  const endpoint = `${url.replace(/\/$/, "")}/graphql`;
+  const tokens: IndexedToken[] = [];
+  let after: string | null = null;
+  let indexedBlock: bigint | undefined;
+  let requests = 0;
+
+  do {
+    const response = await fetcher(endpoint, {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({query: INDEXER_QUERY, variables: {limit: INDEXER_PAGE_SIZE, after}}),
+    });
+    requests++;
+    if (!response.ok) throw new Error(`Shapes indexer returned HTTP ${response.status}`);
+
+    const payload = (await response.json()) as IndexerResponse;
+    if (payload.errors?.length || !payload.data?.tokens || !payload.data.__meta?.status) {
+      throw new Error(payload.errors?.[0]?.message ?? "Shapes indexer returned an invalid response");
+    }
+
+    const statuses = Object.values(payload.data.__meta.status);
+    const status = statuses.find((candidate) => candidate.id === chainId);
+    if (!status || !Number.isSafeInteger(status.block.number) || status.block.number < 0) {
+      throw new Error("Shapes indexer does not report a checkpoint for the connected chain");
+    }
+    const pageBlock = BigInt(status.block.number);
+    if (indexedBlock !== undefined && indexedBlock !== pageBlock) {
+      throw new Error("Shapes indexer advanced during a paginated gallery read");
+    }
+    indexedBlock = pageBlock;
+
+    tokens.push(...payload.data.tokens.items);
+    after = payload.data.tokens.pageInfo.hasNextPage ? payload.data.tokens.pageInfo.endCursor : null;
+    if (payload.data.tokens.pageInfo.hasNextPage && after === null) {
+      throw new Error("Shapes indexer returned a page without a cursor");
+    }
+  } while (after !== null);
+
+  if (indexedBlock === undefined) throw new Error("Shapes indexer returned no checkpoint");
+  return {tokens, indexedBlock, requests};
+}
+
+async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Promise<Omit<SiteData, "tokens">> {
+  const shapes = {address: dep.shapes, abi: shapesAbi} as const;
+  const [reserve, supply, artist, artistReleaseHash, ...fees] = await Promise.all([
+    publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
+    publicClient.readContract({...shapes, functionName: "totalSupply"}),
+    publicClient
+      .readContract({...shapes, functionName: "artist"})
+      .then((value) => value as `0x${string}`)
+      .catch(() => dep.artist ?? null),
+    publicClient
+      .readContract({...shapes, functionName: "artistReleaseHash"})
+      .then((value) => value as `0x${string}`)
+      .catch(() => null),
+    ...DENOMINATIONS.map((d) =>
+      publicClient.readContract({...shapes, functionName: "mintFeeFor", args: [d.wei]}),
+    ),
+  ]);
+  const artistAttested =
+    artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
+  return {reserve, supply, fees: fees as bigint[], artist, artistAttested, artistReleaseHash};
+}
+
+/**
+ * The indexer contains structural state but intentionally does not mirror renderer output. Token
+ * metadata stays a chain read so the site always displays the contract's canonical tokenURI.
+ */
+async function tokensFromIndexer(
+  publicClient: PublicClient,
+  dep: Deployment,
+  indexed: IndexedToken[],
+): Promise<SiteToken[]> {
+  const shapes = {address: dep.shapes, abi: shapesAbi} as const;
+  const visible = indexed.filter((row) => !row.isBlack);
+  const viaMulticall = await hasMulticall3(publicClient);
+  const uris = await batchRead(
+    publicClient,
+    visible.map((row) => ({...shapes, functionName: "tokenURI", args: [BigInt(row.id)]})),
+    viaMulticall,
+    TOKEN_CHUNK,
+  );
+
+  const tokens = visible.map((row, i) => {
+    const result = uris[i];
+    if (result.status === "failure") throw result.error;
+    const {image, meta} = parseUri(result.result as string);
+    return {
+      id: BigInt(row.id),
+      backing: BigInt(row.backingWei),
+      di: row.denomIndex,
+      seed: BigInt(row.seed),
+      owner: row.owner,
+      image,
+      meta,
+      inkGene: row.inkGene,
+      // The schema tracks this exact counter across compose/decompose and preserves it on revival.
+      composeDepth: row.composeDepth,
+    };
+  });
+  // Ponder's primary ordering is minted block; keep the legacy deterministic ID tie-breaker for
+  // large same-block batches.
+  return tokens.sort((a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0));
+}
+
 /**
  * Full chain state the site renders from. Scans token ids 0..totalMinted-1 with batched reads:
  * ownerOf across all ids to find live tokens, then the per-token fields for live ids only.
@@ -139,7 +305,7 @@ const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as
  *
  * Black tokens are skipped: the sacrifice mechanics are out of scope for this site.
  */
-export async function loadSite(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
+async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
   const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, ...fees] = await Promise.all([
@@ -219,4 +385,56 @@ export async function loadSite(publicClient: PublicClient, dep: Deployment): Pro
     artistAttested,
     artistReleaseHash,
   };
+}
+
+/**
+ * Loads the gallery through an optional Ponder boundary. Any unavailable, malformed, wrong-chain,
+ * or stale indexer response falls through to the established raw-RPC path, so this optimisation
+ * never becomes the source of truth for user-visible state.
+ */
+export async function loadSite(
+  publicClient: PublicClient,
+  dep: Deployment,
+  options: LoadSiteOptions = {},
+): Promise<SiteData> {
+  const url = options.indexerUrl ?? dep.indexerUrl;
+  const fetcher = options.fetch ?? globalThis.fetch;
+
+  if (url && fetcher) {
+    try {
+      const [head, indexed] = await Promise.all([
+        publicClient.getBlockNumber(),
+        fetchIndexedTokens(url, fetcher, dep.chainId),
+      ]);
+      const maximumLag = options.maxIndexerLagBlocks ?? MAX_INDEXER_LAG_BLOCKS;
+      if (maximumLag < 0n || indexed.indexedBlock > head || head - indexed.indexedBlock > maximumLag) {
+        throw new Error(
+          `Shapes indexer is stale: indexed ${indexed.indexedBlock}, chain head ${head}, maximum lag ${maximumLag}`,
+        );
+      }
+
+      const invalid = indexed.tokens.find(
+        (row) =>
+          !Number.isInteger(row.denomIndex) ||
+          !Number.isInteger(row.inkGene) ||
+          !Number.isInteger(row.composeDepth) ||
+          row.composeDepth < 0,
+      );
+      if (invalid) throw new Error("Shapes indexer returned an invalid token row");
+
+      const [header, tokens] = await Promise.all([
+        loadSiteHeader(publicClient, dep),
+        tokensFromIndexer(publicClient, dep, indexed.tokens),
+      ]);
+      options.onMetrics?.({source: "indexer", indexerRequests: indexed.requests});
+      return {tokens, ...header};
+    } catch {
+      // The raw path is deliberately inside this boundary. This includes a renderer RPC failure
+      // after a fresh indexer result: mixed snapshots are less safe than one all-chain snapshot.
+    }
+  }
+
+  const site = await loadSiteFromChain(publicClient, dep);
+  options.onMetrics?.({source: "chain", indexerRequests: 0});
+  return site;
 }

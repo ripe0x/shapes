@@ -11,6 +11,10 @@ export const token = onchainTable(
     denomIndex: t.integer().notNull(),
     backingWei: t.bigint().notNull(),
     originCount: t.integer().notNull(),
+    // Number of compose records currently stacked on this token. A split child begins at zero;
+    // compose increments its survivor and decompose decrements it. Consumed inputs retain their
+    // own depth while dead so a later revival restores the exact state without an RPC read.
+    composeDepth: t.integer().notNull().default(0),
     // Ink gene (0..6). Assigned at mint and reassigned on every recomposition, always by a
     // separate InkGene event emitted right after the structural event; the default holds only
     // for the instant between the two within one transaction.

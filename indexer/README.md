@@ -1,7 +1,7 @@
 # shapes-indexer
 
 A [Ponder](https://ponder.sh) indexer for the standalone Shapes ERC721
-(`src/Shapes.sol`). Turns the eight onchain events into two Postgres tables —
+(`src/Shapes.sol`). Turns the nine consumed onchain events into two Postgres tables —
 `token` and `lineage_edge` — queryable over GraphQL or `@ponder/client`
 SQL-over-HTTP, so a frontend never has to scan chain logs directly. Log
 scanning is fatal on mainnet and for any token with a deep composition /
@@ -50,11 +50,51 @@ GraphiQL in the browser) and the `@ponder/client` SQL endpoint at
 `.env.example`).
 
 Verified end to end against a running dev chain seeded by `npm run simulate`
-(see the repo root): all eight event handlers below fired with zero indexing
+(see the repo root): all nine event handlers below fired with zero indexing
 errors. A representative run indexed 10k+ mints and their `InkGene`
 assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 sacrifice, and
 20k+ transfers — every `token` row carried its assigned `inkGene` and every
 `lineage_edge` its derived `childSeed`, queryable over GraphQL.
+
+## Site data path and freshness
+
+The shared site loader (`preview/src/site/data.ts`) treats this service as an optional,
+advisory source. Add its public origin to runtime `deployment.json` only after the service is
+live and read back:
+
+```json
+{ "indexerUrl": "https://your-shapes-indexer.example" }
+```
+
+It POSTs the gallery query below to `/graphql`, reads Ponder's built-in `__meta.status`
+checkpoint, and compares the matching chain's indexed block to `eth_blockNumber`. The source is
+accepted only when it is at most **2 blocks behind**. A missing URL, HTTP or GraphQL failure,
+malformed/wrong-chain response, changing paginated checkpoint, an indexer ahead of the selected
+chain, or lag above 2 blocks all use the established raw-RPC loader. The site still reads each
+visible `tokenURI` from Shapes, so displayed art and metadata remain the contract's canonical
+output rather than an indexer copy.
+
+Ponder exposes `/health` (process live), `/ready` (backfill complete), and `/status` (latest
+checkpoint). Configure infrastructure probes with `/ready`; the browser's block-level freshness
+gate is stricter and protects users after a process is technically ready.
+
+### RPC call measurement
+
+The deterministic `preview/src/site/data.test.ts` fixture models **1,203 minted IDs**, with two
+visible tokens and one Black token. It records the data-loader calls on each route:
+
+| Gallery state | Raw chain | Fresh indexer |
+| --- | ---: | ---: |
+| Token-state contract reads | 1,218 (`ownerOf` × 1,203 + 5 fields × 3 live) | 2 (`tokenURI` × 2 visible) |
+| Multicall requests | 4 | 1 |
+| Header reads | 14 | 13 |
+| Indexer HTTP requests | 0 | 1 GraphQL page |
+
+That removes **1,216 of 1,218 token-state reads (99.84%)** in this fixture. The indexer retains
+the corresponding history/provenance path as one paginated `lineageEdges` query by `parentId` or
+`childId`, rather than a token-lineage `eth_getLogs` scan. The current token detail screen stays
+on raw history until its full dated-event presentation is mapped to indexed event rows; this
+gallery rollout does not silently downgrade that display.
 
 ## Data model
 
@@ -71,7 +111,9 @@ history stays queryable.
 | `denomIndex` | `integer` | 0..8, index into the nine-denomination ladder (`src/lib/denominations.ts`) |
 | `backingWei` | `bigint` | wei backing; `0` once `isBlack` |
 | `originCount` | `integer` | independent direct-mint origins credited to this token |
+| `composeDepth` | `integer` | active reversible compose records; incremented/decremented by compose/decompose |
 | `inkGene` | `integer` | ink gene 0..6; set by `InkGene`, reassigned on every recomposition |
+| `modules` | `hex?` | materialized geometry; null for seed-derived grammar v1 |
 | `isBlack` | `boolean` | transformed via `sacrifice` |
 | `live` | `boolean` | `false` once redeemed/composed-away/split-away |
 | `owner` | `hex` | current owner address |
@@ -90,7 +132,7 @@ and `decompose`.
 | `id` | `text` (PK) | `${txHash}-${logIndex}-${i}`, unique per edge within a single event |
 | `childId` | `bigint` | the token consumed into `parentId` (continuation) or produced from it (split) |
 | `parentId` | `bigint` | the surviving / continuing token |
-| `kind` | `text` | `"continuation"` (compose burn), `"split"` (split output) |
+| `kind` | `text` | `"continuation"` (compose burn), `"split"` (split output), or `"revival"` (decompose) |
 | `childSeed` | `hex` | the child's seed at the time of the edge — lets a burned piece still be rendered from a lineage query alone |
 | `block` | `bigint` | |
 | `txHash` | `hex` | |
@@ -158,7 +200,7 @@ call site.
 
 ## Event handling notes
 
-The eight events and what each does to the two tables (`src/index.ts`):
+The nine events and what each does to the two tables (`src/index.ts`):
 
 - **`ShapeMinted(tokenId, to, amountWei, seed, originCount)`** — inserts a
   `token` row. `originCount` is always `1` on this event.
@@ -166,11 +208,18 @@ The eight events and what each does to the two tables (`src/index.ts`):
   once per mint and once per recomposition, always right after the structural
   event (`ShapeMinted`/`Composed`/`Decomposed`) that creates or
   continues the row, so the row exists to update.
+- **`ModulesSampled(tokenId, modules)`** — stores materialized geometry after
+  compose, split, and decompose. Empty bytes become null, matching an original
+  seed-derived Shape.
 - **`Composed(survivorId, burnedIds[], denomIndex, originCount)`** — updates
   the survivor's `denomIndex`/`backingWei`/`originCount`; for each burned id,
   marks it `live: false` and inserts a `"continuation"` edge
   (`childId = burnedId`, `parentId = survivorId`).
-- **`Decomposed(tokenId, parentSeed, newIds[], outDenoms[], originCounts[])`**
+- **`Decomposed(survivorId, restoredIds[], survivorDenomIndex, survivorOriginCount)`**
+  — restores the survivor's denomination/origin count and decrements its compose
+  depth; each already-indexed input becomes live again and gets a `"revival"`
+  edge. Its later ERC721 mint `Transfer` supplies the exact recipient.
+- **`Split(tokenId, parentSeed, newIds[], outDenoms[], originCounts[])`**
   — marks `tokenId` `live: false`; for each output, derives its seed as
   `keccak256(abi.encodePacked(parentSeed, i))` (matching `Shapes.sol`
   exactly — the event doesn't carry per-child seeds), inserts the new
@@ -184,13 +233,11 @@ The eight events and what each does to the two tables (`src/index.ts`):
   still exists and still has an owner.
 - **`ShapeRedeemed(tokenId, to, amountWei, originCount)`** — marks `tokenId`
   `live: false`.
-- **`Transfer(from, to, tokenId)`** — sets `owner: to`, but only for an
-  ordinary transfer (`from` and `to` both non-zero). Mint and burn transfers
-  are skipped: `ShapeMinted` already sets the owner for a direct mint, and a
-  redeemed/consumed token's owner is no longer meaningful. `decompose` and
-  `decompose` mints to `msg.sender`, which the event does not carry as an
-  argument; the indexer takes `event.transaction.from` as that recipient,
-  which holds for a direct EOA call.
+- **`Transfer(from, to, tokenId)`** — sets `owner: to` for every non-burn
+  transfer, including mints. This is required for `splitTo`/`decomposeTo`:
+  their aggregate events omit the recipient, while the following ERC721 mint
+  transfer carries it exactly. Burn transfers are ignored because a dead row's
+  owner is no longer meaningful.
 
 ## ABI
 
@@ -200,3 +247,19 @@ New core views such as `exists` and `denomIndexOf` belong here only if the
 indexer starts calling them. When a consumed event or read changes, rebuild the
 contracts and copy that exact entry from the relevant compiled Shapes or lens
 artifact so field names, types, and `indexed` flags match deployed bytecode.
+
+## Production recommendation: Railway + Postgres
+
+For pinned Ponder **0.17.6**, the viable low-ceremony production target is a Railway service
+rooted at `indexer/`, plus Railway Postgres in the same project and region. This matches Ponder's
+current official Railway guide and its requirement for a low-latency Postgres connection. Run
+`npm start -- --schema $RAILWAY_DEPLOYMENT_ID`, set Railway's health check to `/ready` with a
+3600-second timeout, and give the service a public domain. Set `DATABASE_URL` from the linked
+Postgres service plus `PONDER_RPC_URL`, `PONDER_CHAIN_ID=11155111`, `SHAPES_ADDRESS`, and the
+Sepolia deployment `SHAPES_START_BLOCK`. Then read back `/ready`, `/status`, and the GraphQL
+query before adding that domain as `indexerUrl` in the site's deployment metadata.
+
+No Railway account, project, database, RPC credential, Sepolia Shapes address, or deployment
+block has been supplied here, so nothing has been provisioned or hosted. Those are the exact
+credentials/actions blocking production activation. Official references: [Railway deployment](https://ponder.sh/docs/production/railway)
+and [self-hosting requirements](https://ponder.sh/docs/production/deploy).
