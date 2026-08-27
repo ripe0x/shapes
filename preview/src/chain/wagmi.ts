@@ -1,4 +1,4 @@
-import {getDefaultConfig} from "@rainbow-me/rainbowkit";
+import {getDefaultConfig, type RainbowKitWalletConnectParameters} from "@rainbow-me/rainbowkit";
 import {createConfig} from "wagmi";
 import {injected} from "@wagmi/core";
 import {defineChain, type Transport} from "viem";
@@ -35,12 +35,26 @@ function deploymentChain(dep: Deployment, primaryRpcUrl?: string) {
 }
 
 /**
+ * Declares the deployment chain as WalletConnect's REQUIRED chain.
+ *
+ * WalletConnect's EthereumProvider derives the session's required namespace from `chains` and the
+ * optional namespace from `optionalChains`. wagmi's connector only ever sets `optionalChains`, so
+ * the required namespace is empty and a wallet's approval screen shows the network as "None" and
+ * may return no accounts. Setting `chains` puts the deployment chain (Sepolia) in the required
+ * namespace, so the approval names Sepolia and the account resolves on it. `chains` is a real
+ * EthereumProvider option that wagmi omits from its public parameter type, hence the cast.
+ */
+function requiredWalletConnectChain(chainId: number): RainbowKitWalletConnectParameters {
+  return {chains: [chainId]} as unknown as RainbowKitWalletConnectParameters;
+}
+
+/**
  * Builds the wagmi config for a single deployment chain.
  *
- * With a WalletConnect project id, this is RainbowKit's documented `getDefaultConfig`: it declares
- * exactly one chain (Sepolia for the public site), so every wallet's connection proposal names that
- * chain and its approval screen shows it. Without a project id (local anvil dev, unit tests), it is
- * a plain injected-only config so no relay identity is created.
+ * With a WalletConnect project id this is RainbowKit's `getDefaultConfig` scoped to exactly one
+ * chain, with that chain declared as the required WalletConnect chain (see above). Without a
+ * project id (local anvil dev, unit tests) it is a plain injected-only config, so no relay
+ * identity is created.
  */
 export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
   const primaryRpcUrl = options.primaryRpcUrl?.trim() || undefined;
@@ -56,6 +70,7 @@ export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
       projectId: walletConnectProjectId,
       chains: [chain],
       transports: {[chain.id]: transport},
+      walletConnectParameters: requiredWalletConnectChain(chain.id),
       ssr: false,
     });
   }
