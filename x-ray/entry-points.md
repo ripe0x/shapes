@@ -9,11 +9,11 @@
 
 ### Deployment (Deployer)
 
-`new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful; internally creates the reusable `ArtistAttribution(artist=deployer)` primitive with `subject=Shapes` → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
+`new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful; records `artist=deployer` and mints backed Shape #0 to the deployer → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
 
 ### Artist attestation (Artist signature / any relayer)
 
-`ArtistAttribution.attest(releaseHash, signature)` ◄── one valid EIP-712 EOA/ERC-1271 signature from immutable `artist`; digest binds chain, primitive, immutable `subject`, artist and release hash; succeeds once. Any EOA may deploy it directly; any contract may create it for itself.
+`Shapes.attestArtist(releaseHash, signature)` ◄── one valid EIP-712 EOA/ERC-1271 signature from immutable `artist`; digest binds chain, exact Shapes contract, artist and release hash; succeeds once, stores the hash and raw signature directly in Shapes, and grants no authority. Any caller may relay it.
 
 `Shapes.setFeeRecipient(newRecipient)` ◄── current `admin()` only; redirects future mint fees, cannot change the rate or move backing/accrued funds; renunciation freezes the final recipient.
 
