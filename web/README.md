@@ -19,10 +19,9 @@ with it, RainbowKit's maintained standard list exposes named Rainbow, Base Accou
 WalletConnect choices, plus Safe in its applicable context. Release evidence still requires a real
 phone pairing and Sepolia mint.
 
-For testnet deployments, WalletConnect advertises Ethereum mainnet as the session bootstrap and
-Sepolia as the application chain. All Shapes reads and balance checks stay pinned to Sepolia, and
-every write switches to Sepolia first. This avoids mobile wallets returning no account for a
-testnet-only WalletConnect namespace without allowing a Shapes transaction on mainnet.
+WalletConnect requires the deployment chain in its session namespace. A versioned storage prefix
+prevents a stale session from an older chain policy being silently reused. Sepolia deployments
+therefore connect on Sepolia directly; Shapes never uses mainnet as a connection bootstrap.
 
 Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
 

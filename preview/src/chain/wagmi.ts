@@ -1,8 +1,8 @@
-import {getDefaultWallets} from "@rainbow-me/rainbowkit";
+import {getDefaultWallets, type RainbowKitWalletConnectParameters} from "@rainbow-me/rainbowkit";
 import {createConfig} from "wagmi";
 import {injected} from "@wagmi/core";
-import {defineChain, http, type Transport} from "viem";
-import {mainnet, sepolia} from "viem/chains";
+import {defineChain, type Transport} from "viem";
+import {sepolia} from "viem/chains";
 import type {Deployment} from "./abi";
 import {rpcUrlsForChain, shapesTransport} from "./rpc";
 
@@ -13,6 +13,18 @@ export interface WalletOptions {
   primaryRpcUrl?: string;
   /** Test-only override for exercising the client without live RPC requests. */
   transport?: Transport;
+}
+
+export function walletConnectSessionParameters(chainId: number): RainbowKitWalletConnectParameters & {
+  chains: [number];
+} {
+  return {
+    // `chains` is supported by the underlying WalletConnect provider but omitted from Wagmi's
+    // public parameter type. Requiring the deployment chain prevents an empty testnet namespace.
+    chains: [chainId],
+    // Do not reuse a session created by an earlier chain-negotiation policy.
+    customStoragePrefix: `shapes-required-${chainId}-v1`,
+  };
 }
 
 // The wagmi config is built from the deployment file at runtime, since the fork's chain id and
@@ -39,26 +51,19 @@ export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
   // Use RainbowKit's maintained default inventory so mobile users see named deep-link choices
   // instead of only the generic Browser Wallet and WalletConnect entries.
   const connectors = walletConnectProjectId
-    ? getDefaultWallets({appName: "Shapes", projectId: walletConnectProjectId}).connectors
+    ? getDefaultWallets({
+        appName: "Shapes",
+        projectId: walletConnectProjectId,
+        walletConnectParameters: walletConnectSessionParameters(chain.id),
+      }).connectors
     : [injected()];
-  // Some mobile wallets do not expose an account when a testnet is the session's only namespace.
-  // Bootstrap the WalletConnect session on Ethereum, advertise the deployment chain alongside it,
-  // and switch to the deployment chain immediately before every Shapes write.
-  const chains =
-    walletConnectProjectId && chain.id !== mainnet.id
-      ? ([mainnet, chain] as const)
-      : ([chain] as const);
-  const transports: Record<number, Transport> = {
-    [chain.id]: options.transport ?? shapesTransport(dep.chainId, dep.rpc, primaryRpcUrl),
-  };
-  if (walletConnectProjectId && chain.id !== mainnet.id) transports[mainnet.id] = http();
 
   return createConfig({
-    chains,
+    chains: [chain],
     connectors,
     // No transport-level JSON-RPC batching: same-tick Multicall3 aggregates would coalesce
     // into request bodies past anvil's ~2MB limit, which resets the connection.
-    transports,
+    transports: {[chain.id]: options.transport ?? shapesTransport(dep.chainId, dep.rpc, primaryRpcUrl)},
     ssr: false,
   });
 }

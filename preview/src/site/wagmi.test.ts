@@ -2,7 +2,7 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {create as createQrCode} from "cuer/QrCode";
 
-import {buildConfig} from "../chain/wagmi";
+import {buildConfig, walletConnectSessionParameters} from "../chain/wagmi";
 import type {Deployment} from "../chain/abi";
 
 const dep: Deployment = {
@@ -27,7 +27,11 @@ test("wallet config keeps injected wallets without a WalletConnect project id", 
   assert.ok(standardWallets.some((connector) => connector.id === "baseAccount"));
 
   const walletChains = buildConfig(dep, {walletConnectProjectId: "project-owned-id"}).chains;
-  assert.deepEqual(walletChains.map((chain) => chain.id), [1, dep.chainId]);
+  assert.deepEqual(walletChains.map((chain) => chain.id), [dep.chainId]);
+  assert.deepEqual(walletConnectSessionParameters(dep.chainId), {
+    chains: [dep.chainId],
+    customStoragePrefix: `shapes-required-${dep.chainId}-v1`,
+  });
 });
 
 test("WalletConnect QR generation accepts RainbowKit's borderless grid", () => {
