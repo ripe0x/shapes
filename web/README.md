@@ -12,16 +12,13 @@ endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHA
 browser reads when a paid/provider RPC is available. Requests are unbatched because shared site
 reads already use Multicall3 and local seed demos can exceed Anvil's batch-size limit.
 
-WalletConnect is disabled unless `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is a real project id from
-the project's WalletConnect Cloud account. Without it, injected wallets (for example MetaMask)
-remain available. The production and preview build contexts have the project-owned public id;
-with it, RainbowKit's maintained standard list exposes named Rainbow, Base Account, MetaMask and
-WalletConnect choices, plus Safe in its applicable context. Release evidence still requires a real
-phone pairing and Sepolia mint.
-
-WalletConnect requires the deployment chain in its session namespace. A versioned storage prefix
-prevents a stale session from an older chain policy being silently reused. Sepolia deployments
-therefore connect on Sepolia directly; Shapes never uses mainnet as a connection bootstrap.
+The wallet config is RainbowKit's `getDefaultConfig` (see `preview/src/chain/wagmi.ts`), built with
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` and exactly one chain: the deployment's chain. On Sepolia this
+is chain 11155111, so every wallet's connection proposal names Sepolia and its approval screen shows
+Sepolia. `getDefaultConfig` provides the standard wallet inventory (Rainbow, MetaMask, Coinbase,
+WalletConnect, Safe, ...). Without a project id (local dev), the config falls back to injected wallets
+only, so no relay identity is created. Release evidence still requires a real phone pairing and
+Sepolia mint.
 
 Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
 

@@ -1,11 +1,16 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
+import {createServer} from "node:http";
 import {create as createQrCode} from "cuer/QrCode";
+import {connect, createConfig, writeContract, mock} from "@wagmi/core";
+import {decodeFunctionData, http} from "viem";
+import {sepolia} from "viem/chains";
 
-import {buildConfig, walletConnectSessionParameters} from "../chain/wagmi";
-import type {Deployment} from "../chain/abi";
+import {buildConfig} from "../chain/wagmi";
+import {mintRequest} from "./mint";
+import {shapesAbi, type Deployment} from "../chain/abi";
 
-const dep: Deployment = {
+const localDep: Deployment = {
   rpc: "http://127.0.0.1:8545",
   chainId: 31337,
   shapes: "0x0000000000000000000000000000000000000000",
@@ -14,24 +19,134 @@ const dep: Deployment = {
   feeBps: "0",
 };
 
-test("wallet config keeps injected wallets without a WalletConnect project id", () => {
-  const injectedOnly = buildConfig(dep).connectors;
+const sepoliaDep: Deployment = {
+  rpc: "https://ethereum-sepolia-rpc.publicnode.com",
+  chainId: sepolia.id,
+  shapes: "0x00000000000000000000000000000000000000AA",
+  lens: "0x00000000000000000000000000000000000000BB",
+  renderer: "0x00000000000000000000000000000000000000CC",
+  feeBps: "500",
+};
+
+const PROJECT_ID = "60af16a1be7c0077e8df5570cbed082f";
+
+test("without a WalletConnect project id the config is injected-only", () => {
+  const injectedOnly = buildConfig(localDep).connectors;
   assert.equal(injectedOnly.length, 1);
   assert.equal(injectedOnly[0].id, "injected");
+});
 
-  // A non-empty real project id adds RainbowKit's standard named wallet inventory. The actual
-  // relay handshake and platform-specific filtering are intentionally outside this unit test.
-  const standardWallets = buildConfig(dep, {walletConnectProjectId: "project-owned-id"}).connectors;
-  assert.ok(standardWallets.length >= 5);
-  assert.ok(standardWallets.some((connector) => connector.id === "safe"));
-  assert.ok(standardWallets.some((connector) => connector.id === "baseAccount"));
+test("a project id activates RainbowKit's standard wallet inventory on Sepolia only", () => {
+  const config = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID});
 
-  const walletChains = buildConfig(dep, {walletConnectProjectId: "project-owned-id"}).chains;
-  assert.deepEqual(walletChains.map((chain) => chain.id), [dep.chainId]);
-  assert.deepEqual(walletConnectSessionParameters(dep.chainId), {
-    chains: [dep.chainId],
-    customStoragePrefix: `shapes-required-${dep.chainId}-v1`,
+  // The site declares exactly one chain: every wallet's connection proposal names Sepolia, so its
+  // approval screen shows Sepolia rather than an empty or mainnet namespace.
+  assert.deepEqual(
+    config.chains.map((chain) => chain.id),
+    [sepolia.id],
+  );
+
+  // getDefaultConfig wires the maintained inventory (Rainbow, MetaMask, Coinbase, WalletConnect,
+  // Safe, ...) instead of only injected + generic WalletConnect.
+  const connectors = config.connectors;
+  assert.ok(connectors.length >= 5, `expected the full inventory, got ${connectors.length}`);
+  assert.ok(connectors.some((c) => c.id === "safe"));
+  assert.ok(connectors.some((c) => c.id === "baseAccount"));
+});
+
+test("the chain carries Multicall3 and the Sepolia explorer", () => {
+  const chain = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
+  assert.equal(
+    chain.contracts?.multicall3?.address,
+    "0xcA11bde05977b3631167028862bE2a173976CA11",
+  );
+  assert.match(chain.blockExplorers?.default.url ?? "", /sepolia\.etherscan\.io/);
+});
+
+// A minimal JSON-RPC endpoint that answers the read calls viem makes while preparing a send and
+// records the eth_sendTransaction it finally emits. Proves the mint reaches the wire, not a stub.
+function rpcRecorder() {
+  const sent: {to?: string; data?: string; value?: string; chainId?: string}[] = [];
+  const reply = (method: string): unknown => {
+    switch (method) {
+      case "eth_chainId":
+        return "0xaa36a7"; // 11155111
+      case "eth_blockNumber":
+        return "0x1";
+      case "eth_getTransactionCount":
+        return "0x0";
+      case "eth_gasPrice":
+      case "eth_maxPriorityFeePerGas":
+        return "0x3b9aca00";
+      case "eth_estimateGas":
+        return "0x5208";
+      case "eth_getBlockByNumber":
+        return {number: "0x1", baseFeePerGas: "0x3b9aca00", gasLimit: "0x1c9c380"};
+      case "eth_feeHistory":
+        return {baseFeePerGas: ["0x3b9aca00", "0x3b9aca00"], gasUsedRatio: [0], oldestBlock: "0x0", reward: [["0x3b9aca00"]]};
+      default:
+        return null;
+    }
+  };
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      const calls = JSON.parse(body);
+      const one = (call: {id: number; method: string; params?: unknown[]}) => {
+        if (call.method === "eth_sendTransaction") {
+          const tx = (call.params?.[0] ?? {}) as Record<string, string>;
+          sent.push({to: tx.to, data: tx.data ?? tx.input, value: tx.value, chainId: tx.chainId});
+          return {jsonrpc: "2.0", id: call.id, result: `0x${"11".repeat(32)}`};
+        }
+        return {jsonrpc: "2.0", id: call.id, result: reply(call.method)};
+      };
+      const out = Array.isArray(calls) ? calls.map(one) : one(calls);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(out));
+    });
   });
+  return {server, sent};
+}
+
+test("Mint initiates a real Sepolia transaction to the Shapes contract", async () => {
+  const {server, sent} = rpcRecorder();
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const {port} = server.address() as {port: number};
+  const url = `http://127.0.0.1:${port}`;
+
+  const account = "0x1111111111111111111111111111111111111111" as const;
+  const chainDep = {...sepoliaDep, rpc: url};
+  // The Sepolia chain the app actually configures (id, explorer, Multicall3, RPC list).
+  const chain = buildConfig(chainDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
+  // getDefaultConfig's WalletConnect connectors cannot open a relay session headlessly, so the
+  // send is driven by a mock wallet on that same chain. The point under test is that mintRequest,
+  // pushed through wagmi + viem against a Sepolia-configured chain, emits the right eth_sendTransaction.
+  const config = createConfig({
+    chains: [chain],
+    connectors: [mock({accounts: [account]})],
+    transports: {[chain.id]: http(url)},
+    ssr: false,
+  });
+  const connection = await connect(config, {connector: config.connectors[0]});
+  // The wallet connects on Sepolia, not mainnet or an empty namespace.
+  assert.equal(connection.chainId, sepolia.id);
+
+  // mintRequest pins chainId 11155111; writeContract rejects a connector on any other chain, so a
+  // successful send is itself proof the wallet is on Sepolia.
+  const req = mintRequest(chainDep, {amountWei: 10n ** 16n, quantity: 1, fee: 5n * 10n ** 14n});
+  await writeContract(config, req as unknown as Parameters<typeof writeContract>[1]);
+
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+
+  assert.equal(sent.length, 1, "exactly one transaction should be sent");
+  const tx = sent[0];
+  assert.equal(tx.to?.toLowerCase(), sepoliaDep.shapes.toLowerCase());
+  // 0.01 ETH denomination + 0.0005 ETH fee = 0.0105 ETH
+  assert.equal(BigInt(tx.value ?? "0x0"), 10n ** 16n + 5n * 10n ** 14n);
+  const decoded = decodeFunctionData({abi: shapesAbi, data: tx.data as `0x${string}`});
+  assert.equal(decoded.functionName, "mint");
+  assert.deepEqual(decoded.args, [10n ** 16n]);
 });
 
 test("WalletConnect QR generation accepts RainbowKit's borderless grid", () => {
