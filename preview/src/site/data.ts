@@ -59,19 +59,12 @@ export interface LoadSiteOptions {
   onMetrics?: (metrics: SiteLoadMetrics) => void;
 }
 
-interface IndexedToken {
+interface IndexedTokenId {
   id: string;
-  seed: string;
-  denomIndex: number;
-  backingWei: string;
-  inkGene: number;
-  composeDepth: number;
-  isBlack: boolean;
-  owner: `0x${string}`;
 }
 
 interface IndexerPage {
-  items: IndexedToken[];
+  items: IndexedTokenId[];
   pageInfo: {hasNextPage: boolean; endCursor: string | null};
 }
 
@@ -93,7 +86,7 @@ const INDEXER_QUERY = `query SiteTokens($limit: Int!, $after: String) {
     limit: $limit
     after: $after
   ) {
-    items { id seed denomIndex backingWei inkGene composeDepth isBlack owner }
+    items { id }
     pageInfo { hasNextPage endCursor }
   }
 }`;
@@ -190,9 +183,9 @@ async function fetchIndexedTokens(
   url: string,
   fetcher: typeof fetch,
   chainId: number,
-): Promise<{tokens: IndexedToken[]; indexedBlock: bigint; requests: number}> {
+): Promise<{tokens: IndexedTokenId[]; indexedBlock: bigint; requests: number}> {
   const endpoint = `${url.replace(/\/$/, "")}/graphql`;
-  const tokens: IndexedToken[] = [];
+  const tokens: IndexedTokenId[] = [];
   let after: string | null = null;
   let indexedBlock: bigint | undefined;
   let requests = 0;
@@ -256,43 +249,47 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
 }
 
 /**
- * The indexer contains structural state but intentionally does not mirror renderer output. Token
- * metadata stays a chain read so the site always displays the contract's canonical tokenURI.
+ * The indexer supplies only candidate live IDs. Every displayed or actionable field stays a
+ * current chain read, so an indexing bug cannot invent ownership, backing, art, or token state.
  */
 async function tokensFromIndexer(
   publicClient: PublicClient,
   dep: Deployment,
-  indexed: IndexedToken[],
+  ids: bigint[],
 ): Promise<SiteToken[]> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
-  const visible = indexed.filter((row) => !row.isBlack);
   const viaMulticall = await hasMulticall3(publicClient);
-  const uris = await batchRead(
+  const rows = await batchRead(
     publicClient,
-    visible.map((row) => ({...shapes, functionName: "tokenURI", args: [BigInt(row.id)]})),
+    ids.flatMap((id) => [
+      {...shapes, functionName: "ownerOf", args: [id]},
+      ...FIELDS.map((functionName) => ({...shapes, functionName, args: [id]})),
+    ]),
     viaMulticall,
     TOKEN_CHUNK,
   );
 
-  const tokens = visible.map((row, i) => {
-    const result = uris[i];
-    if (result.status === "failure") throw result.error;
-    const {image, meta} = parseUri(result.result as string);
-    return {
-      id: BigInt(row.id),
-      backing: BigInt(row.backingWei),
-      di: row.denomIndex,
-      seed: BigInt(row.seed),
-      owner: row.owner,
+  const tokens: SiteToken[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    const row = rows.slice(i * 6, i * 6 + 6);
+    const failure = row.find((result) => result.status === "failure");
+    if (failure?.status === "failure") throw failure.error;
+    const [owner, backing, seed, black, uri, composeDepth] = row.map(
+      (result) => (result as {result: unknown}).result,
+    );
+    const {image, meta} = parseUri(uri as string);
+    tokens.push({
+      id: ids[i]!,
+      backing: backing as bigint,
+      di: black ? -1 : denomIndexOf(backing as bigint),
+      seed: seed as bigint,
+      owner: owner as `0x${string}`,
       image,
       meta,
-      inkGene: row.inkGene,
-      // The schema tracks this exact counter across compose/decompose and preserves it on revival.
-      composeDepth: row.composeDepth,
-    };
-  });
-  // Ponder's primary ordering is minted block; keep the legacy deterministic ID tie-breaker for
-  // large same-block batches.
+      inkGene: geneOfMeta(meta),
+      composeDepth: Number(composeDepth),
+    });
+  }
   return tokens.sort((a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0));
 }
 
@@ -413,19 +410,15 @@ export async function loadSite(
         );
       }
 
-      const invalid = indexed.tokens.find(
-        (row) =>
-          !Number.isInteger(row.denomIndex) ||
-          !Number.isInteger(row.inkGene) ||
-          !Number.isInteger(row.composeDepth) ||
-          row.composeDepth < 0,
-      );
-      if (invalid) throw new Error("Shapes indexer returned an invalid token row");
-
-      const [header, tokens] = await Promise.all([
-        loadSiteHeader(publicClient, dep),
-        tokensFromIndexer(publicClient, dep, indexed.tokens),
-      ]);
+      const ids = indexed.tokens.map((row) => BigInt(row.id));
+      if (new Set(ids.map(String)).size !== ids.length) {
+        throw new Error("Shapes indexer returned duplicate token ids");
+      }
+      const header = await loadSiteHeader(publicClient, dep);
+      if (BigInt(ids.length) !== header.supply) {
+        throw new Error("Shapes indexer live-token count does not match totalSupply");
+      }
+      const tokens = await tokensFromIndexer(publicClient, dep, ids);
       options.onMetrics?.({source: "indexer", indexerRequests: indexed.requests});
       return {tokens, ...header};
     } catch {

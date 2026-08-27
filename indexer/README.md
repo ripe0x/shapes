@@ -70,9 +70,10 @@ It POSTs the gallery query below to `/graphql`, reads Ponder's built-in `__meta.
 checkpoint, and compares the matching chain's indexed block to `eth_blockNumber`. The source is
 accepted only when it is at most **2 blocks behind**. A missing URL, HTTP or GraphQL failure,
 malformed/wrong-chain response, changing paginated checkpoint, an indexer ahead of the selected
-chain, or lag above 2 blocks all use the established raw-RPC loader. The site still reads each
-visible `tokenURI` from Shapes, so displayed art and metadata remain the contract's canonical
-output rather than an indexer copy.
+chain, lag above 2 blocks, duplicate ids, or a live-id count different from `totalSupply` all use
+the established raw-RPC loader. The indexer supplies only candidate live IDs. The site reads
+owner, backing, seed, Black state, `tokenURI`, and compose depth from Shapes, so every displayed
+or actionable field remains canonical chain state rather than an indexer assertion.
 
 Ponder exposes `/health` (process live), `/ready` (backfill complete), and `/status` (latest
 checkpoint). Configure infrastructure probes with `/ready`; the browser's block-level freshness
@@ -85,12 +86,13 @@ visible tokens and one Black token. It records the data-loader calls on each rou
 
 | Gallery state | Raw chain | Fresh indexer |
 | --- | ---: | ---: |
-| Token-state contract reads | 1,218 (`ownerOf` × 1,203 + 5 fields × 3 live) | 2 (`tokenURI` × 2 visible) |
+| Token-state contract reads | 1,218 (`ownerOf` × 1,203 + 5 fields × 3 live) | 18 (6 fields × 3 live) |
 | Multicall requests | 4 | 1 |
 | Header reads | 14 | 13 |
 | Indexer HTTP requests | 0 | 1 GraphQL page |
 
-That removes **1,216 of 1,218 token-state reads (99.84%)** in this fixture. The indexer retains
+That removes **1,200 of 1,218 token-state reads (98.52%)** without trusting indexed token state.
+The indexer retains
 the corresponding history/provenance path as one paginated `lineageEdges` query by `parentId` or
 `childId`, rather than a token-lineage `eth_getLogs` scan. The current token detail screen stays
 on raw history until its full dated-event presentation is mapped to indexed event rows; this

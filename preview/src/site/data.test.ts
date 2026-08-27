@@ -132,17 +132,8 @@ function indexerFixture(opts: {block: number; tokens: unknown[]; status?: number
     )) as typeof fetch;
 }
 
-function indexedToken(id: bigint, t: FakeToken, composeDepth = 0) {
-  return {
-    id: id.toString(),
-    seed: `0x${t.seed.toString(16).padStart(64, "0")}`,
-    denomIndex: DENOMINATIONS.findIndex((d) => d.wei === t.backing),
-    backingWei: t.backing.toString(),
-    inkGene: GENE_NAMES.indexOf(t.ink),
-    composeDepth,
-    isBlack: t.black,
-    owner: OWNER,
-  };
+function indexedToken(id: bigint) {
+  return {id: id.toString()};
 }
 
 const NORMAL: FakeToken = {
@@ -222,7 +213,7 @@ test("loadSite: pre-attribution deployments still load", async () => {
   assert.equal(site.artistAttested, false);
 });
 
-test("loadSite: fresh indexer gallery uses one tokenURI batch instead of scanning minted ids", async () => {
+test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state stays onchain", async () => {
   const live = new Map<bigint, FakeToken>([
     [2n, NORMAL],
     [5n, {...NORMAL, black: true}],
@@ -236,17 +227,18 @@ test("loadSite: fresh indexer gallery uses one tokenURI batch instead of scannin
     fetch: indexerFixture({
       block: 99,
       tokens: [
-        indexedToken(1200n, live.get(1200n)!, 3),
-        indexedToken(5n, live.get(5n)!),
-        indexedToken(2n, live.get(2n)!),
+        indexedToken(1200n),
+        indexedToken(5n),
+        indexedToken(2n),
       ],
     }),
     onMetrics: (metric) => metrics.push(metric),
   });
 
-  assert.deepEqual(site.tokens.map((t) => t.id), [1200n, 2n]);
+  assert.deepEqual(site.tokens.map((t) => t.id), [1200n, 5n, 2n]);
   assert.equal(site.tokens[0]!.composeDepth, 3);
-  assert.equal(counts.multicall, 1); // only tokenURI for two visible rows
+  assert.equal(site.tokens[1]!.di, -1); // Black remains live and visible
+  assert.equal(counts.multicall, 1); // six canonical reads for each candidate live id
   assert.equal(counts.readContract, 4 + DENOMINATIONS.length); // live header, no totalMinted scan
   assert.deepEqual(metrics, [{source: "indexer", indexerRequests: 1}]);
 });
@@ -254,7 +246,7 @@ test("loadSite: fresh indexer gallery uses one tokenURI batch instead of scannin
 test("loadSite: stale or unhealthy indexer deterministically falls back to the chain", async () => {
   const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
   for (const fetcher of [
-    indexerFixture({block: 97, tokens: [indexedToken(1n, NORMAL)]}), // 3 blocks behind a 100 head
+    indexerFixture({block: 97, tokens: [indexedToken(1n)]}), // 3 blocks behind a 100 head
     indexerFixture({block: 100, tokens: [], status: 503}),
   ]) {
     const {client, counts} = makeClient({minted: 3n, live, multicall3: true, headBlock: 100n});
