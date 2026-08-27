@@ -1,0 +1,34 @@
+{
+  "fuzzing": {
+    "workers": 4,
+    "timeout": 120,
+    "testLimit": 20000,
+    "callSequenceLength": 50,
+    "corpusDirectory": "/tmp/shapes-p1-medusa-corpus",
+    "coverageEnabled": true,
+    "coverageFormats": ["lcov"],
+    "targetContracts": ["MedusaReserveHarness"],
+    "targetContractsBalances": ["10000000000000000000"],
+    "deployerAddress": "0x30000",
+    "senderAddresses": ["0x10000", "0x20000", "0x30000"],
+    "transactionGasLimit": 12500000,
+    "testing": {
+      "stopOnFailedTest": true,
+      "stopOnNoTests": true,
+      "testAllContracts": false,
+      "testViewMethods": true,
+      "propertyTesting": {"enabled": true, "testPrefixes": ["property_"]},
+      "assertionTesting": {"enabled": true},
+      "optimizationTesting": {"enabled": false},
+      "targetFunctionSignatures": [],
+      "excludeFunctionSignatures": []
+    },
+    "chainConfig": {"codeSizeCheckDisabled": true, "skipAccountChecks": true}
+  },
+  "compilation": {
+    "platform": "crytic-compile",
+    "platformConfig": {"target": "test/MedusaReserveHarness.sol", "solcVersion": "", "exportDirectory": "", "args": []}
+  },
+  "slither": {"useSlither": false, "cachePath": "/tmp/shapes-p1-medusa-slither.json", "args": []},
+  "logging": {"level": "info", "logDirectory": "/tmp/shapes-p1-medusa-logs", "noColor": true}
+}

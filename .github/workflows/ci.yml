@@ -28,6 +28,7 @@ jobs:
               - 'test/**'
               - 'script/**'
               - 'lib/**'
+              - 'project/experiments/medusa-reserve.json'
               - 'foundry.toml'
               - 'remappings.txt'
               - '.github/workflows/ci.yml'
@@ -163,3 +164,35 @@ jobs:
 
       - name: build
         run: npm run build --workspace web
+
+  medusa:
+    name: medusa reserve lifecycle
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: install bounded fuzzing toolchain
+        run: |
+          python -m pip install --disable-pip-version-check crytic-compile==0.3.11
+          curl -fsSLo medusa-linux-x64.tar.gz https://github.com/crytic/medusa/releases/download/v1.5.1/medusa-linux-x64.tar.gz
+          echo "ddfe1517ae9028ef9fc331b00f5a6a9d5406f3fcd11a715d60c6b6fb3e4546d3  medusa-linux-x64.tar.gz" | sha256sum -c -
+          tar -xzf medusa-linux-x64.tar.gz
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      # Medusa's crytic-compile adapter treats the config directory as its project root. Keep the
+      # reviewed configuration under project/experiments, but link it at root for this invocation.
+      - name: fuzz reserve and lifecycle invariants
+        run: |
+          ln -s project/experiments/medusa-reserve.json medusa.json
+          trap 'rm -f medusa.json' EXIT
+          medusa fuzz --config medusa.json
