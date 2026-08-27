@@ -17,3 +17,6 @@ preview/public/ink-demo.html
 # Testnet-profile build artifacts (foundry.toml [profile.testnet]).
 out-testnet/
 cache-testnet/
+
+# Local Netlify folder
+.netlify

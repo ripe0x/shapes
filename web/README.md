@@ -14,7 +14,8 @@ reads already use Multicall3 and local seed demos can exceed Anvil's batch-size 
 
 WalletConnect is disabled unless `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is a real project id from
 the project's WalletConnect Cloud account. Without it, injected wallets (for example MetaMask)
-remain available. Mobile WalletConnect testing is blocked until that credential is supplied.
+remain available. The production and preview build contexts have the project-owned public id;
+release evidence still requires a real phone pairing and Sepolia mint.
 
 Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
 

@@ -10,7 +10,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 - PR #5 merged as `7f92f1b`. Final core views are `exists` and live-only `denomIndexOf`; `absorbedBy` remains rejected. `IShapes` is `0xb5ac96e9`, `IShapeValue` is `0xd07d718a`.
 - PR #8 is open from `codex/p1-hardening` with the consolidated P1 packet. It includes RPC fallback, Black/provenance UI fixes, bounded optional chain-authoritative indexer reads, CI cost controls, Medusa, gas/ink experiments, portless, dependency cleanup, Next 16 and fetched-exact-main Sepolia deployment postflights.
 - The core contract is unchanged by this packet. Fresh size gates remain Shapes 24,235 bytes default (341-byte EIP-170 margin) and 24,214 bytes testnet (362-byte margin).
-- Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 55 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
+- Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 56 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
 - PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
 - D-32 reschedules GitHub issue #7 as P2 pre-mainnet renderer-audit work, after the current P1/Sepolia release and before any renderer expansion. Only a behavior-preserving `_moduleSvg` helper extraction is approved. `_glyph` remains a documented lookup-table complexity exception. Current ShapeRenderer baselines are 22,699 bytes default and 22,698 bytes testnet; unchanged TypeScript fixtures, frozen-legacy differential parity, pinned size and one-/25-module gas evidence are mandatory.
@@ -22,6 +22,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 - D-09: adopt Medusa 1.5.1 in CI with a checksum-pinned binary; defer Halmos because its AST build exceeded the three-minute/~2.1 GB spike budget before symbolic execution.
 - D-10: optional indexer path is implemented and keeps Shapes authoritative. Freshness, chain, uniqueness and exact live count are checked; each page has an 8-second abort, 256 KiB body cap, 500-item cap, unique cursor and totalSupply-derived page/item ceiling. All displayed fields are current chain reads; every failure falls back to raw RPC. A 1,203-id fixture cuts reads from 1,218 to 18. Ponder's vulnerable pins are replaced by smoke-tested overrides, and the isolated install audits at zero.
 - D-12/W-1/W-4/W-5/W-6/D-21: implemented. Browser and OG share independent RPC fallbacks; Black Shapes remain visible with invalid mutators hidden; provenance rollups no longer impersonate token #0; CI is path-filtered/cached and includes site/Medusa jobs; portless is adopted; direct unused x402 packages are removed.
+- D-11: the project-owned public Reown id is configured for Netlify production and preview builds. A deployed PR preview exposes WalletConnect and opens its scannable relay QR. The live check caught `cuer` 0.0.3 resolving incompatible `qr` 0.6.0; the branch pins 0.5.5 and adds a regression. Actual phone pairing plus Sepolia mint is still required.
 
 ## Deployment configuration
 
@@ -34,7 +35,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 
 ## Remaining gates, in order
 
-1. Obtain a real public WalletConnect/Reown project id and run the actual mobile connection/mint test. No placeholder id is shipped.
+1. Open the validated WalletConnect preview on a real phone, pair the intended mobile wallet, and complete a Sepolia mint. The public Reown id, connector and QR path are already configured and verified.
 2. After D-11 passes, merge the already-green PR #8.
 3. Fetch exact merged `main`, run non-broadcast rehearsal, then have the user run the interactive Sepolia deploy command. Read back and verify every address/value; submit the one-time artist attestation; update `web/public/deployment.json` in a follow-up cutover.
 4. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
