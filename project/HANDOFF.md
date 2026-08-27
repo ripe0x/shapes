@@ -13,6 +13,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 - Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 55 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
 - PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
+- D-32 reschedules GitHub issue #7 as P2 pre-mainnet renderer-audit work, after the current P1/Sepolia release and before any renderer expansion. Only a behavior-preserving `_moduleSvg` helper extraction is approved. `_glyph` remains a documented lookup-table complexity exception. Current ShapeRenderer baselines are 22,699 bytes default and 22,698 bytes testnet; unchanged TypeScript fixtures, frozen-legacy differential parity, pinned size and one-/25-module gas evidence are mandatory.
 
 ## Decisions and evidence
 

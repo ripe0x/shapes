@@ -67,6 +67,7 @@ Deliverables:
 - Architecture decision: standalone vs Surface-hosted (D-04 final). If Surface-hosted, a full sub-roadmap replaces P3 below.
 - Release build explicitly pinned to the default mainnet ladder; mainnet fixtures, full parity chain, and deploy-profile assertions revalidated (D-01).
 - External security audit completed; findings closed or accepted with rationale (D-16, D-17 folded in).
+- Renderer audit hardening completed before any module/vocabulary/grammar expansion: issue #7's behavior-only `_moduleSvg` helper extraction preserves unchanged TypeScript fixtures and frozen-legacy differential output, keeps `_glyph` as a documented lookup-table complexity exception, preserves the measured 22,699/22,698-byte runtime baselines unless separately approved, and records pinned one- versus 25-module gas deltas with a 5% worst-case review threshold (D-32).
 - Legal review completed (D-15).
 - Key ceremony plan: admin structure, initial/final fee recipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
 - Deploy rehearsal: full deploy + seed + lens-probe dry run on a mainnet fork, then Sepolia at mainnet scale if warranted.
