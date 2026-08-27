@@ -22,7 +22,8 @@ set -euo pipefail
 : "${ETHERSCAN_API_KEY:?set ETHERSCAN_API_KEY (Etherscan v2 key)}"
 command -v jq >/dev/null || { echo "jq is required to inspect the deployment" >&2; exit 1; }
 command -v curl >/dev/null || { echo "curl is required to confirm Etherscan verification" >&2; exit 1; }
-RPC="${SEPOLIA_RPC_URL:-https://ethereum-sepolia-rpc.publicnode.com}"
+PUBLIC_RPC="https://ethereum-sepolia-rpc.publicnode.com"
+RPC="${SEPOLIA_RPC_URL:-$PUBLIC_RPC}"
 SENDER="${DEPLOYER:-0xCB43078C32423F5348Cab5885911C3B5faE217F9}"
 PAYOUT="0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4"
 SEED="${SEED_ETH:-false}"
@@ -36,9 +37,11 @@ FEE_BPS="${SHAPES_FEE_BPS:-100}"
   || { echo "approved fee recipient unexpectedly has code" >&2; exit 1; }
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
-[ "$(git branch --show-current)" = "main" ] \
+cd "$REPO_ROOT"
+[ "$(git -C "$REPO_ROOT" branch --show-current)" = "main" ] \
   || { echo "deployments must run from the main branch" >&2; exit 1; }
-[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
+git -C "$REPO_ROOT" fetch --quiet origin main
+[ "$(git -C "$REPO_ROOT" rev-parse HEAD)" = "$(git -C "$REPO_ROOT" rev-parse origin/main)" ] \
   || { echo "local main is not the fetched origin/main commit" >&2; exit 1; }
 git -C "$REPO_ROOT" diff --quiet && git -C "$REPO_ROOT" diff --cached --quiet \
   || { echo "tracked files are dirty; deployment commit is not exact" >&2; exit 1; }
@@ -187,7 +190,7 @@ done < <(jq -r '.libraries[]? // empty' "$BROADCAST_FILE")
 
 SUMMARY_FILE="broadcast/DeploySepolia.s.sol/11155111/deployment-summary.json"
 jq -n \
-  --arg rpc "$RPC" \
+  --arg rpc "$PUBLIC_RPC" \
   --argjson chainId 11155111 \
   --arg renderer "$RENDERER" \
   --arg collection "$COLLECTION" \

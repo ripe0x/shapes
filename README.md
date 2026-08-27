@@ -351,7 +351,8 @@ test/
   Hardening.t.sol             regressions for the adversarial review findings
   Invariants.t.sol            stateful solvency invariants
   Fork.t.sol                  full lifecycle against a mainnet fork (env-gated)
-  fixtures/fixtures.json      generated corpus, do not hand-edit
+  fixtures/fixtures.mainnet.json  generated default-ladder corpus, do not hand-edit
+  fixtures/fixtures.testnet.json  generated testnet-ladder corpus, do not hand-edit
 preview/                      the generative preview harness + chain tester
 netlify.toml                  repository-root Netlify config; builds the web workspace
 SPEC.md                       implementation plan and every rendering decision
@@ -512,8 +513,11 @@ are the contract between them.
 
 ```bash
 cd preview
-npm run fixtures       # writes test/fixtures/fixtures.json
-cd .. && forge test --mc Parity
+npm run fixtures                       # writes fixtures.mainnet.json
+SHAPES_LADDER=testnet npm run fixtures # writes fixtures.testnet.json
+cd ..
+forge test --mc Parity
+FOUNDRY_PROFILE=testnet forge test --mc Parity
 ```
 
 Regenerate whenever the canonical renderer changes, and expect the parity suite to fail loudly

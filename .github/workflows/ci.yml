@@ -17,6 +17,7 @@ jobs:
       contracts: ${{ steps.filter.outputs.contracts }}
       renderer: ${{ steps.filter.outputs.renderer }}
       site: ${{ steps.filter.outputs.site }}
+      indexer: ${{ steps.filter.outputs.indexer }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -38,6 +39,8 @@ jobs:
               - 'lib/**'
               - 'preview/**'
               - 'test/fixtures/**'
+              - 'package.json'
+              - 'package-lock.json'
               - 'foundry.toml'
               - 'remappings.txt'
               - '.github/workflows/ci.yml'
@@ -46,6 +49,9 @@ jobs:
               - 'web/**'
               - 'package.json'
               - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            indexer:
+              - 'indexer/**'
               - '.github/workflows/ci.yml'
 
   contracts:
@@ -134,11 +140,43 @@ jobs:
         working-directory: preview
         run: |
           npm run fixtures
-          git diff --exit-code -- ../test/fixtures/fixtures.json
+          SHAPES_LADDER=testnet npm run fixtures
+          git diff --exit-code -- ../test/fixtures/fixtures.mainnet.json ../test/fixtures/fixtures.testnet.json
 
       # and the Solidity port must still match them byte for byte
       - name: byte parity
-        run: forge test --mc ParityTest -vv
+        run: |
+          forge test --mc ParityTest -vv
+          FOUNDRY_PROFILE=testnet forge test --mc ParityTest -vv
+
+  indexer:
+    name: indexer
+    needs: changes
+    if: needs.changes.outputs.indexer == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: indexer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: indexer/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: codegen
+        run: npm run codegen
+
+      - name: typecheck
+        run: npm run typecheck
 
   site:
     name: site
@@ -185,10 +223,11 @@ jobs:
       - name: install bounded fuzzing toolchain
         run: |
           python -m pip install --disable-pip-version-check crytic-compile==0.3.11
-          curl -fsSLo medusa-linux-x64.tar.gz https://github.com/crytic/medusa/releases/download/v1.5.1/medusa-linux-x64.tar.gz
-          echo "ddfe1517ae9028ef9fc331b00f5a6a9d5406f3fcd11a715d60c6b6fb3e4546d3  medusa-linux-x64.tar.gz" | sha256sum -c -
-          tar -xzf medusa-linux-x64.tar.gz
-          echo "$PWD" >> "$GITHUB_PATH"
+          curl -fsSLo "$RUNNER_TEMP/medusa-linux-x64.tar.gz" https://github.com/crytic/medusa/releases/download/v1.5.1/medusa-linux-x64.tar.gz
+          echo "ddfe1517ae9028ef9fc331b00f5a6a9d5406f3fcd11a715d60c6b6fb3e4546d3  $RUNNER_TEMP/medusa-linux-x64.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/medusa-bin"
+          tar -xzf "$RUNNER_TEMP/medusa-linux-x64.tar.gz" -C "$RUNNER_TEMP/medusa-bin"
+          echo "$RUNNER_TEMP/medusa-bin" >> "$GITHUB_PATH"
 
       # Medusa's crytic-compile adapter treats the config directory as its project root. Keep the
       # reviewed configuration under project/experiments, but link it at root for this invocation.

@@ -46,6 +46,7 @@ function makeClient(opts: {
   minted: bigint;
   live: Map<bigint, FakeToken>;
   multicall3: boolean;
+  supply?: bigint;
   attribution?: boolean;
   headBlock?: bigint;
 }) {
@@ -60,7 +61,7 @@ function makeClient(opts: {
       case "redeemableBacking":
         return 42n;
       case "totalSupply":
-        return BigInt(opts.live.size);
+        return opts.supply ?? BigInt(opts.live.size);
       case "artist":
         if (opts.attribution === false) throw new Error("function selector was not recognized");
         return ARTIST;
@@ -131,6 +132,30 @@ function indexerFixture(opts: {block: number; tokens: unknown[]; status?: number
       }),
       {status: opts.status ?? 200, headers: {"content-type": "application/json"}},
     )) as typeof fetch;
+}
+
+function pagedIndexerFixture(
+  pages: {tokens: unknown[]; hasNextPage: boolean; endCursor: string | null}[],
+): typeof fetch {
+  let page = 0;
+  return (async () => {
+    const current = pages[Math.min(page++, pages.length - 1)]!;
+    return new Response(
+      JSON.stringify({
+        data: {
+          _meta: {status: {chain: {id: 31337, block: {number: 100}}}},
+          tokens: {
+            items: current.tokens,
+            pageInfo: {
+              hasNextPage: current.hasNextPage,
+              endCursor: current.endCursor,
+            },
+          },
+        },
+      }),
+      {status: 200, headers: {"content-type": "application/json"}},
+    );
+  }) as typeof fetch;
 }
 
 function indexedToken(id: bigint) {
@@ -266,4 +291,73 @@ test("loadSite: stale or unhealthy indexer deterministically falls back to the c
     assert.equal(counts.multicall, 2); // 3 ownerOf calls, then one live-token field batch
     assert.deepEqual(metrics, [{source: "chain", indexerRequests: 0}]);
   }
+});
+
+test("loadSite: a stalled indexer is aborted and falls back to the chain", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true});
+  let aborted = false;
+  const stalled = ((_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    })) as typeof fetch;
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: stalled,
+    indexerTimeoutMs: 5,
+  });
+
+  assert.equal(aborted, true);
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("loadSite: oversized indexer pages fall back before accumulation", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true, supply: 1_000n});
+  const oversized = Array.from({length: 501}, (_, id) => indexedToken(BigInt(id)));
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: pagedIndexerFixture([{tokens: oversized, hasNextPage: false, endCursor: null}]),
+  });
+
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("loadSite: repeated indexer cursors fall back instead of looping", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true, supply: 1_000n});
+  const first = Array.from({length: 500}, (_, id) => indexedToken(BigInt(id)));
+  const second = Array.from({length: 500}, (_, id) => indexedToken(BigInt(id + 500)));
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: pagedIndexerFixture([
+      {tokens: first, hasNextPage: true, endCursor: "same"},
+      {tokens: second, hasNextPage: true, endCursor: "same"},
+    ]),
+  });
+
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("loadSite: oversized indexer response bodies fall back", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true});
+  const oversizedBody = (async () =>
+    new Response("{}", {
+      status: 200,
+      headers: {"content-length": String(256 * 1024 + 1)},
+    })) as typeof fetch;
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: oversizedBody,
+  });
+
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
 });

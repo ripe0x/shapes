@@ -8,23 +8,24 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 ## Current outcome
 
 - PR #5 merged as `7f92f1b`. Final core views are `exists` and live-only `denomIndexOf`; `absorbedBy` remains rejected. `IShapes` is `0xb5ac96e9`, `IShapeValue` is `0xd07d718a`.
-- The consolidated P1 packet is locally integrated but not pushed or merged yet. It includes RPC fallback, Black/provenance UI fixes, optional chain-authoritative indexer reads, CI cost controls, Medusa, gas/ink experiments, portless, dependency cleanup, Next 16 and exact-main Sepolia deployment postflights.
+- The consolidated P1 packet is locally integrated but not pushed or merged yet. It includes RPC fallback, Black/provenance UI fixes, bounded optional chain-authoritative indexer reads, CI cost controls, Medusa, gas/ink experiments, portless, dependency cleanup, Next 16 and fetched-exact-main Sepolia deployment postflights.
 - The core contract is unchanged by this packet. Fresh size gates remain Shapes 24,235 bytes default (341-byte EIP-170 margin) and 24,214 bytes testnet (362-byte margin).
-- Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 47 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
+- Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 55 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
+- Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
 
 ## Decisions and evidence
 
 - D-07: keep ink constants unchanged for Sepolia. The exact seed-preserving retained-Dense heuristic reaches Solid 100 after 40,064 dust mints on average (95% CI 39,972–40,156), about 4.01 ETH mainnet-scale fees, with 100.07 ETH mean peak retained backing. This is not a global optimum; mainnet immutable values are reconfirmed at P2.
 - D-08: direct 10k actions are impossible on L1, but the hierarchical apex path is valid. Direct compose is 1.134B gas; direct split/decompose exceed 30M. The exact 3,333-call ladder tree reaches the apex, with a 985,862-gas worst individual rung. UI must not promise direct fan-in/fan-out or an unmeasured batch size. W-2 is rejected.
 - D-09: adopt Medusa 1.5.1 in CI with a checksum-pinned binary; defer Halmos because its AST build exceeded the three-minute/~2.1 GB spike budget before symbolic execution.
-- D-10: optional indexer path is implemented and keeps Shapes authoritative. Freshness, chain, pagination, uniqueness and exact live count are checked; all displayed fields are current chain reads; every failure falls back to raw RPC. A 1,203-id fixture cuts reads from 1,218 to 18. Ponder's vulnerable pins are replaced by smoke-tested overrides, and the isolated install audits at zero.
+- D-10: optional indexer path is implemented and keeps Shapes authoritative. Freshness, chain, uniqueness and exact live count are checked; each page has an 8-second abort, 256 KiB body cap, 500-item cap, unique cursor and totalSupply-derived page/item ceiling. All displayed fields are current chain reads; every failure falls back to raw RPC. A 1,203-id fixture cuts reads from 1,218 to 18. Ponder's vulnerable pins are replaced by smoke-tested overrides, and the isolated install audits at zero.
 - D-12/W-1/W-4/W-5/W-6/D-21: implemented. Browser and OG share independent RPC fallbacks; Black Shapes remain visible with invalid mutators hidden; provenance rollups no longer impersonate token #0; CI is path-filtered/cached and includes site/Medusa jobs; portless is adopted; direct unused x402 packages are removed.
 
 ## Deployment configuration
 
 - Sepolia deployer/admin/artist/Shape #0 owner: `0xCB43078C32423F5348Cab5885911C3B5faE217F9` via Foundry account `ripe0x`.
 - Sepolia future mint-fee recipient: `0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4`; it is code-free. Fee is exactly 100 bps.
-- Deploy only from fetched, clean, exact `main`. Never deploy from this branch. `script/deploy-sepolia.sh` enforces branch/commit/cleanliness, chain, ladder, payout, fee, complete wiring, Shape #0 state, unsigned artist state, receipts and Etherscan source visibility.
+- Deploy only from fetched, clean, exact `main`. Never deploy from this branch. `script/deploy-sepolia.sh` fetches `origin/main` immediately before enforcing branch/commit/cleanliness, then checks chain, ladder, payout, fee, complete wiring, Shape #0 state, unsigned artist state, receipts and Etherscan source visibility. Its portable summary records a credential-free public RPC, never the operational provider URL.
 - The Etherscan key supplied in chat is not persisted. Inject it only into the deployment process. The user enters the Foundry keystore password interactively; never write it to a file.
 - After deployment, `releaseHash` is the exact mined Shapes creation transaction hash. Run `script/attest-artist-sepolia.sh` only after address/readback confirmation; the one-time signature lives directly in Shapes.
 - The old live deployment in `web/public/deployment.json` is immutable and incompatible. A prior throwaway rehearsal at Shapes `0xc840be03f6824165954213136927828b10b1a1a1`, creation tx `0x0529271c4cc71449429a094d6b2fcb2225ee926360d86712b0c96901d4bf8330`, uses the superseded child-attribution architecture. Never sign, relabel or adopt it.
@@ -32,7 +33,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 ## Remaining gates, in order
 
 1. Obtain a real public WalletConnect/Reown project id and run the actual mobile connection/mint test. No placeholder id is shipped.
-2. Finish canonical doc checks and independent diff/security review; push the branch, open a PR, pass GitHub/Netlify and merge.
+2. Push the reviewed branch, open a PR, pass GitHub/Netlify and merge.
 3. Fetch exact merged `main`, run non-broadcast rehearsal, then have the user run the interactive Sepolia deploy command. Read back and verify every address/value; submit the one-time artist attestation; update `web/public/deployment.json` in a follow-up cutover.
 4. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
 5. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.

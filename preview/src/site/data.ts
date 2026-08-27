@@ -44,6 +44,8 @@ export interface SiteData {
 
 /** The indexer is advisory: a source this far behind the connected chain is rejected. */
 export const MAX_INDEXER_LAG_BLOCKS = 2n;
+export const INDEXER_TIMEOUT_MS = 8_000;
+export const MAX_INDEXER_RESPONSE_BYTES = 256 * 1024;
 
 export interface SiteLoadMetrics {
   source: "chain" | "indexer";
@@ -56,6 +58,8 @@ export interface LoadSiteOptions {
   indexerUrl?: string;
   fetch?: typeof fetch;
   maxIndexerLagBlocks?: bigint;
+  /** Primarily for deterministic tests; production uses INDEXER_TIMEOUT_MS. */
+  indexerTimeoutMs?: number;
   onMetrics?: (metrics: SiteLoadMetrics) => void;
 }
 
@@ -179,27 +183,87 @@ async function batchRead(
 // Per-token reads, in call order within each token's chunk slice.
 const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as const;
 
+async function readJsonBounded(response: Response): Promise<IndexerResponse> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_INDEXER_RESPONSE_BYTES) {
+    throw new Error("Shapes indexer response is too large");
+  }
+
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_INDEXER_RESPONSE_BYTES) {
+      throw new Error("Shapes indexer response is too large");
+    }
+    return JSON.parse(text) as IndexerResponse;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  for (;;) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > MAX_INDEXER_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new Error("Shapes indexer response is too large");
+    }
+    text += decoder.decode(value, {stream: true});
+  }
+  text += decoder.decode();
+  return JSON.parse(text) as IndexerResponse;
+}
+
+async function fetchIndexerPage(
+  endpoint: string,
+  fetcher: typeof fetch,
+  after: string | null,
+  timeoutMs: number,
+): Promise<IndexerResponse> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("Shapes indexer timeout must be positive");
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetcher(endpoint, {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({query: INDEXER_QUERY, variables: {limit: INDEXER_PAGE_SIZE, after}}),
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Shapes indexer returned HTTP ${response.status}`);
+    return await readJsonBounded(response);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function fetchIndexedTokens(
   url: string,
   fetcher: typeof fetch,
   chainId: number,
+  expectedSupply: bigint,
+  timeoutMs: number,
 ): Promise<{tokens: IndexedTokenId[]; indexedBlock: bigint; requests: number}> {
   const endpoint = `${url.replace(/\/$/, "")}/graphql`;
   const tokens: IndexedTokenId[] = [];
   let after: string | null = null;
   let indexedBlock: bigint | undefined;
   let requests = 0;
+  const seenCursors = new Set<string>();
+  const maximumPages = expectedSupply === 0n
+    ? 1n
+    : (expectedSupply + BigInt(INDEXER_PAGE_SIZE - 1)) / BigInt(INDEXER_PAGE_SIZE);
 
   do {
-    const response = await fetcher(endpoint, {
-      method: "POST",
-      headers: {"content-type": "application/json"},
-      body: JSON.stringify({query: INDEXER_QUERY, variables: {limit: INDEXER_PAGE_SIZE, after}}),
-    });
     requests++;
-    if (!response.ok) throw new Error(`Shapes indexer returned HTTP ${response.status}`);
+    if (BigInt(requests) > maximumPages) {
+      throw new Error("Shapes indexer returned too many pages");
+    }
 
-    const payload = (await response.json()) as IndexerResponse;
+    const payload = await fetchIndexerPage(endpoint, fetcher, after, timeoutMs);
     if (payload.errors?.length || !payload.data?.tokens || !payload.data._meta?.status) {
       throw new Error(payload.errors?.[0]?.message ?? "Shapes indexer returned an invalid response");
     }
@@ -215,14 +279,31 @@ async function fetchIndexedTokens(
     }
     indexedBlock = pageBlock;
 
-    tokens.push(...payload.data.tokens.items);
-    after = payload.data.tokens.pageInfo.hasNextPage ? payload.data.tokens.pageInfo.endCursor : null;
-    if (payload.data.tokens.pageInfo.hasNextPage && after === null) {
+    const {items, pageInfo} = payload.data.tokens;
+    if (items.length > INDEXER_PAGE_SIZE) {
+      throw new Error("Shapes indexer returned an oversized page");
+    }
+    if (pageInfo.hasNextPage && items.length !== INDEXER_PAGE_SIZE) {
+      throw new Error("Shapes indexer returned a short intermediate page");
+    }
+    if (BigInt(tokens.length + items.length) > expectedSupply) {
+      throw new Error("Shapes indexer returned more tokens than totalSupply");
+    }
+    tokens.push(...items);
+    after = pageInfo.hasNextPage ? pageInfo.endCursor : null;
+    if (pageInfo.hasNextPage && after === null) {
       throw new Error("Shapes indexer returned a page without a cursor");
     }
+    if (after !== null && seenCursors.has(after)) {
+      throw new Error("Shapes indexer repeated a pagination cursor");
+    }
+    if (after !== null) seenCursors.add(after);
   } while (after !== null);
 
   if (indexedBlock === undefined) throw new Error("Shapes indexer returned no checkpoint");
+  if (BigInt(tokens.length) !== expectedSupply) {
+    throw new Error("Shapes indexer live-token count does not match totalSupply");
+  }
   return {tokens, indexedBlock, requests};
 }
 
@@ -399,10 +480,17 @@ export async function loadSite(
 
   if (url && fetcher) {
     try {
-      const [head, indexed] = await Promise.all([
+      const [head, header] = await Promise.all([
         publicClient.getBlockNumber(),
-        fetchIndexedTokens(url, fetcher, dep.chainId),
+        loadSiteHeader(publicClient, dep),
       ]);
+      const indexed = await fetchIndexedTokens(
+        url,
+        fetcher,
+        dep.chainId,
+        header.supply,
+        options.indexerTimeoutMs ?? INDEXER_TIMEOUT_MS,
+      );
       const maximumLag = options.maxIndexerLagBlocks ?? MAX_INDEXER_LAG_BLOCKS;
       if (maximumLag < 0n || indexed.indexedBlock > head || head - indexed.indexedBlock > maximumLag) {
         throw new Error(
@@ -413,10 +501,6 @@ export async function loadSite(
       const ids = indexed.tokens.map((row) => BigInt(row.id));
       if (new Set(ids.map(String)).size !== ids.length) {
         throw new Error("Shapes indexer returned duplicate token ids");
-      }
-      const header = await loadSiteHeader(publicClient, dep);
-      if (BigInt(ids.length) !== header.supply) {
-        throw new Error("Shapes indexer live-token count does not match totalSupply");
       }
       const tokens = await tokensFromIndexer(publicClient, dep, ids);
       options.onMetrics?.({source: "indexer", indexerRequests: indexed.requests});
