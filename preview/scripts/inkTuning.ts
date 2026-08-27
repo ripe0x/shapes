@@ -242,8 +242,8 @@ function pGroupToSolid(ratio: number, solids: number, filler: number, oldIndex: 
 // upper bound): a patient player who mints dust, redeems anything below a keep-threshold, and
 // composes only retained high-gene tokens upward with survivor search until a Solid emerges at
 // the target denomination. This is not an optimizer or a claim about the globally cheapest
-// strategy. Pools track retained counts[level][gene] with fresh random seeds per compose (seeds
-// are uniform anyway), so a whole trial is cheap.
+// strategy. Pools track retained `{gene, seed}` tokens. A selected survivor keeps its actual
+// onchain seed through every rung, and each candidate's burn fold is the XOR of its actual peers.
 // ---------------------------------------------------------------------------
 
 interface FactoryOutcome {
@@ -251,26 +251,38 @@ interface FactoryOutcome {
   peakRetainedEth: number;
 }
 
+interface FactoryToken {
+  gene: number;
+  seed: bigint;
+}
+
 function factoryDustToSolid(targetLevel: number, keepThreshold: number, kn: Knobs, rng: () => number, maxDust: number): FactoryOutcome | null {
-  const counts: number[][] = Array.from({ length: targetLevel + 1 }, () => new Array(GENES).fill(0));
+  const pools: FactoryToken[][][] = Array.from(
+    { length: targetLevel + 1 },
+    () => Array.from({ length: GENES }, () => []),
+  );
   let dust = 0;
   let peakRetainedUnits = 0;
 
-  const retainedUnits = () => counts.reduce(
-    (total, byGene, level) => total + byGene.reduce((sum, count) => sum + count * UNITS[level], 0),
+  const retainedUnits = () => pools.reduce(
+    (total, byGene, level) => total + byGene.reduce((sum, tokens) => sum + tokens.length * UNITS[level], 0),
     0,
   );
 
   const recordPeak = () => { peakRetainedUnits = Math.max(peakRetainedUnits, retainedUnits()); };
 
-  const highestGroup = (lvl: number, r: number): number[] | null => {
-    // pick the r highest-gene tokens at lvl that are all >= keepThreshold; else null.
-    const picked: number[] = [];
+  const highestGroup = (lvl: number, r: number): FactoryToken[] | null => {
+    // Pick the r highest-gene retained tokens at this level. Within a gene bucket, LIFO is an
+    // explicit deterministic heuristic, not a claim that every seed grouping was optimized.
+    const picked: FactoryToken[] = [];
     for (let g = GENES - 1; g >= keepThreshold && picked.length < r; g--) {
-      let avail = counts[lvl][g];
-      while (avail-- > 0 && picked.length < r) picked.push(g);
+      const bucket = pools[lvl][g];
+      while (bucket.length !== 0 && picked.length < r) picked.push(bucket.pop()!);
     }
-    return picked.length === r ? picked : null;
+    if (picked.length === r) return picked;
+    // Restore a partial pick on the impossible path, preserving exact pool state.
+    for (const token of picked) pools[lvl][token.gene].push(token);
+    return null;
   };
 
   const cascade = () => {
@@ -281,21 +293,28 @@ function factoryDustToSolid(targetLevel: number, keepThreshold: number, kn: Knob
         const r = RATIOS[lvl];
         let grp = highestGroup(lvl, r);
         while (grp) {
-          for (const g of grp) counts[lvl][g]--;
-          const seeds = grp.map(() => randSeed(rng));
-          const best = Math.max(...grp);
-          const worst = Math.min(...grp);
+          const genes = grp.map((token) => token.gene);
+          const best = Math.max(...genes);
+          const worst = Math.min(...genes);
           const unitsPerChild = UNITS[lvl];
           let bestResult = 0;
+          let chosenSurvivor = grp[0];
           for (let s = 0; s < r; s++) {
             let fold = 0n;
             let sumW = 0, u = 0;
-            for (let i = 0; i < r; i++) { sumW += grp[i] * unitsPerChild; u += unitsPerChild; if (i !== s) fold ^= seeds[i]; }
+            for (let i = 0; i < r; i++) {
+              sumW += grp[i].gene * unitsPerChild;
+              u += unitsPerChild;
+              if (i !== s) fold ^= grp[i].seed;
+            }
             const center = Math.floor((2 * sumW + u) / (2 * u));
-            const res = composeGene(seeds[s], fold, grp[s], lvl, lvl + 1, best, worst, center, kn);
-            if (res > bestResult) bestResult = res;
+            const res = composeGene(grp[s].seed, fold, grp[s].gene, lvl, lvl + 1, best, worst, center, kn);
+            if (res > bestResult) {
+              bestResult = res;
+              chosenSurvivor = grp[s];
+            }
           }
-          counts[lvl + 1][bestResult]++;
+          pools[lvl + 1][bestResult].push({ gene: bestResult, seed: chosenSurvivor.seed });
           changed = true;
           grp = highestGroup(lvl, r);
         }
@@ -304,19 +323,20 @@ function factoryDustToSolid(targetLevel: number, keepThreshold: number, kn: Knob
   };
 
   while (dust < maxDust) {
-    if (counts[targetLevel][SOLID] >= 1) return { dustMints: dust, peakRetainedEth: peakRetainedUnits * 0.01 };
+    if (pools[targetLevel][SOLID].length >= 1) return { dustMints: dust, peakRetainedEth: peakRetainedUnits * 0.01 };
     // mint a small batch, then cascade.
     for (let i = 0; i < 64; i++) {
-      const gene = geneAtMintP(randSeed(rng), 0, kn);
+      const seed = randSeed(rng);
+      const gene = geneAtMintP(seed, 0, kn);
       if (gene >= keepThreshold) {
-        counts[0][gene]++;
+        pools[0][gene].push({ gene, seed });
         recordPeak();
       }
       dust++;
     }
     cascade();
   }
-  return counts[targetLevel][SOLID] >= 1 ? { dustMints: dust, peakRetainedEth: peakRetainedUnits * 0.01 } : null;
+  return pools[targetLevel][SOLID].length >= 1 ? { dustMints: dust, peakRetainedEth: peakRetainedUnits * 0.01 } : null;
 }
 
 // ---------------------------------------------------------------------------
