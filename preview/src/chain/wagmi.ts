@@ -1,5 +1,4 @@
-import {connectorsForWallets} from "@rainbow-me/rainbowkit";
-import {injectedWallet, walletConnectWallet} from "@rainbow-me/rainbowkit/wallets";
+import {getDefaultWallets} from "@rainbow-me/rainbowkit";
 import {createConfig} from "wagmi";
 import {injected} from "@wagmi/core";
 import {defineChain, type Transport} from "viem";
@@ -32,14 +31,10 @@ export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
     contracts: {multicall3: {address: "0xcA11bde05977b3631167028862bE2a173976CA11"}},
   });
 
+  // Use RainbowKit's maintained default inventory so mobile users see named deep-link choices
+  // instead of only the generic Browser Wallet and WalletConnect entries.
   const connectors = walletConnectProjectId
-    ? connectorsForWallets(
-        [
-          {groupName: "Recommended", wallets: [injectedWallet]},
-          {groupName: "Mobile", wallets: [walletConnectWallet]},
-        ],
-        {appName: "Shapes", projectId: walletConnectProjectId},
-      )
+    ? getDefaultWallets({appName: "Shapes", projectId: walletConnectProjectId}).connectors
     : [injected()];
 
   return createConfig({

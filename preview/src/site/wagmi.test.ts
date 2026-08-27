@@ -19,9 +19,12 @@ test("wallet config keeps injected wallets without a WalletConnect project id", 
   assert.equal(injectedOnly.length, 1);
   assert.equal(injectedOnly[0].id, "injected");
 
-  // A non-empty real project id adds the existing RainbowKit mobile connector path. The actual
-  // relay handshake is intentionally outside this deterministic unit test.
-  assert.ok(buildConfig(dep, {walletConnectProjectId: "project-owned-id"}).connectors.length > 1);
+  // A non-empty real project id adds RainbowKit's standard named wallet inventory. The actual
+  // relay handshake and platform-specific filtering are intentionally outside this unit test.
+  const standardWallets = buildConfig(dep, {walletConnectProjectId: "project-owned-id"}).connectors;
+  assert.ok(standardWallets.length >= 5);
+  assert.ok(standardWallets.some((connector) => connector.id === "safe"));
+  assert.ok(standardWallets.some((connector) => connector.id === "baseAccount"));
 });
 
 test("WalletConnect QR generation accepts RainbowKit's borderless grid", () => {
