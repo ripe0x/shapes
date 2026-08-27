@@ -45,7 +45,7 @@ Historical note — STOP CONDITION LIFTED (2026-08-25, same day raised): the lan
 
 ## Known unknowns
 
-- The real WalletConnect/Reown project id is configured and its deployed connector/QR path passes. A real iPhone caught and prompted correction of the generic-only wallet inventory; refreshed named-wallet pairing and a Sepolia mint remain (D-11).
+- The real WalletConnect/Reown project id is configured and its deployed connector/QR path passes. A real iPhone caught and prompted correction of the generic-only wallet inventory; `wallet-options--shapes-onchain.netlify.app` is the stable corrected preview because old hash-addressed deploys never update. Refreshed named-wallet pairing and a Sepolia mint remain (D-11).
 - Whether the user authorizes a hosted Railway service/Postgres and which archive Sepolia RPC it should use (D-10).
 - Root frontend dependencies retain 9 moderate and 0 high/critical npm advisories after Vite and scoped transitive overrides. The maintained standard inventory now selects MetaMask, so the residual connector dependency risk is explicit; npm's supported fix requires a Wagmi 3 migration. The isolated indexer audits at zero (R21).
 - `ShapeAuctionHouse.createAuction` `minIncrementBps` has no explicit bound beyond uint16 (D-17).
