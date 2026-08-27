@@ -1145,10 +1145,21 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
+    function exists(uint256 tokenId) external view returns (bool) {
+        return _ownerOf(tokenId) != address(0);
+    }
+
+    /// @inheritdoc IShapes
     function backingOf(uint256 tokenId) public view returns (uint256) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
         return d.isBlack ? 0 : Denominations.amountAt(d.denomIndex);
+    }
+
+    /// @inheritdoc IShapes
+    function denomIndexOf(uint256 tokenId) external view returns (uint8) {
+        _requireOwned(tokenId);
+        return _shapes[tokenId].denomIndex;
     }
 
     /// @inheritdoc IShapes

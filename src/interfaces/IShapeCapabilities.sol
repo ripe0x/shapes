@@ -63,6 +63,7 @@ struct ComposeRecordView {
 /// @notice Stable value and redemption capability for integrators that do not need recomposition.
 interface IShapeValue {
     function backingOf(uint256 tokenId) external view returns (uint256);
+    function denomIndexOf(uint256 tokenId) external view returns (uint8);
     function denominationAt(uint8 index) external pure returns (uint256);
     function denominationCount() external pure returns (uint8);
     function unit() external pure returns (uint256);

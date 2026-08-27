@@ -20,31 +20,19 @@ import {ComposeCompute} from "./lib/ComposeCompute.sol";
 /// @notice Read-only periphery for `Shapes`, deployed separately to keep the core token's runtime
 ///         bytecode under the EIP-170 size limit.
 /// @dev Holds no state and no owner. Every view here reads token state through `Shapes`'s own
-///      getters (`isBlack`, `seedOf`, `backingOf`, `originCountOf`, `inkGeneOf`, `modulesOf`) and
+///      getters (`isBlack`, `seedOf`, `denomIndexOf`, `originCountOf`, `inkGeneOf`, `modulesOf`) and
 ///      recomputes its result with the same externally linked libraries `Shapes` links and
 ///      executes with (`GeometrySampling`, `ComposeCompute`, `InkGenes`), so `previewCompose` and
 ///      `previewSplit` are bit-identical to what `Shapes.compose` / `Shapes.split` would produce,
 ///      and `shapeState` is bit-identical to what `Shapes` itself has stored. Reverts propagate
 ///      the same custom errors `Shapes` declares (`IShapes.TokenIsBlack`, and so on), since this
 ///      contract applies the identical validation before computing a result.
-///
-///      `Shapes` has no raw denomination-index getter: a non-Black Shape's index is recovered from
-///      `backingOf` (its amount maps back to exactly one index), and a Black Shape's index is
-///      always the apex one (`sacrifice` requires it, and no path changes a live token's
-///      denomination once it is Black), so `_denomIndexOf` below never needs a new core accessor.
 contract ShapeLens is IShapeLens {
     IShapes public immutable shapes;
 
     constructor(address shapes_) {
         require(shapes_ != address(0), "shapes is zero");
         shapes = IShapes(shapes_);
-    }
-
-    /// @dev A live token's denomination index: the apex index if Black (invariant, see the
-    ///      contract-level dev note), otherwise recovered from its nonzero `backingOf`.
-    function _denomIndexOf(uint256 tokenId, bool black) private view returns (uint8) {
-        if (black) return uint8(Denominations.COUNT - 1);
-        return uint8(Denominations.requireIndexOf(shapes.backingOf(tokenId)));
     }
 
     /* ------------------------------ shapeState ------------------------------ */
@@ -54,7 +42,7 @@ contract ShapeLens is IShapeLens {
         bool black = shapes.isBlack(tokenId); // reverts if tokenId does not exist
         return _shapeState(
             shapes.seedOf(tokenId),
-            _denomIndexOf(tokenId, black),
+            shapes.denomIndexOf(tokenId),
             uint32(shapes.originCountOf(tokenId)),
             shapes.inkGeneOf(tokenId),
             black,
@@ -122,7 +110,7 @@ contract ShapeLens is IShapeLens {
 
         if (shapes.isBlack(survivorId)) revert IShapes.TokenIsBlack(survivorId); // also existence
 
-        uint8 oldIndex = _denomIndexOf(survivorId, false);
+        uint8 oldIndex = shapes.denomIndexOf(survivorId);
         bytes memory survivorModules = shapes.modulesOf(survivorId);
         bytes32 survivorSeed = shapes.seedOf(survivorId);
         uint32 survivorOriginCount = uint32(shapes.originCountOf(survivorId));
@@ -180,7 +168,7 @@ contract ShapeLens is IShapeLens {
         view
         returns (GeometrySampling.Donor memory donor)
     {
-        uint8 denomIndex = _denomIndexOf(burnId, false);
+        uint8 denomIndex = shapes.denomIndexOf(burnId);
         bytes memory modules = shapes.modulesOf(burnId);
         uint32 originCount = uint32(shapes.originCountOf(burnId));
         bytes32 seed = shapes.seedOf(burnId);
@@ -214,7 +202,7 @@ contract ShapeLens is IShapeLens {
 
         if (shapes.isBlack(tokenId)) revert IShapes.TokenIsBlack(tokenId); // also existence
 
-        uint8 denomIndex = _denomIndexOf(tokenId, false);
+        uint8 denomIndex = shapes.denomIndexOf(tokenId);
         uint32 originCount = uint32(shapes.originCountOf(tokenId));
         bytes32 seed = shapes.seedOf(tokenId);
         uint8 inkGene = shapes.inkGeneOf(tokenId);
@@ -272,8 +260,7 @@ contract ShapeLens is IShapeLens {
 
     /// @inheritdoc IShapeLens
     function unicodeCard(uint256 tokenId) external view returns (string memory) {
-        bool black = shapes.isBlack(tokenId); // reverts if tokenId does not exist
-        uint8 denomIndex = _denomIndexOf(tokenId, black);
+        uint8 denomIndex = shapes.denomIndexOf(tokenId);
         uint8 inkGene = shapes.inkGeneOf(tokenId);
         bytes memory modules = shapes.modulesOf(tokenId);
         uint256 amountWei = Denominations.amountAt(denomIndex);

@@ -158,6 +158,11 @@ Both revert for nonexistent or consumed IDs, and both return zero for a live Bla
 implements the current draft `IERC721Value` interface (`valueOf` + `burn`) and advertises it through
 ERC-165; the draft may still change before finalization.
 
+`exists(tokenId)` is the non-reverting liveness check: it is true for every live token, including
+Black, and false for never-issued, redeemed, publicly burned, split-parent and compose-consumed
+IDs. `denomIndexOf(tokenId)` returns the live token's stored ladder index from 0 through 8 and
+reverts for a nonexistent ID. A Black Shape keeps index 8 even though its redeemable value is zero.
+
 If the ETH transfer fails, the entire redemption reverts. The token survives and the backing
 stays put.
 
@@ -197,7 +202,7 @@ I look?”; the future protocol defines what lives there and how it can be used.
 No core Shapes operation calls the resolver. A broken or malicious resolver can make `positionOf`
 return zero or misleading data, but cannot make the read revert and cannot affect ownership, backing, redemption, burn,
 recomposition, rendering or reserve solvency. Historical or not-yet-minted IDs may resolve; callers
-that require a live Shape must separately call `ownerOf(tokenId)`.
+that require a live Shape must separately call `exists(tokenId)`.
 
 The intended future protocol is an external exchange-option layer. A creator escrows claim assets
 against a live Shape, records its current `valueOf` and an expiry, but keeps the Shape itself as an

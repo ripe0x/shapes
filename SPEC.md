@@ -686,6 +686,12 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 ### D18. Final value and position discovery interfaces
 
+- **Direct liveness.** `exists(tokenId)` is a non-reverting view of ERC-721 liveness: true for every
+  live token including Black, and false for never-issued, redeemed/burned, split-parent and
+  compose-consumed IDs. Decompose makes a revived input live again.
+- **Stored denomination fact.** `denomIndexOf(tokenId)` returns the live token's stored 0..8 ladder
+  index and reverts for a nonexistent ID. Black retains index 8 even though its redeemable backing
+  is zero, so consumers must not reconstruct this state from `backingOf`.
 - **One economic value, two names.** `valueOf(tokenId)` is an exact alias of the existing
   `backingOf(tokenId)`: both return the native ETH the current owner would receive by burning a
   live Shape now and both revert for nonexistent IDs. `backingOf` remains the protocol-native
@@ -712,6 +718,9 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   creator for the claim. Missing/value-mismatched Shapes and expired positions cannot exercise and
   permit creator recovery. A gacha may separately custody a Shape while it is offered. Shapes adds
   no freeze, wrapper, mutation nonce, claim custody or execution path.
+- **No core reverse-compose index.** Compose records and events retain provenance, but Shapes does
+  not duplicate a consumed-id-to-survivor mapping. Its storage and ambiguous terminal/nested
+  lifecycle semantics are unjustified without a concrete on-chain consumer.
 - **Replaceable, clearable, independently lockable.** The transferable admin may set or replace
   the resolver with a contract address, clear it to zero, or permanently lock its current value at
   any time — including locking zero. Renderer and resolver locks are independent. Admin transfer

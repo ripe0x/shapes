@@ -227,7 +227,7 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_AdvertisesShapesAndAdminInterfaces() public view {
-        assertEq(type(IShapes).interfaceId, bytes4(0x926c1806), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0xb5ac96e9), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0xe135adbe), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

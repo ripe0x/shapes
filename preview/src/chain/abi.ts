@@ -26,6 +26,8 @@ export const shapesAbi = parseAbi([
   "function sacrifice(uint256 tokenId)",
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
+  "function exists(uint256 tokenId) view returns (bool)",
+  "function denomIndexOf(uint256 tokenId) view returns (uint8)",
   "function owner() view returns (address)",
   "function artist() view returns (address)",
   "function artistReleaseHash() view returns (bytes32)",

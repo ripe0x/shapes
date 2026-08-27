@@ -41,6 +41,14 @@
 `Shapes.setPositionResolver()` (◄── `!positionResolverLocked`) → `Shapes.lockPositionResolver()` (one-way)
 `Shapes.transferAdmin()` / `renounceAdmin()` — independent of Shape #0 ownership
 
+### Core State Reads (Any Caller)
+
+`Shapes.exists(tokenId)` → non-reverting ERC-721 liveness, including Black Shapes
+
+`Shapes.denomIndexOf(tokenId)` → stored 0..8 denomination index for a live Shape; nonexistent ids revert
+
+`ShapeLens.shapeState(tokenId)` → aggregates the core token-state views, including the stored denomination index; nonexistent ids revert
+
 ### Auction Flow (Seller / Bidder)
 
 `[mint above, for card-denominated bids]` → `ShapeAuctionHouse.createAuction()` ◄── caller owns/approved the lot NFT
