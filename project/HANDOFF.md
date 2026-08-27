@@ -8,10 +8,11 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 ## Current outcome
 
 - PR #5 merged as `7f92f1b`. Final core views are `exists` and live-only `denomIndexOf`; `absorbedBy` remains rejected. `IShapes` is `0xb5ac96e9`, `IShapeValue` is `0xd07d718a`.
-- The consolidated P1 packet is locally integrated but not pushed or merged yet. It includes RPC fallback, Black/provenance UI fixes, bounded optional chain-authoritative indexer reads, CI cost controls, Medusa, gas/ink experiments, portless, dependency cleanup, Next 16 and fetched-exact-main Sepolia deployment postflights.
+- PR #8 is open from `codex/p1-hardening` with the consolidated P1 packet. It includes RPC fallback, Black/provenance UI fixes, bounded optional chain-authoritative indexer reads, CI cost controls, Medusa, gas/ink experiments, portless, dependency cleanup, Next 16 and fetched-exact-main Sepolia deployment postflights.
 - The core contract is unchanged by this packet. Fresh size gates remain Shapes 24,235 bytes default (341-byte EIP-170 margin) and 24,214 bytes testnet (362-byte margin).
 - Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 55 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
+- PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
 
 ## Decisions and evidence
 
@@ -33,7 +34,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 ## Remaining gates, in order
 
 1. Obtain a real public WalletConnect/Reown project id and run the actual mobile connection/mint test. No placeholder id is shipped.
-2. Push the reviewed branch, open a PR, pass GitHub/Netlify and merge.
+2. After D-11 passes, merge the already-green PR #8.
 3. Fetch exact merged `main`, run non-broadcast rehearsal, then have the user run the interactive Sepolia deploy command. Read back and verify every address/value; submit the one-time artist attestation; update `web/public/deployment.json` in a follow-up cutover.
 4. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
 5. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
