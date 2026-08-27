@@ -54,11 +54,14 @@ test("a project id activates RainbowKit's standard wallet inventory on Sepolia o
   assert.ok(connectors.some((c) => c.id === "baseAccount"));
 });
 
-test("the chain carries Multicall3 and the Sepolia explorer", () => {
+test("the Sepolia config uses viem's canonical chain (Multicall3 + explorer)", () => {
   const chain = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
+  // Canonical `sepolia` from viem/wagmi, so WalletConnect/Rainbow identify the network.
+  assert.equal(chain.id, sepolia.id);
+  assert.equal(chain.name, sepolia.name);
   assert.equal(
-    chain.contracts?.multicall3?.address,
-    "0xcA11bde05977b3631167028862bE2a173976CA11",
+    chain.contracts?.multicall3?.address?.toLowerCase(),
+    "0xca11bde05977b3631167028862be2a173976ca11",
   );
   assert.match(chain.blockExplorers?.default.url ?? "", /sepolia\.etherscan\.io/);
 });
@@ -117,8 +120,10 @@ test("Mint initiates a real Sepolia transaction to the Shapes contract", async (
 
   const account = "0x1111111111111111111111111111111111111111" as const;
   const chainDep = {...sepoliaDep, rpc: url};
-  // The Sepolia chain the app actually configures (id, explorer, Multicall3, RPC list).
-  const chain = buildConfig(chainDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
+  // The Sepolia chain the app configures, but with its RPC pointed at the local recorder so the
+  // mock wallet's send is captured instead of hitting a live Sepolia node.
+  const base = buildConfig(chainDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
+  const chain = {...base, rpcUrls: {default: {http: [url]}}};
   // getDefaultConfig's WalletConnect connectors cannot open a relay session headlessly, so the
   // send is driven by a mock wallet on that same chain. The point under test is that mintRequest,
   // pushed through wagmi + viem against a Sepolia-configured chain, emits the right eth_sendTransaction.

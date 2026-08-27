@@ -1,4 +1,4 @@
-import {getDefaultConfig, type RainbowKitWalletConnectParameters} from "@rainbow-me/rainbowkit";
+import {getDefaultConfig} from "@rainbow-me/rainbowkit";
 import {createConfig} from "wagmi";
 import {injected} from "@wagmi/core";
 import {defineChain, type Transport} from "viem";
@@ -16,18 +16,21 @@ export interface WalletOptions {
   transport?: Transport;
 }
 
-/** The viem chain for the deployment: id, RPC list, explorer, and Multicall3 for batched reads. */
+/**
+ * The viem chain for the deployment. Sepolia uses viem's canonical `sepolia` object (the same one
+ * every other RainbowKit app here uses), so WalletConnect and Rainbow identify the network from a
+ * known definition instead of a hand-rolled one that reads as "None". Custom RPC endpoints are
+ * applied through the transport, not by redefining the chain. Only a non-canonical dev chain (local
+ * anvil) is defined by hand.
+ */
 function deploymentChain(dep: Deployment, primaryRpcUrl?: string) {
+  if (dep.chainId === sepolia.id) return sepolia;
   const rpcUrls = rpcUrlsForChain(dep.chainId, dep.rpc, primaryRpcUrl);
   return defineChain({
     id: dep.chainId,
-    name: dep.chainId === sepolia.id ? sepolia.name : "Shapes dev chain",
+    name: "Shapes dev chain",
     nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18},
     rpcUrls: {default: {http: rpcUrls}},
-    blockExplorers:
-      dep.chainId === sepolia.id
-        ? {default: {name: "Etherscan", url: "https://sepolia.etherscan.io"}}
-        : undefined,
     // Canonical Multicall3 address. fork-dev.sh etches it onto a plain dev chain; forks and
     // public chains already have it. Batched readers check for deployed code before using it.
     contracts: {multicall3: {address: "0xcA11bde05977b3631167028862bE2a173976CA11"}},
@@ -35,26 +38,13 @@ function deploymentChain(dep: Deployment, primaryRpcUrl?: string) {
 }
 
 /**
- * Declares the deployment chain as WalletConnect's REQUIRED chain.
- *
- * WalletConnect's EthereumProvider derives the session's required namespace from `chains` and the
- * optional namespace from `optionalChains`. wagmi's connector only ever sets `optionalChains`, so
- * the required namespace is empty and a wallet's approval screen shows the network as "None" and
- * may return no accounts. Setting `chains` puts the deployment chain (Sepolia) in the required
- * namespace, so the approval names Sepolia and the account resolves on it. `chains` is a real
- * EthereumProvider option that wagmi omits from its public parameter type, hence the cast.
- */
-function requiredWalletConnectChain(chainId: number): RainbowKitWalletConnectParameters {
-  return {chains: [chainId]} as unknown as RainbowKitWalletConnectParameters;
-}
-
-/**
  * Builds the wagmi config for a single deployment chain.
  *
  * With a WalletConnect project id this is RainbowKit's `getDefaultConfig` scoped to exactly one
- * chain, with that chain declared as the required WalletConnect chain (see above). Without a
- * project id (local anvil dev, unit tests) it is a plain injected-only config, so no relay
- * identity is created.
+ * chain (Sepolia for the public site). The session uses WalletConnect's optional namespace, which
+ * is the only shape Rainbow accepts on connect; forcing the chain into the required namespace was
+ * tested and rejected by the wallet. Without a project id (local anvil dev, unit tests) it is a
+ * plain injected-only config, so no relay identity is created.
  */
 export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
   const primaryRpcUrl = options.primaryRpcUrl?.trim() || undefined;
@@ -70,7 +60,6 @@ export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
       projectId: walletConnectProjectId,
       chains: [chain],
       transports: {[chain.id]: transport},
-      walletConnectParameters: requiredWalletConnectChain(chain.id),
       ssr: false,
     });
   }
