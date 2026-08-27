@@ -70,7 +70,7 @@ interface IndexerPage {
 
 interface IndexerResponse {
   data?: {
-    __meta?: {status?: Record<string, {id: number; block: {number: number}}>};
+    _meta?: {status?: Record<string, {id: number; block: {number: number}}>};
     tokens?: IndexerPage;
   };
   errors?: {message?: string}[];
@@ -78,7 +78,7 @@ interface IndexerResponse {
 
 const INDEXER_PAGE_SIZE = 500;
 const INDEXER_QUERY = `query SiteTokens($limit: Int!, $after: String) {
-  __meta { status }
+  _meta { status }
   tokens(
     where: { live: true }
     orderBy: "mintedAtBlock"
@@ -200,11 +200,11 @@ async function fetchIndexedTokens(
     if (!response.ok) throw new Error(`Shapes indexer returned HTTP ${response.status}`);
 
     const payload = (await response.json()) as IndexerResponse;
-    if (payload.errors?.length || !payload.data?.tokens || !payload.data.__meta?.status) {
+    if (payload.errors?.length || !payload.data?.tokens || !payload.data._meta?.status) {
       throw new Error(payload.errors?.[0]?.message ?? "Shapes indexer returned an invalid response");
     }
 
-    const statuses = Object.values(payload.data.__meta.status);
+    const statuses = Object.values(payload.data._meta.status);
     const status = statuses.find((candidate) => candidate.id === chainId);
     if (!status || !Number.isSafeInteger(status.block.number) || status.block.number < 0) {
       throw new Error("Shapes indexer does not report a checkpoint for the connected chain");

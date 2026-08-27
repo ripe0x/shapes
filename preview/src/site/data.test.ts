@@ -122,7 +122,7 @@ function indexerFixture(opts: {block: number; tokens: unknown[]; status?: number
     new Response(
       JSON.stringify({
         data: {
-          __meta: {status: {chain: {id: 31337, block: {number: opts.block}}}},
+          _meta: {status: {chain: {id: 31337, block: {number: opts.block}}}},
           tokens: {
             items: opts.tokens,
             pageInfo: {hasNextPage: false, endCursor: null},

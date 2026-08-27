@@ -66,7 +66,7 @@ live and read back:
 { "indexerUrl": "https://your-shapes-indexer.example" }
 ```
 
-It POSTs the gallery query below to `/graphql`, reads Ponder's built-in `__meta.status`
+It POSTs the gallery query below to `/graphql`, reads Ponder's built-in `_meta.status`
 checkpoint, and compares the matching chain's indexed block to `eth_blockNumber`. The source is
 accepted only when it is at most **2 blocks behind**. A missing URL, HTTP or GraphQL failure,
 malformed/wrong-chain response, changing paginated checkpoint, an indexer ahead of the selected
@@ -252,7 +252,7 @@ artifact so field names, types, and `indexed` flags match deployed bytecode.
 
 ## Production recommendation: Railway + Postgres
 
-For pinned Ponder **0.17.6**, the viable low-ceremony production target is a Railway service
+For pinned Ponder **0.17.8**, the viable low-ceremony production target is a Railway service
 rooted at `indexer/`, plus Railway Postgres in the same project and region. This matches Ponder's
 current official Railway guide and its requirement for a low-latency Postgres connection. Run
 `npm start -- --schema $RAILWAY_DEPLOYMENT_ID`, set Railway's health check to `/ready` with a
@@ -265,3 +265,12 @@ No Railway account, project, database, RPC credential, Sepolia Shapes address, o
 block has been supplied here, so nothing has been provisioned or hosted. Those are the exact
 credentials/actions blocking production activation. Official references: [Railway deployment](https://ponder.sh/docs/production/railway)
 and [self-hosting requirements](https://ponder.sh/docs/production/deploy).
+
+### Dependency security
+
+Ponder 0.17.8 still pins vulnerable transitive versions, so `package.json` uses tested npm
+overrides: `@hono/node-server` 1.19.15, `drizzle-orm` 0.45.2, `kysely` 0.28.17, Vite 6.4.3,
+and esbuild 0.25.12. This clears the current npm advisories for encoded-path static serving,
+SQL identifier/JSON-path handling, and Vite/esbuild dev-server traversal. The exact set passed
+`npm audit --omit=dev`, Ponder codegen/typecheck, and a local Anvil `ponder start` smoke with
+`/health`, `/ready`, `/status`, and the gallery GraphQL `_meta` response.
