@@ -1,6 +1,6 @@
 import React from "react";
 import {parseEventLogs} from "viem";
-import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagmi";
+import {useAccount, useDisconnect, usePublicClient, useSwitchChain, useWriteContract} from "wagmi";
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
@@ -42,10 +42,11 @@ export function SiteApp({
   initialTokenId?: bigint | null;
   onNavigate?: (view: View, tokenId: bigint | null) => void;
 }) {
-  const {address, isConnected} = useAccount();
+  const {address, chainId: walletChainId, isConnected} = useAccount();
   const {disconnect} = useDisconnect();
   const {openConnectModal} = useConnectModal();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({chainId: dep.chainId});
+  const {switchChainAsync} = useSwitchChain();
   const {writeContractAsync} = useWriteContract();
 
   const [view, setView] = React.useState<View>(initialView ?? "mint");
@@ -101,8 +102,13 @@ export function SiteApp({
     void refresh();
   }, [refresh]);
 
-  const write = (functionName: string, args: readonly unknown[], value?: bigint) =>
-    writeContractAsync({
+  const onDeploymentChain = async () => {
+    if (walletChainId !== dep.chainId) await switchChainAsync({chainId: dep.chainId});
+  };
+
+  const write = async (functionName: string, args: readonly unknown[], value?: bigint) => {
+    await onDeploymentChain();
+    return writeContractAsync({
       address: dep.shapes,
       abi: shapesAbi,
       functionName,
@@ -110,14 +116,16 @@ export function SiteApp({
       value,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
+  };
 
-  const writeHouse = (
+  const writeHouse = async (
     functionName: string,
     args: readonly unknown[],
     value?: bigint,
     gas?: bigint,
-  ) =>
-    writeContractAsync({
+  ) => {
+    await onDeploymentChain();
+    return writeContractAsync({
       address: dep.auctionHouse!,
       abi: auctionHouseAbi,
       functionName,
@@ -126,6 +134,7 @@ export function SiteApp({
       gas,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
+  };
 
   const doMint = async () => {
     if (!address || !publicClient || !data) return;

@@ -25,6 +25,9 @@ test("wallet config keeps injected wallets without a WalletConnect project id", 
   assert.ok(standardWallets.length >= 5);
   assert.ok(standardWallets.some((connector) => connector.id === "safe"));
   assert.ok(standardWallets.some((connector) => connector.id === "baseAccount"));
+
+  const walletChains = buildConfig(dep, {walletConnectProjectId: "project-owned-id"}).chains;
+  assert.deepEqual(walletChains.map((chain) => chain.id), [1, dep.chainId]);
 });
 
 test("WalletConnect QR generation accepts RainbowKit's borderless grid", () => {

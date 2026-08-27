@@ -144,7 +144,7 @@ export function MintView({
   // The connected account's native balance, to catch a selection that costs more than it holds
   // before the wallet rejects it. This is the backing plus fee only; gas is left to the wallet.
   const {address} = useAccount();
-  const {data: balance} = useBalance({address});
+  const {data: balance} = useBalance({address, chainId});
   const total = fee === null ? null : (wei + fee) * q;
   const insufficient =
     connected && balance !== undefined && total !== null && balance.value < total;
