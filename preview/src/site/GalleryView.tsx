@@ -3,6 +3,14 @@ import {C} from "./theme";
 import {Section, Art} from "./ui";
 import type {SiteData} from "./data";
 
+export const BLACK_FILTER = -2;
+
+/** Kept pure so the gallery's Black-Shape visibility is regression-testable without a DOM. */
+export function filterGalleryTokens<T extends {di: number}>(tokens: T[], filter: number): T[] {
+  if (filter === BLACK_FILTER) return tokens.filter((token) => token.di < 0);
+  return filter < 0 ? tokens : tokens.filter((token) => token.di === filter);
+}
+
 export function GalleryView({
   data,
   filter,
@@ -10,13 +18,17 @@ export function GalleryView({
   onOpenToken,
 }: {
   data: SiteData | null;
-  filter: number; // -1 = all, else denomination index
+  filter: number; // -1 = all, -2 = Black, else denomination index
   setFilter: (i: number) => void;
   onOpenToken: (id: bigint) => void;
 }) {
   const tokens = data?.tokens ?? [];
-  const filtered = filter < 0 ? tokens : tokens.filter((t) => t.di === filter);
-  const chips = [{label: "All", i: -1}, ...DENOMINATIONS.map((d, i) => ({label: d.label, i}))];
+  const filtered = filterGalleryTokens(tokens, filter);
+  const chips = [
+    {label: "All", i: -1},
+    ...DENOMINATIONS.map((d, i) => ({label: d.label, i})),
+    {label: "Black", i: BLACK_FILTER},
+  ];
 
   return (
     <main>
@@ -69,7 +81,7 @@ export function GalleryView({
               }}
             >
               <span>#{t.id.toString()}</span>
-              <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : ""}</span>
+              <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : "Black"}</span>
             </div>
           </button>
         ))}

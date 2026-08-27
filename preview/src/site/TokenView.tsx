@@ -35,6 +35,7 @@ import {
 import {moduleBytesToHex} from "../canonical/moduleCodec";
 import type {CardGeometry} from "../canonical/render";
 import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
+import {isProvenanceRollup, provenanceRollupLabel} from "./provenance";
 
 const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   mint: "Minted",
@@ -308,6 +309,29 @@ export function TokenView({
           <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
             Shape {tokenId.toString()} is no longer live. It was redeemed or recomposed. Its
             history is below.
+          </div>
+        </Section>
+        <History history={history} chainId={dep.chainId} />
+        <div style={{height: 64}} />
+      </main>
+    );
+  }
+
+  if (token.di < 0) {
+    return (
+      <main>
+        {back}
+        <Section title="BLACK SHAPE" pad="36px 48px 44px 32px">
+          <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
+            <Art src={token.image} alt={`Black Shape ${token.id}`} width={340} />
+            <div style={{flex: "1 1 320px", minWidth: 0, fontSize: 13, lineHeight: 1.75}}>
+              <div style={{fontSize: 40, lineHeight: 1}}>Black Shape</div>
+              <div style={{marginTop: 20}}>
+                #{token.id.toString()} has been sacrificed. It remains part of the collection, but
+                has no redeemable ETH backing and cannot be split, composed, or redeemed.
+              </div>
+              <div style={{marginTop: 14, color: C.muted, fontSize: 11}}>owner · {short(token.owner)}</div>
+            </div>
           </div>
         </Section>
         <History history={history} chainId={dep.chainId} />
@@ -851,6 +875,16 @@ function ProvTree({
   live: SiteToken[];
   onOpen: (id: bigint) => void;
 }) {
+  if (isProvenanceRollup(node)) {
+    return (
+      <div
+        style={{marginTop: 6, padding: "5px 7px", border: `1px solid ${C.border}`, color: C.faint, fontSize: 10}}
+        title="additional contributors not expanded"
+      >
+        {provenanceRollupLabel(node)}
+      </div>
+    );
+  }
   const w = treeWidth(depth);
   const isLive = live.some((t) => t.id === node.id);
   // A repeated ancestor's subtree already hangs under its first occurrence; drop the echo.

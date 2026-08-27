@@ -32,7 +32,7 @@ function geneOfMeta(meta: TokenMeta): number {
 }
 
 export interface SiteData {
-  tokens: SiteToken[]; // live, non-Black, newest first
+  tokens: SiteToken[]; // live, including Black Shapes, newest first
   reserve: bigint; // redeemableBacking()
   supply: bigint; // totalSupply()
   fees: bigint[]; // mintFeeFor() per denomination index
@@ -300,7 +300,8 @@ async function tokensFromIndexer(
  * indexer (or at minimum a deploy-block floor on the log scan in chain/history.ts) before this
  * ships publicly.
  *
- * Black tokens are skipped: the sacrifice mechanics are out of scope for this site.
+ * Black Shapes remain in the gallery. They have zero backing and denomination index -1, but their
+ * on-chain tokenURI is still the canonical artwork and should not disappear from public history.
  */
 async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
@@ -357,12 +358,11 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
     const [backing, seed, black, uri, composeDepth] = row.map(
       (r) => (r as {result: unknown}).result,
     );
-    if (black) continue;
     const {image, meta} = parseUri(uri as string);
     tokens.push({
       id,
       backing: backing as bigint,
-      di: denomIndexOf(backing as bigint),
+      di: black ? -1 : denomIndexOf(backing as bigint),
       seed: BigInt(seed as bigint),
       owner,
       image,

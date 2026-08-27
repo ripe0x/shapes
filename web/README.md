@@ -7,6 +7,15 @@ Chain target comes from `web/public/deployment.json`, with env overrides `SHAPES
 `SHAPES_CHAIN_ID`, and `SHAPES_ADDRESS` for the server-side deployment target (see
 `app/lib/deployment.ts`).
 
+For Sepolia, reads use the configured RPC first and then PublicNode, 1RPC, and Tenderly's public
+endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHAPES_RPC_URL` for
+browser reads when a paid/provider RPC is available. Requests are unbatched because shared site
+reads already use Multicall3 and local seed demos can exceed Anvil's batch-size limit.
+
+WalletConnect is disabled unless `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` is a real project id from
+the project's WalletConnect Cloud account. Without it, injected wallets (for example MetaMask)
+remain available. Mobile WalletConnect testing is blocked until that credential is supplied.
+
 Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
 
 ## Development

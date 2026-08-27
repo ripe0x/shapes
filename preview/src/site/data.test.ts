@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type {PublicClient} from "viem";
 
 import {loadSite} from "./data";
+import {BLACK_FILTER, filterGalleryTokens} from "./GalleryView";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {GENE_NAMES} from "../canonical/ink";
 
@@ -147,7 +148,7 @@ const NORMAL: FakeToken = {
 test("loadSite: multicall path chunks ids and reads per-token fields for live ids only", async () => {
   const live = new Map<bigint, FakeToken>([
     [2n, NORMAL],
-    [5n, {...NORMAL, black: true}],
+    [5n, {...NORMAL, backing: 0n, black: true}],
     [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: 9n, composeDepth: 3n}],
   ]);
   const {client, counts} = makeClient({minted: 1203n, live, multicall3: true});
@@ -156,7 +157,7 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
 
   assert.deepEqual(
     site.tokens.map((t) => t.id),
-    [1200n, 2n], // newest first, black id 5 skipped
+    [1200n, 5n, 2n], // newest first, including the Black Shape
   );
   const apex = site.tokens[0];
   assert.equal(apex.owner, OWNER);
@@ -167,6 +168,10 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
   assert.equal(apex.meta.name, "Shape 1200");
   assert.ok(apex.image.startsWith("data:image/svg+xml;base64,"));
   assert.equal(apex.inkGene, 0);
+  const black = site.tokens.find((token) => token.id === 5n)!;
+  assert.equal(black.di, -1);
+  assert.equal(black.backing, 0n);
+  assert.deepEqual(filterGalleryTokens(site.tokens, BLACK_FILTER).map((token) => token.id), [5n]);
   assert.equal(site.reserve, 42n);
   assert.equal(site.supply, 3n);
   assert.equal(site.fees.length, DENOMINATIONS.length);

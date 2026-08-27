@@ -23,8 +23,8 @@ const centered: React.CSSProperties = {
 
 /**
  * Boot mirrors chain/main.tsx: the wagmi config depends on the deployment, so fetch it first.
- * A public deployment replaces /deployment.json with a static deployment record and swaps
- * buildConfig's injected-only connector set for a full one (see chain/wagmi.ts).
+ * VITE_SHAPES_RPC_URL optionally puts a paid/provider RPC first. VITE_WALLETCONNECT_PROJECT_ID
+ * enables WalletConnect only when it is a real project id; otherwise injected wallets remain.
  */
 function Boot() {
   const [state, setState] = React.useState<{
@@ -39,7 +39,15 @@ function Boot() {
         if (!r.ok) throw new Error("no deployment.json");
         return r.json();
       })
-      .then((dep: Deployment) => setState({dep, config: buildConfig(dep)}))
+      .then((dep: Deployment) =>
+        setState({
+          dep,
+          config: buildConfig(dep, {
+            primaryRpcUrl: import.meta.env.VITE_SHAPES_RPC_URL,
+            walletConnectProjectId: import.meta.env.VITE_WALLETCONNECT_PROJECT_ID,
+          }),
+        }),
+      )
       .catch(() =>
         setErr("No deployment found. Run ./script/fork-dev.sh from the repo root, then reload."),
       );

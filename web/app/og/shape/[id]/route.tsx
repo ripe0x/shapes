@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
-import { createPublicClient, http, defineChain } from "viem";
 import { shapesAbi } from "@shared/chain/abi";
+import { createShapesPublicClient } from "@shared/chain/rpc";
 import { serverDeployment } from "../../../lib/deployment";
 
 // The token share image: the on-chain artwork as a card centred on white, with a subtle drop
@@ -27,13 +27,10 @@ function imageFromTokenURI(uri: string): string | null {
 
 async function fetchArtwork(id: bigint): Promise<string | null> {
   const dep = serverDeployment();
-  const chain = defineChain({
-    id: dep.chainId,
-    name: "Shapes",
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: { default: { http: [dep.rpc] } },
+  const client = createShapesPublicClient(dep, {
+    chainName: "Shapes",
+    primaryRpcUrl: process.env.SHAPES_RPC_URL,
   });
-  const client = createPublicClient({ chain, transport: http(dep.rpc) });
   const uri = await client.readContract({
     address: dep.shapes,
     abi: shapesAbi,
