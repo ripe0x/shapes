@@ -16,6 +16,7 @@ jobs:
     outputs:
       contracts: ${{ steps.filter.outputs.contracts }}
       renderer: ${{ steps.filter.outputs.renderer }}
+      site: ${{ steps.filter.outputs.site }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -37,6 +38,12 @@ jobs:
               - 'test/fixtures/**'
               - 'foundry.toml'
               - 'remappings.txt'
+              - '.github/workflows/ci.yml'
+            site:
+              - 'preview/**'
+              - 'web/**'
+              - 'package.json'
+              - 'package-lock.json'
               - '.github/workflows/ci.yml'
 
   contracts:
@@ -130,3 +137,29 @@ jobs:
       # and the Solidity port must still match them byte for byte
       - name: byte parity
         run: forge test --mc ParityTest -vv
+
+  site:
+    name: site
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: test shared site logic
+        run: npm run test --workspace preview
+
+      - name: lint
+        run: npm run lint --workspace web
+
+      - name: build
+        run: npm run build --workspace web
