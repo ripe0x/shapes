@@ -20,7 +20,7 @@ Evidence gate: STATE.md updated to show zero at-risk uncommitted work; audit fin
 
 Stop conditions: an audit finding of high severity (stop and fix before anything else merges); loss or corruption of the Surface port files.
 
-## P1 entry gate: adopted architecture delta (code complete; deployment pending)
+## P1 entry gate: adopted architecture delta (deployment complete; attestation pending)
 
 Objective: land and freshly deploy the D-24 architecture before spending hardening evidence.
 
@@ -33,7 +33,7 @@ Deliverables:
 - COMPLETE: D-27 admin-directed future mint-fee recipient, with immutable `feeBps`, no reserve authority, and exact Sepolia payout/admin post-flight checks. Merged in PR #4 as `c34aea3`.
 - RESOLVED ARCHITECTURALLY, PARKED POST-LAUNCH: D-29 defines positions as a fully escrowed external exchange-option protocol. Shapes retains discovery only and gains no freeze, wrapper, custody or execution logic.
 - COMPLETE: PR #5 merged as `7f92f1b`. D-31 adds non-reverting `exists` and stored `denomIndexOf`, keeps `absorbedBy` rejected, and passes lifecycle/interface and default/testnet EIP-170 gates.
-- MERGED, DEPLOY PREFLIGHT COMPLETE: PR #4 merged as `c34aea3`, and the site tolerates missing attribution selectors on the current Sepolia deployment. Deploy current `main` fresh to Sepolia, submit the artist signature directly to Shapes only after verifying the final addresses and exact Shapes creation transaction hash, and land new addresses/fromBlock in a small follow-up cutover. Never relabel either older immutable deployment.
+- DEPLOYED AND VERIFIED: exact merged `main` commit `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; all constructor/wiring/value postflights pass and all ten sources are verified. Submit the one-time artist signature against creation transaction `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, then merge the address/fromBlock cutover. Never relabel either older immutable deployment.
 
 Acceptance: PR #2 and the D-28 attribution change merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture, and its artist attestation verifies directly on Shapes against the recorded release hash.
 
@@ -66,8 +66,8 @@ Objective: everything irreversible is decided, reviewed, and rehearsed.
 Deliverables:
 - Architecture decision: standalone vs Surface-hosted (D-04 final). If Surface-hosted, a full sub-roadmap replaces P3 below.
 - Release build explicitly pinned to the default mainnet ladder; mainnet fixtures, full parity chain, and deploy-profile assertions revalidated (D-01).
-- External security audit completed; findings closed or accepted with rationale (D-16, D-17 folded in).
 - Renderer audit hardening completed before any module/vocabulary/grammar expansion: issue #7's behavior-only `_moduleSvg` helper extraction preserves unchanged TypeScript fixtures and frozen-legacy differential output, keeps `_glyph` as a documented lookup-table complexity exception, preserves the measured 22,699/22,698-byte runtime baselines unless separately approved, and records pinned one- versus 25-module gas deltas with a 5% worst-case review threshold (D-32).
+- External security audit completed after issue #7, with findings closed or accepted with rationale (D-16, D-17 folded in).
 - Legal review completed (D-15).
 - Key ceremony plan: admin structure, initial/final fee recipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
 - Deploy rehearsal: full deploy + seed + lens-probe dry run on a mainnet fork, then Sepolia at mainnet scale if warranted.
@@ -94,7 +94,7 @@ Stop conditions: any pre-flight read mismatch — no broadcast; any post-deploy 
 
 Objective: keep it healthy; grow by evidence.
 
-Deliverables: monitoring (reserve invariant watch, RPC health, indexer lag), doc upkeep, deferred-decision revisits (D-18..D-22) on observed need, lock/renounce execution per D-05 plan.
+Deliverables: monitoring (reserve invariant watch, RPC health, indexer lag), doc upkeep, deferred-decision revisits (D-18..D-22) on observed need, lock/renounce execution per D-05 plan. Issue #6's `ShapeGrowthEscrow` remains consumer-led P4 periphery and is built only when a concrete protocol requires delegated growth and can fund its separate security review.
 
 Acceptance: ongoing; session protocol in SYSTEM.md governs.
 
