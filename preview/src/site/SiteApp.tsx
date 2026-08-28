@@ -7,6 +7,7 @@ import {C, FONT} from "./theme";
 import {short, addrUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
+import {mintRequest} from "./mint";
 import {MintView} from "./MintView";
 import {GalleryView} from "./GalleryView";
 import {TokenView} from "./TokenView";
@@ -45,7 +46,7 @@ export function SiteApp({
   const {address, isConnected} = useAccount();
   const {disconnect} = useDisconnect();
   const {openConnectModal} = useConnectModal();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({chainId: dep.chainId});
   const {writeContractAsync} = useWriteContract();
 
   const [view, setView] = React.useState<View>(initialView ?? "mint");
@@ -132,11 +133,8 @@ export function SiteApp({
     setMint({status: "pending"});
     try {
       const wei = DENOMINATIONS[sel].wei;
-      const value = (wei + data.fees[sel]) * BigInt(qty);
-      const hash =
-        qty === 1
-          ? await write("mint", [wei], value)
-          : await write("mintBatch", [wei, BigInt(qty)], value);
+      const req = mintRequest(dep, {amountWei: wei, quantity: qty, fee: data.fees[sel]});
+      const hash = await writeContractAsync(req as unknown as Parameters<typeof writeContractAsync>[0]);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs});
       await refresh();

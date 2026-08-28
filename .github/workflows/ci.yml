@@ -5,9 +5,59 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    name: changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      contracts: ${{ steps.filter.outputs.contracts }}
+      renderer: ${{ steps.filter.outputs.renderer }}
+      site: ${{ steps.filter.outputs.site }}
+      indexer: ${{ steps.filter.outputs.indexer }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            contracts:
+              - 'src/**'
+              - 'test/**'
+              - 'medusa/**'
+              - 'script/**'
+              - 'lib/**'
+              - 'project/experiments/medusa-reserve.json'
+              - 'foundry.toml'
+              - 'remappings.txt'
+              - '.github/workflows/ci.yml'
+            renderer:
+              - 'src/**'
+              - 'lib/**'
+              - 'preview/**'
+              - 'test/fixtures/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'foundry.toml'
+              - 'remappings.txt'
+              - '.github/workflows/ci.yml'
+            site:
+              - 'preview/**'
+              - 'web/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+            indexer:
+              - 'indexer/**'
+              - '.github/workflows/ci.yml'
+
   contracts:
     name: contracts
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,6 +65,18 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+          cache: true
+
+      # compiled artifacts (out/, cache/), keyed on everything solc reads. A cache hit turns
+      # forge build into a no-op instead of a full recompile.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out
+            cache
+          key: forge-build-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'lib/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'remappings.txt') }}
+          restore-keys: |
+            forge-build-${{ runner.os }}-
 
       # forge build --sizes exits nonzero if any deployable contract exceeds the EIP-170
       # runtime size limit (24,576 bytes), so this step doubles as the CI size gate.
@@ -27,6 +89,8 @@ jobs:
 
   renderer:
     name: renderer parity
+    needs: changes
+    if: needs.changes.outputs.renderer == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +104,16 @@ jobs:
       - uses: foundry-rs/foundry-toolchain@v1
         with:
           version: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out
+            cache
+          key: forge-build-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'lib/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'remappings.txt') }}
+          restore-keys: |
+            forge-build-${{ runner.os }}-
 
       # The lockfile lives at the repo root (npm workspaces: web + preview), so
       # install runs there; preview's deps hoist into the root node_modules.
@@ -66,8 +140,99 @@ jobs:
         working-directory: preview
         run: |
           npm run fixtures
-          git diff --exit-code -- ../test/fixtures/fixtures.json
+          SHAPES_LADDER=testnet npm run fixtures
+          git diff --exit-code -- ../test/fixtures/fixtures.mainnet.json ../test/fixtures/fixtures.testnet.json
 
       # and the Solidity port must still match them byte for byte
       - name: byte parity
-        run: forge test --mc ParityTest -vv
+        run: |
+          forge test --mc ParityTest -vv
+          FOUNDRY_PROFILE=testnet forge test --mc ParityTest -vv
+
+  indexer:
+    name: indexer
+    needs: changes
+    if: needs.changes.outputs.indexer == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: indexer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: indexer/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: audit production dependencies
+        run: npm audit --omit=dev
+
+      - name: codegen
+        run: npm run codegen
+
+      - name: typecheck
+        run: npm run typecheck
+
+  site:
+    name: site
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: install
+        run: npm ci
+
+      - name: test shared site logic
+        run: npm run test --workspace preview
+
+      - name: lint
+        run: npm run lint --workspace web
+
+      - name: build
+        run: npm run build --workspace web
+
+  medusa:
+    name: medusa reserve lifecycle
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: install bounded fuzzing toolchain
+        run: |
+          python -m pip install --disable-pip-version-check crytic-compile==0.3.11
+          curl -fsSLo "$RUNNER_TEMP/medusa-linux-x64.tar.gz" https://github.com/crytic/medusa/releases/download/v1.5.1/medusa-linux-x64.tar.gz
+          echo "ddfe1517ae9028ef9fc331b00f5a6a9d5406f3fcd11a715d60c6b6fb3e4546d3  $RUNNER_TEMP/medusa-linux-x64.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/medusa-bin"
+          tar -xzf "$RUNNER_TEMP/medusa-linux-x64.tar.gz" -C "$RUNNER_TEMP/medusa-bin"
+          echo "$RUNNER_TEMP/medusa-bin" >> "$GITHUB_PATH"
+
+      # Medusa's crytic-compile adapter treats the config directory as its project root. Keep the
+      # reviewed configuration under project/experiments, but link it at root for this invocation.
+      - name: fuzz reserve and lifecycle invariants
+        run: |
+          ln -s project/experiments/medusa-reserve.json medusa.json
+          trap 'rm -f medusa.json' EXIT
+          medusa fuzz --config medusa.json

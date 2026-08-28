@@ -12,9 +12,10 @@
  * The mechanic that dominates the answer: a compose crossing one tier rolls once —
  * 70% toward the units-weighted center, 20% toward best, 10% toward worst. A lone Solid
  * survivor in a mixed pool is therefore dragged back down by the 70% center branch, so a pool
- * only *outputs* Solid reliably when it is (near-)homogeneous Solid. Solid genes enter only
- * through dust mints (3% each, committed knob), so the honest cost of a Solid 100 is dominated
- * by minting enough Solid dust to assemble the whole 100 ETH of backing from it.
+ * only *outputs* Solid reliably when it is (near-)homogeneous Solid at a single rung. Solid genes
+ * enter only through dust mints (3% each, committed knob), but a player can repeatedly retain
+ * Dense/Rich intermediates and search survivor choices while climbing. The simulator therefore
+ * reports both the safe homogeneous upper bound and one measured lower-cost factory policy.
  *
  * This script does NOT import the committed thresholds from ink.ts (those are the very knobs
  * under test); it reimplements the identical keccak roll structure with the thresholds exposed
@@ -192,8 +193,7 @@ function homogeneousBaseline(k: Knobs) {
 // ---------------------------------------------------------------------------
 // Part 2 — rescue discount, measured. How reliably does ONE group of `ratio` children compose
 // UP to Solid, given the group already contains a Solid `best` but a non-Solid center? This
-// bounds how far a player can substitute cheap fillers for Solid dust and still climb, i.e. how
-// much cheaper than the homogeneous baseline the real optimum is.
+// demonstrates how far a player can substitute cheap fillers for Solid dust and still climb.
 // ---------------------------------------------------------------------------
 
 /** Units-weighted center over a group of (gene, units) pairs, half-up (mirrors InkGenes.center). */
@@ -205,7 +205,7 @@ function centerOf(group: { gene: number; units: number }[]): number {
 
 /**
  * P(a single group of `ratio` children, `solids` of them Solid and the rest `filler`, composes
- * to Solid in one tier) — best over survivor choice, Monte-Carlo over seeds. This is the
+ * to Solid in one tier) — best over the `ratio` survivor choices, Monte-Carlo over seeds. This is the
  * per-attempt success rate; a player with S searchable groups reaches 1-(1-p)^S.
  */
 function pGroupToSolid(ratio: number, solids: number, filler: number, oldIndex: number, kn: Knobs, trials: number, rng: () => number): number {
@@ -218,7 +218,7 @@ function pGroupToSolid(ratio: number, solids: number, filler: number, oldIndex: 
     const seeds = genes.map(() => randSeed(rng));
     const best = Math.max(...genes);
     const worst = Math.min(...genes);
-    // try each child as survivor (the n+1 shots); keep the best result gene.
+    // Try each of the `ratio` children as survivor; keep the best result gene.
     let bestResult = 0;
     for (let s = 0; s < ratio; s++) {
       const survivorGene = genes[s];
@@ -238,25 +238,51 @@ function pGroupToSolid(ratio: number, solids: number, filler: number, oldIndex: 
 }
 
 // ---------------------------------------------------------------------------
-// Part 2b — direct end-to-end factory. Measures the REAL optimum (vs the homogeneous upper
-// bound): a patient player who mints dust, redeems anything below a keep-threshold, and composes
-// only the highest-gene tokens upward with survivor search, until a Solid emerges at the target
-// denomination. Reports dust actually minted. Pools tracked as counts[level][gene] with fresh
-// random seeds per compose (seeds are uniform anyway), so a whole trial is cheap.
+// Part 2b — direct end-to-end factory. Measures one retained-gene heuristic (vs the homogeneous
+// upper bound): a patient player who mints dust, redeems anything below a keep-threshold, and
+// composes only retained high-gene tokens upward with survivor search until a Solid emerges at
+// the target denomination. This is not an optimizer or a claim about the globally cheapest
+// strategy. Pools track retained `{gene, seed}` tokens. A selected survivor keeps its actual
+// onchain seed through every rung, and each candidate's burn fold is the XOR of its actual peers.
 // ---------------------------------------------------------------------------
 
-function factoryDustToSolid(targetLevel: number, keepThreshold: number, kn: Knobs, rng: () => number, maxDust: number): number | null {
-  const counts: number[][] = Array.from({ length: targetLevel + 1 }, () => new Array(GENES).fill(0));
-  let dust = 0;
+interface FactoryOutcome {
+  dustMints: number;
+  peakRetainedEth: number;
+}
 
-  const highestGroup = (lvl: number, r: number): number[] | null => {
-    // pick the r highest-gene tokens at lvl that are all >= keepThreshold; else null.
-    const picked: number[] = [];
+interface FactoryToken {
+  gene: number;
+  seed: bigint;
+}
+
+function factoryDustToSolid(targetLevel: number, keepThreshold: number, kn: Knobs, rng: () => number, maxDust: number): FactoryOutcome | null {
+  const pools: FactoryToken[][][] = Array.from(
+    { length: targetLevel + 1 },
+    () => Array.from({ length: GENES }, () => []),
+  );
+  let dust = 0;
+  let peakRetainedUnits = 0;
+
+  const retainedUnits = () => pools.reduce(
+    (total, byGene, level) => total + byGene.reduce((sum, tokens) => sum + tokens.length * UNITS[level], 0),
+    0,
+  );
+
+  const recordPeak = () => { peakRetainedUnits = Math.max(peakRetainedUnits, retainedUnits()); };
+
+  const highestGroup = (lvl: number, r: number): FactoryToken[] | null => {
+    // Pick the r highest-gene retained tokens at this level. Within a gene bucket, LIFO is an
+    // explicit deterministic heuristic, not a claim that every seed grouping was optimized.
+    const picked: FactoryToken[] = [];
     for (let g = GENES - 1; g >= keepThreshold && picked.length < r; g--) {
-      let avail = counts[lvl][g];
-      while (avail-- > 0 && picked.length < r) picked.push(g);
+      const bucket = pools[lvl][g];
+      while (bucket.length !== 0 && picked.length < r) picked.push(bucket.pop()!);
     }
-    return picked.length === r ? picked : null;
+    if (picked.length === r) return picked;
+    // Restore a partial pick on the impossible path, preserving exact pool state.
+    for (const token of picked) pools[lvl][token.gene].push(token);
+    return null;
   };
 
   const cascade = () => {
@@ -267,21 +293,28 @@ function factoryDustToSolid(targetLevel: number, keepThreshold: number, kn: Knob
         const r = RATIOS[lvl];
         let grp = highestGroup(lvl, r);
         while (grp) {
-          for (const g of grp) counts[lvl][g]--;
-          const seeds = grp.map(() => randSeed(rng));
-          const best = Math.max(...grp);
-          const worst = Math.min(...grp);
+          const genes = grp.map((token) => token.gene);
+          const best = Math.max(...genes);
+          const worst = Math.min(...genes);
           const unitsPerChild = UNITS[lvl];
           let bestResult = 0;
+          let chosenSurvivor = grp[0];
           for (let s = 0; s < r; s++) {
             let fold = 0n;
             let sumW = 0, u = 0;
-            for (let i = 0; i < r; i++) { sumW += grp[i] * unitsPerChild; u += unitsPerChild; if (i !== s) fold ^= seeds[i]; }
+            for (let i = 0; i < r; i++) {
+              sumW += grp[i].gene * unitsPerChild;
+              u += unitsPerChild;
+              if (i !== s) fold ^= grp[i].seed;
+            }
             const center = Math.floor((2 * sumW + u) / (2 * u));
-            const res = composeGene(seeds[s], fold, grp[s], lvl, lvl + 1, best, worst, center, kn);
-            if (res > bestResult) bestResult = res;
+            const res = composeGene(grp[s].seed, fold, grp[s].gene, lvl, lvl + 1, best, worst, center, kn);
+            if (res > bestResult) {
+              bestResult = res;
+              chosenSurvivor = grp[s];
+            }
           }
-          counts[lvl + 1][bestResult]++;
+          pools[lvl + 1][bestResult].push({ gene: bestResult, seed: chosenSurvivor.seed });
           changed = true;
           grp = highestGroup(lvl, r);
         }
@@ -290,12 +323,20 @@ function factoryDustToSolid(targetLevel: number, keepThreshold: number, kn: Knob
   };
 
   while (dust < maxDust) {
-    if (counts[targetLevel][SOLID] >= 1) return dust;
+    if (pools[targetLevel][SOLID].length >= 1) return { dustMints: dust, peakRetainedEth: peakRetainedUnits * 0.01 };
     // mint a small batch, then cascade.
-    for (let i = 0; i < 64; i++) { counts[0][geneAtMintP(randSeed(rng), 0, kn)]++; dust++; }
+    for (let i = 0; i < 64; i++) {
+      const seed = randSeed(rng);
+      const gene = geneAtMintP(seed, 0, kn);
+      if (gene >= keepThreshold) {
+        pools[0][gene].push({ gene, seed });
+        recordPeak();
+      }
+      dust++;
+    }
     cascade();
   }
-  return counts[targetLevel][SOLID] >= 1 ? dust : null;
+  return pools[targetLevel][SOLID].length >= 1 ? { dustMints: dust, peakRetainedEth: peakRetainedUnits * 0.01 } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +348,22 @@ function fmt(n: number): string {
   if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
   if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
   return n.toFixed(n < 10 ? 2 : 0);
+}
+
+function summarize(samples: number[]) {
+  const sorted = [...samples].sort((a, b) => a - b);
+  const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+  const variance = samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (samples.length - 1);
+  const se = Math.sqrt(variance / samples.length);
+  return {
+    n: samples.length,
+    mean,
+    min: sorted[0],
+    p50: sorted[Math.floor((sorted.length - 1) * 0.5)],
+    p95: sorted[Math.floor((sorted.length - 1) * 0.95)],
+    max: sorted[sorted.length - 1],
+    ci95: [mean - 1.96 * se, mean + 1.96 * se],
+  };
 }
 
 function main() {
@@ -346,45 +403,59 @@ function main() {
   }
   out.rescueTierP = rescueTable;
 
-  // --- Direct factory: real optimum vs the homogeneous upper bound ---
+  // --- Direct factory: measured retained-gene heuristic vs the homogeneous upper bound ---
   console.log("\n2b. Direct factory — dust actually minted to reach a Solid at the target denom");
-  console.log("    Player redeems tokens below the keep-threshold; composes the rest up with search.\n");
+  console.log("    One retained-gene heuristic, not a global optimizer. Redeems below threshold; searches survivors.\n");
   console.log("    target   keep≥     avg dust    homog. baseline   discount");
-  const factoryRows: { level: number; denom: string; keep: string; avgDust: number; baseline: number }[] = [];
-  // (level, keep-thresholds to try, trials) — fewer trials at the expensive top tiers.
-  const factoryPlan: [number, number[], number][] = [
-    [4, [3, 4, 5, 6], 16], // 1 ETH — sweep keep-threshold to find the optimum
-    [6, [4, 5], 12],       // 10 ETH
-    [8, [4, 5], 8],        // 100 ETH — the headline, measured directly
+  const factoryRows: { level: number; denom: string; keep: string; avgDust: number; baseline: number; stats?: ReturnType<typeof summarize>; peakRetainedEth?: ReturnType<typeof summarize> }[] = [];
+  // Two policies across every composable denomination, plus the fuller 1 ETH sweep. The default
+  // of 64 independent outcomes gives the Solid-100 mean a 95% confidence interval rather than
+  // treating a handful of illustrative runs as a tuning result. Set INK_FACTORY_TRIALS to trade
+  // runtime for precision while retaining the same deterministic seed stream.
+  const factoryTrials = Number.parseInt(process.env.INK_FACTORY_TRIALS ?? "64", 10);
+  if (!Number.isInteger(factoryTrials) || factoryTrials < 2) throw new Error("INK_FACTORY_TRIALS must be an integer ≥ 2");
+  const factoryPlan: [number, number[]][] = [
+    [1, [4, 5]], [2, [4, 5]], [3, [4, 5]], [4, [3, 4, 5, 6]],
+    [5, [4, 5]], [6, [4, 5]], [7, [4, 5]], [8, [4, 5]],
   ];
-  for (const [level, keeps, trialsN] of factoryPlan) {
+  for (const [level, keeps] of factoryPlan) {
     const baseline = UNITS[level] / (COMMITTED.dustDist[SOLID] / 100);
     for (const keep of keeps) {
-      const trials = trialsN;
+      const trials = factoryTrials;
       // Cap dust at 3x the homogeneous bound: a keep-threshold that cannot climb to Solid caps
       // out fast and is reported as unreachable rather than spinning to millions of mints.
       const cap = Math.ceil(baseline * 3);
-      let sum = 0, ok = 0;
+      const samples: number[] = [];
+      const peakRetainedEthSamples: number[] = [];
       for (let t = 0; t < trials; t++) {
         const d = factoryDustToSolid(level, keep, COMMITTED, rng, cap);
-        if (d !== null) { sum += d; ok++; }
+        if (d !== null) {
+          samples.push(d.dustMints);
+          peakRetainedEthSamples.push(d.peakRetainedEth);
+        }
       }
-      const avg = ok ? sum / ok : Infinity;
-      const reach = ok === trials ? "" : ok === 0 ? "  (never reached Solid ≤3× bound)" : `  (${ok}/${trials} reached)`;
-      factoryRows.push({ level, denom: DENOM_LABEL[level], keep: GENE_NAMES[keep], avgDust: avg, baseline });
+      const stats = samples.length ? summarize(samples) : undefined;
+      const peakRetainedEth = peakRetainedEthSamples.length ? summarize(peakRetainedEthSamples) : undefined;
+      const avg = stats?.mean ?? Infinity;
+      const reach = samples.length === trials ? "" : samples.length === 0 ? "  (never reached Solid ≤3× bound)" : `  (${samples.length}/${trials} reached)`;
+      factoryRows.push({ level, denom: DENOM_LABEL[level], keep: GENE_NAMES[keep], avgDust: avg, baseline, stats, peakRetainedEth });
       console.log(
         `    ${DENOM_LABEL[level].padStart(4)} ETH  ${GENE_NAMES[keep].padEnd(6)}  ${fmt(avg).padStart(8)}    ${fmt(baseline).padStart(9)}         ${(avg / baseline).toFixed(2)}×${reach}`,
       );
     }
   }
   out.factory = factoryRows;
-  // Directly-measured Solid-100 optimum (level 8, best keep-threshold).
+  // Lowest observed Solid-100 mean among the measured retained-gene policies.
   const top = factoryRows.filter((r) => r.level === 8);
-  const bestTop = top.reduce((a, b) => (b.avgDust < a.avgDust ? b : a));
-  const discTop = bestTop.avgDust / bestTop.baseline;
-  console.log(`\n    Solid 100 real optimum (measured): ≈ ${fmt(bestTop.avgDust)} dust mints (keep≥${bestTop.keep}),`);
-  console.log(`      ${discTop.toFixed(2)}× the 333k homogeneous bound, ~${(bestTop.avgDust * 0.0001).toFixed(0)} ETH fees, ~100 ETH parked.`);
-  out.solidHundredOptimum = { dustMints: bestTop.avgDust, keep: bestTop.keep, feesEth: bestTop.avgDust * 0.0001 };
+  const bestMeasuredTop = top.reduce((a, b) => (b.avgDust < a.avgDust ? b : a));
+  const discTop = bestMeasuredTop.avgDust / bestMeasuredTop.baseline;
+  const topStats = bestMeasuredTop.stats!;
+  const topPeak = bestMeasuredTop.peakRetainedEth!;
+  console.log(`\n    Solid 100 retained-gene heuristic (n=${topStats.n}, keep≥${bestMeasuredTop.keep}): ≈ ${fmt(bestMeasuredTop.avgDust)} dust mints,`);
+  console.log(`      95% CI ${fmt(topStats.ci95[0])}–${fmt(topStats.ci95[1])}; p50 ${fmt(topStats.p50)}, p95 ${fmt(topStats.p95)}.`);
+  console.log(`      ${discTop.toFixed(2)}× the 333k homogeneous bound, ~${(bestMeasuredTop.avgDust * 0.0001).toFixed(0)} ETH fees,`);
+  console.log(`      retained backing mean ${topPeak.mean.toFixed(2)} ETH, p95 ${topPeak.p95.toFixed(2)} ETH.`);
+  out.solidHundredHeuristic = { dustMints: bestMeasuredTop.avgDust, keep: bestMeasuredTop.keep, feesEth: bestMeasuredTop.avgDust * 0.0001, stats: topStats, peakRetainedEth: topPeak };
 
   // --- Headline: Solid 100 dust-mint cost vs the two dominant knobs ---
   console.log("\n3. Headline sweep — dust mints to a Solid 100 (homogeneous baseline)");
@@ -420,8 +491,8 @@ function main() {
   console.log(`\n   curve data → scripts/out/ink-tuning.json`);
   console.log("\nNotes:");
   console.log("  - 'parked ETH' assumes non-Solid dust is redeemed as you climb, so peak ≈ the target.");
-  console.log("  - rescue (Part 2) shows a lone Solid in a mixed pool rarely survives: the honest");
-  console.log("    cost stays close to the homogeneous baseline, so dust-Solid% is the master knob.");
+  console.log("  - rescue (Part 2) is local to one pool. Across a full ladder, retained Dense/Rich");
+  console.log("    intermediates can still search into Solid; this reports a policy result, not an optimum.");
 }
 
 main();

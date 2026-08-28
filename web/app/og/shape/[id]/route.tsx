@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
-import { createPublicClient, http, defineChain } from "viem";
 import { shapesAbi } from "@shared/chain/abi";
+import { createShapesPublicClient } from "@shared/chain/rpc";
+import { safeImageFromTokenURI } from "@shared/site/ogArtwork";
 import { serverDeployment } from "../../../lib/deployment";
 
 // The token share image: the on-chain artwork as a card centred on white, with a subtle drop
@@ -16,31 +17,19 @@ const OG = { width: 1200, height: 630 };
 const CARD_H = 540;
 const CARD_W = Math.round((CARD_H * 250) / 350);
 
-// Pull the artwork data URI out of the base64 tokenURI JSON.
-function imageFromTokenURI(uri: string): string | null {
-  const marker = "base64,";
-  const i = uri.indexOf(marker);
-  if (i < 0) return null;
-  const json = JSON.parse(Buffer.from(uri.slice(i + marker.length), "base64").toString("utf8"));
-  return typeof json.image === "string" ? json.image : null;
-}
-
 async function fetchArtwork(id: bigint): Promise<string | null> {
   const dep = serverDeployment();
-  const chain = defineChain({
-    id: dep.chainId,
-    name: "Shapes",
-    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: { default: { http: [dep.rpc] } },
+  const client = createShapesPublicClient(dep, {
+    chainName: "Shapes",
+    primaryRpcUrl: process.env.SHAPES_RPC_URL,
   });
-  const client = createPublicClient({ chain, transport: http(dep.rpc) });
   const uri = await client.readContract({
     address: dep.shapes,
     abi: shapesAbi,
     functionName: "tokenURI",
     args: [id],
   });
-  return imageFromTokenURI(uri);
+  return safeImageFromTokenURI(uri);
 }
 
 function card(children: React.ReactNode) {

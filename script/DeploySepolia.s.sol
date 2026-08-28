@@ -61,6 +61,10 @@ contract DeploySepolia is LensEquivalence {
         bool seed = vm.envOr("SEED_ETH", true);
         address me = msg.sender;
 
+        // This script is the approved Sepolia release path, not a general-purpose deployer.
+        // Keep the mutable shell environment from silently changing the reviewed fee terms.
+        require(feeBps == DEFAULT_FEE_BPS, "Sepolia fee must be 100 bps");
+
         // Shapes.mint reads blockhash(block.number - 1), which underflows at genesis. Only a
         // freshly started local chain sits at block 0; a real network is far past it.
         if (block.number == 0) vm.roll(1);
@@ -103,14 +107,23 @@ contract DeploySepolia is LensEquivalence {
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == SEPOLIA_FEE_RECIPIENT, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
+        require(shapes.collection() == address(collection), "collection mismatch");
         require(address(lens.shapes()) == address(shapes), "lens points at another token");
+        require(house.shapes() == address(shapes), "house points at another token");
         require(shapes.ownerOf(0) == me, "Shape #0 not minted to deployer");
         require(shapes.owner() == me, "contract owner mismatch");
         require(shapes.admin() == me, "admin mismatch");
         require(shapes.artist() == me, "artist mismatch");
         require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
         require(shapes.artistSignature().length == 0, "artist signature should start empty");
+        require(shapes.exists(0), "Shape #0 must exist");
+        require(shapes.denominationCount() == 9, "denomination count mismatch");
+        require(shapes.denominationAt(0) == Denominations.amountAt(0), "minimum denomination mismatch");
+        require(shapes.denomIndexOf(0) == 0, "Shape #0 denomination mismatch");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
+        require(shapes.positionResolver() == address(0), "position resolver should start unset");
+        require(!shapes.positionResolverLocked(), "position resolver should start unlocked");
+        require(house.auctionCount() == (seed ? 1 : 0), "auction count mismatch");
 
         console.log("chain id      ", block.chainid);
         console.log("ShapeRenderer ", address(renderer));

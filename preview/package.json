@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
+  "portless": { "name": "preview.shapes", "appPort": 5173 },
   "description": "Local generative preview harness for the Shapes ERC721 protocol",
   "scripts": {
     "dev": "vite",
@@ -33,8 +34,9 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4.3.4",
     "playwright": "^1.62.1",
+    "qr": "0.5.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "vite": "6.4.3"
   }
 }

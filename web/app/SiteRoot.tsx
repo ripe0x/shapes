@@ -56,7 +56,15 @@ export function SiteRoot({
         if (!r.ok) throw new Error("no deployment.json");
         return r.json();
       })
-      .then((dep: Deployment) => setState({ dep, config: buildConfig(dep) }))
+      .then((dep: Deployment) =>
+        setState({
+          dep,
+          config: buildConfig(dep, {
+            primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
+            walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+          }),
+        }),
+      )
       .catch(() => setErr("The Shapes contract is not connected here yet."));
   }, []);
 

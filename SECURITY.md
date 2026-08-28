@@ -35,8 +35,10 @@ together), the independently lockable optional position resolver, and the destin
 mint fees. It cannot change the fee rate or reach backing, redemption, accrued fees, or token
 ownership. Shape #0 represents backed collectible ownership exposed through `owner()`, but its holder has no
 administrative authority. Neither configuration domain is read
-by a reserve path. The immutable `artist()` and its one-time signature child are attribution only
-and are never read for authorization, fees, ownership or reserve accounting. `ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
+by a reserve path. The immutable `artist()` and one-time signature stored directly in Shapes are
+attribution only and are never read for authorization, fees, ownership or reserve accounting.
+The linked `EIP712Signature` library is stateless verification code, not an attribution contract.
+`ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
 ETH and no admin surface. `ShapeAuctionHouse` and the `ShapeCardEscrow` base it inherits hold
 escrowed cards and lots, not the reserve; `Shapes` has no knowledge of either. There is one
 thing that must never happen: a holder unable to redeem a live Shape for exactly the ETH it

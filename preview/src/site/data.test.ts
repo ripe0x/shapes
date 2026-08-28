@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type {PublicClient} from "viem";
 
 import {loadSite} from "./data";
+import {BLACK_FILTER, filterGalleryTokens} from "./GalleryView";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {GENE_NAMES} from "../canonical/ink";
 
@@ -45,7 +46,9 @@ function makeClient(opts: {
   minted: bigint;
   live: Map<bigint, FakeToken>;
   multicall3: boolean;
+  supply?: bigint;
   attribution?: boolean;
+  headBlock?: bigint;
 }) {
   const counts = {multicall: 0, readContract: 0};
 
@@ -58,7 +61,7 @@ function makeClient(opts: {
       case "redeemableBacking":
         return 42n;
       case "totalSupply":
-        return BigInt(opts.live.size);
+        return opts.supply ?? BigInt(opts.live.size);
       case "artist":
         if (opts.attribution === false) throw new Error("function selector was not recognized");
         return ARTIST;
@@ -90,6 +93,9 @@ function makeClient(opts: {
     async getCode({address}: {address: `0x${string}`}) {
       return address === MULTICALL3 && opts.multicall3 ? "0x600180" : undefined;
     },
+    async getBlockNumber() {
+      return opts.headBlock ?? 100n;
+    },
     async readContract({functionName, args}: {functionName: string; args?: readonly unknown[]}) {
       counts.readContract++;
       return resolve(functionName, args);
@@ -112,6 +118,50 @@ function makeClient(opts: {
   return {client: client as unknown as PublicClient, counts};
 }
 
+function indexerFixture(opts: {block: number; tokens: unknown[]; status?: number}): typeof fetch {
+  return (async () =>
+    new Response(
+      JSON.stringify({
+        data: {
+          _meta: {status: {chain: {id: 31337, block: {number: opts.block}}}},
+          tokens: {
+            items: opts.tokens,
+            pageInfo: {hasNextPage: false, endCursor: null},
+          },
+        },
+      }),
+      {status: opts.status ?? 200, headers: {"content-type": "application/json"}},
+    )) as typeof fetch;
+}
+
+function pagedIndexerFixture(
+  pages: {tokens: unknown[]; hasNextPage: boolean; endCursor: string | null}[],
+): typeof fetch {
+  let page = 0;
+  return (async () => {
+    const current = pages[Math.min(page++, pages.length - 1)]!;
+    return new Response(
+      JSON.stringify({
+        data: {
+          _meta: {status: {chain: {id: 31337, block: {number: 100}}}},
+          tokens: {
+            items: current.tokens,
+            pageInfo: {
+              hasNextPage: current.hasNextPage,
+              endCursor: current.endCursor,
+            },
+          },
+        },
+      }),
+      {status: 200, headers: {"content-type": "application/json"}},
+    );
+  }) as typeof fetch;
+}
+
+function indexedToken(id: bigint) {
+  return {id: id.toString()};
+}
+
 const NORMAL: FakeToken = {
   backing: DENOMINATIONS[0].wei,
   seed: 7n,
@@ -123,7 +173,7 @@ const NORMAL: FakeToken = {
 test("loadSite: multicall path chunks ids and reads per-token fields for live ids only", async () => {
   const live = new Map<bigint, FakeToken>([
     [2n, NORMAL],
-    [5n, {...NORMAL, black: true}],
+    [5n, {...NORMAL, backing: 0n, black: true}],
     [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: 9n, composeDepth: 3n}],
   ]);
   const {client, counts} = makeClient({minted: 1203n, live, multicall3: true});
@@ -132,7 +182,7 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
 
   assert.deepEqual(
     site.tokens.map((t) => t.id),
-    [1200n, 2n], // newest first, black id 5 skipped
+    [1200n, 5n, 2n], // newest first, including the Black Shape
   );
   const apex = site.tokens[0];
   assert.equal(apex.owner, OWNER);
@@ -143,6 +193,10 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
   assert.equal(apex.meta.name, "Shape 1200");
   assert.ok(apex.image.startsWith("data:image/svg+xml;base64,"));
   assert.equal(apex.inkGene, 0);
+  const black = site.tokens.find((token) => token.id === 5n)!;
+  assert.equal(black.di, -1);
+  assert.equal(black.backing, 0n);
+  assert.deepEqual(filterGalleryTokens(site.tokens, BLACK_FILTER).map((token) => token.id), [5n]);
   assert.equal(site.reserve, 42n);
   assert.equal(site.supply, 3n);
   assert.equal(site.fees.length, DENOMINATIONS.length);
@@ -187,4 +241,123 @@ test("loadSite: pre-attribution deployments still load", async () => {
   assert.equal(site.artist, null);
   assert.equal(site.artistReleaseHash, null);
   assert.equal(site.artistAttested, false);
+});
+
+test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state stays onchain", async () => {
+  const live = new Map<bigint, FakeToken>([
+    [2n, NORMAL],
+    [5n, {...NORMAL, black: true}],
+    [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: 9n, composeDepth: 3n}],
+  ]);
+  const {client, counts} = makeClient({minted: 1203n, live, multicall3: true, headBlock: 100n});
+  const metrics: {source: string; indexerRequests: number}[] = [];
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: indexerFixture({
+      block: 99,
+      tokens: [
+        indexedToken(1200n),
+        indexedToken(5n),
+        indexedToken(2n),
+      ],
+    }),
+    onMetrics: (metric) => metrics.push(metric),
+  });
+
+  assert.deepEqual(site.tokens.map((t) => t.id), [1200n, 5n, 2n]);
+  assert.equal(site.tokens[0]!.composeDepth, 3);
+  assert.equal(site.tokens[1]!.di, -1); // Black remains live and visible
+  assert.equal(counts.multicall, 1); // six canonical reads for each candidate live id
+  assert.equal(counts.readContract, 4 + DENOMINATIONS.length); // live header, no totalMinted scan
+  assert.deepEqual(metrics, [{source: "indexer", indexerRequests: 1}]);
+});
+
+test("loadSite: stale or unhealthy indexer deterministically falls back to the chain", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  for (const fetcher of [
+    indexerFixture({block: 97, tokens: [indexedToken(1n)]}), // 3 blocks behind a 100 head
+    indexerFixture({block: 100, tokens: [], status: 503}),
+  ]) {
+    const {client, counts} = makeClient({minted: 3n, live, multicall3: true, headBlock: 100n});
+    const metrics: {source: string; indexerRequests: number}[] = [];
+    const site = await loadSite(client, dep, {
+      indexerUrl: "http://indexer.test",
+      fetch: fetcher,
+      onMetrics: (metric) => metrics.push(metric),
+    });
+
+    assert.deepEqual(site.tokens.map((t) => t.id), [1n]);
+    assert.equal(counts.multicall, 2); // 3 ownerOf calls, then one live-token field batch
+    assert.deepEqual(metrics, [{source: "chain", indexerRequests: 0}]);
+  }
+});
+
+test("loadSite: a stalled indexer is aborted and falls back to the chain", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true});
+  let aborted = false;
+  const stalled = ((_input: RequestInfo | URL, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => {
+        aborted = true;
+        reject(new DOMException("aborted", "AbortError"));
+      });
+    })) as typeof fetch;
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: stalled,
+    indexerTimeoutMs: 5,
+  });
+
+  assert.equal(aborted, true);
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("loadSite: oversized indexer pages fall back before accumulation", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true, supply: 1_000n});
+  const oversized = Array.from({length: 501}, (_, id) => indexedToken(BigInt(id)));
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: pagedIndexerFixture([{tokens: oversized, hasNextPage: false, endCursor: null}]),
+  });
+
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("loadSite: repeated indexer cursors fall back instead of looping", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true, supply: 1_000n});
+  const first = Array.from({length: 500}, (_, id) => indexedToken(BigInt(id)));
+  const second = Array.from({length: 500}, (_, id) => indexedToken(BigInt(id + 500)));
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: pagedIndexerFixture([
+      {tokens: first, hasNextPage: true, endCursor: "same"},
+      {tokens: second, hasNextPage: true, endCursor: "same"},
+    ]),
+  });
+
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("loadSite: oversized indexer response bodies fall back", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true});
+  const oversizedBody = (async () =>
+    new Response("{}", {
+      status: 200,
+      headers: {"content-length": String(256 * 1024 + 1)},
+    })) as typeof fetch;
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: oversizedBody,
+  });
+
+  assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
 });

@@ -351,7 +351,8 @@ test/
   Hardening.t.sol             regressions for the adversarial review findings
   Invariants.t.sol            stateful solvency invariants
   Fork.t.sol                  full lifecycle against a mainnet fork (env-gated)
-  fixtures/fixtures.json      generated corpus, do not hand-edit
+  fixtures/fixtures.mainnet.json  generated default-ladder corpus, do not hand-edit
+  fixtures/fixtures.testnet.json  generated testnet-ladder corpus, do not hand-edit
 preview/                      the generative preview harness + chain tester
 netlify.toml                  repository-root Netlify config; builds the web workspace
 SPEC.md                       implementation plan and every rendering decision
@@ -413,11 +414,20 @@ First shell — anvil, deploy, seed wallet funding. Leave it running:
 ./script/fork-dev.sh
 ```
 
-Second shell — the dev server; then open http://localhost:5173/site.html:
+Second shell — the dev server; then open https://preview.shapes.localhost/site.html
+(or http://localhost:5173/site.html):
 
 ```bash
-cd preview && npm run dev
+cd preview && portless
 ```
+
+Dev servers run through [portless](https://portless.sh) (`npm install -g portless`), which gives
+each app a stable named URL on top of its fixed port. `web` is `shapes.localhost`, `preview` is
+`preview.shapes.localhost`; in a git worktree the worktree name is prefixed
+(`<worktree>.preview.shapes.localhost`). The command prints the exact URL on start. Run
+`portless service install` once to keep the proxy on port 443 across reboots; without it the
+proxy falls back to port 1355 and URLs carry that port. `npm run dev` still works directly on
+the plain localhost ports.
 
 `fork-dev.sh` boots Anvil on `:8545` (chain id `31337`), deploys Shapes and the renderer through
 the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLETS` /
@@ -447,7 +457,7 @@ The dev server serves three entries:
 ```bash
 cd preview
 npm install
-npm run dev            # http://localhost:5173
+portless               # https://preview.shapes.localhost (also http://localhost:5173)
 ```
 
 The harness renders the full nine-denomination ladder, generates reproducible batches of up to
@@ -503,8 +513,11 @@ are the contract between them.
 
 ```bash
 cd preview
-npm run fixtures       # writes test/fixtures/fixtures.json
-cd .. && forge test --mc Parity
+npm run fixtures                       # writes fixtures.mainnet.json
+SHAPES_LADDER=testnet npm run fixtures # writes fixtures.testnet.json
+cd ..
+forge test --mc Parity
+FOUNDRY_PROFILE=testnet forge test --mc Parity
 ```
 
 Regenerate whenever the canonical renderer changes, and expect the parity suite to fail loudly
@@ -541,12 +554,11 @@ You sign every mint and redeem in the wallet, against the deployed contract.
    Leave it running. It prints the RPC URL (`http://127.0.0.1:8545` unless `PORT` is set), the
    chain id, the deployed addresses, and the fee in basis points.
 
-2. **Serve the page** in another shell, and open the chain entry. Vite falls through to the next
-   free port if 5173 is taken, so use whatever it prints.
+2. **Serve the page** in another shell, and open the chain entry.
 
    ```bash
-   cd preview && npm run dev
-   # open http://localhost:5173/chain.html
+   cd preview && portless
+   # open https://preview.shapes.localhost/chain.html (or http://localhost:5173/chain.html)
    ```
 
 3. **Connect** through the RainbowKit button. Pick the browser wallet and approve the

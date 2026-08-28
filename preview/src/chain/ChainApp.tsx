@@ -170,7 +170,7 @@ function shortError(e: unknown): string {
 
 export function ChainApp({dep}: {dep: Deployment}) {
   const {address, isConnected} = useAccount();
-  const publicClient = usePublicClient();
+  const publicClient = usePublicClient({chainId: dep.chainId});
   const {writeContractAsync} = useWriteContract();
 
   const [busy, setBusy] = React.useState<string | null>(null);

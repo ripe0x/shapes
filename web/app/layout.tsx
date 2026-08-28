@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 // Canonical origin for absolute OG/Twitter URLs. Env-overridable so a preview deploy can stamp its
@@ -35,7 +36,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       {/* suppressHydrationWarning: browser extensions (e.g. screen recorders) inject body
           attributes before hydration; attribute-level mismatches are noise, content
           mismatches still warn. */}
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {/* react-dom 19.2's development Performance track JSON-stringifies bigint arrays and can
+            crash the tree. It only arms when console.timeStamp exists before React initializes. */}
+        {process.env.NODE_ENV === "development" && (
+          <Script id="react-perf-track-off" strategy="beforeInteractive">
+            {`delete console.timeStamp;`}
+          </Script>
+        )}
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,63 +1,50 @@
 # Handoff
 
-Live continuity doc for the Director session. A fresh session picks up here: read project/*.md (STATE.md first), then this file for what was mid-flight. Updated at every significant step, not just session end.
+Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
-Session: resumed Director session, 2026-08-26.
-Branch: `codex/final-core-views` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, based on `main` at `705c3e5`; PR #5 is open at commit `45a3e90`.
+Session: P1 hardening integration, 2026-08-27.
+Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, based on merged main `7f92f1b` (PR #5).
 
-## Done this session
+## Current outcome
 
-- Canonical docs created (project/), committed 8eb0235 and updated through 6b4b87f.
-- All at-risk uncommitted work preserved: preserve/surface-port (ce4c7e4), preserve/renderer-wip (074fc30), preserve/split-gas-measure (95cdc28), audit artifacts on claude/shapes-security-audit-fa49c8 (6480f1c).
-- Audit triage: findings were historical (base 4e6b3d8 predates main's fix wave a0ff0af..d2f2e59); stop condition raised and lifted same day; W-3 confirmed all 23 PoC scenarios already covered by existing passing regressions.
-- Chain-1 deploy guard landed (f7fd92b): scripts revert on mainnet while ladder is testnet-scaled.
-- Doc truth pass landed (8c30e51).
+- PR #5 merged as `7f92f1b`. Final core views are `exists` and live-only `denomIndexOf`; `absorbedBy` remains rejected. `IShapes` is `0xb5ac96e9`, `IShapeValue` is `0xd07d718a`.
+- PR #8 is open from `codex/p1-hardening` with the consolidated P1 packet. It includes RPC fallback, Black/provenance UI fixes, bounded optional chain-authoritative indexer reads, CI cost controls, Medusa, gas/ink experiments, portless, dependency cleanup, Next 16 and fetched-exact-main Sepolia deployment postflights.
+- The core contract is unchanged by this packet. Fresh size gates remain Shapes 24,235 bytes default (341-byte EIP-170 margin) and 24,214 bytes testnet (362-byte margin).
+- Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 59 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
+- Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
+- PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
+- D-32 reschedules GitHub issue #7 as P2 pre-mainnet renderer-audit work, after the current P1/Sepolia release and before any renderer expansion. Only a behavior-preserving `_moduleSvg` helper extraction is approved. `_glyph` remains a documented lookup-table complexity exception. Current ShapeRenderer baselines are 22,699 bytes default and 22,698 bytes testnet; unchanged TypeScript fixtures, frozen-legacy differential parity, pinned size and one-/25-module gas evidence are mandatory.
 
-## In flight
+## Decisions and evidence
 
-- D-27 is explicitly approved and implemented as Charter amendment 2: `admin()` may redirect only future mint fees; `feeBps` remains immutable and admin cannot withdraw ETH, reach backing/redemption, recover accrued fees, or affect token ownership. Renouncing admin freezes the final recipient. Sepolia is pinned to payout `0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4`, with deployer `0xCB43078C32423F5348Cab5885911C3B5faE217F9` as initial admin. The payout is a code-free Sepolia address. `IAdminControl` is `0xe135adbe`.
-- D-28 is explicitly approved and supersedes D-26's pre-launch child implementation. `artist()` permanently records the deployer; the one-time EIP-712 release hash and raw signature now live directly in Shapes through `artistReleaseHash`, `artistSignature`, `artistAttestationDigest` and `attestArtist`. A stateless externally linked `EIP712Signature` library contains only digest and EOA/ERC-1271 verification code. It stores no attribution, grants no authority or economics, and the user-selected one-step admin transfer is unchanged.
-- The direct design now fits because duplicate metadata was simplified: token and collection metadata share one editable `description`, `setMetadataCopy` updates the token name prefix and shared description together, and `contractURI` uses the immutable ERC-721 collection name. `ShapeCollection` remains separate because exact animated collection art cannot be merged into the 22,699-byte renderer under EIP-170. No collection-art behavior changed.
-- D-29 records the future position protocol as a fully escrowed external exchange-option layer. The claim is escrowed, the Shape remains normally transferable, exercise atomically transfers the current Shape to the creator for the claim, and expiry/value mismatch/missing-token rules permit recovery. A gacha may separately custody an offered Shape. Shapes retains only `positionResolver`/`positionOf`: no freeze, wrapper, mutation nonce, claim custody or execution logic was added. Implementation is parked post-launch.
-- Verification is green: 443 contract tests pass in each default and testnet profile, 4 fork-only tests skip without `MAINNET_RPC_URL`; 40 preview tests, TypeScript, web lint/build, docs and format checks pass. Shapes is 24,235 bytes in default (341-byte margin) and 24,214 bytes in testnet (362-byte margin); `EIP712Signature` remains 1,009 bytes. `IShapes` is pinned at `0xb5ac96e9` and `IShapeValue` at `0xd07d718a`.
-- Attribution coverage independently reconstructs the EIP-712 domain/type/message and covers wrong signer/hash/chain, cross-deployment replay, one-time storage, zero-hash rejection, EIP-7702 delegated-EOA ECDSA, conventional ERC-1271, and a valid empty ERC-1271 signature. The digest binds chain id, exact Shapes address, artist and release hash.
-- D-30 reverses the branch-first deployment sequence by explicit user direction: releases deploy only from `main`. The site now catches missing `artist()` / `artistReleaseHash()` selectors, preserves the rest of the old Sepolia state load, and renders attribution as unavailable on that deployment. This fallback was verified against all 22 live tokens on the current Sepolia contract. PR #4 merged safely before deployment as `c34aea3`; deploy from `main` and land the new addresses/fromBlock as a small follow-up cutover.
-- D-31 is implemented on `codex/final-core-views`: `exists(uint256)` uses ERC-721 liveness; live-only `denomIndexOf(uint256)` exposes the packed 0..8 state and ShapeLens now reads it directly. `absorbedBy(uint256)` remains rejected. D-25 applies, so there is no dual-id shim. Lifecycle, capability-id and both EIP-170 size gates pass; an independent review found no functional/invariant conflict and the security diff workflow found no reportable issue, with its workbench inventory limitation recorded in the generated report.
-- A throwaway Sepolia rehearsal was broadcast before D-28: Shapes `0xc840be03f6824165954213136927828b10b1a1a1`, actual creation transaction `0x0529271c4cc71449429a094d6b2fcb2225ee926360d86712b0c96901d4bf8330`. It uses the superseded child architecture, is not in deployment metadata, and must not be signed or adopted. No D-28 deployment has been broadcast. The deploy wrapper was corrected to resolve the creation transaction from mined receipts rather than Foundry's simulated transaction ordering.
-- The fresh D-28 Sepolia non-broadcast rehearsal passed against chain 11155111 after clearing both Foundry artifact caches: 20,494,912 estimated gas, about 0.040097621127374848 Sepolia ETH at the sampled gas price, exact 1% fee, pinned payout, deployer as admin/artist/Shape #0 owner, unsigned direct attribution, and lens equivalence. The simulated addresses are ephemeral and must not enter deployment metadata.
-- The `releaseHash` remains the exact Shapes creation transaction hash, whose value exists only after deployment. The user supplied an Etherscan key in chat; it has not been persisted or committed and must be injected only into the deployment process. The Sepolia-only signing script uses the user's Foundry keystore, prints and simulates the exact digest, requires confirmation, waits for receipt, and performs direct Shapes postflight reads.
-- P0 gate PASSED. PR #1 merged green as `5eec83d`; PR #2 merged green as `7fca2b2`; corrective PR #3 merged as `bf5ae6b`. The intended `owner()` API is restored, and P1 entry now waits only for a fresh Sepolia deployment/readback.
-- Independent review found stale status contradictions in STATE/DECISIONS/RISKS/HANDOFF; corrected in the resumed session. Executable PR diff received an independent accept verdict.
-- PR #1's last standalone tip `41a36b3` was fully green: contracts, renderer parity, Netlify deploy preview, header rules, and redirect rules passed; the pages-changed check correctly skipped. Two later main commits (`ef228f0`, `1020730`) implemented build-time ladder selection and made PR #1 conflict in DeployShapes/DeploySepolia. The Director merged current main into the PR branch and selected main's stronger profile-aware guards. Re-run the combined checks before merge.
-- Incident: the Director raised an ERC-173 concern, then treated a general “go” as approval to replace PR #2's `owner()` API with `titleHolder()`. The user did not approve that product/ABI change. DIRECTOR.md now explicitly forbids changing fundamental behavior or ABI on inferred approval.
-- Correction restored and merged in PR #3 as `bf5ae6b`: `owner()` is the Shape #0 holder; `titleHolder()`/`IContractTitle` are removed; the separate `admin()` role and all unrelated PR #2 fixes remain. Active contract, scripts, preview ABI, tests, and product docs are reconciled. Historical incident references are explicitly labeled.
-- Verification: Shapes runtime 24,131 bytes with a 445-byte EIP-170 margin; 428 contract tests pass, 0 fail, 4 fork-only skip; 27 testnet-profile ownership/token/ladder tests pass; 39 preview tests and TypeScript pass; independent behavior review accepts; security diff scan `704e538c-4db4-4ce3-b255-fd523cc47b35` has zero reportable findings.
-- Correction to the review record: D-25/R18 were invented blockers. The expected custom `IShapes` interface-id change has no compatibility impact because the restored architecture has never been deployed, no legacy external consumer exists, and repository production code does not probe that id. No dual-id code is warranted.
-- Combined local verification after current-main reconciliation: docs selector check, preview typecheck/stream verification/500-per-denomination collision sweep/fixture freshness, web lint/build, `forge fmt --check`, `forge build --sizes`, and full `forge test` pass. Result: 454 passed, 0 failed, 4 fork-only skipped; Shapes EIP-170 margin 145 bytes. The sweep exposed and this branch fixed an existing rotation-accounting bug that produced negative percentages after the vocabulary expanded; it now counts every active rotatable primitive and asserts totals.
-- Open user decision: D-05 (mainnet admin/Shape #0 custody, initial fee recipient, and lock/renounce timing, needed by P2). The Sepolia payout/admin choices do not settle mainnet custody.
+- D-07: keep ink constants unchanged for Sepolia. The exact seed-preserving retained-Dense heuristic reaches Solid 100 after 40,064 dust mints on average (95% CI 39,972–40,156), about 4.01 ETH mainnet-scale fees, with 100.07 ETH mean peak retained backing. This is not a global optimum; mainnet immutable values are reconfirmed at P2.
+- D-08: direct 10k actions are impossible on L1, but the hierarchical apex path is valid. Direct compose is 1.134B gas; direct split/decompose exceed 30M. The exact 3,333-call ladder tree reaches the apex, with a 985,862-gas worst individual rung. UI must not promise direct fan-in/fan-out or an unmeasured batch size. W-2 is rejected.
+- D-09: adopt Medusa 1.5.1 in CI with a checksum-pinned binary; defer Halmos because its AST build exceeded the three-minute/~2.1 GB spike budget before symbolic execution.
+- D-10: optional indexer path is implemented and keeps Shapes authoritative. Freshness, chain, uniqueness and exact live count are checked; each page has an 8-second abort, 256 KiB body cap, 500-item cap, unique cursor and totalSupply-derived page/item ceiling. All displayed fields are current chain reads; every failure falls back to raw RPC. A 1,203-id fixture cuts reads from 1,218 to 18. Ponder's vulnerable pins are replaced by smoke-tested overrides, and the isolated install audits at zero.
+- D-12/W-1/W-4/W-5/W-6/D-21: implemented. Browser and OG share independent RPC fallbacks; Black Shapes remain visible with invalid mutators hidden; provenance rollups no longer impersonate token #0; CI is path-filtered/cached and includes site/Medusa jobs; portless is adopted; direct unused x402 packages are removed.
+- D-11: CLOSED. Rainbow does not support testnets, so the attempted Rainbow-to-Sepolia acceptance test was invalid and is removed as a gate. Keep the conventional RainbowKit `getDefaultConfig` integration and standard inventory; every namespace, storage, mainnet-bootstrap and switching workaround remains removed. The deterministic Sepolia config and transaction-initiation tests cover this packet. Rainbow is tested only when the eventual site targets mainnet.
 
-## Next
+## Deployment configuration
 
-- Review and merge the focused D-31 PR. Then, on explicit deployment go-ahead, broadcast the resulting exact `main` suite with the user-supplied Etherscan key kept only in process environment, verify every contract and exact payout/admin/direct-attribution readback, and run the guarded artist attestation using the actual Shapes creation transaction hash. Replace every address/fromBlock in `web/public/deployment.json` through a small follow-up, then rerun live site/CI checks. W-1, D-12, and W-4 remain separate P1 packets; D-08 remains the first experiment.
+- Sepolia deployer/admin/artist/Shape #0 owner: `0xCB43078C32423F5348Cab5885911C3B5faE217F9` via Foundry account `ripe0x`.
+- Sepolia future mint-fee recipient: `0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4`; it is code-free. Fee is exactly 100 bps.
+- Deploy only from fetched, clean, exact `main`. Never deploy from this branch. `script/deploy-sepolia.sh` fetches `origin/main` immediately before enforcing branch/commit/cleanliness, then checks chain, ladder, payout, fee, complete wiring, Shape #0 state, unsigned artist state, receipts and Etherscan source visibility. Its portable summary records a credential-free public RPC, never the operational provider URL.
+- The Etherscan key supplied in chat is not persisted. Inject it only into the deployment process. The user enters the Foundry keystore password interactively; never write it to a file.
+- After deployment, `releaseHash` is the exact mined Shapes creation transaction hash. Run `script/attest-artist-sepolia.sh` only after address/readback confirmation; the one-time signature lives directly in Shapes.
+- The old live deployment in `web/public/deployment.json` is immutable and incompatible. A prior throwaway rehearsal at Shapes `0xc840be03f6824165954213136927828b10b1a1a1`, creation tx `0x0529271c4cc71449429a094d6b2fcb2225ee926360d86712b0c96901d4bf8330`, uses the superseded child-attribution architecture. Never sign, relabel or adopt it.
 
-## Go-public cutover: EXECUTED 2026-08-25
+## Remaining gates, in order
 
-- Old repo renamed ripe0x/shapes-archive (PRIVATE — must stay private forever; its object store carries the pre-scrub identity). Local checkout's origin re-pointed at the archive so an accidental push cannot recontaminate the clean repo.
-- New ripe0x/shapes created, rewritten mirror pushed, server pruned to the canonical 10 branches (filter-repo had promoted stale remote-tracking refs to branches; 30 extra refs deleted, codex checkpoint refs and stash included).
-- Attribution verified via API: all commits author as ripe0x (merge committers web-flow). Flipped PUBLIC. GitHub Actions resumed and passed both jobs on PR #1; R15 closed.
-- Canonical local migration is complete at `/Users/dd/CascadeProjects/shapes-clean`. The archive remains private permanently for its pre-scrub history and merged-PR discussions. Netlify is connected to the new public repo; its repository-root build configuration is verified on PR #1.
+1. Merge the already-green PR #8.
+2. Fetch exact merged `main`, run non-broadcast rehearsal, then have the user run the interactive Sepolia deploy command. Read back and verify every address/value; submit the one-time artist attestation; update `web/public/deployment.json` in a follow-up cutover.
+3. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
+4. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
 
-## Standing user directives (this session)
+## Standing directives
 
-- Director owns plan and judgment calls; not just executor. Token discipline: load-bearing reading and tricky wiring inline; breadth work delegated in parallel to cheaper models, conclusions only kept in context.
-- Commit author must be ripe0x <109935398+ripe0x@users.noreply.github.com>; verify before push.
-- Keep this handoff current so a new session can resume without loss.
-
-## Post-cutover verification (2026-08-25)
-
-- Wallet-key sweep of the public repo, all branch tips + full history: CLEAN. Only anvil's canonical dev keys (accounts 0-7, universal test mnemonic) in e2e/fork-dev/simulate scripts, vendored library constants, multicall3 runtime bytecode, and fixture seeds. No .env ever committed beyond indexer/.env.example (placeholders).
-- Incident: first push from this fresh clone used global gitconfig (gmail author) — the fresh-clone footgun. Amended to ripe0x noreply and force-pushed within a minute (d400c8d); orphaned object held only handoff text. Fresh clones of this repo MUST set local user.name/user.email to ripe0x noreply before committing.
-
-## Issue/PR migration check (2026-08-25)
-
-Archive has zero open issues and zero open PRs; all 41 historical PRs merged. Nothing to migrate. The merged PRs' discussion threads exist ONLY on shapes-archive — recommendation accepted into plan: KEEP shapes-archive as a permanent private archive rather than deleting it.
+- Never broadcast mainnet without explicit approval for each transaction.
+- Commit as `ripe0x <109935398+ripe0x@users.noreply.github.com>`; verify before every push from a fresh clone.
+- Never commit or push from `/Users/dd/CascadeProjects/shapes`; it has pre-rewrite history.
+- `ripe0x/shapes-archive` stays private forever. Never push anything to or from it.
+- Never infer approval to change fundamental functionality, contract semantics, public ABI or a PR's architecture. Surface the concern and obtain explicit user confirmation.
+- D-05 mainnet admin/Shape #0 custody, fee recipient and lock/renounce timing remains a P2 user decision. Sepolia choices do not resolve it.
