@@ -20,7 +20,7 @@ Evidence gate: STATE.md updated to show zero at-risk uncommitted work; audit fin
 
 Stop conditions: an audit finding of high severity (stop and fix before anything else merges); loss or corruption of the Surface port files.
 
-## P1 entry gate: adopted architecture delta (deployment complete; attestation pending)
+## P1 entry gate: adopted architecture delta (onchain gate passed; metadata cutover pending)
 
 Objective: land and freshly deploy the D-24 architecture before spending hardening evidence.
 
@@ -33,7 +33,7 @@ Deliverables:
 - COMPLETE: D-27 admin-directed future mint-fee recipient, with immutable `feeBps`, no reserve authority, and exact Sepolia payout/admin post-flight checks. Merged in PR #4 as `c34aea3`.
 - RESOLVED ARCHITECTURALLY, PARKED POST-LAUNCH: D-29 defines positions as a fully escrowed external exchange-option protocol. Shapes retains discovery only and gains no freeze, wrapper, custody or execution logic.
 - COMPLETE: PR #5 merged as `7f92f1b`. D-31 adds non-reverting `exists` and stored `denomIndexOf`, keeps `absorbedBy` rejected, and passes lifecycle/interface and default/testnet EIP-170 gates.
-- DEPLOYED AND VERIFIED: exact merged `main` commit `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; all constructor/wiring/value postflights pass and all ten sources are verified. Submit the one-time artist signature against creation transaction `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, then merge the address/fromBlock cutover. Never relabel either older immutable deployment.
+- DEPLOYED, SIGNED AND VERIFIED: exact merged `main` commit `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; all constructor/wiring/value postflights pass and all ten sources are verified. The one-time artist signature against creation transaction `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe` mined as `0xaa9f422c51688d6debf1b8da6b82c518d74185a977e701b9afba07200776a2e7` and reads back exactly. Merge the address/fromBlock cutover. Never relabel either older immutable deployment.
 
 Acceptance: PR #2 and the D-28 attribution change merged with no waived P1 finding; the Sepolia deployment named in STATE matches the selected ABI and architecture, and its artist attestation verifies directly on Shapes against the recorded release hash.
 
