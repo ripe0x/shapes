@@ -43,7 +43,8 @@ FOUNDRY_PROFILE=testnet forge script "$SCRIPT" \
   --rpc-url "$RPC_URL" \
   --broadcast \
   --slow \
-  --account ripe0x feerecip
+  --account ripe0x \
+  --account feerecip
 
 AUCTION=$(cast call "$HOUSE" \
   "auctions(uint256)((address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool))" \
@@ -77,7 +78,8 @@ FOUNDRY_PROFILE=testnet forge script "$SCRIPT" \
   --rpc-url "$RPC_URL" \
   --broadcast \
   --slow \
-  --account ripe0x feerecip
+  --account ripe0x \
+  --account feerecip
 
 cast call "$HOUSE" \
   "auctions(uint256)((address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool))" \
