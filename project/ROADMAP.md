@@ -47,7 +47,7 @@ Objective: the selected Sepolia system behaves like the mainnet system will, und
 
 Deliverables:
 - COMPLETE: shared browser/OG RPC fallback with deterministic blackhole tests (D-12). WalletConnect uses the project-owned id and the conventional RainbowKit configuration. D-11 is closed; Rainbow does not support testnets, so Rainbow-to-Sepolia was an invalid acceptance target and no mobile testnet workaround remains.
-- INTEGRATED, HOSTING PENDING FRESH DEPLOY: chain-authoritative optional indexer path, 98.52% fixture read reduction, zero-audit patched Ponder service and deterministic fallback (D-10).
+- COMPLETE: chain-authoritative optional indexer path, 98.52% fixture read reduction, zero-audit patched Ponder service and deterministic fallback. The Sepolia service is live on one Fly machine with embedded PGlite on an encrypted 1 GB volume; activation health, readiness, GraphQL content and one-block freshness passed (D-10).
 - COMPLETE: gas-ceiling experiment recorded per entrypoint; hierarchical apex path accepted and direct 10k actions rejected (D-08).
 - COMPLETE FOR SEPOLIA: seed-preserving ink-gene experiment recorded; current constants retained for testnet and explicitly revisited at P2 mainnet signoff (D-07).
 - COMPLETE: Medusa adopted in CI; Halmos deferral recorded (D-09).

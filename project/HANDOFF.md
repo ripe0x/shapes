@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
 Session: mainnet-readiness execution, 2026-08-28.
-Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, through PR #18.
+Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, through PR #20 plus the active indexer-activation packet.
 
 ## Current outcome
 
@@ -17,13 +17,14 @@ Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, thro
 - Exact `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; creation transaction/release hash is `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, from block 11582031. All postflight reads pass and all ten sources are verified. The one-time artist attestation mined as `0xaa9f422c51688d6debf1b8da6b82c518d74185a977e701b9afba07200776a2e7` at block 11586702; stored hash and signature readback pass.
 - PR #16 merged as `9990f45`; PR #17 merged as `b7c1451` and pins Netlify to Node 22.19.0/npm 10.9.3 after its Node 24/npm 11 default broke optional RainbowKit/Coinbase dependency resolution. The production build completed successfully. `https://shapes.ripe.wtf/deployment.json` serves Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`, and the live homepage plus `/og/shape/0` return HTTP 200. The fresh Sepolia site cutover is complete.
 - Issue #6 is deferred under D-33 to P4 and a real consumer. Do not add `decomposeInto` or a generic position resolver without separate product decisions.
+- PR #20 merged as `f92d019`. The Sepolia indexer is live at `https://shapes-indexer.fly.dev` on one IAD Fly machine with embedded PGlite and encrypted 1 GB volume `vol_vz8xke1po70oz5qv`. Health, readiness, status and GraphQL readback passed; Shape #0 indexed with exact testnet backing and the checkpoint was one block behind Sepolia. The production deployment metadata is being cut over to that optional endpoint.
 
 ## Decisions and evidence
 
 - D-07: keep ink constants unchanged for Sepolia. The exact seed-preserving retained-Dense heuristic reaches Solid 100 after 40,064 dust mints on average (95% CI 39,972–40,156), about 4.01 ETH mainnet-scale fees, with 100.07 ETH mean peak retained backing. This is not a global optimum; mainnet immutable values are reconfirmed at P2.
 - D-08: direct 10k actions are impossible on L1, but the hierarchical apex path is valid. Direct compose is 1.134B gas; direct split/decompose exceed 30M. The exact 3,333-call ladder tree reaches the apex, with a 985,862-gas worst individual rung. UI must not promise direct fan-in/fan-out or an unmeasured batch size. W-2 is rejected.
 - D-09: adopt Medusa 1.5.1 in CI with a checksum-pinned binary; defer Halmos because its AST build exceeded the three-minute/~2.1 GB spike budget before symbolic execution.
-- D-10: optional indexer path is implemented and keeps Shapes authoritative. Freshness, chain, uniqueness and exact live count are checked; each page has an 8-second abort, 256 KiB body cap, 500-item cap, unique cursor and totalSupply-derived page/item ceiling. All displayed fields are current chain reads; every failure falls back to raw RPC. A 1,203-id fixture cuts reads from 1,218 to 18. Ponder's vulnerable pins are replaced by smoke-tested overrides, and the isolated install audits at zero.
+- D-10: RESOLVED. The optional indexer path keeps Shapes authoritative. Freshness, chain, uniqueness and exact live count are checked; each page has an 8-second abort, 256 KiB body cap, 500-item cap, unique cursor and totalSupply-derived page/item ceiling. All displayed fields are current chain reads; every failure falls back to raw RPC. A 1,203-id fixture cuts reads from 1,218 to 18. The isolated install audits at zero, and the Fly/PGlite service passed live Sepolia activation.
 - D-12/W-1/W-4/W-5/W-6/D-21: implemented. Browser and OG share independent RPC fallbacks; Black Shapes remain visible with invalid mutators hidden; provenance rollups no longer impersonate token #0; CI is path-filtered/cached and includes site/Medusa jobs; portless is adopted; direct unused x402 packages are removed.
 - D-11: CLOSED. Rainbow does not support testnets, so the attempted Rainbow-to-Sepolia acceptance test was invalid and is removed as a gate. Keep the conventional RainbowKit `getDefaultConfig` integration and standard inventory; every namespace, storage, mainnet-bootstrap and switching workaround remains removed. The deterministic Sepolia config and transaction-initiation tests cover this packet. Rainbow is tested only when the eventual site targets mainnet.
 
@@ -38,7 +39,7 @@ Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, thro
 
 ## Remaining gates, in order
 
-1. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
+1. Merge the indexer activation packet and verify production serves `indexerUrl` with the homepage and Shape #0 OG route still healthy.
 2. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
 3. Implement issue #7 as the first P2 contract change, with independent review and all D-32 parity/size/gas/complexity evidence, before the D-16 external-audit snapshot.
 
