@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
 Session: mainnet-readiness execution, 2026-08-28.
-Branch: `codex/netlify-node-pin` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, based on merged main `9990f45` (PR #16).
+Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, at `b7c1451` (PR #17).
 
 ## Current outcome
 
@@ -15,7 +15,7 @@ Branch: `codex/netlify-node-pin` in canonical clone `/Users/dd/CascadeProjects/s
 - PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
 - D-32 reschedules GitHub issue #7 as P2 pre-mainnet renderer-audit work, after the current P1/Sepolia release and before any renderer expansion. Only a behavior-preserving `_moduleSvg` helper extraction is approved. `_glyph` remains a documented lookup-table complexity exception. Current ShapeRenderer baselines are 22,699 bytes default and 22,698 bytes testnet; unchanged TypeScript fixtures, frozen-legacy differential parity, pinned size and one-/25-module gas evidence are mandatory.
 - Exact `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; creation transaction/release hash is `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, from block 11582031. All postflight reads pass and all ten sources are verified. The one-time artist attestation mined as `0xaa9f422c51688d6debf1b8da6b82c518d74185a977e701b9afba07200776a2e7` at block 11586702; stored hash and signature readback pass.
-- PR #16 merged as `9990f45`. Production remained on the old deployment because Netlify's new Node 24/npm 11 default re-resolved optional RainbowKit/Coinbase peers and failed on unused x402 imports. GitHub and local builds use Node 22.19.0/npm 10.9.3 and pass. The current fix pins Netlify to that tested toolchain; verify a successful production deploy and live `deployment.json` before declaring cutover complete.
+- PR #16 merged as `9990f45`; PR #17 merged as `b7c1451` and pins Netlify to Node 22.19.0/npm 10.9.3 after its Node 24/npm 11 default broke optional RainbowKit/Coinbase dependency resolution. The production build completed successfully. `https://shapes.ripe.wtf/deployment.json` serves Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`, and the live homepage plus `/og/shape/0` return HTTP 200. The fresh Sepolia site cutover is complete.
 - Issue #6 is deferred under D-33 to P4 and a real consumer. Do not add `decomposeInto` or a generic position resolver without separate product decisions.
 
 ## Decisions and evidence
@@ -38,10 +38,9 @@ Branch: `codex/netlify-node-pin` in canonical clone `/Users/dd/CascadeProjects/s
 
 ## Remaining gates, in order
 
-1. Merge the Netlify Node/npm pin, then confirm production `deployment.json` reads the new contracts.
-2. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
-3. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
-4. Implement issue #7 as the first P2 contract change, with independent review and all D-32 parity/size/gas/complexity evidence, before the D-16 external-audit snapshot.
+1. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
+2. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
+3. Implement issue #7 as the first P2 contract change, with independent review and all D-32 parity/size/gas/complexity evidence, before the D-16 external-audit snapshot.
 
 ## Standing directives
 
