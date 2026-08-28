@@ -1,9 +1,11 @@
 /**
  * Materialized module sampling, canonical TypeScript reference (SAMPLING_SPEC.md sections 5-7).
  *
- * Implements the decisions in SAMPLING_SPEC.md section 11: D1 (units-weighted donor with
- * replacement, uniform module choice within a donor), D2 (solid bits copied verbatim, never
- * re-drawn), D3 (split children sample from the parent instead of drawing a fresh seed).
+ * Implements the decisions in SAMPLING_SPEC.md section 11: D1' (units-weighted donor with
+ * replacement; module choice within a donor uniform over its not-yet-used modules, without
+ * replacement, so compose provenance is injective at the cell level), D2 (solid bits copied
+ * verbatim, never re-drawn), D3 (split children sample from the parent instead of drawing a
+ * fresh seed).
  *
  * All hashing is `keccak256` over `abi.encodePacked` with the exact argument types Solidity
  * uses, the same convention `ink.ts` and `splitSeed.ts` follow, so the stream a Solidity port
@@ -172,8 +174,8 @@ export interface ComposeTraceResult {
 }
 
 /**
- * `sampleCompose` with per-cell provenance (SAMPLING_SPEC.md section 5). `sampleCompose` is
- * defined in terms of this function's output, so there is one draw-order implementation, not
+ * `sampleCompose` with per-cell provenance (SAMPLING_SPEC.md section 5, decision D1'). `sampleCompose`
+ * is defined in terms of this function's output, so there is one draw-order implementation, not
  * two that could drift out of sync.
  *
  * `burnSeedFold` is the XOR of every burn's seed, so the order `burns` arrive in cannot affect
@@ -181,7 +183,15 @@ export interface ComposeTraceResult {
  * burns ascending by token id), independent of the array's input order.
  *
  * Per destination cell: a donor is chosen with replacement, weighted by `unitsAt(denomIndex)`;
- * then a module is chosen with replacement, uniformly, from that donor's effective modules.
+ * then a module is chosen uniformly from that donor's not-yet-used modules, without replacement.
+ * Each donor module contributes to at most one result cell, so provenance is injective at the
+ * cell level: no two result cells trace to the same `(donorIndex, moduleIndex)` pair.
+ *
+ * A donor's supply of unused modules can never run out while it is still being drawn from: every
+ * donor's value is strictly below the result's (a compose merges two or more positive-value
+ * donors into one higher-value survivor), and cell count is strictly decreasing in denomination
+ * (`DENOMINATIONS`'s grid table), so every donor's module count is at least the result's cell
+ * count. Total draws equal the result's cell count. See SAMPLING_SPEC.md section 10 invariant 6.
  */
 export function sampleComposeTraced(
   survivor: SampleDonor,
@@ -207,6 +217,10 @@ export function sampleComposeTraced(
   const bytes = new Uint8Array(newCellCount);
   const trace: ComposeTraceCell[] = new Array(newCellCount);
 
+  // Per-donor consumption state: which module indices are already used, and how many remain.
+  const consumed: boolean[][] = donors.map((donor) => new Array(donor.bytes.length).fill(false));
+  const remaining: number[] = donors.map((donor) => donor.bytes.length);
+
   for (let j = 0; j < newCellCount; j++) {
     const d = rand.nextBelow(totalUnits);
     let acc = 0n;
@@ -219,8 +233,24 @@ export function sampleComposeTraced(
       }
     }
     const donor = donors[donorIndex];
-    const k = rand.nextBelow(BigInt(donor.bytes.length));
-    const moduleIndex = Number(k);
+    const k = Number(rand.nextBelow(BigInt(remaining[donorIndex])));
+
+    const donorConsumed = consumed[donorIndex];
+    let unusedSeen = 0;
+    let moduleIndex = 0; // only reached if remaining[donorIndex] is 0, which the invariant in the doc comment above rules out
+    for (let m = 0; m < donorConsumed.length; m++) {
+      if (!donorConsumed[m]) {
+        if (unusedSeen === k) {
+          moduleIndex = m;
+          break;
+        }
+        unusedSeen++;
+      }
+    }
+
+    donorConsumed[moduleIndex] = true;
+    remaining[donorIndex]--;
+
     const byte = donor.bytes[moduleIndex];
     bytes[j] = byte;
     trace[j] = {donorIndex, donorId: donor.id, moduleIndex, byte, donorMaterialized: donor.materialized};

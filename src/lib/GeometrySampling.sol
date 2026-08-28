@@ -94,11 +94,22 @@ library GeometrySampling {
         }
     }
 
-    /// @notice Sample a compose survivor's new module array (SAMPLING_SPEC.md §5).
+    /// @notice Sample a compose survivor's new module array (SAMPLING_SPEC.md §5, decision D1′).
     /// @dev `donors` must already be in canonical order: the survivor at index 0, then burns
     ///      ascending by id (`sortDonorsById` on the burn subset before prepending the
-    ///      survivor). Donor choice is units-weighted with replacement; module choice within a
-    ///      donor is uniform with replacement.
+    ///      survivor). Donor choice is units-weighted, with replacement. Module choice within a
+    ///      donor is uniform over that donor's not-yet-used modules, without replacement: each
+    ///      donor module contributes to at most one result cell, so compose provenance is
+    ///      injective at the cell level. `consumedMask[i]` is a bitmask over `mods[i]`, one bit
+    ///      per module index, up to 25 modules (denomination index 0) so it fits a `uint256`
+    ///      with room to spare.
+    ///
+    ///      A donor's `remaining` count can never reach zero while it is still being drawn from:
+    ///      every donor's `amountAt` is strictly below the result's (a compose merges two or
+    ///      more positive-value donors into one higher-value survivor), and `Denominations.gridAt`
+    ///      is strictly decreasing in denomination index, so every donor's module count is at
+    ///      least the result's cell count. Total draws equal the result's cell count. See
+    ///      SAMPLING_SPEC.md §10 invariant 6.
     function sampleCompose(Donor[] memory donors, bytes32 survivorSeed, uint256 burnSeedFold, uint8 newIndex)
         public
         pure
@@ -117,6 +128,17 @@ library GeometrySampling {
         uint256 n = cols * rows;
         result = new bytes(n);
 
+        // Cache each donor's effective modules once, and its consumption state, before the cell
+        // loop: consumption is stateful across cells, so the modules must stay stable per donor
+        // rather than being recomputed (and re-derived, for a seed-derived donor) every cell.
+        bytes[] memory mods = new bytes[](donors.length);
+        uint256[] memory consumedMask = new uint256[](donors.length);
+        uint256[] memory remaining = new uint256[](donors.length);
+        for (uint256 i = 0; i < donors.length; ++i) {
+            mods[i] = effectiveModules(donors[i]);
+            remaining[i] = mods[i].length;
+        }
+
         for (uint256 j = 0; j < n; ++j) {
             uint256 d = rnd.nextBelow(totalUnits);
             uint256 cum;
@@ -128,9 +150,25 @@ library GeometrySampling {
                     break;
                 }
             }
-            bytes memory mods = effectiveModules(donors[donorIdx]);
-            uint256 k = rnd.nextBelow(mods.length);
-            result[j] = mods[k];
+
+            uint256 k = rnd.nextBelow(remaining[donorIdx]);
+            uint256 mask = consumedMask[donorIdx];
+            bytes memory donorMods = mods[donorIdx];
+            uint256 unusedSeen;
+            uint256 moduleIdx;
+            for (uint256 m = 0; m < donorMods.length; ++m) {
+                if ((mask >> m) & 1 == 0) {
+                    if (unusedSeen == k) {
+                        moduleIdx = m;
+                        break;
+                    }
+                    ++unusedSeen;
+                }
+            }
+
+            consumedMask[donorIdx] = mask | (1 << moduleIdx);
+            --remaining[donorIdx];
+            result[j] = donorMods[moduleIdx];
         }
     }
 
