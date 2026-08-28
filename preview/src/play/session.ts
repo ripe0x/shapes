@@ -8,7 +8,15 @@
 import { keccak_256 } from "@noble/hashes/sha3";
 import { DENOMINATIONS, denominationIndex, unitsAt } from "../canonical/denominations";
 import { centerGene, geneAtCompose, geneAtMint } from "../canonical/ink";
-import { sampleComposeTraced, type ComposeTraceCell, type SampleBurn, type SampleDonor } from "../canonical/sampling";
+import { CANONICAL } from "../canonical/params";
+import { composeShape, type Composition } from "../canonical/render";
+import {
+  composeSampledShape,
+  sampleComposeTraced,
+  type ComposeTraceCell,
+  type SampleBurn,
+  type SampleDonor,
+} from "../canonical/sampling";
 import { productionSeed } from "../seeds";
 
 export const TRAY_CAP = 8;
@@ -40,6 +48,13 @@ export interface PlaySession {
 
 export function emptySession(): PlaySession {
   return { nodes: [], nextKey: 1, nextDemoId: 1 };
+}
+
+/** A session node's rendered composition: sampled from its stored bytes if composed, otherwise
+ *  drawn fresh from its seed. */
+export function nodeComposition(node: PlayNode): Composition {
+  if (node.modules) return composeSampledShape(node.modules, node.denomIndex, node.inkGene, CANONICAL);
+  return composeShape(node.seed, DENOMINATIONS[node.denomIndex], node.inkGene, CANONICAL);
 }
 
 /** Nodes not consumed as a compose input. The tray shows these. */
