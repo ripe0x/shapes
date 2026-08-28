@@ -4,7 +4,8 @@ import { forDisplay } from "../app/ui";
 import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/provenance";
 import { CANONICAL } from "../canonical/params";
 import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
-import { composeSampledShape } from "../canonical/sampling";
+import { WAD } from "../canonical/wad";
+import type { ComposeTraceCell } from "../canonical/sampling";
 import { DENOMINATIONS, GRIDS, LABELS, UNIT } from "../canonical/denominations";
 import { geneAtMint } from "../canonical/ink";
 import { decodeModuleByte } from "../canonical/moduleCodec";
@@ -14,6 +15,7 @@ import {
   emptySession,
   keepCard,
   liveNodes,
+  nodeComposition,
   randomSeed,
   removeNode,
   textSeed,
@@ -22,7 +24,7 @@ import {
   type PlaySession,
 } from "./session";
 import { decodeSession, encodeSession } from "./urlCodec";
-import { downloadCardPng, downloadLadderPng, downloadSquarePng } from "./exports";
+import { downloadCardPng, downloadComposeGif, downloadLadderPng, downloadSquarePng } from "./exports";
 
 /**
  * The Playground (`/play`): a chain-free demo of the two ideas the collection is built on —
@@ -50,13 +52,6 @@ function formatEth(wei: bigint): string {
   const fracStr = (frac < 10n ? "0" : "") + frac.toString();
   const trimmed = fracStr.endsWith("0") ? fracStr.slice(0, 1) : fracStr;
   return `${whole}.${trimmed} ETH`;
-}
-
-/** A session node's rendered composition: sampled from its stored bytes if composed, otherwise
- *  drawn fresh from its seed. */
-function nodeComposition(node: PlayNode): Composition {
-  if (node.modules) return composeSampledShape(node.modules, node.denomIndex, node.inkGene, CANONICAL);
-  return composeShape(node.seed, DENOMINATIONS[node.denomIndex], node.inkGene, CANONICAL);
 }
 
 /* ------------------------------------------------------------------ *
@@ -193,6 +188,8 @@ function DrawBeat({
   effectiveSeed,
   onKeep,
   keepDisabled,
+  inverted,
+  onToggleInverted,
 }: {
   denomIndex: number;
   onDenomIndex: (i: number) => void;
@@ -202,6 +199,8 @@ function DrawBeat({
   effectiveSeed: bigint;
   onKeep: () => void;
   keepDisabled: boolean;
+  inverted: boolean;
+  onToggleInverted: () => void;
 }) {
   const amountWei = DENOMINATIONS[denomIndex];
   // The gene a kept card of this seed/denomination would get (session.keepCard uses the same call).
@@ -263,12 +262,15 @@ function DrawBeat({
             Keep
           </PlayButton>
 
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <PlayButton small onClick={() => downloadCardPng(svg, LABELS[denomIndex], effectiveSeed)}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
               Card PNG
             </PlayButton>
-            <PlayButton small onClick={() => downloadLadderPng(effectiveSeed)}>
+            <PlayButton small onClick={() => downloadLadderPng(effectiveSeed, inverted)}>
               Ladder PNG
+            </PlayButton>
+            <PlayButton small active={inverted} onClick={onToggleInverted}>
+              Black
             </PlayButton>
           </div>
 
@@ -279,10 +281,16 @@ function DrawBeat({
   );
 }
 
-/** "Copy link" plus a quiet fading confirmation. Copies `location.href`, which the page-level
- *  URL-sync effect keeps equal to `/play?s=<encodeSession(session)>` at all times. */
+/** "Copy link" plus a quiet confirmation. Copies `location.href`, which the page-level URL-sync
+ *  effect keeps equal to `/play?s=<encodeSession(session)>` at all times. No animation here: the
+ *  compose reveal is the only animation this page runs. */
 function ShareLink() {
   const [copied, setCopied] = React.useState(false);
+  React.useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -297,15 +305,7 @@ function ShareLink() {
         >
           Copy link
         </PlayButton>
-        {copied && (
-          <span
-            key={Date.now()}
-            style={{ ...mono, fontSize: 10, color: C.muted, animation: "playFadeIn 320ms ease" }}
-            onAnimationEnd={() => setTimeout(() => setCopied(false), 1200)}
-          >
-            copied
-          </span>
-        )}
+        {copied && <span style={{ ...mono, fontSize: 10, color: C.muted }}>copied</span>}
       </div>
       <Prose>This link reproduces it exactly.</Prose>
     </div>
@@ -380,18 +380,117 @@ function TrayBeat({
  * Beat 3 — compose
  * ------------------------------------------------------------------ */
 
+/** WAD bigint to a display float, the same conversion `GridOverlayCells` (app/provenance.tsx)
+ *  uses for its own positioning percentages. */
+function toFloat(w: bigint): number {
+  return Number(w) / Number(WAD);
+}
+
+/** `color` at `alpha` composited over solid black: `color * alpha` per channel, opaque. Used for
+ *  the reveal's per-cell covers, so they read as a darkened, donor-tinted version of the color
+ *  rather than the raw saturated donor swatch. */
+function tintOverBlack(hex: string, alpha = 0.65): string {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 0xff) * alpha);
+  const g = Math.round(((n >> 8) & 0xff) * alpha);
+  const b = Math.round((n & 0xff) * alpha);
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * The compose reveal: an opaque donor-tinted cover over each grid cell, fading out one by one in
+ * trace order. Reimplements `GridOverlayCells`'s WAD -> percent positioning (app/provenance.tsx)
+ * rather than reusing it, because each cover needs a class name for the reduced-motion-gated CSS
+ * animation below, and `GridOverlayCells`'s `cellStyle` can only carry inline style. Pure CSS
+ * keyframes with a per-cell `animation-delay`; no JS timers, nothing random — the same trace
+ * produces the same reveal every time.
+ */
+function RevealOverlay({ composition, trace }: { composition: Composition; trace: ComposeTraceCell[] }) {
+  const leftPct = (toFloat(composition.x0) / 250) * 100;
+  const topPct = (toFloat(composition.y0) / 350) * 100;
+  const widthPct = ((toFloat(composition.cell) * composition.cols) / 250) * 100;
+  const heightPct = ((toFloat(composition.cell) * composition.rows) / 350) * 100;
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: `${leftPct}%`,
+        top: `${topPct}%`,
+        width: `${widthPct}%`,
+        height: `${heightPct}%`,
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${composition.cols}, 1fr)`,
+          gridTemplateRows: `repeat(${composition.rows}, 1fr)`,
+          width: "100%",
+          height: "100%",
+        }}
+      >
+        {trace.map((cell, j) => (
+          <div
+            key={j}
+            className="play-reveal-cell"
+            style={
+              {
+                background: tintOverBlack(donorColor(cell.donorIndex)),
+                "--cell-i": j,
+              } as React.CSSProperties & Record<"--cell-i", number>
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The compose result card: the finished artwork, fully rendered underneath from the start, with
+ *  the reveal overlay on top when a trace is present. Keyed by the caller on the result node's
+ *  key, so a new compose remounts this (and restarts the CSS animation) from scratch. */
+function ComposeResultCard({
+  composition,
+  trace,
+}: {
+  composition: Composition;
+  trace: ComposeTraceCell[] | null;
+}) {
+  const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, false), [composition]);
+  return (
+    <div
+      style={{
+        position: "relative",
+        aspectRatio: "2.5 / 3.5",
+        background: C.art,
+        overflow: "hidden",
+        lineHeight: 0,
+        outline: `1px solid ${C.border}`,
+        outlineOffset: -1,
+      }}
+    >
+      <div dangerouslySetInnerHTML={{ __html: forDisplay(svg) }} />
+      {trace && <RevealOverlay composition={composition} trace={trace} />}
+    </div>
+  );
+}
+
 function ComposeBeat({
   nodes,
   selected,
   onCompose,
   error,
   lastResult,
+  inverted,
+  onToggleInverted,
 }: {
   nodes: PlayNode[];
   selected: Set<number>;
   onCompose: () => void;
   error: string | null;
   lastResult: PlayNode | null;
+  inverted: boolean;
+  onToggleInverted: () => void;
 }) {
   const selectedNodes = nodes.filter((n) => selected.has(n.key));
   const sumWei = selectedNodes.reduce((acc, n) => acc + DENOMINATIONS[n.denomIndex], 0n);
@@ -406,6 +505,24 @@ function ComposeBeat({
   else if (!validAboveSurvivor) reason = "result must be above the survivor's denomination";
 
   const canCompose = reason === null;
+
+  const resultComposition = React.useMemo(() => (lastResult ? nodeComposition(lastResult) : null), [lastResult]);
+
+  const [gifBusy, setGifBusy] = React.useState<string | null>(null);
+
+  const handleGif = async () => {
+    if (!lastResult) return;
+    setGifBusy("rendering…");
+    try {
+      await downloadComposeGif(lastResult, LABELS[lastResult.denomIndex], inverted, (done, total) =>
+        setGifBusy(`rendering ${done}/${total}…`),
+      );
+    } catch (e) {
+      console.error("GIF export failed", e);
+    } finally {
+      setGifBusy(null);
+    }
+  };
 
   return (
     <section style={sectionStyle}>
@@ -426,35 +543,23 @@ function ComposeBeat({
       </div>
       {error && <div style={{ ...mono, fontSize: 11, color: C.muted, marginBottom: 16 }}>{error}</div>}
 
-      {lastResult && (
-        <div key={lastResult.key} style={{ display: "flex", flexDirection: "column", gap: 8, animation: "playFadeIn 320ms ease" }}>
+      {lastResult && resultComposition && (
+        <div key={lastResult.key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ width: "min(320px, 80vw)" }}>
-            <RawCard svg={svgFromComposition(nodeComposition(lastResult), 0n, CANONICAL, false)} width="100%" />
+            <ComposeResultCard composition={resultComposition} trace={lastResult.trace ?? null} />
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <PlayButton
-              small
-              onClick={() =>
-                downloadCardPng(
-                  svgFromComposition(nodeComposition(lastResult), 0n, CANONICAL, false),
-                  LABELS[lastResult.denomIndex],
-                  lastResult.seed,
-                )
-              }
-            >
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <PlayButton small onClick={() => downloadCardPng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, inverted)}>
               Card PNG
             </PlayButton>
-            <PlayButton
-              small
-              onClick={() =>
-                downloadSquarePng(
-                  svgFromComposition(nodeComposition(lastResult), 0n, CANONICAL, false),
-                  LABELS[lastResult.denomIndex],
-                  lastResult.seed,
-                )
-              }
-            >
+            <PlayButton small onClick={() => downloadSquarePng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, inverted)}>
               Square PNG
+            </PlayButton>
+            <PlayButton small disabled={gifBusy !== null} onClick={handleGif}>
+              {gifBusy ?? "GIF"}
+            </PlayButton>
+            <PlayButton small active={inverted} onClick={onToggleInverted}>
+              Black
             </PlayButton>
           </div>
           <Prose>
@@ -694,6 +799,9 @@ export function PlayApp() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [composeError, setComposeError] = React.useState<string | null>(null);
   const [hydrated, setHydrated] = React.useState(false);
+  // Exports-only: Card/Square/Ladder PNG and GIF render inverted when set. On-page cards never
+  // invert, so this never touches anything the visitor is looking at directly.
+  const [inverted, setInverted] = React.useState(false);
 
   // Client-only setup on mount: roll the real starting seed (see the placeholder note above),
   // and restore session state from `?s=` if present. A state initializer would read `location`
@@ -773,7 +881,25 @@ export function PlayApp() {
 
   return (
     <div style={{ background: C.page, minHeight: "100vh", color: C.ink }}>
-      <style>{`@keyframes playFadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+      <style>{`
+        /* The compose reveal is the only animation on this page. Default (and reduced-motion)
+           state: no cover, no animation -- the plain finished card. Motion is opted back in only
+           when the visitor hasn't asked to reduce it. */
+        @keyframes playRevealFade { from { opacity: 1 } to { opacity: 0 } }
+        .play-reveal-cell {
+          opacity: 0;
+          animation-duration: 300ms;
+          animation-timing-function: ease;
+          animation-fill-mode: forwards;
+          animation-delay: calc(var(--cell-i, 0) * 35ms);
+        }
+        @media (prefers-reduced-motion: no-preference) {
+          .play-reveal-cell {
+            opacity: 1;
+            animation-name: playRevealFade;
+          }
+        }
+      `}</style>
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "48px 20px 80px" }}>
         <header style={{ marginBottom: 40 }}>
           <div style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10 }}>
@@ -800,6 +926,8 @@ export function PlayApp() {
           effectiveSeed={effectiveSeed}
           onKeep={handleKeep}
           keepDisabled={keepDisabled}
+          inverted={inverted}
+          onToggleInverted={() => setInverted((v) => !v)}
         />
 
         <TrayBeat nodes={nodes} selected={selected} onToggle={handleToggle} onRemove={handleRemove} />
@@ -810,6 +938,8 @@ export function PlayApp() {
           onCompose={handleCompose}
           error={composeError}
           lastResult={lastResult}
+          inverted={inverted}
+          onToggleInverted={() => setInverted((v) => !v)}
         />
 
         <LineageBeat session={session} />
