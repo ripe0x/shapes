@@ -45,10 +45,11 @@ contract ArtistAttributionTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
 
-        vm.prank(artist);
+        vm.startPrank(artist);
         shapes = new Shapes{value: Denominations.amountAt(0)}(
             100, address(0xFEE), address(renderer), address(collection)
         );
+        vm.stopPrank();
     }
 
     function _signature(uint256 key, bytes32 digest) private pure returns (bytes memory) {
@@ -106,10 +107,13 @@ contract ArtistAttributionTest is Test {
     }
 
     function test_SignatureCannotBeReplayedAcrossDeployments() public {
-        vm.prank(artist);
-        Shapes other = new Shapes{value: Denominations.amountAt(0)}(
+        uint256 genesisAmount = Denominations.amountAt(0);
+        vm.startPrank(artist);
+        Shapes other = new Shapes{value: genesisAmount}(
             100, address(0xFEE), address(renderer), address(collection)
         );
+        vm.stopPrank();
+        assertEq(other.artist(), artist);
         bytes memory signature = _signature(ARTIST_KEY, shapes.artistAttestationDigest(RELEASE_HASH));
 
         vm.expectRevert(IShapes.InvalidArtistSignature.selector);
@@ -173,9 +177,10 @@ contract ArtistAttributionTest is Test {
 
     function _deployFrom(address deployer) private returns (Shapes deployed) {
         vm.deal(deployer, Denominations.amountAt(0));
-        vm.prank(deployer);
+        vm.startPrank(deployer);
         deployed = new Shapes{value: Denominations.amountAt(0)}(
             100, address(0xFEE), address(renderer), address(collection)
         );
+        vm.stopPrank();
     }
 }
