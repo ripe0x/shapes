@@ -1,5 +1,6 @@
 {
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+  "indexerUrl": "https://shapes-indexer.fly.dev",
   "chainId": 11155111,
   "shapes": "0xbB6F8b4560E0cc15de233E00848104b66FD88B39",
   "renderer": "0x8b36e4149cEb2c658Ee900e30Bc1232100a2f325",
