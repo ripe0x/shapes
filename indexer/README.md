@@ -26,6 +26,7 @@ cp .env.example .env.local   # then fill in the values below
 | --- | --- | --- |
 | `PONDER_RPC_URL` | `http://127.0.0.1:8547` (from `preview/public/deployment.json`) | an archive-capable mainnet RPC |
 | `PONDER_CHAIN_ID` | `31347` (from `preview/public/deployment.json`, currently) | `1` |
+| `SHAPES_LADDER` | `mainnet` locally unless running the testnet profile | `mainnet` |
 | `SHAPES_ADDRESS` | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` (from `preview/public/deployment.json`, currently) | not deployed yet — placeholder in `.env.example` |
 | `SHAPES_START_BLOCK` | `0` is fine for a fresh local anvil chain | the Shapes deployment block |
 
@@ -250,21 +251,28 @@ indexer starts calling them. When a consumed event or read changes, rebuild the
 contracts and copy that exact entry from the relevant compiled Shapes or lens
 artifact so field names, types, and `indexed` flags match deployed bytecode.
 
-## Production recommendation: Railway + Postgres
+## Production deployment: Fly + persistent PGlite
 
-For pinned Ponder **0.17.8**, the viable low-ceremony production target is a Railway service
-rooted at `indexer/`, plus Railway Postgres in the same project and region. This matches Ponder's
-current official Railway guide and its requirement for a low-latency Postgres connection. Run
-`npm start -- --schema $RAILWAY_DEPLOYMENT_ID`, set Railway's health check to `/ready` with a
-3600-second timeout, and give the service a public domain. Set `DATABASE_URL` from the linked
-Postgres service plus `PONDER_RPC_URL`, `PONDER_CHAIN_ID=11155111`, `SHAPES_ADDRESS`, and the
-Sepolia deployment `SHAPES_START_BLOCK`. Then read back `/ready`, `/status`, and the GraphQL
-query before adding that domain as `indexerUrl` in the site's deployment metadata.
+Shapes follows the proven To Be a Machine, Permanent Collection, and Artcoins deployment pattern:
+one always-on Fly Machine running `ponder start`, with Ponder's embedded PGlite directory stored on
+a 1 GB persistent Fly volume. There is no separate Postgres service. The index is entirely
+reconstructable from Ethereum, and the site rejects unavailable or stale indexer responses in
+favor of its raw-RPC path, so the single-machine availability tradeoff is bounded and explicit.
 
-No Railway account, project, database, RPC credential, Sepolia Shapes address, or deployment
-block has been supplied here, so nothing has been provisioned or hosted. Those are the exact
-credentials/actions blocking production activation. Official references: [Railway deployment](https://ponder.sh/docs/production/railway)
-and [self-hosting requirements](https://ponder.sh/docs/production/deploy).
+`fly.toml` pins the public Sepolia deployment and its `testnet` ladder, two archive-capable public
+RPCs, a 12-second poll, one indexing thread, a 1 GB shared-CPU Machine, and `/data/pglite` on the
+`shapes_indexer_data` volume. Provision and deploy from this directory:
+
+```bash
+fly apps create shapes-indexer
+fly volumes create shapes_indexer_data --app shapes-indexer --region iad --size 1
+fly deploy
+```
+
+Then read back `/health`, `/ready`, `/status`, and the gallery GraphQL query before adding
+`https://shapes-indexer.fly.dev` as `indexerUrl` in deployment metadata. Do not scale beyond one
+Machine while using PGlite; a future multi-Machine or sustained-load requirement is the trigger to
+migrate to Postgres.
 
 ### Dependency security
 

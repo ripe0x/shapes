@@ -173,11 +173,17 @@ jobs:
       - name: audit production dependencies
         run: npm audit --omit=dev
 
+      - name: test
+        run: npm test
+
       - name: codegen
         run: npm run codegen
 
       - name: typecheck
         run: npm run typecheck
+
+      - name: build deployment image
+        run: docker build --tag shapes-indexer:ci .
 
   site:
     name: site
