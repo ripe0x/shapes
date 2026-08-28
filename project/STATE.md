@@ -2,11 +2,11 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-08-28 (fresh Sepolia deployment and issue review).
+Last updated: 2026-08-28 (fresh Sepolia release fully cut over).
 
 ## Phase
 
-Current phase: P1 testnet hardening, fresh Sepolia site cutover. PR #16 merged as `9990f45` with the verified deployment metadata and mined artist attestation. Its production Netlify build exposed an environment drift that local and GitHub Node 22 builds could not reproduce: Netlify defaulted to Node 24/npm 11 and re-resolved optional RainbowKit/Coinbase peers, making unused x402 imports fail. Pin the production build to the tested Node 22.19.0/npm 10.9.3 toolchain, publish the new deployment record, then D-10 indexer hosting and D-13 live auction evidence remain for P1 testnet hardening. D-32 approves issue #7's behavior-only renderer refactor for P2 after this release and before the external-audit snapshot; D-33 defers issue #6 to P4 until a real consumer exists.
+Current phase: P1 testnet hardening. The fresh Sepolia release is fully cut over: PR #16 merged as `9990f45` with the verified deployment metadata and mined artist attestation; PR #17 merged as `b7c1451`, pinning Netlify to the tested Node 22.19.0/npm 10.9.3 toolchain after its Node 24 default broke optional RainbowKit/Coinbase dependency resolution. The production site now serves the fresh address record, and both the homepage and Shape #0 OG image return successfully. D-10 indexer hosting and D-13 live auction evidence remain before the P1 gate passes. D-32 approves issue #7's behavior-only renderer refactor for P2 after that gate and before the external-audit snapshot; D-33 defers issue #6 to P4 until a real consumer exists.
 
 P0 GATE PASSED 2026-08-25. PR #1 merged as `5eec83d`; PR #2 merged as `7fca2b2`; corrective PR #3 merged as `bf5ae6b`; PR #4 merged as `c34aea3`; PR #5 merged as `7f92f1b`; P1 hardening PR #8 merged as `2f858ff`; merged-main correction PR #9 merged as `376bb7b`. The adopted architecture is backed Shape #0 as transferable collectible ownership, exposed through `owner()`, with a separate bounded `admin()`. Admin controls presentation/discovery and may redirect future mint fees, but cannot change the fee rate or touch backing, redemption, accrued funds or token ownership. During PR #2 review the Director replaced `owner()` with `titleHolder()` without explicit user approval; PR #3 fully reverted that substitution before deployment. The fresh Sepolia deployment, readback and direct artist attestation are complete.
 
