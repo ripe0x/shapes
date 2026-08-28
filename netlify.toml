@@ -5,5 +5,11 @@
   command = "npm run build"
   publish = ".next"
 
+[build.environment]
+  # Netlify defaults to Node 24/npm 11, which re-resolves optional RainbowKit peers differently
+  # from the tested lockfile and makes unused Coinbase x402 imports fail the production build.
+  NODE_VERSION = "22.19.0"
+  NPM_VERSION = "10.9.3"
+
 [[plugins]]
   package = "@netlify/plugin-nextjs"

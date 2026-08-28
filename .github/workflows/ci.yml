@@ -47,6 +47,7 @@ jobs:
             site:
               - 'preview/**'
               - 'web/**'
+              - 'netlify.toml'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
