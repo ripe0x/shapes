@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
 Session: mainnet-readiness execution, 2026-08-28.
-Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, through PR #20 plus the active indexer-activation packet.
+Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, through PR #23 plus the active handoff refresh.
 
 ## Current outcome
 
@@ -17,7 +17,8 @@ Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, thro
 - Exact `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; creation transaction/release hash is `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, from block 11582031. All postflight reads pass and all ten sources are verified. The one-time artist attestation mined as `0xaa9f422c51688d6debf1b8da6b82c518d74185a977e701b9afba07200776a2e7` at block 11586702; stored hash and signature readback pass.
 - PR #16 merged as `9990f45`; PR #17 merged as `b7c1451` and pins Netlify to Node 22.19.0/npm 10.9.3 after its Node 24/npm 11 default broke optional RainbowKit/Coinbase dependency resolution. The production build completed successfully. `https://shapes.ripe.wtf/deployment.json` serves Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`, and the live homepage plus `/og/shape/0` return HTTP 200. The fresh Sepolia site cutover is complete.
 - Issue #6 is deferred under D-33 to P4 and a real consumer. Do not add `decomposeInto` or a generic position resolver without separate product decisions.
-- PR #20 merged as `f92d019`. The Sepolia indexer is live at `https://shapes-indexer.fly.dev` on one IAD Fly machine with embedded PGlite and encrypted 1 GB volume `vol_vz8xke1po70oz5qv`. Health, readiness, status and GraphQL readback passed; Shape #0 indexed with exact testnet backing and the checkpoint was one block behind Sepolia. The production deployment metadata is being cut over to that optional endpoint.
+- PR #20 merged as `f92d019`. The Sepolia indexer is live at `https://shapes-indexer.fly.dev` on one IAD Fly machine with embedded PGlite and encrypted 1 GB volume `vol_vz8xke1po70oz5qv`. Health, readiness, status and GraphQL readback passed; Shape #0 indexed with exact testnet backing and the checkpoint was one block behind Sepolia.
+- PR #22 merged as `769efe0`; production now serves `indexerUrl: https://shapes-indexer.fly.dev`, with homepage and Shape #0 OG checks still passing. PR #23 merged as `99b79eb` after the full contract and Medusa gates. `script/rehearse-auction-sepolia.sh` is the guarded D-13 path: it requires clean fetched exact `main`, hard-checks Sepolia and the adopted release, uses the `ripe0x` seller and `feerecip` bidder keystores interactively, and contains no mainnet path. Its full opening stage passed against a current Sepolia fork.
 
 ## Decisions and evidence
 
@@ -39,8 +40,8 @@ Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, thro
 
 ## Remaining gates, in order
 
-1. Merge the indexer activation packet and verify production serves `indexerUrl` with the homepage and Shape #0 OG route still healthy.
-2. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
+1. From clean current `main`, run `script/rehearse-auction-sepolia.sh` and enter the `ripe0x` and `feerecip` keystore passwords when Foundry requests them. Capture the mined transaction hashes and verify the two live bids extended the deadline.
+2. Record the auction lifecycle in D-13 and close the P1 evidence gate.
 3. Implement issue #7 as the first P2 contract change, with independent review and all D-32 parity/size/gas/complexity evidence, before the D-16 external-audit snapshot.
 
 ## Standing directives
