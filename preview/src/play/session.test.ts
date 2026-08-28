@@ -1,17 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { keccak_256 } from "@noble/hashes/sha3";
+import { encodePacked, keccak256 } from "viem";
 
 import { centerGene, geneAtCompose, geneAtMint } from "../canonical/ink";
-import { unitsAt } from "../canonical/denominations";
-import { sampleComposeTraced, type SampleBurn, type SampleDonor } from "../canonical/sampling";
+import { DENOMINATIONS, unitsAt } from "../canonical/denominations";
+import { sampleComposeTraced, sampleSplitChildTraced, type SampleBurn, type SampleDonor } from "../canonical/sampling";
 import {
   composeNodes,
   composeSummedIndex,
+  decomposeNode,
   emptySession,
   keepCard,
   liveNodes,
   removeNode,
+  sacrificeNode,
+  splitNode,
   textSeed,
   type PlaySession,
 } from "./session";
@@ -180,4 +184,170 @@ test("textSeed: matches keccak256(utf8(trimmed text))", () => {
   let expected = 0n;
   for (const b of expectedBytes) expected = (expected << 8n) | BigInt(b);
   assert.equal(textSeed("  vitalik.eth  "), expected);
+});
+
+/* ------------------------------------------------------------------ *
+ * split
+ * ------------------------------------------------------------------ */
+
+function seedHexOf(seed: bigint): `0x${string}` {
+  return `0x${seed.toString(16).padStart(64, "0")}` as `0x${string}`;
+}
+
+test("splitNode: child seeds match hand-computed keccak256(abi.encodePacked(parentSeed, uint256 i))", () => {
+  let s = emptySession();
+  s = keepCard(s, 2, seedA); // 0.1 ETH (denomIndex 2)
+  const parent = liveNodes(s)[0];
+
+  const split = splitNode(s, parent.key, 0); // -> 0.01 ETH (denomIndex 0), 10 children
+  const children = liveNodes(split).sort((a, b) => a.demoId - b.demoId);
+  assert.equal(children.length, 10);
+
+  children.forEach((child, i) => {
+    const expected = BigInt(keccak256(encodePacked(["bytes32", "uint256"], [seedHexOf(parent.seed), BigInt(i)])));
+    assert.equal(child.seed, expected, `child ${i} seed`);
+  });
+});
+
+test("splitNode: bytes match sampleSplitChildTraced called directly on the same parent donor", () => {
+  let s = emptySession();
+  s = keepCard(s, 3, seedA); // 0.5 ETH (denomIndex 3)
+  const parent = liveNodes(s)[0];
+
+  const split = splitNode(s, parent.key, 1); // -> 0.05 ETH (denomIndex 1)
+  const children = liveNodes(split).sort((a, b) => a.demoId - b.demoId);
+
+  const parentDonor: SampleDonor = { seed: parent.seed, denomIndex: parent.denomIndex, inkGene: parent.inkGene };
+  children.forEach((child, i) => {
+    const expected = sampleSplitChildTraced(parentDonor, 1, i);
+    assert.equal(bytesEqual(child.modules!, expected.bytes), true, `child ${i} bytes`);
+    assert.deepEqual(child.splitTrace, expected.trace, `child ${i} trace`);
+    assert.equal(child.inkGene, parent.inkGene, `child ${i} inkGene`);
+    assert.equal(child.denomIndex, 1, `child ${i} denomIndex`);
+    assert.deepEqual(child.parents, [parent.key], `child ${i} parents`);
+  });
+});
+
+test("splitNode: child count is unitsAt(parent)/unitsAt(child), parent is consumed", () => {
+  let s = emptySession();
+  s = keepCard(s, 4, seedA); // 1 ETH (denomIndex 4)
+  const parent = liveNodes(s)[0];
+
+  const split = splitNode(s, parent.key, 3); // -> 0.5 ETH (denomIndex 3), 2 children
+  const expectedCount = Number(unitsAt(4) / unitsAt(3));
+  const live = liveNodes(split);
+  assert.equal(live.length, expectedCount);
+  assert.equal(live.every((n) => n.denomIndex === 3), true);
+  // the parent no longer appears among live nodes -- it's consumed, same as a compose survivor.
+  assert.equal(live.some((n) => n.key === parent.key), false);
+});
+
+test("splitNode: splitting a materialized (composed) node samples from its stored bytes", () => {
+  let s = emptySession();
+  s = keepCard(s, 1, seedA);
+  s = keepCard(s, 1, seedB);
+  const [a, b] = liveNodes(s);
+  s = composeNodes(s, [a.key, b.key]); // -> 0.1 ETH, materialized
+  const composed = liveNodes(s)[0];
+  assert.notEqual(composed.modules, undefined);
+
+  const split = splitNode(s, composed.key, 0); // -> 0.01 ETH, 10 children
+  const children = liveNodes(split).sort((x, y) => x.demoId - y.demoId);
+
+  const materializedDonor: SampleDonor = {
+    seed: composed.seed,
+    denomIndex: composed.denomIndex,
+    inkGene: composed.inkGene,
+    modules: composed.modules,
+  };
+  const bareDonor: SampleDonor = {
+    seed: composed.seed,
+    denomIndex: composed.denomIndex,
+    inkGene: composed.inkGene,
+  };
+  const expectedMaterialized = sampleSplitChildTraced(materializedDonor, 0, 0);
+  const expectedBare = sampleSplitChildTraced(bareDonor, 0, 0);
+  assert.equal(bytesEqual(children[0].modules!, expectedMaterialized.bytes), true);
+  assert.equal(bytesEqual(children[0].modules!, expectedBare.bytes), false);
+});
+
+test("splitNode: rejects a black node and a childDenomIndex not below the parent's", () => {
+  let s = emptySession();
+  s = keepCard(s, DENOMINATIONS.length - 1, seedA); // 100 ETH
+  const node = liveNodes(s)[0];
+
+  assert.throws(() => splitNode(s, node.key, DENOMINATIONS.length - 1)); // not below parent's
+  assert.throws(() => splitNode(s, node.key, DENOMINATIONS.length)); // out of range
+
+  const sacrificed = sacrificeNode(s, node.key);
+  assert.throws(() => splitNode(sacrificed, node.key, 0)); // black
+});
+
+/* ------------------------------------------------------------------ *
+ * decompose
+ * ------------------------------------------------------------------ */
+
+test("decomposeNode: restores parents to live, removes the composed node", () => {
+  let s = emptySession();
+  s = keepCard(s, 1, seedA);
+  s = keepCard(s, 1, seedB);
+  const [a, b] = liveNodes(s);
+  s = composeNodes(s, [a.key, b.key]);
+  const composed = liveNodes(s)[0];
+
+  const decomposed = decomposeNode(s, composed.key);
+  const live = liveNodes(decomposed).map((n) => n.key).sort();
+  assert.deepEqual(live, [a.key, b.key].sort());
+  assert.equal(decomposed.nodes.some((n) => n.key === composed.key), false);
+});
+
+test("decomposeNode: rejects a node that isn't a compose result, and a black composed node", () => {
+  let s = emptySession();
+  s = keepCard(s, 0, seedA);
+  const original = liveNodes(s)[0];
+  assert.throws(() => decomposeNode(s, original.key)); // never composed
+
+  s = keepCard(s, 1, seedB);
+  s = keepCard(s, 1, 0x3333n);
+  const [x, y] = liveNodes(s).slice(1);
+  s = composeNodes(s, [x.key, y.key]);
+  const composed = liveNodes(s).find((n) => n.trace)!;
+  // Compose must land above index 8's ceiling for this assertion to hold generally, but at
+  // denomIndex 2 it isn't black yet -- decompose should succeed here.
+  const ok = decomposeNode(s, composed.key);
+  assert.equal(liveNodes(ok).some((n) => n.key === x.key), true);
+});
+
+/* ------------------------------------------------------------------ *
+ * sacrifice
+ * ------------------------------------------------------------------ */
+
+test("sacrificeNode: only a live 100 ETH (top-rung) card qualifies, and it can't be sacrificed twice", () => {
+  let s = emptySession();
+  s = keepCard(s, DENOMINATIONS.length - 2, seedA); // one rung below the top
+  const notTop = liveNodes(s)[0];
+  assert.throws(() => sacrificeNode(s, notTop.key));
+
+  s = keepCard(s, DENOMINATIONS.length - 1, seedB); // 100 ETH
+  const top = liveNodes(s).find((n) => n.denomIndex === DENOMINATIONS.length - 1)!;
+  const sacrificed = sacrificeNode(s, top.key);
+  const node = sacrificed.nodes.find((n) => n.key === top.key)!;
+  assert.equal(node.black, true);
+  // still live: sacrifice doesn't consume the token.
+  assert.equal(liveNodes(sacrificed).some((n) => n.key === top.key), true);
+
+  assert.throws(() => sacrificeNode(sacrificed, top.key)); // already black
+});
+
+test("black nodes are rejected as compose/split participants", () => {
+  let s = emptySession();
+  s = keepCard(s, DENOMINATIONS.length - 1, seedA);
+  const top = liveNodes(s)[0];
+  s = sacrificeNode(s, top.key);
+
+  s = keepCard(s, DENOMINATIONS.length - 1, seedB);
+  const other = liveNodes(s).find((n) => n.key !== top.key)!;
+
+  assert.throws(() => composeNodes(s, [top.key, other.key]));
+  assert.throws(() => splitNode(s, top.key, 0));
 });

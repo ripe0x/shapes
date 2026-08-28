@@ -31,12 +31,15 @@
  * relabeling.
  */
 
-import { DENOMINATIONS } from "../canonical/denominations";
+import { DENOMINATIONS, unitsAt } from "../canonical/denominations";
 import {
   composeNodes,
+  decomposeNode,
   emptySession,
   keepCard,
   liveNodes,
+  sacrificeNode,
+  splitNode,
   textSeed,
   type PlayNode,
   type PlaySession,
@@ -53,7 +56,21 @@ interface CardOpJson {
 interface ComposeOpJson {
   x: number[];
 }
-type OpJson = CardOpJson | ComposeOpJson;
+/** Split op: `p: [parentId, childDenomIndex]`, `parentId` the replay id of the parent card. One
+ *  op covers a whole split call (every child it produces), not one op per child — mirrors
+ *  `splitNode`, which creates all of a split's children atomically. */
+interface SplitOpJson {
+  p: [number, number];
+}
+/** Decompose op: `u: id`, the replay id of the composed card being decomposed. */
+interface DecomposeOpJson {
+  u: number;
+}
+/** Sacrifice op: `k: id`, the replay id of the card being sacrificed. */
+interface SacrificeOpJson {
+  k: number;
+}
+type OpJson = CardOpJson | ComposeOpJson | SplitOpJson | DecomposeOpJson | SacrificeOpJson;
 
 interface WireJson {
   v: 1;
@@ -122,29 +139,61 @@ export function sessionShareable(s: PlaySession): boolean {
 
 /* ---------------- encode ---------------- */
 
-/** Node key -> the id a fresh replay would assign it (see file header). Card nodes get the next
- *  sequential integer in creation order; a compose result inherits its survivor's id (parents[0]
- *  is always the survivor, per session.ts's canonical donor order). */
+/** Node key -> the id a fresh replay would assign it (see file header). Card nodes and split
+ *  children each get the next sequential integer in creation order; a compose result inherits
+ *  its survivor's id (parents[0] is always the survivor, per session.ts's canonical donor
+ *  order). Split children are distinguished from a compose result by `splitTrace` (compose-only
+ *  `trace` never coexists with it) — each gets its own fresh id, not the parent's. */
 function replayIds(nodes: readonly PlayNode[]): Map<number, number> {
   const ids = new Map<number, number>();
   let next = 1;
   for (const n of nodes) {
-    ids.set(n.key, n.parents ? ids.get(n.parents[0])! : next++);
+    if (n.parents && !n.splitTrace) {
+      ids.set(n.key, ids.get(n.parents[0])!);
+    } else {
+      ids.set(n.key, next++);
+    }
   }
   return ids;
 }
 
+/**
+ * Walks `s.nodes` in creation order and emits one op per node, plus a trailing `k` op for any
+ * node left black (see file header). Split children are the one grouping exception: a split
+ * produces several sibling nodes in one atomic call (`splitNode`), sharing the same single-entry
+ * `parents`, so they collapse back into the one `p` op that produced them rather than one op
+ * each. A decomposed compose result leaves no trace to encode — `decomposeNode` deletes it from
+ * `s.nodes` outright (mirroring `removeNode`), so the cards it consumed simply reappear as
+ * whatever created them, exactly as if the compose had never happened. No `u` op is needed to
+ * reproduce that; decode still accepts one (see below) for a session state this encoder doesn't
+ * itself produce.
+ */
 export function encodeSession(s: PlaySession): string {
   const ids = replayIds(s.nodes);
-  const ops: OpJson[] = s.nodes.map((n) => {
+  const ops: OpJson[] = [];
+  for (let i = 0; i < s.nodes.length; i++) {
+    const n = s.nodes[i];
+
+    if (n.splitTrace) {
+      const parentKey = n.parents![0];
+      const parentNode = s.nodes.find((x) => x.key === parentKey)!;
+      const childCount = Number(unitsAt(parentNode.denomIndex) / unitsAt(n.denomIndex));
+      ops.push({ p: [ids.get(parentKey)!, n.denomIndex] });
+      i += childCount - 1; // the rest of this split's children are implied by the `p` op
+      continue;
+    }
+
     if (!n.parents) {
       const c: CardOpJson["c"] = { d: n.denomIndex };
       if (n.seedText) c.t = n.seedText;
       else c.s = n.seed.toString(16).padStart(64, "0");
-      return { c };
+      ops.push({ c });
+    } else {
+      ops.push({ x: n.parents.map((k) => ids.get(k)!) });
     }
-    return { x: n.parents.map((k) => ids.get(k)!) };
-  });
+
+    if (n.black) ops.push({ k: ids.get(n.key)! });
+  }
   const wire: WireJson = { v: 1, ops };
   const bytes = new TextEncoder().encode(JSON.stringify(wire));
   return bytesToBase64Url(bytes);
@@ -170,10 +219,13 @@ export function decodeSession(text: string): PlaySession {
     let session = emptySession();
     for (const rawOp of wire.ops) {
       if (typeof rawOp !== "object" || rawOp === null) return emptySession();
-      const op = rawOp as { c?: unknown; x?: unknown };
+      const op = rawOp as { c?: unknown; x?: unknown; p?: unknown; u?: unknown; k?: unknown };
       const hasC = op.c !== undefined;
       const hasX = op.x !== undefined;
-      if (hasC === hasX) return emptySession(); // exactly one of c/x
+      const hasP = op.p !== undefined;
+      const hasU = op.u !== undefined;
+      const hasK = op.k !== undefined;
+      if ([hasC, hasX, hasP, hasU, hasK].filter(Boolean).length !== 1) return emptySession(); // exactly one op kind
 
       if (hasC) {
         if (typeof op.c !== "object" || op.c === null) return emptySession();
@@ -198,7 +250,7 @@ export function decodeSession(text: string): PlaySession {
           seed = BigInt("0x" + hex);
         }
         session = keepCard(session, c.d as number, seed, seedText);
-      } else {
+      } else if (hasX) {
         if (!Array.isArray(op.x) || op.x.length < 2 || !op.x.every((v) => Number.isInteger(v))) {
           return emptySession();
         }
@@ -209,7 +261,36 @@ export function decodeSession(text: string): PlaySession {
         const resolved = (op.x as number[]).map((id) => live.find((n) => n.demoId === id)?.key);
         if (resolved.some((k) => k === undefined)) return emptySession();
         session = composeNodes(session, resolved as number[]);
+      } else if (hasP) {
+        if (
+          !Array.isArray(op.p) ||
+          op.p.length !== 2 ||
+          !op.p.every((v) => Number.isInteger(v))
+        ) {
+          return emptySession();
+        }
+        const [parentId, childDenomIndex] = op.p as [number, number];
+        if (childDenomIndex < 0 || childDenomIndex >= DENOMINATIONS.length) return emptySession();
+        const live = liveNodes(session);
+        const parentKey = live.find((n) => n.demoId === parentId)?.key;
+        if (parentKey === undefined) return emptySession();
+        session = splitNode(session, parentKey, childDenomIndex);
+      } else if (hasU) {
+        if (!Number.isInteger(op.u)) return emptySession();
+        const live = liveNodes(session);
+        const key = live.find((n) => n.demoId === op.u)?.key;
+        if (key === undefined) return emptySession();
+        session = decomposeNode(session, key);
+      } else {
+        if (!Number.isInteger(op.k)) return emptySession();
+        const live = liveNodes(session);
+        const key = live.find((n) => n.demoId === op.k)?.key;
+        if (key === undefined) return emptySession();
+        session = sacrificeNode(session, key);
       }
+      // A single `p` op can add many nodes at once (a split's whole child set); re-check the
+      // same node cap `sessionShareable` enforces so a hostile URL can't force a huge replay.
+      if (session.nodes.length > MAX_OPS) return emptySession();
     }
     return session;
   } catch {

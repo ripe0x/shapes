@@ -1,29 +1,36 @@
 import React from "react";
 import { C, FONT, label as labelStyle } from "../site/theme";
-import { forDisplay } from "../app/ui";
+import { forDisplay, C as PROV_C } from "../app/ui";
 import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/provenance";
 import { CANONICAL } from "../canonical/params";
 import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
 import { WAD } from "../canonical/wad";
 import type { ComposeTraceCell } from "../canonical/sampling";
-import { DENOMINATIONS, GRIDS, LABELS, UNIT } from "../canonical/denominations";
+import { DENOMINATIONS, GRIDS, LABELS, UNIT, unitsAt } from "../canonical/denominations";
 import { geneAtMint } from "../canonical/ink";
 import { decodeModuleByte } from "../canonical/moduleCodec";
 import {
   composeNodes,
   composeSummedIndex,
+  decomposeNode,
   emptySession,
   keepCard,
   liveNodes,
   nodeComposition,
   randomSeed,
   removeNode,
+  sacrificeNode,
+  splitNode,
   textSeed,
   type PlayNode,
   type PlaySession,
 } from "./session";
 import { decodeSession, encodeSession, sessionShareable } from "./urlCodec";
 import { downloadCardPng, downloadComposeGif, downloadLadderPng, downloadSquarePng } from "./exports";
+
+/** Split's single-donor highlight color, matching provenance.tsx's convention for split
+ *  provenance (`cellStyleAt`/`cellDetailAt`): one warn-color highlight, no per-donor tints. */
+const SPLIT_COLOR = PROV_C.warn;
 
 /**
  * The Playground (`/play`): a chain-free demo of the two ideas the collection is built on —
@@ -320,16 +327,202 @@ function ShareLink() {
  * Beat 2 — tray
  * ------------------------------------------------------------------ */
 
-function TrayBeat({
-  nodes,
+/** Which card's inline tray menu is open, and which kind (the split tier picker or the
+ *  sacrifice confirmation). Only one card's menu is open at a time. */
+type TrayMenu = { key: number; kind: "split" | "sacrifice" } | null;
+
+/** The one-row split tier picker: one button per denomination below the card, labeled with its
+ *  child count. A tier is disabled, with the same "share link is full" reason `keepDisabled`
+ *  uses, whenever splitting into it would push the session past what a share link can carry. */
+function SplitPicker({
+  node,
+  session,
+  onSplit,
+  onCancel,
+}: {
+  node: PlayNode;
+  session: PlaySession;
+  onSplit: (childDenomIndex: number) => void;
+  onCancel: () => void;
+}) {
+  const options = React.useMemo(() => {
+    const opts: { i: number; count: number; shareable: boolean }[] = [];
+    for (let i = 0; i < node.denomIndex; i++) {
+      const count = Number(unitsAt(node.denomIndex) / unitsAt(i));
+      let shareable: boolean;
+      try {
+        shareable = sessionShareable(splitNode(session, node.key, i));
+      } catch {
+        shareable = false;
+      }
+      opts.push({ i, count, shareable });
+    }
+    return opts;
+  }, [node, session]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, width: 180 }}>
+      <Prose>Backing divides exactly. Every child cell samples from the parent.</Prose>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        {options.map(({ i, count, shareable }) => (
+          <PlayButton key={i} small disabled={!shareable} onClick={() => onSplit(i)}>
+            {LABELS[i]} ×{count}
+          </PlayButton>
+        ))}
+      </div>
+      {options.some((o) => !o.shareable) && (
+        <div style={{ ...mono, fontSize: 10, color: C.muted }}>
+          The share link is full. Remove a card to continue.
+        </div>
+      )}
+      <PlayButton small onClick={onCancel}>
+        Cancel
+      </PlayButton>
+    </div>
+  );
+}
+
+function SacrificeConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6, width: 200 }}>
+      <Prose>
+        Sacrifice sends the Shape&apos;s 100 ETH to an address no one can spend from. The card stays,
+        black. On chain this requires a complete 100 ETH Shape: 10,000 independent origins.
+      </Prose>
+      <div style={{ display: "flex", gap: 6 }}>
+        <PlayButton small onClick={onConfirm}>
+          Sacrifice
+        </PlayButton>
+        <PlayButton small onClick={onCancel}>
+          Cancel
+        </PlayButton>
+      </div>
+    </div>
+  );
+}
+
+function TrayCard({
+  node,
+  session,
   selected,
+  menu,
   onToggle,
   onRemove,
+  onOpenMenu,
+  onSplit,
+  onDecompose,
+  onSacrifice,
 }: {
-  nodes: PlayNode[];
-  selected: Set<number>;
+  node: PlayNode;
+  session: PlaySession;
+  selected: boolean;
+  menu: TrayMenu;
   onToggle: (key: number) => void;
   onRemove: (key: number) => void;
+  onOpenMenu: (menu: TrayMenu) => void;
+  onSplit: (key: number, childDenomIndex: number) => void;
+  onDecompose: (key: number) => void;
+  onSacrifice: (key: number) => void;
+}) {
+  const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
+  const isTop = node.denomIndex === DENOMINATIONS.length - 1;
+  const showDecompose = node.trace != null && !node.black;
+  const showRemove = !showDecompose;
+  const menuOpen = menu?.key === node.key ? menu.kind : null;
+
+  return (
+    <div style={{ position: "relative", width: 128 }}>
+      <RawCard
+        svg={svg}
+        width="100%"
+        selected={selected}
+        onClick={node.black ? undefined : () => onToggle(node.key)}
+        caption={
+          node.black
+            ? `#${node.demoId} · Black`
+            : `#${node.demoId} · ${LABELS[node.denomIndex]} ETH`
+        }
+      />
+      {showRemove && (
+        <button
+          onClick={() => onRemove(node.key)}
+          title="remove"
+          style={{
+            ...mono,
+            position: "absolute",
+            top: 2,
+            right: 2,
+            fontSize: 10,
+            lineHeight: 1,
+            padding: "2px 5px",
+            border: "none",
+            background: "rgba(0,0,0,0.55)",
+            color: C.ink,
+            cursor: "pointer",
+          }}
+        >
+          ×
+        </button>
+      )}
+      {!node.black && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+          {node.denomIndex > 0 && (
+            <PlayButton small onClick={() => onOpenMenu(menuOpen === "split" ? null : { key: node.key, kind: "split" })}>
+              Split
+            </PlayButton>
+          )}
+          {showDecompose && (
+            <PlayButton small onClick={() => onDecompose(node.key)}>
+              Decompose
+            </PlayButton>
+          )}
+          {isTop && (
+            <PlayButton
+              small
+              onClick={() => onOpenMenu(menuOpen === "sacrifice" ? null : { key: node.key, kind: "sacrifice" })}
+            >
+              Sacrifice
+            </PlayButton>
+          )}
+        </div>
+      )}
+      {menuOpen === "split" && (
+        <SplitPicker
+          node={node}
+          session={session}
+          onSplit={(childDenomIndex) => onSplit(node.key, childDenomIndex)}
+          onCancel={() => onOpenMenu(null)}
+        />
+      )}
+      {menuOpen === "sacrifice" && (
+        <SacrificeConfirm onConfirm={() => onSacrifice(node.key)} onCancel={() => onOpenMenu(null)} />
+      )}
+    </div>
+  );
+}
+
+function TrayBeat({
+  nodes,
+  session,
+  selected,
+  menu,
+  onToggle,
+  onRemove,
+  onOpenMenu,
+  onSplit,
+  onDecompose,
+  onSacrifice,
+}: {
+  nodes: PlayNode[];
+  session: PlaySession;
+  selected: Set<number>;
+  menu: TrayMenu;
+  onToggle: (key: number) => void;
+  onRemove: (key: number) => void;
+  onOpenMenu: (menu: TrayMenu) => void;
+  onSplit: (key: number, childDenomIndex: number) => void;
+  onDecompose: (key: number) => void;
+  onSacrifice: (key: number) => void;
 }) {
   return (
     <section style={sectionStyle}>
@@ -340,39 +533,21 @@ function TrayBeat({
         <div style={{ ...mono, fontSize: 11, color: C.muted }}>—</div>
       ) : (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
-          {nodes.map((n) => {
-            const svg = svgFromComposition(nodeComposition(n), 0n, CANONICAL, false);
-            return (
-              <div key={n.key} style={{ position: "relative", width: 92 }}>
-                <RawCard
-                  svg={svg}
-                  width="100%"
-                  selected={selected.has(n.key)}
-                  onClick={() => onToggle(n.key)}
-                  caption={`#${n.demoId} · ${LABELS[n.denomIndex]} ETH`}
-                />
-                <button
-                  onClick={() => onRemove(n.key)}
-                  title="remove"
-                  style={{
-                    ...mono,
-                    position: "absolute",
-                    top: 2,
-                    right: 2,
-                    fontSize: 10,
-                    lineHeight: 1,
-                    padding: "2px 5px",
-                    border: "none",
-                    background: "rgba(0,0,0,0.55)",
-                    color: C.ink,
-                    cursor: "pointer",
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            );
-          })}
+          {nodes.map((n) => (
+            <TrayCard
+              key={n.key}
+              node={n}
+              session={session}
+              selected={selected.has(n.key)}
+              menu={menu}
+              onToggle={onToggle}
+              onRemove={onRemove}
+              onOpenMenu={onOpenMenu}
+              onSplit={onSplit}
+              onDecompose={onDecompose}
+              onSacrifice={onSacrifice}
+            />
+          ))}
         </div>
       )}
       {nodes.length > 0 && <ShareLink />}
@@ -456,11 +631,13 @@ function RevealOverlay({ composition, trace }: { composition: Composition; trace
 function ComposeResultCard({
   composition,
   trace,
+  inverted,
 }: {
   composition: Composition;
   trace: ComposeTraceCell[] | null;
+  inverted: boolean;
 }) {
-  const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, false), [composition]);
+  const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, inverted), [composition, inverted]);
   return (
     <div
       style={{
@@ -511,6 +688,9 @@ function ComposeBeat({
   const canCompose = reason === null;
 
   const resultComposition = React.useMemo(() => (lastResult ? nodeComposition(lastResult) : null), [lastResult]);
+  // Exports of a black (sacrificed) result default to inverted, regardless of the manual toggle
+  // below (which still lets a visitor invert a non-black result's exports).
+  const effectiveInverted = inverted || lastResult?.black === true;
 
   const [gifBusy, setGifBusy] = React.useState<string | null>(null);
 
@@ -518,7 +698,7 @@ function ComposeBeat({
     if (!lastResult) return;
     setGifBusy("rendering…");
     try {
-      await downloadComposeGif(lastResult, LABELS[lastResult.denomIndex], inverted, (done, total) =>
+      await downloadComposeGif(lastResult, LABELS[lastResult.denomIndex], effectiveInverted, (done, total) =>
         setGifBusy(`rendering ${done}/${total}…`),
       );
     } catch (e) {
@@ -550,13 +730,23 @@ function ComposeBeat({
       {lastResult && resultComposition && (
         <div key={lastResult.key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ width: "min(320px, 80vw)" }}>
-            <ComposeResultCard composition={resultComposition} trace={lastResult.trace ?? null} />
+            <ComposeResultCard
+              composition={resultComposition}
+              trace={lastResult.trace ?? null}
+              inverted={lastResult.black === true}
+            />
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <PlayButton small onClick={() => downloadCardPng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, inverted)}>
+            <PlayButton
+              small
+              onClick={() => downloadCardPng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, effectiveInverted)}
+            >
               Card PNG
             </PlayButton>
-            <PlayButton small onClick={() => downloadSquarePng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, inverted)}>
+            <PlayButton
+              small
+              onClick={() => downloadSquarePng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, effectiveInverted)}
+            >
               Square PNG
             </PlayButton>
             <PlayButton small disabled={gifBusy !== null} onClick={handleGif}>
@@ -567,7 +757,9 @@ function ComposeBeat({
             </PlayButton>
           </div>
           <Prose>
-            Composed from {lastResult.parents?.length ?? 0} Shapes. Every cell sampled from a parent.
+            {lastResult.black
+              ? "Black."
+              : `Composed from ${lastResult.parents?.length ?? 0} Shapes. Every cell sampled from a parent.`}
           </Prose>
         </div>
       )}
@@ -590,9 +782,9 @@ function LineageNode({
   focusedKey: number | null;
   onSelect: (key: number) => void;
 }) {
-  const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, false);
+  const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
-  const selectable = node.trace != null;
+  const selectable = node.trace != null || node.splitTrace != null;
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
       {parents.length > 0 && (
@@ -618,7 +810,10 @@ function LineageNode({
 
 function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, PlayNode> }) {
   const composition = nodeComposition(node);
-  const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, false), [composition]);
+  const svg = React.useMemo(
+    () => svgFromComposition(composition, 0n, CANONICAL, node.black === true),
+    [composition, node.black],
+  );
   const trace = node.trace!;
   const donorNodes = (node.parents ?? []).map((k) => byKey.get(k)!);
   const donorLabels = donorNodes.map((n) => `#${n.demoId}`);
@@ -710,7 +905,7 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         {donorNodes.map((d, i) => {
           const dc = nodeComposition(d);
-          const dsvg = svgFromComposition(dc, 0n, CANONICAL, false);
+          const dsvg = svgFromComposition(dc, 0n, CANONICAL, d.black === true);
           return (
             <div key={d.key} style={{ width: 120 }}>
               <div
@@ -750,19 +945,143 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
   );
 }
 
+/** Split's cell explorer: the compose explorer's single-donor counterpart. One donor (the
+ *  parent), so cells highlight in the split provenance convention -- one warn color, no per-donor
+ *  tints (see provenance.tsx's `cellStyleAt`/`cellDetailAt`) -- rather than `donorColor`. */
+function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, PlayNode> }) {
+  const composition = nodeComposition(node);
+  const svg = React.useMemo(
+    () => svgFromComposition(composition, 0n, CANONICAL, node.black === true),
+    [composition, node.black],
+  );
+  const trace = node.splitTrace!;
+  const parent = byKey.get(node.parents![0])!;
+  const parentComposition = nodeComposition(parent);
+  const parentSvg = React.useMemo(
+    () => svgFromComposition(parentComposition, 0n, CANONICAL, parent.black === true),
+    [parentComposition, parent.black],
+  );
+
+  const { active, onEnter, onLeave, onClickCell } = useActiveCell();
+  const [hoverParentCell, setHoverParentCell] = React.useState<number | null>(null);
+
+  const resultCellsByParentModule = React.useMemo(() => {
+    const map = new Map<number, number[]>();
+    trace.forEach((cell, j) => {
+      const list = map.get(cell.moduleIndex) ?? [];
+      list.push(j);
+      map.set(cell.moduleIndex, list);
+    });
+    return map;
+  }, [trace]);
+
+  const highlighted = React.useMemo(() => {
+    if (hoverParentCell != null) return new Set(resultCellsByParentModule.get(hoverParentCell) ?? []);
+    if (active != null) return new Set([active]);
+    return new Set<number>();
+  }, [hoverParentCell, active, resultCellsByParentModule]);
+
+  const activeCell = active != null ? trace[active] : null;
+
+  return (
+    <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
+      <div style={{ width: "min(280px, 80vw)" }}>
+        <div
+          style={{
+            position: "relative",
+            aspectRatio: "2.5 / 3.5",
+            background: C.art,
+            overflow: "hidden",
+            lineHeight: 0,
+            border: `1px solid ${C.border}`,
+          }}
+        >
+          <div dangerouslySetInnerHTML={{ __html: forDisplay(svg) }} />
+          <GridOverlayCells
+            cols={composition.cols}
+            rows={composition.rows}
+            cell={composition.cell}
+            x0={composition.x0}
+            y0={composition.y0}
+            cellStyle={(j) => {
+              const isHighlighted = highlighted.has(j);
+              return {
+                background: `${SPLIT_COLOR}4d`,
+                outline: `${isHighlighted ? 2 : 1}px solid ${SPLIT_COLOR}${isHighlighted ? "" : "55"}`,
+                outlineOffset: -1,
+              };
+            }}
+            onEnter={(j) => {
+              setHoverParentCell(null);
+              onEnter(j);
+            }}
+            onLeave={onLeave}
+            onClickCell={onClickCell}
+          />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {activeCell && (
+          <PlayDetailPanel
+            label={`#${parent.demoId}`}
+            moduleIndex={activeCell.moduleIndex}
+            byte={activeCell.byte}
+            color={SPLIT_COLOR}
+          />
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div style={{ width: 120 }}>
+          <div
+            style={{
+              position: "relative",
+              aspectRatio: "2.5 / 3.5",
+              background: C.art,
+              overflow: "hidden",
+              lineHeight: 0,
+              border: `1px solid ${C.border}`,
+            }}
+          >
+            <div dangerouslySetInnerHTML={{ __html: forDisplay(parentSvg) }} />
+            <GridOverlayCells
+              cols={parentComposition.cols}
+              rows={parentComposition.rows}
+              cell={parentComposition.cell}
+              x0={parentComposition.x0}
+              y0={parentComposition.y0}
+              cellStyle={(j) => {
+                const isActive = activeCell != null && activeCell.moduleIndex === j;
+                if (!isActive) return undefined;
+                return { outline: `2px solid ${SPLIT_COLOR}`, outlineOffset: -1, background: `${SPLIT_COLOR}33` };
+              }}
+              onEnter={(j) => setHoverParentCell(j)}
+              onLeave={() => setHoverParentCell(null)}
+            />
+          </div>
+          <div style={{ ...mono, fontSize: 9.5, color: C.muted, textAlign: "center", marginTop: 6 }}>
+            #{parent.demoId}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LineageBeat({ session }: { session: PlaySession }) {
   const byKey = React.useMemo(() => new Map(session.nodes.map((n) => [n.key, n])), [session.nodes]);
   const tips = liveNodes(session);
-  const mostRecentComposed = React.useMemo(() => {
+  const mostRecentProduced = React.useMemo(() => {
     for (let i = session.nodes.length - 1; i >= 0; i--) {
-      if (session.nodes[i].trace) return session.nodes[i];
+      if (session.nodes[i].trace || session.nodes[i].splitTrace) return session.nodes[i];
     }
     return null;
   }, [session.nodes]);
   const [focusedKey, setFocusedKey] = React.useState<number | null>(null);
   React.useEffect(() => {
-    if (mostRecentComposed) setFocusedKey(mostRecentComposed.key);
-  }, [mostRecentComposed?.key]);
+    if (mostRecentProduced) setFocusedKey(mostRecentProduced.key);
+  }, [mostRecentProduced?.key]);
 
   const focusedNode = focusedKey != null ? byKey.get(focusedKey) ?? null : null;
 
@@ -771,13 +1090,14 @@ function LineageBeat({ session }: { session: PlaySession }) {
   return (
     <section style={sectionStyle}>
       <SectionLabel>Lineage</SectionLabel>
-      <Prose>This session&apos;s compose history.</Prose>
+      <Prose>This session&apos;s compose and split history.</Prose>
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "18px 0 28px" }}>
         {tips.map((tip) => (
           <LineageNode key={tip.key} node={tip} byKey={byKey} focusedKey={focusedKey} onSelect={setFocusedKey} />
         ))}
       </div>
       {focusedNode && focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
+      {focusedNode && focusedNode.splitTrace && <SplitCellExplorer node={focusedNode} byKey={byKey} />}
     </section>
   );
 }
@@ -803,6 +1123,8 @@ export function PlayApp() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [composeError, setComposeError] = React.useState<string | null>(null);
   const [hydrated, setHydrated] = React.useState(false);
+  // Which tray card's split picker or sacrifice confirmation is open, if any.
+  const [menu, setMenu] = React.useState<TrayMenu>(null);
   // Exports-only: Card/Square/Ladder PNG and GIF render inverted when set. On-page cards never
   // invert, so this never touches anything the visitor is looking at directly.
   const [inverted, setInverted] = React.useState(false);
@@ -877,6 +1199,35 @@ export function PlayApp() {
       next.delete(key);
       return next;
     });
+    setMenu((m) => (m?.key === key ? null : m));
+  };
+
+  const handleSplit = (key: number, childDenomIndex: number) => {
+    try {
+      const next = splitNode(session, key, childDenomIndex);
+      if (!sessionShareable(next)) return; // SplitPicker already disables this tier; ignore a stale click.
+      setSession(next);
+      setMenu(null);
+    } catch (e) {
+      console.error("split failed", e);
+    }
+  };
+
+  const handleDecompose = (key: number) => {
+    try {
+      setSession(decomposeNode(session, key));
+    } catch (e) {
+      console.error("decompose failed", e);
+    }
+  };
+
+  const handleSacrifice = (key: number) => {
+    try {
+      setSession(sacrificeNode(session, key));
+      setMenu(null);
+    } catch (e) {
+      console.error("sacrifice failed", e);
+    }
   };
 
   const handleCompose = () => {
@@ -945,7 +1296,18 @@ export function PlayApp() {
           onToggleInverted={() => setInverted((v) => !v)}
         />
 
-        <TrayBeat nodes={nodes} selected={selected} onToggle={handleToggle} onRemove={handleRemove} />
+        <TrayBeat
+          nodes={nodes}
+          session={session}
+          selected={selected}
+          menu={menu}
+          onToggle={handleToggle}
+          onRemove={handleRemove}
+          onOpenMenu={setMenu}
+          onSplit={handleSplit}
+          onDecompose={handleDecompose}
+          onSacrifice={handleSacrifice}
+        />
 
         <ComposeBeat
           nodes={nodes}

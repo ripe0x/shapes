@@ -5,8 +5,11 @@ import {
   emptySession,
   keepCard,
   composeNodes,
+  decomposeNode,
   liveNodes,
   removeNode,
+  sacrificeNode,
+  splitNode,
   textSeed,
   type PlaySession,
 } from "./session";
@@ -38,6 +41,8 @@ function assertSessionsEqual(a: PlaySession, b: PlaySession) {
     assert.equal(na.seed, nb.seed, `node ${i} seed`);
     assert.equal(bytesEqual(na.modules, nb.modules), true, `node ${i} modules`);
     assert.deepEqual(na.trace, nb.trace, `node ${i} trace`);
+    assert.deepEqual(na.splitTrace, nb.splitTrace, `node ${i} splitTrace`);
+    assert.equal(na.black, nb.black, `node ${i} black`);
   }
 }
 
@@ -121,6 +126,99 @@ test("round trip: a card removed before a later keep still decodes to the same a
     assert.equal(decodedResult.trace![j].moduleIndex, originalResult.trace![j].moduleIndex);
     assert.equal(decodedResult.trace![j].byte, originalResult.trace![j].byte);
   }
+});
+
+test("round trip: split", () => {
+  let s = emptySession();
+  s = keepCard(s, 1, 0x1111n); // 0.05 ETH
+  const parent = liveNodes(s)[0];
+  s = splitNode(s, parent.key, 0); // -> 5 x 0.01 ETH
+
+  const decoded = decodeSession(encodeSession(s));
+  assertSessionsEqual(s, decoded);
+  assert.equal(liveNodes(decoded).length, 5);
+  assert.equal(liveNodes(decoded).every((n) => n.denomIndex === 0), true);
+});
+
+test("round trip: sacrifice", () => {
+  let s = emptySession();
+  s = keepCard(s, 8, 0x1111n); // 100 ETH (top rung)
+  const top = liveNodes(s)[0];
+  s = sacrificeNode(s, top.key);
+
+  const decoded = decodeSession(encodeSession(s));
+  assertSessionsEqual(s, decoded);
+  assert.equal(liveNodes(decoded)[0].black, true);
+});
+
+test("round trip: decompose leaves no wire footprint -- the decomposed inputs come back live", () => {
+  let s = emptySession();
+  s = keepCard(s, 1, 0x1111n);
+  s = keepCard(s, 1, 0x2222n);
+  const [a, b] = liveNodes(s);
+  s = composeNodes(s, [a.key, b.key]);
+  const composed = liveNodes(s)[0];
+  s = decomposeNode(s, composed.key);
+
+  const decoded = decodeSession(encodeSession(s));
+  assertSessionsEqual(s, decoded);
+  assert.equal(liveNodes(decoded).length, 2);
+  assert.equal(liveNodes(decoded).every((n) => n.denomIndex === 1), true);
+});
+
+test("round trip: chained compose of split children", () => {
+  let s = emptySession();
+  s = keepCard(s, 2, 0x1111n); // 0.1 ETH
+  const parent = liveNodes(s)[0];
+  s = splitNode(s, parent.key, 1); // -> 2 x 0.05 ETH
+
+  const children = liveNodes(s);
+  assert.equal(children.length, 2);
+  s = composeNodes(s, [children[0].key, children[1].key]); // -> 0.1 ETH, materialized from the splits
+
+  const decoded = decodeSession(encodeSession(s));
+  assertSessionsEqual(s, decoded);
+  const result = liveNodes(decoded)[0];
+  assert.equal(result.denomIndex, 2);
+  assert.notEqual(result.modules, undefined);
+});
+
+test("decode: split op with an out-of-range child denomination, or a missing parent, fails closed", () => {
+  const base = { v: 1, ops: [{ c: { d: 2, s: "1".repeat(64) } }] };
+  assert.deepEqual(
+    decodeSession(encodeRawWire({ v: 1, ops: [...base.ops, { p: [1, 9] }] })),
+    emptySession(),
+  );
+  assert.deepEqual(
+    decodeSession(encodeRawWire({ v: 1, ops: [...base.ops, { p: [99, 0] }] })),
+    emptySession(),
+  );
+  assert.deepEqual(
+    decodeSession(encodeRawWire({ v: 1, ops: [...base.ops, { p: [1, 2] }] })), // not below the parent's
+    emptySession(),
+  );
+});
+
+test("decode: decompose/sacrifice ops referencing a missing or ineligible id fail closed", () => {
+  const card = { c: { d: 0, s: "1".repeat(64) } };
+  assert.deepEqual(decodeSession(encodeRawWire({ v: 1, ops: [card, { u: 1 }] })), emptySession()); // not composed
+  assert.deepEqual(decodeSession(encodeRawWire({ v: 1, ops: [card, { u: 99 }] })), emptySession()); // missing
+  assert.deepEqual(decodeSession(encodeRawWire({ v: 1, ops: [card, { k: 1 }] })), emptySession()); // not top denom
+  assert.deepEqual(decodeSession(encodeRawWire({ v: 1, ops: [card, { k: 99 }] })), emptySession()); // missing
+});
+
+test("decode: an op with more than one of c/x/p/u/k, or none, fails closed", () => {
+  const both = { v: 1, ops: [{ c: { d: 0, s: "1".repeat(64) }, p: [1, 0] }] };
+  const none = { v: 1, ops: [{}] };
+  for (const wire of [both, none]) {
+    assert.deepEqual(decodeSession(encodeRawWire(wire)), emptySession());
+  }
+});
+
+test("decode: a split that would exceed the node cap fails closed", () => {
+  // 100 ETH -> 0.01 ETH is 10,000 children, well past MAX_OPS's node-count check.
+  const wire = { v: 1, ops: [{ c: { d: 8, s: "1".repeat(64) } }, { p: [1, 0] }] };
+  assert.deepEqual(decodeSession(encodeRawWire(wire)), emptySession());
 });
 
 test("decode: garbage input fails closed to an empty session", () => {
