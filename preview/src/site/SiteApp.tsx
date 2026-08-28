@@ -328,6 +328,13 @@ export function SiteApp({
             <button type="button" className="btn-ghost" onClick={() => go("about")} style={{letterSpacing: "0.14em", color: navColor("about")}}>
               HOW IT WORKS
             </button>
+            {/* /play is a Next.js route outside SiteApp's view state, so it links as a plain
+                anchor. Only the Next host serves it; the Vite preview (no onNavigate) omits it. */}
+            {onNavigate && (
+              <a href="/play" style={{letterSpacing: "0.14em", color: C.muted, textDecoration: "none"}}>
+                PLAYGROUND
+              </a>
+            )}
           </nav>
           <div style={{marginLeft: "auto", display: "flex", alignItems: "center", gap: 18}}>
             {isConnected && address && (
