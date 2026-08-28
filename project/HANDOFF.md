@@ -3,7 +3,7 @@
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
 Session: mainnet-readiness execution, 2026-08-28.
-Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, at `b7c1451` (PR #17).
+Branch: `main` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, through PR #18.
 
 ## Current outcome
 
