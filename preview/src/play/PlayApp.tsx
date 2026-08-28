@@ -21,6 +21,8 @@ import {
   type PlayNode,
   type PlaySession,
 } from "./session";
+import { decodeSession, encodeSession } from "./urlCodec";
+import { downloadCardPng, downloadLadderPng, downloadSquarePng } from "./exports";
 
 /**
  * The Playground (`/play`): a chain-free demo of the two ideas the collection is built on —
@@ -261,10 +263,52 @@ function DrawBeat({
             Keep
           </PlayButton>
 
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <PlayButton small onClick={() => downloadCardPng(svg, LABELS[denomIndex], effectiveSeed)}>
+              Card PNG
+            </PlayButton>
+            <PlayButton small onClick={() => downloadLadderPng(effectiveSeed)}>
+              Ladder PNG
+            </PlayButton>
+          </div>
+
           <Prose>Simulation. Nothing is minted. No wallet is used. Real seeds are assigned at mint.</Prose>
         </div>
       </div>
     </section>
+  );
+}
+
+/** "Copy link" plus a quiet fading confirmation. Copies `location.href`, which the page-level
+ *  URL-sync effect keeps equal to `/play?s=<encodeSession(session)>` at all times. */
+function ShareLink() {
+  const [copied, setCopied] = React.useState(false);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <PlayButton
+          small
+          onClick={() => {
+            navigator.clipboard
+              .writeText(location.href)
+              .then(() => setCopied(true))
+              .catch(() => {});
+          }}
+        >
+          Copy link
+        </PlayButton>
+        {copied && (
+          <span
+            key={Date.now()}
+            style={{ ...mono, fontSize: 10, color: C.muted, animation: "playFadeIn 320ms ease" }}
+            onAnimationEnd={() => setTimeout(() => setCopied(false), 1200)}
+          >
+            copied
+          </span>
+        )}
+      </div>
+      <Prose>This link reproduces it exactly.</Prose>
+    </div>
   );
 }
 
@@ -291,7 +335,7 @@ function TrayBeat({
       {nodes.length === 0 ? (
         <div style={{ ...mono, fontSize: 11, color: C.muted }}>—</div>
       ) : (
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
           {nodes.map((n) => {
             const svg = svgFromComposition(nodeComposition(n), 0n, CANONICAL, false);
             return (
@@ -327,6 +371,7 @@ function TrayBeat({
           })}
         </div>
       )}
+      {nodes.length > 0 && <ShareLink />}
     </section>
   );
 }
@@ -385,6 +430,32 @@ function ComposeBeat({
         <div key={lastResult.key} style={{ display: "flex", flexDirection: "column", gap: 8, animation: "playFadeIn 320ms ease" }}>
           <div style={{ width: "min(320px, 80vw)" }}>
             <RawCard svg={svgFromComposition(nodeComposition(lastResult), 0n, CANONICAL, false)} width="100%" />
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <PlayButton
+              small
+              onClick={() =>
+                downloadCardPng(
+                  svgFromComposition(nodeComposition(lastResult), 0n, CANONICAL, false),
+                  LABELS[lastResult.denomIndex],
+                  lastResult.seed,
+                )
+              }
+            >
+              Card PNG
+            </PlayButton>
+            <PlayButton
+              small
+              onClick={() =>
+                downloadSquarePng(
+                  svgFromComposition(nodeComposition(lastResult), 0n, CANONICAL, false),
+                  LABELS[lastResult.denomIndex],
+                  lastResult.seed,
+                )
+              }
+            >
+              Square PNG
+            </PlayButton>
           </div>
           <Prose>
             Composed from {lastResult.parents?.length ?? 0} Shapes. Every cell sampled from a parent.
@@ -615,10 +686,39 @@ const sectionStyle: React.CSSProperties = {
 export function PlayApp() {
   const [session, setSession] = React.useState<PlaySession>(emptySession);
   const [denomIndex, setDenomIndex] = React.useState(0);
-  const [seed, setSeed] = React.useState<bigint>(() => randomSeed());
+  // A fixed placeholder, not a real draw: `randomSeed()` draws from `crypto.getRandomValues`,
+  // which returns a different value on the server render than on the client's first paint,
+  // producing a hydration mismatch. The mount effect below replaces it with a real roll.
+  const [seed, setSeed] = React.useState<bigint>(0n);
   const [seedText, setSeedText] = React.useState("");
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [composeError, setComposeError] = React.useState<string | null>(null);
+  const [hydrated, setHydrated] = React.useState(false);
+
+  // Client-only setup on mount: roll the real starting seed (see the placeholder note above),
+  // and restore session state from `?s=` if present. A state initializer would read `location`
+  // and `crypto` during the server render and mismatch the client's first paint, so both run as
+  // an effect instead. `hydrated` gates the write-back effect below until this has had a chance
+  // to run first -- without it, the write-back effect's first pass (which still sees the
+  // pre-restore empty session, since this effect's setSession hasn't committed yet) would strip
+  // `?s=` from the URL before the restore ever reads it.
+  React.useEffect(() => {
+    setSeed(randomSeed());
+    const encoded = new URLSearchParams(location.search).get("s");
+    if (encoded) {
+      const decoded = decodeSession(encoded);
+      if (decoded.nodes.length > 0) setSession(decoded);
+    }
+    setHydrated(true);
+  }, []);
+
+  // Keep the URL in sync with the session: every action (keep, remove, compose) replaces the
+  // `?s=` query so the address bar always reproduces the current state, with no navigation.
+  React.useEffect(() => {
+    if (!hydrated) return;
+    const url = session.nodes.length > 0 ? `/play?s=${encodeSession(session)}` : "/play";
+    history.replaceState(null, "", url);
+  }, [hydrated, session]);
 
   const trimmedText = seedText.trim();
   const effectiveSeed = trimmedText ? textSeed(trimmedText) : seed;

@@ -136,7 +136,7 @@ export function makeZip(files: { name: string; text: string }[]): Blob {
 
 /* ---------------- contact sheet ---------------- */
 
-function svgToImage(svg: string): Promise<HTMLImageElement> {
+export function svgToImage(svg: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
