@@ -10,7 +10,8 @@ import {
   textSeed,
   type PlaySession,
 } from "./session";
-import { encodeSession, decodeSession } from "./urlCodec";
+import { encodeSession, decodeSession, sessionShareable } from "./urlCodec";
+import { productionSeed } from "../seeds";
 
 /** Base64url-encode an arbitrary wire object, bypassing `encodeSession`, to hand `decodeSession`
  *  hand-built payloads its own encoder would never produce. Tests only; runs under Node. */
@@ -181,4 +182,25 @@ test("decode: more than 64 ops fails closed", () => {
 test("empty session encodes to a short string and decodes back to empty", () => {
   const encoded = encodeSession(emptySession());
   assert.deepEqual(decodeSession(encoded), emptySession());
+});
+
+test("sessionShareable: true for a normal session, false past the op cap", () => {
+  let s = emptySession();
+  for (let i = 0; i < 10; i++) s = keepCard(s, 0, productionSeed(BigInt(i + 1)));
+  assert.equal(sessionShareable(s), true);
+
+  // 65 nodes exceeds the 64-op decode limit even though each op is small.
+  let big = emptySession();
+  for (let i = 0; i < 65; i++) big = keepCard(big, 0, textSeed(`n${i}`), `n${i}`);
+  assert.equal(sessionShareable(big), false);
+  // And a shareable=false session really does fail to restore.
+  assert.equal(decodeSession(encodeSession(big)).nodes.length, 0);
+});
+
+test("sessionShareable: false when the encoded payload exceeds the byte cap", () => {
+  // 40 max-length text seeds blow past 4096 decoded bytes while staying under 64 ops.
+  let s = emptySession();
+  for (let i = 0; i < 40; i++) s = keepCard(s, 0, textSeed("x".repeat(120) + i), "x".repeat(120) + i);
+  assert.equal(sessionShareable(s), false);
+  assert.equal(decodeSession(encodeSession(s)).nodes.length, 0);
 });

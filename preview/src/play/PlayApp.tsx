@@ -19,11 +19,10 @@ import {
   randomSeed,
   removeNode,
   textSeed,
-  TRAY_CAP,
   type PlayNode,
   type PlaySession,
 } from "./session";
-import { decodeSession, encodeSession } from "./urlCodec";
+import { decodeSession, encodeSession, sessionShareable } from "./urlCodec";
 import { downloadCardPng, downloadComposeGif, downloadLadderPng, downloadSquarePng } from "./exports";
 
 /**
@@ -263,7 +262,7 @@ function DrawBeat({
           </PlayButton>
           {keepDisabled && (
             <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>
-              Tray is full. Compose or remove a card.
+              The share link is full. Remove a card to continue.
             </div>
           )}
 
@@ -335,7 +334,7 @@ function TrayBeat({
   return (
     <section style={sectionStyle}>
       <SectionLabel>
-        Tray ({nodes.length}/{TRAY_CAP})
+        Tray ({nodes.length})
       </SectionLabel>
       {nodes.length === 0 ? (
         <div style={{ ...mono, fontSize: 11, color: C.muted }}>—</div>
@@ -837,7 +836,13 @@ export function PlayApp() {
   const effectiveSeed = trimmedText ? textSeed(trimmedText) : seed;
 
   const nodes = liveNodes(session);
-  const keepDisabled = nodes.length >= TRAY_CAP;
+  // Keep is blocked only when the session it would produce no longer fits in a share link
+  // (urlCodec's 64-op / 4KiB decode limits) — the demo's one growth bound, unreachable in
+  // normal play. keepCard is pure and cheap, so projecting it per render is fine.
+  const keepDisabled = React.useMemo(
+    () => !sessionShareable(keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined)),
+    [session, denomIndex, effectiveSeed, trimmedText],
+  );
 
   const lastResult = React.useMemo(() => {
     for (let i = session.nodes.length - 1; i >= 0; i--) {
@@ -847,18 +852,12 @@ export function PlayApp() {
   }, [session.nodes]);
 
   const handleKeep = () => {
-    // Computed eagerly, not in a setSession updater: keepCard throws at capacity, and a throw
-    // inside an updater would surface as a render error instead of landing in this catch.
-    try {
-      const next = keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined);
-      setSession(next);
-      // Advance the draft: a kept card stays in the tray, so the same seed has nothing more to
-      // give (a text seed is fully determined by its text). Roll fresh for the next draw.
-      setSeedText("");
-      setSeed(randomSeed());
-    } catch {
-      // tray full; Keep is already disabled in this case.
-    }
+    if (keepDisabled) return;
+    setSession(keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined));
+    // Advance the draft: a kept card stays in the tray, so the same seed has nothing more to
+    // give (a text seed is fully determined by its text). Roll fresh for the next draw.
+    setSeedText("");
+    setSeed(randomSeed());
   };
 
   const handleToggle = (key: number) => {
@@ -883,6 +882,10 @@ export function PlayApp() {
   const handleCompose = () => {
     try {
       const next = composeNodes(session, [...selected]);
+      if (!sessionShareable(next)) {
+        setComposeError("The share link is full. Remove a card first.");
+        return;
+      }
       setSession(next);
       setSelected(new Set());
       setComposeError(null);

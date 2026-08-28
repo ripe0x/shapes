@@ -19,8 +19,6 @@ import {
 } from "../canonical/sampling";
 import { productionSeed } from "../seeds";
 
-export const TRAY_CAP = 8;
-
 export interface PlayNode {
   /** Unique per session. Composed results and their consumed parents each keep their own key. */
   key: number;
@@ -83,11 +81,9 @@ export function randomSeed(): bigint {
   return productionSeed(bytesToBigInt(indexBytes));
 }
 
-/** Add a card to the tray. Throws when the live tray is already at capacity. */
+/** Add a card to the tray. The session's only growth bound is shareability: callers gate on
+ *  `sessionShareable` (urlCodec.ts) so every reachable session still fits in a share link. */
 export function keepCard(s: PlaySession, denomIndex: number, seed: bigint, seedText?: string): PlaySession {
-  if (liveNodes(s).length >= TRAY_CAP) {
-    throw new Error(`tray is full (max ${TRAY_CAP})`);
-  }
   const node: PlayNode = {
     key: s.nextKey,
     demoId: s.nextDemoId,
