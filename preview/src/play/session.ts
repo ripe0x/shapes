@@ -109,7 +109,8 @@ function toDonor(n: PlayNode): SampleDonor {
  * a key is not live, or the summed backing does not land exactly on a denomination above the
  * survivor's.
  */
-export function composeNodes(s: PlaySession, keys: number[]): PlaySession {
+export function composeNodes(s: PlaySession, rawKeys: number[]): PlaySession {
+  const keys = [...new Set(rawKeys)];
   if (keys.length < 2) throw new Error("select at least two cards to compose");
 
   const live = liveNodes(s);
