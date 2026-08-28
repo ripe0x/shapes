@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { View } from "@shared/site/SiteApp";
 import { SiteRoot } from "../SiteRoot";
+import { PlayRoot } from "../play/PlayRoot";
 
 type Params = { slug?: string[] };
 
@@ -23,7 +24,17 @@ export async function generateMetadata({
 }: {
   params: Promise<Params>;
 }): Promise<Metadata> {
-  const r = resolve((await params).slug);
+  const slug = (await params).slug ?? [];
+  if (slug.length === 1 && slug[0] === "play") {
+    return {
+      title: "Playground",
+      description:
+        "Draw a Shape, compose Shapes, and trace every cell to its parent. Simulation, no wallet, nothing minted.",
+      openGraph: { title: "Playground · Shapes", url: "/play" },
+    };
+  }
+
+  const r = resolve(slug);
   if (!r) return { title: "Not found" };
 
   if (r.view === "auction") {
@@ -69,7 +80,12 @@ export async function generateMetadata({
 }
 
 export default async function Page({ params }: { params: Promise<Params> }) {
-  const r = resolve((await params).slug);
+  const slug = (await params).slug ?? [];
+  if (slug.length === 1 && slug[0] === "play") {
+    return <PlayRoot />;
+  }
+
+  const r = resolve(slug);
   if (!r) notFound();
   return <SiteRoot initialView={r.view} initialTokenId={r.tokenId} />;
 }
