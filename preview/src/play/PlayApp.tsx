@@ -261,6 +261,11 @@ function DrawBeat({
           <PlayButton onClick={onKeep} disabled={keepDisabled}>
             Keep
           </PlayButton>
+          {keepDisabled && (
+            <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>
+              Tray is full. Compose or remove a card.
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
@@ -842,8 +847,15 @@ export function PlayApp() {
   }, [session.nodes]);
 
   const handleKeep = () => {
+    // Computed eagerly, not in a setSession updater: keepCard throws at capacity, and a throw
+    // inside an updater would surface as a render error instead of landing in this catch.
     try {
-      setSession((s) => keepCard(s, denomIndex, effectiveSeed, trimmedText || undefined));
+      const next = keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined);
+      setSession(next);
+      // Advance the draft: a kept card stays in the tray, so the same seed has nothing more to
+      // give (a text seed is fully determined by its text). Roll fresh for the next draw.
+      setSeedText("");
+      setSeed(randomSeed());
     } catch {
       // tray full; Keep is already disabled in this case.
     }
