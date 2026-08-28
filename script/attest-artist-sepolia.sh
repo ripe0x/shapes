@@ -9,6 +9,14 @@ set -euo pipefail
 : "${SHAPES_RELEASE_HASH:?set SHAPES_RELEASE_HASH to the exact bytes32 approved by the artist}"
 : "${ARTIST_ACCOUNT:=ripe0x}"
 
+SEND_ARGS=()
+if [ -n "${ATTEST_GAS_PRICE:-}" ]; then
+  SEND_ARGS+=(--gas-price "$ATTEST_GAS_PRICE")
+fi
+if [ -n "${ATTEST_PRIORITY_GAS_PRICE:-}" ]; then
+  SEND_ARGS+=(--priority-gas-price "$ATTEST_PRIORITY_GAS_PRICE")
+fi
+
 if [[ ! "$SHAPES_ADDRESS" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
   echo "SHAPES_ADDRESS must be a 20-byte hex address" >&2
   exit 1
@@ -54,7 +62,7 @@ read -r -p "Type SIGN to broadcast the irreversible Sepolia attestation: " CONFI
 [ "$CONFIRM_SEND" = "SIGN" ] || { echo "not submitted"; exit 1; }
 
 TX_JSON=$(cast send "$SHAPES_ADDRESS" "attestArtist(bytes32,bytes)" "$SHAPES_RELEASE_HASH" "$SIGNATURE" \
-  --account "$ARTIST_ACCOUNT" --rpc-url "$SEPOLIA_RPC_URL" --json)
+  --account "$ARTIST_ACCOUNT" --rpc-url "$SEPOLIA_RPC_URL" "${SEND_ARGS[@]}" --json)
 TX_HASH=$(printf '%s' "$TX_JSON" | python3 -c "import json,sys; print(json.load(sys.stdin)['transactionHash'])")
 cast receipt "$TX_HASH" --confirmations 1 --rpc-url "$SEPOLIA_RPC_URL" >/dev/null
 echo "  transaction    $TX_HASH"
