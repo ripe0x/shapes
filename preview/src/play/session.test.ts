@@ -13,7 +13,6 @@ import {
   liveNodes,
   removeNode,
   textSeed,
-  TRAY_CAP,
   type PlaySession,
 } from "./session";
 
@@ -152,11 +151,10 @@ test("composeNodes: result ink gene matches a hand-computed geneAtCompose call",
   assert.equal(result.inkGene, expectedGene);
 });
 
-test("keepCard: tray cap of 8 live cards is enforced", () => {
+test("keepCard: has no fixed capacity", () => {
   let s: PlaySession = emptySession();
-  for (let i = 0; i < TRAY_CAP; i++) s = keepCard(s, 0, BigInt(i + 1));
-  assert.equal(liveNodes(s).length, TRAY_CAP);
-  assert.throws(() => keepCard(s, 0, 999n));
+  for (let i = 0; i < 12; i++) s = keepCard(s, 0, BigInt(i + 1));
+  assert.equal(liveNodes(s).length, 12);
 });
 
 test("removeNode: drops a live node, is a no-op for a consumed one", () => {

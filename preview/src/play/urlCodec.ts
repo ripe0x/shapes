@@ -110,6 +110,16 @@ function base64UrlToBytes(text: string): Uint8Array | null {
   return out;
 }
 
+/**
+ * Whether `s` still fits in a share link: at most MAX_OPS nodes and an encoded payload within
+ * MAX_ENCODED_BYTES, the same limits `decodeSession` enforces. The UI gates session growth on
+ * this so a copied link can never silently fail to restore.
+ */
+export function sessionShareable(s: PlaySession): boolean {
+  if (s.nodes.length > MAX_OPS) return false;
+  return (base64UrlToBytes(encodeSession(s))?.length ?? Infinity) <= MAX_ENCODED_BYTES;
+}
+
 /* ---------------- encode ---------------- */
 
 /** Node key -> the id a fresh replay would assign it (see file header). Card nodes get the next
