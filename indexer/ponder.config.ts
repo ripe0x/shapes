@@ -8,8 +8,19 @@ import { shapesAbi } from "./abis/Shapes";
 // wrong contract or wrong history is worse than one that refuses to start.
 const CHAIN_ID = Number(process.env.PONDER_CHAIN_ID ?? 31347);
 const RPC_URL = process.env.PONDER_RPC_URL ?? "http://127.0.0.1:8547";
+const RPC_FALLBACKS = (process.env.PONDER_RPC_FALLBACKS ?? "")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+const POLLING_INTERVAL = Number(process.env.PONDER_POLL_INTERVAL_MS ?? 1_000);
 const SHAPES_ADDRESS = process.env.SHAPES_ADDRESS as `0x${string}` | undefined;
 const START_BLOCK = process.env.SHAPES_START_BLOCK ? Number(process.env.SHAPES_START_BLOCK) : undefined;
+const database = process.env.DATABASE_URL
+  ? ({ kind: "postgres", connectionString: process.env.DATABASE_URL } as const)
+  : ({
+      kind: "pglite",
+      directory: process.env.PONDER_DATABASE_DIR ?? ".ponder/pglite",
+    } as const);
 
 if (!SHAPES_ADDRESS) {
   throw new Error(
@@ -20,10 +31,12 @@ if (!SHAPES_ADDRESS) {
 }
 
 export default createConfig({
+  database,
   chains: {
     chain: {
       id: CHAIN_ID,
-      rpc: RPC_URL,
+      rpc: [RPC_URL, ...RPC_FALLBACKS],
+      pollingInterval: POLLING_INTERVAL,
     },
   },
   contracts: {
