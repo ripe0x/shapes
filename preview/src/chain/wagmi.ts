@@ -17,11 +17,9 @@ export interface WalletOptions {
 }
 
 /**
- * The viem chain for the deployment. Sepolia uses viem's canonical `sepolia` object (the same one
- * every other RainbowKit app here uses), so WalletConnect and Rainbow identify the network from a
- * known definition instead of a hand-rolled one that reads as "None". Custom RPC endpoints are
- * applied through the transport, not by redefining the chain. Only a non-canonical dev chain (local
- * anvil) is defined by hand.
+ * The viem chain for the deployment. Sepolia uses viem's canonical `sepolia` object; custom RPC
+ * endpoints are applied through the transport rather than by redefining the chain. Only a
+ * non-canonical dev chain (local anvil) is defined by hand.
  */
 function deploymentChain(dep: Deployment, primaryRpcUrl?: string) {
   if (dep.chainId === sepolia.id) return sepolia;
@@ -40,11 +38,10 @@ function deploymentChain(dep: Deployment, primaryRpcUrl?: string) {
 /**
  * Builds the wagmi config for a single deployment chain.
  *
- * With a WalletConnect project id this is RainbowKit's `getDefaultConfig` scoped to exactly one
- * chain (Sepolia for the public site). The session uses WalletConnect's optional namespace, which
- * is the only shape Rainbow accepts on connect; forcing the chain into the required namespace was
- * tested and rejected by the wallet. Without a project id (local anvil dev, unit tests) it is a
- * plain injected-only config, so no relay identity is created.
+ * With a WalletConnect project id this is RainbowKit's standard `getDefaultConfig` scoped to the
+ * deployment chain. Wallet support for that chain is wallet-specific; Rainbow does not support
+ * testnets and is therefore not a Sepolia acceptance target. Without a project id (local anvil dev,
+ * unit tests) this is a plain injected-only config, so no relay identity is created.
  */
 export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
   const primaryRpcUrl = options.primaryRpcUrl?.trim() || undefined;

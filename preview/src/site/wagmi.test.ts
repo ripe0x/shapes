@@ -39,15 +39,14 @@ test("without a WalletConnect project id the config is injected-only", () => {
 test("a project id activates RainbowKit's standard wallet inventory on Sepolia only", () => {
   const config = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID});
 
-  // The site declares exactly one chain: every wallet's connection proposal names Sepolia, so its
-  // approval screen shows Sepolia rather than an empty or mainnet namespace.
+  // The site declares exactly the deployment chain. Individual wallets may choose not to support
+  // testnets; Rainbow is not used as Sepolia acceptance evidence.
   assert.deepEqual(
     config.chains.map((chain) => chain.id),
     [sepolia.id],
   );
 
-  // getDefaultConfig wires the maintained inventory (Rainbow, MetaMask, Coinbase, WalletConnect,
-  // Safe, ...) instead of only injected + generic WalletConnect.
+  // getDefaultConfig wires RainbowKit's maintained inventory instead of a custom wallet list.
   const connectors = config.connectors;
   assert.ok(connectors.length >= 5, `expected the full inventory, got ${connectors.length}`);
   assert.ok(connectors.some((c) => c.id === "safe"));
@@ -56,7 +55,7 @@ test("a project id activates RainbowKit's standard wallet inventory on Sepolia o
 
 test("the Sepolia config uses viem's canonical chain (Multicall3 + explorer)", () => {
   const chain = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
-  // Canonical `sepolia` from viem/wagmi, so WalletConnect/Rainbow identify the network.
+  // Canonical `sepolia` from viem/wagmi, rather than a hand-built public-chain definition.
   assert.equal(chain.id, sepolia.id);
   assert.equal(chain.name, sepolia.name);
   assert.equal(

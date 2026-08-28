@@ -12,13 +12,12 @@ endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHA
 browser reads when a paid/provider RPC is available. Requests are unbatched because shared site
 reads already use Multicall3 and local seed demos can exceed Anvil's batch-size limit.
 
-The wallet config is RainbowKit's `getDefaultConfig` (see `preview/src/chain/wagmi.ts`), built with
-`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` and exactly one chain: the deployment's chain. On Sepolia this
-is chain 11155111, so every wallet's connection proposal names Sepolia and its approval screen shows
-Sepolia. `getDefaultConfig` provides the standard wallet inventory (Rainbow, MetaMask, Coinbase,
-WalletConnect, Safe, ...). Without a project id (local dev), the config falls back to injected wallets
-only, so no relay identity is created. Release evidence still requires a real phone pairing and
-Sepolia mint.
+The wallet config uses RainbowKit's standard `getDefaultConfig` (see
+`preview/src/chain/wagmi.ts`), built with `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` and the deployment
+chain. `getDefaultConfig` provides the maintained wallet inventory; each wallet decides which chains
+it supports. Rainbow does not support testnets and is not used for Sepolia acceptance. Without a
+project id (local dev), the config falls back to injected wallets only, so no relay identity is
+created.
 
 Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
 

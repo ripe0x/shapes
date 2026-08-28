@@ -22,7 +22,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 - D-09: adopt Medusa 1.5.1 in CI with a checksum-pinned binary; defer Halmos because its AST build exceeded the three-minute/~2.1 GB spike budget before symbolic execution.
 - D-10: optional indexer path is implemented and keeps Shapes authoritative. Freshness, chain, uniqueness and exact live count are checked; each page has an 8-second abort, 256 KiB body cap, 500-item cap, unique cursor and totalSupply-derived page/item ceiling. All displayed fields are current chain reads; every failure falls back to raw RPC. A 1,203-id fixture cuts reads from 1,218 to 18. Ponder's vulnerable pins are replaced by smoke-tested overrides, and the isolated install audits at zero.
 - D-12/W-1/W-4/W-5/W-6/D-21: implemented. Browser and OG share independent RPC fallbacks; Black Shapes remain visible with invalid mutators hidden; provenance rollups no longer impersonate token #0; CI is path-filtered/cached and includes site/Medusa jobs; portless is adopted; direct unused x402 packages are removed.
-- D-11: the wallet integration was rebuilt from scratch on RainbowKit's documented `getDefaultConfig` path (`preview/src/chain/wagmi.ts`). Every earlier workaround is gone: no `getDefaultWallets`/manual `createConfig`, no `walletConnectParameters.chains` override, no `customStoragePrefix`, no mainnet bootstrap. The config declares exactly one chain (the deployment chain; Sepolia = 11155111) with the project-owned public Reown id, and uses viem's canonical `sepolia` chain object (like every other RainbowKit app in this account), so WalletConnect/Rainbow identify the network. Custom RPC lives in the transport. The earlier hand-built `defineChain` for Sepolia is what read as "None". Without a project id it is injected-only. Preview tests (59) and build, and web lint and build, pass. The stable preview remains `https://wallet-options--shapes-onchain.netlify.app`; live iPhone Rainbow evidence (approval shows Sepolia, connect succeeds, Mint opens a Sepolia transaction) is required before this is accepted.
+- D-11: CLOSED. Rainbow does not support testnets, so the attempted Rainbow-to-Sepolia acceptance test was invalid and is removed as a gate. Keep the conventional RainbowKit `getDefaultConfig` integration and standard inventory; every namespace, storage, mainnet-bootstrap and switching workaround remains removed. The deterministic Sepolia config and transaction-initiation tests cover this packet. Rainbow is tested only when the eventual site targets mainnet.
 
 ## Deployment configuration
 
@@ -35,11 +35,10 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 
 ## Remaining gates, in order
 
-1. Open the refreshed stable preview on the same phone and connect Rainbow. Rainbow's approval screen must show Sepolia (not None or Ethereum), the connection must succeed, and Mint must open a Sepolia wallet transaction. This is the acceptance test for D-11.
-2. After D-11 passes, merge the already-green PR #8.
-3. Fetch exact merged `main`, run non-broadcast rehearsal, then have the user run the interactive Sepolia deploy command. Read back and verify every address/value; submit the one-time artist attestation; update `web/public/deployment.json` in a follow-up cutover.
-4. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
-5. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
+1. Merge the already-green PR #8.
+2. Fetch exact merged `main`, run non-broadcast rehearsal, then have the user run the interactive Sepolia deploy command. Read back and verify every address/value; submit the one-time artist attestation; update `web/public/deployment.json` in a follow-up cutover.
+3. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
+4. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
 
 ## Standing directives
 
