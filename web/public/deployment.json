@@ -1,11 +1,11 @@
 {
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "chainId": 11155111,
-  "shapes": "0x57443FDbfA5BA02156977B5dEB53814f50a580ac",
-  "renderer": "0xFF7775e67DD329b09cd1deC30a6bE09ab0728bD2",
-  "collection": "0x483D0925C462a224a8D62EFB8143079609B12C77",
-  "lens": "0xb1Ec83FCE774BE8F00B83F41f1BD56C94111cA2f",
-  "auctionHouse": "0xa46E2ACe3Bb397640B6666D99fAB5198Bd859136",
+  "shapes": "0xbB6F8b4560E0cc15de233E00848104b66FD88B39",
+  "renderer": "0x8b36e4149cEb2c658Ee900e30Bc1232100a2f325",
+  "collection": "0xA8587C5E8Bb61e2BFfD25Ac3DD8A3eC4e7Ef3180",
+  "lens": "0xC92B1614912270B24383a0f30548Be064D252D2E",
+  "auctionHouse": "0x603C745cBFCC76ad47E1eCf6b875abC995959801",
   "feeBps": "100",
-  "fromBlock": 11565510
+  "fromBlock": 11582031
 }
