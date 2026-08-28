@@ -106,8 +106,9 @@ contract ArtistAttributionTest is Test {
     }
 
     function test_SignatureCannotBeReplayedAcrossDeployments() public {
+        uint256 genesisAmount = Denominations.amountAt(0);
         vm.prank(artist);
-        Shapes other = new Shapes{value: Denominations.amountAt(0)}(
+        Shapes other = new Shapes{value: genesisAmount}(
             100, address(0xFEE), address(renderer), address(collection)
         );
         bytes memory signature = _signature(ARTIST_KEY, shapes.artistAttestationDigest(RELEASE_HASH));

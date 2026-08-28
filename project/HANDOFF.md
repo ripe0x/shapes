@@ -2,13 +2,13 @@
 
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
-Session: P1 hardening integration, 2026-08-27.
-Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, based on merged main `7f92f1b` (PR #5).
+Session: mainnet-readiness execution, 2026-08-27.
+Branch: `codex/mainnet-readiness` in canonical clone `/Users/dd/CascadeProjects/shapes-clean`, based on merged main `2f858ff` (PR #8).
 
 ## Current outcome
 
 - PR #5 merged as `7f92f1b`. Final core views are `exists` and live-only `denomIndexOf`; `absorbedBy` remains rejected. `IShapes` is `0xb5ac96e9`, `IShapeValue` is `0xd07d718a`.
-- PR #8 is open from `codex/p1-hardening` with the consolidated P1 packet. It includes RPC fallback, Black/provenance UI fixes, bounded optional chain-authoritative indexer reads, CI cost controls, Medusa, gas/ink experiments, portless, dependency cleanup, Next 16 and fetched-exact-main Sepolia deployment postflights.
+- PR #8 merged as `2f858ff` with the consolidated P1 packet. Its merged-head CI exposed a Foundry one-shot-prank setup failure in the cross-deployment artist replay test; the current branch precomputes the constructor value before applying the prank, and the focused CI-profile attribution suite passes 11/11.
 - The core contract is unchanged by this packet. Fresh size gates remain Shapes 24,235 bytes default (341-byte EIP-170 margin) and 24,214 bytes testnet (362-byte margin).
 - Full default and testnet suites each pass 451 tests with 4 fork-only skips. Preview has 59 passing tests; web lint/build and indexer zero-audit/codegen/typecheck/Anvil smoke pass. The root npm audit has 9 moderate and 0 high/critical findings after scoped overrides; Medusa passes 10/10 reserve/lifecycle checks and 34,350 calls in the Director rerun.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
@@ -35,7 +35,7 @@ Branch: `codex/p1-hardening` in canonical clone `/Users/dd/CascadeProjects/shape
 
 ## Remaining gates, in order
 
-1. Merge the already-green PR #8.
+1. Land the focused merged-main CI correction and require its exact-main workflow to pass.
 2. Fetch exact merged `main`, run non-broadcast rehearsal, then have the user run the interactive Sepolia deploy command. Read back and verify every address/value; submit the one-time artist attestation; update `web/public/deployment.json` in a follow-up cutover.
 3. With the fresh address/fromBlock, provision the indexer only after explicit Railway/Postgres spending authorization and an archive Sepolia RPC are supplied. Verify `/health`, `/ready`, `/status`, `/graphql`, then publish `indexerUrl`.
 4. Run and record a live Sepolia auction with a second signer, then close the P1 evidence gate.
