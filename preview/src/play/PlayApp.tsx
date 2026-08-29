@@ -48,6 +48,13 @@ function seedHex(seed: bigint): string {
   return "0x" + seed.toString(16).padStart(64, "0");
 }
 
+/** Truncated-middle display of a full hex string: `0x5692…3d80e`. The full value stays available
+ *  via the caller's `title` attribute and click-to-copy handler. */
+function truncateMiddleHex(full: string): string {
+  const body = full.slice(2);
+  return `0x${body.slice(0, 4)}…${body.slice(-5)}`;
+}
+
 /** A selection's summed backing, formatted for display. Every denomination is a whole multiple
  *  of UNIT (0.01 ETH), so any sum is too — at most two decimal places. */
 function formatEth(wei: bigint): string {
@@ -81,6 +88,7 @@ function PlayButton({
     <button
       onClick={onClick}
       disabled={disabled}
+      className="play-tap"
       style={{
         ...mono,
         fontSize: small ? 10 : 11.5,
@@ -98,24 +106,102 @@ function PlayButton({
   );
 }
 
-/** A rendered card, no border radius, no shadow, always exactly 2.5:3.5. */
+/** Denomination chip: lighter than `PlayButton` (no fill on selection, thinner padding) so the
+ *  picker doesn't compete with `KeepButton`, the page's one inverted control. */
+function DenomChip({ i, active, onClick }: { i: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="play-tap"
+      style={{
+        ...mono,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 2,
+        padding: "6px 10px",
+        border: `1px solid ${active ? C.ink : C.border}`,
+        background: "transparent",
+        color: active ? C.ink : C.body,
+        cursor: "pointer",
+      }}
+    >
+      <span style={{ fontSize: 11 }}>
+        {GRIDS[i][0]}×{GRIDS[i][1]}
+      </span>
+      <span style={{ fontSize: 9, color: active ? C.muted : C.faint }}>{LABELS[i]} ETH</span>
+    </button>
+  );
+}
+
+/** The page's one inverted control: ink background, page-colored text. Full width, the strongest
+ *  visual weight on the page. */
+function KeepButton({ onClick, disabled }: { onClick: () => void; disabled: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="play-tap"
+      style={{
+        ...mono,
+        fontSize: 13,
+        letterSpacing: "0.04em",
+        padding: "14px 18px",
+        border: `1px solid ${C.ink}`,
+        background: C.ink,
+        color: C.page,
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.4 : 1,
+        width: "100%",
+      }}
+    >
+      Keep
+    </button>
+  );
+}
+
+/** A rendered card, no border radius, no shadow, always exactly 2.5:3.5.
+ *
+ *  `hoverable` (only takes effect when `onClick` is set, i.e. the card is actually selectable):
+ *  drives outline/lift through the `.play-card-shape` / `.play-card-selected` CSS classes instead
+ *  of inline style, so a real `:hover` transition applies -- a card lifted from a hand. Without
+ *  it (or without `onClick`), the outline is a static inline style: no hover feedback for a card
+ *  that isn't a selection target. */
 function RawCard({
   svg,
   width,
   caption,
   onClick,
   selected,
+  hoverable,
 }: {
   svg: string;
   width: number | string;
   caption?: React.ReactNode;
   onClick?: () => void;
   selected?: boolean;
+  hoverable?: boolean;
 }) {
+  const interactive = hoverable === true && onClick != null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, width }}>
       <div
         onClick={onClick}
+        role={onClick ? "button" : undefined}
+        tabIndex={onClick ? 0 : undefined}
+        aria-pressed={onClick ? selected === true : undefined}
+        aria-label={onClick && typeof caption === "string" ? caption : undefined}
+        onKeyDown={
+          onClick
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onClick();
+                }
+              }
+            : undefined
+        }
+        className={interactive ? `play-card-shape${selected ? " play-card-selected" : ""}` : undefined}
         style={{
           position: "relative",
           aspectRatio: "2.5 / 3.5",
@@ -123,8 +209,12 @@ function RawCard({
           overflow: "hidden",
           lineHeight: 0,
           cursor: onClick ? "pointer" : "default",
-          outline: selected ? `2px solid ${C.ink}` : `1px solid ${C.border}`,
-          outlineOffset: selected ? -2 : -1,
+          ...(interactive
+            ? {}
+            : {
+                outline: selected ? `2px solid ${C.ink}` : `1px solid ${C.border}`,
+                outlineOffset: selected ? -2 : -1,
+              }),
         }}
         dangerouslySetInnerHTML={{ __html: forDisplay(svg) }}
       />
@@ -216,76 +306,98 @@ function DrawBeat({
   );
 
   const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, false), [composition]);
+  const fullSeedHex = seedHex(effectiveSeed);
+  const [seedCopied, setSeedCopied] = React.useState(false);
+  React.useEffect(() => {
+    if (!seedCopied) return;
+    const t = setTimeout(() => setSeedCopied(false), 1200);
+    return () => clearTimeout(t);
+  }, [seedCopied]);
 
   return (
     <section style={sectionStyle}>
       <SectionLabel>Draw</SectionLabel>
-      <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ width: "min(320px, 80vw)" }}>
+      <div style={{ marginBottom: 20 }}>
+        <Prose>One seed, nine denominations. More ETH, fewer marks.</Prose>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <div style={{ width: "min(400px, 88vw)" }}>
           <RawCard svg={svg} width="100%" />
-          <div style={{ ...mono, fontSize: 9.5, color: C.muted, marginTop: 8, wordBreak: "break-all" }}>
-            {seedHex(effectiveSeed)}
+        </div>
+        <button
+          onClick={() => {
+            navigator.clipboard
+              .writeText(fullSeedHex)
+              .then(() => setSeedCopied(true))
+              .catch(() => {});
+          }}
+          title={fullSeedHex}
+          className="play-tap"
+          style={{
+            ...mono,
+            fontSize: 10.5,
+            color: C.muted,
+            background: "transparent",
+            border: "none",
+            padding: "4px",
+            cursor: "pointer",
+          }}
+        >
+          {seedCopied ? "copied" : truncateMiddleHex(fullSeedHex)}
+        </button>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 24 }}>
+        <div>
+          <div style={{ ...mono, fontSize: 10, color: C.muted, marginBottom: 8 }}>denomination</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {LABELS.map((_, i) => (
+              <DenomChip key={i} i={i} active={denomIndex === i} onClick={() => onDenomIndex(i)} />
+            ))}
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 260, flex: 1 }}>
-          <div>
-            <div style={{ ...mono, fontSize: 10, color: C.muted, marginBottom: 8 }}>denomination</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {LABELS.map((lab, i) => (
-                <PlayButton key={i} active={denomIndex === i} onClick={() => onDenomIndex(i)}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                    <span>{GRIDS[i][0]}×{GRIDS[i][1]}</span>
-                    <span style={{ fontSize: 9, opacity: 0.75 }}>{lab} ETH</span>
-                  </div>
-                </PlayButton>
-              ))}
-            </div>
-          </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <PlayButton onClick={onRoll}>Roll</PlayButton>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ ...mono, fontSize: 10, color: C.muted }}>Seed it with a name</span>
+            <input
+              value={seedText}
+              onChange={(e) => onSeedText(e.target.value)}
+              placeholder="a name, handle, anything"
+              style={{
+                ...mono,
+                fontSize: 12,
+                padding: "7px 9px",
+                border: `1px solid ${C.border}`,
+                background: "transparent",
+                color: C.ink,
+                width: 220,
+              }}
+            />
+          </label>
+        </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <PlayButton onClick={onRoll}>Roll</PlayButton>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ ...mono, fontSize: 10, color: C.muted }}>Seed it with a name</span>
-              <input
-                value={seedText}
-                onChange={(e) => onSeedText(e.target.value)}
-                placeholder="a name, handle, anything"
-                style={{
-                  ...mono,
-                  fontSize: 12,
-                  padding: "7px 9px",
-                  border: `1px solid ${C.border}`,
-                  background: "transparent",
-                  color: C.ink,
-                  width: 220,
-                }}
-              />
-            </label>
+        <KeepButton onClick={onKeep} disabled={keepDisabled} />
+        {keepDisabled && (
+          <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>
+            The share link is full. Remove a card to continue.
           </div>
+        )}
 
-          <PlayButton onClick={onKeep} disabled={keepDisabled}>
-            Keep
+        <Prose>Simulation. Nothing is minted. No wallet is used. Real seeds are assigned at mint.</Prose>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
+            Card PNG
           </PlayButton>
-          {keepDisabled && (
-            <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>
-              The share link is full. Remove a card to continue.
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
-              Card PNG
-            </PlayButton>
-            <PlayButton small onClick={() => downloadLadderPng(effectiveSeed, inverted)}>
-              Ladder PNG
-            </PlayButton>
-            <PlayButton small active={inverted} onClick={onToggleInverted}>
-              Black
-            </PlayButton>
-          </div>
-
-          <Prose>Simulation. Nothing is minted. No wallet is used. Real seeds are assigned at mint.</Prose>
+          <PlayButton small onClick={() => downloadLadderPng(effectiveSeed, inverted)}>
+            Ladder PNG
+          </PlayButton>
+          <PlayButton small active={inverted} onClick={onToggleInverted}>
+            Black
+          </PlayButton>
         </div>
       </div>
     </section>
@@ -403,40 +515,20 @@ function SacrificeConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCa
 
 function TrayCard({
   node,
-  session,
   selected,
-  menu,
   onToggle,
-  onRemove,
-  onOpenMenu,
-  onSplit,
-  onDecompose,
-  onSacrifice,
 }: {
   node: PlayNode;
-  session: PlaySession;
   selected: boolean;
-  menu: TrayMenu;
   onToggle: (key: number) => void;
-  onRemove: (key: number) => void;
-  onOpenMenu: (menu: TrayMenu) => void;
-  onSplit: (key: number, childDenomIndex: number) => void;
-  onDecompose: (key: number) => void;
-  onSacrifice: (key: number) => void;
 }) {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
-  const isTop = node.denomIndex === DENOMINATIONS.length - 1;
-  const showDecompose = node.trace != null && !node.black;
-  // Split children have no remove control: a split encodes as one atomic URL op, so a missing
-  // sibling could not be reproduced by a share link (removeNode rejects them too).
-  const showRemove = !showDecompose && node.splitTrace == null;
-  const menuOpen = menu?.key === node.key ? menu.kind : null;
-
   return (
-    <div style={{ position: "relative", width: 128 }}>
+    <div style={{ flexShrink: 0, width: 120 }}>
       <RawCard
         svg={svg}
         width="100%"
+        hoverable
         selected={selected}
         onClick={node.black ? undefined : () => onToggle(node.key)}
         caption={
@@ -445,49 +537,70 @@ function TrayCard({
             : `#${node.demoId} · ${LABELS[node.denomIndex]} ETH`
         }
       />
-      {showRemove && (
-        <button
-          onClick={() => onRemove(node.key)}
-          title="remove"
-          style={{
-            ...mono,
-            position: "absolute",
-            top: 2,
-            right: 2,
-            fontSize: 10,
-            lineHeight: 1,
-            padding: "2px 5px",
-            border: "none",
-            background: "rgba(0,0,0,0.55)",
-            color: C.ink,
-            cursor: "pointer",
-          }}
-        >
-          ×
-        </button>
-      )}
-      {!node.black && (
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
-          {node.denomIndex > 0 && (
-            <PlayButton small onClick={() => onOpenMenu(menuOpen === "split" ? null : { key: node.key, kind: "split" })}>
-              Split
-            </PlayButton>
-          )}
-          {showDecompose && (
-            <PlayButton small onClick={() => onDecompose(node.key)}>
-              Decompose
-            </PlayButton>
-          )}
-          {isTop && (
-            <PlayButton
-              small
-              onClick={() => onOpenMenu(menuOpen === "sacrifice" ? null : { key: node.key, kind: "sacrifice" })}
-            >
-              Sacrifice
-            </PlayButton>
-          )}
-        </div>
-      )}
+    </div>
+  );
+}
+
+/** The action bar for whichever tray card is the lone selection: card id/denomination, plus
+ *  whatever actions apply to it (same gating the per-card button stacks used to carry). Appears
+ *  only while exactly one card is selected -- two or more selected means "compose", not "act on
+ *  one card". */
+function TraySelectionBar({
+  node,
+  session,
+  menu,
+  onOpenMenu,
+  onSplit,
+  onDecompose,
+  onSacrifice,
+  onRemove,
+}: {
+  node: PlayNode;
+  session: PlaySession;
+  menu: TrayMenu;
+  onOpenMenu: (menu: TrayMenu) => void;
+  onSplit: (key: number, childDenomIndex: number) => void;
+  onDecompose: (key: number) => void;
+  onSacrifice: (key: number) => void;
+  onRemove: (key: number) => void;
+}) {
+  const isTop = node.denomIndex === DENOMINATIONS.length - 1;
+  const showDecompose = node.trace != null;
+  // Split children have no remove control: a split encodes as one atomic URL op, so a missing
+  // sibling could not be reproduced by a share link (removeNode rejects them too).
+  const showRemove = !showDecompose && node.splitTrace == null;
+  const menuOpen = menu?.key === node.key ? menu.kind : null;
+
+  return (
+    <div style={{ marginTop: 14, padding: "12px 14px", border: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ ...mono, fontSize: 11, color: C.ink }}>
+          #{node.demoId} · {formatEth(DENOMINATIONS[node.denomIndex])}
+        </span>
+        {node.denomIndex > 0 && (
+          <PlayButton small onClick={() => onOpenMenu(menuOpen === "split" ? null : { key: node.key, kind: "split" })}>
+            Split
+          </PlayButton>
+        )}
+        {showDecompose && (
+          <PlayButton small onClick={() => onDecompose(node.key)}>
+            Decompose
+          </PlayButton>
+        )}
+        {isTop && (
+          <PlayButton
+            small
+            onClick={() => onOpenMenu(menuOpen === "sacrifice" ? null : { key: node.key, kind: "sacrifice" })}
+          >
+            Sacrifice
+          </PlayButton>
+        )}
+        {showRemove && (
+          <PlayButton small onClick={() => onRemove(node.key)}>
+            Remove
+          </PlayButton>
+        )}
+      </div>
       {menuOpen === "split" && (
         <SplitPicker
           node={node}
@@ -526,33 +639,44 @@ function TrayBeat({
   onDecompose: (key: number) => void;
   onSacrifice: (key: number) => void;
 }) {
+  // Black cards are never actionable (no Split/Sacrifice/Decompose/Remove applies to them) and
+  // have no onClick to deselect themselves -- excluding them here is a backstop alongside clearing
+  // `selected` in handleSacrifice, so a black card can never stall the selection bar.
+  const singleSelected =
+    selected.size === 1 ? nodes.find((n) => selected.has(n.key) && !n.black) ?? null : null;
+
   return (
     <section style={sectionStyle}>
-      <SectionLabel>
-        Tray ({nodes.length})
-      </SectionLabel>
+      <SectionLabel>Tray ({nodes.length})</SectionLabel>
+      <div style={{ marginBottom: 16 }}>
+        <Prose>Your kept cards. Select two or more to compose.</Prose>
+      </div>
       {nodes.length === 0 ? (
         <div style={{ ...mono, fontSize: 11, color: C.muted }}>—</div>
       ) : (
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
-          {nodes.map((n) => (
-            <TrayCard
-              key={n.key}
-              node={n}
+        <>
+          <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "4px 2px 8px" }}>
+            {nodes.map((n) => (
+              <TrayCard key={n.key} node={n} selected={selected.has(n.key)} onToggle={onToggle} />
+            ))}
+          </div>
+          {singleSelected && (
+            <TraySelectionBar
+              node={singleSelected}
               session={session}
-              selected={selected.has(n.key)}
               menu={menu}
-              onToggle={onToggle}
-              onRemove={onRemove}
               onOpenMenu={onOpenMenu}
               onSplit={onSplit}
               onDecompose={onDecompose}
               onSacrifice={onSacrifice}
+              onRemove={onRemove}
             />
-          ))}
-        </div>
+          )}
+          <div style={{ marginTop: 18 }}>
+            <ShareLink />
+          </div>
+        </>
       )}
-      {nodes.length > 0 && <ShareLink />}
     </section>
   );
 }
@@ -689,18 +813,22 @@ function ComposeBeat({
 
   const canCompose = reason === null;
 
-  const resultComposition = React.useMemo(() => (lastResult ? nodeComposition(lastResult) : null), [lastResult]);
+  // The result stage only shows while the last compose's result is still live in the tray -- once
+  // it's consumed by a further compose, split, or removed, it's no longer "the" result to show.
+  const resultLive = lastResult != null && nodes.some((n) => n.key === lastResult.key) ? lastResult : null;
+
+  const resultComposition = React.useMemo(() => (resultLive ? nodeComposition(resultLive) : null), [resultLive]);
   // Exports of a black (sacrificed) result default to inverted, regardless of the manual toggle
   // below (which still lets a visitor invert a non-black result's exports).
-  const effectiveInverted = inverted || lastResult?.black === true;
+  const effectiveInverted = inverted || resultLive?.black === true;
 
   const [gifBusy, setGifBusy] = React.useState<string | null>(null);
 
   const handleGif = async () => {
-    if (!lastResult) return;
+    if (!resultLive) return;
     setGifBusy("rendering…");
     try {
-      await downloadComposeGif(lastResult, LABELS[lastResult.denomIndex], effectiveInverted, (done, total) =>
+      await downloadComposeGif(resultLive, LABELS[resultLive.denomIndex], effectiveInverted, (done, total) =>
         setGifBusy(`rendering ${done}/${total}…`),
       );
     } catch (e) {
@@ -713,41 +841,39 @@ function ComposeBeat({
   return (
     <section style={sectionStyle}>
       <SectionLabel>Compose</SectionLabel>
+      <div style={{ marginBottom: 16 }}>
+        <Prose>Backing adds up. The sum must land on a denomination.</Prose>
+      </div>
       <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-        <div style={{ ...mono, fontSize: 11, color: C.body }}>
+        <div style={{ ...mono, fontSize: 11.5, color: reason ? C.muted : C.body }}>
           {selectedNodes.length} selected · {formatEth(sumWei)}
+          {reason ? ` · ${reason}` : ` → ${GRIDS[summedIndex][0]}×${GRIDS[summedIndex][1]}`}
         </div>
-        {reason && <div style={{ ...mono, fontSize: 11, color: C.muted }}>{reason}</div>}
-        {!reason && summedIndex >= 0 && (
-          <div style={{ ...mono, fontSize: 11, color: C.body }}>
-            → {LABELS[summedIndex]} ETH ({GRIDS[summedIndex][0]}×{GRIDS[summedIndex][1]})
-          </div>
-        )}
         <PlayButton onClick={onCompose} disabled={!canCompose}>
           Compose
         </PlayButton>
       </div>
       {error && <div style={{ ...mono, fontSize: 11, color: C.muted, marginBottom: 16 }}>{error}</div>}
 
-      {lastResult && resultComposition && (
-        <div key={lastResult.key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ width: "min(320px, 80vw)" }}>
+      {resultLive && resultComposition && (
+        <div key={resultLive.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <div style={{ width: "min(360px, 85vw)" }}>
             <ComposeResultCard
               composition={resultComposition}
-              trace={lastResult.trace ?? null}
-              inverted={lastResult.black === true}
+              trace={resultLive.trace ?? null}
+              inverted={resultLive.black === true}
             />
           </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "center" }}>
             <PlayButton
               small
-              onClick={() => downloadCardPng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, effectiveInverted)}
+              onClick={() => downloadCardPng(resultComposition, LABELS[resultLive.denomIndex], resultLive.seed, effectiveInverted)}
             >
               Card PNG
             </PlayButton>
             <PlayButton
               small
-              onClick={() => downloadSquarePng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, effectiveInverted)}
+              onClick={() => downloadSquarePng(resultComposition, LABELS[resultLive.denomIndex], resultLive.seed, effectiveInverted)}
             >
               Square PNG
             </PlayButton>
@@ -759,9 +885,9 @@ function ComposeBeat({
             </PlayButton>
           </div>
           <Prose>
-            {lastResult.black
+            {resultLive.black
               ? "Black."
-              : `Composed from ${lastResult.parents?.length ?? 0} Shapes. Every cell sampled from a parent.`}
+              : `Composed from ${resultLive.parents?.length ?? 0} Shapes. Every cell sampled from a parent.`}
           </Prose>
         </div>
       )}
@@ -773,39 +899,57 @@ function ComposeBeat({
  * Beat 4 — lineage
  * ------------------------------------------------------------------ */
 
-function LineageNode({
-  node,
-  byKey,
-  focusedKey,
-  onSelect,
-}: {
-  node: PlayNode;
-  byKey: Map<number, PlayNode>;
-  focusedKey: number | null;
-  onSelect: (key: number) => void;
-}) {
+/** One node's ancestry, recursively -- parents fan out above, this node sits below them. Purely
+ *  informational (no selection): focus is picked from `LineageTipStrip` above, not from the tree
+ *  itself. The sibling fan row wraps so a wide split (e.g. 10 children) never runs off the page. */
+function LineageTreeNode({ node, byKey }: { node: PlayNode; byKey: Map<number, PlayNode> }) {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
-  const selectable = node.trace != null || node.splitTrace != null;
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
       {parents.length > 0 && (
         <>
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
+          <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", justifyContent: "center" }}>
             {parents.map((p) => (
-              <LineageNode key={p.key} node={p} byKey={byKey} focusedKey={focusedKey} onSelect={onSelect} />
+              <LineageTreeNode key={p.key} node={p} byKey={byKey} />
             ))}
           </div>
           <div style={{ width: 1, height: 14, background: C.border }} />
         </>
       )}
-      <RawCard
-        svg={svg}
-        width={64}
-        caption={`#${node.demoId}`}
-        onClick={selectable ? () => onSelect(node.key) : undefined}
-        selected={selectable && focusedKey === node.key}
-      />
+      <RawCard svg={svg} width={64} caption={`#${node.demoId}`} />
+    </div>
+  );
+}
+
+/** The strip of live tips: picks which node's ancestry the tree below renders. Same hover/select
+ *  card feel as the tray. */
+function LineageTipStrip({
+  tips,
+  focusedKey,
+  onSelect,
+}: {
+  tips: PlayNode[];
+  focusedKey: number | null;
+  onSelect: (key: number) => void;
+}) {
+  return (
+    <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "4px 2px 8px" }}>
+      {tips.map((tip) => {
+        const svg = svgFromComposition(nodeComposition(tip), 0n, CANONICAL, tip.black === true);
+        return (
+          <div key={tip.key} style={{ flexShrink: 0, width: 90 }}>
+            <RawCard
+              svg={svg}
+              width="100%"
+              hoverable
+              selected={focusedKey === tip.key}
+              onClick={() => onSelect(tip.key)}
+              caption={`#${tip.demoId}`}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1107,12 +1251,15 @@ function LineageBeat({ session }: { session: PlaySession }) {
   return (
     <section style={sectionStyle}>
       <SectionLabel>Lineage</SectionLabel>
-      <Prose>This session&apos;s compose and split history.</Prose>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "18px 0 28px" }}>
-        {tips.map((tip) => (
-          <LineageNode key={tip.key} node={tip} byKey={byKey} focusedKey={focusedKey} onSelect={setFocusedKey} />
-        ))}
+      <div style={{ marginBottom: 16 }}>
+        <Prose>Tap a cell. See where it came from.</Prose>
       </div>
+      <LineageTipStrip tips={tips} focusedKey={focusedKey} onSelect={setFocusedKey} />
+      {focusedNode && (
+        <div style={{ display: "flex", justifyContent: "center", margin: "20px 0 28px" }}>
+          <LineageTreeNode node={focusedNode} byKey={byKey} />
+        </div>
+      )}
       {focusedNode && focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
       {focusedNode && focusedNode.splitTrace && <SplitCellExplorer node={focusedNode} byKey={byKey} />}
     </section>
@@ -1242,6 +1389,16 @@ export function PlayApp() {
     try {
       setSession(sacrificeNode(session, key));
       setMenu(null);
+      // Unlike split/decompose/compose, sacrifice mutates the node in place rather than replacing
+      // it -- the key stays live, just black. Black cards aren't selectable (RawCard gives them no
+      // onClick), so a lingering selection here would strand the selection bar and its outline on
+      // a card the visitor can no longer click to deselect.
+      setSelected((cur) => {
+        if (!cur.has(key)) return cur;
+        const next = new Set(cur);
+        next.delete(key);
+        return next;
+      });
     } catch (e) {
       console.error("sacrifice failed", e);
     }
@@ -1282,13 +1439,38 @@ export function PlayApp() {
             animation-name: playRevealFade;
           }
         }
+
+        /* Selection feedback for tray/lineage cards -- a card lifted from a hand. Interaction
+           feedback, not the page's animation: a 120ms transform/outline-color transition, no
+           autonomous motion. */
+        .play-card-shape {
+          outline: 1px solid ${C.border};
+          outline-offset: -1px;
+          transition: transform 120ms ease, outline-color 120ms ease;
+        }
+        .play-card-shape:hover {
+          transform: translateY(-3px);
+          outline-color: ${C.muted};
+        }
+        .play-card-shape.play-card-selected {
+          outline: 2px solid ${C.ink};
+          outline-offset: -2px;
+          transform: translateY(-6px);
+        }
+
+        /* Minimum 40px tap target on mobile for every clickable control on the page. */
+        @media (max-width: 480px) {
+          .play-tap {
+            min-height: 40px;
+          }
+        }
       `}</style>
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "48px 20px 80px" }}>
-        <header style={{ marginBottom: 40 }}>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10 }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", padding: "40px 20px 72px" }}>
+        <header style={{ marginBottom: 32 }}>
+          <div style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 8 }}>
             PLAYGROUND
           </div>
-          <h1 style={{ ...mono, fontSize: 18, fontWeight: 500, color: C.ink, margin: "0 0 14px" }}>
+          <h1 style={{ ...mono, fontSize: 18, fontWeight: 500, color: C.ink, margin: "0 0 12px" }}>
             Draw a Shape. Compose Shapes. Trace every cell to a parent.
           </h1>
           <Prose>
