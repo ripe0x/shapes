@@ -11,7 +11,7 @@ import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
-import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
+import {IShapeRenderer, SplitProvenance} from "./interfaces/IShapeRenderer.sol";
 import {
     IShapeProvenance,
     IShapeRecomposition,
@@ -134,11 +134,17 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      which `parentModules` necessarily equals. `parentId` is the burned parent's token id,
     ///      needed to re-read `_composeStack[parentId]` (which split does not delete, and which no
     ///      later operation on `parentId` can ever grow, since the id is burned) for reconstruction.
+    ///      `originDenomIndex` is the root split ancestor's denomination index: the parent's own
+    ///      `originDenomIndex` (via `_splitOriginRef[parentId]`) when the parent was itself a
+    ///      split child, else `parentDenomIndex`. Set once at split time. Not reconstructable from
+    ///      the rest of this struct, since `parentId`'s own `_splitOriginRef` entry may belong to a
+    ///      different `SplitRecord` than this one; that is why it is stored here directly.
     struct SplitRecord {
         bytes32 parentSeed;
         uint96 parentId;
         uint8 parentDenomIndex;
         uint8 parentInkGene;
+        uint8 originDenomIndex;
         bytes parentModules;
     }
 
@@ -946,11 +952,20 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         // materialized, otherwise the grammar v1 sequence from its seed at its own denomination),
         // read before the parent is burned below. Informational only (SAMPLING_SPEC.md §6, D3'):
         // the sampling pool below is not read from this field in either branch.
+        //
+        // `originDenomIndex` (issue #21C): the root split ancestor's denomination. The parent
+        // carries one already (via its own `_splitOriginRef` entry) when it was itself a split
+        // child; otherwise the parent is the root and its own denomination is the origin.
+        SplitOriginRef storage parentRef = _splitOriginRef[tokenId];
+        uint8 originDenomIndex =
+            parentRef.exists ? _splitRecords[parentRef.recordIndex].originDenomIndex : p.denomIndex;
+
         SplitRecord memory rec = SplitRecord({
             parentSeed: p.seed,
             parentId: uint96(tokenId),
             parentDenomIndex: p.denomIndex,
             parentInkGene: p.inkGene,
+            originDenomIndex: originDenomIndex,
             parentModules: GeometrySampling.effectiveModulesOf(
                 _sampledModules[tokenId], p.seed, p.denomIndex, p.inkGene
             )
@@ -1325,6 +1340,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      `parentId` is needed to re-derive the split's sampling branch (SAMPLING_SPEC.md §6,
     ///      D3'): `composeDepth(parentId) > 0` means the record branch, whose donor pool is
     ///      rebuilt from `composeRecordHeaderAt`/`composeRecordInputAt` at that depth.
+    ///      `originDenomIndex` is the root split ancestor's denomination (issue #21C): the "Split
+    ///      Origin" metadata trait reads it directly, with no reconstruction needed.
     function splitOriginRaw(uint256 childId)
         external
         view
@@ -1332,6 +1349,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             bytes32 parentSeed,
             uint256 parentId,
             uint8 parentDenomIndex,
+            uint8 originDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
             uint256 childIndex
@@ -1341,7 +1359,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         if (!ref.exists) revert NotASplitChild(childId);
         SplitRecord storage rec = _splitRecords[ref.recordIndex];
         return (
-            rec.parentSeed, rec.parentId, rec.parentDenomIndex, rec.parentInkGene, rec.parentModules, ref.childIndex
+            rec.parentSeed,
+            rec.parentId,
+            rec.parentDenomIndex,
+            rec.originDenomIndex,
+            rec.parentInkGene,
+            rec.parentModules,
+            ref.childIndex
         );
     }
 
@@ -1390,7 +1414,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.
     /// @dev Reads the sampled path (grammar v2) when the token carries materialized geometry
     ///      (`_sampledModules[tokenId]` nonempty: a compose survivor or a split child), otherwise
-    ///      the seed-based path (grammar v1, an original mint).
+    ///      the seed-based path (grammar v1, an original mint). A split child always carries
+    ///      materialized geometry (`_splitTo` writes `_sampledModules` for every child), so its
+    ///      "Split From" / "Split Origin" traits are only ever plumbed through the sampled path;
+    ///      `_splitProvenanceOf` is the all-zero, non-split value for every other token.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
@@ -1408,7 +1435,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                     d.inkGene,
                     depth,
                     tokenNamePrefix,
-                    description
+                    description,
+                    _splitProvenanceOf(tokenId)
                 );
         }
         return IShapeRenderer(renderer)
@@ -1423,6 +1451,22 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 tokenNamePrefix,
                 description
             );
+    }
+
+    /// @dev Split creation-provenance for `tokenId`'s metadata (issue #21C): the all-zero value
+    ///      for a token that was never minted by `split`/`splitTo`, else its immediate parent's
+    ///      and root split ancestor's denomination indexes, read from its `SplitRecord`.
+    function _splitProvenanceOf(uint256 tokenId) private view returns (SplitProvenance memory) {
+        SplitOriginRef storage ref = _splitOriginRef[tokenId];
+        if (!ref.exists) {
+            return SplitProvenance({isSplitChild: false, parentDenomIndex: 0, originDenomIndex: 0});
+        }
+        SplitRecord storage rec = _splitRecords[ref.recordIndex];
+        return SplitProvenance({
+            isSplitChild: true,
+            parentDenomIndex: rec.parentDenomIndex,
+            originDenomIndex: rec.originDenomIndex
+        });
     }
 
     /// @dev Refuses to place a Shape in this contract's own custody.

@@ -247,11 +247,12 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 2; ++i) {
-            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pGene, bytes memory pMods, uint256 childIndex) =
-                lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
+            = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed, "parent seed");
             assertEq(pId, parent, "parent id");
             assertEq(pDenom, 2, "parent denom index (0.1 ETH)");
+            assertEq(pOrigin, 2, "root split ancestor is the parent itself: a direct mint, never split");
             assertEq(pGene, parentGene, "parent gene");
             assertEq(pMods, expectedParentModules, "parent effective modules (grammar v1)");
             assertEq(childIndex, i, "child index");
@@ -276,11 +277,12 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(survivor, outs);
 
         for (uint256 i = 0; i < 5; ++i) {
-            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pGene, bytes memory pMods, uint256 childIndex) =
-                lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
+            = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed);
             assertEq(pId, survivor, "parent id");
             assertEq(pDenom, 1, "parent denom index (0.05 ETH)");
+            assertEq(pOrigin, 1, "root split ancestor is the parent itself: a compose survivor, never split");
             assertEq(pGene, parentGene);
             assertEq(pMods, expectedParentModules, "parent effective modules (stored bytes)");
             assertEq(childIndex, i);
@@ -302,11 +304,12 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 2; ++i) {
-            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pGene, bytes memory pMods, uint256 childIndex) =
-                lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
+            = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed);
             assertEq(pId, parent, "parent id");
             assertEq(pDenom, 8, "parent denom index (100 ETH)");
+            assertEq(pOrigin, 8, "root split ancestor is the parent itself: a direct mint, never split");
             assertEq(pGene, parentGene);
             assertEq(pMods, expectedParentModules);
             assertEq(childIndex, i);
@@ -329,7 +332,7 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 5; ++i) {
-            (bytes32 pSeed, uint256 pId,, uint8 pGene,, uint256 childIndex) = lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId,,, uint8 pGene,, uint256 childIndex) = lens.splitOriginOf(kids[i]);
             assertEq(shapes.composeDepth(pId), 0, "parent has no compose record: grammar branch");
             uint8 childDenom = lens.shapeState(kids[i]).denominationIndex;
             bytes memory pool = GeometrySampling.grammarSplitPool(pSeed, childDenom, pGene);
@@ -361,7 +364,7 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 5; ++i) {
-            (bytes32 pSeed, uint256 pId,,,, uint256 childIndex) = lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId,,,,, uint256 childIndex) = lens.splitOriginOf(kids[i]);
             uint256 depth = shapes.composeDepth(pId);
             assertGt(depth, 0, "parent has a compose record: record branch");
 
@@ -519,6 +522,7 @@ contract ProvenanceTest is ShapesBase {
             bytes32 pSeedBefore,
             uint256 pIdBefore,
             uint8 pDenomBefore,
+            uint8 pOriginBefore,
             uint8 pGeneBefore,
             bytes memory pModsBefore,
             uint256 idxBefore
@@ -541,6 +545,7 @@ contract ProvenanceTest is ShapesBase {
             bytes32 pSeedAfter,
             uint256 pIdAfter,
             uint8 pDenomAfter,
+            uint8 pOriginAfter,
             uint8 pGeneAfter,
             bytes memory pModsAfter,
             uint256 idxAfter
@@ -548,6 +553,7 @@ contract ProvenanceTest is ShapesBase {
         assertEq(pSeedAfter, pSeedBefore, "split origin seed unchanged by the later compose");
         assertEq(pIdAfter, pIdBefore, "split origin parent id unchanged");
         assertEq(pDenomAfter, pDenomBefore, "split origin denom unchanged");
+        assertEq(pOriginAfter, pOriginBefore, "split origin ancestor denom unchanged");
         assertEq(pGeneAfter, pGeneBefore, "split origin gene unchanged");
         assertEq(pModsAfter, pModsBefore, "split origin parent modules unchanged");
         assertEq(idxAfter, idxBefore, "split origin child index unchanged");
@@ -569,6 +575,7 @@ contract ProvenanceTest is ShapesBase {
             bytes32 pSeedBefore,
             uint256 pIdBefore,
             uint8 pDenomBefore,
+            uint8 pOriginBefore,
             uint8 pGeneBefore,
             bytes memory pModsBefore,
             uint256 idxBefore
@@ -587,6 +594,7 @@ contract ProvenanceTest is ShapesBase {
             bytes32 pSeedAfter,
             uint256 pIdAfter,
             uint8 pDenomAfter,
+            uint8 pOriginAfter,
             uint8 pGeneAfter,
             bytes memory pModsAfter,
             uint256 idxAfter
@@ -594,6 +602,7 @@ contract ProvenanceTest is ShapesBase {
         assertEq(pSeedAfter, pSeedBefore);
         assertEq(pIdAfter, pIdBefore);
         assertEq(pDenomAfter, pDenomBefore);
+        assertEq(pOriginAfter, pOriginBefore);
         assertEq(pGeneAfter, pGeneBefore);
         assertEq(pModsAfter, pModsBefore);
         assertEq(idxAfter, idxBefore);

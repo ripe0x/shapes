@@ -659,6 +659,8 @@ const out = {
       originCount: bigint;
       inverted: boolean;
       composeDepth: bigint;
+      /** Split creation-provenance (issue #21C); absent for a case with no split ancestry. */
+      splitFrom?: {parentDenomIndex: number; originDenomIndex: number};
     }
 
     const sampledRenderCases: SampledRenderCase[] = [
@@ -752,6 +754,44 @@ const out = {
         inverted: false,
         composeDepth: 0n,
       },
+
+      // Split creation-provenance (issue #21C): "Split From" / "Split Origin" traits. The three
+      // vectors below exercise every shape splitFrom can take: absent, present with the two
+      // denominations equal (first-generation child), and present with them differing
+      // (grandchild of two splits).
+      {
+        why: "sampled render: non-split token carries no Split From / Split Origin trait",
+        denomIndex: 1,
+        modules: materializedFrom(productionSeed(720n), 1, 3),
+        inkGene: 3,
+        tokenId: 3000n,
+        originCount: 5n,
+        inverted: false,
+        composeDepth: 0n,
+        // splitFrom deliberately omitted.
+      },
+      {
+        why: "sampled render: first-generation split child, Split From == Split Origin",
+        denomIndex: 7, // 50 ETH
+        modules: materializedFrom(productionSeed(721n), 7, 4),
+        inkGene: 4,
+        tokenId: 3001n,
+        originCount: 1n,
+        inverted: false,
+        composeDepth: 0n,
+        splitFrom: {parentDenomIndex: 8, originDenomIndex: 8}, // split straight from a 100 ETH parent
+      },
+      {
+        why: "sampled render: grandchild of two splits, Split From != Split Origin",
+        denomIndex: 6, // 10 ETH
+        modules: materializedFrom(productionSeed(722n), 6, 5),
+        inkGene: 5,
+        tokenId: 3002n,
+        originCount: 0n,
+        inverted: false,
+        composeDepth: 1n,
+        splitFrom: {parentDenomIndex: 7, originDenomIndex: 8}, // split from the 50 ETH middle tier, 100 ETH root
+      },
     ];
 
     for (const c of sampledRenderCases) {
@@ -817,6 +857,13 @@ const out = {
       sampledRenderOriginCount: sampledRenderCases.map((c) => c.originCount.toString()),
       sampledRenderInverted: sampledRenderCases.map((c) => (c.inverted ? "true" : "false")),
       sampledRenderComposeDepth: sampledRenderCases.map((c) => c.composeDepth.toString()),
+      sampledRenderIsSplitChild: sampledRenderCases.map((c) => (c.splitFrom ? "true" : "false")),
+      sampledRenderParentDenomIndex: sampledRenderCases.map((c) =>
+        (c.splitFrom?.parentDenomIndex ?? 0).toString(),
+      ),
+      sampledRenderOriginDenomIndex: sampledRenderCases.map((c) =>
+        (c.splitFrom?.originDenomIndex ?? 0).toString(),
+      ),
       sampledRenderSvg: sampledRenderCases.map((c) =>
         renderSampledShape(c.modules, c.denomIndex, c.tokenId, c.inkGene, CANONICAL, c.inverted),
       ),
@@ -829,6 +876,10 @@ const out = {
           c.inverted,
           c.inkGene,
           c.composeDepth,
+          "Shape ",
+          undefined,
+          CANONICAL,
+          c.splitFrom,
         ),
       ),
       sampledRenderModuleSequence: sampledRenderCases.map((c) =>

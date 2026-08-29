@@ -88,6 +88,10 @@ export interface RawSplitOrigin {
   parentSeed: bigint;
   parentId: bigint;
   parentDenomIndex: number;
+  /** The root split ancestor's denomination index (issue #21C), backing the "Split Origin"
+   *  metadata trait. Not read by the sampling reconstruction below, which only needs the
+   *  immediate parent's own state. */
+  originDenomIndex: number;
   parentInkGene: number;
   parentModules: Uint8Array;
   childIndex: number;
@@ -487,7 +491,7 @@ async function resolveDna(
   if (branch === "split") {
     const shapes = {address: dep.shapes, abi: shapesAbi} as const;
     try {
-      const [parentSeed, parentId, parentDenomIndex, parentInkGene, parentModules, childIndex] =
+      const [parentSeed, parentId, parentDenomIndex, originDenomIndex, parentInkGene, parentModules, childIndex] =
         await publicClient.readContract({
           ...lens,
           functionName: "splitOriginOf",
@@ -497,6 +501,7 @@ async function resolveDna(
         parentSeed: BigInt(parentSeed),
         parentId,
         parentDenomIndex,
+        originDenomIndex,
         parentInkGene,
         parentModules: hexToBytes(parentModules),
         childIndex: Number(childIndex),

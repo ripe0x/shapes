@@ -30,6 +30,7 @@ import {
   type Composition,
   type Module,
   type Params,
+  type SplitFrom,
 } from "./render";
 import {decodeModules, encodeModules, isValidModuleArray} from "./moduleCodec";
 
@@ -522,6 +523,7 @@ export function sampledTokenMetadataJson(
   namePrefix: string = "Shape ",
   description: string = DESCRIPTION,
   p: Params = CANONICAL,
+  splitFrom?: SplitFrom,
 ): string {
   const c = composeSampledShape(modules, denomIndex, inkGene, p);
   const svg = svgFromComposition(c, tokenId, p, inverted);
@@ -535,5 +537,6 @@ export function sampledTokenMetadataJson(
     composeDepth,
     namePrefix,
     description,
+    splitFrom,
   );
 }

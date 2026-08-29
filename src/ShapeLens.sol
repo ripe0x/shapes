@@ -330,6 +330,7 @@ contract ShapeLens is IShapeLens {
             bytes32 parentSeed,
             uint256 parentId,
             uint8 parentDenomIndex,
+            uint8 originDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
             uint256 childIndex

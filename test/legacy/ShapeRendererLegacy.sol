@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {IShapeRenderer} from "../../src/interfaces/IShapeRenderer.sol";
+import {IShapeRenderer, SplitProvenance} from "../../src/interfaces/IShapeRenderer.sol";
 import {IShapeGeometry} from "../../src/interfaces/IShapeGeometry.sol";
 import {Denominations} from "../../src/lib/Denominations.sol";
 import {FixedPoint} from "../../src/lib/FixedPoint.sol";
@@ -1198,7 +1198,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
             inkGene,
             composeDepth,
             namePrefix,
-            description
+            description,
+            SplitProvenance({isSplitChild: false, parentDenomIndex: 0, originDenomIndex: 0})
         );
     }
 
@@ -1212,7 +1213,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint8 inkGene,
         uint256 composeDepth,
         string memory namePrefix,
-        string memory description
+        string memory description,
+        SplitProvenance memory splitInfo
     ) public pure returns (string memory) {
         Card memory card = composeSampled(modules, amountWei, inkGene);
         return _metadataFromCard(
@@ -1224,7 +1226,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
             inkGene,
             composeDepth,
             namePrefix,
-            description
+            description,
+            splitInfo
         );
     }
 
@@ -1237,7 +1240,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint8 inkGene,
         uint256 composeDepth,
         string memory namePrefix,
-        string memory description
+        string memory description,
+        SplitProvenance memory splitInfo
     ) private pure returns (string memory) {
         uint256 units = Denominations.unitsAt(card.denomIndex);
         bool complete = !inverted && units > 1 && originCount == units;
@@ -1271,6 +1275,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
                 ',{"trait_type":"Compose Depth","value":"',
                 FixedPoint.toString(composeDepth),
                 '"}',
+                _splitTraits(splitInfo),
                 "]}"
             )
         );
@@ -1295,6 +1300,18 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
             '"},{"trait_type":"Black","value":"',
             isBlack ? "true" : "false",
             '"}'
+        );
+    }
+
+    /// @dev "Split From" / "Split Origin" (issue #21C), mirroring `ShapeRenderer._splitTraits`.
+    function _splitTraits(SplitProvenance memory splitInfo) private pure returns (bytes memory) {
+        if (!splitInfo.isSplitChild) return bytes("");
+        return abi.encodePacked(
+            ',{"trait_type":"Split From","value":"',
+            Denominations.labelAt(splitInfo.parentDenomIndex),
+            ' ETH"},{"trait_type":"Split Origin","value":"',
+            Denominations.labelAt(splitInfo.originDenomIndex),
+            ' ETH"}'
         );
     }
 
@@ -1335,7 +1352,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint8 inkGene,
         uint256 composeDepth,
         string calldata namePrefix,
-        string calldata description
+        string calldata description,
+        SplitProvenance calldata splitInfo
     ) external pure returns (string memory) {
         return _wrapTokenURI(
             metadataJSONSampled(
@@ -1347,7 +1365,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
                 inkGene,
                 composeDepth,
                 namePrefix,
-                description
+                description,
+                splitInfo
             )
         );
     }

@@ -114,7 +114,7 @@ export const shapeLensAbi = parseAbi([
   "function shapeState(uint256 tokenId) view returns (ShapeState)",
   "function unicodeCard(uint256 tokenId) view returns (string)",
   "function composeRecordAt(uint256 survivorId, uint256 depth) view returns (ComposeRecordView)",
-  "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint256 parentId, uint8 parentDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
+  "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint256 parentId, uint8 parentDenomIndex, uint8 originDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
   "function exists(uint256 tokenId) view returns (bool)",
   "function positionOf(uint256 tokenId) view returns (address)",
   "function isSupportedDenomination(uint256 amountWei) pure returns (bool)",

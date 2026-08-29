@@ -127,6 +127,7 @@ test("deriveSplitDna (grammar branch): reconstruction matching the live bytes re
     parentSeed: parent.seed,
     parentId: 42n,
     parentDenomIndex: parent.denomIndex,
+    originDenomIndex: parent.denomIndex,
     parentInkGene: parent.inkGene,
     parentModules: new Uint8Array(),
     childIndex,
@@ -160,6 +161,7 @@ test("deriveSplitDna: a live-bytes mismatch surfaces as an explicit error", () =
     parentSeed: parent.seed,
     parentId: 42n,
     parentDenomIndex: parent.denomIndex,
+    originDenomIndex: parent.denomIndex,
     parentInkGene: parent.inkGene,
     parentModules: new Uint8Array(),
     childIndex,
@@ -195,6 +197,7 @@ test("deriveSplitDna (record branch): pool is the compose record's donor modules
     parentSeed,
     parentId: 99n,
     parentDenomIndex: 4, // the parent's own (post-compose) denomination, informational only
+    originDenomIndex: 4, // parent was never itself a split child in this fixture
     parentInkGene,
     parentModules: new Uint8Array([0x00]), // informational snapshot; must play no part in reconstruction
     childIndex,

@@ -1,6 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
+/// @notice A split child's creation provenance for its metadata (issue #21C), or the all-zero
+///         value for a token that was never minted by `split`/`splitTo`.
+/// @dev `parentDenomIndex` is the immediate parent's denomination at split time; `originDenomIndex`
+///      is the root split ancestor's denomination. Both are ignored when `isSplitChild` is false.
+///      The renderer emits the "Split From" / "Split Origin" traits from these, omitted entirely
+///      when `isSplitChild` is false (METADATA.md).
+struct SplitProvenance {
+    bool isSplitChild;
+    uint8 parentDenomIndex;
+    uint8 originDenomIndex;
+}
+
 /// @title IShapeRenderer
 /// @notice The fully onchain renderer for Shape tokens.
 /// @dev Every function is `pure`. The renderer holds no state, has no owner and no
@@ -54,6 +66,11 @@ interface IShapeRenderer {
     ) external pure returns (string memory);
 
     /// @notice `metadataJSON`, reading a materialized module array instead of a seed.
+    /// @dev `splitInfo` is the extra argument over `metadataJSON`: a split child always carries
+    ///      materialized geometry, so "Split From" / "Split Origin" are only ever plumbed through
+    ///      this sampled path, never the seed-based one. `Shapes.tokenURI` passes the all-zero,
+    ///      non-split value for every other sampled token (a compose survivor with no split
+    ///      ancestry of its own).
     function metadataJSONSampled(
         bytes calldata modules,
         uint256 amountWei,
@@ -63,7 +80,8 @@ interface IShapeRenderer {
         uint8 inkGene,
         uint256 composeDepth,
         string calldata namePrefix,
-        string calldata description
+        string calldata description,
+        SplitProvenance calldata splitInfo
     ) external pure returns (string memory);
 
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSON`.
@@ -89,7 +107,8 @@ interface IShapeRenderer {
         uint8 inkGene,
         uint256 composeDepth,
         string calldata namePrefix,
-        string calldata description
+        string calldata description,
+        SplitProvenance calldata splitInfo
     ) external pure returns (string memory);
 
     /// @notice The module glyph sequence used as the `Modules` trait.

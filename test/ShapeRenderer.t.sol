@@ -818,6 +818,88 @@ contract TokenMetadataTest is RendererTestBase {
         );
     }
 
+    /// @notice Split creation-provenance traits (issue #21C): absent from every non-split token,
+    ///         and present on a split child as the last two attributes, after Compose Depth.
+    ///         `Split From` is the immediate parent's denomination; `Split Origin` is the root
+    ///         split ancestor's, which stays fixed across a chain of splits even as `Split From`
+    ///         tracks the immediate parent at each generation.
+    function test_SplitProvenanceTraitsOnlyOnSplitChildren() public {
+        // Non-split token: no Split From / Split Origin trait at all.
+        vm.prank(alice);
+        uint256 direct = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        string memory dj = _decodeJson(direct);
+        assertFalse(_contains(dj, "Split From"), "non-split token carries no Split From trait");
+        assertFalse(_contains(dj, "Split Origin"), "non-split token carries no Split Origin trait");
+
+        // Top tier: a direct-minted 100 ETH, split into two 50 ETH children.
+        vm.prank(alice);
+        uint256 top = shapes.mint{value: DENOMS[8] + DENOMS[4]}(DENOMS[8]);
+        uint8[] memory topOuts = new uint8[](2);
+        topOuts[0] = 7; // 50 ETH
+        topOuts[1] = 7;
+        vm.prank(alice);
+        uint256[] memory mid = shapes.split(top, topOuts);
+
+        // First-generation child: Split From == Split Origin, both the 100 ETH root.
+        string memory mj = _decodeJson(mid[0]);
+        assertEq(vm.parseJsonString(mj, ".attributes[15].trait_type"), "Split From");
+        assertEq(
+            vm.parseJsonString(mj, ".attributes[15].value"),
+            string(abi.encodePacked(Denominations.labelAt(8), " ETH")),
+            "split from the 100 ETH parent"
+        );
+        assertEq(vm.parseJsonString(mj, ".attributes[16].trait_type"), "Split Origin");
+        assertEq(
+            vm.parseJsonString(mj, ".attributes[16].value"),
+            string(abi.encodePacked(Denominations.labelAt(8), " ETH")),
+            "root ancestor is the same 100 ETH parent"
+        );
+
+        // Grandchild: split the 50 ETH child again, into five 10 ETH children (5 * 10 = 50).
+        // Split From now reads the 50 ETH middle tier; Split Origin still reads the 100 ETH root.
+        uint8[] memory midOuts = new uint8[](5);
+        for (uint256 i = 0; i < 5; i++) {
+            midOuts[i] = 6; // 10 ETH
+        }
+        vm.prank(alice);
+        uint256[] memory bottom = shapes.split(mid[0], midOuts);
+
+        string memory gj = _decodeJson(bottom[0]);
+        assertEq(
+            vm.parseJsonString(gj, ".attributes[15].value"),
+            string(abi.encodePacked(Denominations.labelAt(7), " ETH")),
+            "split from the 50 ETH middle tier"
+        );
+        assertEq(
+            vm.parseJsonString(gj, ".attributes[16].value"),
+            string(abi.encodePacked(Denominations.labelAt(8), " ETH")),
+            "split origin is still the 100 ETH root, two generations up"
+        );
+
+        // A split child's own later compose keeps its split traits unchanged: they record
+        // creation, not current state (Compose Depth records the later history instead). Four
+        // more 10 ETH tokens compose with the 10 ETH grandchild to land on 50 ETH, a valid
+        // denomination (10 + 4*10).
+        vm.startPrank(alice);
+        uint256[] memory burnList = new uint256[](4);
+        for (uint256 i = 0; i < 4; i++) {
+            burnList[i] = shapes.mint{value: DENOMS[6] + DENOMS[6] / 100}(DENOMS[6]);
+        }
+        shapes.compose(bottom[0], burnList);
+        vm.stopPrank();
+        string memory cj = _decodeJson(bottom[0]);
+        assertEq(
+            vm.parseJsonString(cj, ".attributes[15].value"),
+            string(abi.encodePacked(Denominations.labelAt(7), " ETH")),
+            "Split From survives a later compose"
+        );
+        assertEq(
+            vm.parseJsonString(cj, ".attributes[16].value"),
+            string(abi.encodePacked(Denominations.labelAt(8), " ETH")),
+            "Split Origin survives a later compose"
+        );
+    }
+
     function test_TokenUriUsesTheStoredSeed() public {
         vm.prank(alice);
         uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);

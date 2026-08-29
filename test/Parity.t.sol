@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {SplitProvenance} from "../src/interfaces/IShapeRenderer.sol";
 import {FixedPoint} from "../src/lib/FixedPoint.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {GeometrySampling} from "../src/lib/GeometrySampling.sol";
@@ -99,6 +100,11 @@ contract ParityTest is Test {
     uint256[] internal sampledRenderOriginCount;
     bool[] internal sampledRenderInverted;
     uint256[] internal sampledRenderComposeDepth;
+    /// @dev Split creation-provenance (issue #21C): all-zero/false for a case with no split
+    ///      ancestry, exercised by the majority of `sampledRenderCases` in genFixtures.ts.
+    bool[] internal sampledRenderIsSplitChild;
+    uint8[] internal sampledRenderParentDenomIndex;
+    uint8[] internal sampledRenderOriginDenomIndex;
     string[] internal sampledRenderSvg;
     string[] internal sampledRenderMetadata;
     string[] internal sampledRenderModuleSequence;
@@ -256,6 +262,9 @@ contract ParityTest is Test {
             string[] memory oc = vm.parseJsonStringArray(json, ".sampledRenderOriginCount");
             string[] memory inv = vm.parseJsonStringArray(json, ".sampledRenderInverted");
             string[] memory cdep = vm.parseJsonStringArray(json, ".sampledRenderComposeDepth");
+            string[] memory isc = vm.parseJsonStringArray(json, ".sampledRenderIsSplitChild");
+            string[] memory pdi = vm.parseJsonStringArray(json, ".sampledRenderParentDenomIndex");
+            string[] memory odi = vm.parseJsonStringArray(json, ".sampledRenderOriginDenomIndex");
             uint256 n = di.length;
             for (uint256 i = 0; i < n; ++i) {
                 sampledRenderDenomIndex.push(uint8(vm.parseUint(di[i])));
@@ -266,6 +275,9 @@ contract ParityTest is Test {
                 sampledRenderOriginCount.push(vm.parseUint(oc[i]));
                 sampledRenderInverted.push(_isTrue(inv[i]));
                 sampledRenderComposeDepth.push(vm.parseUint(cdep[i]));
+                sampledRenderIsSplitChild.push(_isTrue(isc[i]));
+                sampledRenderParentDenomIndex.push(uint8(vm.parseUint(pdi[i])));
+                sampledRenderOriginDenomIndex.push(uint8(vm.parseUint(odi[i])));
             }
         }
     }
@@ -509,7 +521,12 @@ contract ParityTest is Test {
                 gene,
                 sampledRenderComposeDepth[i],
                 NAME_PREFIX,
-                DESCRIPTION
+                DESCRIPTION,
+                SplitProvenance({
+                    isSplitChild: sampledRenderIsSplitChild[i],
+                    parentDenomIndex: sampledRenderParentDenomIndex[i],
+                    originDenomIndex: sampledRenderOriginDenomIndex[i]
+                })
             );
             assertEq(metadata, sampledRenderMetadata[i], sampledRenderWhy[i]);
 

@@ -297,12 +297,20 @@ The result equals the survivor's live materialized bytes at that stack depth.
 
 Split has no equivalent storage before this change: the parent is burned and its seed and modules
 deleted, so a child previously carried no on-chain trace of its origin. `_splitTo` now writes one
-append-only `SplitRecord` per split call (parent id, parent seed, parent denomination index, parent
-ink gene, and the parent's own effective modules read before it is burned), shared by every child of
-that split, and one `SplitOriginRef` per child (which record, and the child's index within it).
-`splitOriginOf` returns `(parentSeed, parentId, parentDenomIndex, parentInkGene, parentModules,
-childIndex)` — a passthrough over `Shapes.splitOriginRaw`, already minimal — and reverts
-`NotASplitChild` when `childId` carries no entry.
+append-only `SplitRecord` per split call (parent id, parent seed, parent denomination index, root
+split ancestor's denomination index, parent ink gene, and the parent's own effective modules read
+before it is burned), shared by every child of that split, and one `SplitOriginRef` per child
+(which record, and the child's index within it). `splitOriginOf` returns `(parentSeed, parentId,
+parentDenomIndex, originDenomIndex, parentInkGene, parentModules, childIndex)` — a passthrough over
+`Shapes.splitOriginRaw`, already minimal — and reverts `NotASplitChild` when `childId` carries no
+entry.
+
+`originDenomIndex` (issue #21C) is the root split ancestor's denomination: the parent's own
+`originDenomIndex` when the parent was itself a split child, else `parentDenomIndex`. It backs the
+"Split Origin" metadata trait (METADATA.md) and, unlike every other `SplitRecord` field, cannot be
+reconstructed from chain history after the fact: a compose record or a later split carries only its
+inputs' immediate state, not their full split ancestry. It is computed once at split time and
+stored directly for that reason.
 
 `parentModules` is informational only since D3' (section 6, section 11 D3'): it is the parent's own
 effective geometry snapshot, and neither sampling branch reads it. Reconstruction needs `parentId`
@@ -346,10 +354,10 @@ own `decompose` (same id, same record, unaffected by the round trip in between).
 
 `composeRecordAt` and `splitOriginOf` are views; they add no write cost. The split write is one
 `SplitRecord` (a seed slot; a packed id/denomination-index/ink-gene/length slot, `parentId` sharing
-the slot `parentDenomIndex`/`parentInkGene` already occupied since a `uint96` id plus the two
-`uint8`s is 14 bytes, no new slot; and the modules byte array, which fits in one slot since
-`parentModules` is at most 25 bytes) shared across the whole split, plus one `SplitOriginRef` (one
-slot) per child. Measured on a 2-way 100 ETH -> 2x50 ETH split (direct-mint parent, grammar branch):
+the slot `parentDenomIndex`/`parentInkGene`/`originDenomIndex` already occupied since a `uint96` id
+plus the three `uint8`s is 15 bytes, no new slot; and the modules byte array, which fits in one slot
+since `parentModules` is at most 25 bytes) shared across the whole split, plus one `SplitOriginRef`
+(one slot) per child. Measured on a 2-way 100 ETH -> 2x50 ETH split (direct-mint parent, grammar branch):
 251,813 gas without split provenance recording at all, 421,143 gas with D3'. The D3'-over-D1-era-
 recording delta (387,109 gas measured before D3') comes from the grammar branch deriving a full
 grammar v1 sequence per child (`GrammarV1Modules.all`, rebuilt fresh each time, not cached per
