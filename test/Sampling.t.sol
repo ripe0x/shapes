@@ -32,7 +32,7 @@ contract SamplingTest is ShapesBase {
         bytes32 seed = shapes.seedOf(id);
         uint256 amount = shapes.backingOf(id);
         uint8 gene = shapes.inkGeneOf(id);
-        uint256 n = shapes.modulesForAmount(amount);
+        uint256 n = lens.modulesForAmount(amount);
         out = new bytes(n);
         for (uint256 i = 0; i < n; ++i) {
             (uint8 kind, bool solid, uint16 rotation,,,,) = renderer.moduleAt(seed, amount, gene, i);
@@ -156,7 +156,7 @@ contract SamplingTest is ShapesBase {
         uint256 survivor = shapes.compose(first, burn);
 
         bytes memory got = lens.shapeState(survivor).modules;
-        (uint256 cols, uint256 rows) = shapes.gridForAmount(shapes.backingOf(survivor));
+        (uint256 cols, uint256 rows) = lens.gridForAmount(shapes.backingOf(survivor));
         assertEq(got.length, cols * rows, "materialized length != new grid cell count");
         assertGt(got.length, 0, "compose must materialize a nonempty array");
 
@@ -193,7 +193,7 @@ contract SamplingTest is ShapesBase {
         shapes.compose(a, burnOuter); // 0.1, mixed donor set
 
         bytes memory got = lens.shapeState(a).modules;
-        (uint256 cols, uint256 rows) = shapes.gridForAmount(DENOMS[2]);
+        (uint256 cols, uint256 rows) = lens.gridForAmount(DENOMS[2]);
         assertEq(got.length, cols * rows);
         for (uint256 i = 0; i < got.length; ++i) {
             assertTrue(ModuleCodec.isValid(got[i]));
@@ -331,7 +331,7 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
 
-        (uint256 cols, uint256 rows) = shapes.gridForAmount(DENOMS[7]);
+        (uint256 cols, uint256 rows) = lens.gridForAmount(DENOMS[7]);
         bytes memory pool = GeometrySampling.grammarSplitPool(parentSeed, 7, parentGene);
         for (uint256 i = 0; i < 2; ++i) {
             bytes memory childMods = lens.shapeState(kids[i]).modules;

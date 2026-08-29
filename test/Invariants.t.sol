@@ -618,7 +618,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
             uint256 id = handler.liveTokens(i);
             if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
             assertTrue(
-                shapes.isSupportedDenomination(shapes.backingOf(id)), "token holds an off-ladder amount"
+                Denominations.isSupported(shapes.backingOf(id)), "token holds an off-ladder amount"
             );
         }
     }

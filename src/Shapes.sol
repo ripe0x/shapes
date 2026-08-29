@@ -18,7 +18,6 @@ import {
     IShapeValue,
     ShapeFormation
 } from "./interfaces/IShapeCapabilities.sol";
-import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
@@ -229,10 +228,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
     address public positionResolver;
 
-    /// @dev Gas forwarded to the untrusted resolver by `positionOf`. Ample for a mapping read;
-    ///      bounds a hostile resolver's ability to consume the caller's stipend.
-    uint256 private constant RESOLVER_GAS = 50_000;
-
     /// @inheritdoc IShapes
     bool public positionResolverLocked;
 
@@ -359,14 +354,26 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return (amountWei * feeBps) / BPS_DENOMINATOR;
     }
 
+    /// @dev Shared by every entrypoint that requires the renderer/collection pointers to still be
+    ///      mutable: `setRenderer`, `lockRenderer`, `setCollection`.
+    function _requireRendererUnlocked() private view {
+        if (rendererLocked) revert RendererIsLocked();
+    }
+
     /// @inheritdoc IShapes
     /// @dev Admin only, and only while unlocked. The new renderer must carry code.
     function setRenderer(address newRenderer) external onlyAdmin {
-        if (rendererLocked) revert RendererIsLocked();
+        _requireRendererUnlocked();
         _requireRendererHasCode(newRenderer);
         renderer = newRenderer;
         emit RendererUpdated(newRenderer);
         // A new renderer changes `tokenURI` for every existing token; ERC-4906 signals the refresh.
+        _emitBatchMetadataUpdate();
+    }
+
+    /// @dev ERC-4906 refresh signal for every currently-minted token. Shared by `setRenderer` and
+    ///      `setMetadataCopy`, the two admin actions that change every token's `tokenURI` at once.
+    function _emitBatchMetadataUpdate() private {
         if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
     }
 
@@ -374,7 +381,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev Admin only, one way. After this the renderer can never change again. The optional
     ///      position resolver remains independently configurable until its own lock or renunciation.
     function lockRenderer() external onlyAdmin {
-        if (rendererLocked) revert RendererIsLocked();
+        _requireRendererUnlocked();
         rendererLocked = true;
         emit RendererLocked();
     }
@@ -395,23 +402,28 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
         tokenNamePrefix = tokenNamePrefix_;
         description = description_;
-        if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
+        _emitBatchMetadataUpdate();
         emit ContractURIUpdated();
     }
 
     /// @inheritdoc IShapes
     /// @dev Admin only, and only while unlocked. The new collection must carry code.
     function setCollection(address newCollection) external onlyAdmin {
-        if (rendererLocked) revert RendererIsLocked();
+        _requireRendererUnlocked();
         _requireCollectionHasCode(newCollection);
         collection = newCollection;
         emit CollectionUpdated(newCollection);
     }
 
+    /// @dev Shared by `setPositionResolver` and `lockPositionResolver`.
+    function _requirePositionResolverUnlocked() private view {
+        if (positionResolverLocked) revert PositionResolverIsLocked();
+    }
+
     /// @dev Zero clears the resolver. Nonzero values must carry code when configured, but Shapes
     ///      intentionally does not inspect or call that code and makes no claim about its mutability.
     function setPositionResolver(address resolver_) external onlyAdmin {
-        if (positionResolverLocked) revert PositionResolverIsLocked();
+        _requirePositionResolverUnlocked();
         if (resolver_ != address(0) && resolver_.code.length == 0) {
             revert InvalidPositionResolver();
         }
@@ -421,7 +433,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function lockPositionResolver() external onlyAdmin {
-        if (positionResolverLocked) revert PositionResolverIsLocked();
+        _requirePositionResolverUnlocked();
         positionResolverLocked = true;
         emit PositionResolverLocked(positionResolver);
     }
@@ -492,22 +504,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     {
         _requireNonZero(quantity);
 
-        uint256 denomIndex;
-        {
-            bool ok;
-            (denomIndex, ok) = Denominations.indexOf(amountWei);
-            if (!ok) revert UnsupportedDenomination(amountWei);
-        }
+        firstTokenId = totalMinted;
 
-        uint256 backing = amountWei * quantity;
         // Fee is a percentage of each token's backing. Computed per token, then scaled, so the
         // aggregate matches quantity independent mints exactly. Exact in wei at every
         // denomination for the committed 1% (each denomination is a whole number of finney).
-        uint256 fees = mintFeeFor(amountWei) * quantity;
-        if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
-
-        firstTokenId = totalMinted;
-
+        //
         // One entropy root per batch; each token's seed derives from it and its own id, so every
         // token in a batch gets a distinct seed.
         //
@@ -517,6 +519,15 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         // only the fee is spent), so the mint ordinal is a free knob and traits are grindable at
         // roughly the mint fee per candidate. The seed has no economic effect: redemption value is
         // fixed by denomination. Trait scarcity is best-effort, not enforced (SPEC.md D3e).
+        uint256 denomIndex;
+        {
+            bool ok;
+            (denomIndex, ok) = Denominations.indexOf(amountWei);
+            if (!ok) revert UnsupportedDenomination(amountWei);
+        }
+        uint256 backing = amountWei * quantity;
+        uint256 fees = mintFeeFor(amountWei) * quantity;
+        if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
@@ -605,8 +616,14 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _redeemBatchTo(tokenIds, recipient);
     }
 
+    /// @dev Shared by `_redeemTo` and `_redeemBatchTo`: the payout destination can never be the
+    ///      zero address, or the redemption would burn the ETH along with the token.
+    function _requireValidRecipient(address recipient) private pure {
+        if (recipient == address(0)) revert InvalidRecipient(recipient);
+    }
+
     function _redeemTo(uint256 tokenId, address payable recipient, bool allowBlack) private {
-        if (recipient == address(0)) revert InvalidRecipient(recipient); // never burn the payout
+        _requireValidRecipient(recipient);
         (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId, allowBlack);
 
         totalSupply -= 1;
@@ -620,7 +637,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         private
         returns (uint256 totalWei)
     {
-        if (recipient == address(0)) revert InvalidRecipient(recipient); // never burn the payout
+        _requireValidRecipient(recipient);
         uint256 n = tokenIds.length;
         _requireNonZero(n);
 
@@ -1194,11 +1211,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function exists(uint256 tokenId) external view returns (bool) {
-        return _ownerOf(tokenId) != address(0);
-    }
-
-    /// @inheritdoc IShapes
     function backingOf(uint256 tokenId) public view returns (uint256) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
@@ -1220,22 +1232,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IERC721Value
     function valueOf(uint256 tokenId) external view returns (uint256) {
         return backingOf(tokenId);
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev The resolver is untrusted. The call is capped at `RESOLVER_GAS` and any revert or
-    ///      out-of-gas is swallowed to `address(0)`, so a hostile resolver can neither drain the
-    ///      caller's gas nor make `positionOf` revert. Its only power is to return a wrong address.
-    function positionOf(uint256 tokenId) external view returns (address) {
-        address resolver_ = positionResolver;
-        if (resolver_ == address(0)) return address(0);
-        try IShapePositionResolver(resolver_).positionOf{gas: RESOLVER_GAS}(tokenId) returns (
-            address position
-        ) {
-            return position;
-        } catch {
-            return address(0);
-        }
     }
 
     /// @inheritdoc IShapes
@@ -1377,22 +1373,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     function unit() external pure returns (uint256) {
         return Denominations.UNIT;
-    }
-
-    /// @inheritdoc IShapes
-    function isSupportedDenomination(uint256 amountWei) external pure returns (bool) {
-        return Denominations.isSupported(amountWei);
-    }
-
-    /// @inheritdoc IShapes
-    function gridForAmount(uint256 amountWei) external pure returns (uint256 cols, uint256 rows) {
-        return Denominations.gridAt(Denominations.requireIndexOf(amountWei));
-    }
-
-    /// @inheritdoc IShapes
-    function modulesForAmount(uint256 amountWei) external pure returns (uint256) {
-        (uint256 cols, uint256 rows) = Denominations.gridAt(Denominations.requireIndexOf(amountWei));
-        return cols * rows;
     }
 
     /// @notice EIP-2981 royalty, permanently zero.

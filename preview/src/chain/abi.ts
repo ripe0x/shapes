@@ -3,8 +3,8 @@ import {DENOMINATIONS as CANONICAL_AMOUNTS, LABELS as CANONICAL_LABELS} from "..
 
 // The subset of the Shapes ERC721 the chain tester calls. Human-readable form; viem parses it
 // to the full ABI at import. `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`,
-// `composeRecordAt` and `splitOriginOf` moved to `ShapeLens` (see `shapeLensAbi` below) and are
-// not declared here.
+// `composeRecordAt`, `splitOriginOf`, `exists`, `positionOf` and the raw denomination-grid/
+// support lookups moved to `ShapeLens` (see `shapeLensAbi` below) and are not declared here.
 export const shapesAbi = parseAbi([
   "struct ComposeCall { uint256 survivorId; uint256[] burnIds; }",
   "function mint(uint256 amountWei) payable returns (uint256 tokenId)",
@@ -26,8 +26,12 @@ export const shapesAbi = parseAbi([
   "function sacrifice(uint256 tokenId)",
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
-  "function exists(uint256 tokenId) view returns (bool)",
   "function denomIndexOf(uint256 tokenId) view returns (uint8)",
+  "function isComplete(uint256 tokenId) view returns (bool)",
+  "function childSeed(bytes32 parentSeed, uint256 childIndex) pure returns (bytes32)",
+  "function denominationAt(uint8 index) pure returns (uint256)",
+  "function denominationCount() pure returns (uint8)",
+  "function unit() pure returns (uint256)",
   "function owner() view returns (address)",
   "function artist() view returns (address)",
   "function artistReleaseHash() view returns (bytes32)",
@@ -43,13 +47,11 @@ export const shapesAbi = parseAbi([
   "function positionResolverLocked() view returns (bool)",
   "function setPositionResolver(address resolver)",
   "function lockPositionResolver()",
-  "function positionOf(uint256 tokenId) view returns (address)",
   "function tokenURI(uint256 tokenId) view returns (string)",
   "function backingOf(uint256 tokenId) view returns (uint256)",
   "function seedOf(uint256 tokenId) view returns (bytes32)",
   "function originCountOf(uint256 tokenId) view returns (uint256)",
   "function inkGeneOf(uint256 tokenId) view returns (uint8)",
-  "function isComplete(uint256 tokenId) view returns (bool)",
   "function isBlack(uint256 tokenId) view returns (bool)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function redeemableBacking() view returns (uint256)",
@@ -113,6 +115,11 @@ export const shapeLensAbi = parseAbi([
   "function unicodeCard(uint256 tokenId) view returns (string)",
   "function composeRecordAt(uint256 survivorId, uint256 depth) view returns (ComposeRecordView)",
   "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint256 parentId, uint8 parentDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
+  "function exists(uint256 tokenId) view returns (bool)",
+  "function positionOf(uint256 tokenId) view returns (address)",
+  "function isSupportedDenomination(uint256 amountWei) pure returns (bool)",
+  "function gridForAmount(uint256 amountWei) pure returns (uint256 cols, uint256 rows)",
+  "function modulesForAmount(uint256 amountWei) pure returns (uint256)",
   // Custom errors, from IShapes.sol, that previewCompose/previewSplit/composeRecordAt apply the
   // same validation as the mutating calls and revert with, so a revert decodes to a named error.
   "error CannotComposeWithSelf(uint256 tokenId)",

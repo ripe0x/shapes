@@ -116,7 +116,7 @@ contract DeploySepolia is LensEquivalence {
         require(shapes.artist() == me, "artist mismatch");
         require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
         require(shapes.artistSignature().length == 0, "artist signature should start empty");
-        require(shapes.exists(0), "Shape #0 must exist");
+        require(lens.exists(0), "Shape #0 must exist");
         require(shapes.denominationCount() == 9, "denomination count mismatch");
         require(shapes.denominationAt(0) == Denominations.amountAt(0), "minimum denomination mismatch");
         require(shapes.denomIndexOf(0) == 0, "Shape #0 denomination mismatch");
