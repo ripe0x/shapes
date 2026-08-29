@@ -247,10 +247,12 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 2; ++i) {
-            (bytes32 pSeed, uint8 pDenom, uint8 pGene, bytes memory pMods, uint256 childIndex) =
-                lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
+            = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed, "parent seed");
+            assertEq(pId, parent, "parent id");
             assertEq(pDenom, 2, "parent denom index (0.1 ETH)");
+            assertEq(pOrigin, 2, "root split ancestor is the parent itself: a direct mint, never split");
             assertEq(pGene, parentGene, "parent gene");
             assertEq(pMods, expectedParentModules, "parent effective modules (grammar v1)");
             assertEq(childIndex, i, "child index");
@@ -275,10 +277,12 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(survivor, outs);
 
         for (uint256 i = 0; i < 5; ++i) {
-            (bytes32 pSeed, uint8 pDenom, uint8 pGene, bytes memory pMods, uint256 childIndex) =
-                lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
+            = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed);
+            assertEq(pId, survivor, "parent id");
             assertEq(pDenom, 1, "parent denom index (0.05 ETH)");
+            assertEq(pOrigin, 1, "root split ancestor is the parent itself: a compose survivor, never split");
             assertEq(pGene, parentGene);
             assertEq(pMods, expectedParentModules, "parent effective modules (stored bytes)");
             assertEq(childIndex, i);
@@ -300,18 +304,22 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 2; ++i) {
-            (bytes32 pSeed, uint8 pDenom, uint8 pGene, bytes memory pMods, uint256 childIndex) =
-                lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
+            = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed);
+            assertEq(pId, parent, "parent id");
             assertEq(pDenom, 8, "parent denom index (100 ETH)");
+            assertEq(pOrigin, 8, "root split ancestor is the parent itself: a direct mint, never split");
             assertEq(pGene, parentGene);
             assertEq(pMods, expectedParentModules);
             assertEq(childIndex, i);
         }
     }
 
-    /// @notice Reconstruction round-trip: `sampleSplitChild(parentModules, parentSeed, childDenom,
-    ///         childIndex)` from `splitOriginOf` alone must equal each child's stored modules.
+    /// @notice Reconstruction round-trip, recordless (grammar) branch (SAMPLING_SPEC.md section 6,
+    ///         D3'): the parent here is a direct mint with no compose record, so each child's pool
+    ///         is `GeometrySampling.grammarSplitPool(parentSeed, childDenom, parentGene)` — the
+    ///         parent's own `parentModules` snapshot from `splitOriginOf` plays no part.
     ///         `childDenom` is the child's own live denomination index, valid here because none of
     ///         the children have been mutated since the split.
     function test_SplitOriginOfReconstructionMatchesStoredChildModules() public {
@@ -324,13 +332,140 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 5; ++i) {
-            (bytes32 pSeed,,, bytes memory pMods, uint256 childIndex) = lens.splitOriginOf(kids[i]);
+            (bytes32 pSeed, uint256 pId,,, uint8 pGene,, uint256 childIndex) = lens.splitOriginOf(kids[i]);
+            assertEq(shapes.composeDepth(pId), 0, "parent has no compose record: grammar branch");
             uint8 childDenom = lens.shapeState(kids[i]).denominationIndex;
-            bytes memory reconstructed =
-                GeometrySampling.sampleSplitChild(pMods, pSeed, childDenom, childIndex);
+            bytes memory pool = GeometrySampling.grammarSplitPool(pSeed, childDenom, pGene);
+            bytes memory reconstructed = GeometrySampling.sampleSplitChild(pool, pSeed, childDenom, childIndex);
             assertEq(
                 reconstructed, lens.shapeState(kids[i]).modules, "reconstruction != stored child modules"
             );
+        }
+    }
+
+    /// @notice Reconstruction round-trip, compose-record branch (SAMPLING_SPEC.md section 6, D3'):
+    ///         the parent was itself a compose survivor, so `composeDepth(parentId) > 0` and each
+    ///         child's pool is the concatenated effective modules of that record's donors —
+    ///         pre-compose survivor first, then inputs ascending by id. The compose that created
+    ///         the parent burns its inputs in deliberately shuffled calldata order, locking that
+    ///         the split pool sorts by id rather than reusing calldata order.
+    function test_SplitOriginOfReconstructionMatchesStoredChildModules_RecordBranch() public {
+        uint256 first = _mintDust(5);
+        uint256[] memory shuffled = new uint256[](4);
+        shuffled[0] = first + 3;
+        shuffled[1] = first + 1;
+        shuffled[2] = first + 4;
+        shuffled[3] = first + 2;
+        vm.prank(alice);
+        uint256 parent = shapes.compose(first, shuffled); // materialized 0.05 ETH, one compose record
+
+        uint8[] memory outs = new uint8[](5); // 5 x 0.01 ETH
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+
+        for (uint256 i = 0; i < 5; ++i) {
+            (bytes32 pSeed, uint256 pId,,,,, uint256 childIndex) = lens.splitOriginOf(kids[i]);
+            uint256 depth = shapes.composeDepth(pId);
+            assertGt(depth, 0, "parent has a compose record: record branch");
+
+            ComposeRecordView memory rec = lens.composeRecordAt(pId, depth - 1);
+            bytes memory pool = _reconstructSplitRecordPool(pSeed, rec);
+
+            uint8 childDenom = lens.shapeState(kids[i]).denominationIndex;
+            bytes memory reconstructed = GeometrySampling.sampleSplitChild(pool, pSeed, childDenom, childIndex);
+            assertEq(
+                reconstructed, lens.shapeState(kids[i]).modules, "reconstruction != stored child modules"
+            );
+        }
+    }
+
+    /// @dev Rebuilds a split's compose-record pool (SAMPLING_SPEC.md section 6, D3') from a
+    ///      `ComposeRecordView`: the survivor's pre-compose effective modules first, then the
+    ///      inputs' effective modules sorted ascending by id (they are stored in calldata order).
+    function _reconstructSplitRecordPool(bytes32 parentSeed, ComposeRecordView memory rec)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        uint256 n = rec.inputs.length;
+        GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            ComposeInputView memory inp = rec.inputs[i];
+            inputDonors[i] = GeometrySampling.Donor({
+                id: inp.id,
+                units: 0,
+                seed: inp.seed,
+                denomIndex: inp.denominationIndex,
+                inkGene: inp.inkGene,
+                modules: inp.modules
+            });
+        }
+        inputDonors = GeometrySampling.sortDonorsById(inputDonors);
+        return GeometrySampling.buildSplitRecordPool(
+            rec.survivorModules, parentSeed, rec.survivorDenominationIndex, rec.survivorInkGene, inputDonors
+        );
+    }
+
+    /// @notice Issue #21B's motivating case: a 1x1-module 100 ETH parent produced by compose (two
+    ///         50 ETH inputs merged) splits into varied children, because the record branch draws
+    ///         from the compose's donor pool (4 modules: the two 50 ETH inputs' own 2-cell grids)
+    ///         instead of the 1-byte materialized parent. Under the superseded rule (D3) this
+    ///         parent's single module would have filled every cell of every child identically.
+    function test_SplitOfComposedOneModuleParentProducesVariedChildren() public {
+        uint256 a = _mint(alice, DENOMS[7]); // 50 ETH
+        uint256 b = _mint(alice, DENOMS[7]); // 50 ETH
+        uint256[] memory burn = new uint256[](1);
+        burn[0] = b;
+        vm.prank(alice);
+        uint256 parent = shapes.compose(a, burn); // 100 ETH, 1 module, one compose record
+        assertEq(lens.shapeState(parent).modules.length, 1, "apex denomination has one module");
+        assertGt(shapes.composeDepth(parent), 0, "parent has a compose record");
+
+        uint8[] memory outs = new uint8[](20); // 20 x 5 ETH (6 cells each) = 100 ETH
+        for (uint256 i = 0; i < 20; ++i) {
+            outs[i] = 5;
+        }
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+
+        bool sawDistinctByteWithinAChild = false;
+        for (uint256 i = 0; i < kids.length && !sawDistinctByteWithinAChild; ++i) {
+            bytes memory mods = lens.shapeState(kids[i]).modules;
+            for (uint256 j = 1; j < mods.length; ++j) {
+                if (mods[j] != mods[0]) {
+                    sawDistinctByteWithinAChild = true;
+                    break;
+                }
+            }
+        }
+        assertTrue(sawDistinctByteWithinAChild, "record-branch split must escape single-module monoculture");
+    }
+
+    /// @notice A materialized-but-recordless parent (a split child, split again) uses the grammar
+    ///         branch, not its own stored modules: `composeDepth` is zero because the child was
+    ///         never itself a compose survivor, even though `modulesOf` is nonempty.
+    function test_SplitOfMaterializedRecordlessParentUsesGrammarBranch() public {
+        uint256 grandparent = _mint(alice, DENOMS[2]); // 0.1 ETH
+        uint8[] memory firstOuts = new uint8[](2);
+        firstOuts[0] = 1; // 0.05
+        firstOuts[1] = 1;
+        vm.prank(alice);
+        uint256[] memory firstKids = shapes.split(grandparent, firstOuts);
+        uint256 parent = firstKids[0]; // materialized (split child), no compose record of its own
+        assertGt(lens.shapeState(parent).modules.length, 0, "split child is materialized");
+        assertEq(shapes.composeDepth(parent), 0, "split child was never itself a compose survivor");
+
+        bytes32 parentSeed = shapes.seedOf(parent);
+        uint8 parentGene = shapes.inkGeneOf(parent);
+
+        uint8[] memory outs = new uint8[](5); // 5 x 0.01 ETH
+        vm.prank(alice);
+        uint256[] memory kids = shapes.split(parent, outs);
+
+        for (uint256 i = 0; i < 5; ++i) {
+            bytes memory expectedPool = GeometrySampling.grammarSplitPool(parentSeed, 0, parentGene);
+            bytes memory expected = GeometrySampling.sampleSplitChild(expectedPool, parentSeed, 0, i);
+            assertEq(lens.shapeState(kids[i]).modules, expected, "recordless materialized parent must use grammar branch");
         }
     }
 
@@ -385,7 +520,9 @@ contract ProvenanceTest is ShapesBase {
 
         (
             bytes32 pSeedBefore,
+            uint256 pIdBefore,
             uint8 pDenomBefore,
+            uint8 pOriginBefore,
             uint8 pGeneBefore,
             bytes memory pModsBefore,
             uint256 idxBefore
@@ -404,10 +541,19 @@ contract ProvenanceTest is ShapesBase {
             "compose must resample the child's live modules"
         );
 
-        (bytes32 pSeedAfter, uint8 pDenomAfter, uint8 pGeneAfter, bytes memory pModsAfter, uint256 idxAfter) =
-            lens.splitOriginOf(child);
+        (
+            bytes32 pSeedAfter,
+            uint256 pIdAfter,
+            uint8 pDenomAfter,
+            uint8 pOriginAfter,
+            uint8 pGeneAfter,
+            bytes memory pModsAfter,
+            uint256 idxAfter
+        ) = lens.splitOriginOf(child);
         assertEq(pSeedAfter, pSeedBefore, "split origin seed unchanged by the later compose");
+        assertEq(pIdAfter, pIdBefore, "split origin parent id unchanged");
         assertEq(pDenomAfter, pDenomBefore, "split origin denom unchanged");
+        assertEq(pOriginAfter, pOriginBefore, "split origin ancestor denom unchanged");
         assertEq(pGeneAfter, pGeneBefore, "split origin gene unchanged");
         assertEq(pModsAfter, pModsBefore, "split origin parent modules unchanged");
         assertEq(idxAfter, idxBefore, "split origin child index unchanged");
@@ -427,7 +573,9 @@ contract ProvenanceTest is ShapesBase {
 
         (
             bytes32 pSeedBefore,
+            uint256 pIdBefore,
             uint8 pDenomBefore,
+            uint8 pOriginBefore,
             uint8 pGeneBefore,
             bytes memory pModsBefore,
             uint256 idxBefore
@@ -442,10 +590,19 @@ contract ProvenanceTest is ShapesBase {
         vm.prank(alice);
         shapes.decompose(outerSurvivor); // re-mints child0 under its original id
 
-        (bytes32 pSeedAfter, uint8 pDenomAfter, uint8 pGeneAfter, bytes memory pModsAfter, uint256 idxAfter) =
-            lens.splitOriginOf(child0);
+        (
+            bytes32 pSeedAfter,
+            uint256 pIdAfter,
+            uint8 pDenomAfter,
+            uint8 pOriginAfter,
+            uint8 pGeneAfter,
+            bytes memory pModsAfter,
+            uint256 idxAfter
+        ) = lens.splitOriginOf(child0);
         assertEq(pSeedAfter, pSeedBefore);
+        assertEq(pIdAfter, pIdBefore);
         assertEq(pDenomAfter, pDenomBefore);
+        assertEq(pOriginAfter, pOriginBefore);
         assertEq(pGeneAfter, pGeneBefore);
         assertEq(pModsAfter, pModsBefore);
         assertEq(idxAfter, idxBefore);

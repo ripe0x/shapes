@@ -99,6 +99,38 @@ contract ComposabilityTest is Test {
         assertFalse(renderer.supportsInterface(0xffffffff));
     }
 
+    /// @notice Regression for a review finding: relocating view/pure functions off `Shapes` (issue
+    ///         #21, size recovery) left `supportsInterface` advertising `IShapeValue` and
+    ///         `IShapeProvenance` while some of their members existed only on `ShapeLens`, so a
+    ///         caller that gates on ERC-165 and then calls the missing selector would revert. An
+    ///         advertised capability must never contain an unimplemented selector: this exercises
+    ///         every view/pure member of each capability interface through a handle typed to that
+    ///         interface and bound to `Shapes`, not just the interface id.
+    function test_CapabilityInterfacesImplementEveryMember() public {
+        uint256 id = _mint(alice, DENOMS[1]);
+
+        assertTrue(shapes.supportsInterface(type(IShapeValue).interfaceId));
+        IShapeValue value = IShapeValue(address(shapes));
+        assertEq(value.backingOf(id), DENOMS[1]);
+        assertEq(value.denomIndexOf(id), 1);
+        assertEq(value.denominationAt(0), DENOMS[0]);
+        assertEq(value.denominationCount(), 9);
+        assertEq(value.unit(), DENOMS[0]);
+
+        assertTrue(shapes.supportsInterface(type(IShapeRecomposition).interfaceId));
+        // IShapeRecomposition declares only state-changing members (compose/decompose/split/
+        // sacrifice); nothing view/pure to exercise beyond the interface id itself.
+
+        assertTrue(shapes.supportsInterface(type(IShapeProvenance).interfaceId));
+        IShapeProvenance provenance = IShapeProvenance(address(shapes));
+        assertEq(provenance.seedOf(id), shapes.seedOf(id));
+        assertEq(provenance.originCountOf(id), 1);
+        assertEq(provenance.inkGeneOf(id), shapes.inkGeneOf(id));
+        assertFalse(provenance.isComplete(id));
+        assertEq(uint8(provenance.formationOf(id)), uint8(ShapeFormation.Direct));
+        assertEq(provenance.childSeed(provenance.seedOf(id), 0), shapes.childSeed(shapes.seedOf(id), 0));
+    }
+
     function test_RendererMustAdvertiseTheStableRendererCapability() public {
         vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(receiver)));
         shapes.setRenderer(address(receiver));

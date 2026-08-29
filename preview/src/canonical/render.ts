@@ -834,9 +834,21 @@ export function densityPercent(units: bigint, originCount: bigint): string {
 }
 
 /**
+ * A split child's creation provenance for its metadata (issue #21C): the immediate parent's and
+ * the root split ancestor's denomination index. Omitted (undefined) for a token that was never
+ * minted by split. Mirrors `SplitProvenance` in `src/interfaces/IShapeRenderer.sol`.
+ */
+export interface SplitFrom {
+  parentDenomIndex: number;
+  originDenomIndex: number;
+}
+
+/**
  * Metadata JSON attributes block, built from a composition and its already-rendered SVG. Shared
  * by the seed-drawn path (`tokenMetadataJson`) and the sampled path (`sampledTokenMetadataJson`
- * in `./sampling`).
+ * in `./sampling`). `splitFrom`, when present, appends "Split From" / "Split Origin" as the last
+ * two attributes, after `Compose Depth`; omitted from `attributes` entirely when absent, mirroring
+ * `ShapeRenderer._splitTraits`.
  */
 export function metadataJsonFromComposition(
   c: Composition,
@@ -848,9 +860,14 @@ export function metadataJsonFromComposition(
   composeDepth: bigint,
   namePrefix: string,
   description: string,
+  splitFrom?: SplitFrom,
 ): string {
   const units = unitsOf(c);
   const complete = !inverted && units > 1n && originCount === units;
+  const splitTraits = splitFrom
+    ? `,{"trait_type":"Split From","value":"${LABELS[splitFrom.parentDenomIndex]} ETH"},` +
+      `{"trait_type":"Split Origin","value":"${LABELS[splitFrom.originDenomIndex]} ETH"}`
+    : "";
   return (
     `{"name":"${namePrefix}${tokenId.toString()}",` +
     `"description":"${description}",` +
@@ -871,6 +888,7 @@ export function metadataJsonFromComposition(
     `{"trait_type":"Complete","value":"${complete ? "true" : "false"}"},` +
     `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +
     `{"trait_type":"Compose Depth","value":"${composeDepth.toString()}"}` +
+    splitTraits +
     `]}`
   );
 }
@@ -886,6 +904,7 @@ export function tokenMetadataJson(
   namePrefix: string = "Shape ",
   description: string = DESCRIPTION,
   p: Params = CANONICAL,
+  splitFrom?: SplitFrom,
 ): string {
   const c = composeShape(seed, amountWei, inkGene, p);
   const svg = svgFromComposition(c, tokenId, p, inverted);
@@ -899,6 +918,7 @@ export function tokenMetadataJson(
     composeDepth,
     namePrefix,
     description,
+    splitFrom,
   );
 }
 
@@ -911,6 +931,7 @@ export function tokenURI(
   inkGene: number,
   composeDepth: bigint,
   p: Params = CANONICAL,
+  splitFrom?: SplitFrom,
 ): string {
   return (
     "data:application/json;base64," +
@@ -926,6 +947,7 @@ export function tokenURI(
         "Shape ",
         DESCRIPTION,
         p,
+        splitFrom,
       ),
     )
   );

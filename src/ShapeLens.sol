@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IShapes} from "./interfaces/IShapes.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {IShapeLens} from "./interfaces/IShapeLens.sol";
+import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
 import {
     ComposeInputView,
     ComposeRecordView,
@@ -327,12 +328,69 @@ contract ShapeLens is IShapeLens {
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
+            uint8 originDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
             uint256 childIndex
         )
     {
         return shapes.splitOriginRaw(childId);
+    }
+
+    /* --------------------------- denomination table --------------------------- */
+
+    /// @inheritdoc IShapeLens
+    /// @dev Moved off `Shapes` with the rest of this contract's periphery surface
+    ///      (SAMPLING_SPEC.md §12): a pure denomination-table lookup with no dependency on token
+    ///      state, kept here rather than on the core token to help it stay under the EIP-170
+    ///      runtime size limit.
+    function isSupportedDenomination(uint256 amountWei) external pure returns (bool) {
+        return Denominations.isSupported(amountWei);
+    }
+
+    /// @inheritdoc IShapeLens
+    function gridForAmount(uint256 amountWei) external pure returns (uint256 cols, uint256 rows) {
+        return Denominations.gridAt(Denominations.requireIndexOf(amountWei));
+    }
+
+    /// @inheritdoc IShapeLens
+    function modulesForAmount(uint256 amountWei) external pure returns (uint256) {
+        (uint256 cols, uint256 rows) = Denominations.gridAt(Denominations.requireIndexOf(amountWei));
+        return cols * rows;
+    }
+
+    /* ------------------------------ positionOf ------------------------------ */
+
+    /// @dev Gas forwarded to the untrusted resolver. Ample for a mapping read; bounds a hostile
+    ///      resolver's ability to consume the caller's stipend.
+    uint256 private constant RESOLVER_GAS = 50_000;
+
+    /// @inheritdoc IShapeLens
+    /// @dev The resolver is untrusted. The call is capped at `RESOLVER_GAS` and any revert or
+    ///      out-of-gas is swallowed to `address(0)`, so a hostile resolver can neither drain the
+    ///      caller's gas nor make `positionOf` revert. Its only power is to return a wrong address.
+    function positionOf(uint256 tokenId) external view returns (address) {
+        address resolver_ = shapes.positionResolver();
+        if (resolver_ == address(0)) return address(0);
+        try IShapePositionResolver(resolver_).positionOf{gas: RESOLVER_GAS}(tokenId) returns (
+            address position
+        ) {
+            return position;
+        } catch {
+            return address(0);
+        }
+    }
+
+    /* -------------------------------- exists --------------------------------- */
+
+    /// @inheritdoc IShapeLens
+    function exists(uint256 tokenId) external view returns (bool) {
+        try shapes.ownerOf(tokenId) returns (address) {
+            return true;
+        } catch {
+            return false;
+        }
     }
 }

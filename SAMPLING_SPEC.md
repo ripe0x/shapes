@@ -131,15 +131,46 @@ geometry until the next compose/decompose/split.
   ink gene, escrow) is unchanged.
 - **decompose**: pop the record; restore the survivor's bytes verbatim; re-mint each input with
   its bytes verbatim. A token round-trips to its exact prior look.
-- **split**: each child i samples its own array from the parent's effective modules — stream
+- **split**: each child samples from a pool that depends on whether the parent has a compose
+  record at split time (decision D3', section 11; supersedes D3). Stream:
   `keccak256(abi.encodePacked("Shapes/sample-split/v1", parentSeed, uint8(childDenom), uint256(i)))`,
-  uniform module choice (single donor, so no units weighting), with replacement. `i` is the
-  untruncated child index, the same value `_childSeed` takes. An earlier revision of this spec
-  specified `uint8(i)`, which aliased children 256 apart in one split at one denomination onto
-  an identical stream; the field is a full uint256 word. A child grid
-  can exceed the parent's (100 ETH has 1 module; its 50 ETH children have 2), which with-
-  replacement handles. Children of original mints also sample, so a split visibly divides the
-  parent's look.
+  uniform draw over the pool, with replacement, one draw per child cell. `i` is the untruncated
+  child index, the same value `_childSeed` takes; an earlier revision of this spec specified
+  `uint8(i)`, which aliased children 256 apart in one split at one denomination onto an identical
+  stream.
+
+  - **Parent has a compose record** (`_composeStack[parentId]` nonempty at split time, i.e.
+    `Shapes.composeDepth(parentId) > 0`): the pool is the concatenation of the effective modules of
+    every donor of that top record — the record's pre-compose survivor first (`rec.survivorModules`
+    if nonempty, else grammar v1 of `(parentSeed, rec.survivorDenomIndex, rec.survivorInkGene)`),
+    then the record's inputs ascending by id. `rec.inputs` is stored in calldata order (the loop in
+    `_compose` pushes them in that order); the pool builder sorts by id before concatenating, or the
+    split result would depend on that earlier compose's burnIds calldata order, breaking burn-order
+    independence the same way section 5's donor order does. The pool is child-denomination-
+    independent: built once per split call and shared by every child regardless of `outDenoms`.
+    `_splitTo` reads `_composeStack[parentId]` but never deletes it, so reconstruction (section 12)
+    can redo the same branch decision later.
+  - **No compose record** (a direct mint, or a materialized-but-recordless token: a split child, or
+    a decompose-restored input with an empty stack): the pool is grammar v1 of `(parentSeed, CHILD
+    denomination, parentInkGene)` — the parent seed's expression at the child's OWN denomination,
+    not the parent's. The parent's own `parentModules` (materialized or seed-derived) plays no part;
+    a materialized-but-recordless parent's stored bytes are never read for this. The pool is
+    child-denomination-dependent: rebuilt fresh for each child, not cached per distinct denomination
+    across a split with repeated `outDenoms` (see section 12's Gas subsection).
+
+  `moduleIndex` as reported/traced by `sampleSplitChild` indexes the pool, not the parent's own
+  module list: for the grammar branch the pool is sized to the child's own grid (the same reason a
+  compose donor's own module count equals its own grid); for the record branch the pool spans every
+  donor of the record concatenated, generally not any single denomination's grid.
+
+  D3' fixes a degeneracy in D3 (issue #21B): D3 sampled every child from the parent's own effective
+  modules, so a low-module parent (the 1x1 100 ETH apex is the extreme) produced monoculture
+  children — every cell of every child the same byte, sticky under further composes, since
+  re-composing such a child could only re-sample that one byte. The record branch escapes this by
+  drawing from the modules that made the card at its last merge (the same pool decompose pops), a
+  strictly larger set whenever the parent has one. The grammar branch escapes it for a direct-mint
+  parent by expressing the parent's seed at the child's own, smaller and more numerous denomination
+  instead of re-sampling the parent's own, fewer modules.
 - **redeem / black**: unchanged; burned or terminal state, no geometry transition.
 
 ## 7. Renderer changes
@@ -216,8 +247,20 @@ The "Filled" metadata count already derives from the module list and works on bo
 - **D2 — solid bits.** Copied verbatim, so ink is inherited literally and the gene remains the
   pool statistic that drives labels and future composes. The rejected alternative was
   re-drawing solids at the new gene's probability.
-- **D3 — split.** Children sample from the parent, so look divides with value. The rejected
-  alternative was keeping fresh child seeds (split children reading as new mints).
+- **D3' — split pool (supersedes D3, issue #21B).** Each child's pool is the parent's top compose
+  record's donor modules (concatenated, canonical order) when the parent has one, else the parent
+  seed's grammar v1 expression at the CHILD's own denomination (section 6). Fixes D3's monoculture
+  degeneracy: D3 sampled every child from the parent's own module list, which for a low-module
+  parent (the 1x1 100 ETH apex is the extreme) forced every child cell to the same byte, sticky
+  under further composes. The record branch is symmetric with decompose (same pool, same record);
+  the grammar branch keeps a never-composed parent's children legibly related to it (same seed)
+  without reproducing its own scarcity. The softer provenance claim this accepts: a grammar-branch
+  trace's `moduleIndex` refers to the parent's expression at the child's denomination, not to marks
+  that were ever on the minted parent card. Section 12 documents the reconstruction.
+  Superseded rule (D3): every child sampled from the parent's own effective modules, with
+  replacement, uniform (single donor, no units weighting). The rejected alternative to D3 (fresh
+  child seeds, full diversity but no legible lineage) remains rejected under D3' for the same
+  reason.
 
 ## 12. Provenance views
 
@@ -254,16 +297,42 @@ The result equals the survivor's live materialized bytes at that stack depth.
 
 Split has no equivalent storage before this change: the parent is burned and its seed and modules
 deleted, so a child previously carried no on-chain trace of its origin. `_splitTo` now writes one
-append-only `SplitRecord` per split call (parent seed, parent denomination index, parent ink gene,
-and the parent's effective modules read before it is burned), shared by every child of that split,
-and one `SplitOriginRef` per child (which record, and the child's index within it). `splitOriginOf`
-returns `(parentSeed, parentDenomIndex, parentInkGene, parentModules, childIndex)` — a passthrough
-over `Shapes.splitOriginRaw`, already minimal — and reverts `NotASplitChild` when `childId` carries
-no entry.
+append-only `SplitRecord` per split call (parent id, parent seed, parent denomination index, root
+split ancestor's denomination index, parent ink gene, and the parent's own effective modules read
+before it is burned), shared by every child of that split, and one `SplitOriginRef` per child
+(which record, and the child's index within it). `splitOriginOf` returns `(parentSeed, parentId,
+parentDenomIndex, originDenomIndex, parentInkGene, parentModules, childIndex)` — a passthrough over
+`Shapes.splitOriginRaw`, already minimal — and reverts `NotASplitChild` when `childId` carries no
+entry.
 
-Reconstruction recipe: call `GeometrySampling.sampleSplitChild(parentModules, parentSeed,
-childDenom, childIndex)`, where `childDenom` is the child's own live denomination index. This is
-exactly what `_splitTo` samples at split time, so the result equals the child's modules as
+`originDenomIndex` (issue #21C) is the root split ancestor's denomination: the parent's own
+`originDenomIndex` when the parent was itself a split child, else `parentDenomIndex`. It backs the
+"Split Origin" metadata trait (METADATA.md) and, unlike every other `SplitRecord` field, cannot be
+reconstructed from chain history after the fact: a compose record or a later split carries only its
+inputs' immediate state, not their full split ancestry. It is computed once at split time and
+stored directly for that reason.
+
+`parentModules` is informational only since D3' (section 6, section 11 D3'): it is the parent's own
+effective geometry snapshot, and neither sampling branch reads it. Reconstruction needs `parentId`
+instead, to redo the branch decision `_splitTo` made at split time — `parentId` is the burned
+parent's token id; `_composeStack[parentId]` is read by split but never deleted, so it is still
+there to read back.
+
+Reconstruction recipe:
+
+1. Read `Shapes.composeDepth(parentId)`.
+2. If it is nonzero (record branch): read `ShapeLens.composeRecordAt(parentId, composeDepth(parentId)
+   - 1)` for the parent's top compose record, rebuild the donor array with the record's survivor
+   snapshot first then its `inputs` sorted ascending by id (stored in calldata order, not canonical
+   order, the same as the compose recipe above), and pass it to
+   `GeometrySampling.buildSplitRecordPool(survivorModules, parentSeed, survivorDenomIndex,
+   survivorInkGene, sortedInputs)` for the pool.
+3. If it is zero (grammar branch): the pool is
+   `GeometrySampling.grammarSplitPool(parentSeed, childDenom, parentInkGene)`, where `childDenom` is
+   the child's own live denomination index.
+4. Call `GeometrySampling.sampleSplitChild(pool, parentSeed, childDenom, childIndex)`.
+
+This is exactly what `_splitTo` samples at split time, so the result equals the child's modules as
 recorded then, valid whenever the child has not since been recomposed (see below).
 
 No entry exists for an original mint, nor for a token re-minted verbatim by `decompose`: that path
@@ -284,11 +353,27 @@ own `decompose` (same id, same record, unaffected by the round trip in between).
 ### Gas
 
 `composeRecordAt` and `splitOriginOf` are views; they add no write cost. The split write is one
-`SplitRecord` (a seed slot, a packed denomination-index/ink-gene/length slot, and the modules
-byte array, which fits in one slot since `parentModules` is at most 25 bytes) shared across the
-whole split, plus one `SplitOriginRef` (one slot) per child. Measured on a 2-way 100 ETH -> 2x50
-ETH split: 251,813 gas without this feature, 387,109 gas with it (+135,296 gas, dominated by the
-new SSTOREs, all cold-to-nonzero on a fresh split).
+`SplitRecord` (a seed slot; a packed id/denomination-index/ink-gene/length slot, `parentId` sharing
+the slot `parentDenomIndex`/`parentInkGene`/`originDenomIndex` already occupied since a `uint96` id
+plus the three `uint8`s is 15 bytes, no new slot; and the modules byte array, which fits in one slot
+since `parentModules` is at most 25 bytes) shared across the whole split, plus one `SplitOriginRef`
+(one slot) per child. Measured on a 2-way 100 ETH -> 2x50 ETH split (direct-mint parent, grammar branch):
+251,813 gas without split provenance recording at all, 421,143 gas with D3'. The D3'-over-D1-era-
+recording delta (387,109 gas measured before D3') comes from the grammar branch deriving a full
+grammar v1 sequence per child (`GrammarV1Modules.all`, rebuilt fresh each time, not cached per
+distinct child denomination — see the tradeoff note below) instead of reusing the parent's own
+already-known module bytes; the record branch's added cost is one extra `_composeStack[parentId]`
+read (already-warm storage the compose that created the record wrote) and the donor-modules
+concatenation, not a new SSTORE class. A split with many children at the same denomination pays the
+grammar rebuild once per child rather than once per distinct denomination: `Shapes.sol`'s own
+runtime bytecode was within ~130 bytes of the EIP-170 24,576-byte limit before D3', and the
+per-denomination cache (`bytes[9]`/`bool[9]` scratch arrays keyed by `Denominations.COUNT`) that
+would remove this repeat cost added enough bytecode on its own to push it over; dropped in favor of
+lowering `foundry.toml`'s `optimizer_runs` (100 -> 25) instead, which trades marginally higher
+runtime gas on every repeatedly called function (not just split) for deployment headroom. The
+resulting margin is thin (~9 bytes at the mainnet ladder); a further pass to shrink `Shapes`'s own
+bytecode, not just retune `optimizer_runs`, should reclaim real headroom — and could reintroduce the
+per-denomination cache — before mainnet deploy.
 
 ## 13. Testing
 

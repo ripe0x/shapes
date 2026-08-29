@@ -48,11 +48,16 @@ interface IShapeLens {
         view
         returns (ComposeRecordView memory);
 
-    /// @notice The split that minted `childId`: the parent's pre-split seed, denomination index,
-    ///         ink gene and effective module snapshot (SAMPLING_SPEC.md), plus `childId`'s index
-    ///         among that split's outputs. A caller re-runs `GeometrySampling.sampleSplitChild`
-    ///         with this data and the child's own denomination index to reproduce the child's
-    ///         module bytes as sampled at split time. A passthrough over `Shapes.splitOriginRaw`.
+    /// @notice The split that minted `childId`: the parent's id and pre-split seed, denomination
+    ///         index, ink gene and own effective module snapshot (SAMPLING_SPEC.md), the root
+    ///         split ancestor's denomination index, plus `childId`'s index among that split's
+    ///         outputs. A passthrough over `Shapes.splitOriginRaw`. Reproducing the child's module
+    ///         bytes as sampled at split time (SAMPLING_SPEC.md section 12, D3') needs `parentId`
+    ///         to check `Shapes.composeDepth(parentId)`: nonzero selects the compose-record branch
+    ///         (rebuild the pool from `Shapes.composeRecordHeaderAt`/`composeRecordInputAt` at that
+    ///         depth), zero selects the grammar branch (`GeometrySampling.grammarSplitPool(parentSeed,
+    ///         childDenom, parentInkGene)`, ignoring `parentModules`). `originDenomIndex` (issue
+    ///         #21C) backs the "Split Origin" metadata trait directly, with no reconstruction.
     /// @dev Reverts `IShapes.NotASplitChild` for a token that was never minted by `split`/
     ///      `splitTo` (an original mint, or an input re-minted verbatim by `decompose`).
     function splitOriginOf(uint256 childId)
@@ -60,9 +65,29 @@ interface IShapeLens {
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
+            uint8 originDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
             uint256 childIndex
         );
+
+    /// @notice Whether `amountWei` is one of the nine supported denominations.
+    function isSupportedDenomination(uint256 amountWei) external pure returns (bool);
+
+    /// @notice Grid a denomination maps to. Reverts for unsupported amounts.
+    function gridForAmount(uint256 amountWei) external pure returns (uint256 cols, uint256 rows);
+
+    /// @notice Module count a denomination maps to.
+    function modulesForAmount(uint256 amountWei) external pure returns (uint256);
+
+    /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
+    /// @dev Does not require a live token. Resolver results are unvalidated; failures return zero.
+    function positionOf(uint256 tokenId) external view returns (address);
+
+    /// @notice Whether `tokenId` is currently a live Shape.
+    /// @dev Never reverts. False for never-issued and burned ids, including ids consumed by
+    ///      compose or replaced by split; true for live Black Shapes.
+    function exists(uint256 tokenId) external view returns (bool);
 }

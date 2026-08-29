@@ -33,6 +33,8 @@ traits render as exact-match filters.
 | 9 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `sacrifice` gate at the apex. |
 | 10 | `Black` | `"false"` | `true` when the token has been transformed via `sacrifice`. |
 | 11 | `Seed` | `"0x…"` | The 32-byte visual seed. |
+| n/a | `Split From` | `"10 ETH"` | Only on a split child (issue #21C): the immediate parent's denomination. See below. |
+| n/a | `Split Origin` | `"100 ETH"` | Only on a split child: the root split ancestor's denomination. See below. |
 
 ## Ink
 
@@ -78,3 +80,25 @@ redeems for exactly that.
 | `Complete` | `originCount == units` (units > 1) | Every 0.01 of backing traces to its own dust mint. Only a Complete apex can be sacrificed. |
 | `Fragment` | `originCount == 0` | A decompose remainder: full backing, no origin credit. Origins partition survivor-first across a split, so children past the origin supply get zero. |
 | `Black` | sacrificed | The 100 ETH was burned via `sacrifice`; renders as a black card. |
+
+Split allocates a parent's origin count across its children greedily, filling each child's
+capacity in order until the count runs out: the first child(ren) can read `Direct` or `Composed`
+exactly as a non-split token of that origin count would, the rest read `Fragment`. Formation alone
+does not distinguish a split child from an original mint or compose result with the same origin
+count; `Split From` / `Split Origin` below are the traits that record split ancestry.
+
+## Split From / Split Origin
+
+Present only on a token minted by `split`/`splitTo`; omitted entirely from every other token's
+`attributes`, including a split child's own later compose results (composing changes the token's
+denomination and Formation, not its creation history).
+
+- `Split From` is the immediate parent's denomination at the moment of that split, e.g. `"10 ETH"`.
+- `Split Origin` is the root split ancestor's denomination, e.g. `"100 ETH"`: for a child of a
+  direct-mint or compose-result parent, this equals `Split From`; for a grandchild (a split of a
+  split), it is the denomination further up the chain, letting a deep descendant still read where
+  its lineage started.
+
+Both are creation provenance, fixed at split time. `Compose Depth` separately records what has
+happened to the token since: a split child that later survives a compose keeps `Split From` /
+`Split Origin` unchanged and its `Compose Depth` counts the merges on top.

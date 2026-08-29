@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {Test} from "forge-std/Test.sol";
 
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
-import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
+import {IShapeRenderer, SplitProvenance} from "../src/interfaces/IShapeRenderer.sol";
 import {IShapeGeometry} from "../src/interfaces/IShapeGeometry.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {ModuleCodec} from "../src/lib/ModuleCodec.sol";
@@ -180,11 +180,21 @@ contract RendererDiffTest is Test {
         bool inverted,
         uint256 tokenId,
         uint256 originCount,
-        uint256 composeDepth
+        uint256 composeDepth,
+        bool isSplitChild,
+        uint8 parentDenomRaw,
+        uint8 originDenomRaw
     ) public view {
         (uint256 amountWei, uint256 denomIndex) = _denom(denomRaw);
         uint8 gene = _gene(geneRaw);
         bytes memory modules = _validModules(seed, denomIndex);
+        (, uint256 parentDenomIndex) = _denom(parentDenomRaw);
+        (, uint256 originDenomIndex) = _denom(originDenomRaw);
+        SplitProvenance memory splitInfo = SplitProvenance({
+            isSplitChild: isSplitChild,
+            parentDenomIndex: uint8(parentDenomIndex),
+            originDenomIndex: uint8(originDenomIndex)
+        });
         _diff(
             abi.encodeCall(
                 IShapeRenderer.metadataJSONSampled,
@@ -197,7 +207,8 @@ contract RendererDiffTest is Test {
                     gene,
                     composeDepth,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    splitInfo
                 )
             )
         );
@@ -213,7 +224,8 @@ contract RendererDiffTest is Test {
                     gene,
                     composeDepth,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    splitInfo
                 )
             )
         );
@@ -294,7 +306,18 @@ contract RendererDiffTest is Test {
             _diff(
                 abi.encodeCall(
                     IShapeRenderer.metadataJSONSampled,
-                    (modules, amountWei, 12345, 3, false, gene, 2, NAME_PREFIX, DESCRIPTION)
+                    (
+                        modules,
+                        amountWei,
+                        12345,
+                        3,
+                        false,
+                        gene,
+                        2,
+                        NAME_PREFIX,
+                        DESCRIPTION,
+                        SplitProvenance({isSplitChild: gene % 2 == 0, parentDenomIndex: gene, originDenomIndex: 8})
+                    )
                 )
             );
         }

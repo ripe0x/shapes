@@ -14,6 +14,7 @@ import {
   composeSampledShape,
   sampleComposeTraced,
   sampleSplitChildTraced,
+  type LastMergeDonors,
   type ComposeTraceCell,
   type SampleBurn,
   type SampleDonor,
@@ -227,9 +228,24 @@ export function splitNode(s: PlaySession, key: number, childDenomIndex: number):
   const childCount = Number(unitsAt(node.denomIndex) / unitsAt(childDenomIndex));
   const parentDonor = toDonor(node);
 
+  // D3' pool selection (SAMPLING_SPEC.md section 6): a composed parent's children sample from
+  // its last merge's donor pool. The session still holds those donors verbatim — a compose
+  // result's `parents` are its consumed input nodes, the same snapshot the contract's compose
+  // record stores — so passing them reproduces the record branch exactly. A split child or an
+  // original card has no record; `sampleSplitChildTraced` then uses the grammar branch.
+  let lastMerge: LastMergeDonors | undefined;
+  if (node.trace && node.parents) {
+    const byKey = new Map(s.nodes.map((n) => [n.key, n]));
+    const donorNodes = node.parents.map((k) => byKey.get(k)!);
+    lastMerge = {
+      survivor: toDonor(donorNodes[0]),
+      inputs: donorNodes.slice(1).map((n) => ({ ...toDonor(n), tokenId: BigInt(n.demoId) })),
+    };
+  }
+
   const children: PlayNode[] = [];
   for (let i = 0; i < childCount; i++) {
-    const { bytes, trace } = sampleSplitChildTraced(parentDonor, childDenomIndex, i);
+    const { bytes, trace } = sampleSplitChildTraced(parentDonor, childDenomIndex, i, CANONICAL, lastMerge);
     children.push({
       key: s.nextKey + i,
       demoId: s.nextDemoId + i,

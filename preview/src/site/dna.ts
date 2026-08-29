@@ -16,10 +16,17 @@
  * reconstruction or in the contract's own sampling; it is surfaced as an explicit error state,
  * never rendered as if it were correct.
  *
+ * The split branch has its own inner branch (SAMPLING_SPEC.md section 6, D3'), independent of the
+ * classification above: the pool a split's children were sampled from is the PARENT's top compose
+ * record's donor modules when the parent had one (`composeDepth(parentId) > 0` at split time,
+ * read from `splitOriginOf`'s `parentId`), or the parent seed's grammar v1 expression at the
+ * child's own denomination otherwise. `DnaSplitResult.branch` reports which; the parent's own
+ * `parentModules` snapshot is informational only and plays no part in either.
+ *
  * The reconstruction itself (`deriveComposeDna`, `deriveSplitDna`, `deriveSeedDna`) takes plain
  * fetched values and has no chain dependency, so it is unit-tested with fabricated records.
  * `loadDna` and `loadDnaFromSnapshot` are the chain-facing pieces; both classify and resolve
- * through the shared `resolveDna`, which reads `composeRecordAt` or `splitOriginOf` as the
+ * through the shared `resolveDna`, which reads `composeRecordAt` and/or `splitOriginOf` as the
  * classification requires.
  *
  * `loadDnaFromSnapshot` reads a burned-or-live token's own DNA from a compose/split donor
@@ -35,9 +42,11 @@ import {geometryAt, WAD, type CardGeometry, type Kind, type Params} from "../can
 import {decodeModuleByte, decodeModules} from "../canonical/moduleCodec";
 import {
   effectiveModuleBytes,
+  grammarSplitPoolBytes,
   sampleComposeTraced,
   sampleSplitChildTraced,
   type ComposeTraceCell,
+  type LastMergeDonors,
   type SampleBurn,
   type SampleDonor,
   type SplitTraceCell,
@@ -72,10 +81,17 @@ export interface RawComposeRecord {
   inputs: RawComposeInput[];
 }
 
-/** `splitOriginOf(childId)`'s payload. */
+/** `splitOriginOf(childId)`'s payload. `parentId` is the burned parent's token id, needed to
+ *  re-read its own `composeDepth`/`composeRecordAt` (SAMPLING_SPEC.md section 6, D3'): the split
+ *  branch decision depends on whether the PARENT had a compose record, not on `parentModules`. */
 export interface RawSplitOrigin {
   parentSeed: bigint;
+  parentId: bigint;
   parentDenomIndex: number;
+  /** The root split ancestor's denomination index (issue #21C), backing the "Split Origin"
+   *  metadata trait. Not read by the sampling reconstruction below, which only needs the
+   *  immediate parent's own state. */
+  originDenomIndex: number;
   parentInkGene: number;
   parentModules: Uint8Array;
   childIndex: number;
@@ -142,6 +158,14 @@ export interface DnaSplitResult {
   geometry: CardGeometry;
   bytes: Uint8Array;
   cells: DnaCell[];
+  /** Which sampling pool this split drew from (SAMPLING_SPEC.md section 6, D3'): "record" when
+   *  the parent had a compose record at split time, "grammar" otherwise. */
+  branch: "record" | "grammar";
+  /** Length of the pool sampling actually drew from — not the parent's own module count. */
+  poolLength: number;
+  /** The parent's own pre-split identity, informational only since D3': `modules` (the parent's
+   *  own effective geometry snapshot) plays no part in either sampling branch. Kept for display
+   *  ("split from this Shape") and drill-down into the parent's own DNA. */
   parent: {
     seed: bigint;
     denomIndex: number;
@@ -149,6 +173,17 @@ export interface DnaSplitResult {
     materialized: boolean;
     /** Present iff materialized; absent means grammar-v1 from `seed`/`denomIndex`/`inkGene`. */
     modules?: Uint8Array;
+  };
+  /** The grammar branch's pool, renderable as a card at the CHILD's own denomination (its module
+   *  count always equals that denomination's grid, the same way a compose donor's own module
+   *  count equals its own grid) — present only when `branch === "grammar"`. The record branch's
+   *  pool is a multi-donor concatenation with no single grid shape, so it has no card form here;
+   *  callers show it as pool index/byte only (see `DnaCell.moduleIndex`), not a two-way highlight. */
+  pool?: {
+    seed: bigint;
+    denomIndex: number;
+    inkGene: number;
+    modules: Uint8Array;
   };
 }
 
@@ -299,13 +334,18 @@ export function deriveComposeDna(
 }
 
 /**
- * Split branch (SAMPLING_SPEC.md section 12): sample the child from the recorded parent state at
- * the child's own live denomination and index, and verify the result equals its live materialized
- * bytes.
+ * Split branch (SAMPLING_SPEC.md section 12, D3'): sample the child from the split's pool at the
+ * child's own live denomination and index, and verify the result equals its live materialized
+ * bytes. `record`, when given (the parent's top compose record, only present when the parent's
+ * own `composeDepth` was nonzero at resolution time), selects the record branch; its absence
+ * selects the grammar branch. The parent's own `origin.parentModules` snapshot is never read for
+ * sampling in either branch — it is informational only, carried through to `parent.modules` for
+ * display.
  */
 export function deriveSplitDna(
   state: RawShapeState,
   origin: RawSplitOrigin,
+  record?: RawComposeRecord,
   p?: Params,
 ): DnaSplitResult | DnaMismatchResult {
   const geometry = geometryAt(state.denomIndex, p);
@@ -315,15 +355,53 @@ export function deriveSplitDna(
     inkGene: origin.parentInkGene,
     modules: origin.parentModules.length > 0 ? origin.parentModules : undefined,
   };
-  const {bytes, trace} = sampleSplitChildTraced(parent, state.denomIndex, origin.childIndex, p);
+
+  const lastMergeDonors: LastMergeDonors | undefined = record
+    ? {
+        survivor: {
+          seed: origin.parentSeed,
+          denomIndex: record.survivorDenomIndex,
+          inkGene: record.survivorInkGene,
+          modules: record.survivorModules.length > 0 ? record.survivorModules : undefined,
+        },
+        inputs: record.inputs.map((inp) => ({
+          tokenId: inp.id,
+          seed: inp.seed,
+          denomIndex: inp.denomIndex,
+          inkGene: inp.inkGene,
+          modules: inp.modules.length > 0 ? inp.modules : undefined,
+        })),
+      }
+    : undefined;
+
+  const {bytes, trace, branch, poolLength} = sampleSplitChildTraced(
+    parent,
+    state.denomIndex,
+    origin.childIndex,
+    p,
+    lastMergeDonors,
+  );
   if (!bytesEqual(bytes, state.modules)) {
     return {kind: "mismatch", message: MISMATCH_SPLIT};
   }
+
+  const pool =
+    branch === "grammar"
+      ? {
+          seed: origin.parentSeed,
+          denomIndex: state.denomIndex,
+          inkGene: origin.parentInkGene,
+          modules: grammarSplitPoolBytes(origin.parentSeed, state.denomIndex, origin.parentInkGene, p),
+        }
+      : undefined;
+
   return {
     kind: "split",
     geometry,
     bytes,
     cells: cellsFromSplitTrace(trace),
+    branch,
+    poolLength,
     parent: {
       seed: origin.parentSeed,
       denomIndex: origin.parentDenomIndex,
@@ -331,6 +409,7 @@ export function deriveSplitDna(
       materialized: parent.modules != null,
       modules: parent.modules,
     },
+    pool,
   };
 }
 
@@ -410,8 +489,9 @@ async function resolveDna(
   }
 
   if (branch === "split") {
+    const shapes = {address: dep.shapes, abi: shapesAbi} as const;
     try {
-      const [parentSeed, parentDenomIndex, parentInkGene, parentModules, childIndex] =
+      const [parentSeed, parentId, parentDenomIndex, originDenomIndex, parentInkGene, parentModules, childIndex] =
         await publicClient.readContract({
           ...lens,
           functionName: "splitOriginOf",
@@ -419,12 +499,44 @@ async function resolveDna(
         });
       const rawOrigin: RawSplitOrigin = {
         parentSeed: BigInt(parentSeed),
+        parentId,
         parentDenomIndex,
+        originDenomIndex,
         parentInkGene,
         parentModules: hexToBytes(parentModules),
         childIndex: Number(childIndex),
       };
-      return deriveSplitDna(state, rawOrigin);
+
+      // The split branch decision (SAMPLING_SPEC.md section 6, D3') keys off the PARENT's own
+      // compose depth, not anything about the child: nonzero means the parent had a compose
+      // record at split time (`_composeStack[parentId]` is read but never deleted by split), so
+      // the record branch applies.
+      const parentDepth = Number(
+        await publicClient.readContract({...shapes, functionName: "composeDepth", args: [parentId]}),
+      );
+
+      let record: RawComposeRecord | undefined;
+      if (parentDepth > 0) {
+        const rec = await publicClient.readContract({
+          ...lens,
+          functionName: "composeRecordAt",
+          args: [parentId, BigInt(parentDepth - 1)],
+        });
+        record = {
+          survivorDenomIndex: rec.survivorDenominationIndex,
+          survivorInkGene: rec.survivorInkGene,
+          survivorModules: hexToBytes(rec.survivorModules),
+          inputs: rec.inputs.map((inp) => ({
+            id: inp.id,
+            seed: BigInt(inp.seed),
+            denomIndex: inp.denominationIndex,
+            inkGene: inp.inkGene,
+            modules: hexToBytes(inp.modules),
+          })),
+        };
+      }
+
+      return deriveSplitDna(state, rawOrigin, record);
     } catch {
       return {kind: "unavailable", message: "Split provenance is unavailable for this token."};
     }

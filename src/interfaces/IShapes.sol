@@ -370,21 +370,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Whether a live token is Black.
     function isBlack(uint256 tokenId) external view returns (bool);
 
-    /// @notice Whether `tokenId` is currently a live Shape.
-    /// @dev Never reverts. False for never-issued and burned ids, including ids consumed by
-    ///      compose or replaced by split; true for live Black Shapes.
-    function exists(uint256 tokenId) external view returns (bool);
-
     /// @notice ETH backing a live Shape.
     function backingOf(uint256 tokenId) external view returns (uint256);
 
     /// @notice The denomination-ladder index (0..8) currently stored by a live Shape.
     /// @dev Reverts for a nonexistent id. Black Shapes retain and return apex index 8.
     function denomIndexOf(uint256 tokenId) external view returns (uint8);
-
-    /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
-    /// @dev Does not require a live token. Resolver results are unvalidated; failures return zero.
-    function positionOf(uint256 tokenId) external view returns (address);
 
     /// @notice The immutable visual seed of a live Shape.
     function seedOf(uint256 tokenId) external view returns (bytes32);
@@ -460,11 +451,16 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
             bytes memory modules
         );
 
-    /// @notice The split that minted `childId`: the parent's pre-split seed, denomination index,
-    ///         ink gene and effective module snapshot (SAMPLING_SPEC.md), plus `childId`'s index
-    ///         among that split's outputs. A caller re-runs `GeometrySampling.sampleSplitChild`
-    ///         with this data and the child's own denomination index to reproduce the child's
-    ///         module bytes as sampled at split time.
+    /// @notice The split that minted `childId`: the parent's id and pre-split seed, denomination
+    ///         index, ink gene and own effective module snapshot (SAMPLING_SPEC.md), the root
+    ///         split ancestor's denomination index, plus `childId`'s index among that split's
+    ///         outputs. `parentModules` is informational (D3'): reproducing the child's module
+    ///         bytes as sampled at split time needs the branch decision `parentId` enables, not
+    ///         `parentModules` directly — see SAMPLING_SPEC.md section 12 for the reconstruction
+    ///         recipe (`composeDepth(parentId)` selects between the compose-record pool and the
+    ///         grammar pool). `originDenomIndex` (issue #21C) backs the "Split Origin" metadata
+    ///         trait directly, with no reconstruction: the parent's own `originDenomIndex` when
+    ///         the parent was itself a split child, else `parentDenomIndex`.
     /// @dev The record is written once per split and shared by every child of that split; only
     ///      `childIndex` distinguishes them. It survives the child's own later mutation (e.g. the
     ///      child subsequently used as a compose survivor): this view answers how the token was
@@ -479,7 +475,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
+            uint8 originDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
             uint256 childIndex
@@ -496,13 +494,4 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Smallest denomination and accounting unit, 0.01 ETH.
     function unit() external pure returns (uint256);
-
-    /// @notice Whether `amountWei` is one of the nine supported denominations.
-    function isSupportedDenomination(uint256 amountWei) external pure returns (bool);
-
-    /// @notice Grid a denomination maps to. Reverts for unsupported amounts.
-    function gridForAmount(uint256 amountWei) external pure returns (uint256 cols, uint256 rows);
-
-    /// @notice Module count a denomination maps to.
-    function modulesForAmount(uint256 amountWei) external pure returns (uint256);
 }

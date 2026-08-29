@@ -11,14 +11,13 @@ import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
-import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
+import {IShapeRenderer, SplitProvenance} from "./interfaces/IShapeRenderer.sol";
 import {
     IShapeProvenance,
     IShapeRecomposition,
     IShapeValue,
     ShapeFormation
 } from "./interfaces/IShapeCapabilities.sol";
-import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
@@ -126,13 +125,26 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     mapping(uint256 survivorId => ComposeRecord[]) private _composeStack;
 
     /// @dev One split operation's parent snapshot, appended once per `_splitTo` call and shared
-    ///      by every child of that split. `parentModules` is the parent's effective materialized
-    ///      geometry at split time (stored bytes if materialized, otherwise the grammar v1
-    ///      sequence derived from `parentSeed`), read before the parent is burned.
+    ///      by every child of that split. `parentModules` is the parent's own effective
+    ///      materialized geometry at split time (stored bytes if materialized, otherwise the
+    ///      grammar v1 sequence derived from `parentSeed` at the parent's own denomination), read
+    ///      before the parent is burned. Informational only since D3' (SAMPLING_SPEC.md section
+    ///      6): the sampling pool split actually draws from is `parentId`'s top compose record
+    ///      when it has one, or grammar v1 at each CHILD's own denomination otherwise, neither of
+    ///      which `parentModules` necessarily equals. `parentId` is the burned parent's token id,
+    ///      needed to re-read `_composeStack[parentId]` (which split does not delete, and which no
+    ///      later operation on `parentId` can ever grow, since the id is burned) for reconstruction.
+    ///      `originDenomIndex` is the root split ancestor's denomination index: the parent's own
+    ///      `originDenomIndex` (via `_splitOriginRef[parentId]`) when the parent was itself a
+    ///      split child, else `parentDenomIndex`. Set once at split time. Not reconstructable from
+    ///      the rest of this struct, since `parentId`'s own `_splitOriginRef` entry may belong to a
+    ///      different `SplitRecord` than this one; that is why it is stored here directly.
     struct SplitRecord {
         bytes32 parentSeed;
+        uint96 parentId;
         uint8 parentDenomIndex;
         uint8 parentInkGene;
+        uint8 originDenomIndex;
         bytes parentModules;
     }
 
@@ -221,10 +233,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
     address public positionResolver;
-
-    /// @dev Gas forwarded to the untrusted resolver by `positionOf`. Ample for a mapping read;
-    ///      bounds a hostile resolver's ability to consume the caller's stipend.
-    uint256 private constant RESOLVER_GAS = 50_000;
 
     /// @inheritdoc IShapes
     bool public positionResolverLocked;
@@ -352,14 +360,26 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return (amountWei * feeBps) / BPS_DENOMINATOR;
     }
 
+    /// @dev Shared by every entrypoint that requires the renderer/collection pointers to still be
+    ///      mutable: `setRenderer`, `lockRenderer`, `setCollection`.
+    function _requireRendererUnlocked() private view {
+        if (rendererLocked) revert RendererIsLocked();
+    }
+
     /// @inheritdoc IShapes
     /// @dev Admin only, and only while unlocked. The new renderer must carry code.
     function setRenderer(address newRenderer) external onlyAdmin {
-        if (rendererLocked) revert RendererIsLocked();
+        _requireRendererUnlocked();
         _requireRendererHasCode(newRenderer);
         renderer = newRenderer;
         emit RendererUpdated(newRenderer);
         // A new renderer changes `tokenURI` for every existing token; ERC-4906 signals the refresh.
+        _emitBatchMetadataUpdate();
+    }
+
+    /// @dev ERC-4906 refresh signal for every currently-minted token. Shared by `setRenderer` and
+    ///      `setMetadataCopy`, the two admin actions that change every token's `tokenURI` at once.
+    function _emitBatchMetadataUpdate() private {
         if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
     }
 
@@ -367,7 +387,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev Admin only, one way. After this the renderer can never change again. The optional
     ///      position resolver remains independently configurable until its own lock or renunciation.
     function lockRenderer() external onlyAdmin {
-        if (rendererLocked) revert RendererIsLocked();
+        _requireRendererUnlocked();
         rendererLocked = true;
         emit RendererLocked();
     }
@@ -388,23 +408,28 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
         tokenNamePrefix = tokenNamePrefix_;
         description = description_;
-        if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
+        _emitBatchMetadataUpdate();
         emit ContractURIUpdated();
     }
 
     /// @inheritdoc IShapes
     /// @dev Admin only, and only while unlocked. The new collection must carry code.
     function setCollection(address newCollection) external onlyAdmin {
-        if (rendererLocked) revert RendererIsLocked();
+        _requireRendererUnlocked();
         _requireCollectionHasCode(newCollection);
         collection = newCollection;
         emit CollectionUpdated(newCollection);
     }
 
+    /// @dev Shared by `setPositionResolver` and `lockPositionResolver`.
+    function _requirePositionResolverUnlocked() private view {
+        if (positionResolverLocked) revert PositionResolverIsLocked();
+    }
+
     /// @dev Zero clears the resolver. Nonzero values must carry code when configured, but Shapes
     ///      intentionally does not inspect or call that code and makes no claim about its mutability.
     function setPositionResolver(address resolver_) external onlyAdmin {
-        if (positionResolverLocked) revert PositionResolverIsLocked();
+        _requirePositionResolverUnlocked();
         if (resolver_ != address(0) && resolver_.code.length == 0) {
             revert InvalidPositionResolver();
         }
@@ -414,7 +439,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function lockPositionResolver() external onlyAdmin {
-        if (positionResolverLocked) revert PositionResolverIsLocked();
+        _requirePositionResolverUnlocked();
         positionResolverLocked = true;
         emit PositionResolverLocked(positionResolver);
     }
@@ -485,22 +510,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     {
         _requireNonZero(quantity);
 
-        uint256 denomIndex;
-        {
-            bool ok;
-            (denomIndex, ok) = Denominations.indexOf(amountWei);
-            if (!ok) revert UnsupportedDenomination(amountWei);
-        }
+        firstTokenId = totalMinted;
 
-        uint256 backing = amountWei * quantity;
         // Fee is a percentage of each token's backing. Computed per token, then scaled, so the
         // aggregate matches quantity independent mints exactly. Exact in wei at every
         // denomination for the committed 1% (each denomination is a whole number of finney).
-        uint256 fees = mintFeeFor(amountWei) * quantity;
-        if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
-
-        firstTokenId = totalMinted;
-
+        //
         // One entropy root per batch; each token's seed derives from it and its own id, so every
         // token in a batch gets a distinct seed.
         //
@@ -510,6 +525,15 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         // only the fee is spent), so the mint ordinal is a free knob and traits are grindable at
         // roughly the mint fee per candidate. The seed has no economic effect: redemption value is
         // fixed by denomination. Trait scarcity is best-effort, not enforced (SPEC.md D3e).
+        uint256 denomIndex;
+        {
+            bool ok;
+            (denomIndex, ok) = Denominations.indexOf(amountWei);
+            if (!ok) revert UnsupportedDenomination(amountWei);
+        }
+        uint256 backing = amountWei * quantity;
+        uint256 fees = mintFeeFor(amountWei) * quantity;
+        if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
         bytes32 batchRoot = keccak256(
             abi.encodePacked(
                 block.prevrandao,
@@ -598,8 +622,14 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _redeemBatchTo(tokenIds, recipient);
     }
 
+    /// @dev Shared by `_redeemTo` and `_redeemBatchTo`: the payout destination can never be the
+    ///      zero address, or the redemption would burn the ETH along with the token.
+    function _requireValidRecipient(address recipient) private pure {
+        if (recipient == address(0)) revert InvalidRecipient(recipient);
+    }
+
     function _redeemTo(uint256 tokenId, address payable recipient, bool allowBlack) private {
-        if (recipient == address(0)) revert InvalidRecipient(recipient); // never burn the payout
+        _requireValidRecipient(recipient);
         (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId, allowBlack);
 
         totalSupply -= 1;
@@ -613,7 +643,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         private
         returns (uint256 totalWei)
     {
-        if (recipient == address(0)) revert InvalidRecipient(recipient); // never burn the payout
+        _requireValidRecipient(recipient);
         uint256 n = tokenIds.length;
         _requireNonZero(n);
 
@@ -916,19 +946,41 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         ShapeData storage p = _requireCallerOwnsLive(tokenId);
 
         // The parent's pre-burn state, held as the record it will be pushed as. Bundling these
-        // four values into one memory struct rather than four locals keeps `_splitTo` off the
+        // values into one memory struct rather than separate locals keeps `_splitTo` off the
         // stack-too-deep limit under the non-optimized codegen `forge coverage` uses.
-        // `parentModules` is the parent's effective geometry (SAMPLING_SPEC.md §6): its stored
-        // bytes if materialized, otherwise the grammar v1 sequence from its seed. Read before
-        // the parent is burned below.
+        // `parentModules` is the parent's own effective geometry snapshot (its stored bytes if
+        // materialized, otherwise the grammar v1 sequence from its seed at its own denomination),
+        // read before the parent is burned below. Informational only (SAMPLING_SPEC.md §6, D3'):
+        // the sampling pool below is not read from this field in either branch.
+        //
+        // `originDenomIndex` (issue #21C): the root split ancestor's denomination. The parent
+        // carries one already (via its own `_splitOriginRef` entry) when it was itself a split
+        // child; otherwise the parent is the root and its own denomination is the origin.
+        SplitOriginRef storage parentRef = _splitOriginRef[tokenId];
+        uint8 originDenomIndex =
+            parentRef.exists ? _splitRecords[parentRef.recordIndex].originDenomIndex : p.denomIndex;
+
         SplitRecord memory rec = SplitRecord({
             parentSeed: p.seed,
+            parentId: uint96(tokenId),
             parentDenomIndex: p.denomIndex,
             parentInkGene: p.inkGene,
+            originDenomIndex: originDenomIndex,
             parentModules: GeometrySampling.effectiveModulesOf(
                 _sampledModules[tokenId], p.seed, p.denomIndex, p.inkGene
             )
         });
+
+        // Split's sampling pool (SAMPLING_SPEC.md §6, D3'): the parent's top compose record's
+        // donor pool when it has one (child-denomination-independent, built once here and reused
+        // by every child below), else grammar v1 at each child's own denomination (denomination-
+        // dependent, so read fresh per child in the loop). `_composeStack[tokenId]` is untouched
+        // by split — read here, never deleted — so `ShapeLens`/off-chain reconstruction can redo
+        // this same branch decision later via `parentId` and `Shapes.composeDepth`.
+        uint256 recordDepth = _composeStack[tokenId].length;
+        bool hasRecordPool = recordDepth > 0;
+        bytes memory recordPool =
+            hasRecordPool ? _buildSplitRecordPool(_composeStack[tokenId][recordDepth - 1], rec.parentSeed) : bytes("");
 
         _requireSplitSumMatches(Denominations.amountAt(rec.parentDenomIndex), outDenoms);
         uint32[] memory give = _allocateSplitOrigins(p.originCount, outDenoms);
@@ -959,10 +1011,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 isBlack: false,
                 inkGene: rec.parentInkGene
             });
-            // Every child samples from the parent's modules (SAMPLING_SPEC.md D3), including
-            // children of an original (never-composed) parent.
-            childModules[i] =
-                GeometrySampling.sampleSplitChild(rec.parentModules, rec.parentSeed, outDenoms[i], i);
+
+            childModules[i] = GeometrySampling.sampleSplitChildFromPool(
+                hasRecordPool, recordPool, rec.parentSeed, rec.parentInkGene, outDenoms[i], i
+            );
             _sampledModules[nid] = childModules[i];
             _splitOriginRef[nid] =
                 SplitOriginRef({exists: true, recordIndex: splitRecordIndex, childIndex: uint32(i)});
@@ -979,6 +1031,35 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         for (uint256 i = 0; i < k; ++i) {
             _safeMint(recipient, newIds[i]);
         }
+    }
+
+    /// @dev Assembles a materialized-parent split's sampling pool from its top compose record
+    ///      (SAMPLING_SPEC.md §6, D3'): the record's pre-compose survivor effective modules
+    ///      first, then its inputs' effective modules ascending by donor id. `rec.inputs` is
+    ///      stored in calldata order (the loop in `_compose` pushed them in that order), so this
+    ///      sorts a memory copy before concatenating — required, or the split result would depend
+    ///      on that earlier compose's burnIds calldata order, breaking burn-order independence.
+    function _buildSplitRecordPool(ComposeRecord storage rec, bytes32 parentSeed)
+        private
+        view
+        returns (bytes memory)
+    {
+        uint256 m = rec.inputs.length;
+        GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](m);
+        for (uint256 i = 0; i < m; ++i) {
+            ComposeInput storage inp = rec.inputs[i];
+            inputDonors[i] = GeometrySampling.Donor({
+                id: inp.id,
+                units: 0, // unused: split's pool concatenates every donor's modules, no weighting
+                seed: inp.seed,
+                denomIndex: inp.denomIndex,
+                inkGene: inp.inkGene,
+                modules: inp.modules
+            });
+        }
+        return GeometrySampling.buildSplitRecordPoolSorted(
+            rec.survivorModules, parentSeed, rec.survivorDenomIndex, rec.survivorInkGene, inputDonors
+        );
     }
 
     /// @inheritdoc IShapes
@@ -1145,11 +1226,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function exists(uint256 tokenId) external view returns (bool) {
-        return _ownerOf(tokenId) != address(0);
-    }
-
-    /// @inheritdoc IShapes
     function backingOf(uint256 tokenId) public view returns (uint256) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
@@ -1171,22 +1247,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IERC721Value
     function valueOf(uint256 tokenId) external view returns (uint256) {
         return backingOf(tokenId);
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev The resolver is untrusted. The call is capped at `RESOLVER_GAS` and any revert or
-    ///      out-of-gas is swallowed to `address(0)`, so a hostile resolver can neither drain the
-    ///      caller's gas nor make `positionOf` revert. Its only power is to return a wrong address.
-    function positionOf(uint256 tokenId) external view returns (address) {
-        address resolver_ = positionResolver;
-        if (resolver_ == address(0)) return address(0);
-        try IShapePositionResolver(resolver_).positionOf{gas: RESOLVER_GAS}(tokenId) returns (
-            address position
-        ) {
-            return position;
-        } catch {
-            return address(0);
-        }
     }
 
     /// @inheritdoc IShapes
@@ -1277,12 +1337,19 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     /// @dev Raw accessor: the stored split-origin fields for `childId`, verbatim. Already minimal
     ///      (a passthrough, no struct assembly); `ShapeLens.splitOriginOf` returns this unchanged.
+    ///      `parentId` is needed to re-derive the split's sampling branch (SAMPLING_SPEC.md §6,
+    ///      D3'): `composeDepth(parentId) > 0` means the record branch, whose donor pool is
+    ///      rebuilt from `composeRecordHeaderAt`/`composeRecordInputAt` at that depth.
+    ///      `originDenomIndex` is the root split ancestor's denomination (issue #21C): the "Split
+    ///      Origin" metadata trait reads it directly, with no reconstruction needed.
     function splitOriginRaw(uint256 childId)
         external
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
+            uint8 originDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
             uint256 childIndex
@@ -1291,7 +1358,15 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         SplitOriginRef storage ref = _splitOriginRef[childId];
         if (!ref.exists) revert NotASplitChild(childId);
         SplitRecord storage rec = _splitRecords[ref.recordIndex];
-        return (rec.parentSeed, rec.parentDenomIndex, rec.parentInkGene, rec.parentModules, ref.childIndex);
+        return (
+            rec.parentSeed,
+            rec.parentId,
+            rec.parentDenomIndex,
+            rec.originDenomIndex,
+            rec.parentInkGene,
+            rec.parentModules,
+            ref.childIndex
+        );
     }
 
     function _childSeed(bytes32 parentSeed, uint256 childIndex) private pure returns (bytes32) {
@@ -1324,22 +1399,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return Denominations.UNIT;
     }
 
-    /// @inheritdoc IShapes
-    function isSupportedDenomination(uint256 amountWei) external pure returns (bool) {
-        return Denominations.isSupported(amountWei);
-    }
-
-    /// @inheritdoc IShapes
-    function gridForAmount(uint256 amountWei) external pure returns (uint256 cols, uint256 rows) {
-        return Denominations.gridAt(Denominations.requireIndexOf(amountWei));
-    }
-
-    /// @inheritdoc IShapes
-    function modulesForAmount(uint256 amountWei) external pure returns (uint256) {
-        (uint256 cols, uint256 rows) = Denominations.gridAt(Denominations.requireIndexOf(amountWei));
-        return cols * rows;
-    }
-
     /// @notice EIP-2981 royalty, permanently zero.
     /// @dev Declared rather than omitted so a marketplace reading the standard is told the rate
     ///      instead of falling back to its own default.
@@ -1355,7 +1414,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.
     /// @dev Reads the sampled path (grammar v2) when the token carries materialized geometry
     ///      (`_sampledModules[tokenId]` nonempty: a compose survivor or a split child), otherwise
-    ///      the seed-based path (grammar v1, an original mint).
+    ///      the seed-based path (grammar v1, an original mint). A split child always carries
+    ///      materialized geometry (`_splitTo` writes `_sampledModules` for every child), so its
+    ///      "Split From" / "Split Origin" traits are only ever plumbed through the sampled path;
+    ///      `_splitProvenanceOf` is the all-zero, non-split value for every other token.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
@@ -1373,7 +1435,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                     d.inkGene,
                     depth,
                     tokenNamePrefix,
-                    description
+                    description,
+                    _splitProvenanceOf(tokenId)
                 );
         }
         return IShapeRenderer(renderer)
@@ -1388,6 +1451,22 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 tokenNamePrefix,
                 description
             );
+    }
+
+    /// @dev Split creation-provenance for `tokenId`'s metadata (issue #21C): the all-zero value
+    ///      for a token that was never minted by `split`/`splitTo`, else its immediate parent's
+    ///      and root split ancestor's denomination indexes, read from its `SplitRecord`.
+    function _splitProvenanceOf(uint256 tokenId) private view returns (SplitProvenance memory) {
+        SplitOriginRef storage ref = _splitOriginRef[tokenId];
+        if (!ref.exists) {
+            return SplitProvenance({isSplitChild: false, parentDenomIndex: 0, originDenomIndex: 0});
+        }
+        SplitRecord storage rec = _splitRecords[ref.recordIndex];
+        return SplitProvenance({
+            isSplitChild: true,
+            parentDenomIndex: rec.parentDenomIndex,
+            originDenomIndex: rec.originDenomIndex
+        });
     }
 
     /// @dev Refuses to place a Shape in this contract's own custody.
