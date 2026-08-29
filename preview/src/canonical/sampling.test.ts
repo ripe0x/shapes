@@ -7,6 +7,7 @@ import {encodeModuleByte, kindIndexOf} from "./moduleCodec";
 import {
   composeSampledShape,
   composeSampleSeedInputs,
+  effectiveModuleBytes,
   sampleCompose,
   sampleComposeTraced,
   sampleSplitChild,
@@ -60,11 +61,13 @@ test("sampleCompose: different newIndex or different donors change the result", 
 });
 
 test("sampleCompose: every donor is reachable under units weighting", () => {
-  // Three equal-weight donors (denomIndex 0 -> unitsAt = 1 each), each materialized with a
-  // single, distinct marker byte so its cells are identifiable in the output. Sampling into
-  // the largest grid (denomIndex 0, 25 cells) gives each donor an independent 1/3 chance per
-  // cell; over 25 draws every donor is expected to appear. The PRNG is deterministic, so this
-  // is a fixed check, not a flaky probabilistic one.
+  // Three equal-weight donors (denomIndex 0 -> unitsAt = 1 each), each materialized with 25
+  // copies of a distinct marker byte so its cells are identifiable in the output, and so the
+  // donor's module count (25) meets the result's cell count (25) under D1' without-replacement
+  // module draws (SAMPLING_SPEC.md section 10 invariant 6). Sampling into the largest grid
+  // (denomIndex 0, 25 cells) gives each donor an independent 1/3 chance per cell; over 25 draws
+  // every donor is expected to appear. The PRNG is deterministic, so this is a fixed check, not
+  // a flaky probabilistic one.
   const markerA = encodeModuleByte(0, false, 0); // circle, outline
   const markerB = encodeModuleByte(1, true, 0); // square, solid
   const markerC = encodeModuleByte(5, false, 0); // diamond, outline
@@ -73,21 +76,21 @@ test("sampleCompose: every donor is reachable under units weighting", () => {
     seed: 0xaaan,
     denomIndex: 0,
     inkGene: 0,
-    modules: new Uint8Array([markerA]),
+    modules: new Uint8Array(25).fill(markerA),
   };
   const b1: SampleBurn = {
     tokenId: 1n,
     seed: 0xbbbn,
     denomIndex: 0,
     inkGene: 0,
-    modules: new Uint8Array([markerB]),
+    modules: new Uint8Array(25).fill(markerB),
   };
   const b2: SampleBurn = {
     tokenId: 2n,
     seed: 0xcccn,
     denomIndex: 0,
     inkGene: 0,
-    modules: new Uint8Array([markerC]),
+    modules: new Uint8Array(25).fill(markerC),
   };
 
   const out = sampleCompose(s, [b1, b2], 0);
@@ -213,40 +216,49 @@ test("sampleComposeTraced: bytes match sampleCompose when donors are materialize
   const markerB = encodeModuleByte(1, true, 0); // square, solid
   const markerC = encodeModuleByte(5, false, 0); // diamond, outline
 
-  const s: SampleDonor = {seed: 0xaaan, denomIndex: 0, inkGene: 0, modules: new Uint8Array([markerA])};
+  // 25 copies each, so donor module count (25) meets the result's cell count (25) — see the
+  // note on the previous test.
+  const s: SampleDonor = {seed: 0xaaan, denomIndex: 0, inkGene: 0, modules: new Uint8Array(25).fill(markerA)};
   const b1: SampleBurn = {
     tokenId: 1n,
     seed: 0xbbbn,
     denomIndex: 0,
     inkGene: 0,
-    modules: new Uint8Array([markerB]),
+    modules: new Uint8Array(25).fill(markerB),
   };
   const b2: SampleBurn = {
     tokenId: 2n,
     seed: 0xcccn,
     denomIndex: 0,
     inkGene: 0,
-    modules: new Uint8Array([markerC]),
+    modules: new Uint8Array(25).fill(markerC),
   };
 
   const untraced = sampleCompose(s, [b1, b2], 0);
   const {bytes, trace} = sampleComposeTraced(s, [b1, b2], 0);
   assert.equal(bytesEqual(bytes, untraced), true);
 
-  // A single-module donor's every draw resolves to moduleIndex 0, and each donor's own marker
-  // byte, decoded from the correct donor id and materialized flag (all three are materialized
-  // here, each with a one-byte array).
-  const byId = new Map(trace.map((cell) => [cell.donorId, cell]));
+  // Every donor's byte is a uniform fill, so the byte still identifies the donor id regardless
+  // of which module index within the donor was drawn (all three are materialized here).
+  const byId = new Map<string, typeof trace>();
   for (const cell of trace) {
-    assert.equal(cell.moduleIndex, 0);
     assert.equal(cell.donorMaterialized, true);
+    assert.ok(cell.moduleIndex >= 0 && cell.moduleIndex < 25, "moduleIndex within donor's range");
     if (cell.donorId === "survivor") assert.equal(cell.byte, markerA);
     if (cell.donorId === "1") assert.equal(cell.byte, markerB);
     if (cell.donorId === "2") assert.equal(cell.byte, markerC);
+    byId.set(cell.donorId, [...(byId.get(cell.donorId) ?? []), cell]);
   }
   assert.equal(byId.has("survivor"), true, "survivor never selected");
   assert.equal(byId.has("1"), true, "burn 1 never selected");
   assert.equal(byId.has("2"), true, "burn 2 never selected");
+
+  // D1': module choice within a donor is without replacement, so no donor's moduleIndex repeats
+  // across the cells it supplied.
+  for (const [, cells] of byId) {
+    const indices = cells.map((c) => c.moduleIndex);
+    assert.equal(new Set(indices).size, indices.length, "donor's moduleIndex repeated across cells");
+  }
 });
 
 test("sampleComposeTraced: an unmaterialized donor is flagged accordingly and donorIndex 0 is the survivor", () => {
@@ -266,6 +278,66 @@ test("composeSampleSeedInputs: burnSeedFold is order-invariant and matches the t
   assert.equal(inOrder.sampleSeed, shuffled.sampleSeed);
   assert.equal(inOrder.survivorSeed, survivor.seed);
   assert.equal(inOrder.newIndex, 5);
+});
+
+/* ------------------------------------------------------------------ *
+ * D1' (issue #21A): injective compose provenance. Module choice within a donor is without
+ * replacement, so no two result cells trace to the same (donorIndex, moduleIndex) pair.
+ * ------------------------------------------------------------------ */
+
+test("sampleComposeTraced: no (donorIndex, moduleIndex) pair repeats", () => {
+  const {trace} = sampleComposeTraced(survivor, burns, 5);
+  const seen = new Set<string>();
+  for (const cell of trace) {
+    const key = `${cell.donorIndex}:${cell.moduleIndex}`;
+    assert.equal(seen.has(key), false, `(donorIndex, moduleIndex) pair ${key} repeated`);
+    seen.add(key);
+  }
+});
+
+test("sampleComposeTraced: a 5x0.01 -> 0.05 compose (issue #21A's example) has 20 distinct (donor, module) pairs", () => {
+  // Five 0.01 ETH donors (denomIndex 0, 25 modules each) composing into 0.05 ETH (denomIndex 1,
+  // 20 cells): every donor's module count exceeds the result's cell count, and D1' draws each
+  // donor module at most once, so the trace's 20 cells must carry 20 distinct source pairs.
+  const dustSurvivor: SampleDonor = {seed: 0xd0n, denomIndex: 0, inkGene: 0};
+  const dustBurns: SampleBurn[] = [
+    {tokenId: 1n, seed: 0xd1n, denomIndex: 0, inkGene: 1},
+    {tokenId: 2n, seed: 0xd2n, denomIndex: 0, inkGene: 2},
+    {tokenId: 3n, seed: 0xd3n, denomIndex: 0, inkGene: 3},
+    {tokenId: 4n, seed: 0xd4n, denomIndex: 0, inkGene: 4},
+  ];
+  const {bytes, trace} = sampleComposeTraced(dustSurvivor, dustBurns, 1);
+  assert.equal(bytes.length, 20);
+  assert.equal(trace.length, 20);
+  const pairs = new Set(trace.map((c) => `${c.donorIndex}:${c.moduleIndex}`));
+  assert.equal(pairs.size, 20, "expected 20 distinct (donor, module) pairs");
+});
+
+test("sampleComposeTraced: mixed materialized/seed-derived donors round-trip through composeSampledShape", () => {
+  const materializedSurvivor: SampleDonor = {
+    seed: 0xe0n,
+    denomIndex: 1, // 20 modules, materialized
+    inkGene: 2,
+    modules: effectiveModuleBytes({seed: 0xe0n, denomIndex: 1, inkGene: 2}),
+  };
+  const seedDerivedBurn: SampleBurn = {
+    tokenId: 7n,
+    seed: 0xe1n,
+    denomIndex: 4, // 9 modules, seed-derived (no `modules`)
+    inkGene: 5,
+  };
+
+  const {bytes, trace} = sampleComposeTraced(materializedSurvivor, [seedDerivedBurn], 5); // -> 6 cells
+  assert.equal(bytes.length, cellCountAt(5));
+
+  const pairs = new Set(trace.map((c) => `${c.donorIndex}:${c.moduleIndex}`));
+  assert.equal(pairs.size, trace.length, "mixed-donor compose must still be injective");
+
+  const card = composeSampledShape(bytes, 5, materializedSurvivor.inkGene);
+  assert.equal(card.modules.length, cellCountAt(5));
+  for (let i = 0; i < card.modules.length; i++) {
+    assert.equal(encodeModuleByte(kindIndexOf(card.modules[i].kind), card.modules[i].solid, card.modules[i].rot), bytes[i]);
+  }
 });
 
 test("sampleSplitChildTraced: bytes match sampleSplitChild, including past the uint8 range", () => {

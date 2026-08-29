@@ -107,11 +107,19 @@ For each destination cell j = 0 .. cellCount(newIndex) - 1, in order:
 1. `d = rnd.nextBelow(totalUnits)` where `totalUnits = sum(units_i)` over S and all B_i.
    Map `d` to a donor by cumulative units, survivor first, then burns in calldata-independent
    canonical order (ascending token id).
-2. `k = rnd.nextBelow(cells_donor)`; the destination module is `mods_donor[k]`.
+2. `k = rnd.nextBelow(remaining_donor)`, where `remaining_donor` starts at `cells_donor` and
+   decreases by one each time a module of that donor is used. The destination module is the
+   `(k+1)`-th not-yet-used entry of `mods_donor`, scanning ascending from index 0; that entry is
+   then marked used. `moduleIndex` as reported/traced is the module's index in `mods_donor`,
+   i.e. its position in the donor's full effective module list, not its position among the
+   not-yet-used entries.
 
-Sampling is with replacement. Donor choice is units-weighted, matching the ink-gene pool
-weighting (`sumW` in `_compose`); module choice within a donor is uniform. A 50 ETH input and
-fifty 1 ETH inputs contribute equally in aggregate, regardless of how many cells each card has.
+Donor choice is with replacement and units-weighted, matching the ink-gene pool weighting
+(`sumW` in `_compose`); a 50 ETH input and fifty 1 ETH inputs contribute equally in aggregate,
+regardless of how many cells each card has. Module choice within a donor is without replacement:
+each donor module is usable at most once per compose, so every result cell traces to a distinct
+donor module (D1′, section 11). Every donor's module count is at least `cellCount(newIndex)`
+(section 10 invariant 6), so a donor is never asked for a module it has already used up.
 
 The resulting byte array is stored on the survivor, emitted (section 8), and is the token's
 geometry until the next compose/decompose/split.
@@ -185,14 +193,26 @@ The "Filled" metadata count already derives from the module list and works on bo
 4. Original mints are never materialized; their render output is byte-identical to grammar v1.
 5. No change to any value path: denominations, escrow, origin counts, and the existing
    conservation invariants are untouched by sampling.
+6. Compose provenance is injective: no two result cells trace to the same `(donorIndex,
+   moduleIndex)` pair, and a donor is never drawn from after its module count is exhausted.
+   Holds because a compose's donors are its own pre-compose survivor plus its burned inputs, and
+   `Denominations.gridAt` is strictly decreasing in denomination index while `newIndex` is the
+   denomination of the merged (higher-value) result — every donor's `amountAt` is strictly below
+   the result's, so every donor's cell count is at least the result's cell count. Total draws
+   equal the result's cell count, so no donor's `remaining` can reach zero while it is still
+   being drawn from.
 
 ## 11. Decisions
 
-- **D1 — weighting.** Units-weighted donor, uniform within donor, with replacement (matches
-  the ink-gene pool weighting; O(1) memory; handles every grid-size case). The rejected
-  alternative was uniform over the pooled multiset without replacement (literal conservation
-  of modules, but weights big-value inputs down to their cell count and needs reservoir
-  bookkeeping).
+- **D1′ — weighting (supersedes D1).** Donor choice is units-weighted, with replacement, unchanged
+  from D1. Module choice within a donor is uniform over that donor's not-yet-used modules,
+  without replacement: each donor module contributes to at most one result cell, so compose
+  provenance is injective at the cell level (issue #21A). D1's reasoning for units-weighted
+  donor selection over the pooled multiset stands unchanged; this only removes replacement at
+  the module level, which the section 10 invariant 6 argument shows can never exhaust a donor.
+  Superseded rule (D1): uniform within donor, with replacement — a single parent cell could
+  source several result cells, which read as "duplicated" rather than "moved" in per-cell
+  provenance views.
 - **D2 — solid bits.** Copied verbatim, so ink is inherited literally and the gene remains the
   pool statistic that drives labels and future composes. The rejected alternative was
   re-drawing solids at the new gene's probability.
