@@ -126,11 +126,18 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     mapping(uint256 survivorId => ComposeRecord[]) private _composeStack;
 
     /// @dev One split operation's parent snapshot, appended once per `_splitTo` call and shared
-    ///      by every child of that split. `parentModules` is the parent's effective materialized
-    ///      geometry at split time (stored bytes if materialized, otherwise the grammar v1
-    ///      sequence derived from `parentSeed`), read before the parent is burned.
+    ///      by every child of that split. `parentModules` is the parent's own effective
+    ///      materialized geometry at split time (stored bytes if materialized, otherwise the
+    ///      grammar v1 sequence derived from `parentSeed` at the parent's own denomination), read
+    ///      before the parent is burned. Informational only since D3' (SAMPLING_SPEC.md section
+    ///      6): the sampling pool split actually draws from is `parentId`'s top compose record
+    ///      when it has one, or grammar v1 at each CHILD's own denomination otherwise, neither of
+    ///      which `parentModules` necessarily equals. `parentId` is the burned parent's token id,
+    ///      needed to re-read `_composeStack[parentId]` (which split does not delete, and which no
+    ///      later operation on `parentId` can ever grow, since the id is burned) for reconstruction.
     struct SplitRecord {
         bytes32 parentSeed;
+        uint96 parentId;
         uint8 parentDenomIndex;
         uint8 parentInkGene;
         bytes parentModules;
@@ -916,19 +923,32 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         ShapeData storage p = _requireCallerOwnsLive(tokenId);
 
         // The parent's pre-burn state, held as the record it will be pushed as. Bundling these
-        // four values into one memory struct rather than four locals keeps `_splitTo` off the
+        // values into one memory struct rather than separate locals keeps `_splitTo` off the
         // stack-too-deep limit under the non-optimized codegen `forge coverage` uses.
-        // `parentModules` is the parent's effective geometry (SAMPLING_SPEC.md §6): its stored
-        // bytes if materialized, otherwise the grammar v1 sequence from its seed. Read before
-        // the parent is burned below.
+        // `parentModules` is the parent's own effective geometry snapshot (its stored bytes if
+        // materialized, otherwise the grammar v1 sequence from its seed at its own denomination),
+        // read before the parent is burned below. Informational only (SAMPLING_SPEC.md §6, D3'):
+        // the sampling pool below is not read from this field in either branch.
         SplitRecord memory rec = SplitRecord({
             parentSeed: p.seed,
+            parentId: uint96(tokenId),
             parentDenomIndex: p.denomIndex,
             parentInkGene: p.inkGene,
             parentModules: GeometrySampling.effectiveModulesOf(
                 _sampledModules[tokenId], p.seed, p.denomIndex, p.inkGene
             )
         });
+
+        // Split's sampling pool (SAMPLING_SPEC.md §6, D3'): the parent's top compose record's
+        // donor pool when it has one (child-denomination-independent, built once here and reused
+        // by every child below), else grammar v1 at each child's own denomination (denomination-
+        // dependent, so read fresh per child in the loop). `_composeStack[tokenId]` is untouched
+        // by split — read here, never deleted — so `ShapeLens`/off-chain reconstruction can redo
+        // this same branch decision later via `parentId` and `Shapes.composeDepth`.
+        uint256 recordDepth = _composeStack[tokenId].length;
+        bool hasRecordPool = recordDepth > 0;
+        bytes memory recordPool =
+            hasRecordPool ? _buildSplitRecordPool(_composeStack[tokenId][recordDepth - 1], rec.parentSeed) : bytes("");
 
         _requireSplitSumMatches(Denominations.amountAt(rec.parentDenomIndex), outDenoms);
         uint32[] memory give = _allocateSplitOrigins(p.originCount, outDenoms);
@@ -959,10 +979,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 isBlack: false,
                 inkGene: rec.parentInkGene
             });
-            // Every child samples from the parent's modules (SAMPLING_SPEC.md D3), including
-            // children of an original (never-composed) parent.
-            childModules[i] =
-                GeometrySampling.sampleSplitChild(rec.parentModules, rec.parentSeed, outDenoms[i], i);
+
+            childModules[i] = GeometrySampling.sampleSplitChildFromPool(
+                hasRecordPool, recordPool, rec.parentSeed, rec.parentInkGene, outDenoms[i], i
+            );
             _sampledModules[nid] = childModules[i];
             _splitOriginRef[nid] =
                 SplitOriginRef({exists: true, recordIndex: splitRecordIndex, childIndex: uint32(i)});
@@ -979,6 +999,35 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         for (uint256 i = 0; i < k; ++i) {
             _safeMint(recipient, newIds[i]);
         }
+    }
+
+    /// @dev Assembles a materialized-parent split's sampling pool from its top compose record
+    ///      (SAMPLING_SPEC.md §6, D3'): the record's pre-compose survivor effective modules
+    ///      first, then its inputs' effective modules ascending by donor id. `rec.inputs` is
+    ///      stored in calldata order (the loop in `_compose` pushed them in that order), so this
+    ///      sorts a memory copy before concatenating — required, or the split result would depend
+    ///      on that earlier compose's burnIds calldata order, breaking burn-order independence.
+    function _buildSplitRecordPool(ComposeRecord storage rec, bytes32 parentSeed)
+        private
+        view
+        returns (bytes memory)
+    {
+        uint256 m = rec.inputs.length;
+        GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](m);
+        for (uint256 i = 0; i < m; ++i) {
+            ComposeInput storage inp = rec.inputs[i];
+            inputDonors[i] = GeometrySampling.Donor({
+                id: inp.id,
+                units: 0, // unused: split's pool concatenates every donor's modules, no weighting
+                seed: inp.seed,
+                denomIndex: inp.denomIndex,
+                inkGene: inp.inkGene,
+                modules: inp.modules
+            });
+        }
+        return GeometrySampling.buildSplitRecordPoolSorted(
+            rec.survivorModules, parentSeed, rec.survivorDenomIndex, rec.survivorInkGene, inputDonors
+        );
     }
 
     /// @inheritdoc IShapes
@@ -1277,11 +1326,15 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     /// @dev Raw accessor: the stored split-origin fields for `childId`, verbatim. Already minimal
     ///      (a passthrough, no struct assembly); `ShapeLens.splitOriginOf` returns this unchanged.
+    ///      `parentId` is needed to re-derive the split's sampling branch (SAMPLING_SPEC.md §6,
+    ///      D3'): `composeDepth(parentId) > 0` means the record branch, whose donor pool is
+    ///      rebuilt from `composeRecordHeaderAt`/`composeRecordInputAt` at that depth.
     function splitOriginRaw(uint256 childId)
         external
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
@@ -1291,7 +1344,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         SplitOriginRef storage ref = _splitOriginRef[childId];
         if (!ref.exists) revert NotASplitChild(childId);
         SplitRecord storage rec = _splitRecords[ref.recordIndex];
-        return (rec.parentSeed, rec.parentDenomIndex, rec.parentInkGene, rec.parentModules, ref.childIndex);
+        return (
+            rec.parentSeed, rec.parentId, rec.parentDenomIndex, rec.parentInkGene, rec.parentModules, ref.childIndex
+        );
     }
 
     function _childSeed(bytes32 parentSeed, uint256 childIndex) private pure returns (bytes32) {

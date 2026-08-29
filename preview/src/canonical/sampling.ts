@@ -4,8 +4,10 @@
  * Implements the decisions in SAMPLING_SPEC.md section 11: D1' (units-weighted donor with
  * replacement; module choice within a donor uniform over its not-yet-used modules, without
  * replacement, so compose provenance is injective at the cell level), D2 (solid bits copied
- * verbatim, never re-drawn), D3 (split children sample from the parent instead of drawing a
- * fresh seed).
+ * verbatim, never re-drawn), D3' (split children sample from a pool that depends on whether the
+ * parent has a compose record: the record's donor modules when it does, otherwise the parent
+ * seed's grammar v1 expression at the CHILD's own denomination — never the parent's own stored
+ * modules directly).
  *
  * All hashing is `keccak256` over `abi.encodePacked` with the exact argument types Solidity
  * uses, the same convention `ink.ts` and `splitSeed.ts` follow, so the stream a Solidity port
@@ -49,6 +51,19 @@ export interface SampleDonor {
  *  canonical donor order (ascending token id) independent of calldata order. */
 export interface SampleBurn extends SampleDonor {
   tokenId: bigint;
+}
+
+/**
+ * A split parent's top compose record, in the shape sampling needs to rebuild its donor pool
+ * (SAMPLING_SPEC.md section 6, D3'). `survivor` is the record's pre-compose survivor snapshot —
+ * `seed` must be the parent's own live seed (compose never changes a token's seed), while
+ * `denomIndex`/`inkGene`/`modules` are the snapshot the record stored. `inputs` need not already
+ * be in canonical order; the pool builder sorts them ascending by `tokenId`, mirroring
+ * `GeometrySampling.sortDonorsById` on the Solidity side.
+ */
+export interface LastMergeDonors {
+  survivor: SampleDonor;
+  inputs: SampleBurn[];
 }
 
 const COMPOSE_DOMAIN = "Shapes/sample/v1";
@@ -272,6 +287,46 @@ export function sampleCompose(
   return sampleComposeTraced(survivor, burns, newIndex, p).bytes;
 }
 
+/**
+ * A recordless split's sampling pool (SAMPLING_SPEC.md section 6, D3'): the parent seed's grammar
+ * v1 expression at the CHILD's own denomination, under the parent's ink gene. Ignores the
+ * parent's own materialized modules entirely, even when the parent is materialized (a split
+ * child being split again with no compose record of its own) — the pool depends on the child's
+ * denomination, not the parent's stored geometry.
+ */
+export function grammarSplitPoolBytes(
+  parentSeed: bigint,
+  childDenomIndex: number,
+  parentInkGene: number,
+  p: Params = CANONICAL,
+): Uint8Array {
+  requireDenomIndex(childDenomIndex, "childDenomIndex");
+  const amountWei = DENOMINATIONS[childDenomIndex];
+  const composition = composeShape(parentSeed, amountWei, parentInkGene, p);
+  return encodeModules(composition.modules);
+}
+
+/**
+ * A materialized-parent split's sampling pool (SAMPLING_SPEC.md section 6, D3'): the parent's top
+ * compose record's donor modules, concatenated in canonical order — the record's pre-compose
+ * survivor first, then its inputs ascending by token id. Child-denomination-independent: the same
+ * pool is shared by every child of one split call, mirroring `GeometrySampling.buildSplitRecordPool`.
+ */
+export function splitRecordPoolBytes(donors: LastMergeDonors, p: Params = CANONICAL): Uint8Array {
+  const survivorBytes = effectiveModuleBytes(donors.survivor, p);
+  const orderedInputs = orderedBurns(donors.inputs);
+  const inputBytesArr = orderedInputs.map((b) => effectiveModuleBytes(b, p));
+  const total = inputBytesArr.reduce((acc, b) => acc + b.length, survivorBytes.length);
+  const pool = new Uint8Array(total);
+  pool.set(survivorBytes, 0);
+  let o = survivorBytes.length;
+  for (const ib of inputBytesArr) {
+    pool.set(ib, o);
+    o += ib.length;
+  }
+  return pool;
+}
+
 function splitSampleSeed(parentSeed: bigint, childDenomIndex: number, childIndex: number): bigint {
   return packedKeccakUint(
     ["string", "bytes32", "uint8", "uint256"],
@@ -299,8 +354,10 @@ export function splitSampleSeedInputs(
   };
 }
 
-/** One destination cell's provenance from a traced split sample. Single donor (the parent), so
- *  there is no donor index or id, only which parent module the byte came from. */
+/** One destination cell's provenance from a traced split sample. `moduleIndex` indexes the split's
+ *  pool (SAMPLING_SPEC.md section 6, D3'), not the parent's own module list: the record branch's
+ *  pool spans multiple donors concatenated, and the grammar branch's pool is sized to the CHILD's
+ *  own denomination, not the parent's. */
 export interface SplitTraceCell {
   moduleIndex: number;
   byte: number;
@@ -309,31 +366,46 @@ export interface SplitTraceCell {
 export interface SplitTraceResult {
   bytes: Uint8Array;
   trace: SplitTraceCell[];
-  /** Whether the parent was materialized (stored modules) rather than seed-derived. */
-  parentMaterialized: boolean;
-  /** Length of the parent's effective module list sampling drew from. */
-  parentCellCount: number;
+  /** Which pool branch sampling drew from (SAMPLING_SPEC.md section 6, D3'): "record" when
+   *  `lastMergeDonors` was given, "grammar" otherwise. */
+  branch: "record" | "grammar";
+  /** Length of the pool sampling drew from: the record's concatenated donor module count (record
+   *  branch) or the child-denomination grammar v1 expression's module count (grammar branch).
+   *  Not the parent's own module count in either case. */
+  poolLength: number;
 }
 
 /**
- * `sampleSplitChild` with per-cell provenance (SAMPLING_SPEC.md section 6, decision D3).
+ * `sampleSplitChild` with per-cell provenance (SAMPLING_SPEC.md section 6, decision D3').
  * `sampleSplitChild` is defined in terms of this function's output, so there is one draw-order
- * implementation. Single donor, so no units weighting: module choice is uniform, with
- * replacement. `childIndex` is the child's ordinal position within the split call (the same
- * loop counter `_childSeed` uses), encoded into the stream as a full uint256. Encoding it as a
- * uint8 would alias children 256 apart in the same split at the same denomination.
+ * implementation.
+ *
+ * The pool is child-denomination-independent when `lastMergeDonors` is given (the parent's top
+ * compose record's donor modules, concatenated in canonical order via `splitRecordPoolBytes`) and
+ * depends on `childDenomIndex` otherwise (the parent seed's grammar v1 expression at the child's
+ * own denomination via `grammarSplitPoolBytes`, ignoring `parent.modules` even when the parent is
+ * itself materialized). Either way, module choice within the pool is uniform, with replacement:
+ * a single pool, so no units weighting. `childIndex` is the child's ordinal position within the
+ * split call (the same loop counter `_childSeed` uses), encoded into the stream as a full
+ * uint256. Encoding it as a uint8 would alias children 256 apart in the same split at the same
+ * denomination.
  */
 export function sampleSplitChildTraced(
   parent: SampleDonor,
   childDenomIndex: number,
   childIndex: number,
   p: Params = CANONICAL,
+  lastMergeDonors?: LastMergeDonors,
 ): SplitTraceResult {
   requireDenomIndex(parent.denomIndex, "parent.denomIndex");
   requireDenomIndex(childDenomIndex, "childDenomIndex");
   requireIndex(childIndex, "childIndex");
 
-  const parentBytes = effectiveModuleBytes(parent, p);
+  const branch: "record" | "grammar" = lastMergeDonors ? "record" : "grammar";
+  const pool = lastMergeDonors
+    ? splitRecordPoolBytes(lastMergeDonors, p)
+    : grammarSplitPoolBytes(parent.seed, childDenomIndex, parent.inkGene, p);
+
   const sampleSeed = splitSampleSeed(parent.seed, childDenomIndex, childIndex);
   const rand = new Round03Rand(seed32Of(sampleSeed));
 
@@ -341,18 +413,13 @@ export function sampleSplitChildTraced(
   const bytes = new Uint8Array(childCellCount);
   const trace: SplitTraceCell[] = new Array(childCellCount);
   for (let j = 0; j < childCellCount; j++) {
-    const k = rand.nextBelow(BigInt(parentBytes.length));
+    const k = rand.nextBelow(BigInt(pool.length));
     const moduleIndex = Number(k);
-    const byte = parentBytes[moduleIndex];
+    const byte = pool[moduleIndex];
     bytes[j] = byte;
     trace[j] = {moduleIndex, byte};
   }
-  return {
-    bytes,
-    trace,
-    parentMaterialized: parent.modules != null,
-    parentCellCount: parentBytes.length,
-  };
+  return {bytes, trace, branch, poolLength: pool.length};
 }
 
 export function sampleSplitChild(
@@ -360,8 +427,9 @@ export function sampleSplitChild(
   childDenomIndex: number,
   childIndex: number,
   p: Params = CANONICAL,
+  lastMergeDonors?: LastMergeDonors,
 ): Uint8Array {
-  return sampleSplitChildTraced(parent, childDenomIndex, childIndex, p).bytes;
+  return sampleSplitChildTraced(parent, childDenomIndex, childIndex, p, lastMergeDonors).bytes;
 }
 
 /**

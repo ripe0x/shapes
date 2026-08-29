@@ -61,15 +61,33 @@ contract ParityTest is Test {
     uint8[] internal sampleComposeBurnInkGene;
     bytes[] internal sampleComposeBurnModules;
 
-    // --- materialized module sampling: split ---
-    string[] internal sampleSplitWhy;
-    bytes32[] internal sampleSplitParentSeed;
-    uint8[] internal sampleSplitParentDenomIndex;
-    uint8[] internal sampleSplitParentInkGene;
-    bytes[] internal sampleSplitParentModules;
-    uint8[] internal sampleSplitChildDenomIndex;
-    uint256[] internal sampleSplitChildIndex;
-    bytes[] internal sampleSplitExpected;
+    /// @dev Every split record-branch fixture case carries exactly this many inputs, flattened
+    ///      row-major into the parallel `sampleSplitRecordInput*` arrays below. Must match
+    ///      `SPLIT_RECORD_INPUTS_PER_CASE` in preview/scripts/genFixtures.ts.
+    uint256 internal constant SPLIT_RECORD_INPUTS_PER_CASE = 2;
+
+    // --- materialized module sampling (SAMPLING_SPEC.md section 6, D3'): split, grammar branch ---
+    string[] internal sampleSplitGrammarWhy;
+    bytes32[] internal sampleSplitGrammarParentSeed;
+    uint8[] internal sampleSplitGrammarParentInkGene;
+    uint8[] internal sampleSplitGrammarChildDenomIndex;
+    uint256[] internal sampleSplitGrammarChildIndex;
+    bytes[] internal sampleSplitGrammarExpected;
+
+    // --- materialized module sampling: split, record branch ---
+    string[] internal sampleSplitRecordWhy;
+    bytes32[] internal sampleSplitRecordParentSeed;
+    uint8[] internal sampleSplitRecordSurvivorDenomIndex;
+    uint8[] internal sampleSplitRecordSurvivorInkGene;
+    bytes[] internal sampleSplitRecordSurvivorModules;
+    uint8[] internal sampleSplitRecordChildDenomIndex;
+    uint256[] internal sampleSplitRecordChildIndex;
+    bytes[] internal sampleSplitRecordExpected;
+    uint256[] internal sampleSplitRecordInputId;
+    bytes32[] internal sampleSplitRecordInputSeed;
+    uint8[] internal sampleSplitRecordInputDenomIndex;
+    uint8[] internal sampleSplitRecordInputInkGene;
+    bytes[] internal sampleSplitRecordInputModules;
 
     // --- sampled render surfaces (grammar v2) ---
     string[] internal sampledRenderWhy;
@@ -167,24 +185,61 @@ contract ParityTest is Test {
             }
         }
 
-        sampleSplitWhy = vm.parseJsonStringArray(json, ".sampleSplitWhy");
+        sampleSplitGrammarWhy = vm.parseJsonStringArray(json, ".sampleSplitGrammarWhy");
         {
-            string[] memory s = vm.parseJsonStringArray(json, ".sampleSplitParentSeed");
-            string[] memory di = vm.parseJsonStringArray(json, ".sampleSplitParentDenomIndex");
-            string[] memory ig = vm.parseJsonStringArray(json, ".sampleSplitParentInkGene");
-            string[] memory mo = vm.parseJsonStringArray(json, ".sampleSplitParentModules");
-            string[] memory cd = vm.parseJsonStringArray(json, ".sampleSplitChildDenomIndex");
-            string[] memory ci = vm.parseJsonStringArray(json, ".sampleSplitChildIndex");
-            string[] memory ex = vm.parseJsonStringArray(json, ".sampleSplitExpected");
+            string[] memory s = vm.parseJsonStringArray(json, ".sampleSplitGrammarParentSeed");
+            string[] memory ig = vm.parseJsonStringArray(json, ".sampleSplitGrammarParentInkGene");
+            string[] memory cd = vm.parseJsonStringArray(json, ".sampleSplitGrammarChildDenomIndex");
+            string[] memory ci = vm.parseJsonStringArray(json, ".sampleSplitGrammarChildIndex");
+            string[] memory ex = vm.parseJsonStringArray(json, ".sampleSplitGrammarExpected");
             uint256 n = s.length;
             for (uint256 i = 0; i < n; ++i) {
-                sampleSplitParentSeed.push(vm.parseBytes32(s[i]));
-                sampleSplitParentDenomIndex.push(uint8(vm.parseUint(di[i])));
-                sampleSplitParentInkGene.push(uint8(vm.parseUint(ig[i])));
-                sampleSplitParentModules.push(vm.parseBytes(mo[i]));
-                sampleSplitChildDenomIndex.push(uint8(vm.parseUint(cd[i])));
-                sampleSplitChildIndex.push(vm.parseUint(ci[i]));
-                sampleSplitExpected.push(vm.parseBytes(ex[i]));
+                sampleSplitGrammarParentSeed.push(vm.parseBytes32(s[i]));
+                sampleSplitGrammarParentInkGene.push(uint8(vm.parseUint(ig[i])));
+                sampleSplitGrammarChildDenomIndex.push(uint8(vm.parseUint(cd[i])));
+                sampleSplitGrammarChildIndex.push(vm.parseUint(ci[i]));
+                sampleSplitGrammarExpected.push(vm.parseBytes(ex[i]));
+            }
+        }
+
+        sampleSplitRecordWhy = vm.parseJsonStringArray(json, ".sampleSplitRecordWhy");
+        {
+            string[] memory s = vm.parseJsonStringArray(json, ".sampleSplitRecordParentSeed");
+            string[] memory sdi = vm.parseJsonStringArray(json, ".sampleSplitRecordSurvivorDenomIndex");
+            string[] memory sig = vm.parseJsonStringArray(json, ".sampleSplitRecordSurvivorInkGene");
+            string[] memory smo = vm.parseJsonStringArray(json, ".sampleSplitRecordSurvivorModules");
+            string[] memory cd = vm.parseJsonStringArray(json, ".sampleSplitRecordChildDenomIndex");
+            string[] memory ci = vm.parseJsonStringArray(json, ".sampleSplitRecordChildIndex");
+            string[] memory ex = vm.parseJsonStringArray(json, ".sampleSplitRecordExpected");
+            uint256 n = s.length;
+            for (uint256 i = 0; i < n; ++i) {
+                sampleSplitRecordParentSeed.push(vm.parseBytes32(s[i]));
+                sampleSplitRecordSurvivorDenomIndex.push(uint8(vm.parseUint(sdi[i])));
+                sampleSplitRecordSurvivorInkGene.push(uint8(vm.parseUint(sig[i])));
+                sampleSplitRecordSurvivorModules.push(vm.parseBytes(smo[i]));
+                sampleSplitRecordChildDenomIndex.push(uint8(vm.parseUint(cd[i])));
+                sampleSplitRecordChildIndex.push(vm.parseUint(ci[i]));
+                sampleSplitRecordExpected.push(vm.parseBytes(ex[i]));
+            }
+        }
+        {
+            string[] memory id = vm.parseJsonStringArray(json, ".sampleSplitRecordInputId");
+            string[] memory s = vm.parseJsonStringArray(json, ".sampleSplitRecordInputSeed");
+            string[] memory di = vm.parseJsonStringArray(json, ".sampleSplitRecordInputDenomIndex");
+            string[] memory ig = vm.parseJsonStringArray(json, ".sampleSplitRecordInputInkGene");
+            string[] memory mo = vm.parseJsonStringArray(json, ".sampleSplitRecordInputModules");
+            uint256 nInputs = id.length;
+            assertEq(
+                nInputs,
+                sampleSplitRecordWhy.length * SPLIT_RECORD_INPUTS_PER_CASE,
+                "split record input row count != cases * SPLIT_RECORD_INPUTS_PER_CASE"
+            );
+            for (uint256 i = 0; i < nInputs; ++i) {
+                sampleSplitRecordInputId.push(vm.parseUint(id[i]));
+                sampleSplitRecordInputSeed.push(vm.parseBytes32(s[i]));
+                sampleSplitRecordInputDenomIndex.push(uint8(vm.parseUint(di[i])));
+                sampleSplitRecordInputInkGene.push(uint8(vm.parseUint(ig[i])));
+                sampleSplitRecordInputModules.push(vm.parseBytes(mo[i]));
             }
         }
 
@@ -373,25 +428,59 @@ contract ParityTest is Test {
     }
 
     /// @notice `GeometrySampling.sampleSplitChild` against the TS canonical `sampleSplitChild`
-    ///         (SAMPLING_SPEC.md section 6): materialized and seed-derived parents, including
-    ///         `childIndex` values that wrap past `uint8` the same way the Solidity cast does.
-    function test_SplitSamplingMatchesTypeScript() public view {
-        uint256 n = sampleSplitWhy.length;
-        assertGt(n, 0, "no split-sampling fixtures");
+    ///         (SAMPLING_SPEC.md section 6, D3'), grammar branch: no compose record, so the pool
+    ///         is `grammarSplitPool(parentSeed, childDenom, parentInkGene)` — the parent's own
+    ///         denomination and stored modules play no part, including `childIndex` values that
+    ///         wrap past `uint8` the same way the Solidity cast does.
+    function test_SplitSamplingGrammarBranchMatchesTypeScript() public view {
+        uint256 n = sampleSplitGrammarWhy.length;
+        assertGt(n, 0, "no split-sampling grammar-branch fixtures");
         for (uint256 i = 0; i < n; ++i) {
-            bytes memory parentModules = GeometrySampling.effectiveModulesOf(
-                sampleSplitParentModules[i],
-                sampleSplitParentSeed[i],
-                sampleSplitParentDenomIndex[i],
-                sampleSplitParentInkGene[i]
+            bytes memory pool = GeometrySampling.grammarSplitPool(
+                sampleSplitGrammarParentSeed[i], sampleSplitGrammarChildDenomIndex[i], sampleSplitGrammarParentInkGene[i]
             );
             bytes memory got = GeometrySampling.sampleSplitChild(
-                parentModules,
-                sampleSplitParentSeed[i],
-                sampleSplitChildDenomIndex[i],
-                sampleSplitChildIndex[i]
+                pool, sampleSplitGrammarParentSeed[i], sampleSplitGrammarChildDenomIndex[i], sampleSplitGrammarChildIndex[i]
             );
-            assertEq(got, sampleSplitExpected[i], sampleSplitWhy[i]);
+            assertEq(got, sampleSplitGrammarExpected[i], sampleSplitGrammarWhy[i]);
+        }
+    }
+
+    /// @notice `GeometrySampling.sampleSplitChild` against the TS canonical `sampleSplitChild`
+    ///         (SAMPLING_SPEC.md section 6, D3'), record branch: the pool is the parent's top
+    ///         compose record's donor modules, survivor first then inputs sorted ascending by id.
+    ///         `sampleSplitRecordInput*` stores inputs in calldata order (not necessarily
+    ///         ascending), covering `preview/scripts/genFixtures.ts`'s deliberately shuffled case
+    ///         — the sort here must land on the same pool the unsorted TS fixture data produced.
+    function test_SplitSamplingRecordBranchMatchesTypeScript() public view {
+        uint256 n = sampleSplitRecordWhy.length;
+        assertGt(n, 0, "no split-sampling record-branch fixtures");
+        for (uint256 i = 0; i < n; ++i) {
+            GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](SPLIT_RECORD_INPUTS_PER_CASE);
+            for (uint256 j = 0; j < SPLIT_RECORD_INPUTS_PER_CASE; ++j) {
+                uint256 idx = i * SPLIT_RECORD_INPUTS_PER_CASE + j;
+                inputDonors[j] = GeometrySampling.Donor({
+                    id: sampleSplitRecordInputId[idx],
+                    units: 0, // unused: split's pool concatenates every donor's modules, no weighting
+                    seed: sampleSplitRecordInputSeed[idx],
+                    denomIndex: sampleSplitRecordInputDenomIndex[idx],
+                    inkGene: sampleSplitRecordInputInkGene[idx],
+                    modules: sampleSplitRecordInputModules[idx]
+                });
+            }
+            inputDonors = GeometrySampling.sortDonorsById(inputDonors);
+
+            bytes memory pool = GeometrySampling.buildSplitRecordPool(
+                sampleSplitRecordSurvivorModules[i],
+                sampleSplitRecordParentSeed[i],
+                sampleSplitRecordSurvivorDenomIndex[i],
+                sampleSplitRecordSurvivorInkGene[i],
+                inputDonors
+            );
+            bytes memory got = GeometrySampling.sampleSplitChild(
+                pool, sampleSplitRecordParentSeed[i], sampleSplitRecordChildDenomIndex[i], sampleSplitRecordChildIndex[i]
+            );
+            assertEq(got, sampleSplitRecordExpected[i], sampleSplitRecordWhy[i]);
         }
     }
 

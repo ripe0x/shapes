@@ -1,18 +1,21 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 
-import {composeShape, KIND_ORDER} from "./render";
+import {CANONICAL, composeShape, KIND_ORDER} from "./render";
 import {DENOMINATIONS, cellCountAt} from "./denominations";
 import {encodeModuleByte, kindIndexOf} from "./moduleCodec";
 import {
   composeSampledShape,
   composeSampleSeedInputs,
   effectiveModuleBytes,
+  grammarSplitPoolBytes,
   sampleCompose,
   sampleComposeTraced,
   sampleSplitChild,
   sampleSplitChildTraced,
+  splitRecordPoolBytes,
   splitSampleSeedInputs,
+  type LastMergeDonors,
   type SampleBurn,
   type SampleDonor,
 } from "./sampling";
@@ -137,16 +140,39 @@ test("sampleSplitChild: cell count follows the child denomination's grid", () =>
   assert.equal(sampleSplitChild(parent, 0, 0).length, cellCountAt(0));
 });
 
-test("sampleSplitChild: a 1-module parent fills every child cell with that module", () => {
+test("sampleSplitChild (grammar branch, D3'): parent.modules is ignored even when the parent is materialized", () => {
   const markerByte = encodeModuleByte(7, true, 180); // rtriangle, solid, rot 180
-  const parent: SampleDonor = {
+  const materializedParent: SampleDonor = {
     seed: 0x6666n,
     denomIndex: 8,
     inkGene: 0,
     modules: new Uint8Array([markerByte]),
   };
+  const seedDerivedParent: SampleDonor = {seed: 0x6666n, denomIndex: 8, inkGene: 0};
 
-  const child = sampleSplitChild(parent, 0, 0); // denomIndex 0 -> 25 cells
+  // No `lastMergeDonors`, so both take the grammar branch: the pool is the parent seed's
+  // expression at the CHILD's own denomination, regardless of whether `parent.modules` is set.
+  const fromMaterialized = sampleSplitChild(materializedParent, 0, 0);
+  const fromSeedDerived = sampleSplitChild(seedDerivedParent, 0, 0);
+  assert.equal(bytesEqual(fromMaterialized, fromSeedDerived), true);
+
+  // The one-byte `materializedParent.modules` plays no part: not every cell is `markerByte`.
+  assert.equal(
+    fromMaterialized.every((b) => b === markerByte),
+    false,
+    "grammar branch must not fill from the parent's own single stored module",
+  );
+});
+
+test("sampleSplitChild (record branch, D3'): a 1-module pool fills every child cell with that module", () => {
+  const markerByte = encodeModuleByte(7, true, 180); // rtriangle, solid, rot 180
+  const parent: SampleDonor = {seed: 0x6666n, denomIndex: 8, inkGene: 0};
+  const lastMergeDonors: LastMergeDonors = {
+    survivor: {seed: parent.seed, denomIndex: 8, inkGene: 0, modules: new Uint8Array([markerByte])},
+    inputs: [],
+  };
+
+  const child = sampleSplitChild(parent, 0, 0, CANONICAL, lastMergeDonors); // denomIndex 0 -> 25 cells
   assert.equal(child.length, 25);
   for (const b of child) assert.equal(b, markerByte);
 });
@@ -340,14 +366,15 @@ test("sampleComposeTraced: mixed materialized/seed-derived donors round-trip thr
   }
 });
 
-test("sampleSplitChildTraced: bytes match sampleSplitChild, including past the uint8 range", () => {
+test("sampleSplitChildTraced (grammar branch): bytes match sampleSplitChild, including past the uint8 range", () => {
   const parent: SampleDonor = {seed: 0x5555n, denomIndex: 2, inkGene: 5};
 
   const untraced = sampleSplitChild(parent, 4, 0);
-  const {bytes, trace, parentMaterialized, parentCellCount} = sampleSplitChildTraced(parent, 4, 0);
+  const {bytes, trace, branch, poolLength} = sampleSplitChildTraced(parent, 4, 0);
   assert.equal(bytesEqual(bytes, untraced), true);
-  assert.equal(parentMaterialized, false);
-  assert.equal(parentCellCount, cellCountAt(2));
+  assert.equal(branch, "grammar");
+  // The grammar pool is sized to the CHILD's own denomination (4), not the parent's (2).
+  assert.equal(poolLength, cellCountAt(4));
   for (let j = 0; j < bytes.length; j++) assert.equal(trace[j].byte, bytes[j]);
 
   const untracedWide = sampleSplitChild(parent, 4, 256);
@@ -356,23 +383,92 @@ test("sampleSplitChildTraced: bytes match sampleSplitChild, including past the u
   assert.equal(bytesEqual(tracedWide.bytes, bytes), false);
 });
 
-test("sampleSplitChildTraced: a materialized 1-module parent traces every cell to moduleIndex 0", () => {
+test("sampleSplitChildTraced (record branch): a 1-module pool traces every cell to moduleIndex 0", () => {
   const markerByte = encodeModuleByte(7, true, 180); // rtriangle, solid, rot 180
-  const parent: SampleDonor = {
-    seed: 0x6666n,
-    denomIndex: 8,
-    inkGene: 0,
-    modules: new Uint8Array([markerByte]),
+  const parent: SampleDonor = {seed: 0x6666n, denomIndex: 8, inkGene: 0};
+  const lastMergeDonors: LastMergeDonors = {
+    survivor: {seed: parent.seed, denomIndex: 8, inkGene: 0, modules: new Uint8Array([markerByte])},
+    inputs: [],
   };
 
-  const {bytes, trace, parentMaterialized, parentCellCount} = sampleSplitChildTraced(parent, 0, 0);
+  const {bytes, trace, branch, poolLength} = sampleSplitChildTraced(parent, 0, 0, CANONICAL, lastMergeDonors);
   assert.equal(bytes.length, 25);
-  assert.equal(parentMaterialized, true);
-  assert.equal(parentCellCount, 1);
+  assert.equal(branch, "record");
+  assert.equal(poolLength, 1);
   for (const cell of trace) {
     assert.equal(cell.moduleIndex, 0);
     assert.equal(cell.byte, markerByte);
   }
+});
+
+/* ------------------------------------------------------------------ *
+ * D3' (issue #21B): the split pool. Record branch draws from the parent's top compose record's
+ * donor modules (canonical order); grammar branch draws from the parent seed's expression at the
+ * child's own denomination. Neither branch reads the parent's own stored modules.
+ * ------------------------------------------------------------------ */
+
+test("splitRecordPoolBytes: survivor first, then inputs sorted ascending by token id regardless of input order", () => {
+  const survivorBytes = new Uint8Array([encodeModuleByte(0, false, 0), encodeModuleByte(1, false, 0)]);
+  const in1Bytes = new Uint8Array([encodeModuleByte(2, false, 0)]);
+  const in2Bytes = new Uint8Array([encodeModuleByte(3, false, 0)]);
+
+  const donorsInOrder: LastMergeDonors = {
+    survivor: {seed: 0x1n, denomIndex: 1, inkGene: 0, modules: survivorBytes},
+    inputs: [
+      {tokenId: 5n, seed: 0x2n, denomIndex: 0, inkGene: 0, modules: in1Bytes},
+      {tokenId: 9n, seed: 0x3n, denomIndex: 0, inkGene: 0, modules: in2Bytes},
+    ],
+  };
+  const donorsShuffled: LastMergeDonors = {
+    survivor: donorsInOrder.survivor,
+    inputs: [...donorsInOrder.inputs].reverse(),
+  };
+
+  const poolInOrder = splitRecordPoolBytes(donorsInOrder);
+  const poolShuffled = splitRecordPoolBytes(donorsShuffled);
+  assert.equal(bytesEqual(poolInOrder, poolShuffled), true, "pool must not depend on input array order");
+  assert.equal(
+    bytesEqual(poolInOrder, new Uint8Array([...survivorBytes, ...in1Bytes, ...in2Bytes])),
+    true,
+    "pool must be survivor then inputs ascending by token id",
+  );
+});
+
+test("grammarSplitPoolBytes: depends on the CHILD's own denomination, not the parent's", () => {
+  const parentSeed = 0x7777n;
+  const poolAtDenom0 = grammarSplitPoolBytes(parentSeed, 0, 3);
+  const poolAtDenom2 = grammarSplitPoolBytes(parentSeed, 2, 3);
+  assert.equal(poolAtDenom0.length, cellCountAt(0));
+  assert.equal(poolAtDenom2.length, cellCountAt(2));
+  assert.equal(bytesEqual(poolAtDenom0, poolAtDenom2), false);
+});
+
+test("sampleSplitChildTraced: record branch escapes a 1-module parent's monoculture (issue #21B)", () => {
+  // A composed 100 ETH apex (1 module) whose compose record's donors together carry more than
+  // one distinct byte: the record branch's pool has variety even though the parent's own
+  // materialized geometry does not.
+  const parent: SampleDonor = {seed: 0x8888n, denomIndex: 8, inkGene: 0};
+  const lastMergeDonors: LastMergeDonors = {
+    survivor: {
+      seed: parent.seed,
+      denomIndex: 7,
+      inkGene: 0,
+      modules: new Uint8Array([encodeModuleByte(0, false, 0), encodeModuleByte(1, false, 0)]),
+    },
+    inputs: [
+      {
+        tokenId: 1n,
+        seed: 0x9999n,
+        denomIndex: 7,
+        inkGene: 0,
+        modules: new Uint8Array([encodeModuleByte(2, true, 0), encodeModuleByte(3, true, 0)]),
+      },
+    ],
+  };
+
+  const {bytes} = sampleSplitChildTraced(parent, 5, 0, CANONICAL, lastMergeDonors); // 5 ETH child, 6 cells
+  const distinct = new Set(bytes);
+  assert.ok(distinct.size > 1, "record-branch split must escape single-module monoculture");
 });
 
 test("splitSampleSeedInputs: the seed carries the untruncated childIndex", () => {

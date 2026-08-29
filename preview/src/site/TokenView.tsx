@@ -1138,13 +1138,21 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[]): DonorR
     });
 }
 
-function splitParentDonor(parent: DnaSplitResult["parent"], cells: DnaCell[]): DonorRender {
-  const {svg, geometry} = renderDonor(parent.seed, parent.denomIndex, parent.inkGene, parent.modules);
+/**
+ * The grammar-branch split pool as a donor card (SAMPLING_SPEC.md section 6, D3'): the parent
+ * seed's expression at the CHILD's own denomination, which is always a full grid at that
+ * denomination (the same reason a compose donor's own module count equals its own grid), so it
+ * renders and highlights exactly like any other donor card. Only called when `dna.pool` is
+ * present — the record branch's pool has no single grid shape (see `DnaSplitResult.pool`'s
+ * doc comment) and is shown as pool index/byte in the detail panel instead, with no card.
+ */
+function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>, cells: DnaCell[]): DonorRender {
+  const {svg, geometry} = renderDonor(pool.seed, pool.denomIndex, pool.inkGene, pool.modules);
   return {
     donorIndex: 0,
-    roleLabel: "the parent Shape, before the split",
-    denomLabel: denomLabelAt(parent.denomIndex),
-    materialized: parent.materialized,
+    roleLabel: "sampling pool — the parent's seed, expressed at this denomination",
+    denomLabel: denomLabelAt(pool.denomIndex),
+    materialized: true,
     burned: true,
     svg,
     geometry,
@@ -1285,7 +1293,10 @@ function DnaProvenancePanel({
   // or the split parent). Never recomputed on hover.
   const donorRenders = React.useMemo<DonorRender[]>(() => {
     if (dna.kind === "compose") return contributingComposeDonors(dna.donors, dna.cells);
-    if (dna.kind === "split") return [splitParentDonor(dna.parent, dna.cells)];
+    // Split, record branch: the pool spans multiple donors concatenated with no single grid
+    // shape, so there is no card to render here (SAMPLING_SPEC.md section 6, D3'). The cell
+    // detail panel still shows each cell's pool index and byte.
+    if (dna.kind === "split") return dna.pool ? [splitPoolDonor(dna.pool, dna.cells)] : [];
     return [];
   }, [dna]);
 
@@ -1335,7 +1346,9 @@ function DnaProvenancePanel({
             : "Every cell's module derives directly from this Shape's own seed under grammar v1. Hover a cell for its detail."
           : dna.kind === "compose"
             ? "Every cell was sampled from this Shape's own prior state or one of the Shapes it absorbed. Hover a cell for its source, or hover a donor's card below to see where its modules ended up."
-            : "Every cell was sampled from the parent Shape this one was split from. Hover a cell for its source module, or hover the parent card below."}
+            : dna.branch === "grammar"
+              ? "Every cell was sampled from the parent seed's expression at this denomination. Hover a cell for its source module, or hover the pool card below."
+              : "Every cell was sampled from the parent's compose record: its pre-compose modules plus the modules of what it had absorbed. Hover a cell for its pool index and byte."}
       </p>
       <div style={{display: "flex", flexWrap: "wrap", gap: 32, alignItems: "flex-start"}}>
         <div style={{position: "relative", width: 220, aspectRatio: "250 / 350", backgroundColor: C.art}}>
@@ -1390,6 +1403,14 @@ function DnaProvenancePanel({
               <DnaRow k="seed" v={seedShort(dna.parent.seed)} />
               <DnaRow k="denomination" v={`${DENOMINATIONS[dna.parent.denomIndex]?.label ?? "?"} ETH`} />
               <DnaRow k="materialized" v={dna.parent.materialized ? "yes" : "no (seed-derived)"} />
+              <DnaRow
+                k="sampled from"
+                v={
+                  dna.branch === "grammar"
+                    ? "parent seed's expression at this denomination"
+                    : `${dna.poolLength} modules across the parent's compose record`
+                }
+              />
             </div>
           )}
           {dna.kind === "seed" && (
@@ -1427,7 +1448,7 @@ function DnaProvenancePanel({
       </div>
       {(dna.kind === "compose" || dna.kind === "split") && donorRenders.length > 0 && (
         <div style={{marginTop: 28}}>
-          <div style={{...label, marginBottom: 8}}>{dna.kind === "compose" ? "contributing donors" : "parent"}</div>
+          <div style={{...label, marginBottom: 8}}>{dna.kind === "compose" ? "contributing donors" : "sampling pool"}</div>
           {onDrillDonor && (
             <div style={{fontSize: 11, color: C.faint, marginBottom: 12}}>click a donor to see its own dna</div>
           )}

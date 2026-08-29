@@ -48,11 +48,15 @@ interface IShapeLens {
         view
         returns (ComposeRecordView memory);
 
-    /// @notice The split that minted `childId`: the parent's pre-split seed, denomination index,
-    ///         ink gene and effective module snapshot (SAMPLING_SPEC.md), plus `childId`'s index
-    ///         among that split's outputs. A caller re-runs `GeometrySampling.sampleSplitChild`
-    ///         with this data and the child's own denomination index to reproduce the child's
-    ///         module bytes as sampled at split time. A passthrough over `Shapes.splitOriginRaw`.
+    /// @notice The split that minted `childId`: the parent's id and pre-split seed, denomination
+    ///         index, ink gene and own effective module snapshot (SAMPLING_SPEC.md), plus
+    ///         `childId`'s index among that split's outputs. A passthrough over
+    ///         `Shapes.splitOriginRaw`. Reproducing the child's module bytes as sampled at split
+    ///         time (SAMPLING_SPEC.md section 12, D3') needs `parentId` to check
+    ///         `Shapes.composeDepth(parentId)`: nonzero selects the compose-record branch (rebuild
+    ///         the pool from `Shapes.composeRecordHeaderAt`/`composeRecordInputAt` at that depth),
+    ///         zero selects the grammar branch (`GeometrySampling.grammarSplitPool(parentSeed,
+    ///         childDenom, parentInkGene)`, ignoring `parentModules`).
     /// @dev Reverts `IShapes.NotASplitChild` for a token that was never minted by `split`/
     ///      `splitTo` (an original mint, or an input re-minted verbatim by `decompose`).
     function splitOriginOf(uint256 childId)
@@ -60,6 +64,7 @@ interface IShapeLens {
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,

@@ -112,7 +112,7 @@ export const shapeLensAbi = parseAbi([
   "function shapeState(uint256 tokenId) view returns (ShapeState)",
   "function unicodeCard(uint256 tokenId) view returns (string)",
   "function composeRecordAt(uint256 survivorId, uint256 depth) view returns (ComposeRecordView)",
-  "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint8 parentDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
+  "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint256 parentId, uint8 parentDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
   // Custom errors, from IShapes.sol, that previewCompose/previewSplit/composeRecordAt apply the
   // same validation as the mutating calls and revert with, so a revert decodes to a named error.
   "error CannotComposeWithSelf(uint256 tokenId)",

@@ -40,6 +40,7 @@ import {
   sampleCompose,
   sampleSplitChild,
   sampledTokenMetadataJson,
+  type LastMergeDonors,
   type SampleBurn,
   type SampleDonor,
 } from "../src/canonical/sampling";
@@ -482,62 +483,165 @@ const out = {
       sampleCompose(c.survivor, c.burns, c.newIndex),
     );
 
-    interface SplitSampleCase {
+    // Split's grammar branch (SAMPLING_SPEC.md section 6, D3'): no compose record, so the pool is
+    // the parent seed's grammar v1 expression at the CHILD's own denomination. `parent.denomIndex`
+    // and `parent.modules` are carried on the `SampleDonor` only because `sampleSplitChild` takes
+    // a full donor object; neither participates in the grammar branch's pool (the case that has
+    // `modules` set proves exactly that: the parent is materialized and the pool ignores it
+    // anyway). `parentDenomIndex` is fixed at an arbitrary valid index (2) throughout for that
+    // reason, not because it means anything to the result.
+    interface SplitGrammarCase {
       why: string;
       parent: SampleDonor;
       childDenomIndex: number;
       childIndex: number;
     }
 
-    const materializedParentA = materializedFrom(productionSeed(600n), 1, 2);
-    const splitSampleCases: SplitSampleCase[] = [
+    const materializedParentA = materializedFrom(productionSeed(600n), 2, 2);
+    const splitGrammarCases: SplitGrammarCase[] = [
       {
-        why: "split sampling: materialized parent, dust child",
-        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        why: "split sampling, grammar branch: materialized parent (no compose record) — parent.modules is ignored",
+        parent: {seed: productionSeed(600n), denomIndex: 2, inkGene: 2, modules: materializedParentA},
         childDenomIndex: 0,
         childIndex: 0,
       },
       {
-        why: "split sampling: materialized parent, second child index",
-        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        why: "split sampling, grammar branch: same materialized parent, second child index",
+        parent: {seed: productionSeed(600n), denomIndex: 2, inkGene: 2, modules: materializedParentA},
         childDenomIndex: 4,
         childIndex: 1,
       },
       {
-        why: "split sampling: materialized parent, childIndex 0 at the aliasing denomination",
-        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        why: "split sampling, grammar branch: childIndex 0 at the aliasing denomination",
+        parent: {seed: productionSeed(600n), denomIndex: 2, inkGene: 2, modules: materializedParentA},
         childDenomIndex: 4,
         childIndex: 0,
       },
       {
-        why: "split sampling: materialized parent, childIndex 256, must not alias childIndex 0",
-        parent: {seed: productionSeed(600n), denomIndex: 1, inkGene: 2, modules: materializedParentA},
+        why: "split sampling, grammar branch: childIndex 256, must not alias childIndex 0",
+        parent: {seed: productionSeed(600n), denomIndex: 2, inkGene: 2, modules: materializedParentA},
         childDenomIndex: 4,
         childIndex: 256,
       },
       {
-        why: "split sampling: seed-derived (original) parent",
-        parent: {seed: productionSeed(601n), denomIndex: 4, inkGene: 5},
+        why: "split sampling, grammar branch: seed-derived (original) parent",
+        parent: {seed: productionSeed(601n), denomIndex: 2, inkGene: 5},
         childDenomIndex: 0,
         childIndex: 0,
       },
       {
-        why: "split sampling: seed-derived apex parent, single-module donor",
+        why: "split sampling, grammar branch: apex parent (1 own module), pool sized to the CHILD's denomination escapes monoculture (issue #21B)",
         parent: {seed: productionSeed(602n), denomIndex: 8, inkGene: 0},
         childDenomIndex: 7,
         childIndex: 3,
       },
       {
-        why: "split sampling: seed-derived parent, childIndex 256 encodes as a full uint256",
+        why: "split sampling, grammar branch: childIndex 256 encodes as a full uint256",
         parent: {seed: productionSeed(603n), denomIndex: 2, inkGene: 6},
         childDenomIndex: 1,
         childIndex: 256,
       },
     ];
 
-    const splitSampleExpected = splitSampleCases.map((c) =>
+    const splitGrammarExpected = splitGrammarCases.map((c) =>
       sampleSplitChild(c.parent, c.childDenomIndex, c.childIndex),
     );
+
+    // Split's record branch (SAMPLING_SPEC.md section 6, D3'): the parent's top compose record's
+    // donor modules, concatenated survivor-first then inputs ascending by id. Every case carries
+    // exactly this many inputs, flattened row-major below (case0 input0..N-1, case1 input0..N-1,
+    // ...), mirroring `BURNS_PER_COMPOSE_CASE`; test/Parity.t.sol hard-codes the same constant.
+    const SPLIT_RECORD_INPUTS_PER_CASE = 2;
+
+    interface SplitRecordCase {
+      why: string;
+      parentSeed: bigint;
+      survivorDenomIndex: number;
+      survivorInkGene: number;
+      survivorModules?: Uint8Array;
+      inputs: SampleBurn[]; // calldata order, not necessarily ascending by id
+      childDenomIndex: number;
+      childIndex: number;
+    }
+
+    const recordInputsA: SampleBurn[] = [
+      {tokenId: 11n, seed: productionSeed(701n), denomIndex: 0, inkGene: 1},
+      {
+        tokenId: 12n,
+        seed: productionSeed(702n),
+        denomIndex: 0,
+        inkGene: 3,
+        modules: materializedFrom(productionSeed(702n), 0, 3),
+      },
+    ];
+
+    const splitRecordCases: SplitRecordCase[] = [
+      {
+        why: "split sampling, record branch: survivor + inputs ascending by id already",
+        parentSeed: productionSeed(700n),
+        survivorDenomIndex: 1,
+        survivorInkGene: 4,
+        inputs: recordInputsA,
+        childDenomIndex: 0,
+        childIndex: 0,
+      },
+      {
+        why: "split sampling, record branch: same donors, inputs in shuffled calldata order — pool (and result) must be identical to the ascending-order case above",
+        parentSeed: productionSeed(700n),
+        survivorDenomIndex: 1,
+        survivorInkGene: 4,
+        // Same two inputs as the case above, reversed: not ascending by id.
+        inputs: [...recordInputsA].reverse(),
+        childDenomIndex: 0,
+        childIndex: 0,
+      },
+      {
+        why: "split sampling, record branch: materialized survivor snapshot, mixed-materialization inputs",
+        parentSeed: productionSeed(710n),
+        survivorDenomIndex: 3,
+        survivorInkGene: 2,
+        survivorModules: materializedFrom(productionSeed(710n), 3, 2),
+        inputs: [
+          {
+            tokenId: 3n,
+            seed: productionSeed(711n),
+            denomIndex: 1,
+            inkGene: 0,
+            modules: materializedFrom(productionSeed(711n), 1, 0),
+          },
+          {tokenId: 1n, seed: productionSeed(712n), denomIndex: 1, inkGene: 5},
+        ],
+        childDenomIndex: 4,
+        childIndex: 2,
+      },
+    ];
+
+    for (const c of splitRecordCases) {
+      if (c.inputs.length !== SPLIT_RECORD_INPUTS_PER_CASE) {
+        throw new Error(`${c.why}: expected ${SPLIT_RECORD_INPUTS_PER_CASE} inputs, got ${c.inputs.length}`);
+      }
+    }
+
+    const splitRecordExpected = splitRecordCases.map((c) => {
+      const lastMergeDonors: LastMergeDonors = {
+        survivor: {
+          seed: c.parentSeed,
+          denomIndex: c.survivorDenomIndex,
+          inkGene: c.survivorInkGene,
+          modules: c.survivorModules,
+        },
+        inputs: c.inputs,
+      };
+      const parent: SampleDonor = {seed: c.parentSeed, denomIndex: c.survivorDenomIndex, inkGene: c.survivorInkGene};
+      return sampleSplitChild(parent, c.childDenomIndex, c.childIndex, CANONICAL, lastMergeDonors);
+    });
+
+    // The two shuffled-vs-ascending record cases above must sample identically: the pool is
+    // order-invariant over the input array, so this is a build-time self-check, not just a
+    // Solidity-side assertion.
+    if (moduleBytesToHex(splitRecordExpected[0]) !== moduleBytesToHex(splitRecordExpected[1])) {
+      throw new Error("split record-branch pool must not depend on input calldata order");
+    }
 
     // Every valid kind/rot/solid combination (52 appearances, render.ts vocabulary()), split
     // across two 25-cell grids and one 2-cell grid so the three arrays cover it exactly once.
@@ -677,16 +781,32 @@ const out = {
         c.burns.map((b) => (b.modules ? moduleBytesToHex(b.modules) : "0x")),
       ),
 
-      sampleSplitWhy: splitSampleCases.map((c) => c.why),
-      sampleSplitParentSeed: splitSampleCases.map((c) => hex32(c.parent.seed)),
-      sampleSplitParentDenomIndex: splitSampleCases.map((c) => c.parent.denomIndex.toString()),
-      sampleSplitParentInkGene: splitSampleCases.map((c) => c.parent.inkGene.toString()),
-      sampleSplitParentModules: splitSampleCases.map((c) =>
-        c.parent.modules ? moduleBytesToHex(c.parent.modules) : "0x",
+      sampleSplitGrammarWhy: splitGrammarCases.map((c) => c.why),
+      sampleSplitGrammarParentSeed: splitGrammarCases.map((c) => hex32(c.parent.seed)),
+      sampleSplitGrammarParentInkGene: splitGrammarCases.map((c) => c.parent.inkGene.toString()),
+      sampleSplitGrammarChildDenomIndex: splitGrammarCases.map((c) => c.childDenomIndex.toString()),
+      sampleSplitGrammarChildIndex: splitGrammarCases.map((c) => c.childIndex.toString()),
+      sampleSplitGrammarExpected: splitGrammarExpected.map(moduleBytesToHex),
+
+      sampleSplitRecordWhy: splitRecordCases.map((c) => c.why),
+      sampleSplitRecordParentSeed: splitRecordCases.map((c) => hex32(c.parentSeed)),
+      sampleSplitRecordSurvivorDenomIndex: splitRecordCases.map((c) => c.survivorDenomIndex.toString()),
+      sampleSplitRecordSurvivorInkGene: splitRecordCases.map((c) => c.survivorInkGene.toString()),
+      sampleSplitRecordSurvivorModules: splitRecordCases.map((c) =>
+        c.survivorModules ? moduleBytesToHex(c.survivorModules) : "0x",
       ),
-      sampleSplitChildDenomIndex: splitSampleCases.map((c) => c.childDenomIndex.toString()),
-      sampleSplitChildIndex: splitSampleCases.map((c) => c.childIndex.toString()),
-      sampleSplitExpected: splitSampleExpected.map(moduleBytesToHex),
+      sampleSplitRecordChildDenomIndex: splitRecordCases.map((c) => c.childDenomIndex.toString()),
+      sampleSplitRecordChildIndex: splitRecordCases.map((c) => c.childIndex.toString()),
+      sampleSplitRecordExpected: splitRecordExpected.map(moduleBytesToHex),
+      sampleSplitRecordInputId: splitRecordCases.flatMap((c) => c.inputs.map((i) => i.tokenId.toString())),
+      sampleSplitRecordInputSeed: splitRecordCases.flatMap((c) => c.inputs.map((i) => hex32(i.seed))),
+      sampleSplitRecordInputDenomIndex: splitRecordCases.flatMap((c) =>
+        c.inputs.map((i) => i.denomIndex.toString()),
+      ),
+      sampleSplitRecordInputInkGene: splitRecordCases.flatMap((c) => c.inputs.map((i) => i.inkGene.toString())),
+      sampleSplitRecordInputModules: splitRecordCases.flatMap((c) =>
+        c.inputs.map((i) => (i.modules ? moduleBytesToHex(i.modules) : "0x")),
+      ),
 
       sampledRenderWhy: sampledRenderCases.map((c) => c.why),
       sampledRenderDenomIndex: sampledRenderCases.map((c) => c.denomIndex.toString()),

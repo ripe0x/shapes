@@ -2118,16 +2118,16 @@
   "0x1019",
   "0x"
  ],
- "sampleSplitWhy": [
-  "split sampling: materialized parent, dust child",
-  "split sampling: materialized parent, second child index",
-  "split sampling: materialized parent, childIndex 0 at the aliasing denomination",
-  "split sampling: materialized parent, childIndex 256, must not alias childIndex 0",
-  "split sampling: seed-derived (original) parent",
-  "split sampling: seed-derived apex parent, single-module donor",
-  "split sampling: seed-derived parent, childIndex 256 encodes as a full uint256"
+ "sampleSplitGrammarWhy": [
+  "split sampling, grammar branch: materialized parent (no compose record) — parent.modules is ignored",
+  "split sampling, grammar branch: same materialized parent, second child index",
+  "split sampling, grammar branch: childIndex 0 at the aliasing denomination",
+  "split sampling, grammar branch: childIndex 256, must not alias childIndex 0",
+  "split sampling, grammar branch: seed-derived (original) parent",
+  "split sampling, grammar branch: apex parent (1 own module), pool sized to the CHILD's denomination escapes monoculture (issue #21B)",
+  "split sampling, grammar branch: childIndex 256 encodes as a full uint256"
  ],
- "sampleSplitParentSeed": [
+ "sampleSplitGrammarParentSeed": [
   "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
   "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
   "0x8ca50451c8a8e02502f6b28a30ed3fa34e5aaea699d576a319c66dc0119ca508",
@@ -2136,16 +2136,7 @@
   "0xce0236a5efe714299a42f6f2c9cfc717a528be41a4d75e4891e940c13ffa4685",
   "0xf053972e2a70d33d6a0c98aa53e7749152ea05e436054ae8ebfcf3ff58428b9e"
  ],
- "sampleSplitParentDenomIndex": [
-  "1",
-  "1",
-  "1",
-  "1",
-  "4",
-  "8",
-  "2"
- ],
- "sampleSplitParentInkGene": [
+ "sampleSplitGrammarParentInkGene": [
   "2",
   "2",
   "2",
@@ -2154,16 +2145,7 @@
   "0",
   "6"
  ],
- "sampleSplitParentModules": [
-  "0x1853115647393209005211620226765843050100",
-  "0x1853115647393209005211620226765843050100",
-  "0x1853115647393209005211620226765843050100",
-  "0x1853115647393209005211620226765843050100",
-  "0x",
-  "0x",
-  "0x"
- ],
- "sampleSplitChildDenomIndex": [
+ "sampleSplitGrammarChildDenomIndex": [
   "0",
   "4",
   "4",
@@ -2172,7 +2154,7 @@
   "7",
   "1"
  ],
- "sampleSplitChildIndex": [
+ "sampleSplitGrammarChildIndex": [
   "0",
   "1",
   "0",
@@ -2181,14 +2163,94 @@
   "3",
   "256"
  ],
- "sampleSplitExpected": [
-  "0x00584718624356110009390026586253260032110000110000",
-  "0x260043581811096205",
-  "0x525826013252320011",
-  "0x000053115800115653",
-  "0x10181010370303133748131318101314481314184810187618",
+ "sampleSplitGrammarExpected": [
+  "0x11003218763747260752321143007611431109111107260711",
+  "0x395609321853563909",
+  "0x473232001147114747",
+  "0x560018470900535318",
+  "0x76187613103937583403585848390539141056181437107810",
   "0x6363",
-  "0x3810361039361074151536101136381515153638"
+  "0x1132387410381215393938123638111515393811"
+ ],
+ "sampleSplitRecordWhy": [
+  "split sampling, record branch: survivor + inputs ascending by id already",
+  "split sampling, record branch: same donors, inputs in shuffled calldata order — pool (and result) must be identical to the ascending-order case above",
+  "split sampling, record branch: materialized survivor snapshot, mixed-materialization inputs"
+ ],
+ "sampleSplitRecordParentSeed": [
+  "0x11ea3afe2e887a739c703143e9354bb5c9d93d7129b7516e8ffef3a0b913bac2",
+  "0x11ea3afe2e887a739c703143e9354bb5c9d93d7129b7516e8ffef3a0b913bac2",
+  "0x13864db288ce2dd4bb02a0a61479f0b39e91096d75772d1c68ef3374cce1d20e"
+ ],
+ "sampleSplitRecordSurvivorDenomIndex": [
+  "1",
+  "1",
+  "3"
+ ],
+ "sampleSplitRecordSurvivorInkGene": [
+  "4",
+  "4",
+  "2"
+ ],
+ "sampleSplitRecordSurvivorModules": [
+  "0x",
+  "0x",
+  "0x003711172910442405012437"
+ ],
+ "sampleSplitRecordChildDenomIndex": [
+  "0",
+  "0",
+  "4"
+ ],
+ "sampleSplitRecordChildIndex": [
+  "0",
+  "0",
+  "2"
+ ],
+ "sampleSplitRecordExpected": [
+  "0x19112615101173561057581032581006111968392667283239",
+  "0x19112615101173561057581032581006111968392667283239",
+  "0x057713000501340811"
+ ],
+ "sampleSplitRecordInputId": [
+  "11",
+  "12",
+  "12",
+  "11",
+  "3",
+  "1"
+ ],
+ "sampleSplitRecordInputSeed": [
+  "0x7b507b6b9771d1deae1d58db335fe708fd384e6533c691126425e55c2f765a74",
+  "0x6561a69900ec89c706caf64002f0ec2bee5dae1814b0783e66929315cef62db0",
+  "0x6561a69900ec89c706caf64002f0ec2bee5dae1814b0783e66929315cef62db0",
+  "0x7b507b6b9771d1deae1d58db335fe708fd384e6533c691126425e55c2f765a74",
+  "0xdc3f29f9648fe971f4ccd6fe2a78a63035f715f2e7a98d40c06b11511652d765",
+  "0x367d2bfebe3a7a5a22c3ad1ac18fbb54275ec1e3f8cf43c466c3297c3eb826c5"
+ ],
+ "sampleSplitRecordInputDenomIndex": [
+  "0",
+  "0",
+  "0",
+  "0",
+  "1",
+  "1"
+ ],
+ "sampleSplitRecordInputInkGene": [
+  "1",
+  "3",
+  "3",
+  "1",
+  "0",
+  "5"
+ ],
+ "sampleSplitRecordInputModules": [
+  "0x",
+  "0x05150017561128764411533933110973525729390044561019",
+  "0x05150017561128764411533933110973525729390044561019",
+  "0x",
+  "0x0801042905442408660100260505006405480123",
+  "0x"
  ],
  "sampledRenderWhy": [
   "sampled render: 1-module grid (100 ETH apex)",
