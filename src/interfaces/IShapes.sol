@@ -370,21 +370,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Whether a live token is Black.
     function isBlack(uint256 tokenId) external view returns (bool);
 
-    /// @notice Whether `tokenId` is currently a live Shape.
-    /// @dev Never reverts. False for never-issued and burned ids, including ids consumed by
-    ///      compose or replaced by split; true for live Black Shapes.
-    function exists(uint256 tokenId) external view returns (bool);
-
     /// @notice ETH backing a live Shape.
     function backingOf(uint256 tokenId) external view returns (uint256);
 
     /// @notice The denomination-ladder index (0..8) currently stored by a live Shape.
     /// @dev Reverts for a nonexistent id. Black Shapes retain and return apex index 8.
     function denomIndexOf(uint256 tokenId) external view returns (uint8);
-
-    /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
-    /// @dev Does not require a live token. Resolver results are unvalidated; failures return zero.
-    function positionOf(uint256 tokenId) external view returns (address);
 
     /// @notice The immutable visual seed of a live Shape.
     function seedOf(uint256 tokenId) external view returns (bytes32);
@@ -499,13 +490,4 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Smallest denomination and accounting unit, 0.01 ETH.
     function unit() external pure returns (uint256);
-
-    /// @notice Whether `amountWei` is one of the nine supported denominations.
-    function isSupportedDenomination(uint256 amountWei) external pure returns (bool);
-
-    /// @notice Grid a denomination maps to. Reverts for unsupported amounts.
-    function gridForAmount(uint256 amountWei) external pure returns (uint256 cols, uint256 rows);
-
-    /// @notice Module count a denomination maps to.
-    function modulesForAmount(uint256 amountWei) external pure returns (uint256);
 }

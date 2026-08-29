@@ -70,4 +70,22 @@ interface IShapeLens {
             bytes memory parentModules,
             uint256 childIndex
         );
+
+    /// @notice Whether `amountWei` is one of the nine supported denominations.
+    function isSupportedDenomination(uint256 amountWei) external pure returns (bool);
+
+    /// @notice Grid a denomination maps to. Reverts for unsupported amounts.
+    function gridForAmount(uint256 amountWei) external pure returns (uint256 cols, uint256 rows);
+
+    /// @notice Module count a denomination maps to.
+    function modulesForAmount(uint256 amountWei) external pure returns (uint256);
+
+    /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
+    /// @dev Does not require a live token. Resolver results are unvalidated; failures return zero.
+    function positionOf(uint256 tokenId) external view returns (address);
+
+    /// @notice Whether `tokenId` is currently a live Shape.
+    /// @dev Never reverts. False for never-issued and burned ids, including ids consumed by
+    ///      compose or replaced by split; true for live Black Shapes.
+    function exists(uint256 tokenId) external view returns (bool);
 }

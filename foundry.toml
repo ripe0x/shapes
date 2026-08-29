@@ -10,16 +10,20 @@ script = "script"
 solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
-# Lowered from 200, then from 100 (issue #21B, split's D3' pool logic): each step trades marginally
-# higher runtime gas on repeatedly called functions (mint, redeem, compose, split, bid) for
-# deployment headroom. At 100, `Shapes`'s own runtime size was ~134 bytes over the EIP-170 24,576
-# limit; 25 is the lowest value in a 1-100 sweep that stays under it, with a thin ~9-byte margin
-# (the size-vs-runs curve is not monotonic near this range: 20 and 25 both land at the same size,
-# 10 and 1 land worse than either). That margin is uncomfortably thin for a value this low in the
-# tradeoff space; a further pass to shrink `Shapes`'s own bytecode (not just retune this knob)
-# should raise it back before mainnet deploy. Re-measure with `forge build --sizes` before changing
-# this value in either direction.
-optimizer_runs = 25
+# Restored to 100 (issue #21, follow-up to #21B) after `Shapes`'s own runtime bytecode was cut:
+# `positionOf`, `exists`, `isSupportedDenomination`, `gridForAmount` and `modulesForAmount` moved
+# to `ShapeLens` (none of them touch mint/redeem/compose/split/decompose accounting), plus
+# consolidating a handful of repeated admin-lock and revert checks into shared private helpers.
+# `denominationAt`, `denominationCount`, `unit`, `childSeed`, `formationOf` and `isComplete`
+# stayed on `Shapes`: a review (issue #21A) found the first pass had also moved them, which left
+# `supportsInterface` advertising `IShapeValue`/`IShapeProvenance` (SPEC.md's stable capability
+# interfaces) with members that no longer existed on the token, so they came back. At 100,
+# `Shapes`'s own runtime size is 24,010 bytes: a 566-byte margin under the EIP-170 24,576 limit.
+# 200 was tried and does not fit: runtime size rises with `optimizer_runs` (more inlining trades
+# size for gas), reaching a 258-byte margin at 200 and a 420-byte margin at 150, both still under
+# the limit but with less room than 100 leaves for issue #21C's upcoming trait bytecode. Re-measure
+# with `forge build --sizes` before changing this value in either direction.
+optimizer_runs = 100
 via_ir = true
 bytecode_hash = "none"
 cbor_metadata = false

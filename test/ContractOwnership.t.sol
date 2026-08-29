@@ -227,7 +227,15 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_AdvertisesShapesAndAdminInterfaces() public view {
-        assertEq(type(IShapes).interfaceId, bytes4(0xb5ac96e9), "IShapes id changed");
+        // Pinned snapshot of `type(IShapes).interfaceId`, the XOR of every function selector still
+        // declared on `IShapes`. `positionOf`, `exists`, `isSupportedDenomination`, `gridForAmount`
+        // and `modulesForAmount` moved off it in this pass (issue #21, follow-up to #21B, size
+        // recovery) to `IShapeLens` instead; `denominationAt`, `denominationCount`, `unit`,
+        // `childSeed`, `isComplete` and `formationOf` stayed on `IShapes` because `IShapeValue` and
+        // `IShapeProvenance` (SPEC.md's stable external integration surface, gated by ERC-165) still
+        // declare them, and `supportsInterface` must not advertise a capability it cannot serve.
+        // Update this constant again only when `IShapes`'s function set changes on purpose.
+        assertEq(type(IShapes).interfaceId, bytes4(0x35ed4674), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0xe135adbe), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));
