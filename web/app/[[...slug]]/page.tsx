@@ -5,6 +5,9 @@ import { SiteRoot } from "../SiteRoot";
 import { PlayRoot } from "../play/PlayRoot";
 
 type Params = { slug?: string[] };
+type SearchParams = { s?: string | string[] };
+
+const MAX_OG_STATE_LENGTH = 6000;
 
 // Resolve a URL path into the SiteApp view it shows. Returns null for an unknown path.
 function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | null } | null {
@@ -21,16 +24,26 @@ function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | nu
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<Params>;
+  searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
   const slug = (await params).slug ?? [];
   if (slug.length === 1 && slug[0] === "play") {
+    const s = (await searchParams).s;
+    const state = typeof s === "string" && s.length > 0 && s.length <= MAX_OG_STATE_LENGTH ? s : null;
+    const ogUrl = state ? `/og/play?s=${encodeURIComponent(state)}` : "/og/play";
     return {
       title: "Playground",
       description:
         "Draw a Shape, compose Shapes, and trace every cell to its parent. Simulation, no wallet, nothing minted.",
-      openGraph: { title: "Playground · Shapes", url: "/play" },
+      openGraph: {
+        title: "Playground · Shapes",
+        url: "/play",
+        images: [{ url: ogUrl, width: 1200, height: 630 }],
+      },
+      twitter: { card: "summary_large_image", images: [ogUrl] },
     };
   }
 

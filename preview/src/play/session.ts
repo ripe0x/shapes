@@ -8,10 +8,19 @@
 import { keccak_256 } from "@noble/hashes/sha3";
 import { DENOMINATIONS, denominationIndex, unitsAt } from "../canonical/denominations";
 import { centerGene, geneAtCompose, geneAtMint } from "../canonical/ink";
-import { sampleComposeTraced, type ComposeTraceCell, type SampleBurn, type SampleDonor } from "../canonical/sampling";
+import { CANONICAL } from "../canonical/params";
+import { composeShape, type Composition } from "../canonical/render";
+import {
+  composeSampledShape,
+  sampleComposeTraced,
+  sampleSplitChildTraced,
+  type ComposeTraceCell,
+  type SampleBurn,
+  type SampleDonor,
+  type SplitTraceCell,
+} from "../canonical/sampling";
 import { productionSeed } from "../seeds";
-
-export const TRAY_CAP = 8;
+import { splitChildSeed } from "../splitSeed";
 
 export interface PlayNode {
   /** Unique per session. Composed results and their consumed parents each keep their own key. */
@@ -26,10 +35,17 @@ export interface PlayNode {
   /** Set iff this node is a compose result: its materialized module bytes. */
   modules?: Uint8Array;
   /** Node keys of this node's compose inputs, canonical donor order (survivor first, then burns
-   *  ascending by demoId). Set iff this node is a compose result. */
+   *  ascending by demoId), or the single parent key for a split child. Set iff this node is a
+   *  compose result or a split child. */
   parents?: number[];
   /** Per-cell provenance from the compose that produced this node. Set iff composed. */
   trace?: ComposeTraceCell[];
+  /** Per-cell provenance from the split that produced this node. Set iff this node is a split
+   *  child. Distinct from `trace`, which stays compose-only. */
+  splitTrace?: SplitTraceCell[];
+  /** Set iff this node has been sacrificed: renders inverted, and can no longer be composed,
+   *  split, decomposed, or selected. */
+  black?: true;
 }
 
 export interface PlaySession {
@@ -40,6 +56,13 @@ export interface PlaySession {
 
 export function emptySession(): PlaySession {
   return { nodes: [], nextKey: 1, nextDemoId: 1 };
+}
+
+/** A session node's rendered composition: sampled from its stored bytes if composed, otherwise
+ *  drawn fresh from its seed. */
+export function nodeComposition(node: PlayNode): Composition {
+  if (node.modules) return composeSampledShape(node.modules, node.denomIndex, node.inkGene, CANONICAL);
+  return composeShape(node.seed, DENOMINATIONS[node.denomIndex], node.inkGene, CANONICAL);
 }
 
 /** Nodes not consumed as a compose input. The tray shows these. */
@@ -68,11 +91,9 @@ export function randomSeed(): bigint {
   return productionSeed(bytesToBigInt(indexBytes));
 }
 
-/** Add a card to the tray. Throws when the live tray is already at capacity. */
+/** Add a card to the tray. The session's only growth bound is shareability: callers gate on
+ *  `sessionShareable` (urlCodec.ts) so every reachable session still fits in a share link. */
 export function keepCard(s: PlaySession, denomIndex: number, seed: bigint, seedText?: string): PlaySession {
-  if (liveNodes(s).length >= TRAY_CAP) {
-    throw new Error(`tray is full (max ${TRAY_CAP})`);
-  }
   const node: PlayNode = {
     key: s.nextKey,
     demoId: s.nextDemoId,
@@ -88,6 +109,11 @@ export function keepCard(s: PlaySession, denomIndex: number, seed: bigint, seedT
 export function removeNode(s: PlaySession, key: number): PlaySession {
   const live = new Set(liveNodes(s).map((n) => n.key));
   if (!live.has(key)) return s;
+  // Split children are not individually removable: the URL codec encodes a split as one atomic
+  // op covering all of its children, so a missing sibling would be unrepresentable and the
+  // encoder's contiguous-sibling walk would misencode the session.
+  const node = s.nodes.find((n) => n.key === key);
+  if (node?.splitTrace) return s;
   return { ...s, nodes: s.nodes.filter((n) => n.key !== key) };
 }
 
@@ -117,6 +143,7 @@ export function composeNodes(s: PlaySession, rawKeys: number[]): PlaySession {
   const selected = keys.map((k) => {
     const n = live.find((x) => x.key === k);
     if (!n) throw new Error(`node ${k} is not a live card`);
+    if (n.black) throw new Error("a black card cannot be composed");
     return n;
   });
 
@@ -172,4 +199,88 @@ export function composeNodes(s: PlaySession, rawKeys: number[]): PlaySession {
   };
 
   return { nodes: [...s.nodes, resultNode], nextKey: s.nextKey + 1, nextDemoId: s.nextDemoId };
+}
+
+/**
+ * Split a live node into equal children at a lower denomination (contract semantics: `split`).
+ * Child count is `unitsAt(node.denomIndex) / unitsAt(childDenomIndex)` (always a whole number —
+ * every rung's unit count divides every higher rung's, by construction of the ladder). Child i's
+ * seed is `splitChildSeed(parentSeed, i)`, i.e. `keccak256(abi.encodePacked(parentSeed,
+ * uint256(i)))`, mirroring `Shapes._childSeed`. Ink gene is the parent's, verbatim. Module bytes
+ * come from `sampleSplitChildTraced` over the parent's effective modules (its stored bytes if
+ * materialized, otherwise grammar-v1 from its seed). The parent is consumed: each child's
+ * `parents` names it, so `liveNodes` excludes it, the same mechanism compose uses. Throws when
+ * the node is not live, is black, or `childDenomIndex` is not strictly below the node's.
+ */
+export function splitNode(s: PlaySession, key: number, childDenomIndex: number): PlaySession {
+  const live = liveNodes(s);
+  const node = live.find((n) => n.key === key);
+  if (!node) throw new Error(`node ${key} is not a live card`);
+  if (node.black) throw new Error("a black card cannot be split");
+  if (childDenomIndex < 0 || childDenomIndex >= DENOMINATIONS.length) {
+    throw new Error(`childDenomIndex out of range: ${childDenomIndex}`);
+  }
+  if (childDenomIndex >= node.denomIndex) {
+    throw new Error("split denomination must be below the parent's");
+  }
+
+  const childCount = Number(unitsAt(node.denomIndex) / unitsAt(childDenomIndex));
+  const parentDonor = toDonor(node);
+
+  const children: PlayNode[] = [];
+  for (let i = 0; i < childCount; i++) {
+    const { bytes, trace } = sampleSplitChildTraced(parentDonor, childDenomIndex, i);
+    children.push({
+      key: s.nextKey + i,
+      demoId: s.nextDemoId + i,
+      denomIndex: childDenomIndex,
+      inkGene: node.inkGene,
+      seed: splitChildSeed(node.seed, i),
+      modules: bytes,
+      parents: [node.key],
+      splitTrace: trace,
+    });
+  }
+
+  return {
+    nodes: [...s.nodes, ...children],
+    nextKey: s.nextKey + childCount,
+    nextDemoId: s.nextDemoId + childCount,
+  };
+}
+
+/**
+ * Undo a node's most recent compose (contract semantics: `decompose`). The node must be live and
+ * a compose result (has `trace`); it is removed and its compose inputs become live again — the
+ * same filtering `removeNode` does, but only valid for a composed node. An original (non-composed)
+ * card still goes through `removeNode`. Throws when the node is not live, was not produced by a
+ * compose, or is black.
+ */
+export function decomposeNode(s: PlaySession, key: number): PlaySession {
+  const live = liveNodes(s);
+  const node = live.find((n) => n.key === key);
+  if (!node) throw new Error(`node ${key} is not a live card`);
+  if (!node.trace) throw new Error("only a composed card can be decomposed");
+  if (node.black) throw new Error("a black card cannot be decomposed");
+  return { ...s, nodes: s.nodes.filter((n) => n.key !== key) };
+}
+
+/**
+ * Sacrifice a live node (contract semantics: `sacrifice`). On chain this requires a complete
+ * apex (100 ETH backing, 10,000 independent origins) and sends its ETH to an unspendable
+ * address; the token stays alive and renders inverted (Black). The demo has no origin count to
+ * check (mint/compose sampling doesn't track it), so it gates only on denomination: any live
+ * top-rung (100 ETH) card qualifies here, and the UI states the real on-chain gate in its
+ * confirmation copy. Throws when the node is not live, is not at the top denomination, or is
+ * already black.
+ */
+export function sacrificeNode(s: PlaySession, key: number): PlaySession {
+  const live = liveNodes(s);
+  const node = live.find((n) => n.key === key);
+  if (!node) throw new Error(`node ${key} is not a live card`);
+  if (node.denomIndex !== DENOMINATIONS.length - 1) {
+    throw new Error("only a complete 100 ETH Shape can be sacrificed");
+  }
+  if (node.black) throw new Error("already sacrificed");
+  return { ...s, nodes: s.nodes.map((n) => (n.key === key ? { ...n, black: true } : n)) };
 }
