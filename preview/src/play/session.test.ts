@@ -242,7 +242,7 @@ test("splitNode: child count is unitsAt(parent)/unitsAt(child), parent is consum
   assert.equal(live.some((n) => n.key === parent.key), false);
 });
 
-test("splitNode: splitting a materialized (composed) node samples from its stored bytes", () => {
+test("splitNode: a composed node's children sample the last merge's donor pool (D3' record branch)", () => {
   let s = emptySession();
   s = keepCard(s, 1, seedA);
   s = keepCard(s, 1, seedB);
@@ -254,21 +254,21 @@ test("splitNode: splitting a materialized (composed) node samples from its store
   const split = splitNode(s, composed.key, 0); // -> 0.01 ETH, 10 children
   const children = liveNodes(split).sort((x, y) => x.demoId - y.demoId);
 
-  const materializedDonor: SampleDonor = {
+  const parentDonor: SampleDonor = {
     seed: composed.seed,
     denomIndex: composed.denomIndex,
     inkGene: composed.inkGene,
     modules: composed.modules,
   };
-  const bareDonor: SampleDonor = {
-    seed: composed.seed,
-    denomIndex: composed.denomIndex,
-    inkGene: composed.inkGene,
-  };
-  const expectedMaterialized = sampleSplitChildTraced(materializedDonor, 0, 0);
-  const expectedBare = sampleSplitChildTraced(bareDonor, 0, 0);
-  assert.equal(bytesEqual(children[0].modules!, expectedMaterialized.bytes), true);
-  assert.equal(bytesEqual(children[0].modules!, expectedBare.bytes), false);
+  // The record branch: the compose's own donors, exactly what the contract's record stores.
+  const expectedRecord = sampleSplitChildTraced(parentDonor, 0, 0, undefined, {
+    survivor: { seed: a.seed, denomIndex: a.denomIndex, inkGene: a.inkGene },
+    inputs: [{ seed: b.seed, denomIndex: b.denomIndex, inkGene: b.inkGene, tokenId: BigInt(b.demoId) }],
+  });
+  const expectedGrammar = sampleSplitChildTraced(parentDonor, 0, 0);
+  assert.equal(expectedRecord.branch, "record");
+  assert.equal(bytesEqual(children[0].modules!, expectedRecord.bytes), true);
+  assert.equal(bytesEqual(children[0].modules!, expectedGrammar.bytes), false);
 });
 
 test("splitNode: rejects a black node and a childDenomIndex not below the parent's", () => {

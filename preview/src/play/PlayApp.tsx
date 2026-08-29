@@ -5,7 +5,7 @@ import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/pro
 import { CANONICAL } from "../canonical/params";
 import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
 import { WAD } from "../canonical/wad";
-import type { ComposeTraceCell } from "../canonical/sampling";
+import { composeSampledShape, grammarSplitPoolBytes, type ComposeTraceCell } from "../canonical/sampling";
 import { DENOMINATIONS, GRIDS, LABELS, UNIT, unitsAt } from "../canonical/denominations";
 import { geneAtMint } from "../canonical/ink";
 import { decodeModuleByte } from "../canonical/moduleCodec";
@@ -958,10 +958,20 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
   );
   const trace = node.splitTrace!;
   const parent = byKey.get(node.parents![0])!;
-  const parentComposition = nodeComposition(parent);
-  const parentSvg = React.useMemo(
-    () => svgFromComposition(parentComposition, 0n, CANONICAL, parent.black === true),
-    [parentComposition, parent.black],
+  // D3' pool display: the trace's moduleIndex indexes the split's POOL, not the parent's own
+  // card. Grammar branch (recordless parent): the pool is the parent seed's expression at the
+  // CHILD's denomination -- render that as the highlight card; its grid matches the trace. Record
+  // branch (composed parent): the pool spans several concatenated donors with no single grid, so
+  // there is no highlight card and the detail panel reports the pool index directly.
+  const recordBranch = parent.trace != null;
+  const poolComposition = React.useMemo(() => {
+    if (recordBranch) return null;
+    const poolBytes = grammarSplitPoolBytes(parent.seed, node.denomIndex, parent.inkGene);
+    return composeSampledShape(poolBytes, node.denomIndex, parent.inkGene, CANONICAL);
+  }, [recordBranch, parent.seed, parent.inkGene, node.denomIndex]);
+  const poolSvg = React.useMemo(
+    () => (poolComposition ? svgFromComposition(poolComposition, 0n, CANONICAL, false) : null),
+    [poolComposition],
   );
 
   const { active, onEnter, onLeave, onClickCell } = useActiveCell();
@@ -1026,47 +1036,52 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {activeCell && (
           <PlayDetailPanel
-            label={`#${parent.demoId}`}
+            label={recordBranch ? `#${parent.demoId} merge pool` : `#${parent.demoId} seed at ${LABELS[node.denomIndex]} ETH`}
             moduleIndex={activeCell.moduleIndex}
             byte={activeCell.byte}
             color={SPLIT_COLOR}
           />
         )}
+        {recordBranch && (
+          <Prose>Sampled from the cards that merged into #{parent.demoId}.</Prose>
+        )}
       </div>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        <div style={{ width: 120 }}>
-          <div
-            style={{
-              position: "relative",
-              aspectRatio: "2.5 / 3.5",
-              background: C.art,
-              overflow: "hidden",
-              lineHeight: 0,
-              border: `1px solid ${C.border}`,
-            }}
-          >
-            <div dangerouslySetInnerHTML={{ __html: forDisplay(parentSvg) }} />
-            <GridOverlayCells
-              cols={parentComposition.cols}
-              rows={parentComposition.rows}
-              cell={parentComposition.cell}
-              x0={parentComposition.x0}
-              y0={parentComposition.y0}
-              cellStyle={(j) => {
-                const isActive = activeCell != null && activeCell.moduleIndex === j;
-                if (!isActive) return undefined;
-                return { outline: `2px solid ${SPLIT_COLOR}`, outlineOffset: -1, background: `${SPLIT_COLOR}33` };
+      {poolComposition && poolSvg && (
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ width: 120 }}>
+            <div
+              style={{
+                position: "relative",
+                aspectRatio: "2.5 / 3.5",
+                background: C.art,
+                overflow: "hidden",
+                lineHeight: 0,
+                border: `1px solid ${C.border}`,
               }}
-              onEnter={(j) => setHoverParentCell(j)}
-              onLeave={() => setHoverParentCell(null)}
-            />
-          </div>
-          <div style={{ ...mono, fontSize: 9.5, color: C.muted, textAlign: "center", marginTop: 6 }}>
-            #{parent.demoId}
+            >
+              <div dangerouslySetInnerHTML={{ __html: forDisplay(poolSvg) }} />
+              <GridOverlayCells
+                cols={poolComposition.cols}
+                rows={poolComposition.rows}
+                cell={poolComposition.cell}
+                x0={poolComposition.x0}
+                y0={poolComposition.y0}
+                cellStyle={(j) => {
+                  const isActive = activeCell != null && activeCell.moduleIndex === j;
+                  if (!isActive) return undefined;
+                  return { outline: `2px solid ${SPLIT_COLOR}`, outlineOffset: -1, background: `${SPLIT_COLOR}33` };
+                }}
+                onEnter={(j) => setHoverParentCell(j)}
+                onLeave={() => setHoverParentCell(null)}
+              />
+            </div>
+            <div style={{ ...mono, fontSize: 9.5, color: C.muted, textAlign: "center", marginTop: 6 }}>
+              #{parent.demoId} seed at {LABELS[node.denomIndex]} ETH
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
