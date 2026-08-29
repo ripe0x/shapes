@@ -15,7 +15,8 @@ contract SepoliaAuctionEvidence is Script {
     address private constant SHAPES_ADDRESS = 0xbB6F8b4560E0cc15de233E00848104b66FD88B39;
     address private constant HOUSE_ADDRESS = 0x603C745cBFCC76ad47E1eCf6b875abC995959801;
     address private constant SELLER = 0xCB43078C32423F5348Cab5885911C3B5faE217F9;
-    address private constant BIDDER = 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4;
+    address private constant FEE_RECIPIENT = 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4;
+    address private constant BIDDER = 0xea194A186EBe76A84E2B2027f5f23F81939c05AD;
 
     uint256 private constant UNIT = 0.0001 ether;
     uint256 private constant FEE_BPS = 100;
@@ -108,7 +109,7 @@ contract SepoliaAuctionEvidence is Script {
         require(BIDDER.code.length == 0, "bidder must be an EOA");
         require(SHAPES_TOKEN.denominationAt(0) == UNIT, "wrong ladder");
         require(SHAPES_TOKEN.feeBps() == FEE_BPS, "wrong fee");
-        require(SHAPES_TOKEN.feeRecipient() == BIDDER, "wrong fee recipient/bidder");
+        require(SHAPES_TOKEN.feeRecipient() == FEE_RECIPIENT, "wrong fee recipient");
         require(AUCTION_HOUSE.shapes() == SHAPES_ADDRESS, "wrong auction house");
     }
 }
