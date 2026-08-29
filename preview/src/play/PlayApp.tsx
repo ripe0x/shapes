@@ -1246,7 +1246,9 @@ function LineageBeat({ session }: { session: PlaySession }) {
 
   const focusedNode = focusedKey != null ? byKey.get(focusedKey) ?? null : null;
 
-  if (tips.length === 0) return null;
+  // Nothing to trace until a compose or split has happened: original cards have no per-cell
+  // provenance, so the section's promise ("tap a cell") would be empty.
+  if (tips.length === 0 || mostRecentProduced === null) return null;
 
   return (
     <section style={sectionStyle}>
