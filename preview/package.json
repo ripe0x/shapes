@@ -16,7 +16,7 @@
     "ink:tune": "tsx scripts/inkTuning.ts",
     "standalone": "tsx scripts/buildStandalone.ts",
     "gif:e2e": "node scripts/e2eGif.mjs",
-    "test": "tsx --test src/canonical/*.test.ts src/site/*.test.ts"
+    "test": "tsx --test src/canonical/*.test.ts src/site/*.test.ts src/play/*.test.ts"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
