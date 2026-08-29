@@ -351,3 +351,15 @@ test("black nodes are rejected as compose/split participants", () => {
   assert.throws(() => composeNodes(s, [top.key, other.key]));
   assert.throws(() => splitNode(s, top.key, 0));
 });
+
+test("removeNode: a split child is not removable", () => {
+  let s = emptySession();
+  s = keepCard(s, 2, seedA); // 0.1 ETH
+  const parent = liveNodes(s)[0];
+  s = splitNode(s, parent.key, 1); // -> 2 x 0.05
+  const child = liveNodes(s)[0];
+  assert.ok(child.splitTrace);
+  const after = removeNode(s, child.key);
+  assert.equal(after, s);
+  assert.equal(liveNodes(after).length, 2);
+});

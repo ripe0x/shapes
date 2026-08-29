@@ -272,9 +272,14 @@ export function decodeSession(text: string): PlaySession {
         const [parentId, childDenomIndex] = op.p as [number, number];
         if (childDenomIndex < 0 || childDenomIndex >= DENOMINATIONS.length) return emptySession();
         const live = liveNodes(session);
-        const parentKey = live.find((n) => n.demoId === parentId)?.key;
-        if (parentKey === undefined) return emptySession();
-        session = splitNode(session, parentKey, childDenomIndex);
+        const parent = live.find((n) => n.demoId === parentId);
+        if (parent === undefined) return emptySession();
+        // Reject an over-cap split before running it: a single op can otherwise sample
+        // thousands of children (100 ETH -> 0.01 is 10,000) just to be thrown away below.
+        if (childDenomIndex >= parent.denomIndex) return emptySession();
+        const childCount = Number(unitsAt(parent.denomIndex) / unitsAt(childDenomIndex));
+        if (session.nodes.length + childCount > MAX_OPS) return emptySession();
+        session = splitNode(session, parent.key, childDenomIndex);
       } else if (hasU) {
         if (!Number.isInteger(op.u)) return emptySession();
         const live = liveNodes(session);

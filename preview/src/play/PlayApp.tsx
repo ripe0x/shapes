@@ -427,7 +427,9 @@ function TrayCard({
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const isTop = node.denomIndex === DENOMINATIONS.length - 1;
   const showDecompose = node.trace != null && !node.black;
-  const showRemove = !showDecompose;
+  // Split children have no remove control: a split encodes as one atomic URL op, so a missing
+  // sibling could not be reproduced by a share link (removeNode rejects them too).
+  const showRemove = !showDecompose && node.splitTrace == null;
   const menuOpen = menu?.key === node.key ? menu.kind : null;
 
   return (

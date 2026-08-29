@@ -109,6 +109,11 @@ export function keepCard(s: PlaySession, denomIndex: number, seed: bigint, seedT
 export function removeNode(s: PlaySession, key: number): PlaySession {
   const live = new Set(liveNodes(s).map((n) => n.key));
   if (!live.has(key)) return s;
+  // Split children are not individually removable: the URL codec encodes a split as one atomic
+  // op covering all of its children, so a missing sibling would be unrepresentable and the
+  // encoder's contiguous-sibling walk would misencode the session.
+  const node = s.nodes.find((n) => n.key === key);
+  if (node?.splitTrace) return s;
   return { ...s, nodes: s.nodes.filter((n) => n.key !== key) };
 }
 
