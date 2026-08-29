@@ -9,10 +9,12 @@ import {
   composeSampledShape,
   composeSampleSeedInputs,
   effectiveModuleBytes,
+  grammarSplitPoolBytes,
   sampleComposeTraced,
   sampleSplitChildTraced,
   splitSampleSeedInputs,
   type ComposeTraceResult,
+  type LastMergeDonors,
   type SampleBurn,
   type SampleDonor,
   type SplitTraceResult,
@@ -499,6 +501,87 @@ function ComposeDna({ params }: { params: Params }) {
  * Split mode
  * ------------------------------------------------------------------ */
 
+/** The record branch's pre-compose survivor snapshot (SAMPLING_SPEC.md §6, D3'): denomination,
+ *  ink gene and materialized-or-not only. No seed field — the record's survivor is the same
+ *  token as the split's parent, so its seed is always the parent's own (compose never changes a
+ *  token's seed); a separate seed control here would let the sandbox build a combination the
+ *  contract can never produce. */
+interface RecordSurvivorForm {
+  denomIndex: number;
+  inkGene: number;
+  materialized: boolean;
+}
+
+function RecordSurvivorEditor({
+  survivor,
+  onChange,
+}: {
+  survivor: RecordSurvivorForm;
+  onChange: (patch: Partial<RecordSurvivorForm>) => void;
+}) {
+  return (
+    <div
+      style={{
+        border: `1px solid ${C.hair}`,
+        borderRadius: 5,
+        padding: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        minWidth: 230,
+      }}
+    >
+      <div style={{ ...mono, fontSize: 11, letterSpacing: "0.08em", fontWeight: 600 }}>
+        record survivor (pre-compose)
+      </div>
+      <div style={{ ...mono, fontSize: 10, color: C.dim }}>seed: same as parent</div>
+      <div>
+        <Label>denomination</Label>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {LABELS.map((label, i) => (
+            <Button key={i} active={survivor.denomIndex === i} onClick={() => onChange({ denomIndex: i })}>
+              {label}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <Label>ink gene</Label>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+          {GENE_NAMES.map((name, i) => (
+            <Button key={i} active={survivor.inkGene === i} onClick={() => onChange({ inkGene: i })}>
+              {name}
+            </Button>
+          ))}
+        </div>
+      </div>
+      <Toggle
+        label="materialized (independent stored modules)"
+        checked={survivor.materialized}
+        canonical={false}
+        onChange={(materialized) => onChange({ materialized })}
+      />
+    </div>
+  );
+}
+
+/**
+ * Split mode (SAMPLING_SPEC.md §6, D3'). The parent card is informational only — it shows what
+ * the parent itself looks like, but neither sampling branch reads its modules. `hasRecord` picks
+ * the branch:
+ *
+ *   off (grammar branch): each child's pool is the parent seed's grammar v1 expression at that
+ *   child's own denomination. That pool is always a full grid at the child's denomination (same
+ *   reason a compose donor's own module count equals its own grid), so it renders as an ordinary
+ *   pool card per distinct child denomination, with the same two-way cell highlight the parent
+ *   card used to have.
+ *
+ *   on (record branch): each child's pool is the concatenation of a fabricated compose record's
+ *   survivor and input modules, in canonical order. That pool's length is a sum across donors and
+ *   generally is not any denomination's grid cell count, so it has no card form — the pool index
+ *   and byte are shown in the detail panel only, with no card to hover (matches how
+ *   `preview/src/site/TokenView.tsx` handles the same branch for a live token).
+ */
 function SplitDna({ params }: { params: Params }) {
   const [parent, setParent] = React.useState<DonorForm>({
     seed: productionSeed(10n),
@@ -508,9 +591,20 @@ function SplitDna({ params }: { params: Params }) {
   });
   const [childDenoms, setChildDenoms] = React.useState<number[]>([7, 7]);
 
+  const [hasRecord, setHasRecord] = React.useState(false);
+  const [recordSurvivor, setRecordSurvivor] = React.useState<RecordSurvivorForm>({
+    denomIndex: 3,
+    inkGene: 4,
+    materialized: false,
+  });
+  const [recordInputs, setRecordInputs] = React.useState<BurnForm[]>([
+    { tokenId: 2n, seed: productionSeed(2n), denomIndex: 1, inkGene: 2, materialized: false },
+    { tokenId: 3n, seed: productionSeed(3n), denomIndex: 1, inkGene: 4, materialized: true },
+  ]);
+
   const [active, setActive] = React.useState<{ child: number; cell: number } | null>(null);
   const [hover, setHover] = React.useState<{ child: number; cell: number } | null>(null);
-  const [hoverParentCell, setHoverParentCell] = React.useState<number | null>(null);
+  const [hoverPoolCell, setHoverPoolCell] = React.useState<{ denom: number; moduleIndex: number } | null>(null);
   const [inspectChild, setInspectChild] = React.useState<number | null>(null);
 
   const parentDonor = React.useMemo(() => toSampleDonor(parent, params), [parent, params]);
@@ -520,16 +614,33 @@ function SplitDna({ params }: { params: Params }) {
     [parentBytes, parent.denomIndex, parent.inkGene, params],
   );
 
+  const orderedRecordInputs = React.useMemo(() => [...recordInputs].sort(byTokenIdAscending), [recordInputs]);
+
+  const lastMergeDonors: LastMergeDonors | undefined = React.useMemo(() => {
+    if (!hasRecord) return undefined;
+    return {
+      survivor: {
+        seed: parent.seed, // the record's survivor is this same token, seed unchanged by compose
+        denomIndex: recordSurvivor.denomIndex,
+        inkGene: recordSurvivor.inkGene,
+        modules: recordSurvivor.materialized
+          ? materializedModules(parent.seed, recordSurvivor.denomIndex, recordSurvivor.inkGene, params)
+          : undefined,
+      },
+      inputs: orderedRecordInputs.map((f) => toSampleBurn(f, params)),
+    };
+  }, [hasRecord, parent.seed, recordSurvivor, orderedRecordInputs, params]);
+
   const childResults: (SplitTraceResult | null)[] = React.useMemo(
     () =>
       childDenoms.map((d, i) => {
         try {
-          return sampleSplitChildTraced(parentDonor, d, i, params);
+          return sampleSplitChildTraced(parentDonor, d, i, params, lastMergeDonors);
         } catch {
           return null;
         }
       }),
-    [childDenoms, parentDonor, params],
+    [childDenoms, parentDonor, params, lastMergeDonors],
   );
 
   const childSeedInputs = React.useMemo(
@@ -550,29 +661,53 @@ function SplitDna({ params }: { params: Params }) {
     [childResults, childDenoms, parent.inkGene, params],
   );
 
+  // Grammar branch only: one pool card per distinct child denomination, the parent seed's
+  // expression at that denomination. The record branch's pool has no single grid shape (see the
+  // component doc comment), so this map stays empty when `hasRecord`.
+  const distinctChildDenoms = React.useMemo(
+    () => Array.from(new Set(childDenoms)).sort((a, b) => a - b),
+    [childDenoms],
+  );
+  const poolCompositionByDenom = React.useMemo(() => {
+    const m = new Map<number, ReturnType<typeof composeSampledShape>>();
+    if (hasRecord) return m;
+    for (const d of distinctChildDenoms) {
+      const bytes = grammarSplitPoolBytes(parent.seed, d, parent.inkGene, params);
+      m.set(d, composeSampledShape(bytes, d, parent.inkGene, params));
+    }
+    return m;
+  }, [hasRecord, distinctChildDenoms, parent.seed, parent.inkGene, params]);
+
   const shown = hover ?? active;
   const shownTrace = shown && childResults[shown.child] ? childResults[shown.child]!.trace[shown.cell] : null;
+  const shownDenom = shown ? childDenoms[shown.child] : null;
 
-  const parentCellsHighlighted = React.useMemo(() => {
-    if (shownTrace) return new Set([shownTrace.moduleIndex]);
-    return new Set<number>();
-  }, [shownTrace]);
-
-  const childCellsFromParentModule = React.useMemo(() => {
-    if (hoverParentCell == null) return null;
-    return childResults.map((r) => {
-      if (!r) return new Set<number>();
+  const childCellsFromPoolModule = React.useMemo(() => {
+    if (hoverPoolCell == null) return null;
+    return childResults.map((r, i) => {
+      if (!r || childDenoms[i] !== hoverPoolCell.denom) return new Set<number>();
       const cells: number[] = [];
       r.trace.forEach((cell, j) => {
-        if (cell.moduleIndex === hoverParentCell) cells.push(j);
+        if (cell.moduleIndex === hoverPoolCell.moduleIndex) cells.push(j);
       });
       return new Set(cells);
     });
-  }, [hoverParentCell, childResults]);
+  }, [hoverPoolCell, childResults, childDenoms]);
 
   const setChildDenom = (i: number, d: number) => setChildDenoms((cur) => cur.map((v, j) => (j === i ? d : v)));
   const addChild = () => setChildDenoms((cur) => [...cur, parent.denomIndex]);
   const removeChild = (i: number) => setChildDenoms((cur) => cur.filter((_, j) => j !== i));
+
+  const setRecordInput = (i: number, patch: Partial<BurnForm>) => {
+    setRecordInputs((cur) => cur.map((f, j) => (j === i ? { ...f, ...patch } : f)));
+  };
+  const addRecordInput = () => {
+    setRecordInputs((cur) => {
+      const nextId = cur.reduce((m, f) => (f.tokenId > m ? f.tokenId : m), 1n) + 1n;
+      return [...cur, { tokenId: nextId, seed: productionSeed(randomIndex()), denomIndex: 1, inkGene: 2, materialized: false }];
+    });
+  };
+  const removeRecordInput = (i: number) => setRecordInputs((cur) => cur.filter((_, j) => j !== i));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -583,20 +718,98 @@ function SplitDna({ params }: { params: Params }) {
       />
 
       <div>
-        <Label>parent (hover a cell to highlight every child sampled from it)</Label>
-        <ProvenanceCard
-          composition={parentComposition}
-          params={params}
-          width={200}
-          cellStyle={(j) => {
-            const highlighted = parentCellsHighlighted.has(j) || hoverParentCell === j;
-            if (!highlighted) return undefined;
-            return { outline: `2px solid ${C.warn}`, outlineOffset: -1, background: `${C.warn}33` };
-          }}
-          onEnter={(j) => setHoverParentCell(j)}
-          onLeave={() => setHoverParentCell(null)}
-        />
+        <Label>parent (informational only since D3' — neither branch samples from its own modules)</Label>
+        <ProvenanceCard composition={parentComposition} params={params} width={200} cellStyle={() => undefined} />
       </div>
+
+      <Toggle
+        label="parent has a compose record (record branch, SAMPLING_SPEC.md §6, D3')"
+        checked={hasRecord}
+        canonical={false}
+        onChange={setHasRecord}
+      />
+
+      {hasRecord && (
+        <div>
+          <Label>record donors (pool = survivor's modules, then inputs ascending by token id)</Label>
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+            <RecordSurvivorEditor
+              survivor={recordSurvivor}
+              onChange={(patch) => setRecordSurvivor((s) => ({ ...s, ...patch }))}
+            />
+            {recordInputs.map((f, i) => (
+              <DonorEditor
+                key={i}
+                title={`input #${f.tokenId.toString()}`}
+                donor={f}
+                onChange={(patch) => setRecordInput(i, patch)}
+                extra={
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <span style={{ ...mono, fontSize: 10, color: C.dim, letterSpacing: "0.08em" }}>token id</span>
+                      <input
+                        type="number"
+                        value={Number(f.tokenId)}
+                        min={1}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v >= 1) setRecordInput(i, { tokenId: BigInt(Math.floor(v)) });
+                        }}
+                        style={{
+                          ...mono,
+                          fontSize: 11,
+                          width: 70,
+                          padding: "5px 7px",
+                          border: `1px solid ${C.hair}`,
+                          borderRadius: 3,
+                          background: "#fff",
+                        }}
+                      />
+                    </label>
+                    <Button onClick={() => removeRecordInput(i)}>remove</Button>
+                  </div>
+                }
+              />
+            ))}
+            <Button onClick={addRecordInput}>add input</Button>
+          </div>
+          <div style={{ ...mono, fontSize: 10, color: C.dim, marginTop: 8 }}>
+            pool length: {childResults[0]?.poolLength ?? "—"} — no card form; see pool index/byte per cell below
+          </div>
+        </div>
+      )}
+
+      {!hasRecord && (
+        <div>
+          <Label>
+            pool per child denomination (grammar branch — hover a cell to highlight every child of that
+            denomination sampled from it)
+          </Label>
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+            {distinctChildDenoms.map((d) => {
+              const composition = poolCompositionByDenom.get(d);
+              if (!composition) return null;
+              return (
+                <ProvenanceCard
+                  key={d}
+                  composition={composition}
+                  params={params}
+                  width={160}
+                  label={`pool — denom ${LABELS[d]}`}
+                  cellStyle={(j) => {
+                    const fromShown = shownDenom === d && shownTrace && shownTrace.moduleIndex === j;
+                    const isHovered = hoverPoolCell?.denom === d && hoverPoolCell.moduleIndex === j;
+                    if (!fromShown && !isHovered) return undefined;
+                    return { outline: `2px solid ${C.warn}`, outlineOffset: -1, background: `${C.warn}33` };
+                  }}
+                  onEnter={(j) => setHoverPoolCell({ denom: d, moduleIndex: j })}
+                  onLeave={() => setHoverPoolCell(null)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div>
         <Label>children</Label>
@@ -618,9 +831,9 @@ function SplitDna({ params }: { params: Params }) {
                   width={160}
                   label={`child #${i} — denom ${LABELS[d]}`}
                   cellStyle={(j) => {
-                    const fromParentHover = childCellsFromParentModule?.[i]?.has(j) ?? false;
+                    const fromPoolHover = !hasRecord && (childCellsFromPoolModule?.[i]?.has(j) ?? false);
                     const isActive = shown && shown.child === i && shown.cell === j;
-                    if (!fromParentHover && !isActive) return undefined;
+                    if (!fromPoolHover && !isActive) return undefined;
                     return {
                       outline: `2px solid ${C.warn}`,
                       outlineOffset: -1,
@@ -649,7 +862,7 @@ function SplitDna({ params }: { params: Params }) {
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
         {shownTrace && shown && (
           <DetailPanel
-            label={`parent module (child #${shown.child})`}
+            label={`pool cell (${hasRecord ? "record" : "grammar"} branch, child #${shown.child})`}
             moduleIndex={shownTrace.moduleIndex}
             byte={shownTrace.byte}
             color={C.warn}
@@ -663,6 +876,7 @@ function SplitDna({ params }: { params: Params }) {
               <Row k="child denomIndex" v={s.childDenomIndex} />
               <Row k="childIndex" v={s.childIndex} />
               <Row k="sample seed" v={hex64(s.sampleSeed)} />
+              <Row k="pool length" v={childResults[i]?.poolLength ?? "—"} />
             </div>
           ))}
         </div>

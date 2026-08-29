@@ -1,7 +1,13 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 
-import {sampleComposeTraced, sampleSplitChildTraced, type SampleBurn, type SampleDonor} from "../canonical/sampling";
+import {
+  sampleComposeTraced,
+  sampleSplitChildTraced,
+  type LastMergeDonors,
+  type SampleBurn,
+  type SampleDonor,
+} from "../canonical/sampling";
 import {
   classifyDna,
   deriveComposeDna,
@@ -110,7 +116,7 @@ test("deriveComposeDna: a live-bytes mismatch surfaces as an explicit error, nev
   assert.equal(result.kind, "mismatch");
 });
 
-test("deriveSplitDna: reconstruction matching the live bytes returns a split result with parent info", () => {
+test("deriveSplitDna (grammar branch): reconstruction matching the live bytes returns a split result with pool info", () => {
   const parent: SampleDonor = {seed: 0x9999n, denomIndex: 4, inkGene: 3};
   const childDenom = 3;
   const childIndex = 1;
@@ -119,6 +125,7 @@ test("deriveSplitDna: reconstruction matching the live bytes returns a split res
   const state: RawShapeState = {seed: 0xffffn, denomIndex: childDenom, inkGene: parent.inkGene, modules: liveModules};
   const origin: RawSplitOrigin = {
     parentSeed: parent.seed,
+    parentId: 42n,
     parentDenomIndex: parent.denomIndex,
     parentInkGene: parent.inkGene,
     parentModules: new Uint8Array(),
@@ -128,10 +135,15 @@ test("deriveSplitDna: reconstruction matching the live bytes returns a split res
   const result = deriveSplitDna(state, origin);
   assert.equal(result.kind, "split");
   if (result.kind !== "split") return;
+  assert.equal(result.branch, "grammar");
   assert.equal(result.parent.seed, parent.seed);
   assert.equal(result.parent.denomIndex, parent.denomIndex);
   assert.equal(result.parent.materialized, false);
   assert.equal(result.cells.length, liveModules.length);
+  // The grammar pool card renders at the CHILD's own denomination, not the parent's.
+  assert.ok(result.pool != null);
+  assert.equal(result.pool!.denomIndex, childDenom);
+  assert.equal(result.poolLength, result.pool!.modules.length);
 });
 
 test("deriveSplitDna: a live-bytes mismatch surfaces as an explicit error", () => {
@@ -146,6 +158,7 @@ test("deriveSplitDna: a live-bytes mismatch surfaces as an explicit error", () =
   const state: RawShapeState = {seed: 0xffffn, denomIndex: childDenom, inkGene: parent.inkGene, modules: corrupted};
   const origin: RawSplitOrigin = {
     parentSeed: parent.seed,
+    parentId: 42n,
     parentDenomIndex: parent.denomIndex,
     parentInkGene: parent.inkGene,
     parentModules: new Uint8Array(),
@@ -154,4 +167,54 @@ test("deriveSplitDna: a live-bytes mismatch surfaces as an explicit error", () =
 
   const result = deriveSplitDna(state, origin);
   assert.equal(result.kind, "mismatch");
+});
+
+test("deriveSplitDna (record branch): pool is the compose record's donor modules, not the parent's own snapshot", () => {
+  const parentSeed = 0x9999n;
+  const parentInkGene = 3;
+  const childDenom = 1;
+  const childIndex = 0;
+
+  const lastMergeDonors: LastMergeDonors = {
+    survivor: {seed: parentSeed, denomIndex: 2, inkGene: parentInkGene},
+    inputs: [
+      {tokenId: 7n, seed: 0xaaan, denomIndex: 0, inkGene: 1},
+      {tokenId: 3n, seed: 0xbbbn, denomIndex: 0, inkGene: 2},
+    ],
+  };
+  const {bytes: liveModules} = sampleSplitChildTraced(
+    {seed: parentSeed, denomIndex: 4, inkGene: parentInkGene},
+    childDenom,
+    childIndex,
+    undefined,
+    lastMergeDonors,
+  );
+
+  const state: RawShapeState = {seed: 0xccccn, denomIndex: childDenom, inkGene: parentInkGene, modules: liveModules};
+  const origin: RawSplitOrigin = {
+    parentSeed,
+    parentId: 99n,
+    parentDenomIndex: 4, // the parent's own (post-compose) denomination, informational only
+    parentInkGene,
+    parentModules: new Uint8Array([0x00]), // informational snapshot; must play no part in reconstruction
+    childIndex,
+  };
+  const record: RawComposeRecord = {
+    survivorDenomIndex: 2,
+    survivorInkGene: parentInkGene,
+    survivorModules: new Uint8Array(),
+    // Deliberately not sorted by id, matching how the contract stores inputs.
+    inputs: [
+      {id: 7n, seed: 0xaaan, denomIndex: 0, inkGene: 1, modules: new Uint8Array()},
+      {id: 3n, seed: 0xbbbn, denomIndex: 0, inkGene: 2, modules: new Uint8Array()},
+    ],
+  };
+
+  const result = deriveSplitDna(state, origin, record);
+  assert.equal(result.kind, "split");
+  if (result.kind !== "split") return;
+  assert.equal(result.branch, "record");
+  assert.equal(result.pool, undefined, "record branch has no single-grid pool card");
+  assert.ok(result.poolLength > 0);
+  assert.equal(result.cells.length, liveModules.length);
 });

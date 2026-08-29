@@ -10,10 +10,16 @@ script = "script"
 solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
-# Lowered from 200 to preserve EIP-170 runtime headroom. 100 leaves more deployment margin at the
-# cost of marginally higher runtime gas on repeatedly called functions (mint, redeem, compose, split, bid);
-# deployment cost drops. Re-measure with `forge build --sizes` before raising this back toward 200.
-optimizer_runs = 100
+# Lowered from 200, then from 100 (issue #21B, split's D3' pool logic): each step trades marginally
+# higher runtime gas on repeatedly called functions (mint, redeem, compose, split, bid) for
+# deployment headroom. At 100, `Shapes`'s own runtime size was ~134 bytes over the EIP-170 24,576
+# limit; 25 is the lowest value in a 1-100 sweep that stays under it, with a thin ~9-byte margin
+# (the size-vs-runs curve is not monotonic near this range: 20 and 25 both land at the same size,
+# 10 and 1 land worse than either). That margin is uncomfortably thin for a value this low in the
+# tradeoff space; a further pass to shrink `Shapes`'s own bytecode (not just retune this knob)
+# should raise it back before mainnet deploy. Re-measure with `forge build --sizes` before changing
+# this value in either direction.
+optimizer_runs = 25
 via_ir = true
 bytecode_hash = "none"
 cbor_metadata = false

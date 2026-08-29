@@ -327,6 +327,7 @@ contract ShapeLens is IShapeLens {
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,

@@ -2,8 +2,9 @@
 pragma solidity 0.8.28;
 
 import {ShapesBase} from "./Shapes.t.sol";
-import {ShapeState} from "../src/interfaces/IShapeCapabilities.sol";
+import {ComposeInputView, ComposeRecordView, ShapeState} from "../src/interfaces/IShapeCapabilities.sol";
 import {ModuleCodec} from "../src/lib/ModuleCodec.sol";
+import {GeometrySampling} from "../src/lib/GeometrySampling.sol";
 import {GrammarV1Modules} from "../src/lib/GrammarV1Modules.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
@@ -44,6 +45,33 @@ contract SamplingTest is ShapesBase {
             if (hay[i] == needle) return true;
         }
         return false;
+    }
+
+    /// @dev Rebuilds a split's compose-record pool (SAMPLING_SPEC.md §6, D3'): the survivor's
+    ///      pre-compose effective modules first, then the inputs' effective modules sorted
+    ///      ascending by id (the record stores them in calldata order).
+    function _reconstructSplitRecordPool(bytes32 parentSeed, ComposeRecordView memory rec)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        uint256 n = rec.inputs.length;
+        GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            ComposeInputView memory inp = rec.inputs[i];
+            inputDonors[i] = GeometrySampling.Donor({
+                id: inp.id,
+                units: 0,
+                seed: inp.seed,
+                denomIndex: inp.denominationIndex,
+                inkGene: inp.inkGene,
+                modules: inp.modules
+            });
+        }
+        inputDonors = GeometrySampling.sortDonorsById(inputDonors);
+        return GeometrySampling.buildSplitRecordPool(
+            rec.survivorModules, parentSeed, rec.survivorDenominationIndex, rec.survivorInkGene, inputDonors
+        );
     }
 
     /// @dev `GrammarV1Modules` duplicates the renderer's module-identity draws so compose
@@ -283,12 +311,19 @@ contract SamplingTest is ShapesBase {
 
     /* ------------------------------ split ------------------------------ */
 
-    /// @notice The 100 ETH -> 2x50 ETH case: the parent has exactly one module, so both children
-    ///         (with replacement, per D3) must be uniformly that single module.
-    function test_SplitChildrenDrawnFromSingleModuleParent_100to50x2() public {
+    /// @notice The 100 ETH -> 2x50 ETH case, direct-mint parent (no compose record): grammar
+    ///         branch (SAMPLING_SPEC.md §6, D3'). The parent's own apex module is irrelevant —
+    ///         each child samples from `grammarSplitPool(parentSeed, childDenom, gene)`, the
+    ///         grammar v1 expression at the CHILD's own denomination, which escapes the apex's
+    ///         one-module monoculture (issue #21B).
+    function test_SplitChildrenOfDirectMintApexUseGrammarPool_100to50x2() public {
         uint256 parent = _mint(alice, DENOMS[8]);
         bytes memory parentMods = _effectiveModules(parent);
         assertEq(parentMods.length, 1, "apex denomination has exactly one module");
+        assertEq(shapes.composeDepth(parent), 0, "direct mint has no compose record: grammar branch");
+
+        bytes32 parentSeed = shapes.seedOf(parent);
+        uint8 parentGene = shapes.inkGeneOf(parent);
 
         uint8[] memory outs = new uint8[](2);
         outs[0] = 7; // 50 ETH
@@ -297,25 +332,36 @@ contract SamplingTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         (uint256 cols, uint256 rows) = shapes.gridForAmount(DENOMS[7]);
+        bytes memory pool = GeometrySampling.grammarSplitPool(parentSeed, 7, parentGene);
         for (uint256 i = 0; i < 2; ++i) {
             bytes memory childMods = lens.shapeState(kids[i]).modules;
             assertEq(childMods.length, cols * rows, "child length != 50 ETH grid cell count");
+            bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, 7, i);
+            assertEq(childMods, expected, "grammar-branch child must match the pool sample, not the apex byte");
             for (uint256 j = 0; j < childMods.length; ++j) {
                 assertTrue(ModuleCodec.isValid(childMods[j]), "invalid child module byte");
-                assertEq(childMods[j], parentMods[0], "single-module parent must produce a uniform child");
             }
         }
     }
 
-    function test_SplitChildrenOfMaterializedParentDrawFromParentEffectiveModules() public {
+    /// @notice A materialized (compose-survivor) parent uses the record branch (SAMPLING_SPEC.md
+    ///         §6, D3'): each child draws from the parent's top compose record's donor pool
+    ///         (pre-compose survivor's effective modules, then inputs ascending by id), not from
+    ///         the parent's own post-compose stored bytes.
+    function test_SplitChildrenOfMaterializedParentDrawFromComposeRecordPool() public {
         uint256 first = _mintDust(5);
         uint256[] memory burn = new uint256[](4);
         for (uint256 i = 0; i < 4; ++i) {
             burn[i] = first + 1 + i;
         }
         vm.prank(alice);
-        uint256 survivor = shapes.compose(first, burn); // materialized 0.05
-        bytes memory parentMods = lens.shapeState(survivor).modules;
+        uint256 survivor = shapes.compose(first, burn); // materialized 0.05, one compose record
+        uint256 depth = shapes.composeDepth(survivor);
+        assertGt(depth, 0, "compose survivor has a compose record: record branch");
+
+        bytes32 parentSeed = shapes.seedOf(survivor);
+        ComposeRecordView memory rec = lens.composeRecordAt(survivor, depth - 1);
+        bytes memory pool = _reconstructSplitRecordPool(parentSeed, rec);
 
         uint8[] memory outs = new uint8[](5); // 5 x 0.01
         vm.prank(alice);
@@ -323,12 +369,11 @@ contract SamplingTest is ShapesBase {
         for (uint256 i = 0; i < 5; ++i) {
             bytes memory childMods = lens.shapeState(kids[i]).modules;
             assertEq(childMods.length, 25, "0.01 ETH grid is 5x5");
+            bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, 0, i);
+            assertEq(childMods, expected, "record-branch child must match the compose record's donor pool");
             for (uint256 j = 0; j < 25; ++j) {
                 assertTrue(ModuleCodec.isValid(childMods[j]));
-                assertTrue(
-                    _containsByte(parentMods, childMods[j]),
-                    "split child byte not drawn from materialized parent"
-                );
+                assertTrue(_containsByte(pool, childMods[j]), "split child byte not drawn from the record pool");
             }
         }
     }
@@ -379,11 +424,15 @@ contract SamplingTest is ShapesBase {
         assertEq(_rawSampledModulesSlot(kids[0]), bytes32(0), "redeem left materialized geometry behind");
     }
 
-    /// @notice D3: children of an original (never-composed) parent also materialize and sample
-    ///         from the parent's grammar-v1 modules.
+    /// @notice D3' (SAMPLING_SPEC.md §6): children of an original (never-composed) parent also
+    ///         materialize, sampling from the grammar branch — the parent seed's grammar v1
+    ///         expression at the CHILD's own denomination, not the parent's own grammar sequence
+    ///         at the parent's denomination.
     function test_SplitChildrenOfOriginalParentAlsoMaterialize() public {
         uint256 parent = _mint(alice, DENOMS[2]);
-        bytes memory parentMods = _effectiveModules(parent);
+        assertEq(shapes.composeDepth(parent), 0, "direct mint has no compose record: grammar branch");
+        bytes32 parentSeed = shapes.seedOf(parent);
+        uint8 parentGene = shapes.inkGeneOf(parent);
 
         uint8[] memory outs = new uint8[](2);
         outs[0] = 1; // 0.05
@@ -391,11 +440,14 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
 
+        bytes memory pool = GeometrySampling.grammarSplitPool(parentSeed, 1, parentGene);
         for (uint256 i = 0; i < 2; ++i) {
             bytes memory childMods = lens.shapeState(kids[i]).modules;
             assertGt(childMods.length, 0, "split child of an original parent must materialize");
+            bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, 1, i);
+            assertEq(childMods, expected, "grammar-branch child must match the child-denom grammar pool");
             for (uint256 j = 0; j < childMods.length; ++j) {
-                assertTrue(_containsByte(parentMods, childMods[j]));
+                assertTrue(_containsByte(pool, childMods[j]));
             }
         }
     }

@@ -460,11 +460,13 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
             bytes memory modules
         );
 
-    /// @notice The split that minted `childId`: the parent's pre-split seed, denomination index,
-    ///         ink gene and effective module snapshot (SAMPLING_SPEC.md), plus `childId`'s index
-    ///         among that split's outputs. A caller re-runs `GeometrySampling.sampleSplitChild`
-    ///         with this data and the child's own denomination index to reproduce the child's
-    ///         module bytes as sampled at split time.
+    /// @notice The split that minted `childId`: the parent's id and pre-split seed, denomination
+    ///         index, ink gene and own effective module snapshot (SAMPLING_SPEC.md), plus
+    ///         `childId`'s index among that split's outputs. `parentModules` is informational
+    ///         (D3'): reproducing the child's module bytes as sampled at split time needs the
+    ///         branch decision `parentId` enables, not `parentModules` directly — see
+    ///         SAMPLING_SPEC.md section 12 for the reconstruction recipe (`composeDepth(parentId)`
+    ///         selects between the compose-record pool and the grammar pool).
     /// @dev The record is written once per split and shared by every child of that split; only
     ///      `childIndex` distinguishes them. It survives the child's own later mutation (e.g. the
     ///      child subsequently used as a compose survivor): this view answers how the token was
@@ -479,6 +481,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         view
         returns (
             bytes32 parentSeed,
+            uint256 parentId,
             uint8 parentDenomIndex,
             uint8 parentInkGene,
             bytes memory parentModules,
