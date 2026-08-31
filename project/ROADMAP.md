@@ -41,7 +41,7 @@ Evidence gate: combined GitHub/Netlify checks, D-24 entry, PR #2 review closure 
 
 Stop conditions: constructor/owner/admin post-flight mismatch; any renderer parity failure.
 
-## P1 Testnet hardening
+## P1 Testnet hardening (gate passed 2026-08-31)
 
 Objective: the selected Sepolia system behaves like the mainnet system will, under instrumentation.
 
@@ -51,11 +51,11 @@ Deliverables:
 - COMPLETE: gas-ceiling experiment recorded per entrypoint; hierarchical apex path accepted and direct 10k actions rejected (D-08).
 - COMPLETE FOR SEPOLIA: seed-preserving ink-gene experiment recorded; current constants retained for testnet and explicitly revisited at P2 mainnet signoff (D-07).
 - COMPLETE: Medusa adopted in CI; Halmos deferral recorded (D-09).
-- Live Sepolia auctions run and observed (D-13 evidence gathering).
+- COMPLETE: live Sepolia auction #0 exercised two ETH-backed bids, a 12-second anti-sniping deadline extension, settlement, winner lot delivery and seller proceeds. Final house ETH/Shape balances, winning escrow and active lot index are empty; the Fly indexer matched chain ownership at the same head block (D-13).
 
-Acceptance: each deliverable has an EXPERIMENT record with evidence; CI includes any new invariant tooling; site survives primary-RPC blackhole in a verified test.
+Acceptance: PASSED. Each deliverable has recorded evidence; CI includes Medusa; the site survives primary-RPC blackhole; the live auction lifecycle and indexer reconciliation pass.
 
-Evidence gate: all "requires simulation" and "requires prototype" decisions resolved in DECISIONS.md.
+Evidence gate: PASSED 2026-08-31. All P1 simulation/prototype decisions and D-13 are resolved in DECISIONS.md.
 
 Stop conditions: gas ceiling makes a core feature (compose path to apex) infeasible on mainnet — architecture review before proceeding; parity break between TS and Solidity renderers.
 
@@ -65,8 +65,8 @@ Objective: everything irreversible is decided, reviewed, and rehearsed.
 
 Deliverables:
 - Architecture decision: standalone vs Surface-hosted (D-04 final). If Surface-hosted, a full sub-roadmap replaces P3 below.
-- Release build explicitly pinned to the default mainnet ladder; mainnet fixtures, full parity chain, and deploy-profile assertions revalidated (D-01).
-- Renderer audit hardening completed before any module/vocabulary/grammar expansion: issue #7's behavior-only `_moduleSvg` helper extraction preserves unchanged TypeScript fixtures and frozen-legacy differential output, keeps `_glyph` as a documented lookup-table complexity exception, preserves the measured 22,699/22,698-byte runtime baselines unless separately approved, and records pinned one- versus 25-module gas deltas with a 5% worst-case review threshold (D-32).
+- Release build explicitly pinned to the default mainnet ladder; mainnet fixtures, full parity chain, and deploy-profile assertions revalidated (D-01). Current `main` is ahead of the deployed P1 Sepolia core after issue #21 sampling/provenance work, so the eventual release must receive a fresh exact-commit rehearsal rather than inheriting the older deployment's parity claim.
+- Renderer audit hardening completed before any further module/vocabulary/grammar expansion: issue #7's behavior-only `_moduleSvg` helper extraction preserves current TypeScript fixtures and frozen-legacy differential output, keeps `_glyph` as a documented lookup-table complexity exception, preserves the refreshed 23,185/23,184-byte default/testnet runtime baselines unless separately approved, and records pinned one- versus 25-module gas deltas with a 5% worst-case review threshold (D-32).
 - External security audit completed after issue #7, with findings closed or accepted with rationale (D-16, D-17 folded in).
 - Legal review completed (D-15).
 - Key ceremony plan: admin structure, initial/final fee recipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
