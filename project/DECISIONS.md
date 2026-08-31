@@ -97,7 +97,7 @@ Append-only. Two sections: decided (never silently revived if rejected) and open
 
 ### Requires security review
 
-- D-16 External audit. Scope: Shapes + 5 linked libraries + lens + auction house/escrow, including direct artist attestation, the payable genesis constructor, Shape #0 lifecycle, owner/admin separation, the D-31 liveness/denomination views, and capability ABI. Deploy scripts, immutables, and ladder guards stay in scope. Gate for P2->P3. In-repo x-ray and PoCs are inputs, not substitutes.
+- D-16 External audit. Scope: Shapes + 5 linked libraries + lens + auction house/escrow, including direct artist attestation, the payable genesis constructor, Shape #0 lifecycle, owner/admin separation, the D-31 liveness/denomination views, and capability ABI. Deploy scripts, immutables, and ladder guards stay in scope. `AUDIT_PROMPT_v4.md` fixes the proposed external-audit target at exact commit `020a85e`; choosing and engaging the independent auditor still requires user coordination. Gate for P2->P3. In-repo x-ray and PoCs are inputs, not substitutes.
 - D-17 minIncrementBps bound. Seller-supplied uint16, no explicit cap found in createAuction. Matters: probably harmless (seller cannot bid) but unverified against bidder-side edge cases. Resolution: reviewer pass; add a bound or record why none is needed.
 
 ### Deferred (explicitly parked, revisit at the phase named)
