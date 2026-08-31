@@ -303,7 +303,6 @@ function DrawBeat({
           <SectionLabel>01 / Draw</SectionLabel>
           <h2 className="play-h2">One seed. Nine cards.</h2>
         </div>
-        <Prose>More ETH means fewer, larger marks.</Prose>
       </div>
 
       <div className="play-draw-grid">
@@ -321,8 +320,8 @@ function DrawBeat({
         <div className="play-draw-controls">
           <div>
             <div className="play-density-heading">
-              <span>Less value · more marks</span>
-              <span>More value · fewer marks</span>
+              <span>0.01 ETH · 25 marks</span>
+              <span>100 ETH · 1 mark</span>
             </div>
             <DensityDeck seed={effectiveSeed} selectedIndex={denomIndex} onSelect={onDenomIndex} />
           </div>
@@ -339,7 +338,7 @@ function DrawBeat({
               />
             </label>
             <div className="play-seed-actions">
-              <PlayButton onClick={onRoll}>Roll a seed</PlayButton>
+              <PlayButton onClick={onRoll}>Roll</PlayButton>
               <button
                 type="button"
                 className="play-seed-copy play-tap"
@@ -362,7 +361,7 @@ function DrawBeat({
             onClick={onKeep}
             disabled={keepDisabled}
           >
-            Keep this card
+            Keep card
           </button>
           {keepDisabled && (
             <div className="play-plain-message">
@@ -392,9 +391,8 @@ function DrawBeat({
   );
 }
 
-/** "Copy link" plus a quiet confirmation. Copies `location.href`, which the page-level URL-sync
- *  effect keeps equal to `/play?s=<encodeSession(session)>` at all times. No animation here: the
- *  compose reveal is the only animation this page runs. */
+/** "Copy link" plus a quiet confirmation. The page-level URL sync keeps `location.href` equal to
+ *  `/play?s=<encodeSession(session)>` after every session change. */
 function ShareLink() {
   const [copied, setCopied] = React.useState(false);
   React.useEffect(() => {
@@ -403,23 +401,26 @@ function ShareLink() {
     return () => clearTimeout(t);
   }, [copied]);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <PlayButton
-          small
-          onClick={() => {
-            navigator.clipboard
-              .writeText(location.href)
-              .then(() => setCopied(true))
-              .catch(() => {});
-          }}
-        >
-          Copy link
-        </PlayButton>
-        {copied && <span style={{ ...mono, fontSize: 10, color: C.muted }}>copied</span>}
+    <details className="play-share-disclosure">
+      <summary>Share this hand</summary>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <PlayButton
+            small
+            onClick={() => {
+              navigator.clipboard
+                .writeText(location.href)
+                .then(() => setCopied(true))
+                .catch(() => {});
+            }}
+          >
+            Copy link
+          </PlayButton>
+          {copied && <span style={{ ...mono, fontSize: 10, color: C.muted }}>Copied</span>}
+        </div>
+        <Prose>Hand and DNA are included.</Prose>
       </div>
-      <Prose>This link reproduces the hand and its DNA exactly.</Prose>
-    </div>
+    </details>
   );
 }
 
@@ -557,16 +558,16 @@ function TraySelectionBar({
     <div className="play-card-actions">
       <div className="play-card-actions-main">
         <div>
-          <div className="play-control-label">Card moves</div>
+          <div className="play-control-label">Actions</div>
           <strong>#{node.demoId} · {LABELS[node.denomIndex]} ETH</strong>
         </div>
         <div className="play-action-buttons">
           {!hasActions && (
-            <span className="play-plain-message">Split children are one atomic move. They cannot be removed one at a time.</span>
+            <span className="play-plain-message">Split children stay together and cannot be removed one at a time.</span>
           )}
           {node.denomIndex > 0 && (
             <PlayButton small onClick={() => onOpenMenu(menuOpen === "split" ? null : { key: node.key, kind: "split" })}>
-              Split into smaller cards
+              Split
             </PlayButton>
           )}
           {showDecompose && (
@@ -579,7 +580,7 @@ function TraySelectionBar({
               small
               onClick={() => onOpenMenu(menuOpen === "sacrifice" ? null : { key: node.key, kind: "sacrifice" })}
             >
-              Sacrifice to Black
+              Sacrifice
             </PlayButton>
           )}
           {showRemove && (
@@ -642,8 +643,8 @@ function TrayBeat({
       </div>
       {nodes.length === 0 ? (
         <div className="play-empty-hand">
-          <span>YOUR HAND IS EMPTY</span>
-          <p>Keep the card above. It will land here.</p>
+          <span className="play-empty-slot" />
+          <p>Keep a card above. It lands here.</p>
         </div>
       ) : (
         <>
@@ -673,11 +674,6 @@ function TrayBeat({
             />
           )}
         </>
-      )}
-      {nodes.length > 0 && (
-        <div className="play-share-row">
-          <ShareLink />
-        </div>
       )}
     </section>
   );
@@ -828,6 +824,7 @@ function ComposeBeat({
   const effectiveInverted = inverted || resultLive?.black === true;
 
   const [gifBusy, setGifBusy] = React.useState<string | null>(null);
+  if (nodes.length === 0 && !resultLive) return null;
 
   const handleGif = async () => {
     if (!resultLive) return;
@@ -867,7 +864,7 @@ function ComposeBeat({
           onClick={onCompose}
           disabled={!canCompose}
         >
-          Compose selected cards
+          Compose
         </button>
       </div>
       {error && <div className="play-plain-message play-compose-error">{error}</div>}
@@ -885,7 +882,7 @@ function ComposeBeat({
             <SectionLabel>Result</SectionLabel>
             <h2 className="play-h2">Every cell chose a parent.</h2>
             <Prose>
-              Built from {resultLive.parents?.length ?? 0} Shapes. Tap a cell in DNA below to trace it back.
+              Built from {resultLive.parents?.length ?? 0} Shapes. Tap a cell below to inspect its DNA.
             </Prose>
             <details className="play-export">
               <summary>Export this result</summary>
@@ -1275,6 +1272,7 @@ function LineageBeat({ session }: { session: PlaySession }) {
   }, [mostRecentProduced?.key]);
 
   const focusedNode = focusedKey != null ? byKey.get(focusedKey) ?? null : null;
+  if (traceableTips.length === 0) return null;
 
   return (
     <section className="play-dna-panel" id="dna">
@@ -1320,8 +1318,8 @@ function LineageBeat({ session }: { session: PlaySession }) {
           </div>
 
           {focusedNode && (
-            <div className="play-family-tree">
-              <div className="play-control-label">Family tree</div>
+            <details className="play-family-disclosure play-family-tree">
+              <summary>Family tree</summary>
               <div className="play-family-tree-scroll">
                 <LineageNode
                   node={focusedNode}
@@ -1330,7 +1328,7 @@ function LineageBeat({ session }: { session: PlaySession }) {
                   onSelect={setFocusedKey}
                 />
               </div>
-            </div>
+            </details>
           )}
         </>
       )}
@@ -1621,7 +1619,8 @@ export function PlayApp() {
           max-width: 100%;
           min-width: 0;
           overscroll-behavior-inline: contain;
-          padding: 2px 2px 8px;
+          padding: 6px 2px 8px;
+          overflow-y: hidden;
           scrollbar-color: ${C.border} transparent;
         }
         .play-density-card {
@@ -1682,7 +1681,8 @@ export function PlayApp() {
         }
         .play-hand-card { width: 132px; flex: 0 0 132px; }
         .play-empty-hand {
-          min-height: 190px;
+          min-height: 0;
+          padding: 18px;
           border: 1px dashed ${C.border};
           display: flex;
           flex-direction: column;
@@ -1693,6 +1693,9 @@ export function PlayApp() {
           font-family: ${FONT};
           text-align: center;
         }
+        .play-empty-slot { display: block; width: 64px; aspect-ratio: 2.5 / 3.5; border: 1px dashed ${C.border}; }
+        .play-about-disclosure summary, .play-share-disclosure summary, .play-family-disclosure summary { min-height: 40px; line-height: 40px; cursor: pointer; }
+        .play-about-disclosure { flex-basis: 100%; max-width: 760px; }
         .play-empty-hand span { font-size: 10px; letter-spacing: 0.14em; }
         .play-empty-hand p { color: ${C.bodyDim}; font-size: 11px; margin: 0; }
         .play-card-actions {
@@ -1711,6 +1714,7 @@ export function PlayApp() {
         .play-card-actions-main strong { color: ${C.ink}; font-weight: 500; }
         .play-action-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
         .play-share-row { margin-top: 24px; }
+        .play-share-footer { border-top: 1px solid ${C.rule}; margin-top: 0; padding: 16px 0 24px; }
         .play-compose-panel { margin-bottom: 44px; }
         .play-compose-dock {
           display: grid;
@@ -1852,10 +1856,10 @@ export function PlayApp() {
           .play-reveal-cell { opacity: 0; visibility: hidden; }
         }
         @media (max-width: 640px) {
-          .play-panel { padding: 26px 0 36px; }
+          .play-panel { padding: 24px 0 34px; }
           .play-section-heading { align-items: start; flex-direction: column; gap: 8px; }
           .play-draw-grid { grid-template-columns: 1fr; }
-          .play-hero-card { width: min(76vw, 280px); margin: 0 auto; }
+          .play-hero-card { width: min(68vw, 260px); margin: 0 auto; }
           .play-density-scroll { grid-auto-columns: 84px; margin-right: -16px; padding-right: 16px; }
           .play-density-heading { font-size: 8px; }
           .play-hand-panel { margin: 0 -4px; padding: 22px 16px; }
@@ -1874,18 +1878,17 @@ export function PlayApp() {
           .play-family-tree { padding: 20px 12px; }
         }
       `}</style>
-      <div className="play-shell" style={{ maxWidth: 1080, margin: "0 auto", padding: "36px 20px 80px" }}>
-        <header style={{ marginBottom: 40 }}>
+      <div className="play-shell" style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 20px 80px" }}>
+        <header style={{ marginBottom: 28 }}>
           <div style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10 }}>
             SHAPES / PLAY
           </div>
           <h1 style={{ ...mono, fontSize: "clamp(22px, 4vw, 42px)", lineHeight: 1.05, letterSpacing: "-0.045em", fontWeight: 500, color: C.ink, margin: "0 0 16px", maxWidth: 780 }}>
-            Make a Shape. Build a family. Trace every cell.
+            More ETH. Fewer marks.
           </h1>
           <div style={{ maxWidth: 760 }}>
             <Prose>
-              This playground runs the same renderer and the same sampling procedure as the contract. A minted
-              Shape with this seed at this denomination would be byte-identical.
+              Draw a card, keep a few, compose one, then trace every cell.
             </Prose>
           </div>
         </header>
@@ -1936,13 +1939,23 @@ export function PlayApp() {
 
         <LineageBeat session={session} />
 
-        <footer style={{ ...mono, fontSize: 11, color: C.muted, display: "flex", gap: 20 }}>
+        {nodes.length > 0 && (
+          <div className="play-share-row play-share-footer">
+            <ShareLink />
+          </div>
+        )}
+
+        <footer style={{ ...mono, fontSize: 11, color: C.muted, display: "flex", flexWrap: "wrap", gap: "0 20px" }}>
           <a href="/how-it-works" style={{ color: C.muted }}>
             how it works
           </a>
           <a href={REPO_URL} style={{ color: C.muted }}>
             source
           </a>
+          <details className="play-about-disclosure">
+            <summary>About this simulation</summary>
+            <Prose>This playground runs the same renderer and the same sampling procedure as the contract. A minted Shape with this seed at this denomination would be byte-identical.</Prose>
+          </details>
         </footer>
       </div>
     </div>
