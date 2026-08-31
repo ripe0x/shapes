@@ -266,6 +266,7 @@ function DrawBeat({
   keepDisabled,
   inverted,
   onToggleInverted,
+  drawMotionKey,
 }: {
   denomIndex: number;
   onDenomIndex: (i: number) => void;
@@ -277,6 +278,7 @@ function DrawBeat({
   keepDisabled: boolean;
   inverted: boolean;
   onToggleInverted: () => void;
+  drawMotionKey: number;
 }) {
   const amountWei = DENOMINATIONS[denomIndex];
   const composition = React.useMemo(
@@ -306,7 +308,9 @@ function DrawBeat({
 
       <div className="play-draw-grid">
         <div className="play-hero-card">
-          <RawCard svg={svg} width="100%" />
+          <div key={drawMotionKey} className="play-draft-card-motion">
+            <RawCard svg={svg} width="100%" />
+          </div>
           <div className="play-card-facts">
             <strong>{LABELS[denomIndex]} ETH</strong>
             <span>{cols}×{rows}</span>
@@ -457,7 +461,7 @@ function SplitPicker({
   }, [node, session]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, width: 180 }}>
+    <div className="play-inline-menu" style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, width: 180 }}>
       <Prose>Backing divides exactly. Every child cell samples from the parent.</Prose>
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
         {options.map(({ i, count, shareable }) => (
@@ -480,7 +484,7 @@ function SplitPicker({
 
 function SacrificeConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6, width: 200 }}>
+    <div className="play-inline-menu" style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6, width: 200 }}>
       <Prose>
         Sacrifice sends the Shape&apos;s 100 ETH to an address no one can spend from. The card stays
         Black. On chain this requires a complete 100 ETH Shape: 10,000 independent origins.
@@ -644,8 +648,16 @@ function TrayBeat({
       ) : (
         <>
           <div className="play-hand-scroll">
-            {nodes.map((n) => (
-              <TrayCard key={n.key} node={n} selected={selected.has(n.key)} onToggle={onToggle} />
+            {nodes.map((n, i) => (
+              <div
+                key={n.key}
+                style={
+                  { "--deal-delay": `${Math.min(i, 6) * 28}ms` } as React.CSSProperties &
+                    Record<"--deal-delay", string>
+                }
+              >
+                <TrayCard node={n} selected={selected.has(n.key)} onToggle={onToggle} />
+              </div>
             ))}
           </div>
           {singleSelected && (
@@ -1346,6 +1358,7 @@ export function PlayApp() {
   // Exports-only: Card/Square/Ladder PNG and GIF render inverted when set. On-page cards never
   // invert, so this never touches anything the visitor is looking at directly.
   const [inverted, setInverted] = React.useState(false);
+  const [drawMotionKey, setDrawMotionKey] = React.useState(0);
 
   // Client-only setup on mount: roll the real starting seed (see the placeholder note above),
   // and restore session state from `?s=` if present. A state initializer would read `location`
@@ -1356,6 +1369,7 @@ export function PlayApp() {
   // `?s=` from the URL before the restore ever reads it.
   React.useEffect(() => {
     setSeed(randomSeed());
+    setDrawMotionKey((k) => k + 1);
     const encoded = new URLSearchParams(location.search).get("s");
     if (encoded) {
       const decoded = decodeSession(encoded);
@@ -1398,6 +1412,7 @@ export function PlayApp() {
     // give (a text seed is fully determined by its text). Roll fresh for the next draw.
     setSeedText("");
     setSeed(randomSeed());
+    setDrawMotionKey((k) => k + 1);
   };
 
   const handleToggle = (key: number) => {
@@ -1620,11 +1635,11 @@ export function PlayApp() {
           cursor: pointer;
           padding: 5px;
           text-align: left;
-          transition: transform 100ms ease, border-color 100ms ease;
+          transition: transform 140ms cubic-bezier(.22,1,.36,1), border-color 120ms ease;
         }
         .play-density-card:hover { transform: translateY(-2px); }
         .play-density-card:focus-visible { outline: 2px solid ${C.ink}; outline-offset: 1px; }
-        .play-density-card-active { border-color: ${C.ink}; transform: translateY(-2px); }
+        .play-density-card-active { border-color: ${C.ink}; transform: translateY(-4px); }
         .play-density-art {
           display: block;
           width: 100%;
@@ -1640,12 +1655,17 @@ export function PlayApp() {
         .play-density-grid { color: ${C.muted}; font-size: 7px; }
         .play-card-button {
           width: 100%;
-          transition: transform 100ms ease, outline-color 100ms ease;
+          transition: transform 180ms cubic-bezier(.22,1,.36,1), outline-color 120ms ease;
         }
-        .play-card-button:not(:disabled):hover { transform: translateY(-3px); }
         .play-card-button:focus-visible { outline: 2px solid ${C.ink} !important; outline-offset: 2px !important; }
         .play-card-button:disabled { opacity: 1; }
-        .play-card-selected { transform: translateY(-7px); }
+        .play-card-selected { transform: translateY(-8px) scale(1.015); }
+        .play-card-button:not(:disabled):hover { transform: translateY(-3px); }
+        .play-card-button.play-card-selected:hover { transform: translateY(-8px) scale(1.015); }
+        .play-compose-button, .play-primary, .play-tap { transition: transform 120ms cubic-bezier(.22,1,.36,1); }
+        .play-card-button:not(:disabled):active, .play-density-card:active, .play-dna-tip:active, .play-compose-button:active, .play-primary:active, .play-tap:active { transform: translateY(-1px) scale(.985); }
+        .play-card-button.play-card-selected:active { transform: translateY(-8px) scale(1); }
+        .play-draft-card-motion, .play-hand-card, .play-card-actions, .play-inline-menu, .play-result-stage { animation: none; }
         .play-hand-panel {
           border: 1px solid ${C.border};
           background: ${C.row};
@@ -1771,7 +1791,7 @@ export function PlayApp() {
           cursor: pointer;
           padding: 5px;
           text-align: center;
-          transition: transform 100ms ease, border-color 100ms ease;
+          transition: transform 140ms cubic-bezier(.22,1,.36,1), border-color 120ms ease;
         }
         .play-dna-tip:hover { transform: translateY(-2px); }
         .play-dna-tip-active { border-color: ${C.ink}; transform: translateY(-2px); }
@@ -1801,22 +1821,35 @@ export function PlayApp() {
         .play-family-tree { border: 1px solid ${C.border}; border-top: 0; padding: 24px; }
         .play-family-tree-scroll { overflow-x: auto; padding: 12px 4px 4px; }
 
-        /* The compose reveal is the only animation on this page. Default (and reduced-motion)
+        /* Motion is opt-in for visitors who allow it. Default (and reduced-motion)
            state: no cover, no animation -- the plain finished card. Motion is opted back in only
            when the visitor hasn't asked to reduce it. */
+        @keyframes playDraftSwap { from { opacity: .72; transform: translateY(6px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes playDealIn { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        @keyframes playMenuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes playResultIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes playRevealFade { from { opacity: 1 } to { opacity: 0 } }
         .play-reveal-cell {
           opacity: 0;
-          animation-duration: 300ms;
-          animation-timing-function: ease;
+          animation-duration: 240ms;
+          animation-timing-function: cubic-bezier(.22,1,.36,1);
           animation-fill-mode: forwards;
-          animation-delay: calc(var(--cell-i, 0) * 35ms);
+          animation-delay: calc(180ms + var(--cell-i, 0) * 28ms);
         }
         @media (prefers-reduced-motion: no-preference) {
+          .play-draft-card-motion { animation: playDraftSwap 180ms cubic-bezier(.22,1,.36,1) both; }
+          .play-hand-card { animation: playDealIn 240ms cubic-bezier(.22,1,.36,1) both; animation-delay: var(--deal-delay, 0ms); }
+          .play-card-actions { animation: playMenuIn 180ms cubic-bezier(.22,1,.36,1) both; }
+          .play-inline-menu { animation: playMenuIn 180ms cubic-bezier(.22,1,.36,1) both; }
+          .play-result-stage { animation: playResultIn 260ms cubic-bezier(.22,1,.36,1) both; }
           .play-reveal-cell {
             opacity: 1;
             animation-name: playRevealFade;
           }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .play-shell *, .play-shell *::before, .play-shell *::after { animation: none !important; transition: none !important; }
+          .play-reveal-cell { opacity: 0; visibility: hidden; }
         }
         @media (max-width: 640px) {
           .play-panel { padding: 26px 0 36px; }
@@ -1859,18 +1892,23 @@ export function PlayApp() {
 
         <DrawBeat
           denomIndex={denomIndex}
-          onDenomIndex={setDenomIndex}
+          onDenomIndex={(index) => {
+            setDenomIndex(index);
+            setDrawMotionKey((k) => k + 1);
+          }}
           seedText={seedText}
           onSeedText={setSeedText}
           onRoll={() => {
             setSeedText("");
             setSeed(randomSeed());
+            setDrawMotionKey((k) => k + 1);
           }}
           effectiveSeed={effectiveSeed}
           onKeep={handleKeep}
           keepDisabled={keepDisabled}
           inverted={inverted}
           onToggleInverted={() => setInverted((v) => !v)}
+          drawMotionKey={drawMotionKey}
         />
 
         <TrayBeat
