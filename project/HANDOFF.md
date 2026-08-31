@@ -3,17 +3,17 @@
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
 Session: mainnet-readiness execution, 2026-08-31.
-Canonical base: `main` in `/Users/dd/CascadeProjects/shapes-clean`, through PR #34; this D-13 record lands through the normal evidence PR.
+Canonical base: `main` in `/Users/dd/CascadeProjects/shapes-clean`, through PR #36 (`1d6e4b0`).
 
 ## Current outcome
 
 - P1 PASSED 2026-08-31. D-13's live Sepolia auction #0 completed two bids, anti-sniping extension, settlement, winner delivery and seller proceeds; final escrow/index checks are empty and the Fly indexer matched the chain head.
 - Current-main `IShapes` is `0x35ed4674` and `IShapeValue` is `0xd07d718a`. Issue #21's size recovery moved `exists`, `positionOf` and pure denomination helpers to ShapeLens; `absorbedBy` remains rejected.
-- Exact-main CI passes 441 contract tests with 4 fork-only skips and the Medusa lifecycle job. Fresh sizes are Shapes 24,394/24,373 bytes and ShapeRenderer 23,185/23,184 bytes for default/testnet respectively.
+- Exact-main CI passes 453 contract tests with 4 fork-only skips and the Medusa lifecycle job. Fresh sizes are Shapes 24,394/24,373 bytes and ShapeRenderer 23,138/23,137 bytes for default/testnet respectively.
 - Current `main` is ahead of the deployed exact-`376bb7b` Sepolia release after PRs #26/#31 sampling and provenance changes. The auction-house path is unchanged, so D-13 remains valid; P2 must revalidate and rehearse the eventual release and must not claim the live Sepolia core is current-main bytecode.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
 - PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
-- D-32's GitHub issue #7 implementation is complete. The behavior-only `_moduleSvg` extraction is byte-identical against unchanged TypeScript fixtures and the frozen Solidity oracle; normalized dispatch/helper complexity is 10/3 maximum; ShapeRenderer runtime is 23,138/23,137 bytes default/testnet, 47 bytes below baseline; and worst pinned gas growth is 0.0104%. `_glyph` remains unchanged as the documented lookup-table exception. Evidence: `project/experiments/EXP-004-renderer-module-refactor.md`.
+- D-32's GitHub issue #7 implementation merged through PR #36 as `1d6e4b0`. The behavior-only `_moduleSvg` extraction is byte-identical against unchanged TypeScript fixtures and the frozen Solidity oracle; normalized dispatch/helper complexity is 10/3 maximum; ShapeRenderer runtime is 23,138/23,137 bytes default/testnet, 47 bytes below baseline; and worst pinned gas growth is 0.0104%. `_glyph` remains unchanged as the documented lookup-table exception. Evidence: `project/experiments/EXP-004-renderer-module-refactor.md`.
 - Exact `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; creation transaction/release hash is `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, from block 11582031. All postflight reads pass and all ten sources are verified. The one-time artist attestation mined as `0xaa9f422c51688d6debf1b8da6b82c518d74185a977e701b9afba07200776a2e7` at block 11586702; stored hash and signature readback pass.
 - PR #16 merged as `9990f45`; PR #17 merged as `b7c1451` and pins Netlify to Node 22.19.0/npm 10.9.3 after its Node 24/npm 11 default broke optional RainbowKit/Coinbase dependency resolution. The production build completed successfully. `https://shapes.ripe.wtf/deployment.json` serves Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`, and the live homepage plus `/og/shape/0` return HTTP 200. The fresh Sepolia site cutover is complete.
 - Issue #6 is deferred under D-33 to P4 and a real consumer. Do not add `decomposeInto` or a generic position resolver without separate product decisions.
@@ -41,10 +41,9 @@ Canonical base: `main` in `/Users/dd/CascadeProjects/shapes-clean`, through PR #
 
 ## Remaining gates, in order
 
-1. Merge issue #7 after normal review and CI, preserving the recorded D-32 parity/size/gas/complexity evidence.
-2. Coordinate and complete the D-16 external audit, then close or explicitly accept every finding.
-3. Obtain D-15 qualified legal review and record the result.
-4. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody and lock/renounce decisions, then rehearse the exact release on a mainnet fork. No mainnet broadcast is authorized.
+1. Coordinate and complete the D-16 external audit, then close or explicitly accept every finding.
+2. Obtain D-15 qualified legal review and record the result.
+3. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody and lock/renounce decisions, then rehearse the exact release on a mainnet fork. No mainnet broadcast is authorized.
 
 ## Standing directives
 
