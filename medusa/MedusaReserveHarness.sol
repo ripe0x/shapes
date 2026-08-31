@@ -52,7 +52,7 @@ contract MedusaReserveHarness {
     }
 
     function splitLastNickel() external {
-        if (address(shapes) == address(0) || !shapes.exists(lastId) || shapes.denomIndexOf(lastId) != 1) {
+        if (!_isLive(lastId) || shapes.denomIndexOf(lastId) != 1) {
             return;
         }
         uint8[] memory outs = new uint8[](5);
@@ -61,15 +61,24 @@ contract MedusaReserveHarness {
     }
 
     function decomposeLast() external {
-        if (address(shapes) == address(0) || !shapes.exists(lastId) || shapes.composeDepth(lastId) == 0) {
+        if (!_isLive(lastId) || shapes.composeDepth(lastId) == 0) {
             return;
         }
         shapes.decompose(lastId);
     }
 
     function redeemLast() external {
-        if (address(shapes) == address(0) || !shapes.exists(lastId)) return;
+        if (!_isLive(lastId)) return;
         shapes.redeem(lastId);
+    }
+
+    function _isLive(uint256 tokenId) private view returns (bool) {
+        if (address(shapes) == address(0)) return false;
+        try shapes.ownerOf(tokenId) returns (address) {
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     function property_reserve_equals_redeemable_backing() external view returns (bool) {
