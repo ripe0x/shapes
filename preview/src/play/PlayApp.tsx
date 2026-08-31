@@ -90,7 +90,7 @@ function PlayButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="play-tap"
+      className={`play-tap play-button${active ? " play-button-active" : ""}`}
       style={{
         ...mono,
         fontSize: small ? 10 : 11.5,
@@ -244,11 +244,11 @@ function PlayDetailPanel({
 }
 
 function Prose({ children }: { children: React.ReactNode }) {
-  return <p style={{ ...mono, fontSize: 12, lineHeight: 1.6, color: C.body, margin: 0 }}>{children}</p>;
+  return <p className="play-prose" style={{ ...mono, fontSize: 12, lineHeight: 1.6, color: C.body, margin: 0 }}>{children}</p>;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <div style={{ ...labelStyle, textTransform: "uppercase", marginBottom: 14 }}>{children}</div>;
+  return <div className="play-section-label" style={{ ...labelStyle, textTransform: "uppercase", marginBottom: 14 }}>{children}</div>;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1503,6 +1503,41 @@ export function PlayApp() {
         .play-shell { overflow-x: clip; }
         .play-shell button, .play-shell input { border-radius: 0; }
         .play-tap { min-height: 40px; }
+        .play-light-hero {
+          width: 100%;
+          background: ${C.ink};
+          color: ${C.page};
+        }
+        .play-light-hero .play-header-title,
+        .play-light-hero .play-h2,
+        .play-light-hero .play-card-facts strong,
+        .play-light-hero .play-seed-field input,
+        .play-light-hero .play-seed-copy,
+        .play-light-hero .play-density-value { color: ${C.page} !important; }
+        .play-light-hero .play-header-kicker,
+        .play-light-hero .play-header-copy,
+        .play-light-hero .play-prose,
+        .play-light-hero .play-section-label,
+        .play-light-hero .play-control-label,
+        .play-light-hero .play-seed-field span,
+        .play-light-hero .play-card-facts,
+        .play-light-hero .play-density-heading,
+        .play-light-hero .play-density-grid,
+        .play-light-hero .play-export summary,
+        .play-light-hero .play-plain-message { color: ${C.faint} !important; }
+        .play-light-hero .play-panel { border-color: ${C.bodyDim}; }
+        .play-light-hero .play-seed-field input,
+        .play-light-hero .play-button { border-color: ${C.bodyDim} !important; }
+        .play-light-hero .play-seed-field input:focus,
+        .play-light-hero .play-density-card-active { border-color: ${C.page}; }
+        .play-light-hero .play-button { color: ${C.page} !important; }
+        .play-light-hero .play-button-active,
+        .play-light-hero .play-primary {
+          border-color: ${C.page} !important;
+          background: ${C.page} !important;
+          color: ${C.ink} !important;
+        }
+        .play-light-hero .play-export { border-color: ${C.bodyDim}; }
         .play-panel {
           border-top: 1px solid ${C.rule};
           padding: 32px 0 44px;
@@ -1878,15 +1913,16 @@ export function PlayApp() {
           .play-family-tree { padding: 20px 12px; }
         }
       `}</style>
-      <div className="play-shell" style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 20px 80px" }}>
+      <div className="play-light-hero">
+      <div className="play-shell" style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 20px 48px" }}>
         <header style={{ marginBottom: 28 }}>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10 }}>
+          <div className="play-header-kicker" style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10 }}>
             SHAPES / PLAY
           </div>
-          <h1 style={{ ...mono, fontSize: "clamp(22px, 4vw, 42px)", lineHeight: 1.05, letterSpacing: "-0.045em", fontWeight: 500, color: C.ink, margin: "0 0 16px", maxWidth: 780 }}>
+          <h1 className="play-header-title" style={{ ...mono, fontSize: "clamp(22px, 4vw, 42px)", lineHeight: 1.05, letterSpacing: "-0.045em", fontWeight: 500, color: C.ink, margin: "0 0 16px", maxWidth: 780 }}>
             More ETH. Fewer marks.
           </h1>
-          <div style={{ maxWidth: 760 }}>
+          <div className="play-header-copy" style={{ maxWidth: 760 }}>
             <Prose>
               Draw a card, keep a few, compose one, then trace every cell.
             </Prose>
@@ -1913,6 +1949,10 @@ export function PlayApp() {
           onToggleInverted={() => setInverted((v) => !v)}
           drawMotionKey={drawMotionKey}
         />
+      </div>
+      </div>
+
+      <div className="play-shell" style={{ maxWidth: 1080, margin: "0 auto", padding: "0 20px 80px" }}>
 
         <TrayBeat
           nodes={nodes}
