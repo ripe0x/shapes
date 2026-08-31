@@ -581,427 +581,436 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         return a > b ? (a - b).divWad(a) : 0;
     }
 
-    function _moduleSvg(Module memory m, string memory fg) private pure returns (bytes memory) {
-        uint256 r = m.size / 2;
+    function _circleSvg(Module memory m, string memory fg, uint256 r) private pure returns (bytes memory) {
+        return abi.encodePacked(
+            '<circle cx="',
+            m.cx.fmt(),
+            '" cy="',
+            m.cy.fmt(),
+            '" r="',
+            r.fmt(),
+            '"',
+            _style(m.solid, m.weight, fg)
+        );
+    }
 
-        if (m.kind == KIND_CIRCLE) {
+    function _squareSvg(Module memory m, string memory fg, uint256 r) private pure returns (bytes memory) {
+        return abi.encodePacked(
+            '<rect x="',
+            (m.cx - r).fmt(),
+            '" y="',
+            (m.cy - r).fmt(),
+            '" width="',
+            m.size.fmt(),
+            '" height="',
+            m.size.fmt(),
+            '"',
+            _style(m.solid, m.weight, fg)
+        );
+    }
+
+    function _triangleSvg(Module memory m, string memory fg, uint256 r) private pure returns (bytes memory) {
+        uint256 hh = m.size.mulWad(TRI_HEIGHT);
+        uint256 half = hh / 2;
+        bytes memory outer = abi.encodePacked(
+            "M",
+            m.cx.fmt(),
+            ",",
+            (m.cy - half).fmt(),
+            " L",
+            (m.cx + r).fmt(),
+            ",",
+            (m.cy + half).fmt(),
+            " L",
+            (m.cx - r).fmt(),
+            ",",
+            (m.cy + half).fmt(),
+            " Z"
+        );
+        if (m.solid) {
             return abi.encodePacked(
-                '<circle cx="',
-                m.cx.fmt(),
-                '" cy="',
-                m.cy.fmt(),
-                '" r="',
-                r.fmt(),
-                '"',
-                _style(m.solid, m.weight, fg)
-            );
-        }
-
-        if (m.kind == KIND_SQUARE) {
-            return abi.encodePacked(
-                '<rect x="',
-                (m.cx - r).fmt(),
-                '" y="',
-                (m.cy - r).fmt(),
-                '" width="',
-                m.size.fmt(),
-                '" height="',
-                m.size.fmt(),
-                '"',
-                _style(m.solid, m.weight, fg)
-            );
-        }
-
-        if (m.kind == KIND_TRIANGLE) {
-            uint256 hh = m.size.mulWad(TRI_HEIGHT);
-            uint256 half = hh / 2;
-            bytes memory outer = abi.encodePacked(
-                "M",
+                '<polygon points="',
                 m.cx.fmt(),
                 ",",
                 (m.cy - half).fmt(),
-                " L",
+                " ",
                 (m.cx + r).fmt(),
                 ",",
                 (m.cy + half).fmt(),
-                " L",
+                " ",
                 (m.cx - r).fmt(),
                 ",",
                 (m.cy + half).fmt(),
-                " Z"
+                '"',
+                _transform(m.rot, m.cx, m.cy),
+                _style(true, m.weight, fg)
             );
-            if (m.solid) {
-                return abi.encodePacked(
+        }
+        // Inner triangle: the outer scaled about the incenter, which offsets every edge inward by
+        // the weight. Incenter sits one third of the height above the base; inradius = h/3.
+        uint256 rho = hh / 3;
+        uint256 k = _insetScale(rho, m.weight);
+        uint256 iy = m.cy + half - rho;
+        bytes memory inner = abi.encodePacked(
+            "M",
+            m.cx.fmt(),
+            ",",
+            (iy - k.mulWad(hh - rho)).fmt(),
+            " L",
+            (m.cx + k.mulWad(r)).fmt(),
+            ",",
+            (iy + k.mulWad(rho)).fmt(),
+            " L",
+            (m.cx - k.mulWad(r)).fmt(),
+            ",",
+            (iy + k.mulWad(rho)).fmt(),
+            " Z"
+        );
+        return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
+    }
+
+    function _quarterSvg(Module memory m, string memory fg, uint256 r) private pure returns (bytes memory) {
+        // A quarter disc whose right-angle corner sits at one corner of the footprint and whose
+        // arc sweeps to the opposite two: a square with one corner rounded away.
+        // The arc radius is the full footprint, not half of it.
+        uint256 R = m.size;
+        bytes memory outer = bytes.concat(
+            abi.encodePacked(
+                "M",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                " L",
+                (m.cx + r).fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                " A",
+                R.fmt(),
+                ",",
+                R.fmt(),
+                " 0 0 0 ",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy - r).fmt()
+            ),
+            bytes(" Z")
+        );
+        if (m.solid) {
+            return abi.encodePacked(
+                '<path d="', outer, '"', _transform(m.rot, m.cx, m.cy), _style(true, m.weight, fg)
+            );
+        }
+        // Inner region: legs offset inward by the weight, arc of radius R - w about the same
+        // corner, meeting each offset leg where the circle crosses it.
+        uint256 Ri = R - m.weight;
+        uint256 q = (Ri * Ri - m.weight * m.weight).isqrt();
+        bytes memory inner = bytes.concat(
+            abi.encodePacked(
+                "M",
+                (m.cx - r + m.weight).fmt(),
+                ",",
+                (m.cy + r - m.weight).fmt(),
+                " L",
+                (m.cx - r + q).fmt(),
+                ",",
+                (m.cy + r - m.weight).fmt(),
+                " A",
+                Ri.fmt(),
+                ",",
+                Ri.fmt(),
+                " 0 0 0 ",
+                (m.cx - r + m.weight).fmt(),
+                ",",
+                (m.cy + r - q).fmt()
+            ),
+            bytes(" Z")
+        );
+        return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
+    }
+
+    function _diamondSvg(Module memory m, string memory fg, uint256 r) private pure returns (bytes memory) {
+        if (m.solid) {
+            // The square on its diagonal, emitted as its four vertices so the geometry is
+            // explicit in one place. Never rotated.
+            return bytes.concat(
+                abi.encodePacked(
                     '<polygon points="',
                     m.cx.fmt(),
                     ",",
-                    (m.cy - half).fmt(),
-                    " ",
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy + half).fmt(),
-                    " ",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy + half).fmt(),
-                    '"',
-                    _transform(m.rot, m.cx, m.cy),
-                    _style(true, m.weight, fg)
-                );
-            }
-            // Inner triangle: the outer scaled about the incenter, which offsets every edge
-            // inward by the weight. Incenter sits one third of the height above the base;
-            // inradius = h/3.
-            uint256 rho = hh / 3;
-            uint256 k = _insetScale(rho, m.weight);
-            uint256 iy = m.cy + half - rho;
-            bytes memory inner = abi.encodePacked(
-                "M",
-                m.cx.fmt(),
-                ",",
-                (iy - k.mulWad(hh - rho)).fmt(),
-                " L",
-                (m.cx + k.mulWad(r)).fmt(),
-                ",",
-                (iy + k.mulWad(rho)).fmt(),
-                " L",
-                (m.cx - k.mulWad(r)).fmt(),
-                ",",
-                (iy + k.mulWad(rho)).fmt(),
-                " Z"
-            );
-            return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
-        }
-
-        if (m.kind == KIND_QUARTER) {
-            // A quarter disc whose right-angle corner sits at one corner of the footprint and
-            // whose arc sweeps to the opposite two: a square with one corner rounded away.
-            // The arc radius is the full footprint, not half of it.
-            uint256 R = m.size;
-            bytes memory outer = bytes.concat(
-                abi.encodePacked(
-                    "M",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    " L",
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    " A",
-                    R.fmt(),
-                    ",",
-                    R.fmt(),
-                    " 0 0 0 ",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy - r).fmt()
-                ),
-                bytes(" Z")
-            );
-            if (m.solid) {
-                return abi.encodePacked(
-                    '<path d="', outer, '"', _transform(m.rot, m.cx, m.cy), _style(true, m.weight, fg)
-                );
-            }
-            // Inner region: legs offset inward by the weight, arc of radius R - w about the
-            // same corner, meeting each offset leg where the circle crosses it.
-            uint256 Ri = R - m.weight;
-            uint256 q = (Ri * Ri - m.weight * m.weight).isqrt();
-            bytes memory inner = bytes.concat(
-                abi.encodePacked(
-                    "M",
-                    (m.cx - r + m.weight).fmt(),
-                    ",",
-                    (m.cy + r - m.weight).fmt(),
-                    " L",
-                    (m.cx - r + q).fmt(),
-                    ",",
-                    (m.cy + r - m.weight).fmt(),
-                    " A",
-                    Ri.fmt(),
-                    ",",
-                    Ri.fmt(),
-                    " 0 0 0 ",
-                    (m.cx - r + m.weight).fmt(),
-                    ",",
-                    (m.cy + r - q).fmt()
-                ),
-                bytes(" Z")
-            );
-            return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
-        }
-
-        if (m.kind == KIND_DIAMOND) {
-            if (m.solid) {
-                // The square on its diagonal, emitted as its four vertices so the geometry is
-                // explicit in one place. Never rotated.
-                return bytes.concat(
-                    abi.encodePacked(
-                        '<polygon points="',
-                        m.cx.fmt(),
-                        ",",
-                        (m.cy - r).fmt(),
-                        " ",
-                        (m.cx + r).fmt(),
-                        ",",
-                        m.cy.fmt(),
-                        " ",
-                        m.cx.fmt(),
-                        ",",
-                        (m.cy + r).fmt(),
-                        " ",
-                        (m.cx - r).fmt(),
-                        ",",
-                        m.cy.fmt()
-                    ),
-                    abi.encodePacked('"', _style(true, m.weight, fg))
-                );
-            }
-            // Inner diamond: edges offset inward by the weight shorten the half-diagonal by
-            // w * sqrt(2).
-            uint256 ri = r > SQRT2.mulWad(m.weight) ? r - SQRT2.mulWad(m.weight) : 0;
-            bytes memory d = bytes.concat(
-                abi.encodePacked(
-                    "M",
-                    m.cx.fmt(),
-                    ",",
                     (m.cy - r).fmt(),
-                    " L",
+                    " ",
                     (m.cx + r).fmt(),
                     ",",
                     m.cy.fmt(),
-                    " L",
+                    " ",
                     m.cx.fmt(),
                     ",",
                     (m.cy + r).fmt(),
-                    " L",
+                    " ",
                     (m.cx - r).fmt(),
                     ",",
                     m.cy.fmt()
                 ),
-                abi.encodePacked(
-                    " Z ",
-                    "M",
-                    m.cx.fmt(),
-                    ",",
-                    (m.cy - ri).fmt(),
-                    " L",
-                    (m.cx + ri).fmt(),
-                    ",",
-                    m.cy.fmt(),
-                    " L",
-                    m.cx.fmt(),
-                    ",",
-                    (m.cy + ri).fmt(),
-                    " L",
-                    (m.cx - ri).fmt(),
-                    ","
-                ),
-                abi.encodePacked(m.cy.fmt(), " Z")
-            );
-            return _ring(d, 0, m.cx, m.cy, fg);
-        }
-
-        if (m.kind == KIND_HALFSQUARE) {
-            // Half the cell, split by a straight edge: a rectangle filling the upper half of the
-            // footprint at rotation 0. The rectangular twin of the half circle.
-            return abi.encodePacked(
-                '<rect x="',
-                (m.cx - r).fmt(),
-                '" y="',
-                (m.cy - r).fmt(),
-                '" width="',
-                m.size.fmt(),
-                '" height="',
-                r.fmt(),
-                '"',
-                _transform(m.rot, m.cx, m.cy),
-                _style(m.solid, m.weight, fg)
+                abi.encodePacked('"', _style(true, m.weight, fg))
             );
         }
-
-        if (m.kind == KIND_RTRIANGLE) {
-            if (m.solid) {
-                // The square cut on its diagonal: right angle at the top-left footprint corner
-                // at rotation 0, hypotenuse from top-right to bottom-left.
-                return abi.encodePacked(
-                    '<polygon points="',
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " ",
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " ",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    '"',
-                    _transform(m.rot, m.cx, m.cy),
-                    _style(true, m.weight, fg)
-                );
-            }
-            // Inner triangle: the outer scaled about the incenter, which offsets every edge
-            // inward by the weight. For a right isoceles triangle with legs 2r, inradius =
-            // r * (2 - sqrt(2)); the incenter sits that far from each leg.
-            uint256 rho = r.mulWad(TWO_MINUS_SQRT2);
-            uint256 k = _insetScale(rho, m.weight);
-            uint256 ix = m.cx - r + rho;
-            uint256 iy = m.cy - r + rho;
-            uint256 near = k.mulWad(rho); // incenter to the right-angle vertex, scaled
-            uint256 far = k.mulWad(2 * r - rho); // incenter to each acute vertex, scaled
-            bytes memory d = bytes.concat(
-                abi.encodePacked(
-                    "M",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " L",
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " L",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    " Z ",
-                    "M",
-                    (ix - near).fmt(),
-                    ","
-                ),
-                abi.encodePacked(
-                    (iy - near).fmt(),
-                    " L",
-                    (ix + far).fmt(),
-                    ",",
-                    (iy - near).fmt(),
-                    " L",
-                    (ix - near).fmt(),
-                    ",",
-                    (iy + far).fmt(),
-                    " Z"
-                )
-            );
-            return _ring(d, m.rot, m.cx, m.cy, fg);
-        }
-
-        if (m.kind == KIND_ARC) {
-            // The quarter disc's curved edge alone: a filled annular band one weight thick.
-            // The outer curve has the footprint for its radius and connects two footprint
-            // corners; the band's flat radial ends lie on the footprint edges.
-            uint256 arcRi = m.size - m.weight;
-            return bytes.concat(
-                abi.encodePacked(
-                    '<path d="M',
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    " A",
-                    m.size.fmt(),
-                    ",",
-                    m.size.fmt(),
-                    " 0 0 0 ",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " L",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy - r + m.weight).fmt()
-                ),
-                abi.encodePacked(
-                    " A",
-                    arcRi.fmt(),
-                    ",",
-                    arcRi.fmt(),
-                    " 0 0 1 ",
-                    (m.cx + r - m.weight).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    ' Z"',
-                    _transform(m.rot, m.cx, m.cy),
-                    ' fill="',
-                    fg,
-                    '"/>'
-                )
-            );
-        }
-
-        if (m.kind == KIND_LINE) {
-            // A straight diagonal band across the cell, one weight thick, its centreline the
-            // footprint diagonal. Each end is cut flat perpendicular to the diagonal (a butt cap),
-            // so it reads as a bar with square-off ends rather than a point at the corner. Two
-            // orientations.
-            uint256 o = m.weight.mulWad(SQRT2) / 2;
-            return bytes.concat(
-                abi.encodePacked(
-                    '<path d="M',
-                    (m.cx - r + o).fmt(),
-                    ",",
-                    (m.cy - r).fmt(),
-                    " L",
-                    (m.cx + r).fmt(),
-                    ",",
-                    (m.cy + r - o).fmt(),
-                    " L",
-                    (m.cx + r - o).fmt(),
-                    ",",
-                    (m.cy + r).fmt(),
-                    " L",
-                    (m.cx - r).fmt(),
-                    ",",
-                    (m.cy - r + o).fmt()
-                ),
-                abi.encodePacked(' Z"', _transform(m.rot, m.cx, m.cy), ' fill="', fg, '"/>')
-            );
-        }
-
-        // half circle: flat edge through the cell centre, filled half above at rotation 0
-        {
-            bytes memory outer = abi.encodePacked(
+        // Inner diamond edges offset inward by the weight shorten the half-diagonal by w * sqrt(2).
+        uint256 ri = r > SQRT2.mulWad(m.weight) ? r - SQRT2.mulWad(m.weight) : 0;
+        bytes memory d = bytes.concat(
+            abi.encodePacked(
                 "M",
-                (m.cx - r).fmt(),
+                m.cx.fmt(),
                 ",",
-                m.cy.fmt(),
-                " A",
-                r.fmt(),
-                ",",
-                r.fmt(),
-                " 0 0 1 ",
+                (m.cy - r).fmt(),
+                " L",
                 (m.cx + r).fmt(),
                 ",",
                 m.cy.fmt(),
-                " Z"
-            );
-            if (m.solid) {
-                return abi.encodePacked(
-                    '<path d="', outer, '"', _transform(m.rot, m.cx, m.cy), _style(true, m.weight, fg)
-                );
-            }
-            // Inner region: the half disc's points at least `weight` from its boundary — an
-            // arc of radius r - w about the same centre, chorded where it meets the offset
-            // flat edge.
-            uint256 ri = r - m.weight;
-            uint256 q = (ri * ri - m.weight * m.weight).isqrt();
-            bytes memory inner = abi.encodePacked(
+                " L",
+                m.cx.fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                " L",
+                (m.cx - r).fmt(),
+                ",",
+                m.cy.fmt()
+            ),
+            abi.encodePacked(
+                " Z ",
                 "M",
-                (m.cx - q).fmt(),
+                m.cx.fmt(),
                 ",",
-                (m.cy - m.weight).fmt(),
-                " A",
-                ri.fmt(),
+                (m.cy - ri).fmt(),
+                " L",
+                (m.cx + ri).fmt(),
                 ",",
-                ri.fmt(),
-                " 0 0 1 ",
-                (m.cx + q).fmt(),
+                m.cy.fmt(),
+                " L",
+                m.cx.fmt(),
                 ",",
-                (m.cy - m.weight).fmt(),
-                " Z"
+                (m.cy + ri).fmt(),
+                " L",
+                (m.cx - ri).fmt(),
+                ","
+            ),
+            abi.encodePacked(m.cy.fmt(), " Z")
+        );
+        return _ring(d, 0, m.cx, m.cy, fg);
+    }
+
+    function _halfSquareSvg(Module memory m, string memory fg, uint256 r)
+        private
+        pure
+        returns (bytes memory)
+    {
+        // Half the cell, split by a straight edge: the rectangular twin of the half circle.
+        return abi.encodePacked(
+            '<rect x="',
+            (m.cx - r).fmt(),
+            '" y="',
+            (m.cy - r).fmt(),
+            '" width="',
+            m.size.fmt(),
+            '" height="',
+            r.fmt(),
+            '"',
+            _transform(m.rot, m.cx, m.cy),
+            _style(m.solid, m.weight, fg)
+        );
+    }
+
+    function _rightTriangleSvg(Module memory m, string memory fg, uint256 r)
+        private
+        pure
+        returns (bytes memory)
+    {
+        if (m.solid) {
+            // The square cut on its diagonal, with the right angle at the top-left at rotation 0.
+            return abi.encodePacked(
+                '<polygon points="',
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy - r).fmt(),
+                " ",
+                (m.cx + r).fmt(),
+                ",",
+                (m.cy - r).fmt(),
+                " ",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                '"',
+                _transform(m.rot, m.cx, m.cy),
+                _style(true, m.weight, fg)
             );
-            return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
         }
+        // Scale about the incenter to offset every edge inward by the weight.
+        uint256 rho = r.mulWad(TWO_MINUS_SQRT2);
+        uint256 k = _insetScale(rho, m.weight);
+        uint256 ix = m.cx - r + rho;
+        uint256 iy = m.cy - r + rho;
+        uint256 near = k.mulWad(rho);
+        uint256 far = k.mulWad(2 * r - rho);
+        bytes memory d = bytes.concat(
+            abi.encodePacked(
+                "M",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy - r).fmt(),
+                " L",
+                (m.cx + r).fmt(),
+                ",",
+                (m.cy - r).fmt(),
+                " L",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                " Z ",
+                "M",
+                (ix - near).fmt(),
+                ","
+            ),
+            abi.encodePacked(
+                (iy - near).fmt(),
+                " L",
+                (ix + far).fmt(),
+                ",",
+                (iy - near).fmt(),
+                " L",
+                (ix - near).fmt(),
+                ",",
+                (iy + far).fmt(),
+                " Z"
+            )
+        );
+        return _ring(d, m.rot, m.cx, m.cy, fg);
+    }
+
+    function _arcSvg(Module memory m, string memory fg, uint256 r) private pure returns (bytes memory) {
+        // The quarter disc's curved edge alone, as a filled annular band one weight thick.
+        uint256 arcRi = m.size - m.weight;
+        return bytes.concat(
+            abi.encodePacked(
+                '<path d="M',
+                (m.cx + r).fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                " A",
+                m.size.fmt(),
+                ",",
+                m.size.fmt(),
+                " 0 0 0 ",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy - r).fmt(),
+                " L",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy - r + m.weight).fmt()
+            ),
+            abi.encodePacked(
+                " A",
+                arcRi.fmt(),
+                ",",
+                arcRi.fmt(),
+                " 0 0 1 ",
+                (m.cx + r - m.weight).fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                ' Z"',
+                _transform(m.rot, m.cx, m.cy),
+                ' fill="',
+                fg,
+                '"/>'
+            )
+        );
+    }
+
+    function _lineSvg(Module memory m, string memory fg, uint256 r) private pure returns (bytes memory) {
+        // A diagonal band with ends cut perpendicular to its centreline.
+        uint256 o = m.weight.mulWad(SQRT2) / 2;
+        return bytes.concat(
+            abi.encodePacked(
+                '<path d="M',
+                (m.cx - r + o).fmt(),
+                ",",
+                (m.cy - r).fmt(),
+                " L",
+                (m.cx + r).fmt(),
+                ",",
+                (m.cy + r - o).fmt(),
+                " L",
+                (m.cx + r - o).fmt(),
+                ",",
+                (m.cy + r).fmt(),
+                " L",
+                (m.cx - r).fmt(),
+                ",",
+                (m.cy - r + o).fmt()
+            ),
+            abi.encodePacked(' Z"', _transform(m.rot, m.cx, m.cy), ' fill="', fg, '"/>')
+        );
+    }
+
+    function _halfCircleSvg(Module memory m, string memory fg, uint256 r)
+        private
+        pure
+        returns (bytes memory)
+    {
+        // Flat edge through the cell centre, filled half above at rotation 0.
+        bytes memory outer = abi.encodePacked(
+            "M",
+            (m.cx - r).fmt(),
+            ",",
+            m.cy.fmt(),
+            " A",
+            r.fmt(),
+            ",",
+            r.fmt(),
+            " 0 0 1 ",
+            (m.cx + r).fmt(),
+            ",",
+            m.cy.fmt(),
+            " Z"
+        );
+        if (m.solid) {
+            return abi.encodePacked(
+                '<path d="', outer, '"', _transform(m.rot, m.cx, m.cy), _style(true, m.weight, fg)
+            );
+        }
+        // The inner arc is offset from both the outer curve and the flat edge by `weight`.
+        uint256 ri = r - m.weight;
+        uint256 q = (ri * ri - m.weight * m.weight).isqrt();
+        bytes memory inner = abi.encodePacked(
+            "M",
+            (m.cx - q).fmt(),
+            ",",
+            (m.cy - m.weight).fmt(),
+            " A",
+            ri.fmt(),
+            ",",
+            ri.fmt(),
+            " 0 0 1 ",
+            (m.cx + q).fmt(),
+            ",",
+            (m.cy - m.weight).fmt(),
+            " Z"
+        );
+        return _ring(abi.encodePacked(outer, " ", inner), m.rot, m.cx, m.cy, fg);
+    }
+
+    function _moduleSvg(Module memory m, string memory fg) private pure returns (bytes memory) {
+        uint256 r = m.size / 2;
+        if (m.kind == KIND_CIRCLE) return _circleSvg(m, fg, r);
+        if (m.kind == KIND_SQUARE) return _squareSvg(m, fg, r);
+        if (m.kind == KIND_TRIANGLE) return _triangleSvg(m, fg, r);
+        if (m.kind == KIND_QUARTER) return _quarterSvg(m, fg, r);
+        if (m.kind == KIND_DIAMOND) return _diamondSvg(m, fg, r);
+        if (m.kind == KIND_HALFSQUARE) return _halfSquareSvg(m, fg, r);
+        if (m.kind == KIND_RTRIANGLE) return _rightTriangleSvg(m, fg, r);
+        if (m.kind == KIND_ARC) return _arcSvg(m, fg, r);
+        if (m.kind == KIND_LINE) return _lineSvg(m, fg, r);
+        return _halfCircleSvg(m, fg, r);
     }
 
     /// @inheritdoc IShapeRenderer
