@@ -13,7 +13,7 @@ Canonical base: `main` in `/Users/dd/CascadeProjects/shapes-clean`, through PR #
 - Current `main` is ahead of the deployed exact-`376bb7b` Sepolia release after PRs #26/#31 sampling and provenance changes. The auction-house path is unchanged, so D-13 remains valid; P2 must revalidate and rehearse the eventual release and must not claim the live Sepolia core is current-main bytecode.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
 - PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
-- D-32 makes GitHub issue #7 the first P2 pre-mainnet renderer-audit change. Only a behavior-preserving `_moduleSvg` helper extraction is approved. `_glyph` remains a documented lookup-table complexity exception. After the merged issue #21 behavior changes, the refreshed ShapeRenderer baselines are 23,185 bytes default and 23,184 bytes testnet; unchanged current TypeScript fixtures, frozen-legacy differential parity, pinned size and one-/25-module gas evidence are mandatory.
+- D-32's GitHub issue #7 implementation is complete. The behavior-only `_moduleSvg` extraction is byte-identical against unchanged TypeScript fixtures and the frozen Solidity oracle; normalized dispatch/helper complexity is 10/3 maximum; ShapeRenderer runtime is 23,138/23,137 bytes default/testnet, 47 bytes below baseline; and worst pinned gas growth is 0.0104%. `_glyph` remains unchanged as the documented lookup-table exception. Evidence: `project/experiments/EXP-004-renderer-module-refactor.md`.
 - Exact `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; creation transaction/release hash is `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, from block 11582031. All postflight reads pass and all ten sources are verified. The one-time artist attestation mined as `0xaa9f422c51688d6debf1b8da6b82c518d74185a977e701b9afba07200776a2e7` at block 11586702; stored hash and signature readback pass.
 - PR #16 merged as `9990f45`; PR #17 merged as `b7c1451` and pins Netlify to Node 22.19.0/npm 10.9.3 after its Node 24/npm 11 default broke optional RainbowKit/Coinbase dependency resolution. The production build completed successfully. `https://shapes.ripe.wtf/deployment.json` serves Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`, and the live homepage plus `/og/shape/0` return HTTP 200. The fresh Sepolia site cutover is complete.
 - Issue #6 is deferred under D-33 to P4 and a real consumer. Do not add `decomposeInto` or a generic position resolver without separate product decisions.
@@ -41,8 +41,8 @@ Canonical base: `main` in `/Users/dd/CascadeProjects/shapes-clean`, through PR #
 
 ## Remaining gates, in order
 
-1. Implement issue #7 as the first P2 contract change, with independent review and all D-32 parity/size/gas/complexity evidence, before the D-16 external-audit snapshot.
-2. Complete D-16 external audit and close or explicitly accept every finding.
+1. Merge issue #7 after normal review and CI, preserving the recorded D-32 parity/size/gas/complexity evidence.
+2. Coordinate and complete the D-16 external audit, then close or explicitly accept every finding.
 3. Obtain D-15 qualified legal review and record the result.
 4. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody and lock/renounce decisions, then rehearse the exact release on a mainnet fork. No mainnet broadcast is authorized.
 
