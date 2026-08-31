@@ -78,19 +78,30 @@ contract SepoliaAuctionEvidence is Script {
         require(beforeClose.highestUnits == 2, "winning units mismatch");
         // forge-lint: disable-next-line(block-timestamp)
         require(block.timestamp >= beforeClose.endTime, "auction still running");
-        require(!beforeClose.settled && !beforeClose.lotClaimed, "auction already closed");
 
-        vm.startBroadcast(SELLER);
-        AUCTION_HOUSE.settle(AUCTION_ID);
-        vm.stopBroadcast();
+        if (!beforeClose.settled) {
+            vm.startBroadcast(SELLER);
+            AUCTION_HOUSE.settle(AUCTION_ID);
+            vm.stopBroadcast();
+        }
 
-        vm.startBroadcast(BIDDER);
-        AUCTION_HOUSE.claimLot(AUCTION_ID);
-        vm.stopBroadcast();
+        if (!beforeClose.lotClaimed) {
+            if (BIDDER.balance < BIDDER_TARGET_BALANCE) {
+                vm.startBroadcast(SELLER);
+                payable(BIDDER).transfer(BIDDER_TARGET_BALANCE - BIDDER.balance);
+                vm.stopBroadcast();
+            }
 
-        vm.startBroadcast(SELLER);
-        AUCTION_HOUSE.claimProceeds(AUCTION_ID);
-        vm.stopBroadcast();
+            vm.startBroadcast(BIDDER);
+            AUCTION_HOUSE.claimLot(AUCTION_ID);
+            vm.stopBroadcast();
+        }
+
+        if (AUCTION_HOUSE.bidUnits(AUCTION_ID, BIDDER) != 0) {
+            vm.startBroadcast(SELLER);
+            AUCTION_HOUSE.claimProceeds(AUCTION_ID);
+            vm.stopBroadcast();
+        }
 
         ShapeAuctionHouse.Auction memory afterClose = AUCTION_HOUSE.auctions(AUCTION_ID);
         require(afterClose.settled && afterClose.lotClaimed, "auction not closed");
