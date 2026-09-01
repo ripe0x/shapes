@@ -4,6 +4,7 @@ import type {PublicClient} from "viem";
 
 import {loadSite} from "./data";
 import {BLACK_FILTER, filterGalleryTokens} from "./GalleryView";
+import {filterOwnedTokens} from "./MyShapesView";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {GENE_NAMES} from "../canonical/ink";
 
@@ -12,6 +13,18 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`
 const OWNER = "0x1111111111111111111111111111111111111111" as `0x${string}`;
 const ARTIST = "0x2222222222222222222222222222222222222222" as `0x${string}`;
 const RELEASE_HASH = `0x${"44".repeat(32)}` as `0x${string}`;
+
+test("filterOwnedTokens matches wallet addresses without changing newest-first order", () => {
+  const tokens = [
+    {id: 3n, owner: OWNER.toUpperCase()},
+    {id: 2n, owner: ARTIST},
+    {id: 1n, owner: OWNER},
+  ];
+  assert.deepEqual(
+    filterOwnedTokens(tokens, OWNER).map((token) => token.id),
+    [3n, 1n],
+  );
+});
 
 const dep = {
   shapes: SHAPES,

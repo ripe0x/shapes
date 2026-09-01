@@ -1,9 +1,7 @@
 import React from "react";
 import {type PublicClient} from "viem";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
-import {GRIDS} from "../canonical/denominations";
-import {composeShape, fillClass, geometryAt, svgFromComposition, CANONICAL} from "../canonical/render";
-import {shapeLensAbi} from "../chain/abi";
+import {geometryAt, svgFromComposition, CANONICAL} from "../canonical/render";
 import {
   loadHistory,
   loadProvenance,
@@ -48,7 +46,7 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
 };
 
 interface DatedEvent extends HistEvent {
-  date: string;
+  dateTime: string;
 }
 
 export function TokenView({
@@ -58,6 +56,7 @@ export function TokenView({
   address,
   tokenId,
   redeem,
+  backLabel,
   onBack,
   onManage,
   onOpenToken,
@@ -68,16 +67,13 @@ export function TokenView({
   address: `0x${string}` | undefined;
   tokenId: bigint;
   redeem: RedeemState;
+  backLabel: string;
   onBack: () => void;
   onManage: () => void;
   onOpenToken: (id: bigint) => void;
 }) {
-  const [detailsTab, setDetailsTab] = React.useState<"story" | "technical">("story");
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
   const [prov, setProv] = React.useState<ProvNode | null>(null);
-  const [unicodeCard, setUnicodeCard] = React.useState<string | null>(null);
-  const [unicodeUnavailable, setUnicodeUnavailable] = React.useState(false);
-  const [showRawUnicode, setShowRawUnicode] = React.useState(false);
   const [dna, setDna] = React.useState<DnaResult | null>(null);
   // Drill-down stack for the DNA modal: each entry is one donor's own DNA, reached by clicking a
   // contributing donor (or split parent) card. Empty means the modal is closed. Loaded lazily and
@@ -113,11 +109,20 @@ export function TokenView({
         await Promise.all(
           blocks.map(async (b) => {
             const blk = await publicClient.getBlock({blockNumber: b});
-            return [b, new Date(Number(blk.timestamp) * 1000).toISOString().slice(0, 10)] as const;
+            const dateTime = new Intl.DateTimeFormat(undefined, {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit",
+            }).format(new Date(Number(blk.timestamp) * 1000));
+            return [b, dateTime] as const;
           }),
         ),
       );
-      if (!cancelled) setHistory(events.map((e) => ({...e, date: stamps.get(e.block) ?? ""})));
+      if (!cancelled) {
+        setHistory(events.map((e) => ({...e, dateTime: stamps.get(e.block) ?? ""})).reverse());
+      }
     })().catch(() => {
       if (!cancelled) setHistory([]);
     });
@@ -185,34 +190,6 @@ export function TokenView({
   const token = data?.tokens.find((t) => t.id === tokenId) ?? null;
   const snap = redeem.status === "done" && redeem.snap?.id === tokenId ? redeem.snap : null;
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
-  // Read the text rendering from ShapeLens. This intentionally does not derive the grid from
-  // tokenURI or the site's local renderer: the displayed bytes are the protocol's canonical
-  // `unicodeCard(tokenId)` response. A missing `dep.lens` (stale deployment.json) fails this read
-  // the same as any other revert and falls through to the unavailable state below.
-  React.useEffect(() => {
-    let cancelled = false;
-    setUnicodeCard(null);
-    setUnicodeUnavailable(false);
-    if (!publicClient || !token) return;
-
-    void publicClient
-      .readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
-        functionName: "unicodeCard",
-        args: [tokenId],
-      })
-      .then((card) => {
-        if (!cancelled) setUnicodeCard(card);
-      })
-      .catch(() => {
-        if (!cancelled) setUnicodeUnavailable(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [publicClient, dep.lens, tokenId, token]);
 
   const back = (
     <div style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
@@ -222,7 +199,7 @@ export function TokenView({
         onClick={onBack}
         style={{letterSpacing: "0.14em", fontSize: 11, color: C.muted}}
       >
-        ← GALLERY
+        ← {backLabel}
       </button>
     </div>
   );
@@ -237,7 +214,7 @@ export function TokenView({
           <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={localArt(snap.seed, DENOMINATIONS[snap.di].wei, snap.inkGene)} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0}}>
-              <div style={{fontSize: 40, lineHeight: 1}}>{lbl} ETH</div>
+              <div style={{fontSize: 40, lineHeight: 1}}>Shape {snap.id.toString()}</div>
               <div style={{marginTop: 20, fontSize: 13, lineHeight: 1.7}}>
                 <div>
                   Redeemed. {DENOMINATIONS[snap.di].wei.toString()} wei ({lbl} ETH) sent to{" "}
@@ -268,6 +245,7 @@ export function TokenView({
       <main>
         {back}
         <Section title="SHAPE">
+          <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>Shape {tokenId.toString()}</div>
           <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
             Shape {tokenId.toString()} is no longer live. It was redeemed or recomposed. Its
             history is below.
@@ -287,7 +265,7 @@ export function TokenView({
           <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={token.image} alt={`Black Shape ${token.id}`} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0, fontSize: 13, lineHeight: 1.75}}>
-              <div style={{fontSize: 40, lineHeight: 1}}>Black Shape</div>
+              <div style={{fontSize: 40, lineHeight: 1}}>Shape {token.id.toString()}</div>
               <div style={{marginTop: 20}}>
                 #{token.id.toString()} has been sacrificed. It remains part of the collection, but
                 has no redeemable ETH backing and cannot be split, composed, or redeemed.
@@ -304,16 +282,23 @@ export function TokenView({
 
   const di = token.di;
   const lbl = DENOMINATIONS[di].label;
-  const [cols, rows] = GRIDS[di];
-  const comp = composeShape(token.seed, token.backing, token.inkGene);
 
   const tokRows: {k: string; v: React.ReactNode; size?: number; wrap?: "anywhere" | "normal"}[] = [
-    {k: "denomination", v: `${lbl} ETH`},
-    {k: "token", v: `#${token.id.toString()}`},
-    {k: "grid", v: `${cols} × ${rows} · ${cols * rows === 1 ? "1 mark" : `${cols * rows} marks`}`},
-    {k: "fill", v: fillClass(comp)},
     {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
     {k: "backing, exact", v: `${token.backing.toString()} wei`, size: 11},
+    ...token.meta.attributes.map((attribute) => ({
+      k: attribute.trait_type.toLowerCase(),
+      v:
+        attribute.trait_type === "Primitive" ? (
+          <>
+            {attribute.value}
+            <span style={{marginLeft: 10, color: C.muted, fontSize: 11}}>most common module shape</span>
+          </>
+        ) : (
+          attribute.value
+        ),
+      wrap: "anywhere" as const,
+    })),
   ];
 
   return (
@@ -324,7 +309,7 @@ export function TokenView({
         <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
           <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
           <div style={{flex: "1 1 320px", minWidth: 0}}>
-            <div style={{fontSize: 40, lineHeight: 1}}>{lbl} ETH</div>
+            <div style={{fontSize: 40, lineHeight: 1}}>Shape {token.id.toString()}</div>
             <p style={{margin: "20px 0 0", fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "48ch"}}>
               This Shape holds {lbl} ETH. Its owner can burn it and receive {lbl} ETH.
             </p>
@@ -358,117 +343,12 @@ export function TokenView({
         </div>
       </Section>
 
-      <Section title="ABOUT THIS SHAPE" pad="20px 48px 22px 32px">
-        <div style={{display: "flex", flexWrap: "wrap", gap: 10}} role="tablist" aria-label="Shape details">
-          {(["story", "technical"] as const).map((tab) => (
-            <button
-              type="button"
-              key={tab}
-              role="tab"
-              aria-selected={detailsTab === tab}
-              className={detailsTab === tab ? "btn-filled" : "btn-outline"}
-              onClick={() => setDetailsTab(tab)}
-              style={{padding: "8px 15px", letterSpacing: "0.08em", textTransform: "uppercase"}}
-            >
-              {tab === "story" ? "Story & DNA" : "Onchain data"}
-            </button>
-          ))}
-        </div>
-      </Section>
+      <History history={history} chainId={dep.chainId} />
 
-      {detailsTab === "technical" && (
-      <Section title="UNICODE CARD" pad="28px 48px 34px 32px">
-        <p style={{margin: "0 0 22px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-          Returned directly by <span style={{color: C.body}}>unicodeCard(#{token.id.toString()})</span> on the
-          Shapes contract.
-        </p>
-        {unicodeCard !== null ? (
-          <div
-            style={{
-              display: "inline-block",
-              maxWidth: "100%",
-              overflowX: "auto",
-              padding: "24px 28px",
-              border: `1px solid ${C.border}`,
-              background: C.row,
-            }}
-          >
-            <pre
-              aria-label={`Unicode card for Shape ${token.id.toString()}`}
-              style={{
-                margin: 0,
-                color: C.ink,
-                fontFamily: "inherit",
-                fontSize: "clamp(24px, 4.5vw, 52px)",
-                fontWeight: 400,
-                lineHeight: 1.28,
-                letterSpacing: "0.04em",
-                whiteSpace: "pre",
-              }}
-            >
-              {unicodeCard}
-            </pre>
-          </div>
-        ) : unicodeUnavailable ? (
-          <div style={{fontSize: 12, lineHeight: 1.7, color: C.muted}}>
-            Unicode card unavailable on this contract deployment.
-          </div>
-        ) : (
-          <div style={{fontSize: 12, color: C.muted}}>Reading token contract…</div>
-        )}
-        {unicodeCard !== null && (
-          <div style={{marginTop: 18}}>
-            <button
-              type="button"
-              onClick={() => setShowRawUnicode((v) => !v)}
-              style={{
-                background: "none",
-                border: `1px solid ${C.border}`,
-                color: C.muted,
-                fontFamily: "inherit",
-                fontSize: 11,
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-                padding: "7px 12px",
-                cursor: "pointer",
-              }}
-            >
-              {showRawUnicode ? "Hide raw string" : "Show raw string"}
-            </button>
-            {showRawUnicode && (
-              <textarea
-                readOnly
-                value={unicodeCard}
-                onFocus={(e) => e.currentTarget.select()}
-                aria-label={`Raw unicodeCard string for Shape ${token.id.toString()}`}
-                style={{
-                  display: "block",
-                  marginTop: 12,
-                  width: "100%",
-                  maxWidth: "60ch",
-                  minHeight: 140,
-                  resize: "vertical",
-                  padding: "12px 14px",
-                  border: `1px solid ${C.border}`,
-                  background: C.row,
-                  color: C.body,
-                  fontFamily: "ui-monospace, Menlo, monospace",
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  whiteSpace: "pre",
-                }}
-              />
-            )}
-          </div>
-        )}
-      </Section>
-      )}
-
-      {detailsTab === "story" && (
-      <>
       <DnaSection
         dna={dna}
         image={token.image}
+        tokenId={token.id}
         onDrillDonor={(target) => {
           if (dna == null || (dna.kind !== "compose" && dna.kind !== "split")) return;
           const level = drillTargetToLevel(dna, tokenId, target);
@@ -486,8 +366,6 @@ export function TokenView({
         />
       )}
 
-      <History history={history} chainId={dep.chainId} />
-
       {prov && prov.contributors.length > 0 && (
         <Section title="PROVENANCE" pad="16px 48px 36px 32px">
           <p style={{margin: "8px 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
@@ -501,36 +379,6 @@ export function TokenView({
           </div>
         </Section>
       )}
-      </>
-      )}
-
-      {detailsTab === "technical" && (
-      <Section title="METADATA" pad="16px 48px 30px 32px">
-        <p style={{margin: "8px 0 6px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-          Parsed from the token's onchain tokenURI. Nothing here is served by this site.
-        </p>
-        {[
-          {k: "name", v: token.meta.name},
-          {k: "description", v: token.meta.description},
-          ...token.meta.attributes.map((a) => ({k: a.trait_type, v: a.value})),
-        ].map((row) => (
-          <div
-            key={row.k}
-            style={{
-              display: "grid",
-              gridTemplateColumns: "130px minmax(0, 1fr)",
-              gap: 24,
-              padding: "10px 0",
-              borderBottom: `1px solid ${C.ruleInner}`,
-              fontSize: 13,
-            }}
-          >
-            <div style={{color: C.muted}}>{row.k}</div>
-            <div style={{overflowWrap: "anywhere", maxWidth: "70ch", lineHeight: 1.6}}>{row.v}</div>
-          </div>
-        ))}
-      </Section>
-      )}
 
       <div style={{height: 64}} />
     </main>
@@ -542,7 +390,7 @@ const REL_TEXT: Record<ProvNode["rel"], string> = {
   merged: "merged in",
   splitSource: "split source",
   piece: "restored piece",
-  self: "the same token, before the merge",
+  self: "same token, earlier state",
 };
 
 /** Node card width per generation. */
@@ -652,25 +500,26 @@ function History({history, chainId}: {history: DatedEvent[] | null; chainId: num
           <div
             key={h.key}
             style={{
-              display: "flex",
-              flexWrap: "wrap",
-              alignItems: "baseline",
-              gap: "8px 24px",
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) auto",
+              alignItems: "start",
+              gap: "8px 32px",
               padding: "12px 0",
               borderBottom: `1px solid ${C.ruleInner}`,
               fontSize: 13,
             }}
           >
-            <div style={{minWidth: 92}}>{EVENT_LABEL[h.kind]}</div>
-            <div style={{color: C.muted}}>{h.date}</div>
-            <div style={{flex: "1 1 160px", minWidth: 0, color: C.muted}}>{h.text}</div>
+            <div style={{minWidth: 0}}>
+              <div>{EVENT_LABEL[h.kind]}</div>
+              <div style={{marginTop: 4, color: C.muted, lineHeight: 1.55}}>{h.text}</div>
+            </div>
             <a
               href={txUrl(h.tx, chainId)}
               target="_blank"
               rel="noreferrer"
-              style={{fontSize: 12, overflowWrap: "anywhere"}}
+              style={{fontSize: 12, color: C.muted, whiteSpace: "nowrap"}}
             >
-              {h.tx.slice(0, 10)}…
+              {h.dateTime}
             </a>
           </div>
         ))
@@ -806,7 +655,7 @@ function denomLabelAt(denomIndex: number): string {
  * from, in canonical order. Bounded by the result's own cell count (max 25, the largest grid in
  * the collection), so a wide merge never renders one card per absorbed input.
  */
-function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[]): DonorRender[] {
+function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[], shapeLabel: string): DonorRender[] {
   const contributing = new Set(cells.map((c) => c.donorIndex ?? 0));
   return donors
     .map((d, i) => ({d, i}))
@@ -818,7 +667,7 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[]): DonorR
       );
       return {
         donorIndex: i,
-        roleLabel: d.id === "survivor" ? "this shape, before the merge" : `#${d.id}`,
+        roleLabel: d.id === "survivor" ? shapeLabel : `#${d.id}`,
         denomLabel: denomLabelAt(d.denomIndex),
         materialized: d.materialized,
         burned: d.id !== "survivor",
@@ -841,7 +690,7 @@ function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>, cells: DnaCel
   const {svg, geometry} = renderDonor(pool.seed, pool.denomIndex, pool.inkGene, pool.modules);
   return {
     donorIndex: 0,
-    roleLabel: "sampling pool — the parent's seed, expressed at this denomination",
+    roleLabel: "sampling pool: the parent's seed expressed at this denomination",
     denomLabel: denomLabelAt(pool.denomIndex),
     materialized: true,
     burned: true,
@@ -927,10 +776,12 @@ type DnaDrillTarget = {kind: "survivor"} | {kind: "burn"; id: string} | {kind: "
 function DnaProvenancePanel({
   dna,
   resultArt,
+  shapeLabel,
   onDrillDonor,
 }: {
   dna: DnaComposeResult | DnaSplitResult | DnaSeedResult;
   resultArt: {type: "image"; src: string} | {type: "svg"; svg: string};
+  shapeLabel: string;
   onDrillDonor?: (target: DnaDrillTarget) => void;
 }) {
   const [hover, setHover] = React.useState<number | null>(null);
@@ -983,13 +834,13 @@ function DnaProvenancePanel({
   // Donor cards: reconstructed once per DNA record load (compose survivor + contributing burns,
   // or the split parent). Never recomputed on hover.
   const donorRenders = React.useMemo<DonorRender[]>(() => {
-    if (dna.kind === "compose") return contributingComposeDonors(dna.donors, dna.cells);
+    if (dna.kind === "compose") return contributingComposeDonors(dna.donors, dna.cells, shapeLabel);
     // Split, record branch: the pool spans multiple donors concatenated with no single grid
     // shape, so there is no card to render here (SAMPLING_SPEC.md section 6, D3'). The cell
     // detail panel still shows each cell's pool index and byte.
     if (dna.kind === "split") return dna.pool ? [splitPoolDonor(dna.pool, dna.cells)] : [];
     return [];
-  }, [dna]);
+  }, [dna, shapeLabel]);
 
   const drillFor = (d: DonorRender): (() => void) | undefined => {
     if (!onDrillDonor) return undefined;
@@ -1121,7 +972,7 @@ function DnaProvenancePanel({
                 <>
                   <DnaRow
                     k="donor"
-                    v={cell.donorId === "survivor" ? "this shape, before the merge" : `#${cell.donorId}`}
+                    v={cell.donorId === "survivor" ? shapeLabel : `#${cell.donorId}`}
                   />
                   <DnaRow k="materialized" v={cell.donorMaterialized ? "yes" : "no (seed-derived)"} />
                 </>
@@ -1167,10 +1018,12 @@ function DnaProvenancePanel({
 function DnaStateBody({
   dna,
   resultArt,
+  shapeLabel,
   onDrillDonor,
 }: {
   dna: DnaResult | null;
   resultArt: {type: "image"; src: string} | {type: "svg"; svg: string};
+  shapeLabel: string;
   onDrillDonor?: (target: DnaDrillTarget) => void;
 }) {
   if (dna === null) {
@@ -1179,7 +1032,7 @@ function DnaStateBody({
   if (dna.kind === "unavailable" || dna.kind === "mismatch") {
     return <div style={{fontSize: 13, color: C.muted, lineHeight: 1.7, maxWidth: "60ch"}}>{dna.message}</div>;
   }
-  return <DnaProvenancePanel dna={dna} resultArt={resultArt} onDrillDonor={onDrillDonor} />;
+  return <DnaProvenancePanel dna={dna} resultArt={resultArt} shapeLabel={shapeLabel} onDrillDonor={onDrillDonor} />;
 }
 
 /** The page's own DNA section: the live token's `tokenURI` image as the result card, wrapped in
@@ -1188,15 +1041,22 @@ function DnaStateBody({
 function DnaSection({
   dna,
   image,
+  tokenId,
   onDrillDonor,
 }: {
   dna: DnaResult | null;
   image: string;
+  tokenId: bigint;
   onDrillDonor: (target: DnaDrillTarget) => void;
 }) {
   return (
     <Section title="DNA" pad="16px 48px 36px 32px">
-      <DnaStateBody dna={dna} resultArt={{type: "image", src: image}} onDrillDonor={onDrillDonor} />
+      <DnaStateBody
+        dna={dna}
+        resultArt={{type: "image", src: image}}
+        shapeLabel={`#${tokenId.toString()} (this Shape)`}
+        onDrillDonor={onDrillDonor}
+      />
     </Section>
   );
 }
@@ -1250,7 +1110,7 @@ function drillTargetToLevel(
     const donor = parentDna.donors[0];
     const modules = donor.modules ?? new Uint8Array();
     return {
-      label: "before the merge",
+      label: `#${parentSubjectId.toString()} (earlier state)`,
       subjectId: parentSubjectId,
       depthOverride: parentDna.survivorDepth,
       snapshot: {seed: donor.seed, denomIndex: donor.denomIndex, inkGene: donor.inkGene, modules},
@@ -1272,7 +1132,7 @@ function drillTargetToLevel(
 }
 
 /**
- * The DNA drill-down modal: a breadcrumb ("#16692 › before the merge › #16716") over the
+ * The DNA drill-down modal: a breadcrumb ("#16692 › #16692 (earlier state) › #16716") over the
  * topmost stack level's own DNA panel. Clicking the root chip closes the modal; clicking any
  * other breadcrumb entry truncates the stack back to it (cached levels below it are kept, never
  * refetched). Clicking a donor card inside the topmost level's panel builds and pushes the next
@@ -1329,7 +1189,12 @@ function DnaDrillModal({
           </React.Fragment>
         ))}
       </div>
-      <DnaStateBody dna={top.dna} resultArt={{type: "svg", svg: top.art.svg}} onDrillDonor={onDrillDonor} />
+      <DnaStateBody
+        dna={top.dna}
+        resultArt={{type: "svg", svg: top.art.svg}}
+        shapeLabel={`${top.subjectId === null ? top.label : `#${top.subjectId.toString()}`} (this Shape)`}
+        onDrillDonor={onDrillDonor}
+      />
     </Modal>
   );
 }

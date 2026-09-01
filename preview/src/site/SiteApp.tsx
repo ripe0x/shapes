@@ -10,13 +10,14 @@ import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
 import {MintView} from "./MintView";
 import {GalleryView} from "./GalleryView";
+import {MyShapesView} from "./MyShapesView";
 import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
 import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
 
-export type View = "mint" | "auction" | "gallery" | "token" | "manage" | "about";
+export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -56,6 +57,7 @@ export function SiteApp({
   const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
+  const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection">("gallery");
   const [mint, setMint] = React.useState<MintState>({status: "idle"});
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -353,6 +355,7 @@ export function SiteApp({
   };
 
   const openToken = (id: bigint) => {
+    if (view === "gallery" || view === "collection") setTokenBackView(view);
     setTokenId(id);
     setRedeem({status: "idle"});
     setTxErr(null);
@@ -400,6 +403,9 @@ export function SiteApp({
             )}
             <button type="button" className="btn-ghost" onClick={() => go("gallery")} style={{letterSpacing: "0.14em", color: navColor("gallery")}}>
               GALLERY
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => go("collection")} style={{letterSpacing: "0.14em", color: navColor("collection")}}>
+              MY SHAPES
             </button>
             <button type="button" className="btn-ghost" onClick={() => go("about")} style={{letterSpacing: "0.14em", color: navColor("about")}}>
               HOW IT WORKS
@@ -467,6 +473,15 @@ export function SiteApp({
       {view === "gallery" && (
         <GalleryView data={data} filter={filter} setFilter={setFilter} onOpenToken={openToken} />
       )}
+      {view === "collection" && (
+        <MyShapesView
+          data={data}
+          address={address}
+          connected={isConnected}
+          onConnect={() => openConnectModal?.()}
+          onOpenToken={openToken}
+        />
+      )}
       {view === "token" && tokenId !== null && (
         <TokenView
           data={data}
@@ -475,7 +490,8 @@ export function SiteApp({
           address={address}
           tokenId={tokenId}
           redeem={redeem}
-          onBack={() => go("gallery")}
+          backLabel={tokenBackView === "collection" ? "MY SHAPES" : "GALLERY"}
+          onBack={() => go(tokenBackView)}
           onManage={() => go("manage")}
           onOpenToken={openToken}
         />

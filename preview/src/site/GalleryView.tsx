@@ -1,7 +1,7 @@
 import {DENOMINATIONS} from "../chain/abi";
 import {C} from "./theme";
 import {Section, Art} from "./ui";
-import type {SiteData} from "./data";
+import type {SiteData, SiteToken} from "./data";
 
 export const BLACK_FILTER = -2;
 
@@ -60,32 +60,51 @@ export function GalleryView({
         </div>
       </Section>
 
-      <div style={{padding: 48, display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "36px 28px"}}>
-        {filtered.map((t) => (
-          <button
-            key={t.id.toString()}
-            type="button"
-            className="btn-ghost"
-            onClick={() => onOpenToken(t.id)}
-            style={{display: "block", textAlign: "left"}}
-          >
-            <Art src={t.image} alt={`Shape ${t.id}`} />
-            <div
-              style={{
-                marginTop: 11,
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                fontSize: 11,
-                color: C.muted,
-              }}
-            >
-              <span>#{t.id.toString()}</span>
-              <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : "Black"}</span>
-            </div>
-          </button>
-        ))}
-      </div>
+      <ShapeGrid tokens={filtered} onOpenToken={onOpenToken} />
     </main>
+  );
+}
+
+export function ShapeGrid({
+  tokens,
+  onOpenToken,
+}: {
+  tokens: SiteToken[];
+  onOpenToken: (id: bigint) => void;
+}) {
+  return (
+    <div
+      style={{
+        padding: 48,
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+        gap: "36px 28px",
+      }}
+    >
+      {tokens.map((t) => (
+        <button
+          key={t.id.toString()}
+          type="button"
+          className="btn-ghost"
+          onClick={() => onOpenToken(t.id)}
+          style={{display: "block", textAlign: "left"}}
+        >
+          <Art src={t.image} alt={`Shape ${t.id}`} />
+          <div
+            style={{
+              marginTop: 11,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              fontSize: 11,
+              color: C.muted,
+            }}
+          >
+            <span>#{t.id.toString()}</span>
+            <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : "Black"}</span>
+          </div>
+        </button>
+      ))}
+    </div>
   );
 }
