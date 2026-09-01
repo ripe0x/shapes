@@ -431,6 +431,7 @@ export function SiteApp({
         }}
       >
         <div
+          className="site-header-inner"
           style={{
             display: "flex",
             alignItems: "center",
@@ -442,7 +443,7 @@ export function SiteApp({
           }}
         >
           <div>SHAPES</div>
-          <nav style={{display: "flex", gap: 26}}>
+          <nav className="site-nav" style={{display: "flex", gap: 26}}>
             <button type="button" className="btn-ghost" onClick={() => go("mint")} style={{letterSpacing: "0.14em", color: navColor("mint")}}>
               MINT
             </button>
@@ -465,7 +466,7 @@ export function SiteApp({
               </a>
             )}
           </nav>
-          <div ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
+          <div className="site-account" ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
             <button
               type="button"
               className="btn-outline"

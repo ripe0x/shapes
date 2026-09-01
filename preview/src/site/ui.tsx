@@ -21,16 +21,20 @@ export function Section({
 }) {
   return (
     <div
+      className="site-section"
       style={{
         display: "grid",
         gridTemplateColumns: "190px minmax(0, 1fr)",
         borderBottom: last ? "none" : `1px solid ${C.rule}`,
       }}
     >
-      <div style={{padding: "26px 24px 26px 48px", borderRight: `1px solid ${C.rule}`, ...label}}>
+      <div
+        className="site-section-label"
+        style={{padding: "26px 24px 26px 48px", borderRight: `1px solid ${C.rule}`, ...label}}
+      >
         {labelNode ?? title}
       </div>
-      <div style={{padding: pad}}>{children}</div>
+      <div className="site-section-content" style={{padding: pad}}>{children}</div>
     </div>
   );
 }
@@ -38,7 +42,7 @@ export function Section({
 /** Artwork on its pure-black ground at the exact 2.5:3.5 card proportion. */
 export function Art({src, alt = "", width}: {src: string; alt?: string; width?: number | string}) {
   return (
-    <div style={{width: width ?? "100%", aspectRatio: "250 / 350", backgroundColor: C.art}}>
+    <div className="shape-art" style={{width: width ?? "100%", maxWidth: "100%", aspectRatio: "250 / 350", backgroundColor: C.art}}>
       <img
         src={src}
         alt={alt}

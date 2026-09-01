@@ -69,6 +69,16 @@
       .compose-review-arrow { color: #71716b; font-size: 22px; text-align: center; }
       .token-trait-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 24px; }
       @media (max-width: 700px) {
+        .site-header-inner { height: auto !important; min-height: 54px; padding: 12px 20px 0 !important; gap: 12px !important; flex-wrap: wrap; }
+        .site-nav { order: 3; width: calc(100% + 40px); margin: 0 -20px; padding: 0 20px 12px; gap: 22px !important; overflow-x: auto; scrollbar-width: none; }
+        .site-nav > * { flex: 0 0 auto; white-space: nowrap; }
+        .site-nav::-webkit-scrollbar { display: none; }
+        .site-account { margin-left: auto !important; }
+        .token-detail-page .site-section { display: block !important; }
+        .token-detail-page .site-section-label { border-right: 0 !important; padding: 18px 20px 0 !important; }
+        .token-detail-page .site-section-content { padding: 14px 20px 28px !important; }
+        .token-detail-page .token-detail-back { padding: 16px 20px !important; }
+        .token-detail-page .token-detail-hero { gap: 28px !important; }
         .manage-action-grid { grid-template-columns: 1fr; }
         .manage-outcome { grid-template-columns: 1fr; }
         .manage-outcome-arrow { transform: rotate(90deg); text-align: left; }

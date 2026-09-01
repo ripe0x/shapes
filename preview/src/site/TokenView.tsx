@@ -199,7 +199,7 @@ export function TokenView({
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
 
   const back = (
-    <div style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
+    <div className="token-detail-back" style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
       <button
         type="button"
         className="btn-ghost"
@@ -215,10 +215,10 @@ export function TokenView({
   if (!token && snap) {
     const lbl = DENOMINATIONS[snap.di].label;
     return (
-      <main>
+      <main className="token-detail-page">
         {back}
         <Section title="SHAPE" pad="36px 48px 44px 32px">
-          <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
+          <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={localArt(snap.seed, DENOMINATIONS[snap.di].wei, snap.inkGene)} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0}}>
               <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(snap.id)}</div>
@@ -248,7 +248,7 @@ export function TokenView({
 
   if (!token) {
     return (
-      <main>
+      <main className="token-detail-page">
         {back}
         <Section title="SHAPE">
           <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId)}</div>
@@ -264,10 +264,10 @@ export function TokenView({
 
   if (token.di < 0) {
     return (
-      <main>
+      <main className="token-detail-page">
         {back}
         <Section title="BLACK SHAPE" pad="36px 48px 44px 32px">
-          <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
+          <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={token.image} alt={`Black Shape ${token.id}`} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0, fontSize: 13, lineHeight: 1.75}}>
               <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id)}</div>
@@ -312,11 +312,11 @@ export function TokenView({
   ];
 
   return (
-    <main>
+    <main className="token-detail-page">
       {back}
 
       <Section title="SHAPE" pad="36px 48px 44px 32px">
-        <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
+        <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
           <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
           <div style={{flex: "1 1 320px", minWidth: 0}}>
             <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id)}</div>
