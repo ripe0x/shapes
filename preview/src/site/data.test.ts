@@ -22,7 +22,7 @@ const dep = {
 
 interface FakeToken {
   backing: bigint;
-  seed: bigint;
+  seed: `0x${string}`;
   black: boolean;
   composeDepth: bigint;
   ink: string;
@@ -164,7 +164,7 @@ function indexedToken(id: bigint) {
 
 const NORMAL: FakeToken = {
   backing: DENOMINATIONS[0].wei,
-  seed: 7n,
+  seed: `0x${"0".repeat(63)}7`,
   black: false,
   composeDepth: 0n,
   ink: GENE_NAMES[0],
@@ -174,7 +174,7 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
   const live = new Map<bigint, FakeToken>([
     [2n, NORMAL],
     [5n, {...NORMAL, backing: 0n, black: true}],
-    [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: 9n, composeDepth: 3n}],
+    [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: `0x${"0".repeat(63)}9`, composeDepth: 3n}],
   ]);
   const {client, counts} = makeClient({minted: 1203n, live, multicall3: true});
 
@@ -247,7 +247,7 @@ test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state s
   const live = new Map<bigint, FakeToken>([
     [2n, NORMAL],
     [5n, {...NORMAL, black: true}],
-    [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: 9n, composeDepth: 3n}],
+    [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: `0x${"0".repeat(63)}9`, composeDepth: 3n}],
   ]);
   const {client, counts} = makeClient({minted: 1203n, live, multicall3: true, headBlock: 100n});
   const metrics: {source: string; indexerRequests: number}[] = [];
@@ -266,6 +266,7 @@ test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state s
   });
 
   assert.deepEqual(site.tokens.map((t) => t.id), [1200n, 5n, 2n]);
+  assert.equal(site.tokens[0]!.seed, 9n); // bytes32 RPC data is normalized before detail rendering
   assert.equal(site.tokens[0]!.composeDepth, 3);
   assert.equal(site.tokens[1]!.di, -1); // Black remains live and visible
   assert.equal(counts.multicall, 1); // six canonical reads for each candidate live id

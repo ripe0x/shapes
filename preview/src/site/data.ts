@@ -363,7 +363,9 @@ async function tokensFromIndexer(
       id: ids[i]!,
       backing: backing as bigint,
       di: black ? -1 : denomIndexOf(backing as bigint),
-      seed: seed as bigint,
+      // Viem decodes bytes32 as a hex string. Normalize it at the chain-data boundary so every
+      // renderer receives the bigint promised by SiteToken, regardless of which ID source won.
+      seed: BigInt(seed as `0x${string}`),
       owner: owner as `0x${string}`,
       image,
       meta,
