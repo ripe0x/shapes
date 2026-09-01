@@ -74,6 +74,7 @@ export function TokenView({
 }) {
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
   const [prov, setProv] = React.useState<ProvNode | null>(null);
+  const [dnaExpanded, setDnaExpanded] = React.useState(false);
   const [dna, setDna] = React.useState<DnaResult | null>(null);
   // Drill-down stack for the DNA modal: each entry is one donor's own DNA, reached by clicking a
   // contributing donor (or split parent) card. Empty means the modal is closed. Loaded lazily and
@@ -136,7 +137,7 @@ export function TokenView({
   React.useEffect(() => {
     setDna(null);
     setDrillStack([]);
-    if (!publicClient) return;
+    if (!dnaExpanded || !publicClient) return;
     const t = data?.tokens.find((x) => x.id === tokenId);
     if (!t) return;
     let cancelled = false;
@@ -150,7 +151,11 @@ export function TokenView({
     return () => {
       cancelled = true;
     };
-  }, [publicClient, dep, tokenId, data]);
+  }, [dnaExpanded, publicClient, dep, tokenId, data]);
+
+  React.useEffect(() => {
+    setDnaExpanded(false);
+  }, [tokenId]);
 
   // Fetch whichever drill-stack level is topmost and still unresolved. Every other level keeps
   // its already-loaded `dna`, so navigating back up (which only truncates the stack) never
@@ -350,10 +355,29 @@ export function TokenView({
 
       <History history={history} chainId={dep.chainId} />
 
+      {prov && prov.contributors.length > 0 && (
+        <Section title="PROVENANCE" pad="16px 48px 36px 32px">
+          <p style={{margin: "8px 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+            Every Shape this one was built from. Burned Shapes are drawn from their recorded
+            seeds.
+          </p>
+          <div style={{overflowX: "auto", paddingBottom: 8}}>
+            <div style={{display: "flex", justifyContent: "flex-start", minWidth: "min-content"}}>
+              <ProvTree node={prov} depth={0} live={data?.tokens ?? []} onOpen={onOpenToken} />
+            </div>
+          </div>
+        </Section>
+      )}
+
       <DnaSection
         dna={dna}
         image={token.image}
         tokenId={token.id}
+        expanded={dnaExpanded}
+        onToggle={() => {
+          setDnaExpanded((expanded) => !expanded);
+          setDrillStack([]);
+        }}
         onDrillDonor={(target) => {
           if (dna == null || (dna.kind !== "compose" && dna.kind !== "split")) return;
           const level = drillTargetToLevel(dna, tokenId, target);
@@ -369,20 +393,6 @@ export function TokenView({
           onPush={(level) => setDrillStack((prev) => [...prev, level])}
           onClose={() => setDrillStack([])}
         />
-      )}
-
-      {prov && prov.contributors.length > 0 && (
-        <Section title="PROVENANCE" pad="16px 48px 36px 32px">
-          <p style={{margin: "8px 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-            Every Shape this one was built from. Burned Shapes are drawn from their recorded
-            seeds.
-          </p>
-          <div style={{overflowX: "auto", paddingBottom: 8}}>
-            <div style={{display: "flex", justifyContent: "flex-start", minWidth: "min-content"}}>
-              <ProvTree node={prov} depth={0} live={data?.tokens ?? []} onOpen={onOpenToken} />
-            </div>
-          </div>
-        </Section>
       )}
 
       <div style={{height: 64}} />
@@ -1047,21 +1057,43 @@ function DnaSection({
   dna,
   image,
   tokenId,
+  expanded,
+  onToggle,
   onDrillDonor,
 }: {
   dna: DnaResult | null;
   image: string;
   tokenId: bigint;
+  expanded: boolean;
+  onToggle: () => void;
   onDrillDonor: (target: DnaDrillTarget) => void;
 }) {
+  const bodyId = React.useId();
   return (
-    <Section title="DNA" pad="16px 48px 36px 32px">
-      <DnaStateBody
-        dna={dna}
-        resultArt={{type: "image", src: image}}
-        shapeLabel={`#${tokenId.toString()} (this Shape)`}
-        onDrillDonor={onDrillDonor}
-      />
+    <Section title="DNA" pad={expanded ? "18px 48px 36px 32px" : "18px 48px 20px 32px"}>
+      <button
+        type="button"
+        className="btn-ghost"
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        onClick={onToggle}
+        style={{display: "flex", width: "100%", alignItems: "center", justifyContent: "space-between", gap: 24, textAlign: "left"}}
+      >
+        <span style={{fontSize: 12, color: C.body}}>Trace every module to its source.</span>
+        <span style={{fontSize: 18, color: C.muted, lineHeight: 1}} aria-hidden="true">
+          {expanded ? "−" : "+"}
+        </span>
+      </button>
+      {expanded && (
+        <div id={bodyId} style={{marginTop: 26}}>
+          <DnaStateBody
+            dna={dna}
+            resultArt={{type: "image", src: image}}
+            shapeLabel={`#${tokenId.toString()} (this Shape)`}
+            onDrillDonor={onDrillDonor}
+          />
+        </div>
+      )}
     </Section>
   );
 }
