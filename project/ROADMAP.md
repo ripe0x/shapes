@@ -71,7 +71,7 @@ Deliverables:
 - External security audit completed after issue #7 and D-34, with findings closed or accepted with rationale (D-16, D-17 folded in). `AUDIT_PROMPT_v5.md` is regenerated against exact deployed source `dba4dbf`; selecting the independent auditor and completing the review remain open.
 - Legal review completed (D-15).
 - Key ceremony plan: admin structure, initial/final fee recipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
-- COMPLETE FOR CURRENT RELEASE: deployment/lifecycle checks pass against a live mainnet fork; an exact-commit Sepolia deployment at the isolated testnet ladder is live from block 11613113. The production site/indexer cutover and final Etherscan retry remain release operations, not contract changes.
+- COMPLETE FOR CURRENT RELEASE: deployment/lifecycle checks pass against a live mainnet fork; an exact-commit Sepolia deployment at the isolated testnet ladder is live from block 11613113. The isolated-schema Fly indexer and production Netlify site are cut over and chain-validated. The final Etherscan retry remains a release operation, not a contract change; all three pending sources already have exact Sourcify matches.
 
 Acceptance: signed merge checklist for the release commit; audit report on file; rehearsal transcript recorded.
 
