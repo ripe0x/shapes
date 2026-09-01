@@ -18,11 +18,10 @@ optimizer = true
 # stayed on `Shapes`: a review (issue #21A) found the first pass had also moved them, which left
 # `supportsInterface` advertising `IShapeValue`/`IShapeProvenance` (SPEC.md's stable capability
 # interfaces) with members that no longer existed on the token, so they came back. At 100,
-# `Shapes`'s own runtime size is 24,010 bytes: a 566-byte margin under the EIP-170 24,576 limit.
-# 200 was tried and does not fit: runtime size rises with `optimizer_runs` (more inlining trades
-# size for gas), reaching a 258-byte margin at 200 and a 420-byte margin at 150, both still under
-# the limit but with less room than 100 leaves for issue #21C's upcoming trait bytecode. Re-measure
-# with `forge build --sizes` before changing this value in either direction.
+# `Shapes`'s current runtime size is 24,474 bytes: a 102-byte margin under the EIP-170 24,576
+# limit after the explicit positions/market pointers landed. Runtime size rises with
+# `optimizer_runs` because more inlining trades size for gas. Re-measure both the default and
+# testnet profiles with `forge build --sizes` before changing this value in either direction.
 optimizer_runs = 100
 via_ir = true
 bytecode_hash = "none"

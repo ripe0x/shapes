@@ -83,7 +83,8 @@ contract ForkTest is Test {
         shapes = new Shapes{value: Denominations.amountAt(0)}(
             FEE_BPS, feeRecipient, address(renderer), address(collection)
         );
-        strayWei = address(shapes).balance;
+        // The constructor balance includes backed Shape #0. Only the excess is stranded ETH.
+        strayWei = address(shapes).balance - shapes.redeemableBacking();
     }
 
     /// @dev Skip rather than fail when no RPC is configured.
@@ -117,6 +118,8 @@ contract ForkTest is Test {
         assertEq(s.renderer(), address(r), "renderer mismatch");
         assertEq(s.collection(), address(c), "collection mismatch");
         assertEq(s.artist(), s.admin(), "artist should be the deployer");
+        assertEq(s.owner(), s.admin(), "contract owner should be the deployer");
+        assertEq(s.ownerOf(0), s.admin(), "Shape #0 should belong to the deployer");
         assertEq(s.artistReleaseHash(), bytes32(0), "attribution should start unsigned");
         assertEq(s.artistSignature(), bytes(""), "signature should start empty");
         assertEq(address(l.shapes()), address(s), "lens mismatch");
@@ -196,6 +199,10 @@ contract ForkTest is Test {
         vm.prank(alice);
         uint256 total = shapes.redeemBatch(rest);
         assertEq(total, _sumExcept(DENOMS[4]), "batch total wrong");
+
+        // The test contract received backed Shape #0 in setUp; unwind it too before asserting
+        // that the complete collection reserve and supply reached zero.
+        shapes.redeemTo(0, payable(alice));
         assertEq(shapes.redeemableBacking(), 0, "backing remains");
         // Backing is fully unwound; only the pre-existing stray wei is left behind, stranded.
         assertEq(address(shapes).balance, strayWei, "reserve not unwound to stray");

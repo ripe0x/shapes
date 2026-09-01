@@ -12,6 +12,8 @@
 # Optional env:
 #   SEPOLIA_RPC_URL     defaults to the publicnode endpoint.
 #   DEPLOYER            sender address; defaults to the ripe0x keystore address.
+#   KEYSTORE_PASSWORD_FILE  read the keystore password from this chmod-600 file instead of a
+#                           prompt. The password is never placed in the process arguments.
 #   SEED_ETH            "true" to also mint the seed spread (deploy-only by default, since the
 #                       in-script seed can trip forge's gas estimation; seed from the UI instead).
 #
@@ -28,6 +30,12 @@ SENDER="${DEPLOYER:-0xCB43078C32423F5348Cab5885911C3B5faE217F9}"
 PAYOUT="0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4"
 SEED="${SEED_ETH:-false}"
 FEE_BPS="${SHAPES_FEE_BPS:-100}"
+WALLET_ARGS=(--account ripe0x)
+if [ -n "${KEYSTORE_PASSWORD_FILE:-}" ]; then
+  [ -r "$KEYSTORE_PASSWORD_FILE" ] \
+    || { echo "KEYSTORE_PASSWORD_FILE is not readable" >&2; exit 1; }
+  WALLET_ARGS=(--keystore "$HOME/.foundry/keystores/ripe0x" --password-file "$KEYSTORE_PASSWORD_FILE")
+fi
 
 [ "$FEE_BPS" = "100" ] \
   || { echo "Sepolia fee must remain the approved 100 bps" >&2; exit 1; }
@@ -99,7 +107,7 @@ wait_for_verification() {
 FOUNDRY_PROFILE=testnet SHAPES_FEE_BPS="$FEE_BPS" SEED_ETH="$SEED" \
   forge script script/DeploySepolia.s.sol \
   --rpc-url "$RPC" \
-  --account ripe0x \
+  "${WALLET_ARGS[@]}" \
   --sender "$SENDER" \
   --broadcast \
   --verify

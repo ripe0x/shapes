@@ -144,10 +144,14 @@ contract DeployShapes is LensEquivalence {
         require(shapes.collection() == address(collection), "collection mismatch");
         require(collection.renderer() == address(renderer), "collection points at another renderer");
 
-        require(shapes.ownerOf(0) == msg.sender, "Shape #0 not minted to deployer");
-        require(shapes.owner() == msg.sender, "contract owner mismatch");
-        require(shapes.admin() == msg.sender, "admin mismatch");
-        require(shapes.artist() == msg.sender, "artist mismatch");
+        // `vm.startBroadcast()` changes the sender of the CREATEs. In a test that calls this
+        // script, that sender is intentionally not the test contract (`msg.sender` here).
+        // Prove the four deployment-bound roles agree; live wrappers separately pin this
+        // address to their explicitly selected sender.
+        address deployedAdmin = shapes.admin();
+        require(shapes.ownerOf(0) == deployedAdmin, "Shape #0 owner/admin mismatch");
+        require(shapes.owner() == deployedAdmin, "contract owner/admin mismatch");
+        require(shapes.artist() == deployedAdmin, "artist/admin mismatch");
         require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
         require(shapes.artistSignature().length == 0, "artist signature should start empty");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
