@@ -112,9 +112,13 @@ export function TokenView({
     if (!publicClient) return;
     let cancelled = false;
     setProv(null);
-    void loadProvenance(publicClient, dep, tokenId).then((p) => {
-      if (!cancelled) setProv(p);
-    });
+    void loadProvenance(publicClient, dep, tokenId)
+      .then((p) => {
+        if (!cancelled) setProv(p);
+      })
+      .catch(() => {
+        if (!cancelled) setProv(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -142,7 +146,9 @@ export function TokenView({
         ),
       );
       if (!cancelled) setHistory(events.map((e) => ({...e, date: stamps.get(e.block) ?? ""})));
-    })();
+    })().catch(() => {
+      if (!cancelled) setHistory([]);
+    });
     return () => {
       cancelled = true;
     };
@@ -156,9 +162,13 @@ export function TokenView({
     setDecompInputs(null);
     const t = data?.tokens.find((x) => x.id === tokenId);
     if (!t || t.composeDepth === 0) return;
-    void loadDecomposePreview(publicClient, dep, tokenId).then((inputs) => {
-      if (!cancelled) setDecompInputs(inputs);
-    });
+    void loadDecomposePreview(publicClient, dep, tokenId)
+      .then((inputs) => {
+        if (!cancelled) setDecompInputs(inputs);
+      })
+      .catch(() => {
+        if (!cancelled) setDecompInputs([]);
+      });
     return () => {
       cancelled = true;
     };
