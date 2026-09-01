@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagm
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {short, addrUrl, txUrl} from "./ui";
+import {addrUrl, txUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
@@ -16,6 +16,7 @@ import {ManageShapeView} from "./ManageShapeView";
 import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
 import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
+import {useEnsDisplay} from "./ens";
 
 export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
 
@@ -71,6 +72,29 @@ export function SiteApp({
     hash: string;
     tokenIds: bigint[];
   } | null>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const accountMenuRef = React.useRef<HTMLDivElement>(null);
+  const accountLabel = useEnsDisplay(publicClient, address);
+
+  React.useEffect(() => {
+    if (!accountMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountMenuOpen]);
+
+  React.useEffect(() => {
+    if (!isConnected) setAccountMenuOpen(false);
+  }, [isConnected]);
 
   // URL <-> view sync for the Next.js host. `lastNav` tracks the last applied navigation so a
   // URL-driven change does not echo back out through `onNavigate`, and an internal navigation does
@@ -404,9 +428,6 @@ export function SiteApp({
             <button type="button" className="btn-ghost" onClick={() => go("gallery")} style={{letterSpacing: "0.14em", color: navColor("gallery")}}>
               GALLERY
             </button>
-            <button type="button" className="btn-ghost" onClick={() => go("collection")} style={{letterSpacing: "0.14em", color: navColor("collection")}}>
-              MY SHAPES
-            </button>
             <button type="button" className="btn-ghost" onClick={() => go("about")} style={{letterSpacing: "0.14em", color: navColor("about")}}>
               HOW IT WORKS
             </button>
@@ -418,18 +439,69 @@ export function SiteApp({
               </a>
             )}
           </nav>
-          <div style={{marginLeft: "auto", display: "flex", alignItems: "center", gap: 18}}>
-            {isConnected && address && (
-              <span style={{color: C.muted, letterSpacing: "0.1em"}}>{short(address)}</span>
-            )}
+          <div ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
             <button
               type="button"
               className="btn-outline"
-              onClick={() => (isConnected ? disconnect() : openConnectModal?.())}
-              style={{padding: "6px 13px", fontSize: 11, letterSpacing: "0.1em"}}
+              aria-haspopup={isConnected ? "menu" : undefined}
+              aria-expanded={isConnected ? accountMenuOpen : undefined}
+              onClick={() =>
+                isConnected ? setAccountMenuOpen((open) => !open) : openConnectModal?.()
+              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                maxWidth: 220,
+                padding: "6px 13px",
+                fontSize: 11,
+                letterSpacing: "0.1em",
+              }}
             >
-              {isConnected ? "DISCONNECT" : "CONNECT"}
+              <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
+                {isConnected ? accountLabel : "CONNECT"}
+              </span>
+              {isConnected && <span aria-hidden="true" style={{color: C.muted}}>▾</span>}
             </button>
+            {isConnected && accountMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Wallet account"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  minWidth: 180,
+                  border: `1px solid ${C.border}`,
+                  background: C.page,
+                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.35)",
+                  zIndex: 30,
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    go("collection");
+                  }}
+                >
+                  MY SHAPES
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    disconnect();
+                  }}
+                >
+                  DISCONNECT
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
