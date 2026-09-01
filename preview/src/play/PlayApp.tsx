@@ -21,7 +21,6 @@ import {
   removeNode,
   sacrificeNode,
   splitNode,
-  textSeed,
   type PlayNode,
   type PlaySession,
 } from "./session";
@@ -144,8 +143,9 @@ function RawCard({
           overflow: "hidden",
           lineHeight: 0,
           cursor: onClick ? "pointer" : "default",
-          outline: selected ? `2px solid ${C.ink}` : `1px solid ${C.border}`,
-          outlineOffset: selected ? -2 : -1,
+          outline: selected ? `3px solid ${C.page}` : `1px solid ${C.border}`,
+          outlineOffset: selected ? -3 : -1,
+          boxShadow: selected ? `0 0 0 2px ${C.ink}` : "none",
           borderRadius: 3,
         }}
         dangerouslySetInnerHTML={{ __html: forDisplay(svg) }}
@@ -210,28 +210,28 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function DrawBeat({
   denomIndex,
   onDenomIndex,
-  seedText,
-  onSeedText,
+  quantity,
+  onQuantity,
   onRoll,
   effectiveSeed,
-  onKeep,
-  keepDisabled,
+  onAdd,
+  addDisabled,
   inverted,
   onToggleInverted,
 }: {
   denomIndex: number;
   onDenomIndex: (i: number) => void;
-  seedText: string;
-  onSeedText: (v: string) => void;
+  quantity: number;
+  onQuantity: (quantity: number) => void;
   onRoll: () => void;
   effectiveSeed: bigint;
-  onKeep: () => void;
-  keepDisabled: boolean;
+  onAdd: () => void;
+  addDisabled: boolean;
   inverted: boolean;
   onToggleInverted: () => void;
 }) {
   const amountWei = DENOMINATIONS[denomIndex];
-  // The gene a kept card of this seed/denomination would get (session.keepCard uses the same call).
+  // The gene a tray card of this seed/denomination would get (session.keepCard uses the same call).
   const composition = React.useMemo(
     () => composeShape(effectiveSeed, amountWei, geneAtMint(effectiveSeed, denomIndex), CANONICAL),
     [effectiveSeed, amountWei, denomIndex],
@@ -265,31 +265,36 @@ function DrawBeat({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <PlayButton onClick={onRoll}>Roll</PlayButton>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ ...mono, fontSize: 10, color: C.muted }}>Seed it with a name</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ ...mono, fontSize: 10, color: C.muted }}>Quantity</span>
               <input
-                value={seedText}
-                onChange={(e) => onSeedText(e.target.value)}
-                placeholder="a name, handle, anything"
+                type="number"
+                min={1}
+                max={25}
+                inputMode="numeric"
+                value={quantity}
+                onChange={(event) => {
+                  const next = Number.parseInt(event.target.value, 10);
+                  onQuantity(Number.isFinite(next) ? Math.min(25, Math.max(1, next)) : 1);
+                }}
                 style={{
                   ...mono,
-                  fontSize: 12,
-                  padding: "7px 9px",
+                  width: 58,
+                  padding: "7px 8px",
                   border: `1px solid ${C.border}`,
                   background: "transparent",
                   color: C.ink,
-                  width: 220,
+                  fontSize: 12,
                 }}
               />
             </label>
+            <PlayButton onClick={onAdd} disabled={addDisabled}>
+              {quantity === 1 ? "Add to tray" : `Add ${quantity} to tray`}
+            </PlayButton>
           </div>
-
-          <PlayButton onClick={onKeep} disabled={keepDisabled}>
-            Keep
-          </PlayButton>
-          {keepDisabled && (
+          {addDisabled && (
             <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>
               The share link is full. Remove a card to continue.
             </div>
@@ -354,7 +359,7 @@ function ShareLink() {
 type TrayMenu = { key: number; kind: "split" | "sacrifice" } | null;
 
 /** The one-row split tier picker: one button per denomination below the card, labeled with its
- *  child count. A tier is disabled, with the same "share link is full" reason `keepDisabled`
+ *  child count. A tier is disabled, with the same "share link is full" reason the add control
  *  uses, whenever splitting into it would push the session past what a share link can carry. */
 function SplitPicker({
   node,
@@ -1154,11 +1159,11 @@ const sectionStyle: React.CSSProperties = {
 export function PlayApp() {
   const [session, setSession] = React.useState<PlaySession>(emptySession);
   const [denomIndex, setDenomIndex] = React.useState(0);
+  const [quantity, setQuantity] = React.useState(1);
   // A fixed placeholder, not a real draw: `randomSeed()` draws from `crypto.getRandomValues`,
   // which returns a different value on the server render than on the client's first paint,
   // producing a hydration mismatch. The mount effect below replaces it with a real roll.
   const [seed, setSeed] = React.useState<bigint>(0n);
-  const [seedText, setSeedText] = React.useState("");
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [composeError, setComposeError] = React.useState<string | null>(null);
   const [hydrated, setHydrated] = React.useState(false);
@@ -1193,17 +1198,16 @@ export function PlayApp() {
     history.replaceState(null, "", url);
   }, [hydrated, session]);
 
-  const trimmedText = seedText.trim();
-  const effectiveSeed = trimmedText ? textSeed(trimmedText) : seed;
+  const effectiveSeed = seed;
 
   const nodes = liveNodes(session);
-  // Keep is blocked only when the session it would produce no longer fits in a share link
-  // (urlCodec's 64-op / 4KiB decode limits) — the demo's one growth bound, unreachable in
-  // normal play. keepCard is pure and cheap, so projecting it per render is fine.
-  const keepDisabled = React.useMemo(
-    () => !sessionShareable(keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined)),
-    [session, denomIndex, effectiveSeed, trimmedText],
-  );
+  // Adding is blocked only when the projected tray would no longer fit in a share link. Reusing
+  // one seed for the projection is safe: every encoded seed has the same fixed width.
+  const addDisabled = React.useMemo(() => {
+    let projected = session;
+    for (let i = 0; i < quantity; i++) projected = keepCard(projected, denomIndex, effectiveSeed);
+    return !sessionShareable(projected);
+  }, [session, denomIndex, effectiveSeed, quantity]);
 
   const lastResult = React.useMemo(() => {
     for (let i = session.nodes.length - 1; i >= 0; i--) {
@@ -1212,13 +1216,16 @@ export function PlayApp() {
     return null;
   }, [session.nodes]);
 
-  const handleKeep = () => {
-    if (keepDisabled) return;
-    setSession(keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined));
-    // Advance the draft: a kept card stays in the tray, so the same seed has nothing more to
-    // give (a text seed is fully determined by its text). Roll fresh for the next draw.
-    setSeedText("");
-    setSeed(randomSeed());
+  const handleAdd = () => {
+    if (addDisabled) return;
+    let next = session;
+    let nextSeed = effectiveSeed;
+    for (let i = 0; i < quantity; i++) {
+      next = keepCard(next, denomIndex, nextSeed);
+      nextSeed = randomSeed();
+    }
+    setSession(next);
+    setSeed(nextSeed);
   };
 
   const handleToggle = (key: number) => {
@@ -1438,15 +1445,12 @@ export function PlayApp() {
           <DrawBeat
             denomIndex={denomIndex}
             onDenomIndex={setDenomIndex}
-            seedText={seedText}
-            onSeedText={setSeedText}
-            onRoll={() => {
-              setSeedText("");
-              setSeed(randomSeed());
-            }}
+            quantity={quantity}
+            onQuantity={setQuantity}
+            onRoll={() => setSeed(randomSeed())}
             effectiveSeed={effectiveSeed}
-            onKeep={handleKeep}
-            keepDisabled={keepDisabled}
+            onAdd={handleAdd}
+            addDisabled={addDisabled}
             inverted={inverted}
             onToggleInverted={() => setInverted((v) => !v)}
           />
