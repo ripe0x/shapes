@@ -29,7 +29,9 @@ Deployed as two isolated Netlify projects (`../netlify.toml`):
 Netlify builds use `npm run build:netlify`, which refuses a missing or unsafe mode. A domain-level
 proxy blocks wallet, token, gallery, and auction routes on `shapes.ripe.wtf`, even if its
 environment is later misconfigured. Local development defaults to hybrid mode: the launch page at
-`/`, the playground at `/play`, and the app at `/mint`.
+`/`, the playground at `/play`, and the app at `/mint`. The root Netlify configuration explicitly
+includes `preview/` in its change detection because the playground and canonical renderer are
+shared from that workspace.
 
 ## Development
 
