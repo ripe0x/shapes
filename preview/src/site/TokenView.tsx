@@ -240,7 +240,6 @@ export function TokenView({
           </div>
         </Section>
         <History history={history} chainId={dep.chainId} />
-        <div style={{height: 64}} />
       </main>
     );
   }
@@ -257,7 +256,6 @@ export function TokenView({
           </div>
         </Section>
         <History history={history} chainId={dep.chainId} />
-        <div style={{height: 64}} />
       </main>
     );
   }
@@ -280,7 +278,6 @@ export function TokenView({
           </div>
         </Section>
         <History history={history} chainId={dep.chainId} />
-        <div style={{height: 64}} />
       </main>
     );
   }
@@ -393,7 +390,6 @@ export function TokenView({
         />
       )}
 
-      <div style={{height: 64}} />
     </main>
   );
 }
