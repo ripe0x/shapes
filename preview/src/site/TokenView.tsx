@@ -45,6 +45,24 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   transfer: "Transferred",
 };
 
+const TRAIT_DESCRIPTION: Record<string, string> = {
+  Grid: "The artwork's module grid, shown as columns by rows.",
+  Fill: "How the modules on this specific Shape rendered: filled, outlined, or mixed.",
+  Ink: "The inherited ink gene that controls each module's chance of rendering filled.",
+  Modules: "The artwork's module sequence in reading order.",
+  Primitive: "The module shape that appears most often in the artwork.",
+  Variety: "The number of distinct module shapes present in the artwork.",
+  "Ink Tier": "The rarity band of this Shape's ink gene.",
+  Formation: "How this Shape was assembled from independent mint origins.",
+  "Independent Origins": "The number of direct mint events represented in this Shape.",
+  "Origin Density": "The share of its backing units that trace to separate mint origins.",
+  Complete: "Whether every backing unit traces to its own mint, as required to make an apex Shape Black.",
+  Black: "Whether its ETH backing has been permanently sacrificed.",
+  "Compose Depth": "The number of recent compositions this Shape can still undo.",
+  "Split From": "The denomination of the immediate parent that was split to create this Shape.",
+  "Split Origin": "The denomination of the root ancestor in this Shape's split lineage.",
+};
+
 interface DatedEvent extends HistEvent {
   dateTime: string;
 }
@@ -287,18 +305,18 @@ export function TokenView({
 
   const tokRows: {k: string; v: React.ReactNode; size?: number; wrap?: "anywhere" | "normal"}[] = [
     {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
-    {k: "backing, exact", v: `${token.backing.toString()} wei`, size: 11},
     ...token.meta.attributes.map((attribute) => ({
       k: attribute.trait_type.toLowerCase(),
-      v:
-        attribute.trait_type === "Primitive" ? (
-          <>
-            {attribute.value}
-            <span style={{marginLeft: 10, color: C.muted, fontSize: 11}}>most common module shape</span>
-          </>
-        ) : (
-          attribute.value
-        ),
+      v: (
+        <>
+          <div>{attribute.value}</div>
+          {TRAIT_DESCRIPTION[attribute.trait_type] && (
+            <div style={{marginTop: 4, color: C.muted, fontSize: 11, lineHeight: 1.5}}>
+              {TRAIT_DESCRIPTION[attribute.trait_type]}
+            </div>
+          )}
+        </>
+      ),
       wrap: "anywhere" as const,
     })),
   ];
@@ -317,10 +335,8 @@ export function TokenView({
               {tokRows.map((r) => (
                 <div
                   key={r.k}
+                  className="token-trait-row"
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "130px minmax(0, 1fr)",
-                    gap: 24,
                     padding: "10px 0",
                     borderBottom: `1px solid ${C.ruleInner}`,
                     fontSize: 13,

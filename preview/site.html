@@ -43,10 +43,12 @@
       .manage-action-card:not(:disabled):hover { border-color: #e6e4dd !important; transform: translateY(-1px); }
       .manage-outcome { display: grid; grid-template-columns: minmax(160px, auto) 36px minmax(0, 1fr); gap: 20px; align-items: center; max-width: 920px; padding: 24px; border: 1px solid #262622; background: #11110f; }
       .manage-outcome-arrow { color: #71716b; font-size: 22px; text-align: center; }
+      .token-trait-row { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 24px; }
       @media (max-width: 700px) {
         .manage-action-grid { grid-template-columns: 1fr; }
         .manage-outcome { grid-template-columns: 1fr; }
         .manage-outcome-arrow { transform: rotate(90deg); text-align: left; }
+        .token-trait-row { grid-template-columns: 1fr; gap: 5px; }
       }
     </style>
   </head>

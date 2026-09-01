@@ -142,6 +142,11 @@ button {
   font-size: 22px;
   text-align: center;
 }
+.token-trait-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 24px;
+}
 @media (max-width: 700px) {
   .manage-action-grid {
     grid-template-columns: 1fr;
@@ -152,6 +157,10 @@ button {
   .manage-outcome-arrow {
     transform: rotate(90deg);
     text-align: left;
+  }
+  .token-trait-row {
+    grid-template-columns: 1fr;
+    gap: 5px;
   }
 }
 /* Modal. The overlay dims the page; the panel reuses the section rule colour so it reads
