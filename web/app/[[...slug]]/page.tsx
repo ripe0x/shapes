@@ -16,6 +16,9 @@ function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | nu
   if (parts.length === 1 && parts[0] === "auction") return { view: "auction", tokenId: null };
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
   if (parts.length === 1 && parts[0] === "my-shapes") return { view: "collection", tokenId: null };
+  if (parts.length === 2 && parts[0] === "my-shapes" && parts[1] === "compose") {
+    return { view: "compose", tokenId: null };
+  }
   if (parts.length === 1 && parts[0] === "how-it-works") return { view: "about", tokenId: null };
   if (parts.length === 2 && parts[0] === "shape" && /^\d+$/.test(parts[1])) {
     return { view: "token", tokenId: BigInt(parts[1]) };
@@ -74,6 +77,13 @@ export async function generateMetadata({
       title: "My Shapes",
       description: "The live Shapes currently owned by your connected wallet.",
       openGraph: { title: "My Shapes · Shapes", url: "/my-shapes" },
+    };
+  }
+  if (r.view === "compose") {
+    return {
+      title: "Compose Shapes",
+      description: "Select matching Shapes, choose the identity that survives, and preview the exact result.",
+      openGraph: { title: "Compose Shapes · Shapes", url: "/my-shapes/compose" },
     };
   }
   if (r.view === "about") {

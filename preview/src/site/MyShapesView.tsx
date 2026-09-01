@@ -2,6 +2,7 @@ import {C} from "./theme";
 import {Section, short} from "./ui";
 import {ShapeGrid} from "./GalleryView";
 import type {SiteData} from "./data";
+import {composeRung} from "./composeSelection";
 
 export function filterOwnedTokens<T extends {owner: string}>(tokens: T[], address: string): T[] {
   return tokens.filter((token) => token.owner.toLowerCase() === address.toLowerCase());
@@ -13,14 +14,20 @@ export function MyShapesView({
   connected,
   onConnect,
   onOpenToken,
+  onCompose,
 }: {
   data: SiteData | null;
   address: `0x${string}` | undefined;
   connected: boolean;
   onConnect: () => void;
   onOpenToken: (id: bigint) => void;
+  onCompose: () => void;
 }) {
   const tokens = address ? filterOwnedTokens(data?.tokens ?? [], address) : [];
+  const composeAvailable = tokens.some((token) => {
+    const rung = composeRung(token.di);
+    return !!rung && tokens.filter((candidate) => candidate.di === token.di).length >= rung.totalShapes;
+  });
 
   if (!connected || !address) {
     return (
@@ -45,12 +52,30 @@ export function MyShapesView({
   return (
     <main>
       <Section title="MY SHAPES">
-        <div style={{fontSize: 15}}>
-          {data
-            ? `${tokens.length} Shape${tokens.length === 1 ? "" : "s"}, newest first.`
-            : "Reading the chain…"}
+        <div style={{display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 20}}>
+          <div>
+            <div style={{fontSize: 15}}>
+              {data
+                ? `${tokens.length} Shape${tokens.length === 1 ? "" : "s"}, newest first.`
+                : "Reading the chain…"}
+            </div>
+            <div style={{marginTop: 8, color: C.muted, fontSize: 11}}>{short(address)}</div>
+          </div>
+          <button
+            type="button"
+            className="btn-filled"
+            disabled={!data || !composeAvailable}
+            onClick={onCompose}
+            style={{padding: "10px 18px", letterSpacing: "0.08em"}}
+          >
+            COMPOSE SHAPES
+          </button>
         </div>
-        <div style={{marginTop: 8, color: C.muted, fontSize: 11}}>{short(address)}</div>
+        {data && !composeAvailable && tokens.length > 0 && (
+          <div style={{marginTop: 14, color: C.muted, fontSize: 11}}>
+            You need a complete set of matching Shapes to compose the next denomination.
+          </div>
+        )}
       </Section>
       {data && tokens.length === 0 ? (
         <div style={{padding: 48, color: C.muted, fontSize: 13}}>

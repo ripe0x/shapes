@@ -13,12 +13,13 @@ import {GalleryView} from "./GalleryView";
 import {MyShapesView} from "./MyShapesView";
 import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
+import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
 import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 
-export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
+export type View = "mint" | "auction" | "gallery" | "collection" | "compose" | "token" | "manage" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -58,7 +59,14 @@ export function SiteApp({
   const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
-  const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection">("gallery");
+  const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection" | "compose">("gallery");
+  const [composeDraft, setComposeDraft] = React.useState<ComposeDraft>({
+    session: 0,
+    selectedIds: [],
+    survivorId: null,
+    phase: "select",
+    backView: "collection",
+  });
   const [mint, setMint] = React.useState<MintState>({status: "idle"});
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -284,6 +292,8 @@ export function SiteApp({
         hash,
         tokenIds: [t.id],
       });
+      setTokenId(t.id);
+      setTokenBackView("collection");
       setView("token");
       window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
@@ -379,7 +389,7 @@ export function SiteApp({
   };
 
   const openToken = (id: bigint) => {
-    if (view === "gallery" || view === "collection") setTokenBackView(view);
+    if (view === "gallery" || view === "collection" || view === "compose") setTokenBackView(view);
     setTokenId(id);
     setRedeem({status: "idle"});
     setTxErr(null);
@@ -389,6 +399,19 @@ export function SiteApp({
   const go = (v: View) => {
     setTxErr(null);
     setView(v);
+  };
+
+  const startCompose = (survivorId?: bigint) => {
+    setComposeDraft((previous) => ({
+      session: previous.session + 1,
+      selectedIds: survivorId === undefined ? [] : [survivorId],
+      survivorId: survivorId ?? null,
+      phase: "select",
+      backView: survivorId === undefined ? "collection" : "manage",
+    }));
+    setTxErr(null);
+    setView("compose");
+    window.scrollTo({top: 0, behavior: "smooth"});
   };
 
   const navColor = (v: View) => (view === v ? C.ink : C.muted);
@@ -552,6 +575,23 @@ export function SiteApp({
           connected={isConnected}
           onConnect={() => openConnectModal?.()}
           onOpenToken={openToken}
+          onCompose={() => startCompose()}
+        />
+      )}
+      {view === "compose" && (
+        <ComposeWorkspace
+          key={composeDraft.session}
+          draft={composeDraft}
+          data={data}
+          dep={dep}
+          publicClient={publicClient}
+          address={address}
+          busy={busy}
+          txErr={txErr}
+          onChange={setComposeDraft}
+          onCancel={() => go(composeDraft.backView)}
+          onOpenToken={openToken}
+          onSubmit={(survivor, burnIds) => void doCompose(survivor, burnIds)}
         />
       )}
       {view === "token" && tokenId !== null && (
@@ -562,7 +602,7 @@ export function SiteApp({
           address={address}
           tokenId={tokenId}
           redeem={redeem}
-          backLabel={tokenBackView === "collection" ? "MY SHAPES" : "GALLERY"}
+          backLabel={tokenBackView === "collection" ? "MY SHAPES" : tokenBackView === "compose" ? "COMPOSE" : "GALLERY"}
           onBack={() => go(tokenBackView)}
           onManage={() => go("manage")}
           onOpenToken={openToken}
@@ -578,7 +618,7 @@ export function SiteApp({
           busy={busy}
           txErr={txErr}
           onBack={() => go("token")}
-          onCompose={(t, ids) => void doCompose(t, ids)}
+          onStartCompose={(id) => startCompose(id)}
           onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
           onRedeem={(t) => void confirmRedeem(t)}

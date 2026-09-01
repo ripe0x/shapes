@@ -165,6 +165,111 @@ button {
   font-size: 22px;
   text-align: center;
 }
+.compose-token-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 28px 20px;
+  padding: 32px 48px 48px;
+}
+.compose-select-card {
+  display: block;
+  width: 100%;
+  border: 1px solid transparent;
+  background: none;
+  color: #e6e4dd;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.compose-select-card:not(:disabled):hover,
+.compose-select-card:focus-visible,
+.compose-survivor-card:not(:disabled):hover,
+.compose-survivor-card:focus-visible {
+  border-color: #71716b;
+  outline: none;
+}
+.compose-select-card.selected,
+.compose-survivor-card.selected {
+  border-color: #e6e4dd;
+  background: #161613;
+}
+.compose-select-card:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+.compose-select-card.selected:disabled {
+  opacity: 1;
+}
+.compose-selection-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 5px 7px;
+  border: 1px solid #e6e4dd;
+  background: #0d0d0c;
+  color: #e6e4dd;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.compose-details-link {
+  margin: 8px 10px 0;
+  color: #71716b;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.compose-selection-tray {
+  position: fixed;
+  z-index: 20;
+  left: 24px;
+  right: 24px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 18px calc(14px + env(safe-area-inset-bottom));
+  border: 1px solid #e6e4dd;
+  background: #0d0d0c;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+}
+.compose-tray-actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.compose-survivor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 160px));
+  gap: 14px;
+}
+.compose-survivor-card {
+  border: 1px solid #262622;
+  background: none;
+  color: #e6e4dd;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+.compose-survivor-card:disabled {
+  cursor: default;
+}
+.compose-review-outcome {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 36px minmax(180px, 230px);
+  gap: 24px;
+  align-items: center;
+  max-width: 760px;
+  padding: 24px;
+  border: 1px solid #262622;
+  background: #11110f;
+}
+.compose-review-arrow {
+  color: #71716b;
+  font-size: 22px;
+  text-align: center;
+}
 .token-trait-row {
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr);
@@ -184,6 +289,30 @@ button {
   .token-trait-row {
     grid-template-columns: 1fr;
     gap: 5px;
+  }
+  .compose-token-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 10px;
+    padding: 24px 16px 128px;
+  }
+  .compose-selection-tray {
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .compose-tray-actions {
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .compose-review-outcome {
+    grid-template-columns: 1fr;
+  }
+  .compose-review-arrow {
+    transform: rotate(90deg);
+    text-align: left;
   }
 }
 /* Modal. The overlay dims the page; the panel reuses the section rule colour so it reads

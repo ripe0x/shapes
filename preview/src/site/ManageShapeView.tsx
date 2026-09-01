@@ -1,6 +1,6 @@
 import React from "react";
-import {formatEther, hexToBytes, type Hex, type PublicClient} from "viem";
-import {DENOMINATIONS, denomIndexOf, shapeLensAbi, type Deployment} from "../chain/abi";
+import {hexToBytes, type Hex, type PublicClient} from "viem";
+import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
 import {CANONICAL, renderShape} from "../canonical/render";
 import {
   renderSampledShape,
@@ -11,9 +11,9 @@ import {
 import {C, label} from "./theme";
 import {Art, Modal, Section, short} from "./ui";
 import type {SiteData, SiteToken} from "./data";
-import {buildComposeResultPreview, type ComposeResultPreview} from "./composePreview";
+import {buildComposeResultPreview} from "./composePreview";
 
-type ManageAction = "compose" | "split" | "decompose" | "redeem" | "sacrifice";
+type ManageAction = "split" | "decompose" | "redeem" | "sacrifice";
 
 interface ComposeRecordPreview {
   survivorDenominationIndex: number;
@@ -36,8 +36,6 @@ interface ResultCard {
   identity: string;
 }
 
-const MAX_COMPOSE_INPUTS = 700;
-
 const svgData = (svg: string) => `data:image/svg+xml;base64,${btoa(svg)}`;
 
 export function ManageShapeView({
@@ -49,7 +47,7 @@ export function ManageShapeView({
   busy,
   txErr,
   onBack,
-  onCompose,
+  onStartCompose,
   onSplit,
   onDecompose,
   onRedeem,
@@ -63,7 +61,7 @@ export function ManageShapeView({
   busy: string | null;
   txErr: {op: string; text: string} | null;
   onBack: () => void;
-  onCompose: (token: SiteToken, burnIds: bigint[]) => void;
+  onStartCompose: (tokenId: bigint) => void;
   onSplit: (token: SiteToken) => void;
   onDecompose: (token: SiteToken) => void;
   onRedeem: (token: SiteToken) => void;
@@ -72,10 +70,7 @@ export function ManageShapeView({
   const token = data?.tokens.find((candidate) => candidate.id === tokenId) ?? null;
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
   const [action, setAction] = React.useState<ManageAction | null>(null);
-  const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [confirming, setConfirming] = React.useState<"split" | "redeem" | "sacrifice" | null>(null);
-  const [composePreview, setComposePreview] = React.useState<ComposeResultPreview | null>(null);
-  const [composePreviewUnavailable, setComposePreviewUnavailable] = React.useState(false);
   const [composeRecord, setComposeRecord] = React.useState<ComposeRecordPreview | null>(null);
   const [recordUnavailable, setRecordUnavailable] = React.useState(false);
   const [splitPreviews, setSplitPreviews] = React.useState<ResultCard[] | null>(null);
@@ -83,7 +78,6 @@ export function ManageShapeView({
 
   React.useEffect(() => {
     setAction(null);
-    setPicked(new Set());
     setConfirming(null);
   }, [tokenId]);
 
@@ -99,40 +93,6 @@ export function ManageShapeView({
         : [],
     [address, data, owned, token],
   );
-  const pickedTokens = React.useMemo(
-    () => candidates.filter((candidate) => picked.has(candidate.id.toString())),
-    [candidates, picked],
-  );
-  const pickedIds = React.useMemo(() => pickedTokens.map((candidate) => candidate.id), [pickedTokens]);
-  const sumWei = (token?.backing ?? 0n) + pickedTokens.reduce((sum, candidate) => sum + candidate.backing, 0n);
-  const sumIdx = token ? denomIndexOf(sumWei) : -1;
-  const composeValid = pickedIds.length >= 1 && pickedIds.length <= MAX_COMPOSE_INPUTS && sumIdx >= 0;
-
-  React.useEffect(() => {
-    let cancelled = false;
-    setComposePreview(null);
-    setComposePreviewUnavailable(false);
-    if (action !== "compose" || !publicClient || !token || !composeValid) return;
-
-    void publicClient
-      .readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
-        functionName: "previewCompose",
-        args: [token.id, pickedIds],
-      })
-      .then((result) => {
-        if (!cancelled) setComposePreview(buildComposeResultPreview(result, token.id));
-      })
-      .catch(() => {
-        if (!cancelled) setComposePreviewUnavailable(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [action, composeValid, dep.lens, pickedIds, publicClient, token]);
-
   React.useEffect(() => {
     let cancelled = false;
     setComposeRecord(null);
@@ -297,7 +257,7 @@ export function ManageShapeView({
     ownerBlock ?? (allowed ? null : unavailable);
 
   const options: {
-    id: ManageAction;
+    id: ManageAction | "compose";
     protocol: string;
     title: string;
     description: string;
@@ -359,7 +319,6 @@ export function ManageShapeView({
   const selectAction = (next: ManageAction) => {
     setAction(next);
     setConfirming(null);
-    setPicked(new Set());
     window.scrollTo({top: 0, behavior: "smooth"});
   };
 
@@ -385,7 +344,9 @@ export function ManageShapeView({
                 <ActionCard
                   key={option.id}
                   {...option}
-                  onClick={() => selectAction(option.id)}
+                  onClick={() =>
+                    option.id === "compose" ? onStartCompose(token.id) : selectAction(option.id)
+                  }
                 />
               ))}
             </div>
@@ -406,23 +367,6 @@ export function ManageShapeView({
           >
             ← ALL ACTIONS
           </button>
-
-          {action === "compose" && (
-            <ComposeFlow
-              token={token}
-              candidates={candidates}
-              picked={picked}
-              setPicked={setPicked}
-              pickedIds={pickedIds}
-              sumWei={sumWei}
-              sumIdx={sumIdx}
-              composeValid={composeValid}
-              preview={composePreview}
-              previewUnavailable={composePreviewUnavailable}
-              busy={busy}
-              onSubmit={() => onCompose(token, pickedIds)}
-            />
-          )}
 
           {action === "split" && (
             <SplitFlow
@@ -661,113 +605,6 @@ function CurrentCard({
         identity,
       }}
     />
-  );
-}
-
-function ComposeFlow({
-  token,
-  candidates,
-  picked,
-  setPicked,
-  pickedIds,
-  sumWei,
-  sumIdx,
-  composeValid,
-  preview,
-  previewUnavailable,
-  busy,
-  onSubmit,
-}: {
-  token: SiteToken;
-  candidates: SiteToken[];
-  picked: Set<string>;
-  setPicked: React.Dispatch<React.SetStateAction<Set<string>>>;
-  pickedIds: bigint[];
-  sumWei: bigint;
-  sumIdx: number;
-  composeValid: boolean;
-  preview: ComposeResultPreview | null;
-  previewUnavailable: boolean;
-  busy: string | null;
-  onSubmit: () => void;
-}) {
-  return (
-    <>
-      <FlowHeading
-        title="Grow this Shape"
-        body={`Choose matching Shapes to absorb into #${token.id.toString()}. The selected tokens are burned; #${token.id.toString()} keeps its ID and becomes the exact result shown below.`}
-      />
-      <div style={{maxWidth: 760, borderTop: `1px solid ${C.rule}`}}>
-        {candidates.map((candidate) => {
-          const selected = picked.has(candidate.id.toString());
-          return (
-            <div key={candidate.id.toString()} style={{display: "flex", alignItems: "center", gap: 18, padding: "12px 0", borderBottom: `1px solid ${C.ruleInner}`}}>
-              <Art src={candidate.image} width={42} />
-              <div style={{flex: 1, fontSize: 13}}>
-                Shape #{candidate.id.toString()} · {DENOMINATIONS[candidate.di].label} ETH
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  setPicked((previous) => {
-                    const next = new Set(previous);
-                    const key = candidate.id.toString();
-                    if (next.has(key)) next.delete(key);
-                    else next.add(key);
-                    return next;
-                  })
-                }
-                style={{
-                  border: `1px solid ${selected ? C.ink : C.border}`,
-                  background: selected ? C.ink : "transparent",
-                  color: selected ? C.page : C.bodyDim,
-                  padding: "7px 14px",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
-              >
-                {selected ? "Selected" : "Select"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{marginTop: 20, color: C.muted, fontSize: 12, lineHeight: 1.7}}>
-        {pickedIds.length === 0
-          ? "Select the Shapes to absorb."
-          : pickedIds.length > MAX_COMPOSE_INPUTS
-            ? `Select no more than ${MAX_COMPOSE_INPUTS} Shapes in one transaction.`
-            : composeValid
-              ? `${formatEther(sumWei)} ETH becomes one ${DENOMINATIONS[sumIdx].label} ETH Shape.`
-              : `${formatEther(sumWei)} ETH does not land on a supported denomination.`}
-      </div>
-
-      {composeValid && (
-        <div style={{marginTop: 30}}>
-          <Outcome
-            before={<CurrentCard token={token} />}
-            after={
-              preview ? (
-                <ResultCardView
-                  card={{
-                    id: token.id,
-                    image: preview.image,
-                    value: `${DENOMINATIONS[preview.denominationIndex].label} ETH`,
-                    eyebrow: "UPDATED SHAPE",
-                    identity: `Keeps ID · absorbs ${pickedIds.length} Shape${pickedIds.length === 1 ? "" : "s"}`,
-                  }}
-                />
-              ) : (
-                <PreviewStatus unavailable={previewUnavailable} />
-              )
-            }
-          />
-          <button type="button" className="btn-filled" onClick={onSubmit} disabled={!!busy || !preview} style={{marginTop: 28, padding: "11px 24px"}}>
-            {busy === "compose" ? "Waiting for confirmation" : `Grow Shape #${token.id.toString()}`}
-          </button>
-        </div>
-      )}
-    </>
   );
 }
 
