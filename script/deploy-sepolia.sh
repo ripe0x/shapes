@@ -61,7 +61,7 @@ lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 contract_address() {
   jq -r --arg name "$1" \
     '.transactions[] | select(.contractName == $name and .transactionType == "CREATE") | .contractAddress' \
-    "$BROADCAST_FILE" | tail -1
+    "$BROADCAST_FILE" | tail -1 | tr '[:upper:]' '[:lower:]'
 }
 
 require_address() {

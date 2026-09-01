@@ -8,6 +8,7 @@ Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cu
 ## Current outcome
 
 - Local P2 candidate on `codex/manage-shape-workspace` implements D-35: token #0 is titled `Shapes Collection Owner` and alone carries `Collection Owner: true`, with matching site identity. It is not merged or deployed. Each Foundry profile has 461 passing tests plus 4 expected fork skips; 126 preview tests, parity, preview/web builds and site lint also pass. Shapes size is unchanged at 24,474/24,453; ShapeRenderer is 23,331/23,330 bytes with 1,245/1,246 bytes of margin. The current Sepolia deployment remains exact `dba4dbf` and cannot reflect this renderer change.
+- Current Sepolia auction house `0x38445aced30590910e087672FEEa269284F03379` now holds Shape #0 in launch auction #0. Approval `0xafd08c0864d94aa210f0c3f0a30b8da0ba1be5d94ee61882edafe7aa414feb74` and creation `0xd86702d4845a1233ae7420a94e3764d237a27e2d4a536eaa1d2bb9948a133cfb` succeeded. Terms are no reserve, 5% increment, 24 hours from first bid and 15-minute extension. No bid has landed. The local site displays it after correcting the auction-house address casing; production needs that metadata fix merged and published.
 - P1 PASSED 2026-08-31. D-13's earlier live Sepolia auction completed two bids, anti-sniping extension, settlement, winner delivery and seller proceeds; final escrow/index checks were empty and the Fly indexer matched the chain head.
 - D-34 merged in PR #39 (`8d8c2b2`): explicit `positions()` and `market()` getters start empty/unlocked, may be changed, cleared or independently locked forever by admin, and have no authority over Shapes. `ShapeLens.positionOf` queries only the positions target with a 50,000-gas cap and converts external failure or malformed data to zero. The market is discovery-only and is never called.
 - Release-fork corrections merged in PR #40. Exact release commit `dba4dbfe93df64cc72052c3eab70289070e301d9` passes 459 tests with 4 RPC-only skips in each Foundry profile, all 4 mainnet-fork rehearsal tests, 115 preview tests, all hosted CI and both deployment dry runs.
@@ -36,7 +37,7 @@ Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cu
 
 ## Deployment configuration
 
-- Sepolia deployer/admin/artist/Shape #0 owner: `0xCB43078C32423F5348Cab5885911C3B5faE217F9` via Foundry account `ripe0x`.
+- Sepolia deployer/admin/artist and Shape #0 seller: `0xCB43078C32423F5348Cab5885911C3B5faE217F9` via Foundry account `ripe0x`. Shape #0 is currently escrowed in the launch auction house.
 - Sepolia future mint-fee recipient: `0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4`; it is code-free. Fee is exactly 100 bps.
 - Deploy only from fetched, clean, exact `main`. Never deploy from this branch. `script/deploy-sepolia.sh` fetches `origin/main` immediately before enforcing branch/commit/cleanliness, then checks chain, ladder, payout, fee, complete wiring, Shape #0 state, unsigned artist state, receipts and Etherscan source visibility. Its portable summary records a credential-free public RPC, never the operational provider URL.
 - The Etherscan key supplied in chat is not persisted. Inject it only into the deployment process. The user enters the Foundry keystore password interactively; never write it to a file.
