@@ -313,7 +313,7 @@ export function LaunchLanding() {
             </article>
             <article>
               <span>02</span>
-              <h3>Combine</h3>
+              <h3>Compose</h3>
               <p>Compatible Shapes can become a higher-value Shape. Their ETH and history move into the survivor.</p>
             </article>
             <article>
