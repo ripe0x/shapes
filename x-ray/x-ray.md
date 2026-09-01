@@ -8,11 +8,11 @@
 
 **What it does:** Shapes is an ERC721 that wraps an exact amount of ETH at one of nine fixed denominations (0.01–100 ETH); burning the token returns exactly that ETH to its owner.
 
-- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers presentation, position discovery and the destination of future mint fees. Shape #0 represents backed collectible ownership and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
+- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers presentation, positions, market and the destination of future mint fees. Shape #0 represents backed collectible ownership and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
 - **Core flow**: `mint` (ETH in, token out) and `redeem`/`burn` (token in, exact ETH out) are the whole economic surface; `compose`/`split`/`decompose` reshape tokens without moving ETH.
 - **Key mechanism**: A fixed reserve invariant — `address(this).balance >= redeemableBacking()` — with no admin path that can reach it. No oracle, no market pricing: value is denomination-fixed, not price-discovered.
 - **Token model**: One ERC721 collection (`Shapes`). No fungible token, no governance token, no LP token. `ShapeAuctionHouse` mints/holds Shapes as bid collateral but issues nothing of its own.
-- **Admin model**: A single transferable `admin()` controls presentation (renderer + collection metadata, one-way lockable) and an optional position-discovery resolver (independently one-way lockable, may lock at zero). Neither domain can touch ETH, backing, redemption or token ownership. `owner()` instead follows Shape #0 and is never consulted for authorization. Immutable `artist()` and its one-time signature stored directly in Shapes are attribution only and likewise confer no authority.
+- **Admin model**: A single transferable `admin()` controls presentation (renderer + collection metadata, one-way lockable) plus explicit positions and market pointers (independently one-way lockable, may lock at zero). None can touch ETH, backing, redemption or token ownership. `owner()` instead follows Shape #0 and is never consulted for authorization. Immutable `artist()` and its one-time signature stored directly in Shapes are attribution only and likewise confer no authority.
 
 For a visual overview of the protocol's architecture, see the [architecture diagram](architecture.svg).
 
@@ -114,18 +114,19 @@ Shapes matches the Stablecoin profile's core shape — mint against exact collat
 
 | Actor | Trust Level | Capabilities |
 |-------|-------------|--------------|
-| Admin | Bounded | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), set/clear/lock the position resolver, and redirect future mint fees. It cannot change the fee rate, withdraw ETH, alter backing/redemption, recover accrued fees or affect token ownership. |
+| Admin | Bounded | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), independently set/clear/lock positions and market pointers, and redirect future mint fees. It cannot change the fee rate, withdraw ETH, alter backing/redemption, recover accrued fees or affect token ownership. |
 | Shape #0 holder | Untrusted, self-scoped | Reported by `owner()` as collectible contract ownership. Has exactly the same lifecycle rights as any Shape holder and no administrative permissions. |
 | Shape Owner (any user) | Untrusted, self-scoped | mint/redeem/compose/split/decompose/sacrifice on tokens they own; cannot affect any other holder's tokens or the reserve beyond their own mint/redeem flow. |
 | Fee Recipient | Admin-selected | Receives future mint fees; a reverting recipient blocks minting until admin redirects it. Renouncing admin freezes the final address (SECURITY.md #6). |
 | Auction Seller | Untrusted, self-scoped | Lists any ERC721 it owns/is approved for; cannot bid its own auction (G-36/I-8) or affect another auction. |
 | Auction Bidder | Untrusted, self-scoped | Escrows Shape cards and/or ETH; can only withdraw its own escrow, never another bidder's. |
-| Position Resolver (optional, admin-configured) | Untrusted, gas-capped, fail-safe | A pure discovery read through `positionOf`; reverts or out-of-gas are swallowed to a default, with zero effect on core state. |
+| Positions target (optional, admin-configured) | Untrusted, gas-capped, fail-safe | Queried only by `ShapeLens.positionOf`; reverts, out-of-gas and malformed results become zero, with no effect on core state. |
+| Market target (optional, admin-configured) | Untrusted discovery data | Never called by Shapes or ShapeLens and has no authority over core state. |
 | Auction Lot (arbitrary ERC-721) | Untrusted | Called from exactly two functions (`createAuction`, `claimLot`); per the contract's own NatSpec, a lot that lies about `ownerOf`/`transferFrom` can only harm the bidder who chose to trust it. |
 
 **Adversary Ranking** (adjusted by git evidence — see §6):
 
-1. **Reentrant external-call adversary** (fee recipient, lot NFT, position resolver) — every value-moving external call target is either attacker-chosen (auction lot) or reaches into arbitrary code (fee forwarding, resolver); the one confirmed historical finding here (fee-recipient reentrancy into `bid`) was fixed twice. The commit this tree is built from (`2167dc7`) added a re-check of `a.settled` after the escrow call. A subsequent delta audit found that fix incomplete: against a fee-recipient contract that is also the auction's seller, the same window let the seller record a victim as `highestBidder` on a reentrantly-cancelled auction and then sweep their escrowed cards through `claimProceeds` — theft, not the self-harm a low implies. `settle` and `cancelAuction` now carry `nonReentrant`, closing the class structurally rather than at the `bid` call site alone (PR #38, `d2f2e59`).
+1. **Reentrant external-call adversary** (fee recipient, lot NFT, positions target) — every value-moving external call target is either attacker-chosen (auction lot) or reaches into arbitrary code (fee forwarding); the lens's positions read is separately gas-capped and state-free. The one confirmed historical finding here (fee-recipient reentrancy into `bid`) was fixed twice. The commit this tree is built from (`2167dc7`) added a re-check of `a.settled` after the escrow call. A subsequent delta audit found that fix incomplete: against a fee-recipient contract that is also the auction's seller, the same window let the seller record a victim as `highestBidder` on a reentrantly-cancelled auction and then sweep their escrowed cards through `claimProceeds`. `settle` and `cancelAuction` now carry `nonReentrant`, closing the class structurally (PR #38, `d2f2e59`).
 2. **Malicious or dishonest auction lot/collection contract** — the only adversary the house's own documentation explicitly declines to fully defend against; bounded to the parties who chose that auction.
 3. **Seed/mint-ordinal grinder** — a minter can advance `totalMinted` inside one transaction (mint-then-redeem dust) to select among a small candidate-seed space, most impactful at 50/100 ETH where the composition space is tiny (2,704 / 52 archetypes); accepted design since redemption value never depends on the seed (SPEC.md D3e).
 4. **Compromised admin** — can redirect future mint-fee revenue and can set misleading metadata/artwork or a wrong discovery pointer. It cannot change the fee rate, touch the reserve/redemption, move accrued funds or seize tokens.
@@ -135,7 +136,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 ### Trust Boundaries
 
-**Admin → presentation/resolver** — no timelock or multisig is enforced at the contract level; presentation and resolver are independently one-way lockable and neither reaches ETH, backing or token ownership. Shape #0's holder has no administrative capability. *Git signal: `access_control`-tagged commits touch `Shapes.sol` in 15 of the last 20 commits — elevated churn, but every change is additive validation (renderer/collection code checks, copy validation), not a widening of the admin's reach.*
+**Admin → presentation/pointers** — no timelock or multisig is enforced at the contract level; presentation, positions and market are independently one-way lockable and none reaches ETH, backing or token ownership. Shape #0's holder has no administrative capability. *Git signal: `access_control`-tagged commits touch `Shapes.sol` in 15 of the last 20 commits — elevated churn, but every change is bounded configuration, not reserve authority.*
 
 **Shapes ↔ fee recipient** — admin-selected destination for future fees; a reverting recipient causes a recoverable minting outage while admin exists, never reserve loss (SECURITY.md #6).
 
@@ -157,7 +158,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 - **Compose/split conservation under adversarial input ordering** &nbsp;[[I-11](invariants.md#i-11), [I-12](invariants.md#i-12), [I-14](invariants.md#i-14)] — `Shapes.sol:687-769` (compose) and `:845-920` (split) are the largest and newest rewritten surfaces in the repo. Worth independently re-deriving that `GeometrySampling.sortDonorsById`'s bottom-up merge sort (`GeometrySampling.sol:62-95`) is stable and order-independent under every burn-count and duplicate-id shape, not only the cases the existing fuzz suite happens to hit.
 
-- **Gas-capped external reads treated as authoritative downstream** — `Shapes.positionOf` fails safely for `Shapes` itself, but any off-chain integrator (site, indexer) that treats the returned position as more than an unvalidated hint inherits whatever a hostile resolver chooses to report.
+- **Gas-capped external reads treated as authoritative downstream** — `ShapeLens.positionOf` fails safely to zero, but any integrator that treats the returned position as more than an unvalidated hint inherits whatever a hostile positions target reports.
 
 - **Admin-editable metadata copy, never locked** — `setMetadataCopy` is explicitly not covered by `lockRenderer`; SECURITY.md's own caveat already flags un-escaped HTML in `description`. Worth confirming `CopyValidation.requireJsonSafe`'s UTF-8 walk has no bypass that still breaks a downstream JSON/HTML consumer despite passing the `"`/`\`/C0 check.
 
@@ -187,11 +188,17 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 > - Mutability: Immutable, set once at construction
 > - On failure: the whole mint reverts; permanently bricks minting if the recipient always reverts (accepted)
 
-> **Position Resolver** — via `Shapes.positionOf` (`Shapes.sol:1104-1114`)
-> - Assumes: nothing — explicitly untrusted
-> - Validates: gas-capped at 50,000; any revert/out-of-gas/return swallowed to `address(0)`
-> - Mutability: Admin-replaceable until `lockPositionResolver`; may be locked at zero
-> - On failure: fails open to `address(0)`, never reverts the caller
+> **Positions Target** — via `ShapeLens.positionOf`
+> - Assumes: nothing, explicitly untrusted
+> - Validates: gas-capped at 50,000; revert, out-of-gas or malformed address becomes zero
+> - Mutability: Admin-replaceable until its independent `lockPointer`; may be locked at zero
+> - On failure: returns `address(0)`, never affects core state
+
+> **Market Target** — discovery only through `Shapes.market()`
+> - Assumes: nothing
+> - Validates: deployed code when configured
+> - Mutability: Admin-replaceable until its independent `lockPointer`; may be locked at zero
+> - On failure: no call occurs, so only the discovered address can be misleading
 
 > **Auction Lot (arbitrary ERC-721)** — via `ShapeAuctionHouse.createAuction`/`claimLot` (`ShapeAuctionHouse.sol:80-131,204-216`)
 > - Assumes: honest `ownerOf`/`getApproved`/`isApprovedForAll`/`transferFrom`/ERC165 self-report

@@ -37,6 +37,15 @@ contract DeploySepolia is LensEquivalence {
 
     error WrongLadder(string compiled, string expected);
 
+    function _requirePointersUnset(Shapes shapes) private view {
+        (address positions, bool positionsLocked) = shapes.positions();
+        (address market, bool marketLocked) = shapes.market();
+        require(positions == address(0), "positions should start unset");
+        require(market == address(0), "market should start unset");
+        require(!positionsLocked, "positions should start unlocked");
+        require(!marketLocked, "market should start unlocked");
+    }
+
     /// @dev The ladder is compiled in, so a run without FOUNDRY_PROFILE=testnet would put mainnet
     ///      amounts on a testnet where nobody can fund the upper rungs. Stop before broadcasting.
     function _requireTestnetLadder() internal pure {
@@ -45,16 +54,50 @@ contract DeploySepolia is LensEquivalence {
         }
     }
 
-    function run()
-        external
-        returns (
-            ShapeRenderer renderer,
-            ShapeCollection collection,
-            Shapes shapes,
-            ShapeLens lens,
-            ShapeAuctionHouse house
-        )
-    {
+    function _postflight(
+        ShapeRenderer renderer,
+        ShapeCollection collection,
+        Shapes shapes,
+        ShapeLens lens,
+        ShapeAuctionHouse house,
+        address deployer,
+        bool seeded
+    ) private {
+        require(shapes.feeBps() == DEFAULT_FEE_BPS, "fee bps mismatch");
+        require(shapes.feeRecipient() == SEPOLIA_FEE_RECIPIENT, "fee recipient mismatch");
+        require(shapes.renderer() == address(renderer), "renderer mismatch");
+        require(shapes.collection() == address(collection), "collection mismatch");
+        require(address(lens.shapes()) == address(shapes), "lens points at another token");
+        require(house.shapes() == address(shapes), "house points at another token");
+        require(shapes.ownerOf(0) == deployer, "Shape #0 not minted to deployer");
+        require(shapes.owner() == deployer, "contract owner mismatch");
+        require(shapes.admin() == deployer, "admin mismatch");
+        require(shapes.artist() == deployer, "artist mismatch");
+        require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
+        require(shapes.artistSignature().length == 0, "artist signature should start empty");
+        require(lens.exists(0), "Shape #0 must exist");
+        require(shapes.denominationCount() == 9, "denomination count mismatch");
+        require(shapes.denominationAt(0) == Denominations.amountAt(0), "minimum denomination mismatch");
+        require(shapes.denomIndexOf(0) == 0, "Shape #0 denomination mismatch");
+        require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
+        _requirePointersUnset(shapes);
+        require(house.auctionCount() == (seeded ? 1 : 0), "auction count mismatch");
+
+        console.log("chain id      ", block.chainid);
+        console.log("ShapeRenderer ", address(renderer));
+        console.log("Shapes        ", address(shapes));
+        console.log("ShapeLens     ", address(lens));
+        console.log("fee (bps)     ", DEFAULT_FEE_BPS);
+        console.log("fee recipient ", shapes.feeRecipient());
+        console.log("artist        ", shapes.artist());
+        console.log("total minted  ", shapes.totalMinted());
+        console.log("positions      unset and unlocked");
+        console.log("market         unset and unlocked");
+
+        _assertLensEquivalence(shapes, lens);
+    }
+
+    function run() external {
         _requireTestnetLadder();
 
         uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
@@ -71,14 +114,14 @@ contract DeploySepolia is LensEquivalence {
 
         vm.startBroadcast();
 
-        renderer = new ShapeRenderer();
+        ShapeRenderer renderer = new ShapeRenderer();
 
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
+        ShapeCollection collection = new ShapeCollection(address(renderer));
+        Shapes shapes = new Shapes{value: Denominations.amountAt(0)}(
             feeBps, SEPOLIA_FEE_RECIPIENT, address(renderer), address(collection)
         );
-        lens = new ShapeLens(address(shapes));
-        house = new ShapeAuctionHouse(address(shapes));
+        ShapeLens lens = new ShapeLens(address(shapes));
+        ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
 
         if (seed) {
             // Shape #0 already represents contract ownership. Shape #1 is the first ordinary artwork
@@ -104,38 +147,8 @@ contract DeploySepolia is LensEquivalence {
 
         vm.stopBroadcast();
 
-        require(shapes.feeBps() == feeBps, "fee bps mismatch");
-        require(shapes.feeRecipient() == SEPOLIA_FEE_RECIPIENT, "fee recipient mismatch");
-        require(shapes.renderer() == address(renderer), "renderer mismatch");
-        require(shapes.collection() == address(collection), "collection mismatch");
-        require(address(lens.shapes()) == address(shapes), "lens points at another token");
-        require(house.shapes() == address(shapes), "house points at another token");
-        require(shapes.ownerOf(0) == me, "Shape #0 not minted to deployer");
-        require(shapes.owner() == me, "contract owner mismatch");
-        require(shapes.admin() == me, "admin mismatch");
-        require(shapes.artist() == me, "artist mismatch");
-        require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
-        require(shapes.artistSignature().length == 0, "artist signature should start empty");
-        require(lens.exists(0), "Shape #0 must exist");
-        require(shapes.denominationCount() == 9, "denomination count mismatch");
-        require(shapes.denominationAt(0) == Denominations.amountAt(0), "minimum denomination mismatch");
-        require(shapes.denomIndexOf(0) == 0, "Shape #0 denomination mismatch");
-        require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
-        require(shapes.positionResolver() == address(0), "position resolver should start unset");
-        require(!shapes.positionResolverLocked(), "position resolver should start unlocked");
-        require(house.auctionCount() == (seed ? 1 : 0), "auction count mismatch");
-
-        console.log("chain id      ", block.chainid);
-        console.log("ShapeRenderer ", address(renderer));
-        console.log("Shapes        ", address(shapes));
-        console.log("ShapeLens     ", address(lens));
-        console.log("fee (bps)     ", feeBps);
-        console.log("fee recipient ", shapes.feeRecipient());
-        console.log("artist        ", shapes.artist());
-        console.log("total minted  ", shapes.totalMinted());
-
-        // Runs last: the probe advances simulated token state, so the counts logged above
+        // Runs last: the probe advances simulated token state, so the counts logged inside it
         // are the seeded mints alone.
-        _assertLensEquivalence(shapes, lens);
+        _postflight(renderer, collection, shapes, lens, house, me, seed);
     }
 }

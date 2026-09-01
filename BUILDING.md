@@ -157,8 +157,8 @@ These are `view` and require no ownership.
 - **Backing economics are immutable.** No admin can move the reserve, change denominations, alter
   redemption, or change `feeBps`. The separate admin may redirect future mint fees, replace the
   renderer and collection metadata (locked together), edit copy, and configure the independently
-  lockable position resolver. Shape #0's holder has no permissions. Renouncing admin freezes the
-  final fee recipient and any unlocked presentation settings.
+  lockable positions and market pointers. Shape #0's holder has no permissions. Renouncing admin
+  freezes the final fee recipient and every unlocked configuration at its last value.
 - **Black Shapes are non-redeemable by design.** `redeemableValueWei` is 0 and `isBlack` is true;
   never accept one as payment.
 - **Give value-moving calls gas headroom over the bare estimate.** Every state-changing function

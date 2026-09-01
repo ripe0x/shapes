@@ -83,7 +83,7 @@ interface IShapeLens {
     function modulesForAmount(uint256 amountWei) external pure returns (uint256);
 
     /// @notice Canonical external position reported for `tokenId`, or zero when none is reported.
-    /// @dev Does not require a live token. Resolver results are unvalidated; failures return zero.
+    /// @dev Does not require a live token. Position results are unvalidated; failures return zero.
     function positionOf(uint256 tokenId) external view returns (address);
 
     /// @notice Whether `tokenId` is currently a live Shape.

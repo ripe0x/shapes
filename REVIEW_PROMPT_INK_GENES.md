@@ -9,7 +9,7 @@ You are reviewing the Shapes repo (`~/CascadeProjects/shapes`), an ERC721 that w
 ETH denominations (0.01–100, nine steps) with fully on-chain generative art. Core protocol:
 `mint`/`redeem` (ETH in/out), `compose`/`decompose`/`split` (reshape without moving ETH),
 `sacrifice` (turn a complete 100-ETH apex Black without burning its NFT). Economic admin is
-absent; the transferable admin controls independently lockable renderer and position-resolver
+absent; the transferable admin controls independently lockable renderer, positions and market
 pointers. Read `SPEC.md` and `SECURITY.md` first — they carry the project's
 decision records (D1–D17) and threat model.
 
@@ -143,7 +143,7 @@ go:
    simulate-preview parity, decompose/split, redeem. Verify contracts on Etherscan.
 7. Post-deploy policy decisions documented for the maintainer: final fee recipient,
    when/whether to `lockRenderer`, and when/whether to `renounceAdmin`. Admin also controls
-   metadata copy and the independently lockable position resolver.
+   metadata copy and the independently lockable positions and market pointers.
 8. Items 1–2 of Task 3 resolved (tuned constants, epoch decision) — these are the two
    blockers that must be settled BEFORE any deploy, since both are immutable.
 

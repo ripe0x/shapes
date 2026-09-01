@@ -24,6 +24,7 @@ import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {CopyValidation} from "./lib/CopyValidation.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
 import {EIP712Signature} from "./lib/EIP712Signature.sol";
+import {PointerOps} from "./lib/PointerOps.sol";
 
 /// @title Shapes
 /// @notice ETH in, Shape out.
@@ -39,9 +40,9 @@ import {EIP712Signature} from "./lib/EIP712Signature.sol";
 ///      only by `tokenURI`, the collection only by `contractURI`. The admin also holds the
 ///      metadata copy: `setMetadataCopy` atomically sets the token name prefix and the description
 ///      shared with `contractURI`, and remains editable after `lockRenderer`. Independently,
-///      the admin may set, clear and permanently lock an optional
-///      position resolver; core token and reserve operations never call it. The admin role is
-///      transferable and may be renounced. None of these touch ETH, backing or redeemability.
+///      the admin may set, clear and permanently lock optional positions and market pointers;
+///      core token and reserve operations never call either. The admin role is transferable and
+///      may be renounced. None of these touch ETH, backing or redeemability.
 ///
 ///      Shape #0 represents ownership of this contract as a collectible object. `owner()` follows
 ///      its holder and returns zero while #0 is burned. Shape #0 is otherwise a normal backed
@@ -230,12 +231,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      differently from its tokens.
     string public description;
 
-    /// @inheritdoc IShapes
-    /// @dev Optional discovery-only resolver. Core state-changing operations never read or call it.
-    address public positionResolver;
-
-    /// @inheritdoc IShapes
-    bool public positionResolverLocked;
+    /// @dev Explicit positions and market pointers with independent locks. `PointerOps` keeps
+    ///      their administration outside this contract's EIP-170-constrained runtime.
+    PointerOps.Pointers private _pointers;
 
     /* -------------------------- ownership/admin -------------------------- */
 
@@ -384,8 +382,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev Admin only, one way. After this the renderer can never change again. The optional
-    ///      position resolver remains independently configurable until its own lock or renunciation.
+    /// @dev Admin only, one way. After this the renderer can never change again. The positions and
+    ///      market pointers remain independently configurable until their own locks or renunciation.
     function lockRenderer() external onlyAdmin {
         _requireRendererUnlocked();
         rendererLocked = true;
@@ -421,27 +419,26 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         emit CollectionUpdated(newCollection);
     }
 
-    /// @dev Shared by `setPositionResolver` and `lockPositionResolver`.
-    function _requirePositionResolverUnlocked() private view {
-        if (positionResolverLocked) revert PositionResolverIsLocked();
-    }
-
-    /// @dev Zero clears the resolver. Nonzero values must carry code when configured, but Shapes
-    ///      intentionally does not inspect or call that code and makes no claim about its mutability.
-    function setPositionResolver(address resolver_) external onlyAdmin {
-        _requirePositionResolverUnlocked();
-        if (resolver_ != address(0) && resolver_.code.length == 0) {
-            revert InvalidPositionResolver();
-        }
-        positionResolver = resolver_;
-        emit PositionResolverSet(resolver_);
+    /// @inheritdoc IShapes
+    function setPointer(uint8 pointer, address target) external onlyAdmin {
+        PointerOps.set(_pointers, pointer, target);
     }
 
     /// @inheritdoc IShapes
-    function lockPositionResolver() external onlyAdmin {
-        _requirePositionResolverUnlocked();
-        positionResolverLocked = true;
-        emit PositionResolverLocked(positionResolver);
+    function lockPointer(uint8 pointer) external onlyAdmin {
+        PointerOps.lock(_pointers, pointer);
+    }
+
+    /// @inheritdoc IShapes
+    function positions() external view returns (address target, bool locked) {
+        PointerOps.Pointers storage p = _pointers;
+        return (p.positions, p.positionsLocked);
+    }
+
+    /// @inheritdoc IShapes
+    function market() external view returns (address target, bool locked) {
+        PointerOps.Pointers storage p = _pointers;
+        return (p.market, p.marketLocked);
     }
 
     /// @dev `false` on a revert or a `false` return from `target`'s `supportsInterface`, so the

@@ -14,9 +14,9 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
 ///      Shape #0 represents ownership of the contract as a collectible object: `owner()` follows
 ///      its current holder, including returning zero while #0 is burned. Ownership grants no
-///      permissions. A separate `admin()` role may administer and independently lock the renderer
-///      and optional position resolver, and may redirect future mint fees without changing the fee
-///      rate or touching backing. It may be transferred or renounced without moving Shape #0.
+///      permissions. A separate `admin()` role may administer and independently lock the renderer,
+///      positions pointer and market pointer, and may redirect future mint fees without changing
+///      the fee rate or touching backing. It may be transferred or renounced without moving Shape #0.
 ///
 ///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
 ///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
@@ -25,6 +25,12 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the minimal
 ///      raw accessors `ShapeLens` reads to reconstruct them.
 interface IShapes is IERC721, IERC721Value, IAdminControl {
+    /// @notice The two fixed pointers administered by `setPointer` and `lockPointer`.
+    enum Pointer {
+        Positions,
+        Market
+    }
+
     /// @notice Emitted when a Shape is minted. `originCount` is always 1: a mint is the sole
     ///         source of new origins. A strict origin-creation signal; recomposition does not
     ///         emit it.
@@ -55,11 +61,17 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Standard contract-level metadata refresh signal, emitted when the collection copy changes.
     event ContractURIUpdated();
 
-    /// @notice Emitted when the admin sets, replaces or clears the optional position resolver.
-    event PositionResolverSet(address indexed resolver);
+    /// @notice Emitted when the admin sets, replaces or clears the optional positions contract.
+    event PositionsSet(address indexed positions);
 
-    /// @notice Emitted when the current resolver value is permanently locked, including zero.
-    event PositionResolverLocked(address indexed resolver);
+    /// @notice Emitted when the current positions value is permanently locked, including zero.
+    event PositionsLocked(address indexed positions);
+
+    /// @notice Emitted when the admin sets, replaces or clears the optional canonical market.
+    event MarketSet(address indexed market);
+
+    /// @notice Emitted when the current market value is permanently locked, including zero.
+    event MarketLocked(address indexed market);
 
     /// @notice Emitted when Shapes are composed into one. The survivor keeps its id and seed and
     ///         becomes the summed denomination; the burned inputs are consumed into it.
@@ -159,10 +171,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
     ///      cap. `field` is 0 name/prefix, 1 description.
     error InvalidCopy(uint8 field);
-    /// @dev A nonzero position resolver must contain deployed code when configured.
-    error InvalidPositionResolver();
-    /// @dev The position resolver cannot be changed or locked again after its permanent lock.
-    error PositionResolverIsLocked();
+    /// @dev A nonzero positions or market pointer must contain deployed code when configured.
+    error InvalidPointerTarget();
+    /// @dev A pointer cannot be changed or locked again after its permanent lock.
+    error PointerIsLocked();
+    /// @dev `pointer` must encode `Pointer.Positions` (0) or `Pointer.Market` (1).
+    error InvalidPointer();
     /// @dev Reverted by `IShapeLens.composeRecordAt` when `depth >= composeDepth(survivorId)`,
     ///      checked against `composeDepth` there rather than inside `composeRecordHeaderAt`.
     error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable);
@@ -219,11 +233,13 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The shared description emitted by both token metadata and `contractURI`.
     function description() external view returns (string memory);
 
-    /// @notice Optional canonical resolver for external Shape positions. Zero means none configured.
-    function positionResolver() external view returns (address);
+    /// @notice The optional canonical positions contract and whether its pointer is permanently locked.
+    /// @dev A zero target means none is configured. A true lock is permanent, including at zero.
+    function positions() external view returns (address target, bool locked);
 
-    /// @notice Whether the resolver value has been permanently frozen, including a frozen zero.
-    function positionResolverLocked() external view returns (bool);
+    /// @notice The optional canonical market and whether its pointer is permanently locked.
+    /// @dev A zero target means none is configured. A true lock is permanent, including at zero.
+    function market() external view returns (address target, bool locked);
 
     /* ----------------------------- renderer ---------------------------- */
 
@@ -249,14 +265,14 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///      unescaped (`"`, `\`, C0 controls). Not affected by `lockRenderer`; copy is never frozen.
     function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external;
 
-    /* ---------------------- position resolver admin -------------------- */
+    /* --------------------------- pointer admin ------------------------- */
 
-    /// @notice Set, replace or clear the optional resolver. Admin only, while unlocked.
-    /// @dev Zero clears it; a nonzero resolver must contain deployed code. No resolver call occurs.
-    function setPositionResolver(address resolver_) external;
+    /// @notice Set, replace or clear one explicit pointer. Admin only while that pointer is unlocked.
+    /// @dev Zero clears it; a nonzero target must contain deployed code. No target call occurs.
+    function setPointer(uint8 pointer, address target) external;
 
-    /// @notice Permanently freeze the current resolver value. Admin only; may lock while zero.
-    function lockPositionResolver() external;
+    /// @notice Permanently freeze one explicit pointer. Admin only; may lock it at zero.
+    function lockPointer(uint8 pointer) external;
 
     /* ---------------------------- minting ----------------------------- */
 

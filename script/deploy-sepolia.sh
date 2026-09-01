@@ -169,13 +169,14 @@ EXPECTED_AUCTIONS=0
 [ "$SEED" = "true" ] && EXPECTED_AUCTIONS=1
 require_uint_read 'auction count' \
   "$(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC")" "$EXPECTED_AUCTIONS"
-[ "$(cast call "$SHAPES" 'exists(uint256)(bool)' 0 --rpc-url "$RPC")" = "true" ] \
+[ "$(cast call "$LENS" 'exists(uint256)(bool)' 0 --rpc-url "$RPC")" = "true" ] \
   || { echo "Shape #0 is not live" >&2; exit 1; }
-require_address_read 'position resolver' \
-  "$(cast call "$SHAPES" 'positionResolver()(address)' --rpc-url "$RPC")" \
-  0x0000000000000000000000000000000000000000
-[ "$(cast call "$SHAPES" 'positionResolverLocked()(bool)' --rpc-url "$RPC")" = "false" ] \
-  || { echo "position resolver unexpectedly locked" >&2; exit 1; }
+POSITIONS=$(cast call "$SHAPES" 'positions()(address,bool)' --rpc-url "$RPC")
+MARKET=$(cast call "$SHAPES" 'market()(address,bool)' --rpc-url "$RPC")
+[ "$POSITIONS" = $'0x0000000000000000000000000000000000000000\nfalse' ] \
+  || { echo "positions pointer did not start empty and unlocked" >&2; exit 1; }
+[ "$MARKET" = $'0x0000000000000000000000000000000000000000\nfalse' ] \
+  || { echo "market pointer did not start empty and unlocked" >&2; exit 1; }
 
 echo "Confirming verified source on Etherscan"
 wait_for_verification ShapeRenderer "$RENDERER"

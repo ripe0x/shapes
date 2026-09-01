@@ -121,8 +121,12 @@ contract ForkTest is Test {
         assertEq(s.artistSignature(), bytes(""), "signature should start empty");
         assertEq(address(l.shapes()), address(s), "lens mismatch");
         assertEq(h.shapes(), address(s), "auction house mismatch");
-        assertEq(s.positionResolver(), address(0), "resolver should start empty");
-        assertFalse(s.positionResolverLocked(), "resolver should start unlocked");
+        (address positions, bool positionsLocked) = s.positions();
+        (address market, bool marketLocked) = s.market();
+        assertEq(positions, address(0), "positions should start empty");
+        assertEq(market, address(0), "market should start empty");
+        assertFalse(positionsLocked, "positions should start unlocked");
+        assertFalse(marketLocked, "market should start unlocked");
         assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");
         assertGt(address(r).code.length, 0, "renderer has no code");
         // Smoke the renderer through the interface the token uses; no mint needed.

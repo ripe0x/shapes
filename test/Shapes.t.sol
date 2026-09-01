@@ -28,7 +28,9 @@ import {
     ReentrantRedeemer,
     RevertingFeeRecipient,
     MockPositionResolver,
-    HostileGasResolver
+    HostileGasResolver,
+    ShortReturnResolver,
+    DirtyAddressResolver
 } from "./mocks/Mocks.sol";
 
 abstract contract ShapesBase is Test {
@@ -91,6 +93,22 @@ abstract contract ShapesBase is Test {
             shapes.redeemableBacking(),
             "contract balance fell below redeemableBacking"
         );
+    }
+
+    function _positionsAddress() internal view returns (address target) {
+        (target,) = shapes.positions();
+    }
+
+    function _positionsIsLocked() internal view returns (bool locked) {
+        (, locked) = shapes.positions();
+    }
+
+    function _marketAddress() internal view returns (address target) {
+        (target,) = shapes.market();
+    }
+
+    function _marketIsLocked() internal view returns (bool locked) {
+        (, locked) = shapes.market();
     }
 }
 
@@ -1087,170 +1105,275 @@ contract ValueDiscoveryTest is ShapesBase {
 }
 
 /* ==================================================================== *
- *  Optional position resolver
+ *  Positions and market pointers
  * ==================================================================== */
 
-contract PositionResolverTest is ShapesBase {
-    function test_ResolverStartsEmptyAndQueriesReturnZeroForAnyId() public view {
-        assertEq(shapes.positionResolver(), address(0));
-        assertFalse(shapes.positionResolverLocked());
+contract PointersTest is ShapesBase {
+    function test_PointersStartEmptyUnlockedAndPositionQueriesReturnZero() public view {
+        assertEq(_positionsAddress(), address(0));
+        assertFalse(_positionsIsLocked());
+        assertEq(_marketAddress(), address(0));
+        assertFalse(_marketIsLocked());
         assertEq(lens.positionOf(1), address(0));
         assertEq(lens.positionOf(type(uint256).max), address(0));
     }
 
-    function test_AdminSetsExactResolverResultsAndEvent() public {
+    function test_AdminSetsExactPositionsResultsAndEvent() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setPosition(1, alice);
         resolver.setPosition(99, address(renderer));
 
         vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.PositionResolverSet(address(resolver));
-        shapes.setPositionResolver(address(resolver));
+        emit IShapes.PositionsSet(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
 
-        assertEq(shapes.positionResolver(), address(resolver));
+        assertEq(_positionsAddress(), address(resolver));
         assertEq(lens.positionOf(1), alice);
         assertEq(lens.positionOf(2), address(0));
         assertEq(lens.positionOf(99), address(renderer));
     }
 
-    function test_ResolverCanBeReplacedAndClearedUntilLocked() public {
+    function test_PositionsCanBeReplacedAndClearedUntilLocked() public {
         MockPositionResolver first = new MockPositionResolver();
         MockPositionResolver second = new MockPositionResolver();
         first.setPosition(1, alice);
         second.setPosition(1, bob);
 
-        shapes.setPositionResolver(address(first));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(first));
         assertEq(lens.positionOf(1), alice);
-        shapes.setPositionResolver(address(second));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(second));
         assertEq(lens.positionOf(1), bob);
-        shapes.setPositionResolver(address(0));
-        assertEq(shapes.positionResolver(), address(0));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(0));
+        assertEq(_positionsAddress(), address(0));
         assertEq(lens.positionOf(1), address(0));
     }
 
-    function test_ResolverRejectsCodelessNonzeroAddress() public {
-        vm.expectRevert(IShapes.InvalidPositionResolver.selector);
-        shapes.setPositionResolver(alice);
+    function test_PositionsRejectsCodelessNonzeroAddress() public {
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), alice);
     }
 
-    function test_ResolverIsAdminOnly() public {
+    function test_MarketCanBeSetReplacedAndClearedWithEvents() public {
+        MockPositionResolver first = new MockPositionResolver();
+        MockPositionResolver second = new MockPositionResolver();
+
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.MarketSet(address(first));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(first));
+        assertEq(_marketAddress(), address(first));
+
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(second));
+        assertEq(_marketAddress(), address(second));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(0));
+        assertEq(_marketAddress(), address(0));
+    }
+
+    function test_MarketRejectsCodelessNonzeroAddress() public {
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), alice);
+    }
+
+    function test_InvalidPointerIdsRevertWithoutChangingEitherPointer() public {
+        MockPositionResolver target = new MockPositionResolver();
+        vm.expectRevert(IShapes.InvalidPointer.selector);
+        shapes.setPointer(2, address(target));
+        vm.expectRevert(IShapes.InvalidPointer.selector);
+        shapes.lockPointer(type(uint8).max);
+
+        assertEq(_positionsAddress(), address(0));
+        assertFalse(_positionsIsLocked());
+        assertEq(_marketAddress(), address(0));
+        assertFalse(_marketIsLocked());
+    }
+
+    function test_PointerAdministrationIsAdminOnly() public {
         MockPositionResolver resolver = new MockPositionResolver();
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.lockPositionResolver();
+        shapes.lockPointer(uint8(IShapes.Pointer.Positions));
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(resolver));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
+        shapes.lockPointer(uint8(IShapes.Pointer.Market));
     }
 
     function test_AdminMayPermanentlyLockZero() public {
         vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.PositionResolverLocked(address(0));
-        shapes.lockPositionResolver();
-        assertTrue(shapes.positionResolverLocked());
+        emit IShapes.PositionsLocked(address(0));
+        shapes.lockPointer(uint8(IShapes.Pointer.Positions));
+        assertTrue(_positionsIsLocked());
         assertEq(lens.positionOf(123), address(0));
 
         MockPositionResolver resolver = new MockPositionResolver();
-        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
-        shapes.setPositionResolver(address(resolver));
-        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
-        shapes.lockPositionResolver();
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.lockPointer(uint8(IShapes.Pointer.Positions));
     }
 
-    function test_ConfiguredResolverBecomesPermanentWhenLocked() public {
+    function test_ConfiguredPositionsBecomesPermanentWhenLocked() public {
         MockPositionResolver resolver = new MockPositionResolver();
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.PositionResolverLocked(address(resolver));
-        shapes.lockPositionResolver();
+        emit IShapes.PositionsLocked(address(resolver));
+        shapes.lockPointer(uint8(IShapes.Pointer.Positions));
 
         MockPositionResolver replacement = new MockPositionResolver();
-        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
-        shapes.setPositionResolver(address(replacement));
-        vm.expectRevert(IShapes.PositionResolverIsLocked.selector);
-        shapes.setPositionResolver(address(0));
-        assertEq(shapes.positionResolver(), address(resolver));
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(replacement));
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(0));
+        assertEq(_positionsAddress(), address(resolver));
     }
 
-    function test_RendererAndResolverLocksAreIndependent() public {
+    function test_ConfiguredMarketBecomesPermanentWhenLocked() public {
+        MockPositionResolver market_ = new MockPositionResolver();
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.MarketLocked(address(market_));
+        shapes.lockPointer(uint8(IShapes.Pointer.Market));
+
+        MockPositionResolver replacement = new MockPositionResolver();
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(replacement));
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(0));
+        assertEq(_marketAddress(), address(market_));
+        assertTrue(_marketIsLocked());
+    }
+
+    function test_AdminMayPermanentlyLockMarketAtZeroWithoutLockingPositions() public {
+        vm.expectEmit(true, false, false, true, address(shapes));
+        emit IShapes.MarketLocked(address(0));
+        shapes.lockPointer(uint8(IShapes.Pointer.Market));
+        assertTrue(_marketIsLocked());
+
+        MockPositionResolver target = new MockPositionResolver();
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(target));
+        vm.expectRevert(IShapes.PointerIsLocked.selector);
+        shapes.lockPointer(uint8(IShapes.Pointer.Market));
+
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(target));
+        assertEq(_positionsAddress(), address(target));
+        assertFalse(_positionsIsLocked());
+    }
+
+    function test_RendererPositionsAndMarketLocksAreIndependent() public {
         shapes.lockRenderer();
         MockPositionResolver resolver = new MockPositionResolver();
-        shapes.setPositionResolver(address(resolver));
-        shapes.lockPositionResolver();
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        shapes.lockPointer(uint8(IShapes.Pointer.Positions));
+
+        MockPositionResolver market_ = new MockPositionResolver();
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
         assertTrue(shapes.rendererLocked());
-        assertTrue(shapes.positionResolverLocked());
+        assertTrue(_positionsIsLocked());
+        assertEq(_marketAddress(), address(market_));
+        assertFalse(_marketIsLocked());
+
+        shapes.lockPointer(uint8(IShapes.Pointer.Market));
+        assertTrue(_marketIsLocked());
     }
 
     function test_AdminTransferMovesAllRemainingAdminAuthority() public {
         MockPositionResolver resolver = new MockPositionResolver();
+        MockPositionResolver market_ = new MockPositionResolver();
         shapes.transferAdmin(alice);
         assertEq(shapes.admin(), alice);
 
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
         );
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
 
         vm.startPrank(alice);
         shapes.setRenderer(address(new ShapeRenderer()));
-        shapes.setPositionResolver(address(resolver));
-        shapes.lockPositionResolver();
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        shapes.lockPointer(uint8(IShapes.Pointer.Positions));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
         shapes.transferAdmin(bob);
         vm.stopPrank();
 
         assertEq(shapes.admin(), bob);
-        assertEq(shapes.positionResolver(), address(resolver));
-        assertTrue(shapes.positionResolverLocked());
+        assertEq(_positionsAddress(), address(resolver));
+        assertTrue(_positionsIsLocked());
+        assertEq(_marketAddress(), address(market_));
+        assertFalse(_marketIsLocked());
     }
 
-    function test_RenouncingBeforeInstallLeavesResolverUnset() public {
+    function test_RenouncingBeforeInstallLeavesBothPointersUnsetForever() public {
         shapes.renounceAdmin();
         assertEq(shapes.admin(), address(0));
         MockPositionResolver resolver = new MockPositionResolver();
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
         );
-        shapes.setPositionResolver(address(resolver));
-        assertEq(shapes.positionResolver(), address(0));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
+        );
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(resolver));
+        assertEq(_positionsAddress(), address(0));
+        assertEq(_marketAddress(), address(0));
     }
 
-    function test_RenouncingAfterInstallLeavesResolverUsableAndUnchanged() public {
+    function test_RenouncingAfterInstallLeavesPointersUsableAndUnchanged() public {
         MockPositionResolver resolver = new MockPositionResolver();
+        MockPositionResolver market_ = new MockPositionResolver();
         resolver.setPosition(7, alice);
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
         shapes.renounceAdmin();
-        assertEq(shapes.positionResolver(), address(resolver));
+        assertEq(_positionsAddress(), address(resolver));
+        assertEq(_marketAddress(), address(market_));
         assertEq(lens.positionOf(7), alice);
     }
 
-    /// @notice A reverting resolver does not make `positionOf` revert; the failure is swallowed to
-    ///         `address(0)`, the same value an unset resolver returns.
-    function test_ResolverRevertIsSwallowedToZero() public {
+    /// @notice A reverting positions target does not make `positionOf` revert; the failure is
+    ///         swallowed to `address(0)`, the same value an unset target returns.
+    function test_PositionsRevertIsSwallowedToZero() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         uint256 id = _mint(alice, DENOMS[4]);
 
         assertEq(lens.positionOf(id), address(0), "existing id");
         assertEq(lens.positionOf(999), address(0), "nonexistent id");
     }
 
-    /// @notice A resolver that burns unbounded gas cannot drain the caller: `positionOf` forwards a
-    ///         fixed cap and swallows the resulting out-of-gas to `address(0)`.
-    function test_HostileResolverGasIsBounded() public {
+    /// @notice A positions target that burns unbounded gas cannot drain the caller: `positionOf`
+    ///         forwards a fixed cap and swallows the resulting out-of-gas to `address(0)`.
+    function test_HostilePositionsGasIsBounded() public {
         HostileGasResolver resolver = new HostileGasResolver();
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
 
         uint256 gasBefore = gasleft();
         address position = lens.positionOf(1);
         uint256 used = gasBefore - gasleft();
 
-        assertEq(position, address(0), "hostile resolver swallowed to zero");
-        // The resolver alone would burn tens of millions; the capped call is a tiny fraction.
+        assertEq(position, address(0), "hostile positions result swallowed to zero");
+        // The target alone would burn tens of millions; the capped call is a tiny fraction.
         assertLt(used, 200_000, "forwarded gas is bounded");
     }
 
-    function test_SettingAndQueryingResolverCannotChangeTokenOrReserveState() public {
+    function test_MalformedPositionResultsAreSwallowedToZero() public {
+        ShortReturnResolver shortResult = new ShortReturnResolver();
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(shortResult));
+        assertEq(lens.positionOf(1), address(0), "short result");
+
+        DirtyAddressResolver dirtyResult = new DirtyAddressResolver();
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(dirtyResult));
+        assertEq(lens.positionOf(1), address(0), "dirty address result");
+    }
+
+    function test_SettingAndQueryingPositionsCannotChangeTokenOrReserveState() public {
         uint256 id = _mint(alice, DENOMS[5]);
         uint256 balanceBefore = address(shapes).balance;
         uint256 backingBefore = shapes.redeemableBacking();
@@ -1261,7 +1384,7 @@ contract PositionResolverTest is ShapesBase {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setPosition(id, bob);
 
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         assertEq(lens.positionOf(id), bob);
 
         assertEq(address(shapes).balance, balanceBefore);
@@ -1272,10 +1395,11 @@ contract PositionResolverTest is ShapesBase {
         assertEq(shapes.tokenURI(id), uriBefore);
     }
 
-    function test_RevertingResolverCannotAffectCoreLifecycle() public {
+    function test_RevertingPositionsAndMarketCannotAffectCoreLifecycle() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(resolver));
 
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 5);
@@ -1703,10 +1827,10 @@ contract BlackShapeTest is ShapesBase {
         survivor = shapes.compose(first, burn);
     }
 
-    function test_SacrificeCreatesBlackWithoutBurningAndIgnoresResolver() public {
+    function test_SacrificeCreatesBlackWithoutBurningAndIgnoresPositionsTarget() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
-        shapes.setPositionResolver(address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         uint256 id = _buildApexComplete();
         uint256 deadBefore = DEAD.balance;
         uint256 balBefore = address(shapes).balance;

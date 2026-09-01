@@ -172,7 +172,7 @@ stays put.
 move onto that survivor; the other input IDs are consumed into a reversible LIFO record.
 `decompose` reverses the latest compose and revives those exact identities. Separately, `split`
 consumes one Shape and mints fresh child IDs whose denominations sum exactly to the parent. A split
-is final. None of these operations moves ETH or calls the position resolver.
+is final. None of these operations moves ETH or calls either external pointer.
 
 New token IDs are issued sequentially using `totalMinted` as the next ID and issued-count. IDs
 retired by redemption, public burn or split are never reassigned. The deliberate exception is
@@ -191,18 +191,18 @@ zero, but it cannot be redeemed, composed, decomposed or sacrificed again.
 `sacrificedBacking` and `blackCount` are cumulative historical counters. Burning a Black Shape does
 not reduce either one.
 
-## Optional external positions
+## Optional external positions and market
 
-`positionOf(tokenId)` is a discovery seam for a future positions protocol. With no resolver it
-returns zero immediately, for any ID. Once configured it returns the resolver's result exactly and
-does not check token existence, backing, returned-address code, claim validity or authorization.
-Zero means the resolver reports no canonical position. A nonzero address only answers “where should
-I look?”; the future protocol defines what lives there and how it can be used.
+`positions()` and `market()` expose two explicit canonical ecosystem pointers, each paired with its
+independent permanent lock state. Both launch at `(address(0), false)`. Canonical means the contract
+surfaced by Shapes, not exclusive: anyone may build alternatives.
 
-No core Shapes operation calls the resolver. A broken or malicious resolver can make `positionOf`
-return zero or misleading data, but cannot make the read revert and cannot affect ownership, backing, redemption, burn,
-recomposition, rendering or reserve solvency. Historical or not-yet-minted IDs may resolve; callers
-that require a live Shape must separately call `exists(tokenId)`.
+`ShapeLens.positionOf(tokenId)` queries the configured positions contract. With no positions target
+it returns zero immediately. The target defines aggregation and position lifecycle; the lens does
+not check token existence, backing, claim validity or authorization. Reverts, excessive gas use and
+malformed results return zero. A malicious target can mislead this view but cannot affect ownership,
+backing, redemption, burn, recomposition, rendering or reserve solvency. Core state-changing Shape
+operations never call either pointer.
 
 The intended future protocol is an external exchange-option layer. A creator escrows claim assets
 against a live Shape, records its current `valueOf` and an expiry, but keeps the Shape itself as an
@@ -253,8 +253,8 @@ when `attestArtist` executed. Stateless digest and signature checking live in th
 EOA signatures and ERC-1271 smart-wallet signatures are supported. There is no artist statement or
 artist-controlled mutable text.
 
-A separate `admin()` role controls presentation/discovery configuration and the destination of
-future mint fees. It can be
+A separate `admin()` role controls presentation, positions, market configuration and the
+destination of future mint fees. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
 of Shape #0:
 
@@ -263,14 +263,14 @@ of Shape #0:
   description shared by token and collection metadata, is edited via `setMetadataCopy` and is not covered by `lockRenderer`; it stays editable
   for as long as an admin remains. Copy is validated so it cannot break the metadata
   JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
-- The optional position resolver may be set, replaced or cleared until `lockPositionResolver`
-  permanently freezes its current value. It may be locked while zero, permanently opting out.
+- The positions and market pointers may each be set, replaced or cleared through `setPointer` until
+  `lockPointer` permanently freezes that entry. Pointer id 0 is Positions and 1 is Market; other
+  ids revert. Either entry may be locked while zero.
 - `setFeeRecipient` redirects only subsequent mint fees. It cannot change `feeBps`, recover fees
   already paid, withdraw ETH, or reach backing or redemption.
 
-The resolver pointer is permanent after locking, but its target code and trust model are not
-guaranteed immutable. Renouncing admin leaves any unlocked settings practically frozen because
-no caller can pass the admin check afterward.
+Locking freezes the stored address, not the target's code or trust model. Renouncing admin makes
+every still-unlocked pointer practically permanent because no caller can pass the admin check.
 
 `feeBps` is immutable. Renouncing admin freezes the current fee recipient along with any unlocked
 settings. The reserve, denominations and redemption path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
@@ -334,6 +334,7 @@ src/
     ComposeCompute.sol        module sampling and ink gene assignment in one call
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
     EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
+    PointerOps.sol            positions/market pointer configuration and one-way locks
     GeometrySampling.sol      the compose and split module-sampling procedures
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic

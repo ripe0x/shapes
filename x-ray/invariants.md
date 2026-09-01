@@ -27,10 +27,10 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `if (rendererLocked) revert RendererIsLocked()` · `Shapes.sol:313` · `setCollection` shares the renderer lock; presentation freezes as one unit.
 
 #### G-7
-`if (positionResolverLocked) revert PositionResolverIsLocked()` · `Shapes.sol:322` · Enforces the one-shot resolver lock inside `setPositionResolver` (see I-4).
+`if (p.positionsLocked) revert PointerIsLocked()` · `PointerOps.sol:21,37` · Enforces the one-shot positions lock in both set and lock paths (see I-4).
 
 #### G-8
-`if (positionResolverLocked) revert PositionResolverIsLocked()` · `Shapes.sol:332` · Same lock, checked inside `lockPositionResolver`.
+`if (p.marketLocked) revert PointerIsLocked()` · `PointerOps.sol:26,41` · Independently enforces the one-shot market lock (see I-4).
 
 #### G-9
 `if (msg.value != backing + fees) revert IncorrectPayment(...)` · `Shapes.sol:440` · Enforces exact ETH-for-Shape payment; the mint-side half of reserve solvency (see E-1).
@@ -81,7 +81,7 @@ Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.
 `CopyValidation.requireJsonSafe(...)` · `Shapes.sol:290-291,302-303` · Keeps admin-editable copy (name/description) from breaking or restructuring the token/collection metadata JSON, and requires well-formed UTF-8.
 
 #### G-25
-`if (resolver_ != address(0) && resolver_.code.length == 0) revert InvalidPositionResolver()` · `Shapes.sol:323-325` · A configured (nonzero) resolver must carry code; Shapes never calls or inspects that code further.
+`if (target != address(0) && target.code.length == 0) revert InvalidPointerTarget()` · `PointerOps.sol:50-52` · A configured positions or market target must carry code. Shapes inspects neither target further when setting it.
 
 #### G-28
 `if (nft.code.length == 0) revert LotHasNoCode(nft)` · `ShapeAuctionHouse.sol:90` · Names the reason a void-call collection would otherwise appear to accept a transfer.
@@ -223,11 +223,11 @@ Each block is classified `Conservation` · `Bound` · `Ratio` · `StateMachine` 
 
 `StateMachine` · On-chain: **Yes**
 
-> `positionResolverLocked`: `false → true@Shapes.sol:333`, one-shot, may lock while the resolver is still zero.
+> `positionsLocked` and `marketLocked`: each independently moves `false → true@PointerOps.sol:38,42`, one-shot, and may lock while its pointer is zero.
 
-**Derivation** — edge: sole write site `lockPositionResolver` (`Shapes.sol:333`), guarded by G-8.
+**Derivation** — edges: each flag has one write site in `PointerOps.lock`, guarded by G-7 or G-8. The enum branch updates only the selected flag.
 
-**If violated** — the resolver pointer could still be redirected after a permanent-lock claim.
+**If violated** — a positions or market pointer could be redirected after its permanent-lock claim.
 
 ---
 

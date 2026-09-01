@@ -597,11 +597,11 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
   holding #0 grants no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
-  can set, replace, clear and permanently lock the optional position resolver — including
-  locking it forever at zero — and can edit the token name prefix and description shared by token
+  can set, replace, clear and independently lock optional positions and market pointers, including
+  locking either forever at zero, and can edit the token name prefix and description shared by token
   and collection metadata via `setMetadataCopy`. The
-  renderer and collection are read only by `tokenURI`/`contractURI`; the resolver only by
-  `positionOf`; the copy only by those metadata views, and it is validated on set so it cannot
+  renderer and collection are read only by `tokenURI`/`contractURI`; the positions target only by
+  `ShapeLens.positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
   break the JSON. Admin may also redirect future mint fees, but cannot change the fee rate or
   reach backing, redemption, accrued funds or token ownership. The copy is
   deliberately not covered by the renderer lock; it stays editable until admin is renounced.
@@ -686,7 +686,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 ### D18. Final value and position discovery interfaces
 
-- **Direct liveness.** `exists(tokenId)` is a non-reverting view of ERC-721 liveness: true for every
+- **Direct liveness.** `ShapeLens.exists(tokenId)` is a non-reverting view of ERC-721 liveness: true for every
   live token including Black, and false for never-issued, redeemed/burned, split-parent and
   compose-consumed IDs. Decompose makes a revived input live again.
 - **Stored denomination fact.** `denomIndexOf(tokenId)` returns the live token's stored 0..8 ladder
@@ -707,14 +707,14 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   recorded compose and likewise moves no ETH. Freshly produced tokens receive monotonically
   increasing IDs. The only identity revival is the exact set of compose inputs restored by its
   LIFO decompose record; redemption, public burn and split never recycle retired IDs.
-- **Optional position resolver.** `positionOf(tokenId)` returns `address(0)` without an external
-  call while `positionResolver` is empty. Otherwise it delegates the ID exactly to the configured
-  resolver and returns its address unchanged. Shapes deliberately performs no token-existence,
-  result-code or backing check: the resolver may describe historical/nonexistent IDs, and its
-  revert or misleading result affects only callers of `positionOf`.
+- **Explicit positions and market pointers.** `positions()` and `market()` each return the target
+  plus its independent lock state. Both launch empty and unlocked. `ShapeLens.positionOf(tokenId)`
+  returns zero without a positions target; otherwise it queries the target without a token-existence
+  or backing check. Reverts and malformed address returns become zero.
 - **Future position semantics.** The external protocol may escrow a fully funded claim against a
   live Shape, snapshot its `valueOf`, creator and expiry, and expose one active position through the
-  resolver. The Shape remains transferable. Its current holder may atomically transfer it to the
+  positions target. That target may aggregate multiple future position systems. The Shape remains
+  transferable. Its current holder may atomically transfer it to the
   creator for the claim. Missing/value-mismatched Shapes and expired positions cannot exercise and
   permit creator recovery. A gacha may separately custody a Shape while it is offered. Shapes adds
   no freeze, wrapper, mutation nonce, claim custody or execution path.
@@ -722,11 +722,14 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   not duplicate a consumed-id-to-survivor mapping. Its storage and ambiguous terminal/nested
   lifecycle semantics are unjustified without a concrete on-chain consumer.
 - **Replaceable, clearable, independently lockable.** The transferable admin may set or replace
-  the resolver with a contract address, clear it to zero, or permanently lock its current value at
-  any time — including locking zero. Renderer and resolver locks are independent. Admin transfer
+  either pointer with a contract address, clear it to zero, or permanently lock its current value
+  at any time, including zero. Renderer, positions and market locks are independent. Admin transfer
   moves all still-unlocked authority; renunciation ends it. Shape #0 ownership moves none
   of this authority. Neither pointer can change
   backing, ownership, redemption, composition or reserve accounting.
+- **Fixed pointer identifiers.** `setPointer` and `lockPointer` use `0` for Positions and `1` for
+  Market; every other value reverts. A nonzero target must carry code when set, but Shapes does not
+  require an interface or immutable implementation. Locking freezes the address, not its code.
 
 ---
 
@@ -740,4 +743,4 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 | Solidity SVG byte-identical to TypeScript fixtures | `forge test --mc Parity` |
 | Reserve solvency under fuzzed mint/transfer/redeem sequences | `forge test --mc Invariant` |
 | Value alias, burn settlement, Black zero-burn and ID lifecycle | `forge test --mc ValueDiscoveryTest` |
-| Resolver delegation, locking and administrative isolation | `forge test --mc PositionResolverTest` |
+| Pointer configuration, lens delegation and administrative isolation | `forge test --mc PointersTest` |
