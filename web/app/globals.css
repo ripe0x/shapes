@@ -196,19 +196,19 @@ button {
   font-size: 22px;
   text-align: center;
 }
-.compose-token-grid {
+.shape-token-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 28px 20px;
-  padding: 32px 48px 48px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 36px 28px;
+  padding: 48px;
 }
 .compose-select-card {
   display: block;
   width: 100%;
-  border: 1px solid transparent;
+  border: 0;
   background: none;
   color: #e6e4dd;
-  padding: 10px;
+  padding: 0;
   text-align: left;
   cursor: pointer;
 }
@@ -216,12 +216,13 @@ button {
 .compose-select-card:focus-visible,
 .compose-survivor-card:not(:disabled):hover,
 .compose-survivor-card:focus-visible {
-  border-color: #71716b;
-  outline: none;
+  outline: 1px solid #71716b;
+  outline-offset: 8px;
 }
 .compose-select-card.selected,
 .compose-survivor-card.selected {
-  border-color: #e6e4dd;
+  outline: 1px solid #e6e4dd;
+  outline-offset: 8px;
   background: #161613;
 }
 .compose-select-card:disabled {
@@ -320,11 +321,6 @@ button {
   .token-trait-row {
     grid-template-columns: 1fr;
     gap: 5px;
-  }
-  .compose-token-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px 10px;
-    padding: 24px 16px 128px;
   }
   .compose-selection-tray {
     left: 10px;

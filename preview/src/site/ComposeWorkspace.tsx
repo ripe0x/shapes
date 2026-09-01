@@ -130,7 +130,7 @@ export function ComposeWorkspace({
   }
 
   return (
-    <main style={{paddingBottom: draft.selectedIds.length > 0 ? 96 : 0}}>
+    <main style={{paddingBottom: draft.selectedIds.length > 0 ? 140 : 0}}>
       <ComposeModeHeader onBrowse={onCancel} />
       <Section title="COMPOSE SHAPES" pad="30px 48px 34px 32px">
         <div style={{fontSize: 24, lineHeight: 1.3}}>
@@ -145,7 +145,7 @@ export function ComposeWorkspace({
         </p>
       </Section>
 
-      <div className="compose-token-grid">
+      <div className="shape-token-grid">
         {inventory.map((token) => {
           const selectedNow = draft.selectedIds.some((id) => id === token.id);
           const tokenRung = composeRung(token.di);
@@ -272,7 +272,7 @@ function ComposeSelectionCard({
             <span className="compose-selection-badge">{survivor ? "KEEPS ID" : "SELECTED"}</span>
           )}
         </div>
-        <div style={{marginTop: 10, display: "flex", justifyContent: "space-between", gap: 10, fontSize: 11}}>
+        <div style={{marginTop: 11, display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11}}>
           <span>#{token.id.toString()}</span>
           <span>{token.di >= 0 ? `${DENOMINATIONS[token.di].label} ETH` : "Black"}</span>
         </div>

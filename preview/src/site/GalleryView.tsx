@@ -73,14 +73,7 @@ export function ShapeGrid({
   onOpenToken: (id: bigint) => void;
 }) {
   return (
-    <div
-      style={{
-        padding: 48,
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-        gap: "36px 28px",
-      }}
-    >
+    <div className="shape-token-grid">
       {tokens.map((t) => (
         <button
           key={t.id.toString()}
