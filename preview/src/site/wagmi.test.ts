@@ -36,6 +36,15 @@ test("without a WalletConnect project id the config is injected-only", () => {
   assert.equal(injectedOnly[0].id, "injected");
 });
 
+test("server-rendered hosts can defer wallet hydration until React mounts", () => {
+  assert.equal(buildConfig(localDep)._internal.ssr, false);
+  assert.equal(buildConfig(localDep, {ssr: true})._internal.ssr, true);
+  assert.equal(
+    buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID, ssr: true})._internal.ssr,
+    true,
+  );
+});
+
 test("a project id activates RainbowKit's standard wallet inventory on Sepolia only", () => {
   const config = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID});
 
