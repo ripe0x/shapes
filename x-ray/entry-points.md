@@ -38,12 +38,12 @@
 
 `Shapes.setRenderer()` / `setCollection()` (◄── `!rendererLocked`) → `Shapes.lockRenderer()` (one-way)
 `Shapes.setMetadataCopy()` — independent of the renderer lock, always editable
-`Shapes.setPositionResolver()` (◄── `!positionResolverLocked`) → `Shapes.lockPositionResolver()` (one-way)
+`Shapes.setPointer(Positions|Market, target)` → `Shapes.lockPointer(Positions|Market)` (independent, one-way)
 `Shapes.transferAdmin()` / `renounceAdmin()` — independent of Shape #0 ownership
 
 ### Core State Reads (Any Caller)
 
-`Shapes.exists(tokenId)` → non-reverting ERC-721 liveness, including Black Shapes
+`ShapeLens.exists(tokenId)` → non-reverting ERC-721 liveness, including Black Shapes
 
 `Shapes.denomIndexOf(tokenId)` → stored 0..8 denomination index for a live Shape; nonexistent ids revert
 
@@ -309,8 +309,8 @@ check. None of these functions reach ETH, backing, redemption or token ownership
 | Shapes | `lockRenderer()` | — | `rendererLocked` (one-way) |
 | Shapes | `setCollection(address newCollection)` | `newCollection` (must carry code + `IShapeCollection`) | `collection` |
 | Shapes | `setMetadataCopy(string tokenNamePrefix, string description)` | validated UTF-8/JSON-safe, length-capped | `tokenNamePrefix`, shared `description` |
-| Shapes | `setPositionResolver(address resolver_)` | zero clears; nonzero must carry code | `positionResolver` |
-| Shapes | `lockPositionResolver()` | — | `positionResolverLocked` (one-way, may lock at zero) |
+| Shapes | `setPointer(uint8 pointer, address target)` | 0 positions / 1 market; zero clears; nonzero must carry code | selected pointer |
+| Shapes | `lockPointer(uint8 pointer)` | 0 positions / 1 market | selected lock (one-way, may lock at zero) |
 | Shapes | `transferAdmin(address newAdmin)` | nonzero new admin | `_admin` |
 | Shapes | `renounceAdmin()` | — | `_admin` → zero, permanently disabling every function above |
 

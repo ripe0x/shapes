@@ -38,6 +38,26 @@ contract HostileGasResolver is IShapePositionResolver {
     }
 }
 
+/// @notice Returns a short ABI word for every call. `ShapeLens.positionOf` must reject it to zero.
+contract ShortReturnResolver {
+    fallback() external {
+        assembly ("memory-safe") {
+            mstore(0, 1)
+            return(0, 31)
+        }
+    }
+}
+
+/// @notice Returns a 32-byte word with dirty bits above the low 160-bit address.
+contract DirtyAddressResolver {
+    fallback() external {
+        assembly ("memory-safe") {
+            mstore(0, shl(160, 1))
+            return(0, 32)
+        }
+    }
+}
+
 /// @notice Accepts ERC721 transfers and ETH. The well-behaved contract counterparty.
 contract GoodReceiver is IERC721Receiver {
     receive() external payable {}

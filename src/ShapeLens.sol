@@ -363,24 +363,28 @@ contract ShapeLens is IShapeLens {
 
     /* ------------------------------ positionOf ------------------------------ */
 
-    /// @dev Gas forwarded to the untrusted resolver. Ample for a mapping read; bounds a hostile
-    ///      resolver's ability to consume the caller's stipend.
-    uint256 private constant RESOLVER_GAS = 50_000;
+    /// @dev Gas forwarded to the untrusted positions contract. Ample for a mapping read; bounds a
+    ///      hostile target's ability to consume the caller's stipend.
+    uint256 private constant POSITIONS_GAS = 50_000;
 
     /// @inheritdoc IShapeLens
-    /// @dev The resolver is untrusted. The call is capped at `RESOLVER_GAS` and any revert or
-    ///      out-of-gas is swallowed to `address(0)`, so a hostile resolver can neither drain the
-    ///      caller's gas nor make `positionOf` revert. Its only power is to return a wrong address.
+    /// @dev The positions contract is untrusted. Reverts, out-of-gas and malformed address returns
+    ///      are swallowed to zero. Its only power is to mislead callers of this view.
     function positionOf(uint256 tokenId) external view returns (address) {
-        address resolver_ = shapes.positionResolver();
-        if (resolver_ == address(0)) return address(0);
-        try IShapePositionResolver(resolver_).positionOf{gas: RESOLVER_GAS}(tokenId) returns (
-            address position
-        ) {
-            return position;
-        } catch {
-            return address(0);
+        (address positions_,) = shapes.positions();
+        if (positions_ == address(0)) return address(0);
+
+        (bool success, bytes memory data) = positions_.staticcall{gas: POSITIONS_GAS}(
+            abi.encodeCall(IShapePositionResolver.positionOf, (tokenId))
+        );
+        if (!success || data.length != 32) return address(0);
+
+        uint256 word;
+        assembly ("memory-safe") {
+            word := mload(add(data, 32))
         }
+        if (word >> 160 != 0) return address(0);
+        return address(uint160(word));
     }
 
     /* -------------------------------- exists --------------------------------- */

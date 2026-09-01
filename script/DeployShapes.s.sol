@@ -61,6 +61,15 @@ contract DeployShapes is LensEquivalence {
 
     error WrongLadder(string compiled, string expected);
 
+    function _requirePointersUnset(Shapes shapes) private view {
+        (address positions, bool positionsLocked) = shapes.positions();
+        (address market, bool marketLocked) = shapes.market();
+        require(positions == address(0), "positions should start empty");
+        require(market == address(0), "market should start empty");
+        require(!positionsLocked, "positions should start unlocked");
+        require(!marketLocked, "market should start unlocked");
+    }
+
     /// @dev The ladder is compiled in and the backing amounts it names are permanent once deployed.
     ///      Any chain that carries real value must get the mainnet ladder; anvil may use either,
     ///      since a local chain funds any rung.
@@ -123,14 +132,13 @@ contract DeployShapes is LensEquivalence {
 
         vm.stopBroadcast();
 
-        // Prove the constructor configuration and discovery defaults landed as intended.
-        // The fee rate is immutable. Admin may redirect future fees and may replace the renderer
-        // and position resolver until each independent lock is used.
+        // Prove the constructor configuration and pointer defaults landed as intended.
+        // The fee rate is immutable. Admin may redirect future fees and may replace the renderer,
+        // positions and market pointers until each independent lock is used.
         require(shapes.feeBps() == feeBps, "fee bps mismatch");
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
-        require(shapes.positionResolver() == address(0), "position resolver should start empty");
-        require(!shapes.positionResolverLocked(), "position resolver should start unlocked");
+        _requirePointersUnset(shapes);
         require(shapes.supportsInterface(type(IERC721Value).interfaceId), "draft ERC-8060 interface missing");
         require(address(renderer).code.length != 0, "renderer has no code");
         require(shapes.collection() == address(collection), "collection mismatch");
@@ -200,7 +208,7 @@ contract DeployShapes is LensEquivalence {
         console.log("");
         console.log("Fee rate and reserve rules are immutable. Admin may redirect future mint fees.");
         console.log("Shape #0 represents collectible ownership.");
-        console.log("Presentation and position resolver settings are independently lockable.");
+        console.log("Presentation, positions and market settings are independently lockable.");
 
         // Runs last: the probe advances simulated token state, so every check and log above it
         // reads a fresh collection.

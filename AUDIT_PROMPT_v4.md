@@ -1,5 +1,9 @@
 # External audit brief — Shapes pre-mainnet snapshot
 
+> **SUPERSEDED FOR RELEASE:** D-34 changes the immutable predeployment ABI and architecture after
+> this snapshot. Do not send this packet to an auditor. Regenerate it against the exact merged
+> D-34 release candidate first.
+
 You are an independent smart-contract security auditor. Audit the fixed repository snapshot below
 as code that will custody real ETH and redeemable ERC-721 assets on Ethereum mainnet. Report
 findings; do not change the audited tree.

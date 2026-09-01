@@ -650,7 +650,7 @@ tokens exist anywhere.
 
 ## 19. Final value and position discovery amendment
 
-- `exists(tokenId)` exposes the core's ERC-721 liveness without reverting. It is true for any live
+- `ShapeLens.exists(tokenId)` exposes ERC-721 liveness without reverting. It is true for any live
   Shape, including Black, and false for never-issued, redeemed/burned, split-parent and
   compose-consumed ids. Decompose can make a compose-consumed id live again.
 - `denomIndexOf(tokenId)` exposes the stored denomination index directly, returns 0..8 for a live
@@ -665,16 +665,19 @@ tokens exist anywhere.
 - Fresh token IDs use the monotonic `totalMinted` count as the next id. Decompose may revive only
   the exact inputs recorded by the compose it reverses; redemption, public burn and split do not
   recycle retired IDs.
-- `positionResolver` starts at zero. The transferable admin may set, replace or clear it while
-  unlocked. `lockPositionResolver` permanently freezes its current value and may be called at any
-  time, including while zero. Renderer and resolver locks are independent.
-- `positionOf(tokenId)` returns zero without a resolver. Otherwise it delegates without checking
-  token existence, backing, result code or position status; resolver failures return zero.
-- The returned address is opaque discovery data. The future position protocol defines its claim,
-  authorization, settlement and lifecycle. No core Shapes operation calls the resolver.
+- `positions()` and `market()` each start at `(address(0), false)`. The transferable admin may set,
+  replace or clear either through `setPointer` while that entry is unlocked. `lockPointer`
+  permanently freezes only the selected entry and may lock it while zero. Pointer id 0 means
+  Positions and 1 means Market; every other id reverts. Nonzero targets must carry code when set,
+  but locking freezes only the stored address, not the target's implementation.
+- `ShapeLens.positionOf(tokenId)` returns zero without a positions target. Otherwise it queries the
+  target without checking token existence, backing or position status; failures and malformed
+  address returns become zero.
+- A positions target may aggregate future position systems. The market pointer is discovery only.
+  Neither target is exclusive, and no core state-changing Shapes operation calls either one.
 - Reverse compose ancestry is not stored as a separate core mapping. On-chain code can inspect a
   survivor's compose records; historical reverse lookup remains event/indexer territory unless a
   concrete protocol later establishes semantics that justify permanent per-input storage.
-- Renouncing admin permanently ends any remaining renderer or resolver administration; a prior
+- Renouncing admin permanently ends any remaining renderer or pointer administration; a prior
   admin transfer moves all still-unlocked authority to the new admin. Shape #0 ownership is
   independent and moves no authority.

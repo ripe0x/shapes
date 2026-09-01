@@ -234,8 +234,10 @@ contract ContractOwnershipTest is Test {
         // `childSeed`, `isComplete` and `formationOf` stayed on `IShapes` because `IShapeValue` and
         // `IShapeProvenance` (SPEC.md's stable external integration surface, gated by ERC-165) still
         // declare them, and `supportsInterface` must not advertise a capability it cannot serve.
-        // Update this constant again only when `IShapes`'s function set changes on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0x35ed4674), "IShapes id changed");
+        // The explicit positions/market pointer getters and generic admin pair replace the old
+        // specialized resolver surface. Update this constant only when the function set changes
+        // on purpose.
+        assertEq(type(IShapes).interfaceId, bytes4(0xbdf217ea), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0xe135adbe), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));
