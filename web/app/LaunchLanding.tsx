@@ -388,7 +388,7 @@ export function LaunchLanding() {
 
       <footer className="launch-footer">
         <span>
-          Shapes, 2026 · by{" "}
+          An Ethereum primitive by{" "}
           <a href="https://x.com/ripe0x" target="_blank" rel="noreferrer">
             ripe
           </a>
