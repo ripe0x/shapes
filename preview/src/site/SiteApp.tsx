@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagm
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {short, addrUrl} from "./ui";
+import {short, addrUrl, txUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
@@ -62,6 +62,7 @@ export function SiteApp({
   const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
   const [txHash, setTxHash] = React.useState<string | null>(null);
+  const [composeNotice, setComposeNotice] = React.useState<{tokenId: bigint; hash: string} | null>(null);
 
   // URL <-> view sync for the Next.js host. `lastNav` tracks the last applied navigation so a
   // URL-driven change does not echo back out through `onNavigate`, and an internal navigation does
@@ -203,11 +204,14 @@ export function SiteApp({
     if (!publicClient) return;
     setBusy("compose");
     setTxErr(null);
+    setComposeNotice(null);
     try {
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
       const hash = await write("compose", [t.id, sorted]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh(); // the survivor keeps its id; the open detail shows the new denomination
+      setComposeNotice({tokenId: t.id, hash});
+      window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
       setTxErr({op: "compose", text: describeTxError(e)});
     } finally {
@@ -412,6 +416,48 @@ export function SiteApp({
         />
       )}
       {view === "about" && <AboutView dep={dep} data={data} />}
+
+      {composeNotice && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            zIndex: 20,
+            left: "50%",
+            bottom: 20,
+            transform: "translateX(-50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 18,
+            width: "max-content",
+            maxWidth: "calc(100vw - 32px)",
+            padding: "12px 14px 12px 18px",
+            border: `1px solid ${C.ink}`,
+            background: C.page,
+            boxShadow: "0 8px 28px rgba(0, 0, 0, 0.18)",
+            fontSize: 12,
+          }}
+        >
+          <span style={{whiteSpace: "nowrap"}}>Shape #{composeNotice.tokenId.toString()} composed.</span>
+          <a
+            href={txUrl(composeNotice.hash, dep.chainId)}
+            target="_blank"
+            rel="noreferrer"
+            style={{whiteSpace: "nowrap", textDecoration: "underline"}}
+          >
+            View transaction
+          </a>
+          <button
+            type="button"
+            aria-label="Dismiss compose confirmation"
+            onClick={() => setComposeNotice(null)}
+            style={{padding: "2px 4px", color: C.muted, fontSize: 16, lineHeight: 1}}
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       <footer style={{borderTop: `1px solid ${C.rule}`}}>
         <div
