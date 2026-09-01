@@ -35,6 +35,12 @@
       .account-menu-item { display: block; width: 100%; border: 0; border-bottom: 1px solid #262622; background: none; color: #e6e4dd; padding: 12px 14px; text-align: left; font: inherit; font-size: 11px; letter-spacing: 0.1em; cursor: pointer; white-space: nowrap; }
       .account-menu-item:last-child { border-bottom: 0; }
       .account-menu-item:hover, .account-menu-item:focus-visible { background: #161613; outline: none; }
+      .shape-mode-toggle { display: inline-flex; border: 1px solid #3a3a34; }
+      .shape-mode-toggle button { border: 0; border-right: 1px solid #3a3a34; background: transparent; color: #71716b; padding: 8px 12px; font-size: 10px; letter-spacing: .1em; cursor: pointer; }
+      .shape-mode-toggle button:last-child { border-right: 0; }
+      .shape-mode-toggle button[aria-pressed="true"] { background: #e6e4dd; color: #0d0d0c; }
+      .shape-mode-toggle button:disabled { color: #3a3a34; cursor: default; }
+      .shape-mode-toggle button:not(:disabled):not([aria-pressed="true"]):hover, .shape-mode-toggle button:focus-visible { background: #161613; color: #e6e4dd; outline: none; }
       .row-denom:hover { background: #161613 !important; }
       /* Modal. The overlay dims the page; the panel reuses the section rule colour so it reads
          as the same surface rather than a floating card. */

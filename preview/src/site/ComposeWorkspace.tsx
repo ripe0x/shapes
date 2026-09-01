@@ -102,7 +102,7 @@ export function ComposeWorkspace({
   if (!address) {
     return (
       <main>
-        <ComposeBack onClick={onCancel} />
+        <ComposeModeHeader onBrowse={onCancel} />
         <Section title="COMPOSE SHAPES" last>
           <div style={{fontSize: 15}}>Reconnect the owning wallet to continue this composition.</div>
         </Section>
@@ -131,7 +131,7 @@ export function ComposeWorkspace({
 
   return (
     <main style={{paddingBottom: draft.selectedIds.length > 0 ? 96 : 0}}>
-      <ComposeBack onClick={onCancel} />
+      <ComposeModeHeader onBrowse={onCancel} />
       <Section title="COMPOSE SHAPES" pad="30px 48px 34px 32px">
         <div style={{fontSize: 24, lineHeight: 1.3}}>
           {rung
@@ -226,13 +226,17 @@ export function ComposeWorkspace({
   );
 }
 
-function ComposeBack({onClick}: {onClick: () => void}) {
+function ComposeModeHeader({onBrowse}: {onBrowse: () => void}) {
   return (
-    <div style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
-      <button type="button" className="btn-ghost" onClick={onClick} style={{letterSpacing: "0.14em", fontSize: 11, color: C.muted}}>
-        ← CANCEL COMPOSE
-      </button>
-    </div>
+    <Section title="MY SHAPES" pad="26px 48px 26px 32px">
+      <div style={{display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 20}}>
+        <div style={{fontSize: 15}}>Select matching Shapes to combine.</div>
+        <div className="shape-mode-toggle" role="group" aria-label="My Shapes mode">
+          <button type="button" aria-pressed={false} onClick={onBrowse}>BROWSE</button>
+          <button type="button" aria-pressed={true}>COMPOSE</button>
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -345,7 +349,7 @@ function ComposeReview({
   if (!complete) {
     return (
       <main>
-        <ComposeBack onClick={onCancel} />
+        <ComposeModeHeader onBrowse={onCancel} />
         <Section title="COMPOSE" last>
           <div style={{fontSize: 15}}>The selected Shapes changed or are no longer available.</div>
           <button type="button" className="btn-outline" onClick={onEdit} style={{marginTop: 20, padding: "9px 16px"}}>
@@ -359,8 +363,8 @@ function ComposeReview({
   const rung = composeRung(selected[0].di)!;
   return (
     <main>
-      <ComposeBack onClick={onCancel} />
-      <Section title="COMPOSE" pad="30px 48px 46px 32px" last>
+      <ComposeModeHeader onBrowse={onCancel} />
+      <Section title="REVIEW COMPOSITION" pad="30px 48px 46px 32px" last>
         <button type="button" className="btn-ghost" onClick={onEdit} disabled={!!busy} style={{marginBottom: 28, color: C.muted, fontSize: 11, letterSpacing: "0.12em"}}>
           ← EDIT SELECTION
         </button>

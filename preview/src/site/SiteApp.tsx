@@ -19,7 +19,7 @@ import {AuctionView} from "./AuctionView";
 import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 
-export type View = "mint" | "auction" | "gallery" | "collection" | "compose" | "token" | "manage" | "about";
+export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -59,7 +59,8 @@ export function SiteApp({
   const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
-  const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection" | "compose">("gallery");
+  const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection">("gallery");
+  const [composeMode, setComposeMode] = React.useState(false);
   const [composeDraft, setComposeDraft] = React.useState<ComposeDraft>({
     session: 0,
     selectedIds: [],
@@ -294,6 +295,7 @@ export function SiteApp({
       });
       setTokenId(t.id);
       setTokenBackView("collection");
+      setComposeMode(false);
       setView("token");
       window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
@@ -389,7 +391,7 @@ export function SiteApp({
   };
 
   const openToken = (id: bigint) => {
-    if (view === "gallery" || view === "collection" || view === "compose") setTokenBackView(view);
+    if (view === "gallery" || view === "collection") setTokenBackView(view);
     setTokenId(id);
     setRedeem({status: "idle"});
     setTxErr(null);
@@ -409,8 +411,9 @@ export function SiteApp({
       phase: "select",
       backView: survivorId === undefined ? "collection" : "manage",
     }));
+    setComposeMode(true);
     setTxErr(null);
-    setView("compose");
+    setView("collection");
     window.scrollTo({top: 0, behavior: "smooth"});
   };
 
@@ -568,7 +571,7 @@ export function SiteApp({
       {view === "gallery" && (
         <GalleryView data={data} filter={filter} setFilter={setFilter} onOpenToken={openToken} />
       )}
-      {view === "collection" && (
+      {view === "collection" && !composeMode && (
         <MyShapesView
           data={data}
           address={address}
@@ -578,7 +581,7 @@ export function SiteApp({
           onCompose={() => startCompose()}
         />
       )}
-      {view === "compose" && (
+      {view === "collection" && composeMode && (
         <ComposeWorkspace
           key={composeDraft.session}
           draft={composeDraft}
@@ -589,7 +592,7 @@ export function SiteApp({
           busy={busy}
           txErr={txErr}
           onChange={setComposeDraft}
-          onCancel={() => go(composeDraft.backView)}
+          onCancel={() => setComposeMode(false)}
           onOpenToken={openToken}
           onSubmit={(survivor, burnIds) => void doCompose(survivor, burnIds)}
         />
@@ -602,7 +605,7 @@ export function SiteApp({
           address={address}
           tokenId={tokenId}
           redeem={redeem}
-          backLabel={tokenBackView === "collection" ? "MY SHAPES" : tokenBackView === "compose" ? "COMPOSE" : "GALLERY"}
+          backLabel={tokenBackView === "collection" ? "MY SHAPES" : "GALLERY"}
           onBack={() => go(tokenBackView)}
           onManage={() => go("manage")}
           onOpenToken={openToken}

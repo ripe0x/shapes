@@ -61,15 +61,12 @@ export function MyShapesView({
             </div>
             <div style={{marginTop: 8, color: C.muted, fontSize: 11}}>{short(address)}</div>
           </div>
-          <button
-            type="button"
-            className="btn-filled"
-            disabled={!data || !composeAvailable}
-            onClick={onCompose}
-            style={{padding: "10px 18px", letterSpacing: "0.08em"}}
-          >
-            COMPOSE SHAPES
-          </button>
+          <div className="shape-mode-toggle" role="group" aria-label="My Shapes mode">
+            <button type="button" aria-pressed={true}>BROWSE</button>
+            <button type="button" aria-pressed={false} disabled={!data || !composeAvailable} onClick={onCompose}>
+              COMPOSE
+            </button>
+          </div>
         </div>
         {data && !composeAvailable && tokens.length > 0 && (
           <div style={{marginTop: 14, color: C.muted, fontSize: 11}}>
