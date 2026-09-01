@@ -16,10 +16,10 @@ kill_timeout = "30s"
   PONDER_RPC_FALLBACKS = "https://ethereum-sepolia-rpc.publicnode.com"
   PONDER_POLL_INTERVAL_MS = "12000"
   PONDER_DATABASE_DIR = "/data/pglite"
-  DATABASE_SCHEMA = "shapes_sepolia_v1"
+  DATABASE_SCHEMA = "shapes_sepolia_v2"
   SHAPES_LADDER = "testnet"
-  SHAPES_ADDRESS = "0xbB6F8b4560E0cc15de233E00848104b66FD88B39"
-  SHAPES_START_BLOCK = "11582031"
+  SHAPES_ADDRESS = "0x8172B86708c67D93ab6e666798B7073463371e13"
+  SHAPES_START_BLOCK = "11613113"
 
 [[mounts]]
   source = "shapes_indexer_data"
