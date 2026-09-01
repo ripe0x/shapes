@@ -291,7 +291,7 @@ function DrawBeat({
               />
             </label>
             <PlayButton onClick={onAdd} disabled={addDisabled}>
-              {quantity === 1 ? "Add to tray" : `Add ${quantity} to tray`}
+              Add
             </PlayButton>
           </div>
           {addDisabled && (
