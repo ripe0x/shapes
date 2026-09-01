@@ -313,14 +313,6 @@ export function TokenView({
             <p style={{margin: "20px 0 0", fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "48ch"}}>
               This Shape holds {lbl} ETH. Its owner can burn it and receive {lbl} ETH.
             </p>
-            <button
-              type="button"
-              className="btn-filled"
-              onClick={onManage}
-              style={{marginTop: 24, padding: "11px 22px", letterSpacing: "0.06em"}}
-            >
-              MANAGE SHAPE
-            </button>
             <div style={{margin: "32px 0 0"}}>
               {tokRows.map((r) => (
                 <div
@@ -342,6 +334,19 @@ export function TokenView({
           </div>
         </div>
       </Section>
+
+      {owned && (
+        <Section title="MANAGE" pad="20px 48px 22px 32px">
+          <button
+            type="button"
+            className="btn-filled"
+            onClick={onManage}
+            style={{padding: "10px 18px", letterSpacing: "0.06em"}}
+          >
+            MANAGE SHAPE
+          </button>
+        </Section>
+      )}
 
       <History history={history} chainId={dep.chainId} />
 
