@@ -444,8 +444,12 @@ button {
 
 .launch-mechanics {
   display: grid;
-  grid-template-columns: minmax(300px, 0.75fr) minmax(480px, 1.1fr);
-  gap: clamp(60px, 9vw, 140px);
+  grid-template-columns: 1fr;
+  gap: clamp(72px, 9vw, 124px);
+}
+
+.mechanics-copy {
+  max-width: 760px;
 }
 
 .mechanics-detail {
@@ -460,7 +464,10 @@ button {
   display: grid;
   grid-template-columns: 130px 1fr;
   gap: 22px;
-  margin-bottom: 28px;
+  max-width: 1000px;
+  margin: 34px auto 0;
+  padding-top: 20px;
+  border-top: 1px solid var(--launch-rule);
 }
 
 .provenance-chart figcaption span,
@@ -483,6 +490,8 @@ button {
 .provenance-tree {
   --provenance-line: #bcbcb4;
   width: 100%;
+  max-width: 1000px;
+  margin-inline: auto;
   padding-top: 4px;
 }
 
@@ -509,16 +518,16 @@ button {
 }
 
 .provenance-root {
-  width: 96px;
+  width: 120px;
 }
 
 .provenance-parent {
-  width: 72px;
+  width: 88px;
 }
 
 .provenance-leaf {
   width: 100%;
-  max-width: 44px;
+  max-width: 58px;
 }
 
 .provenance-leaf span {
@@ -860,6 +869,7 @@ button {
   .provenance-chart figcaption {
     grid-template-columns: 1fr;
     gap: 8px;
+    margin-top: 28px;
   }
 
   .provenance-branches {
@@ -876,6 +886,10 @@ button {
 
   .provenance-parent {
     width: 62px;
+  }
+
+  .provenance-leaf {
+    max-width: 44px;
   }
 
 }

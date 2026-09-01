@@ -325,13 +325,6 @@ export function LaunchLanding() {
         </div>
         <div className="mechanics-detail">
           <figure className="provenance-chart">
-            <figcaption>
-              <span>Example provenance</span>
-              <p>
-                Every Shape this one was built from. Burned Shapes can still be drawn from their
-                recorded seeds.
-              </p>
-            </figcaption>
             <div
               className="provenance-tree"
               role="img"
@@ -356,6 +349,13 @@ export function LaunchLanding() {
               </div>
               <div className="provenance-summary">10 recorded origins · 0.01 ETH each</div>
             </div>
+            <figcaption>
+              <span>Example provenance</span>
+              <p>
+                Every Shape this one was built from. Burned Shapes can still be drawn from their
+                recorded seeds.
+              </p>
+            </figcaption>
           </figure>
         </div>
       </section>
