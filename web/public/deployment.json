@@ -2,11 +2,11 @@
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "indexerUrl": "https://shapes-indexer.fly.dev",
   "chainId": 11155111,
-  "shapes": "0xbB6F8b4560E0cc15de233E00848104b66FD88B39",
-  "renderer": "0x8b36e4149cEb2c658Ee900e30Bc1232100a2f325",
-  "collection": "0xA8587C5E8Bb61e2BFfD25Ac3DD8A3eC4e7Ef3180",
-  "lens": "0xC92B1614912270B24383a0f30548Be064D252D2E",
-  "auctionHouse": "0x603C745cBFCC76ad47E1eCf6b875abC995959801",
+  "shapes": "0x8172B86708c67D93ab6e666798B7073463371e13",
+  "renderer": "0x327A40949922E35F622cf18131AcD03973F0C8D0",
+  "collection": "0xBFD7C6AF44D0b7A37d38a53276eF98F5d816fdc0",
+  "lens": "0x28FdBd01b0292EDdF7A9b12B378DFBE3a7b4dfa5",
+  "auctionHouse": "0x38445ACed30590910e087672FEeA269284f03379",
   "feeBps": "100",
-  "fromBlock": 11582031
+  "fromBlock": 11613113
 }

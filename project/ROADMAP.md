@@ -64,14 +64,14 @@ Stop conditions: gas ceiling makes a core feature (compose path to apex) infeasi
 Objective: everything irreversible is decided, reviewed, and rehearsed.
 
 Deliverables:
-- IMPLEMENTED ON FEATURE BRANCH, NOT MERGED OR DEPLOYED: D-34 replaces the specialized resolver with explicit positions and market pointers. Both launch empty/unlocked, lock independently, remain powerless over core state, and preserve the optional lens position read through positions only. Dual-profile size and test gates pass; release audit and rehearsal evidence must target the eventual merged commit.
+- COMPLETE: D-34 replaces the specialized resolver with explicit positions and market pointers. Both launch empty/unlocked, lock independently, remain powerless over core state, and preserve the optional lens position read through positions only. PR #39 merged the design; exact release `dba4dbfe93df64cc72052c3eab70289070e301d9` is live on Sepolia with both pointers zero/unlocked and all independent postflights passing.
 - Architecture decision: standalone vs Surface-hosted (D-04 final). If Surface-hosted, a full sub-roadmap replaces P3 below.
-- Release build explicitly pinned to the default mainnet ladder; mainnet fixtures, full parity chain, and deploy-profile assertions revalidated (D-01). Current `main` is ahead of the deployed P1 Sepolia core after issue #21 sampling/provenance work, so the eventual release must receive a fresh exact-commit rehearsal rather than inheriting the older deployment's parity claim.
+- COMPLETE FOR CURRENT RELEASE: default mainnet ladder, mainnet fixtures, full parity chain and deploy-profile assertions revalidated (D-01). Exact `dba4dbf` passes both full Foundry profiles and all 4 release tests against a live mainnet fork.
 - COMPLETE: renderer audit hardening precedes any module/vocabulary/grammar expansion. PR #36 (`1d6e4b0`) closed issue #7 with a behavior-only `_moduleSvg` extraction that is byte-identical against current TypeScript fixtures and the frozen Solidity oracle, lowers normalized complexity from 16 to 10 with helpers at 3 or lower, reduces runtime by 47 bytes to 23,138/23,137 default/testnet, and keeps worst pinned gas growth to 0.0104% (D-32; EXP-004).
-- External security audit completed after issue #7 and D-34, with findings closed or accepted with rationale (D-16, D-17 folded in). The superseded `020a85e` packet must be regenerated after D-34 merges.
+- External security audit completed after issue #7 and D-34, with findings closed or accepted with rationale (D-16, D-17 folded in). `AUDIT_PROMPT_v5.md` is regenerated against exact deployed source `dba4dbf`; selecting the independent auditor and completing the review remain open.
 - Legal review completed (D-15).
 - Key ceremony plan: admin structure, initial/final fee recipient, Shape #0 custody, artist signing capability, release hash, and lock/renounce timing (D-05).
-- Deploy rehearsal: full deploy + seed + lens-probe dry run on a mainnet fork, then Sepolia at mainnet scale if warranted.
+- COMPLETE FOR CURRENT RELEASE: deployment/lifecycle checks pass against a live mainnet fork; an exact-commit Sepolia deployment at the isolated testnet ladder is live from block 11613113. The production site/indexer cutover and final Etherscan retry remain release operations, not contract changes.
 
 Acceptance: signed merge checklist for the release commit; audit report on file; rehearsal transcript recorded.
 

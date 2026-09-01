@@ -650,7 +650,7 @@ SHAPES_ADDRESS=0x... forge script script/DeployLens.s.sol --rpc-url $RPC   # dry
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
 | Mainnet | not deployed | not deployed |
-| Sepolia | `0xbB6F8b4560E0cc15de233E00848104b66FD88B39` | `0x8b36e4149cEb2c658Ee900e30Bc1232100a2f325` |
+| Sepolia | `0x8172B86708c67D93ab6e666798B7073463371e13` | `0x327A40949922E35F622cf18131AcD03973F0C8D0` |
 
 The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
 mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in

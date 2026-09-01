@@ -2,23 +2,22 @@
 
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
-Session: D-34 explicit pointer implementation, 2026-08-31.
-Canonical base: `origin/main` at `6cb10ed7ba14fc014afbf534911099c328f801df`; candidate branch `codex/positions-market-pointers-main`.
+Session: exact-release Sepolia/site cutover, 2026-09-01.
+Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cutover branch `codex/sepolia-site-cutover`.
 
 ## Current outcome
 
-- P1 PASSED 2026-08-31. D-13's live Sepolia auction #0 completed two bids, anti-sniping extension, settlement, winner delivery and seller proceeds; final escrow/index checks are empty and the Fly indexer matched the chain head.
-- D-34's candidate replaces the specialized resolver surface with explicit `positions()` and `market()` getters. Each target starts empty/unlocked and may be changed, cleared or independently locked forever by admin. Renunciation freezes any unlocked value at its last setting. Canonical does not mean exclusive, and neither target has core authority.
-- `ShapeLens.positionOf` remains and queries only the positions target with a 50,000-gas cap; revert, out-of-gas, short and dirty address returns become zero. The market target is never called. Nonzero targets must contain deployed code when configured.
-- Candidate `IShapes` is `0xbdf217ea`; `IShapeValue` remains `0xd07d718a`. Exact sizes are Shapes 24,474/24,453 bytes, ShapeLens 9,885/9,867 bytes, ShapeRenderer 23,138/23,137 bytes and PointerOps 605 bytes for default/testnet where applicable. The Shapes margin is only 102/123 bytes.
-- Both Foundry profiles pass 459 tests with 4 fork-only skips. Preview passes 115 tests and build; site lint/build, docs validation, default deployment dry-run and testnet Sepolia deployment dry-run pass. Nothing was broadcast.
-- Current `main` is ahead of the deployed exact-`376bb7b` Sepolia release after PRs #26/#31 sampling and provenance changes. The auction-house path is unchanged, so D-13 remains valid; P2 must revalidate and rehearse the eventual release and must not claim the live Sepolia core is current-main bytecode.
+- P1 PASSED 2026-08-31. D-13's earlier live Sepolia auction completed two bids, anti-sniping extension, settlement, winner delivery and seller proceeds; final escrow/index checks were empty and the Fly indexer matched the chain head.
+- D-34 merged in PR #39 (`8d8c2b2`): explicit `positions()` and `market()` getters start empty/unlocked, may be changed, cleared or independently locked forever by admin, and have no authority over Shapes. `ShapeLens.positionOf` queries only the positions target with a 50,000-gas cap and converts external failure or malformed data to zero. The market is discovery-only and is never called.
+- Release-fork corrections merged in PR #40. Exact release commit `dba4dbfe93df64cc72052c3eab70289070e301d9` passes 459 tests with 4 RPC-only skips in each Foundry profile, all 4 mainnet-fork rehearsal tests, 115 preview tests, all hosted CI and both deployment dry runs.
+- Exact sizes are Shapes 24,474/24,453 bytes, ShapeLens 9,885/9,867 bytes, ShapeRenderer 23,138/23,137 bytes and PointerOps 605 bytes for default/testnet where applicable. The Shapes margin is only 102/123 bytes.
+- Exact `dba4dbf` is live on Sepolia at Shapes `0x8172B86708c67D93ab6e666798B7073463371e13`, from block 11613113. The actual Shapes creation transaction is `0x6c162a8b0392e052108912a10b60eedcd7aed4d665032583f5f4724da5dc8d9`. Every receipt and independent wiring, role, reserve, ladder, Shape #0 and empty-pointer postflight passed.
+- Etherscan verified five of eight new deployments during broadcast. PointerOps, Shapes and ShapeLens have exact Sourcify creation/runtime matches; the Etherscan verification-only retry still requires the user's API key but no wallet or transaction. Do not redeploy.
+- Fly deployment version 2 is live on isolated schema `shapes_sepolia_v2`, preserving the old schema. Health/ready are 200; status and GraphQL matched the RPC exactly at block 11613213 and report only backed Shape #0 with the correct owner. Production site metadata is prepared on `codex/sepolia-site-cutover`.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
 - PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
 - D-32's GitHub issue #7 implementation merged through PR #36 as `1d6e4b0`. The behavior-only `_moduleSvg` extraction is byte-identical against unchanged TypeScript fixtures and the frozen Solidity oracle; normalized dispatch/helper complexity is 10/3 maximum; ShapeRenderer runtime is 23,138/23,137 bytes default/testnet, 47 bytes below baseline; and worst pinned gas growth is 0.0104%. `_glyph` remains unchanged as the documented lookup-table exception. Evidence: `project/experiments/EXP-004-renderer-module-refactor.md`.
-- `AUDIT_PROMPT_v4.md`'s exact snapshot `020a85e` is superseded for release purposes by D-34. Regenerate the packet against the eventual merged commit before selecting or contacting an auditor.
-- Exact `376bb7b` is live on Sepolia at Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`; creation transaction/release hash is `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`, from block 11582031. All postflight reads pass and all ten sources are verified. The one-time artist attestation mined as `0xaa9f422c51688d6debf1b8da6b82c518d74185a977e701b9afba07200776a2e7` at block 11586702; stored hash and signature readback pass.
-- PR #16 merged as `9990f45`; PR #17 merged as `b7c1451` and pins Netlify to Node 22.19.0/npm 10.9.3 after its Node 24/npm 11 default broke optional RainbowKit/Coinbase dependency resolution. The production build completed successfully. `https://shapes.ripe.wtf/deployment.json` serves Shapes `0xbB6F8b4560E0cc15de233E00848104b66FD88B39`, and the live homepage plus `/og/shape/0` return HTTP 200. The fresh Sepolia site cutover is complete.
+- `AUDIT_PROMPT_v5.md` is the authoritative independent-audit brief pinned to exact deployed source `dba4dbf`. `AUDIT_PROMPT_v4.md` remains historical.
 - Issue #6 is deferred under D-33 to P4 and a real consumer. Do not add `decomposeInto`, a generic registry, more core pointers or application logic without separate product decisions.
 - PR #20 merged as `f92d019`. The Sepolia indexer is live at `https://shapes-indexer.fly.dev` on one IAD Fly machine with embedded PGlite and encrypted 1 GB volume `vol_vz8xke1po70oz5qv`. Health, readiness, status and GraphQL readback passed; Shape #0 indexed with exact testnet backing and the checkpoint was one block behind Sepolia.
 - PR #22 merged as `769efe0`; production serves `indexerUrl: https://shapes-indexer.fly.dev`. PR #23 (`99b79eb`) added the guarded D-13 path; PR #34 (`6bf5164`) made its close step resumable after the bidder exhausted Sepolia gas. Both PR #34 CI gates passed.
@@ -39,15 +38,15 @@ Canonical base: `origin/main` at `6cb10ed7ba14fc014afbf534911099c328f801df`; can
 - Sepolia future mint-fee recipient: `0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4`; it is code-free. Fee is exactly 100 bps.
 - Deploy only from fetched, clean, exact `main`. Never deploy from this branch. `script/deploy-sepolia.sh` fetches `origin/main` immediately before enforcing branch/commit/cleanliness, then checks chain, ladder, payout, fee, complete wiring, Shape #0 state, unsigned artist state, receipts and Etherscan source visibility. Its portable summary records a credential-free public RPC, never the operational provider URL.
 - The Etherscan key supplied in chat is not persisted. Inject it only into the deployment process. The user enters the Foundry keystore password interactively; never write it to a file.
-- The exact mined release hash is `0x23e53908314594e3bd53d4fa9d83cccb700eb03ea452f1395231a3c3dfaf40fe`. The one-time signature now lives directly in Shapes and cannot be replaced.
-- The old live deployment in `web/public/deployment.json` is immutable and incompatible. A prior throwaway rehearsal at Shapes `0xc840be03f6824165954213136927828b10b1a1a1`, creation tx `0x0529271c4cc71449429a094d6b2fcb2225ee926360d86712b0c96901d4bf8330`, uses the superseded child-attribution architecture. Never sign, relabel or adopt it.
+- The exact mined Shapes creation transaction is `0x6c162a8b0392e052108912a10b60eedcd7aed4d665032583f5f4724da5dc8d9`. The release hash and artist signature remain empty until the separate one-time ceremony; never treat the creation transaction as signed before that ceremony succeeds.
+- Older Sepolia deployments remain immutable historical systems. Never sign, relabel or adopt them as the current release.
 
 ## Remaining gates, in order
 
-1. Review and merge the D-34 pointer commit through the normal PR workflow. Do not deploy this feature branch.
-2. Regenerate D-16 against the exact merged commit, select an independent auditor, then close or explicitly accept every finding.
+1. Finish Etherscan verification for PointerOps, Shapes and ShapeLens; merge the metadata/docs cutover; verify the Netlify production site reads the new deployment.
+2. Send `AUDIT_PROMPT_v5.md` to an independent auditor, then close or explicitly accept every finding.
 3. Obtain D-15 qualified legal review and record the result.
-4. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody and per-pointer lock/renounce decisions, then rehearse the exact release on a mainnet fork. No mainnet broadcast is authorized.
+4. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody, artist-signing and per-pointer lock/renounce decisions. No mainnet broadcast is authorized.
 
 ## Standing directives
 
