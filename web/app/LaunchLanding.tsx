@@ -237,7 +237,10 @@ export function LaunchLanding() {
         <a className="launch-wordmark" href="#top" aria-label="Shapes, top of page">
           shapes
         </a>
-        <span>Onchain on Ethereum</span>
+        <nav className="launch-header-nav" aria-label="Primary navigation">
+          <Link href="/play">Play</Link>
+          <span>Onchain on Ethereum</span>
+        </nav>
       </header>
 
       <section className="launch-hero" id="top">

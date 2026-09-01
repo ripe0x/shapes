@@ -6,7 +6,6 @@ import { DENOMINATIONS } from "@shared/canonical/denominations";
 import { geneAtMint } from "@shared/canonical/ink";
 import { liveNodes, textSeed, type PlayNode, type PlaySession } from "@shared/play/session";
 import { decodeSession } from "@shared/play/urlCodec";
-import { landingOnly } from "../../lib/siteMode";
 
 // The Playground share image: decodes the same `?s=` state the page itself reads, renders the
 // current (or most recently composed) card with the canonical renderer, and rasterizes it. No
@@ -17,7 +16,7 @@ const OG = { width: 1200, height: 630 };
 // Portrait card, the 250:350 ratio the artwork is drawn at. Height leaves a ~7% top/bottom margin.
 const CARD_H = 540;
 const CARD_W = Math.round((CARD_H * 250) / 350);
-const BG = "#0d0d0c";
+const BG = "#f7f7f3";
 
 // Cards over this length in `?s=` are never decoded, only rendered as the default card.
 const MAX_S_LENGTH = 6000;
@@ -79,8 +78,6 @@ function svgForRequest(url: URL): string {
 }
 
 export async function GET(req: Request) {
-  if (landingOnly()) return new Response("Not found", { status: 404 });
-
   // Any failure anywhere in this path (malformed URL, a decode edge case, a render error) still
   // returns a valid share image rather than a 500.
   try {

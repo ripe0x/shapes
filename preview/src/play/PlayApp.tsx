@@ -1,5 +1,5 @@
 import React from "react";
-import { C, FONT, label as labelStyle } from "../site/theme";
+import { FONT } from "../site/theme";
 import { forDisplay, C as PROV_C } from "../app/ui";
 import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/provenance";
 import { CANONICAL } from "../canonical/params";
@@ -40,7 +40,28 @@ const SPLIT_COLOR = PROV_C.warn;
  * state (`./session`).
  */
 
+const C = {
+  page: "#f7f7f3",
+  ink: "#11110f",
+  body: "#2f2f2b",
+  bodyDim: "#4f4f49",
+  muted: "#686862",
+  faint: "#aaa9a1",
+  rule: "#d8d8d1",
+  ruleInner: "#e7e7e1",
+  border: "#b9b9b1",
+  row: "#efefe9",
+  art: "#000000",
+} as const;
+
 const mono: React.CSSProperties = { fontFamily: FONT };
+const sans: React.CSSProperties = { fontFamily: "Arial, Helvetica, sans-serif" };
+const labelStyle: React.CSSProperties = {
+  ...mono,
+  fontSize: 10,
+  letterSpacing: "0.14em",
+  color: C.muted,
+};
 
 const REPO_URL = "https://github.com/ripe0x/shapes";
 
@@ -98,7 +119,7 @@ function PlayButton({
   );
 }
 
-/** A rendered card, no border radius, no shadow, always exactly 2.5:3.5. */
+/** A rendered card, always exactly 2.5:3.5. */
 function RawCard({
   svg,
   width,
@@ -125,6 +146,7 @@ function RawCard({
           cursor: onClick ? "pointer" : "default",
           outline: selected ? `2px solid ${C.ink}` : `1px solid ${C.border}`,
           outlineOffset: selected ? -2 : -1,
+          borderRadius: 3,
         }}
         dangerouslySetInnerHTML={{ __html: forDisplay(svg) }}
       />
@@ -174,7 +196,7 @@ function PlayDetailPanel({
 }
 
 function Prose({ children }: { children: React.ReactNode }) {
-  return <p style={{ ...mono, fontSize: 12, lineHeight: 1.6, color: C.body, margin: 0 }}>{children}</p>;
+  return <p style={{ ...sans, fontSize: 14, lineHeight: 1.55, color: C.body, margin: 0 }}>{children}</p>;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -459,7 +481,7 @@ function TrayCard({
             padding: "2px 5px",
             border: "none",
             background: "rgba(0,0,0,0.55)",
-            color: C.ink,
+            color: "#fff",
             cursor: "pointer",
           }}
         >
@@ -1125,8 +1147,8 @@ function LineageBeat({ session }: { session: PlaySession }) {
 
 const sectionStyle: React.CSSProperties = {
   borderTop: `1px solid ${C.rule}`,
-  paddingTop: 28,
-  marginBottom: 44,
+  paddingTop: 34,
+  marginBottom: 88,
 };
 
 export function PlayApp() {
@@ -1263,7 +1285,7 @@ export function PlayApp() {
   };
 
   return (
-    <div style={{ background: C.page, minHeight: "100vh", color: C.ink }}>
+    <div className="launch-play-page" style={{ background: C.page, minHeight: "100vh", color: C.ink }}>
       <style>{`
         /* The compose reveal is the only animation on this page. Default (and reduced-motion)
            state: no cover, no animation -- the plain finished card. Motion is opted back in only
@@ -1282,71 +1304,189 @@ export function PlayApp() {
             animation-name: playRevealFade;
           }
         }
+        .launch-play-page {
+          color-scheme: light;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: 16px;
+          line-height: 1.5;
+        }
+        .launch-play-page a {
+          color: inherit;
+        }
+        .play-page-nav,
+        .play-page-shell {
+          width: min(100% - 64px, 1360px);
+          margin-inline: auto;
+        }
+        .play-page-nav {
+          min-height: 84px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-bottom: 1px solid ${C.rule};
+          font-family: ${FONT};
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .play-page-nav a {
+          font-weight: 500;
+          text-decoration: none;
+        }
+        .play-page-shell {
+          padding: clamp(72px, 9vw, 132px) 0 42px;
+        }
+        .play-page-intro {
+          max-width: 900px;
+          margin-bottom: clamp(80px, 10vw, 144px);
+        }
+        .play-page-kicker {
+          margin: 0 0 18px;
+          font-family: ${FONT};
+          font-size: 10px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: ${C.muted};
+        }
+        .play-page-intro h1 {
+          max-width: 10ch;
+          margin: 0;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: clamp(64px, 9vw, 126px);
+          font-weight: 500;
+          letter-spacing: -0.075em;
+          line-height: 0.88;
+        }
+        .play-page-intro > p:last-child {
+          max-width: 660px;
+          margin-top: 38px !important;
+          font-size: clamp(18px, 1.65vw, 23px) !important;
+          letter-spacing: -0.02em;
+          line-height: 1.5 !important;
+        }
+        .play-page-content {
+          max-width: 1040px;
+        }
+        .launch-play-page button,
+        .launch-play-page input {
+          border-radius: 0;
+        }
+        .launch-play-page button:not(:disabled):hover {
+          border-color: ${C.ink} !important;
+        }
+        .launch-play-page input:focus-visible,
+        .launch-play-page button:focus-visible,
+        .launch-play-page a:focus-visible {
+          outline: 2px solid ${C.ink};
+          outline-offset: 3px;
+        }
+        .play-page-footer {
+          margin-top: 96px;
+          padding-top: 28px;
+          border-top: 1px solid ${C.ink};
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+          font-family: ${FONT};
+          font-size: 9px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .play-page-footer nav {
+          display: flex;
+          gap: 22px;
+        }
+        @media (max-width: 620px) {
+          .play-page-nav,
+          .play-page-shell {
+            width: min(100% - 36px, 1360px);
+          }
+          .play-page-nav {
+            min-height: 70px;
+          }
+          .play-page-shell {
+            padding-top: 66px;
+          }
+          .play-page-intro h1 {
+            font-size: clamp(58px, 20vw, 82px);
+          }
+          .play-page-intro {
+            margin-bottom: 86px;
+          }
+          .play-page-footer {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+        }
       `}</style>
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "48px 20px 80px" }}>
-        <header style={{ marginBottom: 40 }}>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10 }}>
-            PLAYGROUND
-          </div>
-          <h1 style={{ ...mono, fontSize: 18, fontWeight: 500, color: C.ink, margin: "0 0 14px" }}>
-            Draw a Shape. Compose Shapes. Trace every cell to a parent.
-          </h1>
+      <header className="play-page-nav">
+        <a href="/">shapes</a>
+        <span>Simulation · no wallet</span>
+      </header>
+      <main className="play-page-shell">
+        <header className="play-page-intro">
+          <p className="play-page-kicker">Onchain playground</p>
+          <h1>Draw. Compose. Trace.</h1>
           <Prose>
             This playground runs the same renderer and the same sampling procedure as the contract. A minted
             Shape with this seed at this denomination would be byte-identical.
           </Prose>
         </header>
 
-        <DrawBeat
-          denomIndex={denomIndex}
-          onDenomIndex={setDenomIndex}
-          seedText={seedText}
-          onSeedText={setSeedText}
-          onRoll={() => {
-            setSeedText("");
-            setSeed(randomSeed());
-          }}
-          effectiveSeed={effectiveSeed}
-          onKeep={handleKeep}
-          keepDisabled={keepDisabled}
-          inverted={inverted}
-          onToggleInverted={() => setInverted((v) => !v)}
-        />
+        <div className="play-page-content">
+          <DrawBeat
+            denomIndex={denomIndex}
+            onDenomIndex={setDenomIndex}
+            seedText={seedText}
+            onSeedText={setSeedText}
+            onRoll={() => {
+              setSeedText("");
+              setSeed(randomSeed());
+            }}
+            effectiveSeed={effectiveSeed}
+            onKeep={handleKeep}
+            keepDisabled={keepDisabled}
+            inverted={inverted}
+            onToggleInverted={() => setInverted((v) => !v)}
+          />
 
-        <TrayBeat
-          nodes={nodes}
-          session={session}
-          selected={selected}
-          menu={menu}
-          onToggle={handleToggle}
-          onRemove={handleRemove}
-          onOpenMenu={setMenu}
-          onSplit={handleSplit}
-          onDecompose={handleDecompose}
-          onSacrifice={handleSacrifice}
-        />
+          <TrayBeat
+            nodes={nodes}
+            session={session}
+            selected={selected}
+            menu={menu}
+            onToggle={handleToggle}
+            onRemove={handleRemove}
+            onOpenMenu={setMenu}
+            onSplit={handleSplit}
+            onDecompose={handleDecompose}
+            onSacrifice={handleSacrifice}
+          />
 
-        <ComposeBeat
-          nodes={nodes}
-          selected={selected}
-          onCompose={handleCompose}
-          error={composeError}
-          lastResult={lastResult}
-          inverted={inverted}
-          onToggleInverted={() => setInverted((v) => !v)}
-        />
+          <ComposeBeat
+            nodes={nodes}
+            selected={selected}
+            onCompose={handleCompose}
+            error={composeError}
+            lastResult={lastResult}
+            inverted={inverted}
+            onToggleInverted={() => setInverted((v) => !v)}
+          />
 
-        <LineageBeat session={session} />
+          <LineageBeat session={session} />
+        </div>
 
-        <footer style={{ ...mono, fontSize: 11, color: C.muted, display: "flex", gap: 20 }}>
-          <a href="/how-it-works" style={{ color: C.muted }}>
-            how it works
-          </a>
-          <a href={REPO_URL} style={{ color: C.muted }}>
-            source
-          </a>
+        <footer className="play-page-footer">
+          <span>
+            An Ethereum primitive by <a href="https://x.com/ripe0x">ripe</a>
+          </span>
+          <nav aria-label="Playground footer">
+            <a href="/">Back to launch</a>
+            <a href={REPO_URL}>Source</a>
+          </nav>
         </footer>
-      </div>
+      </main>
     </div>
   );
 }

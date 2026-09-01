@@ -1,12 +1,18 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const PRODUCTION_HOST = "shapes.ripe.wtf";
-const PUBLIC_FILES = new Set(["/", "/contract-animation.svg", "/favicon.ico"]);
+const PUBLIC_FILES = new Set([
+  "/",
+  "/play",
+  "/og/play",
+  "/contract-animation.svg",
+  "/favicon.ico",
+]);
 
 /**
  * Domain-level backstop for the launch site. Even if its Netlify environment is edited
- * incorrectly, the production hostname can never serve wallet, token, gallery, auction, or
- * playground routes. Changing this requires an intentional code deployment.
+ * incorrectly, the production hostname can never serve wallet, token, gallery, or auction
+ * routes. `/play` is an explicit exception: it is chain-free and uses no wallet or RPC.
  */
 export function proxy(request: NextRequest) {
   const host = request.headers.get("host")?.split(":", 1)[0]?.toLowerCase();

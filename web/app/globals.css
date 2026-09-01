@@ -180,6 +180,20 @@ button {
   text-transform: uppercase;
 }
 
+.launch-header-nav {
+  display: flex;
+  align-items: center;
+  gap: clamp(20px, 4vw, 56px);
+}
+
+.launch-header-nav a {
+  text-decoration: none;
+}
+
+.launch-header-nav a:hover {
+  opacity: 0.55;
+}
+
 .launch-wordmark {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 19px;
@@ -769,7 +783,7 @@ button {
     min-height: 70px;
   }
 
-  .launch-header > span {
+  .launch-header-nav span {
     max-width: 12ch;
     text-align: right;
   }

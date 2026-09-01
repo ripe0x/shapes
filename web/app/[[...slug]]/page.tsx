@@ -32,7 +32,8 @@ export async function generateMetadata({
   searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
   const slug = (await params).slug ?? [];
-  if (landingOnly() && slug.length > 0) return { title: "Not found" };
+  const isPlay = slug.length === 1 && slug[0] === "play";
+  if (landingOnly() && slug.length > 0 && !isPlay) return { title: "Not found" };
 
   if (appOnly() && slug.length === 0) {
     return {
@@ -121,6 +122,7 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   const slug = (await params).slug ?? [];
   if (landingOnly()) {
     if (slug.length === 0) return <LaunchLanding />;
+    if (slug.length === 1 && slug[0] === "play") return <PlayRoot />;
     notFound();
   }
 

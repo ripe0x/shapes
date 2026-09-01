@@ -21,14 +21,15 @@ created.
 
 Deployed as two isolated Netlify projects (`../netlify.toml`):
 
-- Production launch page: `shapes.ripe.wtf`, branch `launch`, `SHAPES_SITE_MODE=landing`.
+- Production launch site: `shapes.ripe.wtf`, branch `launch`, `SHAPES_SITE_MODE=landing`.
+  It serves the countdown at `/` and the chain-free playground at `/play`.
 - Sepolia application: separate Netlify URL, branch `main`, `SHAPES_SITE_MODE=app` and
   `SHAPES_LADDER=testnet`.
 
 Netlify builds use `npm run build:netlify`, which refuses a missing or unsafe mode. A domain-level
-proxy also blocks every application route on `shapes.ripe.wtf`, even if its environment is later
-misconfigured. Local development defaults to hybrid mode: the launch page at `/`, and the app at
-`/mint`.
+proxy blocks wallet, token, gallery, and auction routes on `shapes.ripe.wtf`, even if its
+environment is later misconfigured. Local development defaults to hybrid mode: the launch page at
+`/`, the playground at `/play`, and the app at `/mint`.
 
 ## Development
 
