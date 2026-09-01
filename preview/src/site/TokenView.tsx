@@ -318,20 +318,24 @@ export function TokenView({
                   key={r.k}
                   className="token-trait-row"
                   style={{
-                    padding: "10px 0",
+                    padding: "12px 0",
                     borderBottom: `1px solid ${C.ruleInner}`,
-                    fontSize: 13,
                   }}
                 >
                   <div>
-                    <div style={{color: C.muted}}>{r.k}</div>
+                    <div className="token-trait-label">{r.k}</div>
                     {r.description && (
-                      <div style={{marginTop: 4, color: C.muted, fontSize: 11, lineHeight: 1.5}}>
+                      <div className="token-trait-description">
                         {r.description}
                       </div>
                     )}
                   </div>
-                  <div style={{fontSize: r.size ?? 13, overflowWrap: r.wrap ?? "normal"}}>{r.v}</div>
+                  <div
+                    className="token-trait-value"
+                    style={{fontSize: r.size, overflowWrap: r.wrap ?? "normal"}}
+                  >
+                    {r.v}
+                  </div>
                 </div>
               ))}
             </div>

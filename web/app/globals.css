@@ -304,9 +304,27 @@ button {
 }
 .token-trait-row {
   display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 1.35fr) minmax(130px, 0.65fr);
   gap: 24px;
   align-items: start;
+}
+.token-trait-label {
+  color: #a5a59e;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.token-trait-description {
+  max-width: 38ch;
+  margin-top: 6px;
+  color: #71716b;
+  font-size: 10px;
+  line-height: 1.55;
+}
+.token-trait-value {
+  color: #e6e4dd;
+  font-size: 14px;
+  line-height: 1.4;
 }
 @media (max-width: 700px) {
   .manage-action-grid {
@@ -321,7 +339,10 @@ button {
   }
   .token-trait-row {
     grid-template-columns: 1fr;
-    gap: 5px;
+    gap: 8px;
+  }
+  .token-trait-description {
+    max-width: none;
   }
   .compose-selection-tray {
     left: 10px;
