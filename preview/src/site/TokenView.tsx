@@ -36,6 +36,7 @@ import {moduleBytesToHex} from "../canonical/moduleCodec";
 import type {CardGeometry} from "../canonical/render";
 import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
 import {isProvenanceRollup, provenanceRollupLabel} from "./provenance";
+import {buildComposeResultPreview, type ComposeResultPreview} from "./composePreview";
 
 const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   mint: "Minted",
@@ -102,6 +103,8 @@ export function TokenView({
   const [showRawUnicode, setShowRawUnicode] = React.useState(false);
   const [decompInputs, setDecompInputs] = React.useState<DecomposeInput[] | null>(null);
   const [dna, setDna] = React.useState<DnaResult | null>(null);
+  const [composePreview, setComposePreview] = React.useState<ComposeResultPreview | null>(null);
+  const [composePreviewUnavailable, setComposePreviewUnavailable] = React.useState(false);
   // Drill-down stack for the DNA modal: each entry is one donor's own DNA, reached by clicking a
   // contributing donor (or split parent) card. Empty means the modal is closed. Loaded lazily and
   // cached in place, so navigating back up never refetches.
@@ -232,6 +235,28 @@ export function TokenView({
 
   const token = data?.tokens.find((t) => t.id === tokenId) ?? null;
   const snap = redeem.status === "done" && redeem.snap?.id === tokenId ? redeem.snap : null;
+  const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
+  const candidates = React.useMemo(
+    () =>
+      owned && token && token.di >= 0
+        ? (data?.tokens ?? []).filter(
+            (t) =>
+              t.di === token.di &&
+              t.id !== token.id &&
+              !!address &&
+              t.owner.toLowerCase() === address.toLowerCase(),
+          )
+        : [],
+    [address, data, owned, token],
+  );
+  const pickedTokens = React.useMemo(
+    () => candidates.filter((t) => picked.has(t.id.toString())),
+    [candidates, picked],
+  );
+  const pickedIds = React.useMemo(() => pickedTokens.map((t) => t.id), [pickedTokens]);
+  const sumWei = (token?.backing ?? 0n) + pickedTokens.reduce((a, t) => a + t.backing, 0n);
+  const sumIdx = token ? denomIndexOf(sumWei) : -1;
+  const composeValid = pickedIds.length >= 1 && pickedIds.length <= MAX_COMPOSE_INPUTS && sumIdx >= 0;
 
   // Read the text rendering from ShapeLens. This intentionally does not derive the grid from
   // tokenURI or the site's local renderer: the displayed bytes are the protocol's canonical
@@ -261,6 +286,33 @@ export function TokenView({
       cancelled = true;
     };
   }, [publicClient, dep.lens, tokenId, token]);
+
+  // ShapeLens runs the same deterministic sampling as compose without changing state. The
+  // returned materialized modules therefore render the exact post-transaction artwork.
+  React.useEffect(() => {
+    let cancelled = false;
+    setComposePreview(null);
+    setComposePreviewUnavailable(false);
+    if (!publicClient || !token || !composeValid) return;
+
+    void publicClient
+      .readContract({
+        address: dep.lens,
+        abi: shapeLensAbi,
+        functionName: "previewCompose",
+        args: [token.id, pickedIds],
+      })
+      .then((result) => {
+        if (!cancelled) setComposePreview(buildComposeResultPreview(result, token.id));
+      })
+      .catch(() => {
+        if (!cancelled) setComposePreviewUnavailable(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [composeValid, dep.lens, pickedIds, publicClient, token]);
 
   const back = (
     <div style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
@@ -353,7 +405,6 @@ export function TokenView({
   const di = token.di;
   const lbl = DENOMINATIONS[di].label;
   const [cols, rows] = GRIDS[di];
-  const owned = !!address && token.owner.toLowerCase() === address.toLowerCase();
   const comp = composeShape(token.seed, token.backing, token.inkGene);
 
   const tokRows: {k: string; v: React.ReactNode; size?: number; wrap?: "anywhere" | "normal"}[] = [
@@ -383,25 +434,10 @@ export function TokenView({
 
   // Recompose: same-denomination Shapes this wallet owns. The open token survives, keeping its
   // id and seed.
-  const candidates = owned
-    ? (data?.tokens ?? []).filter(
-        (t) =>
-          t.di === di &&
-          t.id !== token.id &&
-          !!address &&
-          t.owner.toLowerCase() === address.toLowerCase(),
-      )
-    : [];
-  const pickedTokens = candidates.filter((t) => picked.has(t.id.toString()));
-  const pickedIds = pickedTokens.map((t) => t.id);
-  const sumWei = token.backing + pickedTokens.reduce((a, t) => a + t.backing, 0n);
-  const sumIdx = denomIndexOf(sumWei);
   // Compose costs about 75k gas per burned input, so a mainnet block caps one call near 775.
   // Hold well under that: a rejected selection here is cheaper than an out of gas revert the
   // caller still pays for. A larger merge is done by composing in batches, which the survivor
   // keeping its id makes safe to repeat.
-  const composeValid = pickedIds.length >= 1 && pickedIds.length <= MAX_COMPOSE_INPUTS && sumIdx >= 0;
-
   const errLine = (op: string) =>
     txErr && txErr.op === op ? (
       <p style={{margin: "18px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
@@ -788,6 +824,52 @@ export function TokenView({
               </div>
             )}
             {composeValid && (
+              <div
+                aria-label={`Compose result preview for Shape ${token.id.toString()}`}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "flex-start",
+                  gap: 22,
+                  marginTop: 22,
+                  padding: 18,
+                  border: `1px solid ${C.border}`,
+                  background: C.row,
+                }}
+              >
+                {composePreview ? (
+                  <>
+                    <Art
+                      src={composePreview.image}
+                      alt={`Composed preview for Shape ${composePreview.tokenId.toString()}`}
+                      width={132}
+                    />
+                    <div style={{flex: "1 1 220px", minWidth: 0}}>
+                      <div style={{fontSize: 11, letterSpacing: "0.12em", color: C.muted}}>
+                        EXACT RESULT PREVIEW
+                      </div>
+                      <div style={{marginTop: 10, fontSize: 24, color: C.ink}}>
+                        Token #{composePreview.tokenId.toString()}
+                      </div>
+                      <div style={{marginTop: 6, fontSize: 14}}>
+                        {DENOMINATIONS[composePreview.denominationIndex].label} ETH
+                      </div>
+                      <p style={{margin: "14px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted}}>
+                        #{composePreview.tokenId.toString()} survives with this artwork. The {pickedIds.length}{" "}
+                        selected Shape{pickedIds.length === 1 ? "" : "s"} are burned into it.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{fontSize: 12, lineHeight: 1.7, color: C.muted}}>
+                    {composePreviewUnavailable
+                      ? `Exact artwork preview is temporarily unavailable. Token #${token.id.toString()} will still be the composed result.`
+                      : `Calculating the exact result for token #${token.id.toString()}…`}
+                  </div>
+                )}
+              </div>
+            )}
+            {composeValid && (
               <button
                 type="button"
                 className="btn-outline"
@@ -795,7 +877,7 @@ export function TokenView({
                 disabled={!!busy}
                 style={{marginTop: 22, padding: "10px 20px"}}
               >
-                {busy === "compose" ? "Waiting for confirmation" : "Compose"}
+                {busy === "compose" ? "Waiting for confirmation" : `Compose into #${token.id.toString()}`}
               </button>
             )}
             {errLine("compose")}
