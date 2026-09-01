@@ -133,6 +133,8 @@ assumptions expose an onchain safety or liveness failure.
   `0x6c162a8b0392e052108912a10b60eedcd7aed4d665032583f5f4724da5dc8d9`.
 - Sepolia postflight confirms nine testnet denominations, 100 bps fee, backed/live Shape #0, exact
   reserve equality, correct wiring/roles, zero auctions and positions/market both zero/unlocked.
+- All eleven Sepolia contracts/libraries expose verified source on Etherscan; PointerOps, Shapes and
+  ShapeLens also have exact Sourcify creation/runtime matches.
 - An earlier exact-release auction implementation completed the full two-bid Sepolia lifecycle,
   including extension, settlement, claims, empty house and indexer agreement. This proves one
   execution, not absence of other attack paths.

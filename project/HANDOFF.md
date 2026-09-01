@@ -12,7 +12,7 @@ Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cu
 - Release-fork corrections merged in PR #40. Exact release commit `dba4dbfe93df64cc72052c3eab70289070e301d9` passes 459 tests with 4 RPC-only skips in each Foundry profile, all 4 mainnet-fork rehearsal tests, 115 preview tests, all hosted CI and both deployment dry runs.
 - Exact sizes are Shapes 24,474/24,453 bytes, ShapeLens 9,885/9,867 bytes, ShapeRenderer 23,138/23,137 bytes and PointerOps 605 bytes for default/testnet where applicable. The Shapes margin is only 102/123 bytes.
 - Exact `dba4dbf` is live on Sepolia at Shapes `0x8172B86708c67D93ab6e666798B7073463371e13`, from block 11613113. The actual Shapes creation transaction is `0x6c162a8b0392e052108912a10b60eedcd7aed4d665032583f5f4724da5dc8d9`. Every receipt and independent wiring, role, reserve, ladder, Shape #0 and empty-pointer postflight passed.
-- Etherscan verified five of eight new deployments during broadcast. PointerOps, Shapes and ShapeLens have exact Sourcify creation/runtime matches; the Etherscan verification-only retry still requires the user's API key but no wallet or transaction. Do not redeploy.
+- All eight newly deployed sources and all eleven deployed contracts/libraries are verified on Etherscan. PointerOps, Shapes and ShapeLens also have exact Sourcify creation/runtime matches. The retry required no redeploy, wallet signature or transaction.
 - Fly deployment version 2 is live on isolated schema `shapes_sepolia_v2`, preserving the old schema. Health/ready are 200; status and GraphQL matched the RPC exactly at block 11613213 and report only backed Shape #0 with the correct owner.
 - PR #41 merged as `b646ae5`; Netlify published that exact production commit. `https://shapes.ripe.wtf/deployment.json` serves the new deployment, and homepage, Play, Shape #0 and its OG image all return HTTP 200.
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
@@ -44,10 +44,9 @@ Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cu
 
 ## Remaining gates, in order
 
-1. Finish Etherscan verification for PointerOps, Shapes and ShapeLens. All three already have exact Sourcify creation/runtime matches.
-2. Send `AUDIT_PROMPT_v5.md` to an independent auditor, then close or explicitly accept every finding.
-3. Obtain D-15 qualified legal review and record the result.
-4. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody, artist-signing and per-pointer lock/renounce decisions. No mainnet broadcast is authorized.
+1. Send `AUDIT_PROMPT_v5.md` to an independent auditor, then close or explicitly accept every finding.
+2. Obtain D-15 qualified legal review and record the result.
+3. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody, artist-signing and per-pointer lock/renounce decisions. No mainnet broadcast is authorized.
 
 ## Standing directives
 
