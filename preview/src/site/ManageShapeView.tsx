@@ -12,6 +12,7 @@ import {C, label} from "./theme";
 import {Art, Modal, Section, short} from "./ui";
 import type {SiteData, SiteToken} from "./data";
 import {buildComposeResultPreview} from "./composePreview";
+import {shapeTitle} from "./shapeTitle";
 
 type ManageAction = "split" | "decompose" | "redeem" | "sacrifice";
 
@@ -488,7 +489,7 @@ function ManageIdentity({token, owned}: {token: SiteToken; owned: boolean}) {
     <div style={{display: "flex", flexWrap: "wrap", alignItems: "center", gap: 26}}>
       <Art src={token.image} alt={`Shape ${token.id.toString()}`} width={104} />
       <div>
-        <div style={{fontSize: 28}}>Shape #{token.id.toString()}</div>
+        <div style={{fontSize: 28}}>{shapeTitle(token.id)}</div>
         <div style={{marginTop: 8, color: C.bodyDim, fontSize: 14}}>
           {token.di >= 0 ? `${DENOMINATIONS[token.di].label} ETH` : "Black Shape"}
         </div>

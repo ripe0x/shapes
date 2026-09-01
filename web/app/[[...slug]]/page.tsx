@@ -9,6 +9,10 @@ type SearchParams = { s?: string | string[] };
 
 const MAX_OG_STATE_LENGTH = 6000;
 
+function shapeTitle(tokenId: bigint): string {
+  return tokenId === 0n ? "Shapes Collection Owner" : `Shape ${tokenId.toString()}`;
+}
+
 // Resolve a URL path into the SiteApp view it shows. Returns null for an unknown path.
 function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | null } | null {
   const parts = slug ?? [];
@@ -86,11 +90,12 @@ export async function generateMetadata({
   }
   if (r.view === "token" && r.tokenId !== null) {
     const id = r.tokenId.toString();
+    const title = shapeTitle(r.tokenId);
     return {
-      title: `Shape ${id}`,
-      description: `Shape ${id} — an ETH-backed on-chain object, redeemable for exactly its denomination.`,
+      title,
+      description: `${title}, an ETH-backed on-chain object redeemable for exactly its denomination.`,
       openGraph: {
-        title: `Shape ${id} · Shapes`,
+        title: `${title} · Shapes`,
         url: `/shape/${id}`,
         images: [{ url: `/og/shape/${id}`, width: 1200, height: 630 }],
       },

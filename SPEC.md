@@ -595,7 +595,8 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 
 - **Collectible ownership, separate bounded admin.** Shape #0 is minted to the deployer with
   minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
-  holding #0 grants no permissions. The separate `admin()` role can replace and permanently lock
+  its metadata title is `Shapes Collection Owner`, with `Collection Owner: true`; holding #0 grants
+  no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including
   locking either forever at zero, and can edit the token name prefix and description shared by token

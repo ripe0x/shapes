@@ -522,6 +522,22 @@ contract OutputTest is RendererTestBase {
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), DENOMS[4], false, 0), "123"));
     }
 
+    /// @notice Shape #0 carries its collection role in both its fixed title and one boolean trait.
+    function test_CollectionOwnerTokenHasDistinctMetadataIdentity() public view {
+        string memory ownerJson = renderer.metadataJSON(
+            bytes32(uint256(1)), DENOMS[0], 0, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+        );
+        assertEq(vm.parseJsonString(ownerJson, ".name"), "Shapes Collection Owner");
+        assertEq(vm.parseJsonString(ownerJson, ".attributes[15].trait_type"), "Collection Owner");
+        assertEq(vm.parseJsonString(ownerJson, ".attributes[15].value"), "true");
+
+        string memory ordinaryJson = renderer.metadataJSON(
+            bytes32(uint256(1)), DENOMS[0], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+        );
+        assertEq(vm.parseJsonString(ordinaryJson, ".name"), "Shape 1");
+        assertFalse(_contains(ordinaryJson, '"trait_type":"Collection Owner"'));
+    }
+
     /// @notice tokenURI must decode to real JSON containing a real inline SVG.
     function testFuzz_TokenUriIsValidBase64Json(bytes32 seed, uint8 which, uint16 tokenId) public view {
         uint256 amount = DENOMS[which % 9];
@@ -532,10 +548,10 @@ contract OutputTest is RendererTestBase {
         string memory json = string(Base64Decode.decode(_after(uri, "data:application/json;base64,")));
 
         // real JSON, parseable field by field
-        assertEq(
-            vm.parseJsonString(json, ".name"),
-            string(abi.encodePacked("Shape ", vm.toString(uint256(tokenId))))
-        );
+        string memory expectedName = tokenId == 0
+            ? "Shapes Collection Owner"
+            : string(abi.encodePacked("Shape ", vm.toString(uint256(tokenId))));
+        assertEq(vm.parseJsonString(json, ".name"), expectedName);
         assertGt(bytes(vm.parseJsonString(json, ".description")).length, 40);
 
         string memory image = vm.parseJsonString(json, ".image");
@@ -729,6 +745,18 @@ contract TokenMetadataTest is RendererTestBase {
 
     function _decodeJson(uint256 id) internal view returns (string memory) {
         return string(Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,")));
+    }
+
+    /// @notice The actual Shapes tokenURI path preserves #0's fixed identity even when an admin
+    ///         changes the ordinary token-name prefix.
+    function test_CollectionOwnerIdentityFlowsThroughShapesTokenURI() public {
+        string memory initial = _decodeJson(0);
+        assertEq(vm.parseJsonString(initial, ".name"), "Shapes Collection Owner");
+        assertEq(vm.parseJsonString(initial, ".attributes[15].trait_type"), "Collection Owner");
+        assertEq(vm.parseJsonString(initial, ".attributes[15].value"), "true");
+
+        shapes.setMetadataCopy("Form ", "A reshaped description of the object.");
+        assertEq(vm.parseJsonString(_decodeJson(0), ".name"), "Shapes Collection Owner");
     }
 
     /// @notice The on-chain token drives the provenance traits from its own (originCount, isBlack),

@@ -2,6 +2,7 @@ import {DENOMINATIONS} from "../chain/abi";
 import {C} from "./theme";
 import {Section, Art} from "./ui";
 import type {SiteData, SiteToken} from "./data";
+import {compactShapeTitle} from "./shapeTitle";
 
 export const BLACK_FILTER = -2;
 
@@ -93,7 +94,7 @@ export function ShapeGrid({
               color: C.muted,
             }}
           >
-            <span>#{t.id.toString()}</span>
+            <span>{compactShapeTitle(t.id)}</span>
             <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : "Black"}</span>
           </div>
         </button>

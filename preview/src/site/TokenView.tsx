@@ -32,6 +32,7 @@ import type {CardGeometry} from "../canonical/render";
 import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
 import {isProvenanceRollup, provenanceRollupLabel} from "./provenance";
 import {displayTraits} from "./displayTraits";
+import {shapeTitle} from "./shapeTitle";
 
 const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   mint: "Minted",
@@ -220,7 +221,7 @@ export function TokenView({
           <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={localArt(snap.seed, DENOMINATIONS[snap.di].wei, snap.inkGene)} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0}}>
-              <div style={{fontSize: 40, lineHeight: 1}}>Shape {snap.id.toString()}</div>
+              <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(snap.id)}</div>
               <div style={{marginTop: 20, fontSize: 13, lineHeight: 1.7}}>
                 <div>
                   Redeemed. {DENOMINATIONS[snap.di].wei.toString()} wei ({lbl} ETH) sent to{" "}
@@ -250,7 +251,7 @@ export function TokenView({
       <main>
         {back}
         <Section title="SHAPE">
-          <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>Shape {tokenId.toString()}</div>
+          <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId)}</div>
           <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
             Shape {tokenId.toString()} is no longer live. It was redeemed or recomposed. Its
             history is below.
@@ -269,7 +270,7 @@ export function TokenView({
           <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={token.image} alt={`Black Shape ${token.id}`} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0, fontSize: 13, lineHeight: 1.75}}>
-              <div style={{fontSize: 40, lineHeight: 1}}>Shape {token.id.toString()}</div>
+              <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id)}</div>
               <div style={{marginTop: 20}}>
                 #{token.id.toString()} has been sacrificed. It remains part of the collection, but
                 has no redeemable ETH backing and cannot be split, composed, or redeemed.
@@ -294,6 +295,14 @@ export function TokenView({
     wrap?: "anywhere" | "normal";
   }[] = [
     {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
+    ...(token.id === 0n
+      ? [{
+          k: "collection owner",
+          v: "true",
+          description: "Holding Shape 0 represents collection ownership and grants no administrative authority.",
+          wrap: "anywhere" as const,
+        }]
+      : []),
     ...displayTraits(token.meta.attributes).map((trait) => ({
       k: trait.label,
       v: trait.value,
@@ -310,7 +319,7 @@ export function TokenView({
         <div style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
           <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
           <div style={{flex: "1 1 320px", minWidth: 0}}>
-            <div style={{fontSize: 40, lineHeight: 1}}>Shape {token.id.toString()}</div>
+            <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id)}</div>
             <div style={{marginTop: 16, fontSize: 18, lineHeight: 1.4, color: C.bodyDim}}>{lbl} ETH</div>
             <div style={{margin: "32px 0 0"}}>
               {tokRows.map((r) => (

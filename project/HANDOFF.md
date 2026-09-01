@@ -7,6 +7,7 @@ Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cu
 
 ## Current outcome
 
+- Local P2 candidate on `codex/manage-shape-workspace` implements D-35: token #0 is titled `Shapes Collection Owner` and alone carries `Collection Owner: true`, with matching site identity. It is not merged or deployed. Each Foundry profile has 461 passing tests plus 4 expected fork skips; 126 preview tests, parity, preview/web builds and site lint also pass. Shapes size is unchanged at 24,474/24,453; ShapeRenderer is 23,331/23,330 bytes with 1,245/1,246 bytes of margin. The current Sepolia deployment remains exact `dba4dbf` and cannot reflect this renderer change.
 - P1 PASSED 2026-08-31. D-13's earlier live Sepolia auction completed two bids, anti-sniping extension, settlement, winner delivery and seller proceeds; final escrow/index checks were empty and the Fly indexer matched the chain head.
 - D-34 merged in PR #39 (`8d8c2b2`): explicit `positions()` and `market()` getters start empty/unlocked, may be changed, cleared or independently locked forever by admin, and have no authority over Shapes. `ShapeLens.positionOf` queries only the positions target with a 50,000-gas cap and converts external failure or malformed data to zero. The market is discovery-only and is never called.
 - Release-fork corrections merged in PR #40. Exact release commit `dba4dbfe93df64cc72052c3eab70289070e301d9` passes 459 tests with 4 RPC-only skips in each Foundry profile, all 4 mainnet-fork rehearsal tests, 115 preview tests, all hosted CI and both deployment dry runs.

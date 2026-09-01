@@ -240,7 +240,8 @@ and the narrow compose/decompose identity-revival exception.
 Shape #0 represents ownership of the contract as a collectible object. It is minted atomically to the
 deployer with minimum-denomination backing, and `owner()` always returns its current holder. It is otherwise a
 normal Shape: it can be transferred, redeemed, composed, decomposed, or split. While #0 does not
-exist, `owner()` returns zero. Holding it grants no administrative rights. Permissionless artwork
+exist, `owner()` returns zero. Its metadata title is `Shapes Collection Owner`, with the exclusive
+trait `Collection Owner: true`. Holding it grants no administrative rights. Permissionless artwork
 minting starts at #1, which is the launch-auction lot.
 
 The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move

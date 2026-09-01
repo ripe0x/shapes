@@ -7,10 +7,12 @@ default copy; `test/Parity.t.sol` asserts the two agree exactly at that default 
 metadata service exists, so nothing here can rot or be withheld.
 
 The token `name` prefix and shared `description` are admin-set copy, stored on Shapes and passed
-into the renderer. `setMetadataCopy` edits both atomically. `contractURI` uses the immutable
-ERC-721 name `Shapes` and that same description, so collection and token descriptions cannot
-diverge. Copy defaults to the TypeScript canonical and is validated on set so it cannot break the
-JSON (`"`, `\`, C0 control bytes and over-length values revert). Everything else is fixed on chain.
+into the renderer. `setMetadataCopy` edits both atomically. The one name exception is token #0:
+its fixed title is `Shapes Collection Owner`, regardless of the configured prefix. `contractURI`
+uses the immutable ERC-721 name `Shapes` and the shared description, so collection and token
+descriptions cannot diverge. Copy defaults to the TypeScript canonical and is validated on set so
+it cannot break the JSON (`"`, `\`, C0 control bytes and over-length values revert). Everything
+else is fixed on chain.
 
 The document has `name`, `description`, `image` (an inline SVG `data:image/svg+xml` URI), and a
 fixed `attributes` array. Every attribute `value` is a **string**. There are no numeric traits:
@@ -27,12 +29,16 @@ traits render as exact-match filters.
 | 3 | `Ink` | `"Dense"` | The ink gene. See below. |
 | 4 | `Modules` | `"● △ ◐ …"` | The module glyph sequence, one glyph per cell, from the same stream that draws the art. |
 | 5 | `Module Count` | `"9"` | Number of marks on the card (`cols * rows`). |
-| 6 | `Formation` | `"Composed"` | Provenance class. See below. |
-| 7 | `Independent Origins` | `"1"` | Count of direct-mint events baked into the token (`originCount`). |
-| 8 | `Origin Density` | `"11%"` | `originCount / units`, as a percent. 100% means every unit of backing traces to its own mint. |
-| 9 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `sacrifice` gate at the apex. |
-| 10 | `Black` | `"false"` | `true` when the token has been transformed via `sacrifice`. |
-| 11 | `Seed` | `"0x…"` | The 32-byte visual seed. |
+| 6 | `Primitive` | `"Half Circle"` | Most common geometric module type in the artwork. |
+| 7 | `Variety` | `"8"` | Number of distinct geometric module types used, from 1 through 10. |
+| 8 | `Ink Tier` | `"Common"` | Rarity band derived from the inherited ink gene. |
+| 9 | `Formation` | `"Composed"` | Provenance class. See below. |
+| 10 | `Independent Origins` | `"1"` | Count of direct-mint events baked into the token (`originCount`). |
+| 11 | `Origin Density` | `"11%"` | `originCount / units`, as a percent. 100% means every unit of backing traces to its own mint. |
+| 12 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `sacrifice` gate at the apex. |
+| 13 | `Black` | `"false"` | `true` when the token has been transformed via `sacrifice`. |
+| 14 | `Compose Depth` | `"2"` | Number of stacked composes the current holder can reverse, newest first. |
+| n/a | `Collection Owner` | `"true"` | Present only on token #0, the transferable collection-ownership token. It grants no administrative authority. |
 | n/a | `Split From` | `"10 ETH"` | Only on a split child (issue #21C): the immediate parent's denomination. See below. |
 | n/a | `Split Origin` | `"100 ETH"` | Only on a split child: the root split ancestor's denomination. See below. |
 

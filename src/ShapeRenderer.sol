@@ -28,6 +28,8 @@ import {ModuleCodec} from "./lib/ModuleCodec.sol";
 ///      constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The one
 ///      exception is the metadata `name` prefix and `description`, which `metadataJSON` writes
 ///      verbatim from its arguments; `Shapes` owns and supplies that copy and is trusted for it.
+///      Token #0 has the fixed collection-role name `Shapes Collection Owner` and a
+///      `Collection Owner: true` attribute, independent of the supplied prefix.
 contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     using FixedPoint for uint256;
     using Round03Rand for Round03Rand.Stream;
@@ -1276,8 +1278,7 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             bytes.concat(
                 abi.encodePacked(
                     '{"name":"',
-                    namePrefix,
-                    FixedPoint.toString(tokenId),
+                    _tokenName(namePrefix, tokenId),
                     '","description":"',
                     description,
                     '","image":"data:image/svg+xml;base64,',
@@ -1304,11 +1305,25 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
                     ',{"trait_type":"Compose Depth","value":"',
                     FixedPoint.toString(composeDepth),
                     '"}',
+                    _collectionOwnerTrait(tokenId),
                     _splitTraits(splitInfo),
                     "]}"
                 )
             )
         );
+    }
+
+    /// @dev Shape #0 is the transferable collection-ownership token. Its role is part of the
+    ///      token's identity, while every other token continues to use the configurable prefix.
+    function _tokenName(string memory namePrefix, uint256 tokenId) private pure returns (string memory) {
+        if (tokenId == 0) return "Shapes Collection Owner";
+        return string(abi.encodePacked(namePrefix, FixedPoint.toString(tokenId)));
+    }
+
+    /// @dev Descriptive metadata only. Privileged Shapes operations use the separate `admin()`.
+    function _collectionOwnerTrait(uint256 tokenId) private pure returns (bytes memory) {
+        if (tokenId != 0) return bytes("");
+        return bytes(',{"trait_type":"Collection Owner","value":"true"}');
     }
 
     /// @dev The provenance trait block, split out to keep `metadataJSON` under the stack limit.
@@ -1333,10 +1348,10 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         );
     }
 
-    /// @dev "Split From" / "Split Origin" (issue #21C): appended after `Compose Depth`, the last
-    ///      two entries in `attributes`, present only when `splitInfo.isSplitChild` is true and
-    ///      omitted entirely otherwise. Both name a denomination label the same way `ETH Value`
-    ///      does: `Denominations.labelAt` plus `" ETH"`.
+    /// @dev "Split From" / "Split Origin" (issue #21C): appended after the fixed traits (and the
+    ///      token #0 owner trait, when present), only when `splitInfo.isSplitChild` is true. Both
+    ///      name a denomination label the same way `ETH Value` does: `Denominations.labelAt` plus
+    ///      `" ETH"`.
     function _splitTraits(SplitProvenance memory splitInfo) private pure returns (bytes memory) {
         if (!splitInfo.isSplitChild) return bytes("");
         return abi.encodePacked(

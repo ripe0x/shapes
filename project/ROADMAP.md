@@ -64,6 +64,7 @@ Stop conditions: gas ceiling makes a core feature (compose path to apex) infeasi
 Objective: everything irreversible is decided, reviewed, and rehearsed.
 
 Deliverables:
+- LOCAL CANDIDATE, PENDING MERGE/DEPLOYMENT: D-35 gives token #0 the fixed title `Shapes Collection Owner` and exclusive trait `Collection Owner: true`, with matching site identity and no authority change. Dual-profile tests, renderer parity and size gates pass; the current Sepolia deployment still exposes the earlier renderer.
 - COMPLETE: D-34 replaces the specialized resolver with explicit positions and market pointers. Both launch empty/unlocked, lock independently, remain powerless over core state, and preserve the optional lens position read through positions only. PR #39 merged the design; exact release `dba4dbfe93df64cc72052c3eab70289070e301d9` is live on Sepolia with both pointers zero/unlocked and all independent postflights passing.
 - Architecture decision: standalone vs Surface-hosted (D-04 final). If Surface-hosted, a full sub-roadmap replaces P3 below.
 - COMPLETE FOR CURRENT RELEASE: default mainnet ladder, mainnet fixtures, full parity chain and deploy-profile assertions revalidated (D-01). Exact `dba4dbf` passes both full Foundry profiles and all 4 release tests against a live mainnet fork.

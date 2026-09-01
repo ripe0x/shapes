@@ -20,6 +20,7 @@ import {
   type BidHistoryEntry,
 } from "./auction";
 import type {SiteData, SiteToken} from "./data";
+import {shapeTitle} from "./shapeTitle";
 
 /** Font size for the token name, the panel's dominant element. */
 const HERO_SIZE = 40;
@@ -159,7 +160,9 @@ export function AuctionView({
   // for some reason, in which case the name falls back to the tokenId directly.
   const lotToken = data?.tokens.find((t) => t.id === auction.tokenId);
   const lotDenomLabel = lotToken ? DENOMINATIONS[lotToken.di]!.label : null;
-  const tokenName = lotToken?.meta.name || `Shape #${auction.tokenId.toString()}`;
+  const tokenName = auction.tokenId === 0n
+    ? shapeTitle(auction.tokenId)
+    : lotToken?.meta.name || shapeTitle(auction.tokenId);
 
   // Cards the connected wallet holds, offered as bid material.
   const owned: SiteToken[] = (data?.tokens ?? []).filter(
