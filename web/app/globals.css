@@ -118,6 +118,42 @@ button {
   border-color: #3a3a34;
   color: #e6e4dd;
 }
+.manage-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.manage-action-card:not(:disabled):hover {
+  border-color: #e6e4dd !important;
+  transform: translateY(-1px);
+}
+.manage-outcome {
+  display: grid;
+  grid-template-columns: minmax(160px, auto) 36px minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  max-width: 920px;
+  padding: 24px;
+  border: 1px solid #262622;
+  background: #11110f;
+}
+.manage-outcome-arrow {
+  color: #71716b;
+  font-size: 22px;
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .manage-action-grid {
+    grid-template-columns: 1fr;
+  }
+  .manage-outcome {
+    grid-template-columns: 1fr;
+  }
+  .manage-outcome-arrow {
+    transform: rotate(90deg);
+    text-align: left;
+  }
+}
 /* Modal. The overlay dims the page; the panel reuses the section rule colour so it reads
    as the same surface rather than a floating card. */
 .modal-overlay {

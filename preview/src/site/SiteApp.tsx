@@ -11,11 +11,12 @@ import {mintRequest} from "./mint";
 import {MintView} from "./MintView";
 import {GalleryView} from "./GalleryView";
 import {TokenView} from "./TokenView";
+import {ManageShapeView} from "./ManageShapeView";
 import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
 import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
 
-export type View = "mint" | "auction" | "gallery" | "token" | "about";
+export type View = "mint" | "auction" | "gallery" | "token" | "manage" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -62,7 +63,12 @@ export function SiteApp({
   const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
   const [txHash, setTxHash] = React.useState<string | null>(null);
-  const [composeNotice, setComposeNotice] = React.useState<{tokenId: bigint; hash: string} | null>(null);
+  const [actionNotice, setActionNotice] = React.useState<{
+    title: string;
+    detail: string;
+    hash: string;
+    tokenIds: bigint[];
+  } | null>(null);
 
   // URL <-> view sync for the Next.js host. `lastNav` tracks the last applied navigation so a
   // URL-driven change does not echo back out through `onNavigate`, and an internal navigation does
@@ -154,14 +160,29 @@ export function SiteApp({
 
   const confirmRedeem = async (t: SiteToken) => {
     if (!publicClient) return;
+    setBusy("redeem");
+    setTxErr(null);
+    setActionNotice(null);
     setRedeem({status: "pending"});
     try {
       const hash = await write("redeem", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
       setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
+      setActionNotice({
+        title: `Shape #${t.id.toString()} redeemed`,
+        detail: `${DENOMINATIONS[t.di].label} ETH was returned to its owner.`,
+        hash,
+        tokenIds: [],
+      });
+      setView("token");
+      window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
-      setRedeem({status: "failed", error: describeTxError(e)});
+      const text = describeTxError(e);
+      setRedeem({status: "failed", error: text});
+      setTxErr({op: "redeem", text});
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -169,13 +190,23 @@ export function SiteApp({
     if (!publicClient) return;
     setBusy("split");
     setTxErr(null);
+    setActionNotice(null);
     try {
       const downWei = DENOMINATIONS[t.di - 1].wei;
       const ratio = Number(t.backing / downWei);
       const hash = await write("split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
-      await publicClient.waitForTransactionReceipt({hash});
+      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const logs = parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs});
+      const newIds = logs[0]?.args.newIds ?? [];
       await refresh();
       setView("gallery"); // the input is burned; its children are newest in the gallery
+      setActionNotice({
+        title: `Shape #${t.id.toString()} split`,
+        detail: `${newIds.length} new Shape${newIds.length === 1 ? " was" : "s were"} created.`,
+        hash,
+        tokenIds: [...newIds],
+      });
+      window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
       setTxErr({op: "split", text: describeTxError(e)});
     } finally {
@@ -189,10 +220,21 @@ export function SiteApp({
     if (!publicClient) return;
     setBusy("decompose");
     setTxErr(null);
+    setActionNotice(null);
     try {
       const hash = await write("decompose", [t.id]);
-      await publicClient.waitForTransactionReceipt({hash});
+      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const logs = parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs});
+      const restoredIds = logs[0]?.args.restoredIds ?? [];
       await refresh(); // the survivor keeps its id; its detail shows the reverted state
+      setActionNotice({
+        title: `Shape #${t.id.toString()} restored`,
+        detail: `${restoredIds.length} absorbed Shape${restoredIds.length === 1 ? "" : "s"} returned with original IDs.`,
+        hash,
+        tokenIds: [t.id, ...restoredIds],
+      });
+      setView("token");
+      window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
       setTxErr({op: "decompose", text: describeTxError(e)});
     } finally {
@@ -204,16 +246,46 @@ export function SiteApp({
     if (!publicClient) return;
     setBusy("compose");
     setTxErr(null);
-    setComposeNotice(null);
+    setActionNotice(null);
     try {
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
       const hash = await write("compose", [t.id, sorted]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh(); // the survivor keeps its id; the open detail shows the new denomination
-      setComposeNotice({tokenId: t.id, hash});
+      setActionNotice({
+        title: `Shape #${t.id.toString()} grew`,
+        detail: `${burnIds.length} Shape${burnIds.length === 1 ? " was" : "s were"} absorbed.`,
+        hash,
+        tokenIds: [t.id],
+      });
+      setView("token");
       window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
       setTxErr({op: "compose", text: describeTxError(e)});
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doSacrifice = async (t: SiteToken) => {
+    if (!publicClient) return;
+    setBusy("sacrifice");
+    setTxErr(null);
+    setActionNotice(null);
+    try {
+      const hash = await write("sacrifice", [t.id]);
+      await publicClient.waitForTransactionReceipt({hash});
+      await refresh();
+      setActionNotice({
+        title: `Shape #${t.id.toString()} is now Black`,
+        detail: "Its ETH backing is permanently unspendable.",
+        hash,
+        tokenIds: [t.id],
+      });
+      setView("token");
+      window.scrollTo({top: 0, behavior: "smooth"});
+    } catch (e) {
+      setTxErr({op: "sacrifice", text: describeTxError(e)});
     } finally {
       setBusy(null);
     }
@@ -403,21 +475,31 @@ export function SiteApp({
           address={address}
           tokenId={tokenId}
           redeem={redeem}
+          onBack={() => go("gallery")}
+          onManage={() => go("manage")}
+          onOpenToken={openToken}
+        />
+      )}
+      {view === "manage" && tokenId !== null && (
+        <ManageShapeView
+          data={data}
+          dep={dep}
+          publicClient={publicClient}
+          address={address}
+          tokenId={tokenId}
           busy={busy}
           txErr={txErr}
-          onBack={() => go("gallery")}
-          onAskRedeem={() => setRedeem({status: "asking"})}
-          onCancelRedeem={() => setRedeem({status: "idle"})}
-          onConfirmRedeem={(t) => void confirmRedeem(t)}
+          onBack={() => go("token")}
+          onCompose={(t, ids) => void doCompose(t, ids)}
           onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
-          onCompose={(t, ids) => void doCompose(t, ids)}
-          onOpenToken={openToken}
+          onRedeem={(t) => void confirmRedeem(t)}
+          onSacrifice={(t) => void doSacrifice(t)}
         />
       )}
       {view === "about" && <AboutView dep={dep} data={data} />}
 
-      {composeNotice && (
+      {actionNotice && (
         <div
           role="status"
           aria-live="polite"
@@ -439,9 +521,28 @@ export function SiteApp({
             fontSize: 12,
           }}
         >
-          <span style={{whiteSpace: "nowrap"}}>Shape #{composeNotice.tokenId.toString()} composed.</span>
+          <div style={{minWidth: 0}}>
+            <div style={{color: C.ink}}>{actionNotice.title}</div>
+            <div style={{marginTop: 3, color: C.muted, fontSize: 10}}>{actionNotice.detail}</div>
+          </div>
+          {actionNotice.tokenIds.slice(0, 3).map((id) => (
+            <button
+              type="button"
+              key={id.toString()}
+              className="btn-ghost"
+              onClick={() => openToken(id)}
+              style={{whiteSpace: "nowrap", color: C.ink, textDecoration: "underline"}}
+            >
+              Shape #{id.toString()}
+            </button>
+          ))}
+          {actionNotice.tokenIds.length > 3 && (
+            <span style={{whiteSpace: "nowrap", color: C.muted}}>
+              +{actionNotice.tokenIds.length - 3} more
+            </span>
+          )}
           <a
-            href={txUrl(composeNotice.hash, dep.chainId)}
+            href={txUrl(actionNotice.hash, dep.chainId)}
             target="_blank"
             rel="noreferrer"
             style={{whiteSpace: "nowrap", textDecoration: "underline"}}
@@ -450,8 +551,8 @@ export function SiteApp({
           </a>
           <button
             type="button"
-            aria-label="Dismiss compose confirmation"
-            onClick={() => setComposeNotice(null)}
+            aria-label="Dismiss transaction confirmation"
+            onClick={() => setActionNotice(null)}
             style={{padding: "2px 4px", color: C.muted, fontSize: 16, lineHeight: 1}}
           >
             ×

@@ -19,6 +19,9 @@ function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | nu
   if (parts.length === 2 && parts[0] === "shape" && /^\d+$/.test(parts[1])) {
     return { view: "token", tokenId: BigInt(parts[1]) };
   }
+  if (parts.length === 3 && parts[0] === "shape" && /^\d+$/.test(parts[1]) && parts[2] === "manage") {
+    return { view: "manage", tokenId: BigInt(parts[1]) };
+  }
   return null;
 }
 
@@ -84,6 +87,14 @@ export async function generateMetadata({
         images: [{ url: `/og/shape/${id}`, width: 1200, height: 630 }],
       },
       twitter: { card: "summary_large_image", images: [`/og/shape/${id}`] },
+    };
+  }
+  if (r.view === "manage" && r.tokenId !== null) {
+    const id = r.tokenId.toString();
+    return {
+      title: `Manage Shape ${id}`,
+      description: `Review and manage the available lifecycle actions for Shape ${id}.`,
+      openGraph: {title: `Manage Shape ${id} · Shapes`, url: `/shape/${id}/manage`},
     };
   }
   return {

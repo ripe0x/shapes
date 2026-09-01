@@ -1,17 +1,14 @@
 import React from "react";
-import {formatEther, type PublicClient} from "viem";
-import {DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
+import {type PublicClient} from "viem";
+import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {GRIDS} from "../canonical/denominations";
 import {composeShape, fillClass, geometryAt, svgFromComposition, CANONICAL} from "../canonical/render";
-import {splitChildSeed} from "../splitSeed";
 import {shapeLensAbi} from "../chain/abi";
 import {
   loadHistory,
   loadProvenance,
-  loadDecomposePreview,
   type HistEvent,
   type ProvNode,
-  type DecomposeInput,
 } from "../chain/history";
 import {C, label} from "./theme";
 import {Section, Art, Modal, short, txUrl} from "./ui";
@@ -36,7 +33,6 @@ import {moduleBytesToHex} from "../canonical/moduleCodec";
 import type {CardGeometry} from "../canonical/render";
 import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
 import {isProvenanceRollup, provenanceRollupLabel} from "./provenance";
-import {buildComposeResultPreview, type ComposeResultPreview} from "./composePreview";
 
 const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   mint: "Minted",
@@ -51,10 +47,6 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   transfer: "Transferred",
 };
 
-/** Inputs one compose call can burn before a mainnet block cannot hold it. About 75k gas each
- *  against a 60M limit is roughly 775; this leaves headroom for the survivor's own writes. */
-const MAX_COMPOSE_INPUTS = 700;
-
 interface DatedEvent extends HistEvent {
   date: string;
 }
@@ -66,15 +58,8 @@ export function TokenView({
   address,
   tokenId,
   redeem,
-  busy,
-  txErr,
   onBack,
-  onAskRedeem,
-  onCancelRedeem,
-  onConfirmRedeem,
-  onSplit,
-  onDecompose,
-  onCompose,
+  onManage,
   onOpenToken,
 }: {
   data: SiteData | null;
@@ -83,28 +68,17 @@ export function TokenView({
   address: `0x${string}` | undefined;
   tokenId: bigint;
   redeem: RedeemState;
-  busy: string | null;
-  txErr: {op: string; text: string} | null;
   onBack: () => void;
-  onAskRedeem: () => void;
-  onCancelRedeem: () => void;
-  onConfirmRedeem: (t: SiteToken) => void;
-  onSplit: (t: SiteToken) => void;
-  onDecompose: (t: SiteToken) => void;
-  onCompose: (t: SiteToken, burnIds: bigint[]) => void;
+  onManage: () => void;
   onOpenToken: (id: bigint) => void;
 }) {
-  const [picked, setPicked] = React.useState<Set<string>>(new Set());
-  const [askSplit, setAskSplit] = React.useState(false);
+  const [detailsTab, setDetailsTab] = React.useState<"story" | "technical">("story");
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
   const [prov, setProv] = React.useState<ProvNode | null>(null);
   const [unicodeCard, setUnicodeCard] = React.useState<string | null>(null);
   const [unicodeUnavailable, setUnicodeUnavailable] = React.useState(false);
   const [showRawUnicode, setShowRawUnicode] = React.useState(false);
-  const [decompInputs, setDecompInputs] = React.useState<DecomposeInput[] | null>(null);
   const [dna, setDna] = React.useState<DnaResult | null>(null);
-  const [composePreview, setComposePreview] = React.useState<ComposeResultPreview | null>(null);
-  const [composePreviewUnavailable, setComposePreviewUnavailable] = React.useState(false);
   // Drill-down stack for the DNA modal: each entry is one donor's own DNA, reached by clicking a
   // contributing donor (or split parent) card. Empty means the modal is closed. Loaded lazily and
   // cached in place, so navigating back up never refetches.
@@ -127,11 +101,6 @@ export function TokenView({
     };
   }, [publicClient, dep, tokenId, data]);
 
-  React.useEffect(() => {
-    setPicked(new Set());
-  }, [tokenId]);
-
-
   // Token history from the event log, with block timestamps resolved to dates.
   React.useEffect(() => {
     if (!publicClient) return;
@@ -152,26 +121,6 @@ export function TokenView({
     })().catch(() => {
       if (!cancelled) setHistory([]);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [publicClient, dep, tokenId, data]);
-
-  // The inputs a decompose would restore (its most recent compose's burned inputs), for the preview
-  // strip. Loaded only when the token has a compose to reverse; reloads after any transaction.
-  React.useEffect(() => {
-    if (!publicClient) return;
-    let cancelled = false;
-    setDecompInputs(null);
-    const t = data?.tokens.find((x) => x.id === tokenId);
-    if (!t || t.composeDepth === 0) return;
-    void loadDecomposePreview(publicClient, dep, tokenId)
-      .then((inputs) => {
-        if (!cancelled) setDecompInputs(inputs);
-      })
-      .catch(() => {
-        if (!cancelled) setDecompInputs([]);
-      });
     return () => {
       cancelled = true;
     };
@@ -236,28 +185,6 @@ export function TokenView({
   const token = data?.tokens.find((t) => t.id === tokenId) ?? null;
   const snap = redeem.status === "done" && redeem.snap?.id === tokenId ? redeem.snap : null;
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
-  const candidates = React.useMemo(
-    () =>
-      owned && token && token.di >= 0
-        ? (data?.tokens ?? []).filter(
-            (t) =>
-              t.di === token.di &&
-              t.id !== token.id &&
-              !!address &&
-              t.owner.toLowerCase() === address.toLowerCase(),
-          )
-        : [],
-    [address, data, owned, token],
-  );
-  const pickedTokens = React.useMemo(
-    () => candidates.filter((t) => picked.has(t.id.toString())),
-    [candidates, picked],
-  );
-  const pickedIds = React.useMemo(() => pickedTokens.map((t) => t.id), [pickedTokens]);
-  const sumWei = (token?.backing ?? 0n) + pickedTokens.reduce((a, t) => a + t.backing, 0n);
-  const sumIdx = token ? denomIndexOf(sumWei) : -1;
-  const composeValid = pickedIds.length >= 1 && pickedIds.length <= MAX_COMPOSE_INPUTS && sumIdx >= 0;
-
   // Read the text rendering from ShapeLens. This intentionally does not derive the grid from
   // tokenURI or the site's local renderer: the displayed bytes are the protocol's canonical
   // `unicodeCard(tokenId)` response. A missing `dep.lens` (stale deployment.json) fails this read
@@ -286,33 +213,6 @@ export function TokenView({
       cancelled = true;
     };
   }, [publicClient, dep.lens, tokenId, token]);
-
-  // ShapeLens runs the same deterministic sampling as compose without changing state. The
-  // returned materialized modules therefore render the exact post-transaction artwork.
-  React.useEffect(() => {
-    let cancelled = false;
-    setComposePreview(null);
-    setComposePreviewUnavailable(false);
-    if (!publicClient || !token || !composeValid) return;
-
-    void publicClient
-      .readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
-        functionName: "previewCompose",
-        args: [token.id, pickedIds],
-      })
-      .then((result) => {
-        if (!cancelled) setComposePreview(buildComposeResultPreview(result, token.id));
-      })
-      .catch(() => {
-        if (!cancelled) setComposePreviewUnavailable(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [composeValid, dep.lens, pickedIds, publicClient, token]);
 
   const back = (
     <div style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
@@ -416,35 +316,6 @@ export function TokenView({
     {k: "backing, exact", v: `${token.backing.toString()} wei`, size: 11},
   ];
 
-  // Split: the designed one-tier-down even split. Child seeds are fixed by the parent's
-  // seed, so the previews are the exact tokens the contract would mint.
-  const canSplit = di > 0;
-  const downWei = canSplit ? DENOMINATIONS[di - 1].wei : 0n;
-  const ratio = canSplit ? Number(token.backing / downWei) : 0;
-  const splitChildren = canSplit
-    ? Array.from({length: ratio}, (_, i) => ({
-        seed: splitChildSeed(token.seed, i),
-        wei: downWei,
-      }))
-    : [];
-
-  // Decompose: reverses the survivor's most recent still-standing compose. Shown only when a
-  // compose is on the stack to reverse.
-  const canDecompose = token.composeDepth > 0;
-
-  // Recompose: same-denomination Shapes this wallet owns. The open token survives, keeping its
-  // id and seed.
-  // Compose costs about 75k gas per burned input, so a mainnet block caps one call near 775.
-  // Hold well under that: a rejected selection here is cheaper than an out of gas revert the
-  // caller still pays for. A larger merge is done by composing in batches, which the survivor
-  // keeping its id makes safe to repeat.
-  const errLine = (op: string) =>
-    txErr && txErr.op === op ? (
-      <p style={{margin: "18px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-        {txErr.text}
-      </p>
-    ) : null;
-
   return (
     <main>
       {back}
@@ -457,6 +328,14 @@ export function TokenView({
             <p style={{margin: "20px 0 0", fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "48ch"}}>
               This Shape holds {lbl} ETH. Its owner can burn it and receive {lbl} ETH.
             </p>
+            <button
+              type="button"
+              className="btn-filled"
+              onClick={onManage}
+              style={{marginTop: 24, padding: "11px 22px", letterSpacing: "0.06em"}}
+            >
+              MANAGE SHAPE
+            </button>
             <div style={{margin: "32px 0 0"}}>
               {tokRows.map((r) => (
                 <div
@@ -479,6 +358,25 @@ export function TokenView({
         </div>
       </Section>
 
+      <Section title="ABOUT THIS SHAPE" pad="20px 48px 22px 32px">
+        <div style={{display: "flex", flexWrap: "wrap", gap: 10}} role="tablist" aria-label="Shape details">
+          {(["story", "technical"] as const).map((tab) => (
+            <button
+              type="button"
+              key={tab}
+              role="tab"
+              aria-selected={detailsTab === tab}
+              className={detailsTab === tab ? "btn-filled" : "btn-outline"}
+              onClick={() => setDetailsTab(tab)}
+              style={{padding: "8px 15px", letterSpacing: "0.08em", textTransform: "uppercase"}}
+            >
+              {tab === "story" ? "Story & DNA" : "Onchain data"}
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      {detailsTab === "technical" && (
       <Section title="UNICODE CARD" pad="28px 48px 34px 32px">
         <p style={{margin: "0 0 22px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
           Returned directly by <span style={{color: C.body}}>unicodeCard(#{token.id.toString()})</span> on the
@@ -564,7 +462,10 @@ export function TokenView({
           </div>
         )}
       </Section>
+      )}
 
+      {detailsTab === "story" && (
+      <>
       <DnaSection
         dna={dna}
         image={token.image}
@@ -600,7 +501,10 @@ export function TokenView({
           </div>
         </Section>
       )}
+      </>
+      )}
 
+      {detailsTab === "technical" && (
       <Section title="METADATA" pad="16px 48px 30px 32px">
         <p style={{margin: "8px 0 6px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
           Parsed from the token's onchain tokenURI. Nothing here is served by this site.
@@ -626,313 +530,8 @@ export function TokenView({
           </div>
         ))}
       </Section>
-
-      {owned && (
-        <>
-          <Section title="REDEEM" pad="26px 48px 34px 32px">
-            <div style={{fontSize: 15, lineHeight: 1.6}}>
-              Burn this Shape. Receive {lbl} ETH.
-            </div>
-            <div style={{margin: "8px 0 22px", fontSize: 12, color: C.muted, overflowWrap: "anywhere"}}>
-              {token.backing.toString()} wei ({lbl} ETH)
-            </div>
-            {(redeem.status === "idle" || redeem.status === "failed") && (
-              <>
-                <button type="button" className="btn-filled" onClick={onAskRedeem} style={{padding: "11px 26px"}}>
-                  Redeem
-                </button>
-                {redeem.status === "failed" && redeem.error && (
-                  <p style={{margin: "16px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-                    {redeem.error}
-                  </p>
-                )}
-              </>
-            )}
-            {(redeem.status === "asking" || redeem.status === "pending") && (
-              <div>
-                <p style={{margin: "0 0 20px", fontSize: 13, lineHeight: 1.7, maxWidth: "60ch"}}>
-                  Redeeming burns the token and sends {token.backing.toString()} wei ({lbl} ETH)
-                  to {short(token.owner)}. This cannot be undone.
-                </p>
-                <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
-                  <button
-                    type="button"
-                    className="btn-filled"
-                    onClick={() => onConfirmRedeem(token)}
-                    disabled={redeem.status === "pending"}
-                    style={{padding: "11px 26px"}}
-                  >
-                    {redeem.status === "pending" ? "Waiting for confirmation" : "Confirm redeem"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    onClick={onCancelRedeem}
-                    disabled={redeem.status === "pending"}
-                    style={{padding: "11px 26px"}}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </Section>
-
-          <Section title="SPLIT" pad="26px 48px 36px 32px">
-            <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-              {canSplit
-                ? `Split this Shape into ${ratio} Shapes of ${DENOMINATIONS[di - 1].label} ETH. The outputs sum to exactly ${lbl} ETH.`
-                : `${DENOMINATIONS[0].label} ETH is the smallest denomination. This Shape cannot be split.`}
-            </p>
-            {canSplit && (
-              <p style={{margin: "0 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-                No ETH moves. No fee is charged. The seeds below are fixed already, so this is
-                the exact result. A split is final: it burns this Shape, and its artwork cannot
-                be brought back.
-              </p>
-            )}
-            <div style={{display: "flex", flexWrap: "wrap", gap: 18}}>
-              {splitChildren.map((c, i) => (
-                <div key={i} style={{flex: "0 0 96px", width: 96}}>
-                  {/* split copies the parent's gene verbatim to every child */}
-                  <Art src={localArt(c.seed, c.wei, token.inkGene)} />
-                  <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
-                    {DENOMINATIONS[di - 1].label} ETH
-                  </div>
-                </div>
-              ))}
-            </div>
-            {canSplit && (
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => setAskSplit(true)}
-                disabled={!!busy}
-                style={{marginTop: 26, padding: "10px 20px"}}
-              >
-                {busy === "split" ? "Waiting for confirmation" : "Split"}
-              </button>
-            )}
-            {errLine("split")}
-            {askSplit && (
-              <Modal
-                title="SPLIT IS FINAL"
-                onCancel={() => setAskSplit(false)}
-              >
-                <p style={{margin: "0 0 14px", fontSize: 14, lineHeight: 1.7, color: C.ink}}>
-                  Splitting burns #{token.id.toString()} and returns {ratio} Shapes of{" "}
-                  {DENOMINATIONS[di - 1].label} ETH in its place.
-                </p>
-                <p style={{margin: "0 0 24px", fontSize: 13, lineHeight: 1.7, color: C.muted}}>
-                  This cannot be undone. Composing the pieces back gives a different Shape: the
-                  artwork on this one is gone for good. Your {lbl} ETH is untouched either way.
-                </p>
-                <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
-                  <button
-                    type="button"
-                    className="btn-filled"
-                    onClick={() => {
-                      setAskSplit(false);
-                      onSplit(token);
-                    }}
-                    disabled={!!busy}
-                    style={{padding: "11px 26px"}}
-                  >
-                    Split anyway
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-outline"
-                    onClick={() => setAskSplit(false)}
-                    disabled={!!busy}
-                    style={{padding: "11px 26px"}}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </Modal>
-            )}
-          </Section>
-
-          <Section title="COMPOSE" pad="26px 48px 36px 32px">
-            <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-              Grow this Shape. Composing burns others of the same denomination into it and moves
-              it to the larger denomination.
-            </p>
-            <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-              #{token.id.toString()} keeps its id and its seed. No ETH moves. No fee is charged.
-            </p>
-            {candidates.map((t) => {
-              const on = picked.has(t.id.toString());
-              return (
-                <div
-                  key={t.id.toString()}
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    gap: 20,
-                    padding: "10px 0",
-                    borderBottom: `1px solid ${C.ruleInner}`,
-                  }}
-                >
-                  <Art src={t.image} width={34} />
-                  <div style={{flex: "1 1 140px", minWidth: 0, fontSize: 13}}>
-                    #{t.id.toString()} · {lbl} ETH
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPicked((prev) => {
-                        const next = new Set(prev);
-                        const k = t.id.toString();
-                        if (next.has(k)) next.delete(k);
-                        else next.add(k);
-                        return next;
-                      })
-                    }
-                    style={{
-                      flex: "0 0 auto",
-                      whiteSpace: "nowrap",
-                      border: `1px solid ${on ? C.ink : C.border}`,
-                      background: on ? C.ink : "transparent",
-                      color: on ? C.page : C.bodyDim,
-                      padding: "6px 14px",
-                      fontSize: 12,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {on ? "Selected" : "Select"}
-                  </button>
-                </div>
-              );
-            })}
-            {candidates.length === 0 && (
-              <div style={{fontSize: 13, color: C.muted}}>
-                This wallet owns no other {lbl} ETH Shapes to compose with.
-              </div>
-            )}
-            {candidates.length > 0 && (
-              <div style={{marginTop: 22, fontSize: 13, color: C.muted}}>
-                {pickedIds.length === 0
-                  ? "Select Shapes to compose."
-                  : pickedIds.length > MAX_COMPOSE_INPUTS
-                    ? `${pickedIds.length} Shapes is more than one transaction can burn. Compose up to ${MAX_COMPOSE_INPUTS} at a time; this Shape keeps its id, so the next batch merges into the same one.`
-                    : composeValid
-                      ? `${formatEther(sumWei)} ETH → one ${DENOMINATIONS[sumIdx].label} ETH Shape.`
-                      : `${formatEther(sumWei)} ETH is not a denomination. The sum must be exactly one of the nine.`}
-              </div>
-            )}
-            {composeValid && (
-              <div
-                aria-label={`Compose result preview for Shape ${token.id.toString()}`}
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "flex-start",
-                  gap: 22,
-                  marginTop: 22,
-                  padding: 18,
-                  border: `1px solid ${C.border}`,
-                  background: C.row,
-                }}
-              >
-                {composePreview ? (
-                  <>
-                    <Art
-                      src={composePreview.image}
-                      alt={`Composed preview for Shape ${composePreview.tokenId.toString()}`}
-                      width={132}
-                    />
-                    <div style={{flex: "1 1 220px", minWidth: 0}}>
-                      <div style={{fontSize: 11, letterSpacing: "0.12em", color: C.muted}}>
-                        EXACT RESULT PREVIEW
-                      </div>
-                      <div style={{marginTop: 10, fontSize: 24, color: C.ink}}>
-                        Token #{composePreview.tokenId.toString()}
-                      </div>
-                      <div style={{marginTop: 6, fontSize: 14}}>
-                        {DENOMINATIONS[composePreview.denominationIndex].label} ETH
-                      </div>
-                      <p style={{margin: "14px 0 0", fontSize: 12, lineHeight: 1.7, color: C.muted}}>
-                        #{composePreview.tokenId.toString()} survives with this artwork. The {pickedIds.length}{" "}
-                        selected Shape{pickedIds.length === 1 ? "" : "s"} are burned into it.
-                      </p>
-                    </div>
-                  </>
-                ) : (
-                  <div style={{fontSize: 12, lineHeight: 1.7, color: C.muted}}>
-                    {composePreviewUnavailable
-                      ? `Exact artwork preview is temporarily unavailable. Token #${token.id.toString()} will still be the composed result.`
-                      : `Calculating the exact result for token #${token.id.toString()}…`}
-                  </div>
-                )}
-              </div>
-            )}
-            {composeValid && (
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => onCompose(token, pickedIds)}
-                disabled={!!busy}
-                style={{marginTop: 22, padding: "10px 20px"}}
-              >
-                {busy === "compose" ? "Waiting for confirmation" : `Compose into #${token.id.toString()}`}
-              </button>
-            )}
-            {errLine("compose")}
-          </Section>
-
-          {canDecompose && (
-            <Section title="DECOMPOSE" pad="26px 48px 36px 32px">
-              <p style={{margin: "0 0 8px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-                Undo this Shape's most recent compose. #{token.id.toString()} keeps its id and
-                returns to its pre-compose denomination and origins, and every Shape that compose
-                burned is re-minted to you under its original id and seed.
-              </p>
-              <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-                No ETH moves. No fee is charged. Stacked composes reverse newest first — this
-                Shape has {token.composeDepth} compose{token.composeDepth === 1 ? "" : "s"} left to
-                undo.
-              </p>
-              {decompInputs && decompInputs.length > 0 && (
-                <div style={{display: "flex", flexWrap: "wrap", gap: 18, margin: "0 0 26px"}}>
-                  {decompInputs.map((c) => (
-                    <div key={c.id.toString()} style={{flex: "0 0 96px", width: 96}}>
-                      {/* geometry is exact from the restored seed; ink shown as the seed's mint gene */}
-                      <Art src={localArt(c.seed, DENOMINATIONS[c.di].wei, mintGene(c.seed, DENOMINATIONS[c.di].wei))} />
-                      <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
-                        #{c.id.toString()} · {DENOMINATIONS[c.di].label} ETH
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => onDecompose(token)}
-                disabled={!!busy}
-                style={{padding: "10px 20px"}}
-              >
-                {busy === "decompose" ? "Waiting for confirmation" : "Decompose"}
-              </button>
-              {errLine("decompose")}
-            </Section>
-          )}
-
-        </>
       )}
 
-      {!owned && (
-        <Section title="OWNERSHIP">
-          <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
-            {address
-              ? "This Shape belongs to another address. Only its owner can redeem, split, compose or decompose it."
-              : "Connect the owning wallet to redeem, split, compose or decompose this Shape."}
-          </div>
-        </Section>
-      )}
       <div style={{height: 64}} />
     </main>
   );
