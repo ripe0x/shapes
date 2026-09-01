@@ -38,7 +38,7 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   bornFromSplit: "Created",
   splitInto: "Split",
   absorbed: "Composed",
-  mergedAway: "Merged",
+  mergedAway: "Composed",
   decomposed: "Decomposed",
   revived: "Revived",
   blackened: "Blackened",
@@ -404,7 +404,7 @@ export function TokenView({
 
 const REL_TEXT: Record<ProvNode["rel"], string> = {
   root: "this Shape",
-  merged: "merged in",
+  merged: "composed in",
   splitSource: "split source",
   piece: "restored piece",
   self: "same token, earlier state",

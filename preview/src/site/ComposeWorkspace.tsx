@@ -136,12 +136,12 @@ export function ComposeWorkspace({
         <div style={{fontSize: 24, lineHeight: 1.3}}>
           {rung
             ? `Select ${rung.totalShapes} matching Shapes`
-            : "Choose Shapes to combine"}
+            : "Choose Shapes to compose"}
         </div>
         <p style={{margin: "10px 0 0", maxWidth: "66ch", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
           {rung
             ? `${draft.selectedIds.length} of ${rung.totalShapes} selected. Together they become one ${DENOMINATIONS[rung.targetIndex].label} ETH Shape.`
-            : "Choose the first Shape to set the denomination. This flow combines one measured ladder step at a time."}
+            : "Choose the first Shape to set the denomination. This flow composes one measured ladder step at a time."}
         </p>
       </Section>
 
@@ -230,7 +230,7 @@ function ComposeModeHeader({onBrowse}: {onBrowse: () => void}) {
   return (
     <Section title="MY SHAPES" pad="26px 48px 26px 32px">
       <div style={{display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 20}}>
-        <div style={{fontSize: 15}}>Select matching Shapes to combine.</div>
+        <div style={{fontSize: 15}}>Select matching Shapes to compose.</div>
         <div className="shape-mode-toggle" role="group" aria-label="My Shapes mode">
           <button type="button" aria-pressed={false} onClick={onBrowse}>BROWSE</button>
           <button type="button" aria-pressed={true}>COMPOSE</button>

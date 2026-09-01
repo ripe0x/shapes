@@ -268,7 +268,7 @@ export function ManageShapeView({
       id: "compose",
       protocol: "COMPOSE",
       title: "Grow this Shape",
-      description: `Combine #${token.id.toString()} with matching Shapes you own. It keeps its ID and becomes more valuable.`,
+      description: `Compose #${token.id.toString()} with matching Shapes you own. It keeps its ID and becomes more valuable.`,
       consequence: "Newest grow can be undone",
       unavailable: availability(
         canCompose,
@@ -645,7 +645,7 @@ function SplitFlow({
       />
       <p style={{margin: "24px 0 0", maxWidth: "64ch", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
         The total backing remains exactly {DENOMINATIONS[token.di].label} ETH. This does not undo
-        a compose, and combining the new Shapes later will not restore #{token.id.toString()}.
+        a compose, and composing the new Shapes later will not restore #{token.id.toString()}.
       </p>
       <button type="button" className="btn-outline" onClick={onConfirm} disabled={!!busy || !previews} style={{marginTop: 26, padding: "11px 24px"}}>
         Split #{token.id.toString()} into {ratio} new Shapes
