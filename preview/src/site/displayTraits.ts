@@ -3,7 +3,7 @@ import type {TokenMeta} from "./data";
 export interface DisplayTrait {
   label: string;
   value: string;
-  description: string;
+  description?: string;
 }
 
 const INK_CHANCE: Record<string, number> = {
@@ -23,7 +23,7 @@ const INK_CHANCE: Record<string, number> = {
 export function displayTraits(attributes: TokenMeta["attributes"]): DisplayTrait[] {
   const value = new Map(attributes.map((attribute) => [attribute.trait_type, attribute.value]));
   const rows: DisplayTrait[] = [];
-  const add = (traitType: string, label: string, description: string, format?: (raw: string) => string) => {
+  const add = (traitType: string, label: string, description?: string, format?: (raw: string) => string) => {
     const raw = value.get(traitType);
     if (raw === undefined) return;
     rows.push({label, value: format ? format(raw) : raw, description});
@@ -32,7 +32,7 @@ export function displayTraits(attributes: TokenMeta["attributes"]): DisplayTrait
   // ETH Value is already the Shape subtitle. Modules repeat the visible artwork, Module Count is
   // implied by Grid, Ink Tier is derived from Ink, and Formation/Complete/Black duplicate the more
   // precise provenance rows or the dedicated Black Shape state.
-  add("Grid", "grid", "Artwork layout, shown as columns by rows.");
+  add("Grid", "grid");
   add("Fill", "fill", "Whether the fill-capable modules rendered filled, outlined, or a mix.");
 
   const ink = value.get("Ink");
@@ -51,8 +51,8 @@ export function displayTraits(attributes: TokenMeta["attributes"]): DisplayTrait
   add("Primitive", "dominant module", "The module type used most often in this artwork.");
   add(
     "Variety",
-    "module types",
-    "How many of the ten module types appear in this artwork.",
+    "module variety",
+    "Distinct geometric modules used in the artwork, such as circles, squares, triangles, arcs, and lines.",
     (raw) => `${raw} of 10`,
   );
   add(

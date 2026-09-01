@@ -30,13 +30,14 @@ test("displayTraits keeps useful independent facts and translates protocol metad
       ["fill", "Mixed"],
       ["ink", "Murk"],
       ["dominant module", "Half Circle"],
-      ["module types", "8 of 10"],
+      ["module variety", "8 of 10"],
       ["mint origins", "10"],
       ["origin coverage", "100%"],
       ["reversible composes", "2"],
     ],
   );
   assert.match(rows.find((row) => row.label === "ink")?.description ?? "", /50%/);
+  assert.equal(rows.find((row) => row.label === "grid")?.description, undefined);
   assert.equal(rows.some((row) => row.label === "formation"), false);
 });
 

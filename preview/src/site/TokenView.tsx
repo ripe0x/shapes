@@ -286,18 +286,18 @@ export function TokenView({
   const di = token.di;
   const lbl = DENOMINATIONS[di].label;
 
-  const tokRows: {k: string; v: React.ReactNode; size?: number; wrap?: "anywhere" | "normal"}[] = [
+  const tokRows: {
+    k: string;
+    v: React.ReactNode;
+    description?: string;
+    size?: number;
+    wrap?: "anywhere" | "normal";
+  }[] = [
     {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
     ...displayTraits(token.meta.attributes).map((trait) => ({
       k: trait.label,
-      v: (
-        <>
-          <div>{trait.value}</div>
-          <div style={{marginTop: 4, color: C.muted, fontSize: 11, lineHeight: 1.5}}>
-            {trait.description}
-          </div>
-        </>
-      ),
+      v: trait.value,
+      description: trait.description,
       wrap: "anywhere" as const,
     })),
   ];
@@ -323,7 +323,14 @@ export function TokenView({
                     fontSize: 13,
                   }}
                 >
-                  <div style={{color: C.muted}}>{r.k}</div>
+                  <div>
+                    <div style={{color: C.muted}}>{r.k}</div>
+                    {r.description && (
+                      <div style={{marginTop: 4, color: C.muted, fontSize: 11, lineHeight: 1.5}}>
+                        {r.description}
+                      </div>
+                    )}
+                  </div>
                   <div style={{fontSize: r.size ?? 13, overflowWrap: r.wrap ?? "normal"}}>{r.v}</div>
                 </div>
               ))}
