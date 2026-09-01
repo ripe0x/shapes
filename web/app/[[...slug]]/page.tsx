@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { View } from "@shared/site/SiteApp";
 import { SiteRoot } from "../SiteRoot";
+import { LaunchLanding } from "../LaunchLanding";
 import { PlayRoot } from "../play/PlayRoot";
+import { appOnly, landingOnly } from "../lib/siteMode";
 
 type Params = { slug?: string[] };
 type SearchParams = { s?: string | string[] };
@@ -12,7 +14,7 @@ const MAX_OG_STATE_LENGTH = 6000;
 // Resolve a URL path into the SiteApp view it shows. Returns null for an unknown path.
 function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | null } | null {
   const parts = slug ?? [];
-  if (parts.length === 0) return { view: "mint", tokenId: null };
+  if (parts.length === 1 && parts[0] === "mint") return { view: "mint", tokenId: null };
   if (parts.length === 1 && parts[0] === "auction") return { view: "auction", tokenId: null };
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
   if (parts.length === 1 && parts[0] === "how-it-works") return { view: "about", tokenId: null };
@@ -30,6 +32,15 @@ export async function generateMetadata({
   searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
   const slug = (await params).slug ?? [];
+  if (landingOnly() && slug.length > 0) return { title: "Not found" };
+
+  if (appOnly() && slug.length === 0) {
+    return {
+      title: "Shapes",
+      description: "ETH in, Shape out. Shape burned, the same ETH out.",
+    };
+  }
+
   if (slug.length === 1 && slug[0] === "play") {
     const s = (await searchParams).s;
     const state = typeof s === "string" && s.length > 0 && s.length <= MAX_OG_STATE_LENGTH ? s : null;
@@ -44,6 +55,20 @@ export async function generateMetadata({
         images: [{ url: ogUrl, width: 1200, height: 630 }],
       },
       twitter: { card: "summary_large_image", images: [ogUrl] },
+    };
+  }
+
+  if (slug.length === 0) {
+    return {
+      title: "Shapes · ETH, shaped",
+      description:
+        "Shapes are generative onchain objects backed by exact amounts of ETH. Public mint opens September 2 at 12:00 PM ET.",
+      openGraph: {
+        title: "Shapes · ETH, shaped",
+        description:
+          "Fungible value as a non-fungible, generative object. Mint opens September 2 at 12:00 PM ET.",
+        url: "/",
+      },
     };
   }
 
@@ -94,6 +119,17 @@ export async function generateMetadata({
 
 export default async function Page({ params }: { params: Promise<Params> }) {
   const slug = (await params).slug ?? [];
+  if (landingOnly()) {
+    if (slug.length === 0) return <LaunchLanding />;
+    notFound();
+  }
+
+  if (slug.length === 0) {
+    return appOnly()
+      ? <SiteRoot initialView="mint" initialTokenId={null} />
+      : <LaunchLanding />;
+  }
+
   if (slug.length === 1 && slug[0] === "play") {
     return <PlayRoot />;
   }

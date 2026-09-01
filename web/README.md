@@ -19,7 +19,16 @@ it supports. Rainbow does not support testnets and is not used for Sepolia accep
 project id (local dev), the config falls back to injected wallets only, so no relay identity is
 created.
 
-Deployed via Netlify git auto-deploy from `main` (`../netlify.toml`).
+Deployed as two isolated Netlify projects (`../netlify.toml`):
+
+- Production launch page: `shapes.ripe.wtf`, branch `launch`, `SHAPES_SITE_MODE=landing`.
+- Sepolia application: separate Netlify URL, branch `main`, `SHAPES_SITE_MODE=app` and
+  `SHAPES_LADDER=testnet`.
+
+Netlify builds use `npm run build:netlify`, which refuses a missing or unsafe mode. A domain-level
+proxy also blocks every application route on `shapes.ripe.wtf`, even if its environment is later
+misconfigured. Local development defaults to hybrid mode: the launch page at `/`, and the app at
+`/mint`.
 
 ## Development
 

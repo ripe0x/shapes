@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:netlify": "node scripts/verify-netlify-mode.mjs && next build",
     "start": "next start",
     "lint": "eslint"
   },

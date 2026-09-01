@@ -2,7 +2,7 @@
 # Netlify reads this file from the repository root, then builds inside the web workspace.
 [build]
   base = "web"
-  command = "npm run build"
+  command = "npm run build:netlify"
   publish = ".next"
 
 [build.environment]

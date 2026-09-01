@@ -6,6 +6,7 @@ import { DENOMINATIONS } from "@shared/canonical/denominations";
 import { geneAtMint } from "@shared/canonical/ink";
 import { liveNodes, textSeed, type PlayNode, type PlaySession } from "@shared/play/session";
 import { decodeSession } from "@shared/play/urlCodec";
+import { landingOnly } from "../../lib/siteMode";
 
 // The Playground share image: decodes the same `?s=` state the page itself reads, renders the
 // current (or most recently composed) card with the canonical renderer, and rasterizes it. No
@@ -78,6 +79,8 @@ function svgForRequest(url: URL): string {
 }
 
 export async function GET(req: Request) {
+  if (landingOnly()) return new Response("Not found", { status: 404 });
+
   // Any failure anywhere in this path (malformed URL, a decode edge case, a render error) still
   // returns a valid share image rather than a 500.
   try {
