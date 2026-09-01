@@ -315,9 +315,7 @@ export function TokenView({
           <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
           <div style={{flex: "1 1 320px", minWidth: 0}}>
             <div style={{fontSize: 40, lineHeight: 1}}>Shape {token.id.toString()}</div>
-            <p style={{margin: "20px 0 0", fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "48ch"}}>
-              This Shape holds {lbl} ETH. Its owner can burn it and receive {lbl} ETH.
-            </p>
+            <div style={{marginTop: 16, fontSize: 18, lineHeight: 1.4, color: C.bodyDim}}>{lbl} ETH</div>
             <div style={{margin: "32px 0 0"}}>
               {tokRows.map((r) => (
                 <div
