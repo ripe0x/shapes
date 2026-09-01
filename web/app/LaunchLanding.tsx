@@ -268,7 +268,7 @@ export function LaunchLanding() {
       <section className="launch-section launch-about" aria-labelledby="about-title">
         <div>
           <p className="launch-kicker">The project</p>
-          <h2 id="about-title">The same ETH, behaving like an NFT.</h2>
+          <h2 id="about-title">ETH that behaves like an NFT, without giving up being ETH.</h2>
         </div>
         <div className="launch-prose">
           <p>
@@ -302,9 +302,26 @@ export function LaunchLanding() {
       </section>
 
       <section className="launch-section launch-mechanics" id="lineage" aria-labelledby="mechanics-title">
-        <div>
+        <div className="mechanics-copy">
           <p className="launch-kicker">How it works</p>
           <h2 id="mechanics-title">Value with a visible history.</h2>
+          <div className="mechanic-grid">
+            <article>
+              <span>01</span>
+              <h3>Mint</h3>
+              <p>Choose a tier and send its backing plus the 1% mint fee. The Shape is generated onchain.</p>
+            </article>
+            <article>
+              <span>02</span>
+              <h3>Combine</h3>
+              <p>Compatible Shapes can become a higher-value Shape. Their ETH and history move into the survivor.</p>
+            </article>
+            <article>
+              <span>03</span>
+              <h3>Redeem</h3>
+              <p>Burn a Shape to receive its exact backing. There is no redemption fee.</p>
+            </article>
+          </div>
         </div>
         <div className="mechanics-detail">
           <figure className="provenance-chart">
@@ -340,24 +357,6 @@ export function LaunchLanding() {
               <div className="provenance-summary">10 recorded origins · 0.01 ETH each</div>
             </div>
           </figure>
-
-          <div className="mechanic-grid">
-            <article>
-              <span>01</span>
-              <h3>Mint</h3>
-              <p>Choose a tier and send its backing plus the 1% mint fee. The Shape is generated onchain.</p>
-            </article>
-            <article>
-              <span>02</span>
-              <h3>Combine</h3>
-              <p>Compatible Shapes can become a higher-value Shape. Their ETH and history move into the survivor.</p>
-            </article>
-            <article>
-              <span>03</span>
-              <h3>Redeem</h3>
-              <p>Burn a Shape to receive its exact backing. There is no redemption fee.</p>
-            </article>
-          </div>
         </div>
       </section>
 

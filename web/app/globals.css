@@ -454,8 +454,6 @@ button {
 
 .provenance-chart {
   margin: 0;
-  padding-bottom: 48px;
-  border-bottom: 1px solid var(--launch-rule);
 }
 
 .provenance-chart figcaption {
