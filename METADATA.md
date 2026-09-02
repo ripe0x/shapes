@@ -7,8 +7,10 @@ default copy; `test/Parity.t.sol` asserts the two agree exactly at that default 
 metadata service exists, so nothing here can rot or be withheld.
 
 The token `name` prefix and shared `description` are admin-set copy, stored on Shapes and passed
-into the renderer. `setMetadataCopy` edits both atomically. The one name exception is token #0:
-its fixed title is `Shapes Collection Owner`, regardless of the configured prefix. `contractURI`
+into the renderer. `setMetadataCopy` edits both atomically. The one name exception is the owner
+token, the one live Shape that currently carries collection ownership (starts as #0, moves through
+`compose`, `decompose` and `split`): its fixed name is `Shapes Collection Owner`, regardless of
+the configured prefix. `contractURI`
 uses the immutable ERC-721 name `Shapes` and the shared description, so collection and token
 descriptions cannot diverge. Copy defaults to the TypeScript canonical and is validated on set so
 it cannot break the JSON (`"`, `\`, C0 control bytes and over-length values revert). Everything
@@ -38,7 +40,7 @@ traits render as exact-match filters.
 | 12 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `sacrifice` gate at the apex. |
 | 13 | `Black` | `"false"` | `true` when the token has been transformed via `sacrifice`. |
 | 14 | `Compose Depth` | `"2"` | Number of stacked composes the current holder can reverse, newest first. |
-| n/a | `Collection Owner` | `"true"` | Present only on token #0, the transferable collection-ownership token. It grants no administrative authority. |
+| n/a | `Collection Owner` | `"true"` | Present only on the owner token, the one live Shape that currently carries collection ownership. It grants no administrative authority. |
 | n/a | `Split From` | `"10 ETH"` | Only on a split child (issue #21C): the immediate parent's denomination. See below. |
 | n/a | `Split Origin` | `"100 ETH"` | Only on a split child: the root split ancestor's denomination. See below. |
 

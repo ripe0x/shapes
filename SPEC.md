@@ -593,10 +593,13 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
   flat radial ends lie on the footprint edges.
 
-- **Collectible ownership, separate bounded admin.** Shape #0 is minted to the deployer with
-  minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
-  its metadata title is `Shapes Collection Owner`, with `Collection Owner: true`; holding #0 grants
-  no permissions. The separate `admin()` role can replace and permanently lock
+- **Collectible ownership, separate bounded admin.** One live Shape is the owner token. It starts
+  as #0, minted to the deployer with minimum-denomination backing, and moves through `compose`,
+  `decompose` and `split`: a compose absorbing it moves it to the survivor, the matching decompose
+  restores it to that input, and a split of it gives it to the first output. `owner()` follows its
+  current holder, or returns zero once it is redeemed or burned, which ends collection ownership
+  permanently. Its metadata name is `Shapes Collection Owner`, with `Collection Owner: true`;
+  holding it grants no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including
   locking either forever at zero, and can edit the token name prefix and description shared by token
@@ -608,7 +611,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   token ownership. The copy is
   deliberately not covered by the renderer lock; it stays editable until admin is renounced.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
-  or renounced without transferring Shape #0.
+  or renounced without moving the owner token.
 - **Permanent artist attribution, separate from ownership and admin.** `artist()` records the
   deployer forever and grants no authority or economics. Shapes itself accepts one EIP-712
   signature, relayed by anyone, over the exact chain, Shapes address, artist and `releaseHash`, and
@@ -730,8 +733,8 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 - **Replaceable, clearable, independently lockable.** The transferable admin may set or replace
   either pointer with a contract address, clear it to zero, or permanently lock its current value
   at any time, including zero. Renderer, positions and market locks are independent. Admin transfer
-  moves all still-unlocked authority; renunciation ends it. Shape #0 ownership moves none
-  of this authority. Neither pointer can change
+  moves all still-unlocked authority; renunciation ends it. The owner token moving to a new
+  holder, or through compose, decompose or split, moves none of this authority. Neither pointer can change
   backing, ownership, redemption, composition or reserve accounting.
 - **Fixed pointer identifiers.** `setPointer` and `lockPointer` use `0` for Positions and `1` for
   Market; every other value reverts. A nonzero target must carry code when set, but Shapes does not

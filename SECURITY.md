@@ -243,7 +243,7 @@ exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defe
 | DoS against the reserve | An owner that rejects ETH causes `_payRedemption` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
 | Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is admin-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only, never backing, redemption or ownership, and after locking it is fixed forever. |
 | Positions and market pointers | Both start empty and unlocked, may be replaced or cleared by admin, and may be locked independently at any value including zero. Targets must contain code when set. Only `ShapeLens.positionOf` queries positions; it forwards a fixed gas cap and converts reverts, out-of-gas and malformed results to zero. A hostile target can mislead discovery but cannot affect Shapes state or reserve behavior. The market target is never called by Shapes or ShapeLens. |
-| Contract ownership | Shape #0 is atomically backed and minted to the deployer. `owner()` follows `ownerOf(0)`, returning zero whenever #0 is burned. Transfer, redemption, composition, decomposition and split affect it exactly like any other Shape; no authorization check reads `owner()`. |
+| Contract ownership | One live Shape is the owner token, tracked by `_ownerToken` and starting as #0, atomically backed and minted to the deployer. `owner()` follows its current holder, returning zero once it is redeemed or burned. Compose moves it from a burned donor to the survivor; decompose restores it to that input; split gives it to the first output; `decomposeTo`/`splitTo` make the recipient the collection owner. No authorization check reads `owner()` or `ownerToken()`. |
 | Artist attribution | `artist()` is constructor-set and immutable. Shapes directly stores one nonzero `artistReleaseHash` and the raw `artistSignature`; zero release hash is the unsigned sentinel. The EIP-712 digest binds chain id, exact Shapes address, artist and release hash. The stateless linked `EIP712Signature` library checks canonical ECDSA first so an EIP-7702 delegated EOA can still sign, then ERC-1271 for contract wallets. Anyone may relay, but nobody can replace or clear a successful attestation. For ERC-1271, the permanent proof is validity at execution time because wallet policy may later change. Attribution grants no artist-authorized call. |
 | Linked libraries | `GeometrySampling`, `ComposeCompute`, `InkGenes`, `CopyValidation`, `EIP712Signature` and `PointerOps` are external libraries; forge resolves and deploys each at build/deploy time and bakes its address into the linking contract's bytecode. There is no setter for a library address, so their logic cannot be redirected after deployment. `PointerOps` mutates only Shapes' two pointer slots through admin-gated wrappers and has no authority at its own address. |
 
@@ -282,9 +282,12 @@ exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defe
    pointer can be replaced, cleared or permanently locked at zero independently. A configured
    target may be upgradeable or malicious, but has no authority over Shapes. Canonical does not
    mean exclusive. Transfer admin to the intended custody target before configuration.
-6. **Shape #0 can temporarily cease to exist.** Because it is an ordinary backed Shape, redeeming,
-   splitting or consuming #0 as a compose input makes `owner()` return zero. Decomposition can
-   later restore the same ID. This affects the public ownership signal only, never administration.
+6. **The owner token moves, and can end collection ownership permanently.** It is an ordinary
+   backed Shape: composing it into another survivor, decomposing the compose that absorbed it, or
+   splitting it moves it to the survivor, the original input, or the first output respectively, and
+   `decomposeTo`/`splitTo` make the chosen recipient the collection owner. Redeeming or `burn()`ing
+   the owner token ends collection ownership permanently: `owner()` returns zero and no token
+   inherits. This affects the public ownership signal only, never administration.
 7. **Artist attestation is one-time and release-bound.** The deployer remains `artist()` forever,
    even after Shape #0 or admin moves. The artist should verify the final chain, Shapes address,
    attribution address and chosen release hash before signing; a mistaken valid attestation cannot
