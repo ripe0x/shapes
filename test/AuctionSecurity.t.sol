@@ -70,7 +70,7 @@ contract MaliciousFeeRecipient is IERC721Receiver {
     }
 
     function acquire(uint256 amount) external returns (uint256) {
-        held = shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount);
+        held = shapes.mint{value: amount + shapes.mintFee()}(amount);
         return held;
     }
 
@@ -107,7 +107,7 @@ contract ReentrantCancelSeller is IERC721Receiver {
     }
 
     function list(uint256 amount, uint64 duration) external returns (uint256) {
-        uint256 lot = shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount);
+        uint256 lot = shapes.mint{value: amount + shapes.mintFee()}(amount);
         shapes.setApprovalForAll(address(house), true);
         auctionId = house.createAuction(address(shapes), lot, duration, 0, 0, 0);
         return auctionId;
@@ -130,6 +130,7 @@ contract ReentrantCancelSeller is IERC721Receiver {
 }
 
 contract AuctionSecurityTest is Test {
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
     uint256[9] internal DENOMS = [
         Denominations.amountAt(0),
         Denominations.amountAt(1),
@@ -152,7 +153,7 @@ contract AuctionSecurityTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, makeAddr("fee"), address(renderer), address(collection)
+            MINT_FEE, makeAddr("fee"), address(renderer), address(collection)
         );
         vm.deal(seller, 10 ether);
         house = new ShapeAuctionHouse(address(shapes));
@@ -183,14 +184,14 @@ contract AuctionSecurityTest is Test {
     ///         Delivery is `claimLot`, called separately by the winner.
     function test_H02_SettlementCannotBeBlockedByTheLot() public {
         vm.prank(seller);
-        uint256 lot = shapes.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
+        uint256 lot = shapes.mint{value: DENOMS[2] + MINT_FEE}(DENOMS[2]);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
         uint256 a = house.createAuction(address(shapes), lot, 1, 100, 0, 0);
 
         vm.prank(alice);
-        uint256 card = shapes.mint{value: (DENOMS[4] * 101) / 100}(DENOMS[4]);
+        uint256 card = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
         vm.prank(alice);
@@ -213,14 +214,14 @@ contract AuctionSecurityTest is Test {
     ///         it later withdraws intact is refused at the source.
     function test_M02_SellerCannotBidItsOwnAuction() public {
         vm.prank(seller);
-        uint256 lot = shapes.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
+        uint256 lot = shapes.mint{value: DENOMS[2] + MINT_FEE}(DENOMS[2]);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
         uint256 a = house.createAuction(address(shapes), lot, 1 days, 1, 0, 0);
 
         vm.prank(seller);
-        uint256 card = shapes.mint{value: (DENOMS[4] * 101) / 100}(DENOMS[4]);
+        uint256 card = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
 
@@ -234,7 +235,7 @@ contract AuctionSecurityTest is Test {
     ///         the duration it extends.
     function test_L04_DurationAndExtensionAreBounded() public {
         vm.prank(seller);
-        uint256 lot = shapes.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
+        uint256 lot = shapes.mint{value: DENOMS[2] + MINT_FEE}(DENOMS[2]);
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
 
@@ -277,7 +278,7 @@ contract AuctionSecurityTest is Test {
         MaliciousFeeRecipient mal = new MaliciousFeeRecipient();
         // A separate Shapes whose fee recipient is the malicious contract.
         Shapes shapes2 = new Shapes{value: Denominations.amountAt(0)}(
-            100, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection)
         );
         ShapeAuctionHouse house2 = new ShapeAuctionHouse(address(shapes2));
         mal.setTargets(shapes2, address(house2));
@@ -291,7 +292,7 @@ contract AuctionSecurityTest is Test {
         address seller2 = makeAddr("seller2");
         vm.deal(seller2, 10 ether);
         vm.prank(seller2);
-        uint256 lot = shapes2.mint{value: (DENOMS[2] * 101) / 100}(DENOMS[2]);
+        uint256 lot = shapes2.mint{value: DENOMS[2] + MINT_FEE}(DENOMS[2]);
         vm.prank(seller2);
         shapes2.setApprovalForAll(address(house2), true);
         vm.prank(seller2);
@@ -302,8 +303,9 @@ contract AuctionSecurityTest is Test {
         address carol = makeAddr("carol");
         vm.deal(carol, 10 ether);
         mal.arm();
+        uint256 bidCost = house2.mintCostFor(DENOMS[4]);
         vm.prank(carol);
-        house2.bid{value: (DENOMS[4] * 101) / 100}(a, new uint256[](0), DENOMS[4]);
+        house2.bid{value: bidCost}(a, new uint256[](0), DENOMS[4]);
 
         // The push was refused: the Shape stayed with the fee recipient, not the house.
         assertEq(shapes2.ownerOf(pushed), address(mal), "the pushed Shape was refused, not stranded");
@@ -322,7 +324,7 @@ contract AuctionSecurityTest is Test {
     function test_L1_ABidCannotBeRecordedOnAnAuctionCancelledMidCall() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
         Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            100, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection)
         );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
@@ -333,11 +335,12 @@ contract AuctionSecurityTest is Test {
         address carol = makeAddr("carol");
         vm.deal(carol, 10 ether);
         mal.arm();
+        uint256 bidCost = house3.mintCostFor(DENOMS[4]);
         vm.prank(carol);
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), DENOMS[0])
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), MINT_FEE)
         );
-        house3.bid{value: (DENOMS[4] * 101) / 100}(a, new uint256[](0), DENOMS[4]);
+        house3.bid{value: bidCost}(a, new uint256[](0), DENOMS[4]);
 
         // The revert unwound the reentrant cancel along with the bid.
         assertEq(mal.cancelled(), false, "the cancel was rolled back with the bid");
@@ -366,7 +369,7 @@ contract AuctionSecurityTest is Test {
     function test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
         Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            100, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection)
         );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
@@ -381,11 +384,12 @@ contract AuctionSecurityTest is Test {
         uint256 supplyBefore = shapes3.totalSupply();
 
         mal.arm();
+        uint256 bidCost = house3.mintCostFor(DENOMS[4]);
         vm.prank(carol);
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), DENOMS[0])
+            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), MINT_FEE)
         );
-        house3.bid{value: (DENOMS[4] * 101) / 100}(a, new uint256[](0), DENOMS[4]);
+        house3.bid{value: bidCost}(a, new uint256[](0), DENOMS[4]);
 
         // Carol paid nothing and holds no cards: the mint that would have created them unwound.
         assertEq(carol.balance, carolBefore, "carol's ETH is intact");

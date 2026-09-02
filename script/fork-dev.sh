@@ -89,7 +89,7 @@ RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 
 COLLECTION=$(echo "$OUT" | grep -oE 'ShapeCollection\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 LENS=$(echo "$OUT" | grep -oE 'ShapeLens\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
 HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-FEE_BPS=$(cast call "$SHAPES" "feeBps()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+MINT_FEE=$(cast call "$SHAPES" "mintFee()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
 ARTIST=$(cast call "$SHAPES" "artist()(address)" --rpc-url "$RPC")
 
 [ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
@@ -120,7 +120,7 @@ cat >"$DEPLOYMENT_FILE" <<JSON
   "renderer": "$RENDERER",
   "collection": "$COLLECTION",
   "auctionHouse": "$HOUSE",
-  "feeBps": "$FEE_BPS",
+  "mintFeeWei": "$MINT_FEE",
   "fromBlock": $DEPLOY_BLOCK
 }
 JSON
@@ -132,7 +132,7 @@ echo "  ShapeLens     $LENS"
 echo "  ShapeRenderer $RENDERER"
 echo "  ShapeCollection $COLLECTION"
 echo "  AuctionHouse  $HOUSE"
-echo "  fee (bps)     $FEE_BPS"
+echo "  mint fee (wei) $MINT_FEE"
 echo "  wrote         $DEPLOYMENT_FILE"
 echo
 echo "  cd preview && npm run dev, then open http://localhost:5173/chain.html"

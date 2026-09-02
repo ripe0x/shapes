@@ -247,8 +247,15 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 2; ++i) {
-            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
-            = lens.splitOriginOf(kids[i]);
+            (
+                bytes32 pSeed,
+                uint256 pId,
+                uint8 pDenom,
+                uint8 pOrigin,
+                uint8 pGene,
+                bytes memory pMods,
+                uint256 childIndex
+            ) = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed, "parent seed");
             assertEq(pId, parent, "parent id");
             assertEq(pDenom, 2, "parent denom index (0.1 ETH)");
@@ -277,8 +284,15 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(survivor, outs);
 
         for (uint256 i = 0; i < 5; ++i) {
-            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
-            = lens.splitOriginOf(kids[i]);
+            (
+                bytes32 pSeed,
+                uint256 pId,
+                uint8 pDenom,
+                uint8 pOrigin,
+                uint8 pGene,
+                bytes memory pMods,
+                uint256 childIndex
+            ) = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed);
             assertEq(pId, survivor, "parent id");
             assertEq(pDenom, 1, "parent denom index (0.05 ETH)");
@@ -304,8 +318,15 @@ contract ProvenanceTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         for (uint256 i = 0; i < 2; ++i) {
-            (bytes32 pSeed, uint256 pId, uint8 pDenom, uint8 pOrigin, uint8 pGene, bytes memory pMods, uint256 childIndex)
-            = lens.splitOriginOf(kids[i]);
+            (
+                bytes32 pSeed,
+                uint256 pId,
+                uint8 pDenom,
+                uint8 pOrigin,
+                uint8 pGene,
+                bytes memory pMods,
+                uint256 childIndex
+            ) = lens.splitOriginOf(kids[i]);
             assertEq(pSeed, parentSeed);
             assertEq(pId, parent, "parent id");
             assertEq(pDenom, 8, "parent denom index (100 ETH)");
@@ -336,7 +357,8 @@ contract ProvenanceTest is ShapesBase {
             assertEq(shapes.composeDepth(pId), 0, "parent has no compose record: grammar branch");
             uint8 childDenom = lens.shapeState(kids[i]).denominationIndex;
             bytes memory pool = GeometrySampling.grammarSplitPool(pSeed, childDenom, pGene);
-            bytes memory reconstructed = GeometrySampling.sampleSplitChild(pool, pSeed, childDenom, childIndex);
+            bytes memory reconstructed =
+                GeometrySampling.sampleSplitChild(pool, pSeed, childDenom, childIndex);
             assertEq(
                 reconstructed, lens.shapeState(kids[i]).modules, "reconstruction != stored child modules"
             );
@@ -372,7 +394,8 @@ contract ProvenanceTest is ShapesBase {
             bytes memory pool = _reconstructSplitRecordPool(pSeed, rec);
 
             uint8 childDenom = lens.shapeState(kids[i]).denominationIndex;
-            bytes memory reconstructed = GeometrySampling.sampleSplitChild(pool, pSeed, childDenom, childIndex);
+            bytes memory reconstructed =
+                GeometrySampling.sampleSplitChild(pool, pSeed, childDenom, childIndex);
             assertEq(
                 reconstructed, lens.shapeState(kids[i]).modules, "reconstruction != stored child modules"
             );
@@ -465,7 +488,11 @@ contract ProvenanceTest is ShapesBase {
         for (uint256 i = 0; i < 5; ++i) {
             bytes memory expectedPool = GeometrySampling.grammarSplitPool(parentSeed, 0, parentGene);
             bytes memory expected = GeometrySampling.sampleSplitChild(expectedPool, parentSeed, 0, i);
-            assertEq(lens.shapeState(kids[i]).modules, expected, "recordless materialized parent must use grammar branch");
+            assertEq(
+                lens.shapeState(kids[i]).modules,
+                expected,
+                "recordless materialized parent must use grammar branch"
+            );
         }
     }
 

@@ -119,9 +119,9 @@ interface IShapeAuctionHouse is IShapeCardEscrow {
     /// @notice Bid with Shapes, with ETH, or with both.
     /// @dev `cardIds` are transferred in and valued at `backingOf`, which is zero for a Black
     ///      Shape and so rejects one. `ethBackingWei` is minted into the minimal card set for
-    ///      that amount, which costs the Shapes mint fee on top; send
-    ///      `ethBackingWei + shapes.mintFeeFor(ethBackingWei)`. A bidder already holding the
-    ///      standing bid adds to it rather than replacing it.
+    ///      that amount, which costs one flat Shapes mint fee per generated card; send exactly
+    ///      `mintCostFor(ethBackingWei)`. A bidder already holding the standing bid adds to it
+    ///      rather than replacing it.
     function bid(uint256 auctionId, uint256[] calldata cardIds, uint256 ethBackingWei) external payable;
 
     /// @notice Record the outcome. Permissionless once the auction has ended. An auction that

@@ -207,7 +207,7 @@ backing returns in full, only the mint fee is spent. Every other root input is f
 block, so the mint ordinal is the free knob — a minter enumerates candidate ordinals on chain and
 mints the real token at the one whose seed suits them. Hundreds of candidates fit in one block, so
 the ~3.5% trait above costs on the order of the mint fee times a few dozen dust mints, in one
-transaction — not one attempt per block. At `feeBps == 0` only gas is spent. This applies to every
+transaction — not one attempt per block. At `mintFee == 0` only gas is spent. This applies to every
 seed-derived property: geometry, rotation, fill, module sequence and the ink gene, at every
 denomination.
 
@@ -595,14 +595,15 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 
 - **Collectible ownership, separate bounded admin.** Shape #0 is minted to the deployer with
   minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
-  holding #0 grants no permissions. The separate `admin()` role can replace and permanently lock
+  its metadata title is `Shapes Collection Owner`, with `Collection Owner: true`; holding #0 grants
+  no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including
   locking either forever at zero, and can edit the token name prefix and description shared by token
   and collection metadata via `setMetadataCopy`. The
   renderer and collection are read only by `tokenURI`/`contractURI`; the positions target only by
   `ShapeLens.positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
-  break the JSON. Admin may also redirect future mint fees, but cannot change the fee rate or
+  break the JSON. Admin may also redirect future mint fees, but cannot change the fee amount or
   reach backing, redemption, accrued funds or token ownership. The copy is
   deliberately not covered by the renderer lock; it stays editable until admin is renounced.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
@@ -616,14 +617,15 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.
-- `feeBps` is immutable and the initial `feeRecipient` is set at construction. Admin may redirect
+- `mintFee` is immutable and the initial `feeRecipient` is set at construction. Admin may redirect
   subsequent mint fees. `renderer` is
   mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
-- The mint fee is `feeBps` basis points of the backing (the committed value is
-  100, i.e. 1%). One percent of every denomination is a whole number of wei, so
-  the fee is exact at each. Fees are forwarded to `feeRecipient` in the same
-  transaction and never enter the reserve. A batch forwards its aggregate once.
+- The committed mainnet mint fee is a flat 0.001 ETH for every Shape created, regardless of
+  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees are forwarded to
+  `feeRecipient` in the same transaction and never enter the reserve. A batch forwards
+  `quantity * mintFee` once. Auction ETH bids pay one fee for every minimal-denomination card the
+  escrow creates, exposed exactly by `ShapeAuctionHouse.mintCostFor(backingWei)`.
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
   invariant asserted is `address(this).balance >= redeemableBacking`.

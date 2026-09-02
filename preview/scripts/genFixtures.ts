@@ -167,6 +167,14 @@ for (let di = 0; di < DENOMINATIONS.length; di++) {
 // Edge cases that exercise the formatter, the stream and the id rendering. Where not otherwise
 // interesting, originCount defaults to 1 (Direct) and inverted to false.
 const edges: Case[] = [
+  {
+    seed: productionSeed(0n),
+    amountWei: DENOMINATIONS[0],
+    tokenId: 0n,
+    originCount: 1n,
+    inverted: false,
+    why: "collection owner token identity",
+  },
   { seed: 0n, amountWei: DENOMINATIONS[0], tokenId: 1n, originCount: 1n, inverted: false, why: "seed zero, densest grid" },
   { seed: 0n, amountWei: DENOMINATIONS[8], tokenId: 1n, originCount: 1n, inverted: false, why: "seed zero, single module" },
   { seed: MAX_U256, amountWei: DENOMINATIONS[8], tokenId: 1n, originCount: 1n, inverted: false, why: "seed all ones" },

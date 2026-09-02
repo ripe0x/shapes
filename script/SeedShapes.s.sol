@@ -17,7 +17,7 @@ import {Denominations} from "../src/lib/Denominations.sol";
 contract SeedShapes is Script {
     function run() external {
         Shapes shapes = Shapes(payable(vm.envAddress("SHAPES_ADDRESS")));
-        uint256 feeBps = shapes.feeBps();
+        uint256 mintFee = shapes.mintFee();
         address me = msg.sender;
 
         // five 0.01, two 0.05, one 0.1 (indices 0,1,2)
@@ -26,9 +26,8 @@ contract SeedShapes is Script {
         vm.startBroadcast();
         for (uint256 di = 0; di < counts.length; di++) {
             uint256 wei_ = Denominations.amountAt(di);
-            uint256 fee = (wei_ * feeBps) / 10_000;
             for (uint256 n = 0; n < counts[di]; n++) {
-                shapes.mint{value: wei_ + fee}(wei_);
+                shapes.mint{value: wei_ + mintFee}(wei_);
             }
         }
         vm.stopBroadcast();

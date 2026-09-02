@@ -4,18 +4,22 @@ import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagm
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {short, addrUrl, txUrl} from "./ui";
+import {addrUrl, txUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
 import {MintView} from "./MintView";
 import {GalleryView} from "./GalleryView";
+import {MyShapesView} from "./MyShapesView";
 import {TokenView} from "./TokenView";
+import {ManageShapeView} from "./ManageShapeView";
+import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
-import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
+import {breakdown, loadAuction, loadLotImage, type AuctionSlot} from "./auction";
+import {useEnsDisplay} from "./ens";
 
-export type View = "mint" | "auction" | "gallery" | "token" | "about";
+export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -55,6 +59,15 @@ export function SiteApp({
   const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
+  const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection">("gallery");
+  const [composeMode, setComposeMode] = React.useState(false);
+  const [composeDraft, setComposeDraft] = React.useState<ComposeDraft>({
+    session: 0,
+    selectedIds: [],
+    survivorId: null,
+    phase: "select",
+    backView: "collection",
+  });
   const [mint, setMint] = React.useState<MintState>({status: "idle"});
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
@@ -62,7 +75,35 @@ export function SiteApp({
   const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
   const [txHash, setTxHash] = React.useState<string | null>(null);
-  const [composeNotice, setComposeNotice] = React.useState<{tokenId: bigint; hash: string} | null>(null);
+  const [actionNotice, setActionNotice] = React.useState<{
+    title: string;
+    detail: string;
+    hash: string;
+    tokenIds: bigint[];
+  } | null>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
+  const accountMenuRef = React.useRef<HTMLDivElement>(null);
+  const accountLabel = useEnsDisplay(publicClient, address);
+
+  React.useEffect(() => {
+    if (!accountMenuOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAccountMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [accountMenuOpen]);
+
+  React.useEffect(() => {
+    if (!isConnected) setAccountMenuOpen(false);
+  }, [isConnected]);
 
   // URL <-> view sync for the Next.js host. `lastNav` tracks the last applied navigation so a
   // URL-driven change does not echo back out through `onNavigate`, and an internal navigation does
@@ -154,14 +195,29 @@ export function SiteApp({
 
   const confirmRedeem = async (t: SiteToken) => {
     if (!publicClient) return;
+    setBusy("redeem");
+    setTxErr(null);
+    setActionNotice(null);
     setRedeem({status: "pending"});
     try {
       const hash = await write("redeem", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
       setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
+      setActionNotice({
+        title: `Shape #${t.id.toString()} redeemed`,
+        detail: `${DENOMINATIONS[t.di].label} ETH was returned to its owner.`,
+        hash,
+        tokenIds: [],
+      });
+      setView("token");
+      window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
-      setRedeem({status: "failed", error: describeTxError(e)});
+      const text = describeTxError(e);
+      setRedeem({status: "failed", error: text});
+      setTxErr({op: "redeem", text});
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -169,13 +225,23 @@ export function SiteApp({
     if (!publicClient) return;
     setBusy("split");
     setTxErr(null);
+    setActionNotice(null);
     try {
       const downWei = DENOMINATIONS[t.di - 1].wei;
       const ratio = Number(t.backing / downWei);
       const hash = await write("split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
-      await publicClient.waitForTransactionReceipt({hash});
+      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const logs = parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs});
+      const newIds = logs[0]?.args.newIds ?? [];
       await refresh();
       setView("gallery"); // the input is burned; its children are newest in the gallery
+      setActionNotice({
+        title: `Shape #${t.id.toString()} split`,
+        detail: `${newIds.length} new Shape${newIds.length === 1 ? " was" : "s were"} created.`,
+        hash,
+        tokenIds: [...newIds],
+      });
+      window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
       setTxErr({op: "split", text: describeTxError(e)});
     } finally {
@@ -189,10 +255,21 @@ export function SiteApp({
     if (!publicClient) return;
     setBusy("decompose");
     setTxErr(null);
+    setActionNotice(null);
     try {
       const hash = await write("decompose", [t.id]);
-      await publicClient.waitForTransactionReceipt({hash});
+      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const logs = parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs});
+      const restoredIds = logs[0]?.args.restoredIds ?? [];
       await refresh(); // the survivor keeps its id; its detail shows the reverted state
+      setActionNotice({
+        title: `Shape #${t.id.toString()} restored`,
+        detail: `${restoredIds.length} absorbed Shape${restoredIds.length === 1 ? "" : "s"} returned with original IDs.`,
+        hash,
+        tokenIds: [t.id, ...restoredIds],
+      });
+      setView("token");
+      window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
       setTxErr({op: "decompose", text: describeTxError(e)});
     } finally {
@@ -204,16 +281,49 @@ export function SiteApp({
     if (!publicClient) return;
     setBusy("compose");
     setTxErr(null);
-    setComposeNotice(null);
+    setActionNotice(null);
     try {
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
       const hash = await write("compose", [t.id, sorted]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh(); // the survivor keeps its id; the open detail shows the new denomination
-      setComposeNotice({tokenId: t.id, hash});
+      setActionNotice({
+        title: `Shape #${t.id.toString()} grew`,
+        detail: `${burnIds.length} Shape${burnIds.length === 1 ? " was" : "s were"} absorbed.`,
+        hash,
+        tokenIds: [t.id],
+      });
+      setTokenId(t.id);
+      setTokenBackView("collection");
+      setComposeMode(false);
+      setView("token");
       window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
       setTxErr({op: "compose", text: describeTxError(e)});
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doSacrifice = async (t: SiteToken) => {
+    if (!publicClient) return;
+    setBusy("sacrifice");
+    setTxErr(null);
+    setActionNotice(null);
+    try {
+      const hash = await write("sacrifice", [t.id]);
+      await publicClient.waitForTransactionReceipt({hash});
+      await refresh();
+      setActionNotice({
+        title: `Shape #${t.id.toString()} is now Black`,
+        detail: "Its ETH backing is permanently unspendable.",
+        hash,
+        tokenIds: [t.id],
+      });
+      setView("token");
+      window.scrollTo({top: 0, behavior: "smooth"});
+    } catch (e) {
+      setTxErr({op: "sacrifice", text: describeTxError(e)});
     } finally {
       setBusy(null);
     }
@@ -276,11 +386,15 @@ export function SiteApp({
 
   const doBid = (cardIds: bigint[], ethBackingWei: bigint) => {
     const sorted = [...cardIds].sort((a, b) => (a < b ? -1 : 1));
-    // The mint fee rides on top of the backing, and only on the ETH portion.
-    void runHouse("bid", "bid", [0n, sorted, ethBackingWei], ethBackingWei + ethBackingWei / 100n);
+    const fee = breakdown(ethBackingWei).reduce(
+      (sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n),
+      0n,
+    );
+    void runHouse("bid", "bid", [0n, sorted, ethBackingWei], ethBackingWei + fee);
   };
 
   const openToken = (id: bigint) => {
+    if (view === "gallery" || view === "collection") setTokenBackView(view);
     setTokenId(id);
     setRedeem({status: "idle"});
     setTxErr(null);
@@ -290,6 +404,20 @@ export function SiteApp({
   const go = (v: View) => {
     setTxErr(null);
     setView(v);
+  };
+
+  const startCompose = (survivorId?: bigint) => {
+    setComposeDraft((previous) => ({
+      session: previous.session + 1,
+      selectedIds: survivorId === undefined ? [] : [survivorId],
+      survivorId: survivorId ?? null,
+      phase: "select",
+      backView: survivorId === undefined ? "collection" : "manage",
+    }));
+    setComposeMode(true);
+    setTxErr(null);
+    setView("collection");
+    window.scrollTo({top: 0, behavior: "smooth"});
   };
 
   const navColor = (v: View) => (view === v ? C.ink : C.muted);
@@ -306,6 +434,7 @@ export function SiteApp({
         }}
       >
         <div
+          className="site-header-inner"
           style={{
             display: "flex",
             alignItems: "center",
@@ -317,7 +446,7 @@ export function SiteApp({
           }}
         >
           <div>SHAPES</div>
-          <nav style={{display: "flex", gap: 26}}>
+          <nav className="site-nav" style={{display: "flex", gap: 26}}>
             <button type="button" className="btn-ghost" onClick={() => go("mint")} style={{letterSpacing: "0.14em", color: navColor("mint")}}>
               MINT
             </button>
@@ -340,18 +469,69 @@ export function SiteApp({
               </a>
             )}
           </nav>
-          <div style={{marginLeft: "auto", display: "flex", alignItems: "center", gap: 18}}>
-            {isConnected && address && (
-              <span style={{color: C.muted, letterSpacing: "0.1em"}}>{short(address)}</span>
-            )}
+          <div className="site-account" ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
             <button
               type="button"
               className="btn-outline"
-              onClick={() => (isConnected ? disconnect() : openConnectModal?.())}
-              style={{padding: "6px 13px", fontSize: 11, letterSpacing: "0.1em"}}
+              aria-haspopup={isConnected ? "menu" : undefined}
+              aria-expanded={isConnected ? accountMenuOpen : undefined}
+              onClick={() =>
+                isConnected ? setAccountMenuOpen((open) => !open) : openConnectModal?.()
+              }
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                maxWidth: 220,
+                padding: "6px 13px",
+                fontSize: 11,
+                letterSpacing: "0.1em",
+              }}
             >
-              {isConnected ? "DISCONNECT" : "CONNECT"}
+              <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
+                {isConnected ? accountLabel : "CONNECT"}
+              </span>
+              {isConnected && <span aria-hidden="true" style={{color: C.muted}}>▾</span>}
             </button>
+            {isConnected && accountMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Wallet account"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  minWidth: 180,
+                  border: `1px solid ${C.border}`,
+                  background: C.page,
+                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.35)",
+                  zIndex: 30,
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    go("collection");
+                  }}
+                >
+                  MY SHAPES
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    disconnect();
+                  }}
+                >
+                  DISCONNECT
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -395,6 +575,32 @@ export function SiteApp({
       {view === "gallery" && (
         <GalleryView data={data} filter={filter} setFilter={setFilter} onOpenToken={openToken} />
       )}
+      {view === "collection" && !composeMode && (
+        <MyShapesView
+          data={data}
+          address={address}
+          connected={isConnected}
+          onConnect={() => openConnectModal?.()}
+          onOpenToken={openToken}
+          onCompose={() => startCompose()}
+        />
+      )}
+      {view === "collection" && composeMode && (
+        <ComposeWorkspace
+          key={composeDraft.session}
+          draft={composeDraft}
+          data={data}
+          dep={dep}
+          publicClient={publicClient}
+          address={address}
+          busy={busy}
+          txErr={txErr}
+          onChange={setComposeDraft}
+          onCancel={() => setComposeMode(false)}
+          onOpenToken={openToken}
+          onSubmit={(survivor, burnIds) => void doCompose(survivor, burnIds)}
+        />
+      )}
       {view === "token" && tokenId !== null && (
         <TokenView
           data={data}
@@ -403,21 +609,32 @@ export function SiteApp({
           address={address}
           tokenId={tokenId}
           redeem={redeem}
+          backLabel={tokenBackView === "collection" ? "MY SHAPES" : "GALLERY"}
+          onBack={() => go(tokenBackView)}
+          onManage={() => go("manage")}
+          onOpenToken={openToken}
+        />
+      )}
+      {view === "manage" && tokenId !== null && (
+        <ManageShapeView
+          data={data}
+          dep={dep}
+          publicClient={publicClient}
+          address={address}
+          tokenId={tokenId}
           busy={busy}
           txErr={txErr}
-          onBack={() => go("gallery")}
-          onAskRedeem={() => setRedeem({status: "asking"})}
-          onCancelRedeem={() => setRedeem({status: "idle"})}
-          onConfirmRedeem={(t) => void confirmRedeem(t)}
+          onBack={() => go("token")}
+          onStartCompose={(id) => startCompose(id)}
           onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
-          onCompose={(t, ids) => void doCompose(t, ids)}
-          onOpenToken={openToken}
+          onRedeem={(t) => void confirmRedeem(t)}
+          onSacrifice={(t) => void doSacrifice(t)}
         />
       )}
       {view === "about" && <AboutView dep={dep} data={data} />}
 
-      {composeNotice && (
+      {actionNotice && (
         <div
           role="status"
           aria-live="polite"
@@ -439,9 +656,28 @@ export function SiteApp({
             fontSize: 12,
           }}
         >
-          <span style={{whiteSpace: "nowrap"}}>Shape #{composeNotice.tokenId.toString()} composed.</span>
+          <div style={{minWidth: 0}}>
+            <div style={{color: C.ink}}>{actionNotice.title}</div>
+            <div style={{marginTop: 3, color: C.muted, fontSize: 10}}>{actionNotice.detail}</div>
+          </div>
+          {actionNotice.tokenIds.slice(0, 3).map((id) => (
+            <button
+              type="button"
+              key={id.toString()}
+              className="btn-ghost"
+              onClick={() => openToken(id)}
+              style={{whiteSpace: "nowrap", color: C.ink, textDecoration: "underline"}}
+            >
+              Shape #{id.toString()}
+            </button>
+          ))}
+          {actionNotice.tokenIds.length > 3 && (
+            <span style={{whiteSpace: "nowrap", color: C.muted}}>
+              +{actionNotice.tokenIds.length - 3} more
+            </span>
+          )}
           <a
-            href={txUrl(composeNotice.hash, dep.chainId)}
+            href={txUrl(actionNotice.hash, dep.chainId)}
             target="_blank"
             rel="noreferrer"
             style={{whiteSpace: "nowrap", textDecoration: "underline"}}
@@ -450,8 +686,8 @@ export function SiteApp({
           </a>
           <button
             type="button"
-            aria-label="Dismiss compose confirmation"
-            onClick={() => setComposeNotice(null)}
+            aria-label="Dismiss transaction confirmation"
+            onClick={() => setActionNotice(null)}
             style={{padding: "2px 4px", color: C.muted, fontSize: 16, lineHeight: 1}}
           >
             ×

@@ -20,6 +20,8 @@ import {ShapeRendererLegacy} from "./legacy/ShapeRendererLegacy.sol";
 ///      `Parity.t.sol` pins output against ~80 fixed TypeScript fixtures; this sweeps the input
 ///      space instead, fuzzed and exhaustive, and compares raw call data so a revert on one side
 ///      and a revert on the other are compared byte for byte along with success output.
+///      Token #0 is excluded from metadata comparisons because its collection-owner identity is
+///      an intentional post-refactor metadata change covered by renderer and parity tests.
 contract RendererDiffTest is Test {
     string internal constant NAME_PREFIX = "Shape ";
     string internal constant DESCRIPTION =
@@ -116,6 +118,7 @@ contract RendererDiffTest is Test {
         uint256 originCount,
         uint256 composeDepth
     ) public view {
+        if (tokenId == 0) tokenId = 1;
         (uint256 amountWei,) = _denom(denomRaw);
         uint8 gene = _gene(geneRaw);
         _diff(
@@ -185,6 +188,7 @@ contract RendererDiffTest is Test {
         uint8 parentDenomRaw,
         uint8 originDenomRaw
     ) public view {
+        if (tokenId == 0) tokenId = 1;
         (uint256 amountWei, uint256 denomIndex) = _denom(denomRaw);
         uint8 gene = _gene(geneRaw);
         bytes memory modules = _validModules(seed, denomIndex);
@@ -316,7 +320,9 @@ contract RendererDiffTest is Test {
                         2,
                         NAME_PREFIX,
                         DESCRIPTION,
-                        SplitProvenance({isSplitChild: gene % 2 == 0, parentDenomIndex: gene, originDenomIndex: 8})
+                        SplitProvenance({
+                            isSplitChild: gene % 2 == 0, parentDenomIndex: gene, originDenomIndex: 8
+                        })
                     )
                 )
             );
@@ -330,7 +336,7 @@ contract RendererDiffTest is Test {
     function test_TokenIdAndComposeDepthBoundaries() public view {
         bytes32 seed = keccak256("shapes/difftest/boundary");
         uint256 amountWei = Denominations.amountAt(4);
-        uint256[2] memory tokenIds = [uint256(0), type(uint256).max];
+        uint256[2] memory tokenIds = [uint256(1), type(uint256).max];
         uint256[2] memory depths = [uint256(0), type(uint256).max];
         for (uint256 i = 0; i < tokenIds.length; ++i) {
             for (uint256 j = 0; j < depths.length; ++j) {

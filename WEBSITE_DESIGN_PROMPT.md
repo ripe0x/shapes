@@ -4,7 +4,7 @@
 
 Shapes is an ERC721 token that wraps an exact amount of ETH. Mint a Shape by sending ETH; burn it and the same ETH comes back. Not a share of a pool — the same amount, exactly. Between mint and burn it is an ordinary NFT: transfer it, sell it, hold it.
 
-There are exactly nine denominations, permanent: 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100 ETH. Every other amount is rejected. The mint fee is 1% of the backing, paid on top. Redemption always returns the full backing.
+There are exactly nine denominations, permanent: 0.01, 0.05, 0.1, 0.5, 1, 5, 10, 50, 100 ETH. Every other amount is rejected. The mainnet mint fee is a flat 0.001 ETH for every Shape, paid on top. Redemption always returns the full backing.
 
 The artwork is fully onchain SVG. Black background, white marks, nothing else — no color, no gradients, no text on the face. Each card is a 2.5 × 3.5 trading-card proportion (250 × 350 viewBox). The marks are simple geometric primitives — circle, square, triangle, half circle, quarter circle, diamond, half square, right triangle, arc, line — placed on a grid. Value controls density, inverted: a 0.01 ETH Shape is a dense 5 × 5 grid of 25 marks; a 100 ETH Shape is a single mark alone on a black field. The more ETH a Shape holds, the less is drawn.
 
@@ -19,7 +19,7 @@ Two jobs: mint and browse. Nothing else.
 **1. Home / Mint.** One page. A short statement of what a Shape is, the nine denominations, and a mint action.
 
 - The denomination picker is the centerpiece. Nine choices, laid out plainly — consider showing each denomination's grid dimensions (5×5 down to 1×1) as part of the picker, since the grid *is* the denomination's identity.
-- Selecting a denomination shows the exact cost: backing + 1% fee = total. All three numbers, no rounding, no "approximately."
+- Selecting a denomination shows the exact cost: backing + 0.001 ETH fee = total. All three numbers, no rounding, no "approximately."
 - A quantity control for batch minting is fine, but keep it quiet.
 - The freshly minted Shape's artwork is shown after mint. That is the payoff; give it room.
 - Wallet connection is a small, plain control. Not a hero button.
@@ -34,7 +34,7 @@ Two jobs: mint and browse. Nothing else.
 - History: minted, transferred, redeemed — plain event rows with dates
 - If the connected wallet owns it: a redeem action. The copy states plainly what happens: "Burn this Shape. Receive 1 ETH." Redemption is irreversible; the confirmation should say so in one sentence, not a modal essay.
 
-**4. About / How it works.** Can be a section of the home page rather than a page. Short. The README's opening already has the right voice: "ETH in, Shape out. Shape burned, the same ETH out." Cover: the nine denominations, the 1% mint fee, redemption, that the contract holds the ETH and does nothing else with it, that the art is fully onchain, and what the owner cannot do (no pause, no withdrawal, no fee change). A link to the contract address and source.
+**4. About / How it works.** Can be a section of the home page rather than a page. Short. The README's opening already has the right voice: "ETH in, Shape out. Shape burned, the same ETH out." Cover: the nine denominations, the flat per-Shape mint fee, redemption, that the contract holds the ETH and does nothing else with it, that the art is fully onchain, and what the owner cannot do (no pause, no withdrawal, no fee change). A link to the contract address and source.
 
 ## Visual direction
 
@@ -54,7 +54,7 @@ This matters as much as the layout. Every sentence on the site follows these rul
 
 - Simple words, short sentences. If there is a simple way to say it, use it.
 - State facts. Never persuade. No hyperbole, no superlatives, no "revolutionary," no "unlock," no exclamation points.
-- Exact numbers, always. "1 ETH + 0.01 ETH fee = 1.01 ETH total." Never "~1 ETH" or "just 1%."
+- Exact numbers, always. "1 ETH + 0.001 ETH fee = 1.001 ETH total." Never "~1 ETH."
 - Say what the contract does and does not do, plainly. "The contract holds the ETH. It does not lend it, stake it, or invest it."
 - No urgency, no scarcity language, no countdowns.
 
@@ -64,7 +64,7 @@ Sample copy in the right register:
 
 > Nine denominations. 0.01 to 100 ETH. Higher value, fewer marks.
 
-> Mint fee is 1% of the backing, paid once at mint. There is no burn fee.
+> Mint fee is a flat 0.001 ETH per mainnet Shape, paid once at mint. There is no burn fee.
 
 > Burn this Shape. Receive 1 ETH. This cannot be undone.
 

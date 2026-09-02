@@ -64,7 +64,7 @@ contract HostileReentrant is IERC721Receiver {
 ///         tracking its own view of what the reserve should be.
 contract Handler is Test, IERC721Receiver {
     Shapes public immutable shapes;
-    uint256 public immutable feeBps;
+    uint256 public immutable mintFee;
 
     address[4] public actors;
 
@@ -97,7 +97,7 @@ contract Handler is Test, IERC721Receiver {
 
     constructor(Shapes shapes_) {
         shapes = shapes_;
-        feeBps = shapes_.feeBps();
+        mintFee = shapes_.mintFee();
         actors = [address(0xA1), address(0xA2), address(0xA3), address(0xA4)];
         for (uint256 i = 0; i < actors.length; ++i) {
             vm.deal(actors[i], 100_000 ether);
@@ -145,12 +145,12 @@ contract Handler is Test, IERC721Receiver {
         address who = _actor(actorSeed);
         // Hoist the fee query out of the prank window: an external call inside the `{value:}`
         // expression would consume the prank, and the mint would then run as the handler.
-        uint256 cost = amount + shapes.mintFeeFor(amount);
+        uint256 cost = amount + shapes.mintFee();
 
         vm.prank(who);
         try shapes.mintTo{value: cost}(amount, who) returns (uint256 id) {
             ghostBackingIn += amount;
-            ghostFeesPaid += shapes.mintFeeFor(amount);
+            ghostFeesPaid += shapes.mintFee();
             ghostMints += 1;
             _track(id);
         } catch {}
@@ -160,12 +160,12 @@ contract Handler is Test, IERC721Receiver {
         uint256 amount = DENOMS[denomSeed % 9];
         uint256 qty = bound(qtySeed, 1, 8);
         address who = _actor(actorSeed);
-        uint256 cost = qty * (amount + shapes.mintFeeFor(amount));
+        uint256 cost = qty * (amount + shapes.mintFee());
 
         vm.prank(who);
         try shapes.mintBatchTo{value: cost}(amount, qty, who) returns (uint256 first) {
             ghostBackingIn += amount * qty;
-            ghostFeesPaid += shapes.mintFeeFor(amount) * qty;
+            ghostFeesPaid += shapes.mintFee() * qty;
             ghostMints += qty;
             for (uint256 i = 0; i < qty; ++i) {
                 _track(first + i);
@@ -458,7 +458,7 @@ contract Handler is Test, IERC721Receiver {
  * ==================================================================== */
 
 contract ShapesInvariantTest is StdInvariant, Test {
-    uint256 internal constant FEE_BPS = 100; // 1%
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
 
     ShapeRenderer internal renderer;
 
@@ -471,7 +471,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection)
         );
         // The handler must own and account for every live Shape. Genesis ownership is covered by
         // ContractOwnership.t.sol, so retire it before handing this collection to the handler.
@@ -578,11 +578,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
     /// @notice Fees never enter the reserve, and every minted token paid exactly one.
     function invariant_FeesAreSeparateFromBacking() public view {
         assertEq(feeRecipient.balance, handler.ghostFeesPaid(), "fee accounting drifted");
-        assertEq(
-            handler.ghostFeesPaid(),
-            (handler.ghostBackingIn() * handler.feeBps()) / 10_000,
-            "fees are exactly feeBps of all backing minted"
-        );
+        assertEq(handler.ghostFeesPaid(), handler.ghostMints() * handler.mintFee(), "one fee per mint");
         assertGe(
             address(shapes).balance, shapes.redeemableBacking(), "fees leaked into or out of the reserve"
         );
@@ -617,9 +613,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
             if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
-            assertTrue(
-                Denominations.isSupported(shapes.backingOf(id)), "token holds an off-ladder amount"
-            );
+            assertTrue(Denominations.isSupported(shapes.backingOf(id)), "token holds an off-ladder amount");
         }
     }
 
@@ -726,7 +720,7 @@ contract AuctionHandler is Test, IERC721Receiver {
 
         // Hoist the fee query out of the prank window; an external call inside `{value:}` consumes
         // the prank and the mint would run as the handler.
-        uint256 cost = DENOMS[2] + shapes.mintFeeFor(DENOMS[2]);
+        uint256 cost = DENOMS[2] + shapes.mintFee();
         vm.prank(seller);
         try shapes.mint{value: cost}(DENOMS[2]) returns (uint256 lot) {
             vm.prank(seller);
@@ -745,7 +739,7 @@ contract AuctionHandler is Test, IERC721Receiver {
         uint256 id = auctionIds[aSeed % auctionIds.length];
         address bidder = _actor(actorSeed);
         uint256 backing = bound(unitsSeed, 1, 200) * Denominations.UNIT;
-        uint256 cost = backing + shapes.mintFeeFor(backing);
+        uint256 cost = backing + shapes.mintFee();
 
         vm.prank(bidder);
         try house.bid{value: cost}(id, new uint256[](0), backing) {
@@ -758,7 +752,7 @@ contract AuctionHandler is Test, IERC721Receiver {
         uint256 id = auctionIds[aSeed % auctionIds.length];
         address bidder = _actor(actorSeed);
         uint256 amount = DENOMS[denomSeed % 7]; // cap at 10 ETH to keep fuzzing cheap
-        uint256 cost = amount + shapes.mintFeeFor(amount);
+        uint256 cost = amount + shapes.mintFee();
 
         vm.prank(bidder);
         uint256 card;
@@ -784,7 +778,7 @@ contract AuctionHandler is Test, IERC721Receiver {
         address bidder = _actor(actorSeed);
         uint256 amount = DENOMS[denomSeed % 5]; // <= 1 ETH
         uint256 qty = bound(qtySeed, 2, 8);
-        uint256 unit = amount + shapes.mintFeeFor(amount);
+        uint256 unit = amount + shapes.mintFee();
 
         vm.prank(bidder);
         uint256 first;
@@ -859,7 +853,7 @@ contract AuctionInvariantTest is StdInvariant, Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, address(0xFEE), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection)
         );
         house = new ShapeAuctionHouse(address(shapes));
         handler = new AuctionHandler(shapes, house);
@@ -980,7 +974,7 @@ contract HostileAuctionFeeRecipient is IERC721Receiver {
     }
 
     function acquire(uint256 amount) external {
-        held = shapes.mint{value: amount + shapes.mintFeeFor(amount)}(amount);
+        held = shapes.mint{value: amount + shapes.mintFee()}(amount);
         holds = true;
     }
 
@@ -1003,7 +997,7 @@ contract AuctionInvariantHostileFeeTest is AuctionInvariantTest {
         collection = new ShapeCollection(address(renderer));
         hostile = new HostileAuctionFeeRecipient();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, address(hostile), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(hostile), address(renderer), address(collection)
         );
         house = new ShapeAuctionHouse(address(shapes));
         hostile.setTargets(shapes, address(house));

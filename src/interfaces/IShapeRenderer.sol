@@ -50,9 +50,11 @@ interface IShapeRenderer {
     ///      `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait. `composeDepth`
     ///      is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait;
     ///      it is the one input that is mutable chain state rather than fixed at mint.
-    ///      `namePrefix` and `description` are the editorial copy the caller supplies: the `name`
-    ///      is `namePrefix` followed by the decimal token id, and `description` is emitted verbatim.
-    ///      The renderer neither stores nor escapes them; the caller owns their content.
+    ///      `namePrefix` and `description` are the editorial copy the caller supplies. For every
+    ///      token except #0, `name` is `namePrefix` followed by the decimal token id. Token #0 is
+    ///      named `Shapes Collection Owner` and carries `Collection Owner: true` in its attributes.
+    ///      `description` is emitted verbatim. The renderer neither stores nor escapes
+    ///      caller-supplied copy; the caller owns its content.
     function metadataJSON(
         bytes32 seed,
         uint256 amountWei,

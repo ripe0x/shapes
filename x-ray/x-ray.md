@@ -8,7 +8,7 @@
 
 **What it does:** Shapes is an ERC721 that wraps an exact amount of ETH at one of nine fixed denominations (0.01–100 ETH); burning the token returns exactly that ETH to its owner.
 
-- **Users**: Anyone can mint (permissionless, pays backing + a 1% fee) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers presentation, positions, market and the destination of future mint fees. Shape #0 represents backed collectible ownership and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
+- **Users**: Anyone can mint (permissionless, pays backing + a flat 0.001 ETH fee per mainnet Shape) and hold, transfer or redeem a Shape like any NFT. A separate transferable admin administers presentation, positions, market and the destination of future mint fees. Shape #0 represents backed collectible ownership and grants no permissions. An `Auction Seller`/`Bidder` uses a separate `ShapeAuctionHouse` that prices bids in Shape cards.
 - **Core flow**: `mint` (ETH in, token out) and `redeem`/`burn` (token in, exact ETH out) are the whole economic surface; `compose`/`split`/`decompose` reshape tokens without moving ETH.
 - **Key mechanism**: A fixed reserve invariant — `address(this).balance >= redeemableBacking()` — with no admin path that can reach it. No oracle, no market pricing: value is denomination-fixed, not price-discovered.
 - **Token model**: One ERC721 collection (`Shapes`). No fungible token, no governance token, no LP token. `ShapeAuctionHouse` mints/holds Shapes as bid collateral but issues nothing of its own.
@@ -114,7 +114,7 @@ Shapes matches the Stablecoin profile's core shape — mint against exact collat
 
 | Actor | Trust Level | Capabilities |
 |-------|-------------|--------------|
-| Admin | Bounded | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), independently set/clear/lock positions and market pointers, and redirect future mint fees. It cannot change the fee rate, withdraw ETH, alter backing/redemption, recover accrued fees or affect token ownership. |
+| Admin | Bounded | Replace renderer/collection (until `lockRenderer`), edit token/collection copy (never locked), independently set/clear/lock positions and market pointers, and redirect future mint fees. It cannot change the fee amount, withdraw ETH, alter backing/redemption, recover accrued fees or affect token ownership. |
 | Shape #0 holder | Untrusted, self-scoped | Reported by `owner()` as collectible contract ownership. Has exactly the same lifecycle rights as any Shape holder and no administrative permissions. |
 | Shape Owner (any user) | Untrusted, self-scoped | mint/redeem/compose/split/decompose/sacrifice on tokens they own; cannot affect any other holder's tokens or the reserve beyond their own mint/redeem flow. |
 | Fee Recipient | Admin-selected | Receives future mint fees; a reverting recipient blocks minting until admin redirects it. Renouncing admin freezes the final address (SECURITY.md #6). |
@@ -129,7 +129,7 @@ Shapes matches the Stablecoin profile's core shape — mint against exact collat
 1. **Reentrant external-call adversary** (fee recipient, lot NFT, positions target) — every value-moving external call target is either attacker-chosen (auction lot) or reaches into arbitrary code (fee forwarding); the lens's positions read is separately gas-capped and state-free. The one confirmed historical finding here (fee-recipient reentrancy into `bid`) was fixed twice. The commit this tree is built from (`2167dc7`) added a re-check of `a.settled` after the escrow call. A subsequent delta audit found that fix incomplete: against a fee-recipient contract that is also the auction's seller, the same window let the seller record a victim as `highestBidder` on a reentrantly-cancelled auction and then sweep their escrowed cards through `claimProceeds`. `settle` and `cancelAuction` now carry `nonReentrant`, closing the class structurally (PR #38, `d2f2e59`).
 2. **Malicious or dishonest auction lot/collection contract** — the only adversary the house's own documentation explicitly declines to fully defend against; bounded to the parties who chose that auction.
 3. **Seed/mint-ordinal grinder** — a minter can advance `totalMinted` inside one transaction (mint-then-redeem dust) to select among a small candidate-seed space, most impactful at 50/100 ETH where the composition space is tiny (2,704 / 52 archetypes); accepted design since redemption value never depends on the seed (SPEC.md D3e).
-4. **Compromised admin** — can redirect future mint-fee revenue and can set misleading metadata/artwork or a wrong discovery pointer. It cannot change the fee rate, touch the reserve/redemption, move accrued funds or seize tokens.
+4. **Compromised admin** — can redirect future mint-fee revenue and can set misleading metadata/artwork or a wrong discovery pointer. It cannot change the fee amount, touch the reserve/redemption, move accrued funds or seize tokens.
 5. **Griefing via a reverting counterparty** — a reverting `feeRecipient` disables minting until admin redirects fees; after admin renunciation the choice is permanent. A reverting redemption recipient only reverts its own transaction, never another holder's.
 
 See [entry-points.md](entry-points.md) for the full permissionless entry point map.
@@ -175,7 +175,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 
 **Deployment & Initialization:**
 - No proxy or `initialize()` pattern exists anywhere in scope (see entry-points.md, Initialization) — the standard front-run-the-initializer threat does not apply.
-- `feeBps` is immutable. Admin may repair a misconfigured `feeRecipient` until renunciation (SECURITY.md caveats #1–#2); `DeployShapes.s.sol` refuses an initial contract fee recipient without an explicit override, but that script sits outside `src/` and was not read as part of this scope.
+- `mintFee` is immutable. Admin may repair a misconfigured `feeRecipient` until renunciation (SECURITY.md caveats #1–#3); `DeployShapes.s.sol` refuses an initial contract fee recipient without an explicit override and checks the intended flat value, but that script sits outside `src/` and was not read as part of this scope.
 - Library linking at deploy time (four computation libraries independently re-linked into `ShapeLens`, plus Shapes-only `EIP712Signature`) is the one deployment-ordering risk with no on-chain enforcement. `DeployLens.s.sol` now runs a pre-broadcast behavioral probe that refuses a divergent lens (PR #37), but that is deploy-script discipline, not a contract-level guarantee — see the linked-library-drift attack surface above.
 
 ### Composability & Dependency Risks

@@ -10,6 +10,7 @@ import {IShapeCardEscrow} from "../src/interfaces/IShapeCardEscrow.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
 contract Token0Test is Test {
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
     uint256[9] internal DENOMS = [
         Denominations.amountAt(0),
         Denominations.amountAt(1),
@@ -32,7 +33,7 @@ contract Token0Test is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, makeAddr("fee"), address(renderer), address(collection)
+            MINT_FEE, makeAddr("fee"), address(renderer), address(collection)
         );
         house = new ShapeAuctionHouse(address(shapes));
         vm.deal(artist, 10 ether);
@@ -45,7 +46,7 @@ contract Token0Test is Test {
         assertEq(shapes.owner(), address(this));
 
         vm.prank(stranger);
-        uint256 id = shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
+        uint256 id = shapes.mint{value: DENOMS[0] + MINT_FEE}(DENOMS[0]);
         assertEq(id, 1, "the first public minter takes #1");
         assertEq(shapes.ownerOf(1), stranger);
         assertEq(shapes.ownerOf(0), address(this));
@@ -71,13 +72,13 @@ contract Token0Test is Test {
     function test_CannotMintDirectlyToTheHouse() public {
         vm.prank(artist);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.UnsolicitedToken.selector, address(0)));
-        shapes.mintTo{value: (DENOMS[0] * 101) / 100}(DENOMS[0], address(house));
+        shapes.mintTo{value: DENOMS[0] + MINT_FEE}(DENOMS[0], address(house));
     }
 
     /// The intended flow: artist owns it, then escrows it.
     function test_ArtistMintsThenEscrows() public {
         vm.prank(artist);
-        uint256 id = shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
+        uint256 id = shapes.mint{value: DENOMS[0] + MINT_FEE}(DENOMS[0]);
         assertEq(shapes.ownerOf(id), artist, "artist owns it first");
 
         vm.prank(artist);
@@ -93,11 +94,11 @@ contract Token0Test is Test {
     /// `redeem`/`redeemTo` and `split`/`splitTo`.
     function test_BareMintGoesToTheCaller() public {
         vm.prank(artist);
-        uint256 id = shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
+        uint256 id = shapes.mint{value: DENOMS[0] + MINT_FEE}(DENOMS[0]);
         assertEq(shapes.ownerOf(id), artist, "bare mint went somewhere else");
 
         vm.prank(artist);
-        uint256 first = shapes.mintBatch{value: 2 * (DENOMS[0] * 101) / 100}(DENOMS[0], 2);
+        uint256 first = shapes.mintBatch{value: 2 * (DENOMS[0] + MINT_FEE)}(DENOMS[0], 2);
         assertEq(shapes.ownerOf(first), artist);
         assertEq(shapes.ownerOf(first + 1), artist);
         assertEq(shapes.balanceOf(artist), 3);
@@ -107,11 +108,11 @@ contract Token0Test is Test {
     /// same address.
     function test_MintsToAnyRecipient() public {
         vm.prank(artist);
-        uint256 id = shapes.mintTo{value: (DENOMS[0] * 101) / 100}(DENOMS[0], stranger);
+        uint256 id = shapes.mintTo{value: DENOMS[0] + MINT_FEE}(DENOMS[0], stranger);
         assertEq(shapes.ownerOf(id), stranger, "minted to the named recipient, not the payer");
 
         vm.prank(artist);
-        uint256 first = shapes.mintBatchTo{value: 3 * (DENOMS[0] * 101) / 100}(DENOMS[0], 3, stranger);
+        uint256 first = shapes.mintBatchTo{value: 3 * (DENOMS[0] + MINT_FEE)}(DENOMS[0], 3, stranger);
         for (uint256 i = 0; i < 3; ++i) {
             assertEq(shapes.ownerOf(first + i), stranger, "batch honours the recipient too");
         }
@@ -123,12 +124,12 @@ contract Token0Test is Test {
     function test_RecipientDoesNotMoveTheSeed() public {
         uint256 snap = vm.snapshotState();
         vm.prank(artist);
-        uint256 selfId = shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
+        uint256 selfId = shapes.mint{value: DENOMS[0] + MINT_FEE}(DENOMS[0]);
         bytes32 toSelf = shapes.seedOf(selfId);
 
         vm.revertToState(snap);
         vm.prank(artist);
-        uint256 recipientId = shapes.mintTo{value: (DENOMS[0] * 101) / 100}(DENOMS[0], stranger);
+        uint256 recipientId = shapes.mintTo{value: DENOMS[0] + MINT_FEE}(DENOMS[0], stranger);
         assertEq(recipientId, selfId, "snapshot did not reproduce the token id");
         assertEq(shapes.seedOf(recipientId), toSelf, "the recipient changed the seed");
     }
@@ -136,7 +137,7 @@ contract Token0Test is Test {
     /// Could someone open an auction on a token they do not own?
     function test_StrangerCannotAuctionTheArtistsToken() public {
         vm.prank(artist);
-        uint256 id = shapes.mint{value: (DENOMS[0] * 101) / 100}(DENOMS[0]);
+        uint256 id = shapes.mint{value: DENOMS[0] + MINT_FEE}(DENOMS[0]);
         vm.prank(stranger);
         vm.expectRevert();
         house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes);
