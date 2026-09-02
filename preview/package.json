@@ -10,6 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "simulate": "tsx scripts/simulate.ts",
+    "simulate:history": "tsx scripts/simulateHistory.ts",
     "verify": "tsx scripts/verifyStream.ts",
     "fixtures": "tsx scripts/genFixtures.ts",
     "sweep": "tsx scripts/collisionSweep.ts",

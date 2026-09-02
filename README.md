@@ -443,10 +443,25 @@ the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLE
 on load. The Next site reads `web/public/deployment.json`, which is updated only for a real public
 deployment. Every local run is a fresh chain; prior tokens are gone.
 
-To browse the collection in a lived-in state, seed the running chain with simulated activity —
-mints across every denomination, compositions up to two 100 ETH apexes (one fully built, one
-half direct), splits, transfers and redemptions. Run it from `preview/`, as many
-times as you like; each run appends another round:
+For a chain that looks like the project has run for weeks, use `script/lived-in.sh` instead of
+the two commands above. One command from the repo root:
+
+```bash
+./script/lived-in.sh
+```
+
+This boots (or reuses) the dev chain, deploys the contracts, then runs
+`preview/scripts/simulateHistory.ts` against it: roughly six weeks of dated activity across 30
+wallets, exercising every external function of `Shapes`, `ShapeLens` and `ShapeAuctionHouse`
+several times each from different wallets, including full auction lifecycles, and ending with a
+curated set of presents sent to the browsing wallet. It then copies the deployment to
+`web/public/deployment.local.json` (gitignored, never the tracked `deployment.json`), which the
+Next site and its OG image route prefer over the bundled deployment when present. Leaves the
+chain running afterward; Ctrl-C stops it.
+
+To seed a shorter, simpler round of activity instead (mints across every denomination,
+compositions up to two 100 ETH apexes, one fully built and one half direct, splits, transfers and
+redemptions), run it from `preview/`, as many times as you like; each run appends another round:
 
 ```bash
 npm run simulate

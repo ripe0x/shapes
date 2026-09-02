@@ -246,6 +246,8 @@ export function TokenView({
     );
   }
 
+  // `data` is null while the site data is (re)loading; only a loaded set that lacks the id means
+  // the token is gone.
   if (!token) {
     return (
       <main className="token-detail-page">
@@ -253,8 +255,9 @@ export function TokenView({
         <Section title="SHAPE">
           <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId)}</div>
           <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
-            Shape {tokenId.toString()} is no longer live. It was redeemed or recomposed. Its
-            history is below.
+            {data
+              ? `Shape ${tokenId.toString()} is no longer live. It was redeemed or recomposed. Its history is below.`
+              : "Reading the chain…"}
           </div>
         </Section>
         <History history={history} chainId={dep.chainId} />
