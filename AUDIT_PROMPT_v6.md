@@ -8,8 +8,8 @@ findings; do not change the audited tree.
 
 ```text
 repository  https://github.com/ripe0x/shapes
-commit      217498564f46667bc8fabce32be0a19c22d7e431
-short       2174985
+commit      1054db2455f7d6d3542a422130262bc872c34464
+short       1054db2
 phase       P2 pre-mainnet
 ```
 
@@ -18,7 +18,7 @@ Audit this exact commit, not a branch tip. Record the full hash and clean status
 
 ```bash
 git fetch origin
-git checkout 217498564f46667bc8fabce32be0a19c22d7e431
+git checkout 1054db2455f7d6d3542a422130262bc872c34464
 git status --short
 git log -1 --oneline
 ```
@@ -202,7 +202,7 @@ State every skipped or unavailable check explicitly.
 
 ## Deliverable
 
-For each finding provide severity, exact file/line at `2174985`, violated property, concrete
+For each finding provide severity, exact file/line at `1054db2`, violated property, concrete
 sequence with values, impact, smallest safe remediation and a regression test. Separate confirmed
 findings from open questions and hardening suggestions. Include methodology, commands run, skipped
 coverage, linked-library/storage-layout review, flat-fee and per-card accounting review, and a final
