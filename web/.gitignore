@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# local dev chain target (script/lived-in.sh); never the tracked deployment.json
+/public/deployment.local.json
+
 # vercel
 .vercel
 

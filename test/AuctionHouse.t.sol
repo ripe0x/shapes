@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
@@ -710,5 +711,64 @@ contract AuctionHouseTest is AuctionBase {
 
         vm.expectRevert(bytes("shapes has no code"));
         new ShapeAuctionHouse(alice); // an EOA
+    }
+
+    /* ------------------------- mixed cards and ETH ------------------------- */
+
+    /// @notice A single bid carrying both a deposited card and an ETH backing amount escrows
+    ///         both: the deposited card first, then the card the ETH path mints. The ETH leg
+    ///         stays exact-payment, same as a cards-only bid.
+    function test_ACombinedCardsAndEthBidEscrowsBoth() public {
+        uint256 id = _open();
+        uint256 card = _mintCard(alice, DENOMS[2]); // 0.1 ETH, 10 units
+
+        vm.prank(alice);
+        house.bid{value: DENOMS[1] + feeOf(DENOMS[1])}(id, _one(card), DENOMS[1]);
+
+        assertEq(house.bidUnits(id, alice), 15, "10 units deposited + 5 units minted");
+        uint256[] memory ids = house.escrowedCards(id, alice);
+        assertEq(ids.length, 2, "the deposited card plus one minted card");
+        assertEq(ids[0], card, "the deposited card is escrowed first");
+        assertEq(shapes.backingOf(ids[1]), DENOMS[1], "the minted card is the 0.05 denomination");
+        assertEq(shapes.ownerOf(ids[0]), address(house));
+        assertEq(shapes.ownerOf(ids[1]), address(house));
+        assertEq(address(house).balance, 0, "the house forwards ETH to shapes, holding none itself");
+
+        // The ETH leg is still exact-payment: one wei over the expected cost reverts.
+        uint256 card2 = _mintCard(alice, DENOMS[2]);
+        uint256 expected = DENOMS[1] + feeOf(DENOMS[1]);
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, expected, expected + 1)
+        );
+        house.bid{value: expected + 1}(id, _one(card2), DENOMS[1]);
+    }
+
+    /// @notice A bid naming a card the caller does not own is refused: the house is an approved
+    ///         operator for the card's actual owner, so `_takeCards`' `transferFrom` succeeds
+    ///         authorization but fails the `from` check, since the caller is not the owner.
+    function test_ABidWithAnotherBiddersCardIsRefused() public {
+        uint256 id = _open();
+        uint256 bobCard = _mintCard(bob, DENOMS[4]);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IERC721Errors.ERC721IncorrectOwner.selector, alice, bobCard, bob)
+        );
+        house.bid(id, _one(bobCard), 0);
+
+        assertEq(shapes.ownerOf(bobCard), bob, "bob's card stays with bob");
+    }
+
+    /// @notice `claimProceeds` after a no-bid cancellation has nothing to release: `highestBidder`
+    ///         is zero, so `_release` finds an empty escrow entry for it.
+    function test_ClaimProceedsAfterCancelHasNothingToRelease() public {
+        uint256 id = _open();
+        vm.prank(seller);
+        house.cancelAuction(id);
+
+        vm.prank(seller);
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, id, address(0)));
+        house.claimProceeds(id);
     }
 }

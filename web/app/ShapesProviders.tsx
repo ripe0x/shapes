@@ -39,7 +39,11 @@ export function ShapesProviders({ children }: { children: React.ReactNode }) {
     if (isPlayground || state || err) return;
 
     let active = true;
-    fetch("/deployment.json", { cache: "no-store" })
+    // A local dev target (script/lived-in.sh, web/public/deployment.local.json, gitignored)
+    // takes priority over the bundled deployment.json so a local chain is picked up without
+    // touching the tracked file. Falls back to deployment.json when no local target exists.
+    fetch("/deployment.local.json", { cache: "no-store" })
+      .then((response) => (response.ok ? response : fetch("/deployment.json", { cache: "no-store" })))
       .then((response) => {
         if (!response.ok) throw new Error("no deployment.json");
         return response.json();

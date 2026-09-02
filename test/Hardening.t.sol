@@ -129,13 +129,13 @@ contract HardeningTest is Test {
     /* ---------------- immutable-deployment footguns ---------------- */
 
     function test_RendererWithoutCodeIsRejected() public {
-        vm.expectRevert(bytes("renderer has no code"));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0xDEAD)));
         new Shapes{value: Denominations.amountAt(0)}(
             MINT_FEE, feeRecipient, address(0xDEAD), address(collection)
         );
 
         // an EOA is equally unacceptable
-        vm.expectRevert(bytes("renderer has no code"));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, alice));
         new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, alice, address(collection));
     }
 
@@ -200,8 +200,8 @@ contract HardeningTest is Test {
         assertGt(probe.observations(), 0, "callback never ran");
         assertEq(
             probe.observedBalance(),
-            probe.observedBacking(),
-            "balance and redeemableBacking disagreed inside the callback"
+            probe.observedBacking() + shapes.pendingFees(),
+            "balance and redeemableBacking + pendingFees disagreed inside the callback"
         );
     }
 }

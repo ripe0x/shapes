@@ -16,11 +16,14 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 /// @notice Deploys the renderer, collection metadata, token, read-only lens, and auction house.
 ///
 /// @dev The mint fee and initial fee recipient are deployment parameters, not source constants.
-///      `mintFee` is immutable. The initial admin is the deployer and may redirect future fees,
-///      so the initial recipient still must be chosen deliberately here.
+///      `mintFee` is admin-adjustable afterward via `setMintFee`, up to the on-chain
+///      cap of one denomination unit. The initial admin is the deployer and may redirect future fee
+///      withdrawals or change the fee amount, so the initial recipient still must be chosen
+///      deliberately here.
 ///
 ///        SHAPES_MINT_FEE_WEI   flat fee per Shape in wei. Defaults to 0.001 ETH on mainnet.
-///        SHAPES_FEE_RECIPIENT  where fees are forwarded. Must be set off local chains.
+///        SHAPES_FEE_RECIPIENT  where accrued fees are sent by `withdrawFees`. Must be set off
+///                              local chains.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
 ///
 ///      `ShapeLens` is periphery deployed alongside `Shapes`: it holds the rich view surface
@@ -54,9 +57,10 @@ contract DeployShapes is LensEquivalence {
     uint256 internal constant DEFAULT_MINT_FEE = Denominations.UNIT / 10;
     uint256 internal constant ANVIL_CHAIN_ID = 31337;
 
-    /// @dev A sanity ceiling, not a protocol rule. The fee is immutable, and a fat-fingered one
-    ///      would be permanent. A fee above the minimum Shape's backing is almost certainly a
-    ///      mistake. Override deliberately if that is truly intended.
+    /// @dev Mirrors the on-chain cap (one denomination unit) the constructor enforces
+    ///      unconditionally. Checked here first only so a fat-fingered value fails with a clear
+    ///      script error instead of the constructor's revert; there is no override, because none
+    ///      would change the outcome on chain.
     uint256 internal constant MAX_SANE_MINT_FEE = Denominations.UNIT;
 
     error WrongLadder(string compiled, string expected);
@@ -104,13 +108,13 @@ contract DeployShapes is LensEquivalence {
         }
 
         require(
-            mintFee <= MAX_SANE_MINT_FEE || vm.envOr("SHAPES_ALLOW_HIGH_FEE", false),
-            "flat fee above the sanity ceiling: set SHAPES_ALLOW_HIGH_FEE=true to confirm"
+            mintFee <= MAX_SANE_MINT_FEE,
+            "flat fee above the on-chain cap (one denomination unit): the constructor would reject it"
         );
         require(
             feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
-            "fee recipient is a contract: a reverting receive would block minting until admin updates it. "
-            "Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is audited to always accept ETH"
+            "fee recipient is a contract: a reverting receive would block withdrawFees until admin "
+            "redirects it. Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is audited to always accept ETH"
         );
 
         // Shapes derives the genesis seed from the previous block. A fresh local Anvil chain is
@@ -133,14 +137,14 @@ contract DeployShapes is LensEquivalence {
         vm.stopBroadcast();
 
         // Prove the constructor configuration and pointer defaults landed as intended.
-        // The fee amount is immutable. Admin may redirect future fees and may replace the renderer,
-        // positions and market pointers until each independent lock is used.
+        // Admin may redirect future fee withdrawals, adjust the fee amount up to one denomination unit, and
+        // may replace the renderer, positions and market pointers until each independent lock is used.
         require(shapes.mintFee() == mintFee, "mint fee mismatch");
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         _requirePointersUnset(shapes);
         require(shapes.supportsInterface(type(IERC721Value).interfaceId), "draft ERC-8060 interface missing");
-        require(address(renderer).code.length != 0, "renderer has no code");
+        require(address(renderer).code.length != 0, "renderer missing code");
         require(shapes.collection() == address(collection), "collection mismatch");
         require(collection.renderer() == address(renderer), "collection points at another renderer");
 
@@ -210,7 +214,9 @@ contract DeployShapes is LensEquivalence {
         console.log("admin         ", shapes.admin());
         console.log("artist        ", shapes.artist());
         console.log("");
-        console.log("Flat mint fee and reserve rules are immutable. Admin may redirect future mint fees.");
+        console.log(
+            "Reserve rules are immutable. Admin may redirect fee withdrawals and adjust the fee up to the cap."
+        );
         console.log("Shape #0 represents collectible ownership.");
         console.log("Presentation, positions and market settings are independently lockable.");
 

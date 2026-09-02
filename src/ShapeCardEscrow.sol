@@ -169,8 +169,9 @@ abstract contract ShapeCardEscrow is IShapeCardEscrow, IERC721Receiver, Reentran
     ///      minting one. An inbound `safeTransferFrom` carries a nonzero `from` and is refused:
     ///      bidding by sending a card here directly is unsupported on purpose, since a bid must be
     ///      one transaction, so that what it totals is compared against the standing bid exactly
-    ///      once. A contract fee recipient that gains control inside the mint cannot push its own
-    ///      Shape in through this path.
+    ///      once. A contract fee recipient that gains control from `Shapes.withdrawFees` cannot
+    ///      push its own Shape in through this path either: `from` there is the recipient itself,
+    ///      not the zero address.
     function onERC721Received(address, address from, uint256, bytes calldata) external view returns (bytes4) {
         if (msg.sender != shapes || !_minting || from != address(0)) revert UnsolicitedToken(from);
         return IERC721Receiver.onERC721Received.selector;
@@ -212,7 +213,7 @@ abstract contract ShapeCardEscrow is IShapeCardEscrow, IERC721Receiver, Reentran
     }
 
     function _total(uint256[9] memory counts) internal pure returns (uint256 sum) {
-        for (uint256 i = 0; i < 9; ++i) {
+        for (uint256 i = 0; i < Denominations.COUNT; ++i) {
             sum += counts[i];
         }
     }

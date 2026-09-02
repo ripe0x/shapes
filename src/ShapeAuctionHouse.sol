@@ -134,10 +134,11 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
     /// @inheritdoc IShapeAuctionHouse
     /// @dev Records the close and returns nothing. The seller pulls the lot back with `claimLot`,
     ///      which `highestBidder == address(0)` directs to them rather than to a winner.
-    ///      `nonReentrant` because `bid` holds a half-written auction across the fee-recipient
-    ///      callback in `_takeBid`, and this is the one mutator whose preconditions that window
-    ///      satisfies. The guard states that exclusion on the function, so a later change to
-    ///      `bid` cannot silently make it reachable again.
+    ///      `nonReentrant` as defense in depth: `_takeBid`'s escrow mint accrues the Shapes fee to
+    ///      `pendingFees` rather than calling out to the fee recipient, so `bid` no longer holds a
+    ///      half-written auction across an external call to an arbitrary contract. The guard
+    ///      states the exclusion on the function regardless, so a later change to `bid` that
+    ///      reintroduces a callback is refused here even if it carries no guard of its own.
     function cancelAuction(uint256 auctionId) external nonReentrant {
         Auction storage a = _requireAuction(auctionId);
         if (msg.sender != a.seller || a.highestBidder != address(0) || a.settled) {
@@ -164,14 +165,13 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         if (a.settled) revert AuctionAlreadySettled(auctionId);
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
         uint64 newUnits = _takeBid(auctionId, cardIds, ethBackingWei);
-        // `_takeBid` escrows the cards, which mints and pays the Shapes fee recipient, so control
-        // reaches an arbitrary contract between the check above and the writes below. `settle`
-        // cannot close the auction in that window: it requires `a.endTime != 0 &&
-        // block.timestamp >= a.endTime`, the negation of the pre-check above, and
-        // `block.timestamp` is fixed for the transaction. `cancelAuction` can, and is barred by
-        // its own `nonReentrant`. Re-read the flag anyway rather than record a bid on a closed
-        // auction, so a mutator added later and reachable from that window is refused here even
-        // if it carries no guard of its own.
+        // `_takeBid`'s escrow mint accrues the Shapes fee to `pendingFees` rather than calling the
+        // fee recipient, so the only callback reached between the check above and the writes below
+        // is this house's own `onERC721Received`, a `view` function that cannot mutate anything.
+        // No callback window into an arbitrary contract exists here today. `cancelAuction` and
+        // `settle` keep their `nonReentrant` guards as defense in depth, and the flag is re-read
+        // anyway rather than recording a bid on a closed auction, so a mutator added later that
+        // reintroduces a callback here is refused even if it carries no guard of its own.
         if (a.settled) revert AuctionAlreadySettled(auctionId);
 
         uint64 required = _minimumBid(a);

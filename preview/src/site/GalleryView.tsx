@@ -12,6 +12,15 @@ export function filterGalleryTokens<T extends {di: number}>(tokens: T[], filter:
   return filter < 0 ? tokens : tokens.filter((token) => token.di === filter);
 }
 
+/** Gallery caption for a token's mint-origin count: "1 origin", "6 origins", or "10,000 origins,
+ *  Complete" when every backing unit carries its own origin (the "Complete" trait). Pure. */
+export function originsLabel(t: Pick<SiteToken, "originCount" | "meta">): string {
+  const n = t.originCount;
+  const complete = t.meta.attributes.some((a) => a.trait_type === "Complete" && a.value === "true");
+  const base = `${n.toLocaleString("en-US")} origin${n === 1 ? "" : "s"}`;
+  return complete ? `${base}, Complete` : base;
+}
+
 export function GalleryView({
   data,
   filter,
@@ -35,7 +44,7 @@ export function GalleryView({
     <main>
       <Section title="GALLERY">
         <div style={{fontSize: 15}}>
-          {data ? `${filtered.length} Shapes, newest first.` : "Reading the chain…"}
+          {data ? `${filtered.length} Shape${filtered.length === 1 ? "" : "s"}, newest first.` : "Reading the chain…"}
         </div>
         <div style={{marginTop: 20, display: "flex", flexWrap: "wrap", gap: 8}}>
           {chips.map((f) => {
@@ -97,6 +106,7 @@ export function ShapeGrid({
             <span>{compactShapeTitle(t.id)}</span>
             <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : "Black"}</span>
           </div>
+          <div style={{marginTop: 4, fontSize: 11, color: C.muted, opacity: 0.7}}>{originsLabel(t)}</div>
         </button>
       ))}
     </div>

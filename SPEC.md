@@ -603,8 +603,9 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   and collection metadata via `setMetadataCopy`. The
   renderer and collection are read only by `tokenURI`/`contractURI`; the positions target only by
   `ShapeLens.positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
-  break the JSON. Admin may also redirect future mint fees, but cannot change the fee amount or
-  reach backing, redemption, accrued funds or token ownership. The copy is
+  break the JSON. Admin may also redirect future mint fee withdrawals and adjust the mint fee
+  amount within the cap of one denomination unit, but cannot reach backing, redemption, already-accrued fees or
+  token ownership. The copy is
   deliberately not covered by the renderer lock; it stays editable until admin is renounced.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
   or renounced without transferring Shape #0.
@@ -617,21 +618,24 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.
-- `mintFee` is immutable and the initial `feeRecipient` is set at construction. Admin may redirect
-  subsequent mint fees. `renderer` is
+- `mintFee` is set at construction, bounded by a compile-time cap of one denomination unit (`unit()`)
+  (`Denominations.UNIT`), and admin-adjustable afterward via `setMintFee` within that same cap.
+  The initial `feeRecipient` is set at construction; admin may redirect subsequent withdrawals.
+  `renderer` is
   mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
-- The committed mainnet mint fee is a flat 0.001 ETH for every Shape created, regardless of
-  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees are forwarded to
-  `feeRecipient` in the same transaction and never enter the reserve. A batch forwards
+- The committed mainnet initial mint fee is a flat 0.001 ETH for every Shape created, regardless of
+  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees accrue to `pendingFees` in
+  the same transaction as the mint, never enter the reserve, and leave only through `withdrawFees`,
+  a separate permissionless call that forwards the accrued total to `feeRecipient`. A batch accrues
   `quantity * mintFee` once. Auction ETH bids pay one fee for every minimal-denomination card the
   escrow creates, exposed exactly by `ShapeAuctionHouse.mintCostFor(backingWei)`.
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
-  invariant asserted is `address(this).balance >= redeemableBacking`.
+  invariant asserted is `address(this).balance >= redeemableBacking + pendingFees`.
 - Checks-effects-interactions, plus a reentrancy guard on functions that mint, restructure
   or move ETH: `mint`, `mintBatch`, `redeem`, `burn`, `redeemBatch`, `compose`,
-  `decompose`, `split`, `sacrifice`. The inherited
+  `decompose`, `split`, `sacrifice`, `withdrawFees`. The inherited
   ERC721 transfer and approval functions are **not** guarded, deliberately —
   they move no ETH. One consequence is worth knowing: a receiver can redeem a
   Shape from inside its own `onERC721Received` during a `safeTransferFrom`.

@@ -35,12 +35,9 @@ import {Denominations} from "../src/lib/Denominations.sol";
 ///      Because the probe does advance the simulated token state, call it after any check or log
 ///      that reads `totalMinted`, `totalSupply` or per-token state.
 ///
-///      Scope: this compares the compose path, which is the only path where a lens view and a
-///      core mutator route through the same linked library. `previewSplit` returns no module
-///      bytes, so the split half compares the mirrored pure logic (child seeds, origin-count
-///      allocation, inherited gene) and not library linkage. `Shapes` links `GeometrySampling`
-///      directly for `sampleSplitChild` and `effectiveModulesOf`; the lens has no counterpart
-///      view for those, so there is nothing to compare them against.
+///      Scope: both the compose and split halves compare a lens preview's module bytes against
+///      the core mutator's stored result, so both exercise the same linked `GeometrySampling`
+///      deployment the lens and the token resolve their sampling calls to.
 abstract contract LensEquivalence is Script {
     /// @dev One index-1 (0.05 ETH) parent, split into five index-0 (0.01 ETH) children, composed
     ///      back to index 1. The smallest probe that produces materialized donor modules on both
@@ -108,6 +105,10 @@ abstract contract LensEquivalence is Script {
             // Compose donors must carry materialized geometry, or the sampler below reads the
             // seed-derived fallback on both sides and the comparison proves less than it looks.
             require(shapes.modulesOf(childId).length != 0, "split child has no materialized modules");
+            require(
+                keccak256(previewChildren[i].modules) == keccak256(shapes.modulesOf(childId)),
+                "lens and token do not link the same library: previewSplit modules differ from split"
+            );
         }
 
         uint256 survivorId = childIds[0];

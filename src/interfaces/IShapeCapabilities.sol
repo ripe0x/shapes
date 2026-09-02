@@ -28,12 +28,15 @@ struct ShapeState {
 }
 
 /// @notice One deterministic child returned by `IShapeLens.previewSplit`.
+/// @dev `modules` is the child's materialized module bytes, exactly what `Shapes.split` stores
+///      for it (SAMPLING_SPEC.md section 6).
 struct ShapeChildPreview {
     bytes32 seed;
     uint8 denominationIndex;
     uint32 originCount;
     uint8 inkGene;
     uint256 faceValueWei;
+    bytes modules;
 }
 
 /// @notice One burned compose input as returned by `composeRecordAt`.

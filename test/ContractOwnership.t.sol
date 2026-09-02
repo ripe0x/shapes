@@ -150,21 +150,23 @@ contract ContractOwnershipTest is Test {
         shapes.setFeeRecipient(bob);
     }
 
-    function test_AdminRedirectsOnlyFutureMintFees() public {
+    function test_AdminRedirectsOnlyFutureFeeWithdrawals() public {
         uint256 backing = Denominations.amountAt(0);
         uint256 fee = shapes.mintFee();
 
         _mintDust(alice, 1);
-        assertEq(feeRecipient.balance, fee);
+        shapes.withdrawFees();
+        assertEq(feeRecipient.balance, fee, "the first withdrawal paid the original recipient");
 
         vm.expectEmit(true, true, false, true, address(shapes));
         emit IAdminControl.FeeRecipientUpdated(feeRecipient, bob);
         shapes.setFeeRecipient(bob);
         _mintDust(alice, 1);
+        shapes.withdrawFees();
 
         assertEq(shapes.feeRecipient(), bob);
-        assertEq(feeRecipient.balance, fee, "old recipient keeps only its prior fee");
-        assertEq(bob.balance, 100 ether + fee, "new recipient receives the next fee");
+        assertEq(feeRecipient.balance, fee, "old recipient keeps only what it was already paid");
+        assertEq(bob.balance, 100 ether + fee, "new recipient receives the next withdrawal");
         assertEq(shapes.redeemableBacking(), Denominations.amountAt(0) + backing * 2);
     }
 
@@ -173,7 +175,9 @@ contract ContractOwnershipTest is Test {
         shapes.setFeeRecipient(address(0));
     }
 
-    function test_AdminCanRecoverMintingFromRevertingFeeRecipient() public {
+    /// @notice A reverting fee recipient never blocked minting under pull semantics: only
+    ///         `withdrawFees` can reach it, so the admin recovers a stuck withdrawal, not minting.
+    function test_AdminCanRecoverWithdrawalFromRevertingFeeRecipient() public {
         RevertingFeeRecipient revertingRecipient = new RevertingFeeRecipient();
         Shapes recoverable = new Shapes{value: Denominations.amountAt(0)}(
             MINT_FEE, address(revertingRecipient), address(renderer), address(collection)
@@ -181,15 +185,20 @@ contract ContractOwnershipTest is Test {
         uint256 backing = Denominations.amountAt(0);
         uint256 fee = recoverable.mintFee();
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(revertingRecipient), fee)
-        );
         recoverable.mintTo{value: backing + fee}(backing, alice);
+        assertEq(recoverable.pendingFees(), fee, "the mint succeeded and the fee accrued");
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(revertingRecipient), fee)
+        );
+        recoverable.withdrawFees();
+        assertEq(recoverable.pendingFees(), fee, "the failed withdrawal left the fee pending");
 
         recoverable.setFeeRecipient(bob);
-        recoverable.mintTo{value: backing + fee}(backing, alice);
+        recoverable.withdrawFees();
         assertEq(bob.balance, 100 ether + fee);
         assertEq(recoverable.redeemableBacking(), Denominations.amountAt(0) + backing);
+        assertEq(recoverable.pendingFees(), 0);
     }
 
     function test_RedeemingShapeZeroClearsOwnershipAndReturnsBacking() public {
@@ -235,10 +244,12 @@ contract ContractOwnershipTest is Test {
         // `IShapeProvenance` (SPEC.md's stable external integration surface, gated by ERC-165) still
         // declare them, and `supportsInterface` must not advertise a capability it cannot serve.
         // The explicit positions/market pointer getters and generic admin pair replace the old
-        // specialized resolver surface. Update this constant only when the function set changes
-        // on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0x86cf5406), "IShapes id changed");
-        assertEq(type(IAdminControl).interfaceId, bytes4(0xe135adbe), "admin interface id changed");
+        // specialized resolver surface. `pendingFees` and `withdrawFees` were
+        // added to `IShapes`, and `setMintFee` to `IAdminControl`, when mint fees moved from
+        // push-forwarded-and-immutable to pull-based accrual with an admin-adjustable amount.
+        // Update these constants only when the function set changes on purpose.
+        assertEq(type(IShapes).interfaceId, bytes4(0xe3e82f39), "IShapes id changed");
+        assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));
         assertTrue(shapes.supportsInterface(type(IAdminControl).interfaceId));

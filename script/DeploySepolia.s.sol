@@ -15,7 +15,8 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///         gallery has content, all in one broadcast (one keystore prompt).
 ///
 /// @dev The initial Sepolia fee recipient is pinned below. The deployer starts as `admin()` and
-///      may redirect only future mint fees; the fee amount and reserve rules remain immutable.
+///      may redirect future fee withdrawals and adjust the fee amount up to one denomination unit; the
+///      reserve rules remain immutable.
 ///
 ///      Backed Shape #0 is minted atomically to the deployer as the powerless contract-ownership
 ///      token. When seeding is enabled, the launch auction therefore lists Shape #1.

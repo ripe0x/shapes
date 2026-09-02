@@ -15,8 +15,9 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      Shape #0 represents ownership of the contract as a collectible object: `owner()` follows
 ///      its current holder, including returning zero while #0 is burned. Ownership grants no
 ///      permissions. A separate `admin()` role may administer and independently lock the renderer,
-///      positions pointer and market pointer, and may redirect future mint fees without changing
-///      the fee amount or touching backing. It may be transferred or renounced without moving Shape #0.
+///      positions pointer and market pointer, may redirect future mint fees and adjust the mint
+///      fee amount within a compile-time cap, and cannot otherwise touch backing. It may be
+///      transferred or renounced without moving Shape #0.
 ///
 ///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
 ///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
@@ -43,8 +44,13 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         origin balance (mint origins − redeemed origins) without a pre-burn state read.
     event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 
-    /// @notice Emitted once per mint call, when the aggregate fee is forwarded.
-    event MintFeePaid(address indexed recipient, uint256 amountWei, uint256 quantity);
+    /// @notice Emitted once per mint call that charges a nonzero fee: the aggregate fee accrued
+    ///         to `pendingFees`, not yet forwarded to anyone. Quantity minted is recoverable from
+    ///         the same transaction's `ShapeMinted` events.
+    event MintFeeAccrued(uint256 amountWei);
+
+    /// @notice Emitted when `withdrawFees` forwards the accrued fee to the current fee recipient.
+    event FeesWithdrawn(address indexed recipient, uint256 amountWei);
 
     /// @notice Emitted once when the artist cryptographically approves this deployment and release.
     event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature);
@@ -139,14 +145,18 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error EthTransferFailed(address to, uint256 amountWei);
     /// @notice A recipient-directed redemption named the zero address, which would burn the payout.
     error InvalidRecipient(address recipient);
-    error MintFeeTransferFailed(address recipient, uint256 amountWei);
+    /// @dev `withdrawFees` found nothing accrued.
+    error NoFeesPending();
+    /// @dev A mint fee, at construction or via `setMintFee`, above the cap, `unit()`.
+    error MintFeeAboveCap(uint256 fee);
     error DirectDepositRejected();
     /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
     ///      minting and transferring to `address(this)` are both refused.
     error SelfCustodyRejected(uint256 tokenId);
     /// @dev `setRenderer` and `lockRenderer` revert once the renderer has been locked.
     error RendererIsLocked();
-    /// @dev A renderer must explicitly support the stable `IShapeRenderer` capability.
+    /// @dev A renderer must have code and explicitly support the stable `IShapeRenderer`
+    ///      capability; the zero address fails the code check.
     error UnsupportedRenderer(address renderer);
     /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
     error UnsupportedCollection(address collection);
@@ -159,6 +169,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error CannotComposeWithSelf(uint256 tokenId);
     /// @dev A split's output denominations must sum to exactly the input's backing.
     error SplitMismatch(uint256 inputBacking, uint256 outputSum);
+    /// @dev `split`/`splitTo` named fewer than two outputs.
+    error SplitTooFewOutputs();
     /// @dev `decompose` found no compose to reverse: the survivor's compose stack is empty.
     error NoComposeRecord(uint256 survivorId);
     /// @dev `sacrifice` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
@@ -185,11 +197,16 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error NotASplitChild(uint256 tokenId);
     /* ----------------------- fee and deployment reads ----------------------- */
 
-    /// @notice Flat fee in wei for every Shape created, charged on top of backing.
-    ///         Never enters backing. Set at construction, never changeable.
+    /// @notice Flat fee in wei for every Shape created, charged on top of backing. Never enters
+    ///         backing. Set at construction and admin-adjustable afterward via `setMintFee`. The
+    ///         cap, enforced at construction and by `setMintFee`, is one denomination unit,
+    ///         `unit()`.
     function mintFee() external view returns (uint256);
 
-    /// @notice Where mint fees are currently forwarded. Admin-updateable for future mints.
+    /// @notice Mint fees accrued and not yet withdrawn. Never part of `redeemableBacking`.
+    function pendingFees() external view returns (uint256);
+
+    /// @notice Where `withdrawFees` currently forwards accrued fees. Admin-updateable.
     function feeRecipient() external view returns (address);
 
     /// @notice Permanent creator attribution: the address that deployed Shapes.
@@ -292,6 +309,13 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         external
         payable
         returns (uint256 firstTokenId);
+
+    /// @notice Forward every accrued mint fee to the current `feeRecipient`. Callable by anyone;
+    ///         the destination is always the recipient at the time of the call. Reverts
+    ///         `NoFeesPending` when nothing has accrued. A recipient that reverts on receipt makes
+    ///         only this call revert; minting is never affected, and the admin can redirect
+    ///         `feeRecipient` and retry.
+    function withdrawFees() external;
 
     /* --------------------------- redemption --------------------------- */
 
