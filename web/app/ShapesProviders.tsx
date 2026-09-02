@@ -6,8 +6,10 @@ import "@rainbow-me/rainbowkit/styles.css";
 import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
-import type { Deployment } from "@shared/chain/abi";
+import { getPublicClient } from "@wagmi/core";
+import { shapesAbi, type Deployment } from "@shared/chain/abi";
 import { buildConfig } from "@shared/chain/wagmi";
+import { LADDER_NAME, UNIT } from "@shared/canonical/denominations";
 
 type WalletState = {
   dep: Deployment;
@@ -52,16 +54,27 @@ export function ShapesProviders({ children }: { children: React.ReactNode }) {
         if (!response.ok) throw new Error("no deployment.json");
         return response.json();
       })
-      .then((dep: Deployment) => {
-        if (!active) return;
-        setState({
-          dep,
-          config: buildConfig(dep, {
-            primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
-            walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
-            ssr: true,
-          }),
+      .then(async (dep: Deployment) => {
+        const config = buildConfig(dep, {
+          primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
+          walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+          ssr: true,
         });
+        // The denomination ladder is compiled in (SHAPES_LADDER at build time) while the contract
+        // comes from deployment.json, so the two can disagree. One unit() read at load catches
+        // that before any amount is shown. Uses the config's own fallback-wired transport.
+        const client = getPublicClient(config);
+        const unit = client
+          ? await client.readContract({address: dep.shapes, abi: shapesAbi, functionName: "unit"})
+          : UNIT;
+        if (!active) return;
+        if (unit !== UNIT) {
+          setErr(
+            `This build uses the ${LADDER_NAME} denomination ladder but the contract at ${dep.shapes} uses a different one. Rebuild with the matching SHAPES_LADDER.`,
+          );
+          return;
+        }
+        setState({dep, config});
       })
       .catch(() => {
         if (active) setErr("The Shapes contract is not connected here yet.");

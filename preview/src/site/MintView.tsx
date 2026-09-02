@@ -7,7 +7,7 @@ import {C, SANS} from "./theme";
 import {Section, Art, txUrl} from "./ui";
 import {localArt, sampleSeed} from "./art";
 import {mintGene} from "../previewGene";
-import {FACTS} from "./copy";
+import {facts} from "./copy";
 import type {SiteData} from "./data";
 import type {MintState} from "./SiteApp";
 
@@ -404,7 +404,7 @@ export function MintView({
         </Section>
       )}
 
-      {FACTS.map((f) => (
+      {facts(fee).map((f) => (
         <Section key={f.k} title={f.k}>
           <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, maxWidth: "70ch", color: C.body}}>{f.v}</div>
         </Section>

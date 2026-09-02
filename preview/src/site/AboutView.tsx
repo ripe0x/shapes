@@ -1,7 +1,7 @@
 import {C, SANS} from "./theme";
 import {Section} from "./ui";
 import {DenomLadder} from "./MintView";
-import {ABOUT_FACTS} from "./copy";
+import {aboutFacts} from "./copy";
 import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import {addrUrl, short} from "./ui";
@@ -34,7 +34,7 @@ export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null})
         <DenomLadder />
       </Section>
 
-      {ABOUT_FACTS.map((f) => (
+      {aboutFacts(data?.fees[0] ?? null).map((f) => (
         <Section key={f.k} title={f.k}>
           <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, maxWidth: "70ch", color: C.body}}>{f.v}</div>
         </Section>
