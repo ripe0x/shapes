@@ -8,7 +8,7 @@ findings; do not change the audited tree.
 
 ```text
 repository  https://github.com/ripe0x/shapes
-commit      pinned commit: to be set at merge
+commit      c583c76 (merge of PR #58 into main, 2026-09-02)
 phase       P2 pre-mainnet
 ```
 
@@ -17,7 +17,7 @@ Audit this exact commit, not a branch tip. Record the full hash and clean status
 
 ```bash
 git fetch origin
-git checkout <pinned commit: to be set at merge>
+git checkout c583c76
 git status --short
 git log -1 --oneline
 ```
