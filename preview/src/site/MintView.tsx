@@ -3,7 +3,7 @@ import {formatEther} from "viem";
 import {useAccount, useBalance} from "wagmi";
 import {DENOMINATIONS} from "../chain/abi";
 import {GRIDS, LABELS} from "../canonical/denominations";
-import {C} from "./theme";
+import {C, SANS} from "./theme";
 import {Section, Art, txUrl} from "./ui";
 import {localArt, sampleSeed} from "./art";
 import {mintGene} from "../previewGene";
@@ -152,12 +152,12 @@ export function MintView({
   return (
     <main>
       <div style={{padding: "72px 48px 64px", borderBottom: `1px solid ${C.rule}`}}>
-        <div style={{fontSize: 24, lineHeight: 1.62, maxWidth: "54ch"}}>
+        <div style={{fontFamily: SANS, fontSize: 24, lineHeight: 1.62, maxWidth: "54ch"}}>
           ETH in, Shape out.
           <br />
           Shape burned, ETH returned.
         </div>
-        <p style={{margin: "34px 0 0", fontSize: 14, lineHeight: 1.75, maxWidth: "62ch", color: C.bodyDim}}>
+        <p style={{margin: "34px 0 0", fontFamily: SANS, fontSize: 15, lineHeight: 1.6, maxWidth: "62ch", color: C.bodyDim}}>
           A Shape holds an exact amount of ETH and gives back the same amount, exactly. Nine
           denominations, {LABELS[0]} to {LABELS[LABELS.length - 1]} ETH. Higher value, fewer marks.
         </p>
@@ -318,7 +318,7 @@ export function MintView({
                   </a>
                 </div>
               </div>
-              <p style={{margin: "22px 0 0", fontSize: 13, lineHeight: 1.7, color: C.bodyDim, maxWidth: "52ch"}}>
+              <p style={{margin: "22px 0 0", fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.bodyDim, maxWidth: "52ch"}}>
                 The contract holds {DENOMINATIONS[minted.di].label} ETH for this Shape. Burn it and
                 you receive {DENOMINATIONS[minted.di].label} ETH.
               </p>
@@ -377,7 +377,7 @@ export function MintView({
               </button>
             ))}
           </div>
-          <p style={{margin: "24px 0 0", fontSize: 13, lineHeight: 1.7, color: C.bodyDim, maxWidth: "52ch"}}>
+          <p style={{margin: "24px 0 0", fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.bodyDim, maxWidth: "52ch"}}>
             The contract holds {DENOMINATIONS[minted.di].label} ETH for each of these Shapes. Burn
             one and you receive {DENOMINATIONS[minted.di].label} ETH.
           </p>
@@ -386,7 +386,7 @@ export function MintView({
 
       {FACTS.map((f) => (
         <Section key={f.k} title={f.k}>
-          <div style={{fontSize: 13, lineHeight: 1.78, maxWidth: "70ch", color: C.body}}>{f.v}</div>
+          <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, maxWidth: "70ch", color: C.body}}>{f.v}</div>
         </Section>
       ))}
 

@@ -8,7 +8,7 @@ import {
   type LastMergeDonors,
   type SampleDonor,
 } from "../canonical/sampling";
-import {C, label} from "./theme";
+import {C, SANS, label} from "./theme";
 import {Art, Modal, Section, short} from "./ui";
 import type {SiteData, SiteToken} from "./data";
 import {buildComposeResultPreview} from "./composePreview";
@@ -216,7 +216,7 @@ export function ManageShapeView({
       <main>
         <ManageBack tokenId={tokenId} onBack={onBack} />
         <Section title="MANAGE SHAPE">
-          <p style={{margin: 0, color: C.bodyDim, fontSize: 13, lineHeight: 1.7}}>
+          <p style={{margin: 0, fontFamily: SANS, color: C.bodyDim, fontSize: 14, lineHeight: 1.6}}>
             Shape #{tokenId.toString()} is no longer live and cannot be managed.
           </p>
         </Section>
@@ -230,7 +230,7 @@ export function ManageShapeView({
         <ManageBack tokenId={tokenId} onBack={onBack} />
         <Section title="BLACK SHAPE" pad="36px 48px 44px 32px">
           <ManageIdentity token={token} owned={owned} />
-          <p style={{margin: "26px 0 0", maxWidth: "60ch", color: C.bodyDim, fontSize: 13, lineHeight: 1.75}}>
+          <p style={{margin: "26px 0 0", maxWidth: "60ch", fontFamily: SANS, color: C.bodyDim, fontSize: 14, lineHeight: 1.6}}>
             This Shape has already been sacrificed. It remains transferable, but its backing is
             permanently unredeemable and no lifecycle actions remain.
           </p>
@@ -335,8 +335,8 @@ export function ManageShapeView({
       {action === null ? (
         <Section title="ACTIONS" pad="30px 48px 48px 32px" last>
           <div style={{maxWidth: 860}}>
-            <div style={{fontSize: 24, lineHeight: 1.3}}>What do you want to do?</div>
-            <p style={{margin: "10px 0 26px", maxWidth: "64ch", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
+            <div style={{fontFamily: SANS, fontSize: 24, lineHeight: 1.3}}>What do you want to do?</div>
+            <p style={{margin: "10px 0 26px", maxWidth: "64ch", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
               Choose an outcome first. You will review the exact identity, artwork, and ETH
               consequences before your wallet is asked to confirm anything.
             </p>
@@ -409,11 +409,11 @@ export function ManageShapeView({
 
       {confirming === "split" && (
         <Modal title="SPLIT IS PERMANENT" onCancel={() => setConfirming(null)}>
-          <p style={{margin: "0 0 12px", color: C.ink, fontSize: 14, lineHeight: 1.7}}>
+          <p style={{margin: "0 0 12px", fontFamily: SANS, color: C.ink, fontSize: 15, lineHeight: 1.6}}>
             Shape #{token.id.toString()} will be burned. {splitRatio} new Shapes will be created
             with the exact artwork shown, and their IDs will be assigned onchain.
           </p>
-          <p style={{margin: "0 0 24px", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
+          <p style={{margin: "0 0 24px", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
             Composing those Shapes later will not restore #{token.id.toString()} or its artwork.
             The total ETH backing remains unchanged.
           </p>
@@ -431,11 +431,11 @@ export function ManageShapeView({
 
       {confirming === "redeem" && (
         <Modal title="REDEEM IS PERMANENT" onCancel={() => setConfirming(null)}>
-          <p style={{margin: "0 0 12px", color: C.ink, fontSize: 14, lineHeight: 1.7}}>
+          <p style={{margin: "0 0 12px", fontFamily: SANS, color: C.ink, fontSize: 15, lineHeight: 1.6}}>
             Shape #{token.id.toString()} will be burned. Exactly {DENOMINATIONS[token.di].label} ETH
             will be sent to {short(token.owner)}.
           </p>
-          <p style={{margin: "0 0 24px", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
+          <p style={{margin: "0 0 24px", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
             The token, its artwork, and its remaining compose history will no longer be live.
           </p>
           <ConfirmButtons
@@ -452,11 +452,11 @@ export function ManageShapeView({
 
       {confirming === "sacrifice" && (
         <Modal title="SACRIFICE IS PERMANENT" onCancel={() => setConfirming(null)}>
-          <p style={{margin: "0 0 12px", color: C.ink, fontSize: 14, lineHeight: 1.7}}>
+          <p style={{margin: "0 0 12px", fontFamily: SANS, color: C.ink, fontSize: 15, lineHeight: 1.6}}>
             Shape #{token.id.toString()} will remain as a Black Shape, but its entire
             {` ${DENOMINATIONS[token.di].label} ETH`} backing will be sent to an unspendable address.
           </p>
-          <p style={{margin: "0 0 24px", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
+          <p style={{margin: "0 0 24px", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
             It can never be redeemed, split, composed, or restored. No person can recover the ETH.
           </p>
           <ConfirmButtons
@@ -536,7 +536,7 @@ function ActionCard({
     >
       <div style={{...label, color: unavailable ? C.faint : C.muted}}>{protocol}</div>
       <div style={{marginTop: 16, fontSize: 20, lineHeight: 1.35}}>{title}</div>
-      <p style={{margin: "12px 0 18px", color: unavailable ? C.faint : C.bodyDim, fontSize: 12, lineHeight: 1.7}}>
+      <p style={{margin: "12px 0 18px", fontFamily: SANS, color: unavailable ? C.faint : C.bodyDim, fontSize: 14, lineHeight: 1.5}}>
         {description}
       </p>
       <div style={{marginTop: "auto", paddingTop: 14, borderTop: `1px solid ${C.ruleInner}`, fontSize: 10, lineHeight: 1.6, letterSpacing: "0.08em"}}>
@@ -550,7 +550,7 @@ function FlowHeading({title, body}: {title: string; body: string}) {
   return (
     <div style={{maxWidth: 760}}>
       <div style={{fontSize: 28, lineHeight: 1.3}}>{title}</div>
-      <p style={{margin: "12px 0 28px", maxWidth: "64ch", color: C.bodyDim, fontSize: 13, lineHeight: 1.75}}>
+      <p style={{margin: "12px 0 28px", maxWidth: "64ch", fontFamily: SANS, color: C.bodyDim, fontSize: 14, lineHeight: 1.6}}>
         {body}
       </p>
     </div>
@@ -644,7 +644,7 @@ function SplitFlow({
           )
         }
       />
-      <p style={{margin: "24px 0 0", maxWidth: "64ch", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
+      <p style={{margin: "24px 0 0", maxWidth: "64ch", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
         The total backing remains exactly {DENOMINATIONS[token.di].label} ETH. This does not undo
         a compose, and composing the new Shapes later will not restore #{token.id.toString()}.
       </p>
@@ -729,7 +729,7 @@ function DecomposeFlow({
           )
         }
       />
-      <p style={{margin: "24px 0 0", maxWidth: "64ch", color: C.muted, fontSize: 12, lineHeight: 1.7}}>
+      <p style={{margin: "24px 0 0", maxWidth: "64ch", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
         No ETH moves and no fee is charged. This Shape has {token.composeDepth} compose
         {token.composeDepth === 1 ? "" : "s"} remaining, and they can only be undone newest first.
       </p>

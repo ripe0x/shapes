@@ -1,13 +1,25 @@
 /* Global styles for the Shapes site, matching preview/site.html exactly (that file's inline
-   <style>). The SiteApp component carries the rest via inline styles. */
+   <style>). The SiteApp component carries the rest via inline styles. Colour values are the
+   paper palette from preview/src/site/theme.ts; keep the two files in sync. */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+  --page: #f7f7f3;
+  --ink: #11110f;
+  --body: #2f2f2b;
+  --body-dim: #4f4f49;
+  --muted: #686862;
+  --faint: #aaa9a1;
+  --rule: #d8d8d1;
+  --rule-inner: #e7e7e1;
+  --border: #b9b9b1;
+  --row: #efefe9;
+  --art: #000000;
 }
 html,
 body {
   margin: 0;
   padding: 0;
-  background: #0d0d0c;
+  background: var(--page);
 }
 * {
   box-sizing: border-box;
@@ -16,13 +28,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 a {
-  color: #e6e4dd;
+  color: var(--ink);
   text-decoration: underline;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
 }
 a:hover {
-  color: #8f8f88;
+  color: var(--muted);
 }
 @keyframes artin {
   from {
@@ -65,9 +77,9 @@ button {
   font: inherit;
 }
 .btn-filled {
-  border: 1px solid #e6e4dd;
-  background: #e6e4dd;
-  color: #0d0d0c;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--page);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -75,18 +87,19 @@ button {
   white-space: nowrap;
 }
 .btn-filled:hover {
-  background: #ffffff;
+  background: transparent;
+  color: var(--ink);
 }
 .btn-filled:disabled {
   cursor: default;
-  background: #262622;
-  border-color: #262622;
-  color: #71716b;
+  background: var(--rule);
+  border-color: var(--rule);
+  color: var(--muted);
 }
 .btn-outline {
-  border: 1px solid #3a3a34;
+  border: 1px solid var(--border);
   background: none;
-  color: #e6e4dd;
+  color: var(--ink);
   font: inherit;
   font-size: 13px;
   cursor: pointer;
@@ -94,7 +107,7 @@ button {
   white-space: nowrap;
 }
 .btn-outline:hover {
-  border-color: #e6e4dd;
+  border-color: var(--ink);
 }
 .btn-ghost {
   border: 0;
@@ -107,9 +120,9 @@ button {
   display: block;
   width: 100%;
   border: 0;
-  border-bottom: 1px solid #262622;
+  border-bottom: 1px solid var(--rule);
   background: none;
-  color: #e6e4dd;
+  color: var(--ink);
   padding: 12px 14px;
   text-align: left;
   font: inherit;
@@ -123,18 +136,18 @@ button {
 }
 .account-menu-item:hover,
 .account-menu-item:focus-visible {
-  background: #161613;
+  background: var(--row);
   outline: none;
 }
 .shape-mode-toggle {
   display: inline-flex;
-  border: 1px solid #3a3a34;
+  border: 1px solid var(--border);
 }
 .shape-mode-toggle button {
   border: 0;
-  border-right: 1px solid #3a3a34;
+  border-right: 1px solid var(--border);
   background: transparent;
-  color: #71716b;
+  color: var(--muted);
   padding: 8px 12px;
   font-size: 10px;
   letter-spacing: 0.1em;
@@ -144,33 +157,33 @@ button {
   border-right: 0;
 }
 .shape-mode-toggle button[aria-pressed="true"] {
-  background: #e6e4dd;
-  color: #0d0d0c;
+  background: var(--ink);
+  color: var(--page);
 }
 .shape-mode-toggle button:disabled {
-  color: #3a3a34;
+  color: var(--border);
   cursor: default;
 }
 .shape-mode-toggle button:not(:disabled):not([aria-pressed="true"]):hover,
 .shape-mode-toggle button:focus-visible {
-  background: #161613;
-  color: #e6e4dd;
+  background: var(--row);
+  color: var(--ink);
   outline: none;
 }
 .row-denom:hover {
-  background: #161613 !important;
+  background: var(--row) !important;
 }
 .btn-step {
-  border: 1px solid #262622;
+  border: 1px solid var(--rule);
   background: none;
-  color: #71716b;
+  color: var(--muted);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
 }
 .btn-step:hover {
-  border-color: #3a3a34;
-  color: #e6e4dd;
+  border-color: var(--border);
+  color: var(--ink);
 }
 .manage-action-grid {
   display: grid;
@@ -178,7 +191,7 @@ button {
   gap: 14px;
 }
 .manage-action-card:not(:disabled):hover {
-  border-color: #e6e4dd !important;
+  border-color: var(--ink) !important;
   transform: translateY(-1px);
 }
 .manage-outcome {
@@ -188,11 +201,11 @@ button {
   align-items: center;
   max-width: 920px;
   padding: 24px;
-  border: 1px solid #262622;
-  background: #11110f;
+  border: 1px solid var(--rule);
+  background: var(--row);
 }
 .manage-outcome-arrow {
-  color: #71716b;
+  color: var(--muted);
   font-size: 22px;
   text-align: center;
 }
@@ -207,7 +220,7 @@ button {
   width: 100%;
   border: 0;
   background: none;
-  color: #e6e4dd;
+  color: var(--ink);
   padding: 0;
   text-align: left;
   cursor: pointer;
@@ -216,14 +229,14 @@ button {
 .compose-select-card:focus-visible,
 .compose-survivor-card:not(:disabled):hover,
 .compose-survivor-card:focus-visible {
-  outline: 1px solid #71716b;
+  outline: 1px solid var(--muted);
   outline-offset: 8px;
 }
 .compose-select-card.selected,
 .compose-survivor-card.selected {
-  outline: 1px solid #e6e4dd;
+  outline: 1px solid var(--ink);
   outline-offset: 8px;
-  background: #161613;
+  background: var(--row);
 }
 .compose-select-card:disabled {
   cursor: default;
@@ -237,15 +250,15 @@ button {
   top: 8px;
   right: 8px;
   padding: 5px 7px;
-  border: 1px solid #e6e4dd;
-  background: #0d0d0c;
-  color: #e6e4dd;
+  border: 1px solid var(--ink);
+  background: var(--page);
+  color: var(--ink);
   font-size: 9px;
   letter-spacing: 0.08em;
 }
 .compose-details-link {
   margin: 8px 10px 0;
-  color: #71716b;
+  color: var(--muted);
   font-size: 10px;
   letter-spacing: 0.1em;
   text-decoration: underline;
@@ -262,9 +275,9 @@ button {
   justify-content: space-between;
   gap: 24px;
   padding: 14px 18px calc(14px + env(safe-area-inset-bottom));
-  border: 1px solid #e6e4dd;
-  background: #0d0d0c;
-  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--ink);
+  background: var(--page);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.12);
 }
 .compose-tray-actions {
   display: flex;
@@ -277,9 +290,9 @@ button {
   gap: 14px;
 }
 .compose-survivor-card {
-  border: 1px solid #262622;
+  border: 1px solid var(--rule);
   background: none;
-  color: #e6e4dd;
+  color: var(--ink);
   padding: 10px;
   text-align: left;
   cursor: pointer;
@@ -294,11 +307,11 @@ button {
   align-items: center;
   max-width: 760px;
   padding: 24px;
-  border: 1px solid #262622;
-  background: #11110f;
+  border: 1px solid var(--rule);
+  background: var(--row);
 }
 .compose-review-arrow {
-  color: #71716b;
+  color: var(--muted);
   font-size: 22px;
   text-align: center;
 }
@@ -309,7 +322,7 @@ button {
   align-items: start;
 }
 .token-trait-label {
-  color: #a5a59e;
+  color: var(--body-dim);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -317,12 +330,12 @@ button {
 .token-trait-description {
   max-width: 38ch;
   margin-top: 6px;
-  color: #71716b;
+  color: var(--muted);
   font-size: 10px;
   line-height: 1.55;
 }
 .token-trait-value {
-  color: #e6e4dd;
+  color: var(--ink);
   font-size: 14px;
   line-height: 1.4;
 }
@@ -411,7 +424,7 @@ button {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(6, 6, 5, 0.78);
+  background: rgba(17, 17, 15, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -420,21 +433,21 @@ button {
   animation: artin 0.18s ease both;
 }
 .modal-panel {
-  background: #0d0d0c;
-  border: 1px solid #3a3a34;
+  background: var(--page);
+  border: 1px solid var(--border);
   max-width: 480px;
   width: 100%;
   padding: 30px 32px 28px;
 }
 
-/* Pre-mint landing page. Kept under one scope so the existing dark application retains its
-   original visual system at /mint and the collection routes. */
+/* Pre-mint landing page. Kept under its own scope for the class names, but the app now shares
+   this same paper palette at /mint and the collection routes; these vars alias the root tokens. */
 .launch-page {
   position: relative;
-  --launch-paper: #f7f7f3;
-  --launch-ink: #11110f;
-  --launch-muted: #686862;
-  --launch-rule: #d8d8d1;
+  --launch-paper: var(--page);
+  --launch-ink: var(--ink);
+  --launch-muted: var(--muted);
+  --launch-rule: var(--rule);
   min-height: 100vh;
   background: var(--launch-paper);
   color: var(--launch-ink);

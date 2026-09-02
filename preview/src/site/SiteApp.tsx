@@ -504,7 +504,7 @@ export function SiteApp({
                   minWidth: 180,
                   border: `1px solid ${C.border}`,
                   background: C.page,
-                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.35)",
+                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.12)",
                   zIndex: 30,
                 }}
               >
@@ -652,7 +652,7 @@ export function SiteApp({
             padding: "12px 14px 12px 18px",
             border: `1px solid ${C.ink}`,
             background: C.page,
-            boxShadow: "0 8px 28px rgba(0, 0, 0, 0.18)",
+            boxShadow: "0 8px 28px rgba(0, 0, 0, 0.08)",
             fontSize: 12,
           }}
         >

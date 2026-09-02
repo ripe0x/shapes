@@ -3,7 +3,7 @@
 import React from "react";
 import { usePathname } from "next/navigation";
 import "@rainbow-me/rainbowkit/styles.css";
-import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
+import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider } from "wagmi";
 import type { Deployment } from "@shared/chain/abi";
@@ -75,7 +75,7 @@ export function ShapesProviders({ children }: { children: React.ReactNode }) {
   return (
     <WagmiProvider config={state.config} reconnectOnMount>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()}>
+        <RainbowKitProvider theme={lightTheme()}>
           <DeploymentContext.Provider value={state.dep}>{children}</DeploymentContext.Provider>
         </RainbowKitProvider>
       </QueryClientProvider>

@@ -8,7 +8,7 @@ import {
   type HistEvent,
   type ProvNode,
 } from "../chain/history";
-import {C, label} from "./theme";
+import {C, FONT, SANS, label} from "./theme";
 import {Section, Art, Modal, short, txUrl} from "./ui";
 import {localArt} from "./art";
 import {mintGene} from "../previewGene";
@@ -223,7 +223,7 @@ export function TokenView({
             <Art src={localArt(snap.seed, DENOMINATIONS[snap.di].wei, snap.inkGene)} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0}}>
               <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(snap.id)}</div>
-              <div style={{marginTop: 20, fontSize: 13, lineHeight: 1.7}}>
+              <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
                 <div>
                   Redeemed. {DENOMINATIONS[snap.di].wei.toString()} wei ({lbl} ETH) sent to{" "}
                   {address ? short(address) : "the owner"}. The token is burned.
@@ -233,7 +233,7 @@ export function TokenView({
                     href={txUrl(redeem.tx, dep.chainId)}
                     target="_blank"
                     rel="noreferrer"
-                    style={{display: "inline-block", marginTop: 12, fontSize: 12, overflowWrap: "anywhere"}}
+                    style={{display: "inline-block", marginTop: 12, fontFamily: FONT, fontSize: 12, overflowWrap: "anywhere"}}
                   >
                     {redeem.tx.slice(0, 12)}… on evm.now
                   </a>
@@ -255,7 +255,7 @@ export function TokenView({
         {back}
         <Section title="SHAPE">
           <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId)}</div>
-          <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
+          <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.bodyDim, maxWidth: "60ch"}}>
             {data
               ? `Shape ${tokenId.toString()} is no longer live. It was redeemed or recomposed. Its history is below.`
               : "Reading the chain…"}
@@ -273,9 +273,9 @@ export function TokenView({
         <Section title="BLACK SHAPE" pad="36px 48px 44px 32px">
           <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={token.image} alt={`Black Shape ${token.id}`} width={340} />
-            <div style={{flex: "1 1 320px", minWidth: 0, fontSize: 13, lineHeight: 1.75}}>
+            <div style={{flex: "1 1 320px", minWidth: 0}}>
               <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id)}</div>
-              <div style={{marginTop: 20}}>
+              <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
                 #{token.id.toString()} has been sacrificed. It remains part of the collection, but
                 has no redeemable ETH backing and cannot be split, composed, or redeemed.
               </div>
@@ -373,7 +373,7 @@ export function TokenView({
 
       {prov && prov.contributors.length > 0 && (
         <Section title="PROVENANCE" pad="16px 48px 36px 32px">
-          <p style={{margin: "8px 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+          <p style={{margin: "8px 0 26px", fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.muted, maxWidth: "60ch"}}>
             How this Shape came to be, oldest first: where it started, every Shape merged into it
             at each step, and what it is now. Burned Shapes are drawn from their recorded seeds.
           </p>
@@ -626,8 +626,10 @@ function History({history, chainId}: {history: DatedEvent[] | null; chainId: num
   );
 }
 
-/** Distinguishable donor tints for the compose overlay, canonical order: index 0 is the survivor. */
-const DNA_DONOR_COLORS = ["#d9a25a", "#5a9fd9", "#7ed98a", "#d95a8a", "#a05ad9", "#d9d05a"];
+/** Distinguishable donor tints for the compose overlay, canonical order: index 0 is the survivor.
+ *  Darkened from the original dark-ground palette so the legend swatch reads on the paper page
+ *  background; still legible as alpha-blended overlays on the artwork's black ground. */
+const DNA_DONOR_COLORS = ["#866437", "#376286", "#4e8655", "#863755", "#633786", "#868037"];
 function dnaDonorColor(i: number): string {
   return DNA_DONOR_COLORS[i % DNA_DONOR_COLORS.length];
 }
@@ -979,7 +981,7 @@ function DnaProvenancePanel({
 
   return (
     <>
-      <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+      <p style={{margin: "0 0 24px", fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.muted, maxWidth: "60ch"}}>
         {dna.kind === "seed"
           ? dna.materialized
             ? "Recorded module bytes with no token id of its own, so its provenance cannot be traced any further. Hover a cell for its detail."

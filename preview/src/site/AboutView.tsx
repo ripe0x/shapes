@@ -1,4 +1,4 @@
-import {C} from "./theme";
+import {C, SANS} from "./theme";
 import {Section} from "./ui";
 import {DenomLadder} from "./MintView";
 import {ABOUT_FACTS} from "./copy";
@@ -19,7 +19,7 @@ export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null})
   return (
     <main>
       <div style={{padding: "64px 48px 56px", borderBottom: `1px solid ${C.rule}`}}>
-        <div style={{fontSize: 22, lineHeight: 1.62, maxWidth: "54ch"}}>
+        <div style={{fontFamily: SANS, fontSize: 22, lineHeight: 1.62, maxWidth: "54ch"}}>
           ETH in, Shape out.
           <br />
           Shape burned, ETH returned.
@@ -27,7 +27,7 @@ export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null})
       </div>
 
       <Section title="DENOMINATIONS">
-        <p style={{margin: "0 0 22px", fontSize: 13, lineHeight: 1.78, maxWidth: "70ch", color: C.body}}>
+        <p style={{margin: "0 0 22px", fontFamily: SANS, fontSize: 14, lineHeight: 1.6, maxWidth: "70ch", color: C.body}}>
           Nine denominations, permanent. Every other amount is rejected. Value sets the grid: the
           more ETH a Shape holds, the fewer marks are drawn.
         </p>
@@ -36,7 +36,7 @@ export function AboutView({dep, data}: {dep: Deployment; data: SiteData | null})
 
       {ABOUT_FACTS.map((f) => (
         <Section key={f.k} title={f.k}>
-          <div style={{fontSize: 13, lineHeight: 1.78, maxWidth: "70ch", color: C.body}}>{f.v}</div>
+          <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, maxWidth: "70ch", color: C.body}}>{f.v}</div>
         </Section>
       ))}
 

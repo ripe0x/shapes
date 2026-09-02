@@ -1,5 +1,5 @@
 import React from "react";
-import { FONT } from "../site/theme";
+import { C, FONT, SANS } from "../site/theme";
 import { forDisplay, C as PROV_C } from "../app/ui";
 import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/provenance";
 import { CANONICAL } from "../canonical/params";
@@ -43,22 +43,8 @@ const SPLIT_COLOR = PROV_C.warn;
  * state (`./session`).
  */
 
-const C = {
-  page: "#f7f7f3",
-  ink: "#11110f",
-  body: "#2f2f2b",
-  bodyDim: "#4f4f49",
-  muted: "#686862",
-  faint: "#aaa9a1",
-  rule: "#d8d8d1",
-  ruleInner: "#e7e7e1",
-  border: "#b9b9b1",
-  row: "#efefe9",
-  art: "#000000",
-} as const;
-
 const mono: React.CSSProperties = { fontFamily: FONT };
-const sans: React.CSSProperties = { fontFamily: "Arial, Helvetica, sans-serif" };
+const sans: React.CSSProperties = { fontFamily: SANS };
 const labelStyle: React.CSSProperties = {
   ...mono,
   fontSize: 10,
