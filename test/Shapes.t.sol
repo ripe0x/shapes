@@ -34,11 +34,10 @@ import {
 } from "./mocks/Mocks.sol";
 
 abstract contract ShapesBase is Test {
-    uint256 internal constant FEE_BPS = 100; // 1%
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
 
-    /// @dev The mint fee for a given backing: 1% of it. Exact in wei at every denomination.
-    function feeOf(uint256 amount) internal pure returns (uint256) {
-        return (amount * FEE_BPS) / 10_000;
+    function feeOf(uint256) internal pure returns (uint256) {
+        return MINT_FEE;
     }
 
     ShapeRenderer internal renderer;
@@ -71,7 +70,7 @@ abstract contract ShapesBase is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection)
         );
         // Most legacy subsystem tests need an otherwise-empty collection. ContractOwnership.t.sol
         // exercises the live genesis token itself; burn it here while preserving issued id 0.
@@ -303,28 +302,21 @@ contract MintTest is ShapesBase {
 contract FeeTest is ShapesBase {
     function test_FeesReachRecipientAndNeverJoinBacking() public {
         _mint(alice, DENOMS[8]);
-        assertEq(feeRecipient.balance, feeOf(DENOMS[8]), "1% of 100 ETH");
-        assertEq(feeRecipient.balance, DENOMS[4]);
+        assertEq(feeRecipient.balance, MINT_FEE, "one flat fee for one Shape");
         assertEq(shapes.redeemableBacking(), DENOMS[8]);
         assertEq(address(shapes).balance, DENOMS[8]);
 
         _mint(alice, DENOMS[0]);
-        assertEq(
-            feeRecipient.balance, feeOf(DENOMS[8]) + feeOf(DENOMS[0]), "fee is 1% of each backing, not flat"
-        );
+        assertEq(feeRecipient.balance, 2 * MINT_FEE, "two Shapes pay two flat fees");
         assertEq(shapes.redeemableBacking(), DENOMS[8] + DENOMS[0]);
         assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0]);
     }
 
-    function test_FeeIsOnePercentAtEveryDenomination() public {
+    function test_FeeIsFlatAtEveryDenomination() public {
         for (uint256 i = 0; i < 9; ++i) {
             uint256 before = feeRecipient.balance;
             _mint(alice, DENOMS[i]);
-            assertEq(
-                feeRecipient.balance - before,
-                DENOMS[i] / 100,
-                "fee is exactly 1% of backing at every denomination"
-            );
+            assertEq(feeRecipient.balance - before, MINT_FEE, "every Shape pays the same flat fee");
         }
     }
 
@@ -341,7 +333,7 @@ contract FeeTest is ShapesBase {
     function test_RevertingFeeRecipientBlocksMintingButNotRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
         Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, address(bad), address(renderer), address(collection)
+            MINT_FEE, address(bad), address(renderer), address(collection)
         );
 
         vm.prank(alice);
@@ -366,38 +358,28 @@ contract FeeTest is ShapesBase {
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(bytes("fee recipient is zero"));
         new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, address(0), address(renderer), address(collection)
+            MINT_FEE, address(0), address(renderer), address(collection)
         );
 
         vm.expectRevert(bytes("renderer is zero"));
-        new Shapes{value: Denominations.amountAt(0)}(FEE_BPS, feeRecipient, address(0), address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(0), address(collection));
     }
 
-    /// @notice `feeBps` is bounded at 100% of the backing. The bound is inclusive, so the
-    ///         rejection starts one basis point above it.
-    function test_ConstructorBoundsTheFeeAtOneHundredPercent() public {
-        vm.expectRevert(bytes("fee exceeds 100%"));
-        new Shapes{value: Denominations.amountAt(0)}(
-            10_001, feeRecipient, address(renderer), address(collection)
+    function test_ConstructorStoresAndChargesTheFlatFee() public {
+        uint256 customFee = 0.123 ether;
+        Shapes custom = new Shapes{value: Denominations.amountAt(0)}(
+            customFee, feeRecipient, address(renderer), address(collection)
         );
+        assertEq(custom.mintFee(), customFee);
 
-        Shapes ceiling = new Shapes{value: Denominations.amountAt(0)}(
-            10_000, feeRecipient, address(renderer), address(collection)
-        );
-        assertEq(ceiling.feeBps(), 10_000, "the ceiling itself is accepted");
-        assertEq(ceiling.mintFeeFor(DENOMS[4]), DENOMS[4], "a 100% fee doubles the mint price");
-
-        // And it is charged: the mint costs backing plus an equal fee, and only the backing
-        // joins the reserve.
         vm.prank(alice);
-        ceiling.mint{value: DENOMS[4] * 2}(DENOMS[4]);
-        assertEq(ceiling.redeemableBacking(), DENOMS[0] + DENOMS[4], "genesis and mint backing only");
-        assertEq(feeRecipient.balance, DENOMS[4], "the fee reached the recipient");
+        custom.mint{value: DENOMS[4] + customFee}(DENOMS[4]);
+        assertEq(custom.redeemableBacking(), DENOMS[0] + DENOMS[4], "fee stayed outside backing");
+        assertEq(feeRecipient.balance, customFee, "the flat fee reached the recipient");
     }
 
     function test_FeeConfigurationIsExposed() public view {
-        assertEq(shapes.feeBps(), FEE_BPS);
-        assertEq(shapes.mintFeeFor(DENOMS[4]), DENOMS[0]);
+        assertEq(shapes.mintFee(), MINT_FEE);
         assertEq(shapes.feeRecipient(), feeRecipient);
         assertEq(shapes.renderer(), address(renderer));
     }
@@ -729,7 +711,7 @@ contract ReserveTest is ShapesBase {
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
         Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, address(fr), address(renderer), address(collection)
+            MINT_FEE, address(fr), address(renderer), address(collection)
         );
         s.redeemTo(0, payable(address(0xD15CA4D)));
         fr.configure(IShapes(address(s)), DENOMS[4]);

@@ -185,11 +185,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /* --------------------------- fee and renderer --------------------------- */
 
-    /// @dev Basis-point denominator: `feeBps` of 100 is 1%.
-    uint256 internal constant BPS_DENOMINATOR = 10_000;
-
     /// @inheritdoc IShapes
-    uint256 public immutable feeBps;
+    uint256 public immutable mintFee;
     /// @inheritdoc IShapes
     address public feeRecipient;
 
@@ -241,8 +238,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      holder of backed Shape #0. No authorization check reads collectible ownership.
     address private _admin;
 
-    /// @param feeBps_ Mint fee in basis points of the backing, charged on top of it. 100 is 1%.
-    ///        May be zero. Above BPS_DENOMINATOR (100%) is rejected.
+    /// @param mintFee_ Flat fee in wei for every Shape created. Charged on top of backing and may
+    ///        be zero. A batch of `quantity` Shapes pays exactly `mintFee_ * quantity`.
     /// @param feeRecipient_ Initial destination for mint fees. The admin may redirect future fees.
     ///        It MUST be able to receive ETH: a recipient that reverts disables minting until the
     ///        admin replaces it. Prefer an EOA, or a splitter audited for a non-reverting `receive`.
@@ -251,15 +248,14 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-ownership
     ///      Shape is fee-exempt and minted atomically to `msg.sender`, so permissionless artwork
     ///      minting begins at #1.
-    constructor(uint256 feeBps_, address feeRecipient_, address renderer_, address collection_)
+    constructor(uint256 mintFee_, address feeRecipient_, address renderer_, address collection_)
         payable
         ERC721("Shapes", "SHAPE")
     {
-        require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%");
         require(feeRecipient_ != address(0), "fee recipient is zero");
         _requireRendererHasCode(renderer_);
         _requireCollectionHasCode(collection_);
-        feeBps = feeBps_;
+        mintFee = mintFee_;
         feeRecipient = feeRecipient_;
         artist = msg.sender;
         renderer = renderer_;
@@ -351,11 +347,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         address previousRecipient = feeRecipient;
         feeRecipient = newRecipient;
         emit FeeRecipientUpdated(previousRecipient, newRecipient);
-    }
-
-    /// @inheritdoc IShapes
-    function mintFeeFor(uint256 amountWei) public view returns (uint256) {
-        return (amountWei * feeBps) / BPS_DENOMINATOR;
     }
 
     /// @dev Shared by every entrypoint that requires the renderer/collection pointers to still be
@@ -509,9 +500,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
         firstTokenId = totalMinted;
 
-        // Fee is a percentage of each token's backing. Computed per token, then scaled, so the
-        // aggregate matches quantity independent mints exactly. Exact in wei at every
-        // denomination for the committed 1% (each denomination is a whole number of finney).
+        // The fee is flat per token, so a batch costs exactly the same as `quantity` independent
+        // mints regardless of denomination.
         //
         // One entropy root per batch; each token's seed derives from it and its own id, so every
         // token in a batch gets a distinct seed.
@@ -529,7 +519,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             if (!ok) revert UnsupportedDenomination(amountWei);
         }
         uint256 backing = amountWei * quantity;
-        uint256 fees = mintFeeFor(amountWei) * quantity;
+        uint256 fees = mintFee * quantity;
         if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
         bytes32 batchRoot = keccak256(
             abi.encodePacked(

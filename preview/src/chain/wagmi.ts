@@ -14,6 +14,8 @@ export interface WalletOptions {
   primaryRpcUrl?: string;
   /** Test-only override for exercising the client without live RPC requests. */
   transport?: Transport;
+  /** Enable wagmi's deferred hydration when embedded in a server-rendered app. */
+  ssr?: boolean;
 }
 
 /**
@@ -57,7 +59,7 @@ export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
       projectId: walletConnectProjectId,
       chains: [chain],
       transports: {[chain.id]: transport},
-      ssr: false,
+      ssr: options.ssr ?? false,
     });
   }
 
@@ -65,6 +67,6 @@ export function buildConfig(dep: Deployment, options: WalletOptions = {}) {
     chains: [chain],
     connectors: [injected()],
     transports: {[chain.id]: transport},
-    ssr: false,
+    ssr: options.ssr ?? false,
   });
 }

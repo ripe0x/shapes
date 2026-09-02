@@ -32,10 +32,10 @@ import {Base64Decode} from "./utils/Base64Decode.sol";
 contract ForkTest is Test {
     using Base64Decode for string;
 
-    uint256 internal constant FEE_BPS = 100; // 1%
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
 
-    function feeOf(uint256 amount) internal pure returns (uint256) {
-        return (amount * FEE_BPS) / 10_000;
+    function feeOf(uint256) internal pure returns (uint256) {
+        return MINT_FEE;
     }
 
     ShapeRenderer internal renderer;
@@ -81,7 +81,7 @@ contract ForkTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection)
         );
         // The constructor balance includes backed Shape #0. Only the excess is stranded ETH.
         strayWei = address(shapes).balance - shapes.redeemableBacking();
@@ -113,7 +113,7 @@ contract ForkTest is Test {
         DeployShapes deployer = new DeployShapes();
         (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeLens l, ShapeAuctionHouse h) = deployer.run();
 
-        assertEq(s.feeBps(), 100, "default fee bps not applied");
+        assertEq(s.mintFee(), MINT_FEE, "default flat fee not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
         assertEq(s.renderer(), address(r), "renderer mismatch");
         assertEq(s.collection(), address(c), "collection mismatch");

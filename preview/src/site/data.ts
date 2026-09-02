@@ -35,7 +35,7 @@ export interface SiteData {
   tokens: SiteToken[]; // live, including Black Shapes, newest first
   reserve: bigint; // redeemableBacking()
   supply: bigint; // totalSupply()
-  fees: bigint[]; // mintFeeFor() per denomination index
+  fees: bigint[]; // flat mintFee(), repeated per denomination for the selector UI
   artist: `0x${string}` | null;
   artistAttested: boolean;
   /** Null when deployment metadata targets a pre-attribution Shapes contract. */
@@ -70,6 +70,26 @@ interface IndexedTokenId {
 interface IndexerPage {
   items: IndexedTokenId[];
   pageInfo: {hasNextPage: boolean; endCursor: string | null};
+}
+
+/** Reads the flat fee from the current ABI. The fallback keeps the site usable against the
+ *  superseded Sepolia deployment until the fresh flat-fee release is live. */
+async function loadMintFees(publicClient: PublicClient, dep: Deployment): Promise<bigint[]> {
+  const shapes = {address: dep.shapes, abi: shapesAbi} as const;
+  try {
+    const fee = await publicClient.readContract({...shapes, functionName: "mintFee"});
+    return DENOMINATIONS.map(() => fee);
+  } catch {
+    return Promise.all(
+      DENOMINATIONS.map((denomination) =>
+        publicClient.readContract({
+          ...shapes,
+          functionName: "mintFeeFor",
+          args: [denomination.wei],
+        }),
+      ),
+    );
+  }
 }
 
 interface IndexerResponse {
@@ -309,7 +329,7 @@ async function fetchIndexedTokens(
 
 async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Promise<Omit<SiteData, "tokens">> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
-  const [reserve, supply, artist, artistReleaseHash, ...fees] = await Promise.all([
+  const [reserve, supply, artist, artistReleaseHash, fees] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
     publicClient
@@ -320,13 +340,18 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
       .readContract({...shapes, functionName: "artistReleaseHash"})
       .then((value) => value as `0x${string}`)
       .catch(() => null),
-    ...DENOMINATIONS.map((d) =>
-      publicClient.readContract({...shapes, functionName: "mintFeeFor", args: [d.wei]}),
-    ),
+    loadMintFees(publicClient, dep),
   ]);
   const artistAttested =
     artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
-  return {reserve, supply, fees: fees as bigint[], artist, artistAttested, artistReleaseHash};
+  return {
+    reserve,
+    supply,
+    fees,
+    artist,
+    artistAttested,
+    artistReleaseHash,
+  };
 }
 
 /**
@@ -389,7 +414,7 @@ async function tokensFromIndexer(
 async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, ...fees] = await Promise.all([
+  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "totalMinted"}),
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
@@ -402,9 +427,7 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
       .then((value) => value as `0x${string}`)
       .catch(() => null),
     hasMulticall3(publicClient),
-    ...DENOMINATIONS.map((d) =>
-      publicClient.readContract({...shapes, functionName: "mintFeeFor", args: [d.wei]}),
-    ),
+    loadMintFees(publicClient, dep),
   ]);
 
   const artistAttested =

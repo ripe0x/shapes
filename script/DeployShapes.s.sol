@@ -16,10 +16,10 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 /// @notice Deploys the renderer, collection metadata, token, read-only lens, and auction house.
 ///
 /// @dev The mint fee and initial fee recipient are deployment parameters, not source constants.
-///      `feeBps` is immutable. The initial admin is the deployer and may redirect future fees,
+///      `mintFee` is immutable. The initial admin is the deployer and may redirect future fees,
 ///      so the initial recipient still must be chosen deliberately here.
 ///
-///        SHAPES_FEE_BPS        mint fee in basis points of backing. Defaults to 100 (1%).
+///        SHAPES_MINT_FEE_WEI   flat fee per Shape in wei. Defaults to 0.001 ETH on mainnet.
 ///        SHAPES_FEE_RECIPIENT  where fees are forwarded. Must be set off local chains.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
 ///
@@ -41,7 +41,7 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      administrative permissions.
 ///      Permissionless artwork minting therefore begins at #1. The deployer is also the initial
 ///      `admin()` and may transfer or renounce that separate role. Admin can redirect only future
-///      mint fees; it cannot change the rate, touch backing, or alter redemption.
+///      mint fees; it cannot change the amount, touch backing, or alter redemption.
 ///
 ///      Local:
 ///        forge script script/DeployShapes.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
@@ -51,13 +51,13 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///        SHAPES_FEE_RECIPIENT=0x... forge script script/DeployShapes.s.sol --rpc-url $RPC \
 ///          --broadcast --verify
 contract DeployShapes is LensEquivalence {
-    uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
+    uint256 internal constant DEFAULT_MINT_FEE = Denominations.UNIT / 10;
     uint256 internal constant ANVIL_CHAIN_ID = 31337;
 
-    /// @dev A sanity ceiling, not a protocol rule. The fee is immutable, and a fat-fingered
-    ///      one would be permanent. 1000 bps is 10% of backing; anything above that is almost
-    ///      certainly a mistake. Override deliberately if you really mean it.
-    uint256 internal constant MAX_SANE_FEE_BPS = 1000;
+    /// @dev A sanity ceiling, not a protocol rule. The fee is immutable, and a fat-fingered one
+    ///      would be permanent. A fee above the minimum Shape's backing is almost certainly a
+    ///      mistake. Override deliberately if that is truly intended.
+    uint256 internal constant MAX_SANE_MINT_FEE = Denominations.UNIT;
 
     error WrongLadder(string compiled, string expected);
 
@@ -92,7 +92,7 @@ contract DeployShapes is LensEquivalence {
     {
         _requireMainnetLadderOffAnvil();
 
-        uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
+        uint256 mintFee = vm.envOr("SHAPES_MINT_FEE_WEI", DEFAULT_MINT_FEE);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));
 
@@ -104,8 +104,8 @@ contract DeployShapes is LensEquivalence {
         }
 
         require(
-            feeBps <= MAX_SANE_FEE_BPS || vm.envOr("SHAPES_ALLOW_HIGH_FEE", false),
-            "fee bps above the sanity ceiling: set SHAPES_ALLOW_HIGH_FEE=true to confirm"
+            mintFee <= MAX_SANE_MINT_FEE || vm.envOr("SHAPES_ALLOW_HIGH_FEE", false),
+            "flat fee above the sanity ceiling: set SHAPES_ALLOW_HIGH_FEE=true to confirm"
         );
         require(
             feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
@@ -125,7 +125,7 @@ contract DeployShapes is LensEquivalence {
         collection = new ShapeCollection(address(renderer));
 
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            feeBps, feeRecipient, address(renderer), address(collection)
+            mintFee, feeRecipient, address(renderer), address(collection)
         );
         lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
@@ -133,9 +133,9 @@ contract DeployShapes is LensEquivalence {
         vm.stopBroadcast();
 
         // Prove the constructor configuration and pointer defaults landed as intended.
-        // The fee rate is immutable. Admin may redirect future fees and may replace the renderer,
+        // The fee amount is immutable. Admin may redirect future fees and may replace the renderer,
         // positions and market pointers until each independent lock is used.
-        require(shapes.feeBps() == feeBps, "fee bps mismatch");
+        require(shapes.mintFee() == mintFee, "mint fee mismatch");
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         _requirePointersUnset(shapes);
@@ -204,13 +204,13 @@ contract DeployShapes is LensEquivalence {
         console.log("Shapes        ", address(shapes));
         console.log("ShapeLens     ", address(lens));
         console.log("AuctionHouse  ", address(house));
-        console.log("fee (bps)     ", feeBps);
+        console.log("mint fee (wei)", mintFee);
         console.log("fee recipient ", feeRecipient);
         console.log("contract owner ", shapes.owner());
         console.log("admin         ", shapes.admin());
         console.log("artist        ", shapes.artist());
         console.log("");
-        console.log("Fee rate and reserve rules are immutable. Admin may redirect future mint fees.");
+        console.log("Flat mint fee and reserve rules are immutable. Admin may redirect future mint fees.");
         console.log("Shape #0 represents collectible ownership.");
         console.log("Presentation, positions and market settings are independently lockable.");
 

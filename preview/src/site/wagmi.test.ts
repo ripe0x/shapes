@@ -16,7 +16,7 @@ const localDep: Deployment = {
   shapes: "0x0000000000000000000000000000000000000000",
   lens: "0x0000000000000000000000000000000000000000",
   renderer: "0x0000000000000000000000000000000000000000",
-  feeBps: "0",
+  mintFeeWei: "0",
 };
 
 const sepoliaDep: Deployment = {
@@ -25,7 +25,7 @@ const sepoliaDep: Deployment = {
   shapes: "0x00000000000000000000000000000000000000AA",
   lens: "0x00000000000000000000000000000000000000BB",
   renderer: "0x00000000000000000000000000000000000000CC",
-  feeBps: "500",
+  mintFeeWei: "10000000000000",
 };
 
 const PROJECT_ID = "60af16a1be7c0077e8df5570cbed082f";
@@ -34,6 +34,15 @@ test("without a WalletConnect project id the config is injected-only", () => {
   const injectedOnly = buildConfig(localDep).connectors;
   assert.equal(injectedOnly.length, 1);
   assert.equal(injectedOnly[0].id, "injected");
+});
+
+test("server-rendered hosts can defer wallet hydration until React mounts", () => {
+  assert.equal(buildConfig(localDep)._internal.ssr, false);
+  assert.equal(buildConfig(localDep, {ssr: true})._internal.ssr, true);
+  assert.equal(
+    buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID, ssr: true})._internal.ssr,
+    true,
+  );
 });
 
 test("a project id activates RainbowKit's standard wallet inventory on Sepolia only", () => {

@@ -1,5 +1,8 @@
 # External audit brief: Shapes pre-mainnet release
 
+> Historical: this brief is pinned to the pre-D-35/D-36 Sepolia release. Do not use it for the
+> flat-fee mainnet candidate; regenerate the audit brief after that candidate is merged.
+
 You are an independent smart-contract security auditor. Audit the fixed repository snapshot below
 as code intended to custody real ETH and redeemable ERC-721 assets on Ethereum mainnet. Report
 findings; do not change the audited tree.

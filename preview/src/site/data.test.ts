@@ -4,6 +4,7 @@ import type {PublicClient} from "viem";
 
 import {loadSite} from "./data";
 import {BLACK_FILTER, filterGalleryTokens} from "./GalleryView";
+import {filterOwnedTokens} from "./MyShapesView";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {GENE_NAMES} from "../canonical/ink";
 
@@ -12,6 +13,18 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`
 const OWNER = "0x1111111111111111111111111111111111111111" as `0x${string}`;
 const ARTIST = "0x2222222222222222222222222222222222222222" as `0x${string}`;
 const RELEASE_HASH = `0x${"44".repeat(32)}` as `0x${string}`;
+
+test("filterOwnedTokens matches wallet addresses without changing newest-first order", () => {
+  const tokens = [
+    {id: 3n, owner: OWNER.toUpperCase()},
+    {id: 2n, owner: ARTIST},
+    {id: 1n, owner: OWNER},
+  ];
+  assert.deepEqual(
+    filterOwnedTokens(tokens, OWNER).map((token) => token.id),
+    [3n, 1n],
+  );
+});
 
 const dep = {
   shapes: SHAPES,
@@ -48,6 +61,7 @@ function makeClient(opts: {
   multicall3: boolean;
   supply?: bigint;
   attribution?: boolean;
+  legacyFee?: boolean;
   headBlock?: bigint;
 }) {
   const counts = {multicall: 0, readContract: 0};
@@ -68,8 +82,11 @@ function makeClient(opts: {
       case "artistReleaseHash":
         if (opts.attribution === false) throw new Error("function selector was not recognized");
         return RELEASE_HASH;
+      case "mintFee":
+        if (opts.legacyFee) throw new Error("function selector was not recognized");
+        return 1_000_000_000_000_000n;
       case "mintFeeFor":
-        return (id as bigint) / 100n; // arg is the denomination wei
+        return (id as bigint) / 100n;
       case "ownerOf":
         if (!t) throw new Error("ERC721NonexistentToken");
         return OWNER;
@@ -200,14 +217,15 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
   assert.equal(site.reserve, 42n);
   assert.equal(site.supply, 3n);
   assert.equal(site.fees.length, DENOMINATIONS.length);
+  assert.ok(site.fees.every((fee) => fee === 1_000_000_000_000_000n));
   assert.equal(site.artist, ARTIST);
   assert.equal(site.artistAttested, true);
   assert.equal(site.artistReleaseHash, RELEASE_HASH);
 
   // 1203 ownerOf calls in 500-call chunks = 3 multicalls, plus 1 for the per-token fields.
   assert.equal(counts.multicall, 4);
-  // Header and fee reads go one-by-one.
-  assert.equal(counts.readContract, 5 + DENOMINATIONS.length);
+  // Header and the single flat-fee read go one-by-one.
+  assert.equal(counts.readContract, 6);
 });
 
 test("loadSite: falls back to single reads when the chain has no Multicall3", async () => {
@@ -222,7 +240,23 @@ test("loadSite: falls back to single reads when the chain has no Multicall3", as
   );
   assert.equal(counts.multicall, 0);
   // Header reads, then 3 ownerOf + 5 per-token fields.
-  assert.equal(counts.readContract, 5 + DENOMINATIONS.length + 3 + 5);
+  assert.equal(counts.readContract, 6 + 3 + 5);
+});
+
+test("loadSite: superseded percentage-fee Sepolia remains readable until redeployment", async () => {
+  const {client} = makeClient({
+    minted: 0n,
+    live: new Map(),
+    multicall3: false,
+    legacyFee: true,
+  });
+
+  const site = await loadSite(client, dep);
+
+  assert.deepEqual(
+    site.fees,
+    DENOMINATIONS.map((denomination) => denomination.wei / 100n),
+  );
 });
 
 test("loadSite: pre-attribution deployments still load", async () => {
@@ -270,7 +304,7 @@ test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state s
   assert.equal(site.tokens[0]!.composeDepth, 3);
   assert.equal(site.tokens[1]!.di, -1); // Black remains live and visible
   assert.equal(counts.multicall, 1); // six canonical reads for each candidate live id
-  assert.equal(counts.readContract, 4 + DENOMINATIONS.length); // live header, no totalMinted scan
+  assert.equal(counts.readContract, 5); // live header and one flat-fee read, no totalMinted scan
   assert.deepEqual(metrics, [{source: "indexer", indexerRequests: 1}]);
 });
 

@@ -59,7 +59,9 @@ export const shapesAbi = parseAbi([
   "function blackCount() view returns (uint256)",
   "function totalSupply() view returns (uint256)",
   "function totalMinted() view returns (uint256)",
-  "function feeBps() view returns (uint256)",
+  "function mintFee() view returns (uint256)",
+  // Temporary read fallback for the superseded percentage-fee Sepolia deployment. New Shapes
+  // contracts do not implement this selector.
   "function mintFeeFor(uint256 amountWei) view returns (uint256)",
   "event ShapeMinted(uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed, uint256 originCount)",
   "event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount)",
@@ -153,7 +155,9 @@ export interface Deployment {
   renderer: `0x${string}`;
   collection?: `0x${string}`;
   auctionHouse?: `0x${string}`;
-  feeBps: string;
+  /** Flat fee in wei for every Shape created. New deployment metadata includes this as a
+   *  readback aid; transaction construction still reads the canonical value onchain. */
+  mintFeeWei?: string;
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
   fromBlock?: number;
@@ -189,6 +193,7 @@ export const auctionHouseAbi = parseAbi([
   "function escrowedCards(uint256 auctionId, address bidder) view returns (uint256[])",
   "function minimumBid(uint256 auctionId) view returns (uint64)",
   "function cardsFor(uint256 backingWei) pure returns (uint256[9])",
+  "function mintCostFor(uint256 backingWei) view returns (uint256)",
   "function getAuctionFor(address nft, uint256 tokenId) view returns (bool exists, uint256 auctionId)",
   "function hasAuctionFor(address nft, uint256 tokenId) view returns (bool)",
   "function createAuction(address nft, uint256 tokenId, uint64 duration, uint64 reserveUnits, uint16 minIncrementBps, uint32 extensionWindow) returns (uint256 auctionId)",

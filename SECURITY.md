@@ -32,7 +32,7 @@ bypass `receive`: stated as an inequality and left permanently inaccessible.
 Shapes holds user ETH and has no administrator with any power over the reserve. A separate,
 transferable admin can administer presentation (renderer plus collection metadata, locked
 together), independently lockable positions and market pointers, and the destination of future
-mint fees. It cannot change the fee rate or reach backing, redemption, accrued fees, or token
+mint fees. It cannot change the fee amount or reach backing, redemption, accrued fees, or token
 ownership. Shape #0 represents backed collectible ownership exposed through `owner()`, but its holder has no
 administrative authority. Neither configuration domain is read
 by a reserve path. The immutable `artist()` and one-time signature stored directly in Shapes are
@@ -80,7 +80,7 @@ inside a single transaction by minting throwaway dust Shapes and redeeming them 
 the backing returns in full, only the mint fee is spent. Since every other root input is fixed
 within a block, the mint ordinal is a free knob, and hundreds of candidates fit in one block. The
 per-token seed also keys on `tokenId`, the same purchasable value. So the ~3.5% trait above is
-reachable in one transaction at roughly the mint fee times a few dozen dust mints; at `feeBps == 0`
+reachable in one transaction at roughly the mint fee times a few dozen dust mints; at `mintFee == 0`
 only gas is spent. This is accepted, not mitigated: the seed has no economic effect — redemption
 value is fixed by denomination, and every Shape of a denomination redeems for the same ETH
 regardless of appearance. Trait scarcity is best-effort, not enforced. Commit-reveal would close
@@ -219,7 +219,7 @@ whole post-state, and separately verified to fail if both guards are removed
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
 | Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), the fee forward (money received in the same call, never counted as backing), and `sacrifice` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking`, backing conservation net of sacrifice, `valueOf == backingOf`, `sacrificedBacking == 100 ether * blackCount`, and a full drain of every live Shape. |
 | ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. Admin can select the recipient of fees entering in future mint calls, but cannot withdraw ETH already held by Shapes or alter the reserve. Shape #0 ownership grants no permissions. External-library delegate targets are fixed in bytecode and cannot be selected by users or admin; there is no `selfdestruct` or inline assembly in `Shapes.sol`. |
-| Administrative isolation | The renderer and collection are called only by metadata reads. Core state-changing operations never call the positions or market target; only `ShapeLens.positionOf` queries positions, with bounded gas and failure-to-zero behavior. Reverting targets are regression-tested against the full token lifecycle. `setFeeRecipient` changes one address used for future fee forwarding; it cannot change `feeBps`, move accrued funds, or touch backing, redemption or token ownership. |
+| Administrative isolation | The renderer and collection are called only by metadata reads. Core state-changing operations never call the positions or market target; only `ShapeLens.positionOf` queries positions, with bounded gas and failure-to-zero behavior. Reverting targets are regression-tested against the full token lifecycle. `setFeeRecipient` changes one address used for future fee forwarding; it cannot change `mintFee`, move accrued funds, or touch backing, redemption or token ownership. |
 | Draft ERC-8060 | `valueOf` exactly aliases `backingOf`; owner-only `burn` destroys a normal Shape for its exact value or a Black Shape for zero. Structural burns never settle ETH. The current draft interface ID is advertised through ERC-165; the proposal is not final and may change. |
 | Core state views | `ShapeLens.exists` is a non-reverting read of ERC-721 liveness and writes no state. `denomIndexOf` returns the already-stored 0..8 index for a live token and reverts for a nonexistent id; Black remains index 8 even though `backingOf == valueOf == 0`. Neither view calls the renderer, collection, positions or market target. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
@@ -238,10 +238,15 @@ whole post-state, and separately verified to fail if both guards are removed
 
 1. **`feeRecipient` should be an EOA.** A reverting recipient blocks minting until admin redirects
    future fees. Renouncing admin freezes the current recipient permanently.
-2. **The mint fee is immutable.** It is `feeBps` basis points of backing (default 100 = 1%). The
-   deploy script's sanity ceiling is 1000 bps (10%); overriding it requires an explicit
-   environment variable.
-3. **The admin can replace the renderer until it is locked, and can edit the metadata copy at any
+2. **The mint fee is immutable.** The mainnet value is 0.001 ETH per Shape and the 1/100 testnet
+   build uses 0.00001 ETH per Shape. The deploy script rejects a value above one compiled
+   denomination unit unless the explicit high-fee override is set.
+3. **The flat fee changes mint-path economics.** It removes denomination-proportional fee parity.
+   Direct high-denomination rerolls cost only 0.001 ETH each, while building the same backing from
+   many dust mints pays one fee per dust Shape. This does not affect solvency or redemption, but it
+   materially lowers high-tier artwork-reroll cost and must be accepted as a collectible-economics
+   choice before mainnet.
+4. **The admin can replace the renderer until it is locked, and can edit the metadata copy at any
    time.** Both are cosmetic powers. The renderer is `view`-only and the copy is read only by
    metadata views; neither can touch ETH, backing, redemption or ownership. A compromised admin
    could point `tokenURI` at a renderer producing misleading or offensive metadata until
@@ -253,24 +258,24 @@ whole post-state, and separately verified to fail if both guards are removed
    supplies the collection name. Copy is deliberately never frozen: `lockRenderer` freezes the renderer and collection
    pointers, not the copy, which stays editable while an admin remains. Hold admin in a multisig;
    renounce it to freeze copy permanently at its last value.
-4. **The admin can designate canonical positions and market targets until each is locked.** Either
+5. **The admin can designate canonical positions and market targets until each is locked.** Either
    pointer can be replaced, cleared or permanently locked at zero independently. A configured
    target may be upgradeable or malicious, but has no authority over Shapes. Canonical does not
    mean exclusive. Transfer admin to the intended custody target before configuration.
-5. **Shape #0 can temporarily cease to exist.** Because it is an ordinary backed Shape, redeeming,
+6. **Shape #0 can temporarily cease to exist.** Because it is an ordinary backed Shape, redeeming,
    splitting or consuming #0 as a compose input makes `owner()` return zero. Decomposition can
    later restore the same ID. This affects the public ownership signal only, never administration.
-6. **Artist attestation is one-time and release-bound.** The deployer remains `artist()` forever,
+7. **Artist attestation is one-time and release-bound.** The deployer remains `artist()` forever,
    even after Shape #0 or admin moves. The artist should verify the final chain, Shapes address,
    attribution address and chosen release hash before signing; a mistaken valid attestation cannot
    be replaced. Losing the artist key before signing leaves the child permanently unsigned but does
    not affect any token or reserve behavior.
-7. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
+8. **ERC-8060 support follows an open draft.** The implemented `valueOf`/`burn` interface and
    ERC-165 ID match the current proposal, but an immutable deployment cannot follow later changes.
-8. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
+9. **Artwork and ink traits are selectable to order in one transaction.** A minter advances the
    mint ordinal (`totalMinted`) by minting and redeeming dust in the same call, so the seed is
    grindable at roughly the mint fee per candidate, hundreds per block — not one attempt per block
    (§1). If trait rarity is intended to carry economic weight, this design is not sufficient — but
    for Shapes it does not, because redemption value is set by denomination alone.
-9. **This review is not a substitute for a professional audit** before mainnet deployment with
+10. **This review is not a substitute for a professional audit** before mainnet deployment with
    real value at risk.

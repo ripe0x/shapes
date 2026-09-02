@@ -149,7 +149,7 @@ can:
   This is the whole valuation path.
 - `IShapeProvenance` for `originCountOf` and `isComplete`, which is what R8 wants surfaced.
 - `IERC721` for `transferFrom` and `safeTransferFrom`.
-- `IShapes` for `mintBatch` and `mintFeeFor` only. There is no mint capability interface, so
+- `IShapes` for `mintBatch` and `mintFee` only. There is no mint capability interface, so
   the ETH on-ramp is the one place the house needs the full interface.
 
 The house needs **nothing** from `IShapeRecomposition`. It never composes, decomposes or splits.
@@ -218,8 +218,8 @@ function bid(uint256 auctionId, uint256[] calldata cardIds, uint256 ethBackingWe
 3. If `ethBackingWei > 0`: require it is a whole `UNIT` multiple, compute the greedy
    breakdown (L3), require `msg.value == ethBackingWei + fee`, and call
    `shapes.mintBatch(amount, count, address(this))` once per tier present, at most 8 calls.
-   The aggregate fee is exactly `ethBackingWei * feeBps / 10000`, because 1% of every
-   denomination is a whole number of wei and the fee is linear in backing.
+   The aggregate fee is exactly `cardCount * mintFee`, where `cardCount` is the count in the
+   greedy minimal breakdown. `mintCostFor` exposes backing plus that exact fee.
 4. `newUnits = bidUnits[id][msg.sender] + accumulated / UNIT`. A bidder topping up an existing
    escrowed bid adds to it rather than replacing it, so nobody has to withdraw and re-bid.
 5. Require
@@ -278,7 +278,7 @@ set of indivisible cards, and 5% of a lattice amount is not necessarily on the l
 0.01 ETH is 0.0005 ETH, which no card can hold). Carving one out would mean decomposing the
 winning set at settlement.
 
-The only fee anywhere is the 1% `Shapes` mint fee on the ETH bidding path.
+The only fee anywhere is Shapes' flat per-card mint fee on the ETH bidding path.
 
 ---
 
@@ -312,7 +312,7 @@ with it the density of the artwork. Two constraints:
 
 - **The owner must hold the cards first.** `compose` burns caller-owned tokens; it takes no
   ETH and charges no fee. So adding value is two steps: `mint`/`mintBatch` the cards (backing
-  plus the 1% mint fee), then `compose` them into token 0. Buying existing cards on the
+  plus one flat mint fee per card), then `compose` them into token 0. Buying existing cards on the
   secondary market works identically and pays no mint fee.
 - **The total must land on a rung.** Token 0 starts at 0.01, so the first addition must be
   0.04 (to 0.05), 0.09 (to 0.1), 0.49, 0.99, 4.99, 9.99, 49.99 or 99.99. The rung table is in
@@ -488,14 +488,13 @@ redeemable for exactly their backing. A bug here loses other people's ETH, not j
 JPEGs. Same discipline as `Shapes`: no admin path, no pause, no recovery function, pull-based
 everything, reentrancy guards, its own audit. Largest new risk surface in the plan.
 
-**R3. The ETH path costs 1% and the card path does not.** An ETH bidder pays the mint fee to
-conjure cards; a bidder holding cards pays nothing. Losing ETH bidders therefore pay 1% for
-the privilege of losing. They keep the cards, which redeem at par, so the 1% is the whole cost
-and not a loss of principal, and it is the same 1% they would have paid minting normally.
+**R3. The ETH path pays per card and the card path does not.** An ETH bidder pays one flat Shapes
+mint fee for every minimal-breakdown card created; a bidder holding cards pays nothing. Losing ETH
+bidders keep the cards, which redeem at par, so only the per-card fees are lost.
 Still an asymmetry, and it belongs in the UI rather than buried.
 
-**R4. If the artist is also the `feeRecipient`, they earn 1% on every ETH bid**, including
-losing bids and their own. A shill-bidding incentive with a direct payout. Disclose it.
+**R4. If the artist is also the `feeRecipient`, they earn each per-card fee on every ETH bid**,
+including losing bids and their own. A shill-bidding incentive with a direct payout. Disclose it.
 
 **R5. Gas.** A 20 card bid is 20 transfers. A 20 card ETH bid is 20 mints plus the `_safeMint`
 callbacks, on the order of 2M gas. The 64 card cap bounds it, the UI must show the cost before

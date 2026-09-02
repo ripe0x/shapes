@@ -847,8 +847,8 @@ export interface SplitFrom {
  * Metadata JSON attributes block, built from a composition and its already-rendered SVG. Shared
  * by the seed-drawn path (`tokenMetadataJson`) and the sampled path (`sampledTokenMetadataJson`
  * in `./sampling`). `splitFrom`, when present, appends "Split From" / "Split Origin" as the last
- * two attributes, after `Compose Depth`; omitted from `attributes` entirely when absent, mirroring
- * `ShapeRenderer._splitTraits`.
+ * two attributes after the fixed traits and token #0's conditional collection-owner trait; omitted
+ * from `attributes` entirely when absent, mirroring `ShapeRenderer._splitTraits`.
  */
 export function metadataJsonFromComposition(
   c: Composition,
@@ -868,8 +868,12 @@ export function metadataJsonFromComposition(
     ? `,{"trait_type":"Split From","value":"${LABELS[splitFrom.parentDenomIndex]} ETH"},` +
       `{"trait_type":"Split Origin","value":"${LABELS[splitFrom.originDenomIndex]} ETH"}`
     : "";
+  const name = tokenId === 0n ? "Shapes Collection Owner" : `${namePrefix}${tokenId.toString()}`;
+  const collectionOwnerTrait = tokenId === 0n
+    ? `,{"trait_type":"Collection Owner","value":"true"}`
+    : "";
   return (
-    `{"name":"${namePrefix}${tokenId.toString()}",` +
+    `{"name":"${name}",` +
     `"description":"${description}",` +
     `"image":"data:image/svg+xml;base64,${base64Utf8(svg)}",` +
     `"attributes":[` +
@@ -888,6 +892,7 @@ export function metadataJsonFromComposition(
     `{"trait_type":"Complete","value":"${complete ? "true" : "false"}"},` +
     `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +
     `{"trait_type":"Compose Depth","value":"${composeDepth.toString()}"}` +
+    collectionOwnerTrait +
     splitTraits +
     `]}`
   );

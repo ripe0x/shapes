@@ -7,7 +7,7 @@
  *
  *   - dust mints:  total 0.01-ETH mints the player must make (the "hunting")
  *   - parked ETH:  peak simultaneous redeemable backing the strategy ties up
- *   - fees:        1% of every mint's backing (the only non-refundable spend, ex-gas)
+ *   - fees:        0.001 ETH per mint (the only non-refundable spend, ex-gas)
  *
  * The mechanic that dominates the answer: a compose crossing one tier rolls once —
  * 70% toward the units-weighted center, 20% toward best, 10% toward worst. A lone Solid
@@ -184,7 +184,7 @@ function homogeneousBaseline(k: Knobs) {
     const solidDustNeeded = units; // homogeneous: whole backing is Solid dust
     const dustMints = pSolidDust > 0 ? solidDustNeeded / pSolidDust : Infinity;
     const parkedEth = units * 0.01; // the assembled backing (Solid dust redeemed as it climbs → peak ~= target)
-    const feesEth = dustMints * 0.01 * 0.01; // 1% of each 0.01 mint
+    const feesEth = dustMints * 0.001;
     return { denom: DENOM_LABEL[di], units, dustMints, parkedEth, feesEth };
   });
   return { pSolidDust, rows };

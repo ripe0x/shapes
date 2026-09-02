@@ -155,7 +155,7 @@ These are `view` and require no ownership.
 - **Redemption is owner-only, and pays out with a real call.** A recipient that reverts on ETH
   receipt reverts the redemption; it cannot corrupt anyone else's balance. Reentrancy is guarded.
 - **Backing economics are immutable.** No admin can move the reserve, change denominations, alter
-  redemption, or change `feeBps`. The separate admin may redirect future mint fees, replace the
+  redemption, or change the flat `mintFee`. The separate admin may redirect future mint fees, replace the
   renderer and collection metadata (locked together), edit copy, and configure the independently
   lockable positions and market pointers. Shape #0's holder has no permissions. Renouncing admin
   freezes the final fee recipient and every unlocked configuration at its last value.

@@ -89,7 +89,7 @@ export async function loadHistory(
   for (const l of minted) {
     if (l.args.tokenId === id) {
       const oc = l.args.originCount ?? 0n; // uint256 → bigint
-      push(l, "mint", `Minted — ${oc} origin${oc === 1n ? "" : "s"}, ${denomLabel(l.args.amountWei ?? 0n)} ETH`);
+      push(l, "mint", `${oc} origin${oc === 1n ? "" : "s"}, ${denomLabel(l.args.amountWei ?? 0n)} ETH`);
     }
   }
   for (const l of split) {
@@ -103,7 +103,7 @@ export async function loadHistory(
   for (const l of composed) {
     if (l.args.survivorId === id) {
       const n = l.args.burnedIds?.length ?? 0;
-      push(l, "absorbed", `Absorbed ${n} shape${n === 1 ? "" : "s"} → grew to a larger denomination`);
+      push(l, "absorbed", `Absorbed ${n} Shape${n === 1 ? "" : "s"} and grew to a larger denomination`);
     }
     if (l.args.burnedIds?.some((x) => x === id)) {
       push(l, "mergedAway", `Merged into #${l.args.survivorId?.toString()}`);
@@ -116,7 +116,7 @@ export async function loadHistory(
       push(
         l,
         "decomposed",
-        `Decomposed — released ${n} shape${n === 1 ? "" : "s"} back to their original ids, reverted to ${denom} ETH`,
+        `Released ${n} Shape${n === 1 ? "" : "s"} under their original IDs and reverted to ${denom} ETH`,
       );
     }
     if (l.args.restoredIds?.some((x) => x === id)) {
@@ -125,7 +125,7 @@ export async function loadHistory(
   }
   for (const l of blackened) {
     if (l.args.tokenId === id) {
-      push(l, "blackened", `Blackened — ${formatEther(l.args.sacrificedWei ?? 0n)} ETH sacrificed`);
+      push(l, "blackened", `${formatEther(l.args.sacrificedWei ?? 0n)} ETH sacrificed`);
     }
   }
   for (const l of redeemed) {
@@ -134,7 +134,7 @@ export async function loadHistory(
       push(
         l,
         "redeemed",
-        `Redeemed — ${formatEther(l.args.amountWei ?? 0n)} ETH returned, ${oc} origin${oc === 1n ? "" : "s"} retired`,
+        `${formatEther(l.args.amountWei ?? 0n)} ETH returned, ${oc} origin${oc === 1n ? "" : "s"} retired`,
       );
     }
   }
@@ -144,7 +144,7 @@ export async function loadHistory(
     const to = (l.args.to ?? ZERO) as string;
     // The mint and burn Transfers (to/from the zero address) duplicate the semantic events above.
     if (from === ZERO || to === ZERO) continue;
-    push(l, "transfer", `Transferred ${short(from)} → ${short(to)}`);
+    push(l, "transfer", `From ${short(from)} to ${short(to)}`);
   }
 
   out.sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));

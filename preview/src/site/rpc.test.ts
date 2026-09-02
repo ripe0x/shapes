@@ -12,7 +12,7 @@ const dep: Deployment = {
   shapes: "0x0000000000000000000000000000000000000000",
   lens: "0x0000000000000000000000000000000000000000",
   renderer: "0x0000000000000000000000000000000000000000",
-  feeBps: "0",
+  mintFeeWei: "0",
 };
 
 function blackholeThenHealthy(attempts: string[]) {
