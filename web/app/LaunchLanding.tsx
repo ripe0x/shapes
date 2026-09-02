@@ -272,7 +272,7 @@ export function LaunchLanding() {
       <section className="launch-section launch-about" aria-labelledby="about-title">
         <div>
           <p className="launch-kicker">The project</p>
-          <h2 id="about-title">ETH that behaves like an NFT, without giving up being ETH.</h2>
+          <h2 id="about-title">ETH in, Shape out. Shape burned, ETH returned.</h2>
         </div>
         <div className="launch-prose">
           <p>
