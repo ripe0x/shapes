@@ -12,8 +12,9 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      returns exactly that amount to its owner. The other reserve outflow is `sacrifice`, which
 ///      sends a fixed 100 ETH to an unspendable address and is callable only by an apex Complete
 ///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
-///      Shape #0 represents ownership of the contract as a collectible object: `owner()` follows
-///      its current holder, including returning zero while #0 is burned. Ownership grants no
+///      One live Shape is the owner token, tracked by `_ownerToken` and exposed by `ownerToken()`.
+///      It starts as #0 and moves through `compose`, `decompose` and `split`; `owner()` follows
+///      its current holder, returning zero once it is redeemed or burned. Ownership grants no
 ///      permissions. A separate `admin()` role may administer and independently lock the renderer,
 ///      positions pointer and market pointer, may redirect future mint fees and adjust the mint
 ///      fee amount within a compile-time cap, and cannot otherwise touch backing. It may be
@@ -135,6 +136,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         token's geometry has reverted to seed-derived grammar v1.
     event ModulesSampled(uint256 indexed tokenId, bytes modules);
 
+    /// @notice Emitted whenever the owner token changes: at construction, when it is a compose
+    ///         donor, when a compose absorbing it is decomposed, when it is split, and when it is
+    ///         redeemed or burned. `type(uint256).max` denotes no owner token. The co-emitted
+    ///         `Composed`/`Decomposed`/`Split`/`ShapeRedeemed` event in the same transaction says why.
+    event OwnerTokenMoved(uint256 indexed fromTokenId, uint256 indexed toTokenId);
+
     error UnsupportedDenomination(uint256 amountWei);
     error IncorrectPayment(uint256 expected, uint256 provided);
     error ZeroQuantity();
@@ -195,6 +202,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev `splitOriginRaw` requires `tokenId` to have been minted as a split child. Original
     ///      mints and re-minted decompose outputs never carry an entry.
     error NotASplitChild(uint256 tokenId);
+    /// @dev `ownerToken` found no live owner token: it was redeemed or burned.
+    error NoOwnerToken();
     /* ----------------------- fee and deployment reads ----------------------- */
 
     /// @notice Flat fee in wei for every Shape created, charged on top of backing. Never enters
@@ -227,9 +236,15 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Anyone may relay the signature. Supports EOAs, EIP-7702 delegated EOAs and ERC-1271 wallets.
     function attestArtist(bytes32 releaseHash, bytes calldata signature) external;
 
-    /// @notice The current holder of Shape #0, or zero while #0 does not exist.
-    /// @dev This collectible ownership carries no administrative authority.
+    /// @notice The current holder of the owner token, or zero while there is none.
+    /// @dev Ownership follows the owner token through `compose`, `decompose` and `split`.
+    ///      Redeeming or burning the owner token ends collection ownership permanently: this
+    ///      returns zero and no other token inherits. Carries no administrative authority.
     function owner() external view returns (address);
+
+    /// @notice The id of the current owner token.
+    /// @dev Reverts `NoOwnerToken` once the owner token has been redeemed or burned.
+    function ownerToken() external view returns (uint256);
 
     /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until locked.
     function renderer() external view returns (address);
@@ -321,15 +336,19 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Burn a Shape and receive exactly its backing.
     /// @dev Callable only by the current owner. All or nothing; there is no partial redemption.
+    ///      Redeeming the owner token ends collection ownership permanently.
     function redeem(uint256 tokenId) external;
 
     /// @notice Burn several Shapes owned by the caller and receive the exact total backing.
+    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatch(uint256[] calldata tokenIds) external returns (uint256 totalWei);
 
     /// @notice Redeem a caller-owned Shape and send its exact backing directly to `recipient`.
+    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemTo(uint256 tokenId, address payable recipient) external;
 
     /// @notice Batch redemption with a caller-selected ETH recipient.
+    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
         external
         returns (uint256 totalWei);
@@ -339,7 +358,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Compose several Shapes into one. `survivorId` keeps its id and seed and becomes the
     ///         summed denomination; the `burnIds` are burned into it. All must be owned by the
     ///         caller and not Black. No ETH moves and no fee is charged. The summed backing must be
-    ///         a valid denomination. Origins are summed onto the survivor.
+    ///         a valid denomination. Origins are summed onto the survivor. If the owner token is
+    ///         among `burnIds`, ownership moves to `survivorId`.
     function compose(uint256 survivorId, uint256[] calldata burnIds) external returns (uint256 outId);
 
     /// @notice One compose in a `composeMany` batch: a survivor and the ids burned into it.
@@ -357,11 +377,14 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         reverts to its pre-compose denomination, origin count and gene; every input burned by
     ///         that compose is re-minted under its original id and seed, to the caller. Caller must
     ///         own the survivor and it must not be Black. No ETH moves and no fee is charged. Stacked
-    ///         composes reverse newest first (LIFO); reverts `NoComposeRecord` if none remain.
+    ///         composes reverse newest first (LIFO); reverts `NoComposeRecord` if none remain. If
+    ///         the reversed compose had moved ownership from one of its inputs, ownership restores
+    ///         to that input.
     function decompose(uint256 survivorId) external returns (uint256[] memory restoredIds);
 
     /// @notice Reverse the survivor's most recent compose, safely minting the restored inputs to
-    ///         `recipient` instead of the caller.
+    ///         `recipient` instead of the caller. If ownership restores to a restored input,
+    ///         `recipient` becomes the collection owner.
     function decomposeTo(uint256 survivorId, address recipient)
         external
         returns (uint256[] memory restoredIds);
@@ -379,10 +402,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Split a Shape into the denominations in `outDenoms`, which must sum to its backing.
     ///         The input is burned; each output is a fresh id with a seed derived from the input's
     ///         seed. No ETH moves and no fee is charged. Origins are partitioned across the outputs,
-    ///         each output filled to capacity in listed order.
+    ///         each output filled to capacity in listed order. If the input is the owner token,
+    ///         ownership moves to the first output.
     function split(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
 
-    /// @notice Split a caller-owned Shape and safely mint every child to `recipient`.
+    /// @notice Split a caller-owned Shape and safely mint every child to `recipient`. If the input
+    ///         is the owner token, `recipient` becomes the collection owner.
     function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
@@ -457,6 +482,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         combines this with `composeRecordInputAt` to reassemble the full
     ///         `ComposeRecordView` (IShapeLens); declared here rather than as a rich struct getter
     ///         to keep this contract's runtime bytecode under the EIP-170 size limit.
+    ///         `ownerTokenFrom` is the raw `ComposeRecord.ownerTokenFrom` value, the owner token's
+    ///         id plus one if this compose moved ownership from one of the record's inputs, else
+    ///         zero; `ShapeLens.composeRecordAt` decodes it to `ComposeRecordView.ownerTokenFrom`.
     /// @dev No `depth` bounds check: an out-of-range `depth` panics on the storage array access
     ///      rather than reverting `ComposeRecordOutOfRange`. `ShapeLens.composeRecordAt` checks
     ///      `depth` against `composeDepth` itself and reverts that error before calling this.
@@ -467,6 +495,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
             uint8 survivorDenomIndex,
             uint32 survivorOriginCount,
             uint8 survivorInkGene,
+            uint96 ownerTokenFrom,
             bytes memory survivorModules,
             uint256 inputCount
         );

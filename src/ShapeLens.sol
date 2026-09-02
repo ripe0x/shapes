@@ -209,8 +209,12 @@ contract ShapeLens is IShapeLens {
         view
         returns (bytes memory)
     {
-        (uint8 survivorDenomIndex,, uint8 survivorInkGene, bytes memory survivorModules, uint256 inputCount) =
-            shapes.composeRecordHeaderAt(parentId, depth - 1);
+        (
+            uint8 survivorDenomIndex,,
+            uint8 survivorInkGene,,
+            bytes memory survivorModules,
+            uint256 inputCount
+        ) = shapes.composeRecordHeaderAt(parentId, depth - 1);
 
         ComposeInputView[] memory inputs = _readComposeInputs(parentId, depth - 1, inputCount);
         GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](inputCount);
@@ -277,6 +281,7 @@ contract ShapeLens is IShapeLens {
             uint8 survivorDenomIndex,
             uint32 survivorOriginCount,
             uint8 survivorInkGene,
+            uint96 rawOwnerTokenFrom,
             bytes memory survivorModules,
             uint256 inputCount
         ) = shapes.composeRecordHeaderAt(survivorId, depth);
@@ -288,6 +293,7 @@ contract ShapeLens is IShapeLens {
             survivorOriginCount: survivorOriginCount,
             survivorInkGene: survivorInkGene,
             survivorModules: survivorModules,
+            ownerTokenFrom: rawOwnerTokenFrom == 0 ? type(uint256).max : uint256(rawOwnerTokenFrom) - 1,
             inputs: inputs
         });
     }

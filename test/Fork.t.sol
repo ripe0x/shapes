@@ -134,7 +134,7 @@ contract ForkTest is Test {
         assertGt(address(r).code.length, 0, "renderer missing code");
         // Smoke the renderer through the interface the token uses; no mint needed.
         assertGt(
-            bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x")).length,
+            bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x", false)).length,
             500,
             "no metadata"
         );

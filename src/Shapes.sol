@@ -47,9 +47,11 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 ///      core token and reserve operations never call either. The admin role is transferable and
 ///      may be renounced. None of these touch ETH, backing or redeemability.
 ///
-///      Shape #0 represents ownership of this contract as a collectible object. `owner()` follows
-///      its holder and returns zero while #0 is burned. Shape #0 is otherwise a normal backed
-///      Shape and carries no administrative permissions; authorization uses the separate `admin()` role.
+///      One live Shape is the owner token, representing ownership of this contract as a
+///      collectible object. It starts as Shape #0 and moves through `compose`, `decompose` and
+///      `split`. `owner()` follows its current holder and returns zero once it is redeemed or
+///      burned. The owner token is otherwise a normal backed Shape and carries no administrative
+///      permissions; authorization uses the separate `admin()` role.
 ///
 ///      `artist()` permanently attributes the deployment to its deployer. That artist may store
 ///      one EIP-712 signature approving this exact contract and a release hash. The attribution
@@ -110,13 +112,16 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev One reversible compose. `survivor*` is the survivor's pre-compose state, restored by
     ///      `decompose`; `inputs` are the burned tokens, re-minted verbatim. Self-contained: the
     ///      record alone suffices to reverse the compose, with no caller input and no dependence
-    ///      on event history. The fixed-size survivor fields pack into one slot; `survivorModules`
-    ///      (the survivor's pre-compose materialized geometry, empty if none) takes a further
-    ///      slot when nonempty; `inputs` is dynamic.
+    ///      on event history. `ownerTokenFrom` is the owner token's id plus one if this compose
+    ///      moved ownership from one of `inputs` to the survivor, else zero; read by `decompose`
+    ///      to restore ownership to that input. The fixed-size survivor fields pack into one slot;
+    ///      `survivorModules` (the survivor's pre-compose materialized geometry, empty if none)
+    ///      takes a further slot when nonempty; `inputs` is dynamic.
     struct ComposeRecord {
         uint8 survivorDenomIndex;
         uint32 survivorOriginCount;
         uint8 survivorInkGene;
+        uint96 ownerTokenFrom;
         bytes survivorModules;
         ComposeInput[] inputs;
     }
@@ -272,8 +277,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* -------------------------- ownership/admin -------------------------- */
 
     /// @dev Administrative authority is deliberately separate from `owner()`, which resolves the
-    ///      holder of backed Shape #0. No authorization check reads collectible ownership.
+    ///      holder of the owner token. No authorization check reads collectible ownership.
     address private _admin;
+
+    /// @dev The owner token's id plus one; zero means no owner token. Starts as Shape #0 and
+    ///      moves through `compose`, `decompose` and `split`; cleared by redeeming or burning it.
+    uint256 private _ownerToken;
 
     /// @param mintFee_ Flat fee in wei for every Shape created. Charged on top of backing and may
     ///        be zero, up to `AdminOps.MAX_MINT_FEE`. A batch of `quantity` Shapes pays exactly
@@ -305,6 +314,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _admin = msg.sender;
         emit AdminTransferred(address(0), msg.sender);
 
+        _ownerToken = 1;
+        emit OwnerTokenMoved(type(uint256).max, 0);
+
         uint256 genesisBacking = Denominations.amountAt(0);
         if (msg.value != genesisBacking) revert IncorrectPayment(genesisBacking, msg.value);
 
@@ -322,10 +334,15 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _mint(msg.sender, 0);
     }
 
-    /// @notice The owner of Shapes as a collectible object: the current holder of Shape #0.
-    /// @dev Returns zero after #0 is burned or split. This address has no administrative rights.
+    /// @inheritdoc IShapes
     function owner() public view returns (address) {
-        return _ownerOf(0);
+        return _ownerToken == 0 ? address(0) : _ownerOf(_ownerToken - 1);
+    }
+
+    /// @inheritdoc IShapes
+    function ownerToken() external view returns (uint256) {
+        if (_ownerToken == 0) revert NoOwnerToken();
+        return _ownerToken - 1;
     }
 
     /// @inheritdoc IShapes
@@ -618,7 +635,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     /// @dev Owner only, which fixes the payout destination. An approved operator reaches the same
     ///      outcome by transferring the Shape to itself and redeeming in the same transaction, so
-    ///      approval is economically equivalent to granting redemption rights.
+    ///      approval is economically equivalent to granting redemption rights. Redeeming the owner
+    ///      token ends collection ownership permanently.
     function redeem(uint256 tokenId) external nonReentrant {
         _redeemTo(tokenId, payable(msg.sender), false);
     }
@@ -626,21 +644,25 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IERC721Value
     /// @dev Draft ERC-8060 entry point. It additionally permits a Black Shape to be destroyed
     ///      for zero without making an ETH call. Structural burns never route through here.
+    ///      Burning the owner token ends collection ownership permanently.
     function burn(uint256 tokenId) external nonReentrant {
         _redeemTo(tokenId, payable(msg.sender), true);
     }
 
     /// @inheritdoc IShapes
+    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatch(uint256[] calldata tokenIds) external nonReentrant returns (uint256 totalWei) {
         return _redeemBatchTo(tokenIds, payable(msg.sender));
     }
 
     /// @inheritdoc IShapes
+    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemTo(uint256 tokenId, address payable recipient) external nonReentrant {
         _redeemTo(tokenId, recipient, false);
     }
 
     /// @inheritdoc IShapes
+    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
         external
         nonReentrant
@@ -691,7 +713,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      count, clear the token state, burn. The origin count is returned so redemption events
     ///      carry it, letting an event-only indexer track global origin conservation without a
     ///      pre-burn state read. A duplicate id in a batch fails here on its second appearance,
-    ///      because the token no longer exists.
+    ///      because the token no longer exists. Burning the owner token ends collection ownership
+    ///      permanently: no other token inherits it.
     function _burnForRedemption(uint256 tokenId, bool allowBlack)
         private
         returns (uint256 amountWei, uint256 originCount)
@@ -703,6 +726,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
         amountWei = d.isBlack ? 0 : Denominations.amountAt(d.denomIndex);
         originCount = d.originCount;
+
+        if (tokenId + 1 == _ownerToken) {
+            _ownerToken = 0;
+            emit OwnerTokenMoved(tokenId, type(uint256).max);
+        }
 
         delete _shapes[tokenId];
         delete _sampledModules[tokenId];
@@ -826,6 +854,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                         modules: burnModules
                     })
                 );
+
+            if (burnId + 1 == _ownerToken) {
+                rec.ownerTokenFrom = uint96(_ownerToken);
+                _ownerToken = survivorId + 1;
+                emit OwnerTokenMoved(burnId, survivorId);
+            }
 
             delete _shapes[burnId];
             delete _sampledModules[burnId];
@@ -967,6 +1001,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         totalMinted = firstId + k;
         totalSupply += k - 1; // burned one, minting k
 
+        if (tokenId + 1 == _ownerToken) {
+            _ownerToken = firstId + 1;
+            emit OwnerTokenMoved(tokenId, firstId);
+        }
+
         newIds = new uint256[](k);
         bytes[] memory childModules = new bytes[](k);
         for (uint256 i = 0; i < k; ++i) {
@@ -1039,8 +1078,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      every id already issued, and an id
     ///      belongs to at most one live record (DECOMPOSE_SPEC.md). LIFO: stacked composes on one
     ///      survivor unwind newest first. Backing is conserved, so `redeemableBacking` is untouched.
-    ///      All accounting precedes the `_safeMint` loop so a receiver callback observes consistent
-    ///      state.
+    ///      Non-owner-token accounting precedes the `_safeMint` loop; the owner token move (if this
+    ///      record carried one) happens after every restored id is minted, so a receiver callback
+    ///      never observes `ownerToken()` pointing at an id that does not exist yet.
     function decompose(uint256 survivorId) external nonReentrant returns (uint256[] memory restoredIds) {
         return _decomposeTo(survivorId, msg.sender);
     }
@@ -1099,6 +1139,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         if (depth == 0) revert NoComposeRecord(survivorId);
         ComposeRecord storage rec = stack[depth - 1];
         uint256 m = rec.inputs.length;
+        uint96 ownerTokenFrom = rec.ownerTokenFrom;
 
         // -------- effects --------
         // Restore the survivor to its pre-compose state. Seed is unchanged — compose never wrote it.
@@ -1139,8 +1180,17 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         emit MetadataUpdate(survivorId);
 
         // -------- interactions --------
+        // The restored owner token id is re-minted at its original position in `rec.inputs`, not
+        // necessarily first, so `_ownerToken` moves only after every mint completes: moving it
+        // before the loop would let an earlier receiver's callback observe `ownerToken()` pointing
+        // at an id not yet minted, with `owner()` reading address(0) for it.
         for (uint256 i = 0; i < m; ++i) {
             _safeMint(recipient, restoredIds[i]);
+        }
+
+        if (ownerTokenFrom != 0) {
+            _ownerToken = ownerTokenFrom;
+            emit OwnerTokenMoved(survivorId, uint256(ownerTokenFrom) - 1);
         }
     }
 
@@ -1251,6 +1301,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             uint8 survivorDenomIndex,
             uint32 survivorOriginCount,
             uint8 survivorInkGene,
+            uint96 ownerTokenFrom,
             bytes memory survivorModules,
             uint256 inputCount
         )
@@ -1260,6 +1311,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             rec.survivorDenomIndex,
             rec.survivorOriginCount,
             rec.survivorInkGene,
+            rec.ownerTokenFrom,
             rec.survivorModules,
             rec.inputs.length
         );
@@ -1372,6 +1424,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         bytes memory modules = _sampledModules[tokenId];
         uint256 amountWei = Denominations.amountAt(d.denomIndex);
         uint256 depth = _composeStack[tokenId].length;
+        bool isOwnerToken = tokenId + 1 == _ownerToken;
         if (modules.length != 0) {
             return IShapeRenderer(renderer)
                 .tokenURISampled(
@@ -1384,7 +1437,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                     depth,
                     _copyConfig.tokenNamePrefix,
                     _copyConfig.description,
-                    _splitProvenanceOf(tokenId)
+                    _splitProvenanceOf(tokenId),
+                    isOwnerToken
                 );
         }
         return IShapeRenderer(renderer)
@@ -1397,7 +1451,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 d.inkGene,
                 depth,
                 _copyConfig.tokenNamePrefix,
-                _copyConfig.description
+                _copyConfig.description,
+                isOwnerToken
             );
     }
 

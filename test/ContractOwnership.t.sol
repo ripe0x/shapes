@@ -226,11 +226,13 @@ contract ContractOwnershipTest is Test {
 
         vm.prank(alice);
         shapes.compose(1, burnIds);
-        assertEq(shapes.owner(), address(0));
+        assertEq(shapes.owner(), alice, "owner token moved to the survivor");
+        assertEq(shapes.ownerToken(), 1);
 
         vm.prank(alice);
         shapes.decompose(1);
         assertEq(shapes.owner(), alice);
+        assertEq(shapes.ownerToken(), 0, "owner token restored to #0");
         assertEq(shapes.ownerOf(0), alice);
         assertEq(shapes.backingOf(0), Denominations.amountAt(0));
     }
@@ -247,8 +249,10 @@ contract ContractOwnershipTest is Test {
         // specialized resolver surface. `pendingFees` and `withdrawFees` were
         // added to `IShapes`, and `setMintFee` to `IAdminControl`, when mint fees moved from
         // push-forwarded-and-immutable to pull-based accrual with an admin-adjustable amount.
+        // `ownerToken` was added when collection ownership moved from being fixed to Shape #0 to
+        // following a movable owner token (issue #56).
         // Update these constants only when the function set changes on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0xe3e82f39), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x86df37ba), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

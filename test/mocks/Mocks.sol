@@ -200,6 +200,45 @@ contract ReentrantFeeRecipient {
     }
 }
 
+/// @notice Records `owner()`/`ownerToken()` on every `onERC721Received` callback, to catch a
+///         mint loop that moves `_ownerToken` mid-loop and lets an earlier callback observe
+///         `ownerToken()` pointing at an id not minted yet.
+contract OwnerTokenConsistencyRecorder is IERC721Receiver {
+    IShapes public shapes;
+    address[] public recordedOwner;
+    bool[] public recordedOwnerTokenReverted;
+    bool[] public recordedConsistent;
+
+    constructor(IShapes shapes_) {
+        shapes = shapes_;
+    }
+
+    function recordedCount() external view returns (uint256) {
+        return recordedOwner.length;
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
+        address ownerAddr = shapes.owner();
+        recordedOwner.push(ownerAddr);
+
+        try shapes.ownerToken() returns (uint256 tid) {
+            recordedOwnerTokenReverted.push(false);
+            // ownerOf reverting here means ownerToken() named an id with no live owner: itself
+            // an inconsistency, not something that trivially matches an address(0) owner().
+            try shapes.ownerOf(tid) returns (address holder) {
+                recordedConsistent.push(holder == ownerAddr);
+            } catch {
+                recordedConsistent.push(false);
+            }
+        } catch {
+            recordedOwnerTokenReverted.push(true);
+            recordedConsistent.push(ownerAddr == address(0));
+        }
+
+        return IERC721Receiver.onERC721Received.selector;
+    }
+}
+
 /// @notice Attempts to re-enter `mint` from an ERC721 receiver callback.
 contract ReentrantMinter is IERC721Receiver {
     IShapes public shapes;

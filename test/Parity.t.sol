@@ -336,7 +336,8 @@ contract ParityTest is Test {
                 genes[i],
                 composeDepths[i],
                 NAME_PREFIX,
-                DESCRIPTION
+                DESCRIPTION,
+                tokenIds[i] == 0
             );
             assertEq(got, expectedMetadata[i], why[i]);
         }
@@ -449,10 +450,15 @@ contract ParityTest is Test {
         assertGt(n, 0, "no split-sampling grammar-branch fixtures");
         for (uint256 i = 0; i < n; ++i) {
             bytes memory pool = GeometrySampling.grammarSplitPool(
-                sampleSplitGrammarParentSeed[i], sampleSplitGrammarChildDenomIndex[i], sampleSplitGrammarParentInkGene[i]
+                sampleSplitGrammarParentSeed[i],
+                sampleSplitGrammarChildDenomIndex[i],
+                sampleSplitGrammarParentInkGene[i]
             );
             bytes memory got = GeometrySampling.sampleSplitChild(
-                pool, sampleSplitGrammarParentSeed[i], sampleSplitGrammarChildDenomIndex[i], sampleSplitGrammarChildIndex[i]
+                pool,
+                sampleSplitGrammarParentSeed[i],
+                sampleSplitGrammarChildDenomIndex[i],
+                sampleSplitGrammarChildIndex[i]
             );
             assertEq(got, sampleSplitGrammarExpected[i], sampleSplitGrammarWhy[i]);
         }
@@ -468,7 +474,8 @@ contract ParityTest is Test {
         uint256 n = sampleSplitRecordWhy.length;
         assertGt(n, 0, "no split-sampling record-branch fixtures");
         for (uint256 i = 0; i < n; ++i) {
-            GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](SPLIT_RECORD_INPUTS_PER_CASE);
+            GeometrySampling.Donor[] memory inputDonors =
+                new GeometrySampling.Donor[](SPLIT_RECORD_INPUTS_PER_CASE);
             for (uint256 j = 0; j < SPLIT_RECORD_INPUTS_PER_CASE; ++j) {
                 uint256 idx = i * SPLIT_RECORD_INPUTS_PER_CASE + j;
                 inputDonors[j] = GeometrySampling.Donor({
@@ -490,7 +497,10 @@ contract ParityTest is Test {
                 inputDonors
             );
             bytes memory got = GeometrySampling.sampleSplitChild(
-                pool, sampleSplitRecordParentSeed[i], sampleSplitRecordChildDenomIndex[i], sampleSplitRecordChildIndex[i]
+                pool,
+                sampleSplitRecordParentSeed[i],
+                sampleSplitRecordChildDenomIndex[i],
+                sampleSplitRecordChildIndex[i]
             );
             assertEq(got, sampleSplitRecordExpected[i], sampleSplitRecordWhy[i]);
         }
@@ -526,7 +536,8 @@ contract ParityTest is Test {
                     isSplitChild: sampledRenderIsSplitChild[i],
                     parentDenomIndex: sampledRenderParentDenomIndex[i],
                     originDenomIndex: sampledRenderOriginDenomIndex[i]
-                })
+                }),
+                sampledRenderTokenId[i] == 0
             );
             assertEq(metadata, sampledRenderMetadata[i], sampledRenderWhy[i]);
 

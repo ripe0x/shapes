@@ -166,7 +166,7 @@ contract DeployShapes is LensEquivalence {
         require(
             bytes(
                 IShapeRenderer(address(renderer))
-                    .tokenURI(bytes32(0), Denominations.amountAt(0), 1, 1, false, 0, 0, "Shape ", "x")
+                    .tokenURI(bytes32(0), Denominations.amountAt(0), 1, 1, false, 0, 0, "Shape ", "x", false)
             )
             .length > 500,
             "renderer produced no metadata"
@@ -183,7 +183,8 @@ contract DeployShapes is LensEquivalence {
                         6,
                         0,
                         "Shape ",
-                        "x"
+                        "x",
+                        false
                     )
             )
             .length > 500,
