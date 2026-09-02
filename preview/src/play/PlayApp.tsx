@@ -779,51 +779,59 @@ function LineageNode({
   byKey,
   focusedKey,
   onSelect,
-  expandedKeys,
-  onToggleExpanded,
+  depth = 0,
 }: {
   node: PlayNode;
   byKey: Map<number, PlayNode>;
   focusedKey: number | null;
   onSelect: (key: number) => void;
-  expandedKeys: Set<number>;
-  onToggleExpanded: (key: number) => void;
+  depth?: number;
 }) {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
   const selectable = node.trace != null || node.splitTrace != null;
-  const expanded = expandedKeys.has(node.key);
+  const widths = [120, 76, 52, 36, 26, 20];
+  const width = widths[Math.min(depth, widths.length - 1)];
+  const stub = 18;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-      {parents.length > 0 && expanded && (
-        <>
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
-            {parents.map((p) => (
-              <LineageNode
-                key={p.key}
-                node={p}
-                byKey={byKey}
-                focusedKey={focusedKey}
-                onSelect={onSelect}
-                expandedKeys={expandedKeys}
-                onToggleExpanded={onToggleExpanded}
-              />
-            ))}
-          </div>
-          <div style={{ width: 1, height: 14, background: C.border }} />
-        </>
-      )}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
       <RawCard
         svg={svg}
-        width={64}
-        caption={`#${node.demoId}`}
+        width={width}
+        caption={width >= 26 ? `#${node.demoId}` : undefined}
         onClick={selectable ? () => onSelect(node.key) : undefined}
         selected={selectable && focusedKey === node.key}
       />
       {parents.length > 0 && (
-        <PlayButton small onClick={() => onToggleExpanded(node.key)}>
-          {expanded ? "Hide sources" : `${parents.length} ${parents.length === 1 ? "source" : "sources"}`}
-        </PlayButton>
+        <>
+          <div style={{ width: 1, height: stub, background: C.border }} />
+          <div style={{ display: "flex", alignItems: "flex-start" }}>
+            {parents.map((parent, index) => {
+              const first = index === 0;
+              const last = index === parents.length - 1;
+              const solo = parents.length === 1;
+              return (
+                <div key={parent.key} style={{ position: "relative", padding: `${stub}px 9px 0` }}>
+                  {!solo && !first && (
+                    <div style={{ position: "absolute", top: 0, left: 0, width: "50%", height: 1, background: C.border }} />
+                  )}
+                  {!solo && !last && (
+                    <div style={{ position: "absolute", top: 0, left: "50%", width: "50%", height: 1, background: C.border }} />
+                  )}
+                  <div style={{ position: "absolute", top: 0, left: "50%", width: 1, height: stub, background: C.border }} />
+                  <LineageNode
+                    node={parent}
+                    byKey={byKey}
+                    focusedKey={focusedKey}
+                    onSelect={onSelect}
+                    depth={depth + 1}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
@@ -1247,21 +1255,10 @@ function LineageBeat({ session }: { session: PlaySession }) {
     return null;
   }, [session.nodes]);
   const [focusedKey, setFocusedKey] = React.useState<number | null>(null);
-  const [expandedKeys, setExpandedKeys] = React.useState<Set<number>>(new Set());
   React.useEffect(() => {
     if (!mostRecentProduced) return;
     setFocusedKey(mostRecentProduced.key);
-    setExpandedKeys((current) => new Set(current).add(mostRecentProduced.key));
   }, [mostRecentProduced?.key]);
-
-  const toggleExpanded = (key: number) => {
-    setExpandedKeys((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
 
   const focusedNode = focusedKey != null ? byKey.get(focusedKey) ?? null : null;
 
@@ -1269,7 +1266,7 @@ function LineageBeat({ session }: { session: PlaySession }) {
 
   return (
     <section className="play-section">
-      <SectionLabel>Lineage</SectionLabel>
+      <SectionLabel>Provenance</SectionLabel>
       {completeRoot ? (
         <CompleteLineageLadder
           key={completeRoot.key}
@@ -1281,8 +1278,8 @@ function LineageBeat({ session }: { session: PlaySession }) {
         />
       ) : (
         <>
-          <Prose>This session&apos;s compose and split history.</Prose>
-          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "18px 0 28px" }}>
+          <Prose>Every Shape the surviving object was built from.</Prose>
+          <div className="play-lineage-scroll">
             {tips.map((tip) => (
               <LineageNode
                 key={tip.key}
@@ -1290,8 +1287,6 @@ function LineageBeat({ session }: { session: PlaySession }) {
                 byKey={byKey}
                 focusedKey={focusedKey}
                 onSelect={setFocusedKey}
-                expandedKeys={expandedKeys}
-                onToggleExpanded={toggleExpanded}
               />
             ))}
           </div>
@@ -1636,6 +1631,18 @@ export function PlayApp() {
           align-items: center;
           flex-wrap: wrap;
           margin-bottom: 16px;
+        }
+        .play-lineage-scroll {
+          display: flex;
+          align-items: flex-start;
+          gap: 32px;
+          margin: 24px 0 32px;
+          padding: 0 0 18px;
+          overflow-x: auto;
+          overscroll-behavior-x: contain;
+        }
+        .play-lineage-scroll > div {
+          min-width: max-content;
         }
         .launch-play-page button,
         .launch-play-page input {
