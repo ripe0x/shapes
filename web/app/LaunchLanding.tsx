@@ -293,7 +293,8 @@ export function LaunchLanding() {
             <h2 id="tiers-title">Mainnet value tiers</h2>
           </div>
           <p>
-            Each value is exact and fully redeemable. A 1% fee is added once when minting.
+            Each value is exact and fully redeemable. A flat 0.001 ETH fee is added once when
+            minting.
           </p>
         </div>
 
@@ -312,7 +313,10 @@ export function LaunchLanding() {
             <article>
               <span>01</span>
               <h3>Mint</h3>
-              <p>Choose a tier and send its backing plus the 1% mint fee. The Shape is generated onchain.</p>
+              <p>
+                Choose a tier and send its backing plus the 0.001 ETH mint fee. The Shape is
+                generated onchain.
+              </p>
             </article>
             <article>
               <span>02</span>
@@ -379,7 +383,10 @@ export function LaunchLanding() {
           </article>
           <article>
             <h3>What does minting cost?</h3>
-            <p>The selected backing plus a one-time 1% fee. A 1 ETH Shape costs 1.01 ETH to mint.</p>
+            <p>
+              The selected backing plus a one-time 0.001 ETH fee. A 1 ETH Shape costs 1.001 ETH to
+              mint.
+            </p>
           </article>
           <article>
             <h3>What is stored onchain?</h3>
