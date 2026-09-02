@@ -190,8 +190,7 @@ function useCountdown() {
   return {
     ready: remaining !== null,
     live: remaining === 0,
-    days: Math.floor(seconds / 86_400),
-    hours: Math.floor((seconds % 86_400) / 3_600),
+    hours: Math.floor(seconds / 3_600),
     minutes: Math.floor((seconds % 3_600) / 60),
     seconds: seconds % 60,
   };
@@ -200,7 +199,6 @@ function useCountdown() {
 function Countdown() {
   const countdown = useCountdown();
   const units = [
-    [countdown.days, "days"],
     [countdown.hours, "hours"],
     [countdown.minutes, "minutes"],
     [countdown.seconds, "seconds"],
@@ -209,7 +207,7 @@ function Countdown() {
   return (
     <section className="launch-countdown" aria-labelledby="mint-time">
       <div>
-        <p className="launch-kicker">Public mint</p>
+        <p className="launch-kicker">Mint opens</p>
         <h2 id="mint-time">
           {countdown.live ? "Minting is live." : "September 3, 12:00 PM ET"}
         </h2>
@@ -259,7 +257,6 @@ export function LaunchLanding() {
             priority
             unoptimized
           />
-          <figcaption>18 onchain compositions, moving through all nine value tiers.</figcaption>
         </figure>
       </section>
 
@@ -268,7 +265,11 @@ export function LaunchLanding() {
       <section className="launch-section launch-about" aria-labelledby="about-title">
         <div>
           <p className="launch-kicker">The project</p>
-          <h2 id="about-title">ETH in, Shape out. Shape burned, ETH returned.</h2>
+          <h2 id="about-title">
+            ETH in, Shape out.
+            <br />
+            Shape burned, ETH returned.
+          </h2>
         </div>
         <div className="launch-prose">
           <p>
@@ -290,8 +291,8 @@ export function LaunchLanding() {
             <h2 id="tiers-title">Mainnet value tiers</h2>
           </div>
           <p>
-            Each value is exact and fully redeemable. A flat 0.001 ETH fee is added once when
-            minting.
+            Each value is exact and fully redeemable. A one-time 0.001 ETH mint fee applies to
+            any shape mint. No fees to merge, split, or redeem.
           </p>
         </div>
 
