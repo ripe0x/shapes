@@ -42,8 +42,12 @@ export function ShapesProviders({ children }: { children: React.ReactNode }) {
     // A local dev target (script/lived-in.sh, web/public/deployment.local.json, gitignored)
     // takes priority over the bundled deployment.json so a local chain is picked up without
     // touching the tracked file. Falls back to deployment.json when no local target exists.
+    // The content-type check matters: the catch-all route streams a 200 HTML page for an unknown
+    // path before notFound() can set the status, so a missing local file is not a non-ok response.
+    const isJson = (response: Response) =>
+      response.ok && (response.headers.get("content-type") ?? "").includes("json");
     fetch("/deployment.local.json", { cache: "no-store" })
-      .then((response) => (response.ok ? response : fetch("/deployment.json", { cache: "no-store" })))
+      .then((response) => (isJson(response) ? response : fetch("/deployment.json", { cache: "no-store" })))
       .then((response) => {
         if (!response.ok) throw new Error("no deployment.json");
         return response.json();
