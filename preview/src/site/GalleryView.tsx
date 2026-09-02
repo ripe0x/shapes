@@ -44,7 +44,7 @@ export function GalleryView({
     <main>
       <Section title="GALLERY">
         <div style={{fontSize: 15}}>
-          {data ? `${filtered.length} Shapes, newest first.` : "Reading the chain…"}
+          {data ? `${filtered.length} Shape${filtered.length === 1 ? "" : "s"}, newest first.` : "Reading the chain…"}
         </div>
         <div style={{marginTop: 20, display: "flex", flexWrap: "wrap", gap: 8}}>
           {chips.map((f) => {
