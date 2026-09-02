@@ -1099,9 +1099,141 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
   );
 }
 
+const COMPLETE_LAYER_PAGE_SIZE = 10;
+
+function formatCount(count: number): string {
+  return String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function CompleteLineageLadder({
+  root,
+  session,
+  byKey,
+  focusedKey,
+  onSelect,
+}: {
+  root: PlayNode;
+  session: PlaySession;
+  byKey: Map<number, PlayNode>;
+  focusedKey: number | null;
+  onSelect: (key: number) => void;
+}) {
+  const layers = React.useMemo(() => {
+    const ancestry = new Set<number>();
+    const pending = [root.key];
+    while (pending.length > 0) {
+      const key = pending.pop()!;
+      if (ancestry.has(key)) continue;
+      ancestry.add(key);
+      for (const parentKey of byKey.get(key)?.parents ?? []) pending.push(parentKey);
+    }
+
+    return Array.from({ length: root.denomIndex + 1 }, (_, denomIndex) => ({
+      denomIndex,
+      nodes: session.nodes.filter((node) => ancestry.has(node.key) && node.denomIndex === denomIndex),
+    })).reverse();
+  }, [root.key, root.denomIndex, session.nodes, byKey]);
+
+  const [pages, setPages] = React.useState<Record<number, number>>({});
+  const originCount = layers.at(-1)?.nodes.length ?? 0;
+
+  return (
+    <div style={{ margin: "20px 0 32px" }}>
+      <Prose>
+        Complete {LABELS[root.denomIndex]} ETH · {formatCount(originCount)} independent origins · {layers.length} tiers.
+        Select any composed card to inspect how its cells were sampled.
+      </Prose>
+
+      <div style={{ marginTop: 24, borderBottom: `1px solid ${C.rule}` }}>
+        {layers.map((layer, layerIndex) => {
+          const pageCount = Math.max(1, Math.ceil(layer.nodes.length / COMPLETE_LAYER_PAGE_SIZE));
+          const page = Math.min(pages[layer.denomIndex] ?? 0, pageCount - 1);
+          const first = page * COMPLETE_LAYER_PAGE_SIZE;
+          const visible = layer.nodes.slice(first, first + COMPLETE_LAYER_PAGE_SIZE);
+          const countLabel = `${formatCount(layer.nodes.length)} ${layer.nodes.length === 1 ? "Shape" : "Shapes"}`;
+
+          return (
+            <React.Fragment key={layer.denomIndex}>
+              {layerIndex > 0 && (
+                <div style={{ ...mono, fontSize: 9, color: C.muted, padding: "9px 0 9px 112px" }}>
+                  built from
+                </div>
+              )}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "92px minmax(0, 1fr)",
+                  gap: 20,
+                  padding: "20px 0",
+                  borderTop: `1px solid ${C.rule}`,
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  <strong style={{ ...sans, fontSize: 18, fontWeight: 500, color: C.ink }}>
+                    {LABELS[layer.denomIndex]} ETH
+                  </strong>
+                  <span style={{ ...mono, fontSize: 9.5, color: C.muted }}>{countLabel}</span>
+                </div>
+
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                    {visible.map((node) => {
+                      const selectable = node.trace != null || node.splitTrace != null;
+                      return (
+                        <RawCard
+                          key={node.key}
+                          svg={svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true)}
+                          width={64}
+                          caption={`#${node.demoId}`}
+                          onClick={selectable ? () => onSelect(node.key) : undefined}
+                          selected={selectable && focusedKey === node.key}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {pageCount > 1 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+                      <PlayButton
+                        small
+                        disabled={page === 0}
+                        onClick={() => setPages((current) => ({ ...current, [layer.denomIndex]: page - 1 }))}
+                      >
+                        Previous
+                      </PlayButton>
+                      <span style={{ ...mono, fontSize: 9.5, color: C.muted }}>
+                        {formatCount(first + 1)}–{formatCount(Math.min(first + COMPLETE_LAYER_PAGE_SIZE, layer.nodes.length))}
+                        {" of "}{formatCount(layer.nodes.length)}
+                      </span>
+                      <PlayButton
+                        small
+                        disabled={page === pageCount - 1}
+                        onClick={() => setPages((current) => ({ ...current, [layer.denomIndex]: page + 1 }))}
+                      >
+                        Next
+                      </PlayButton>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function LineageBeat({ session }: { session: PlaySession }) {
   const byKey = React.useMemo(() => new Map(session.nodes.map((n) => [n.key, n])), [session.nodes]);
   const tips = liveNodes(session);
+  const completeRoot = React.useMemo(() => {
+    const liveKeys = new Set(tips.map((tip) => tip.key));
+    for (let i = session.nodes.length - 1; i >= 0; i--) {
+      if (session.nodes[i].complete && liveKeys.has(session.nodes[i].key)) return session.nodes[i];
+    }
+    return null;
+  }, [session.nodes, tips]);
   const mostRecentProduced = React.useMemo(() => {
     for (let i = session.nodes.length - 1; i >= 0; i--) {
       if (session.nodes[i].trace || session.nodes[i].splitTrace) return session.nodes[i];
@@ -1132,20 +1264,33 @@ function LineageBeat({ session }: { session: PlaySession }) {
   return (
     <section style={sectionStyle}>
       <SectionLabel>Lineage</SectionLabel>
-      <Prose>This session&apos;s compose and split history.</Prose>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "18px 0 28px" }}>
-        {tips.map((tip) => (
-          <LineageNode
-            key={tip.key}
-            node={tip}
-            byKey={byKey}
-            focusedKey={focusedKey}
-            onSelect={setFocusedKey}
-            expandedKeys={expandedKeys}
-            onToggleExpanded={toggleExpanded}
-          />
-        ))}
-      </div>
+      {completeRoot ? (
+        <CompleteLineageLadder
+          key={completeRoot.key}
+          root={completeRoot}
+          session={session}
+          byKey={byKey}
+          focusedKey={focusedKey}
+          onSelect={setFocusedKey}
+        />
+      ) : (
+        <>
+          <Prose>This session&apos;s compose and split history.</Prose>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "18px 0 28px" }}>
+            {tips.map((tip) => (
+              <LineageNode
+                key={tip.key}
+                node={tip}
+                byKey={byKey}
+                focusedKey={focusedKey}
+                onSelect={setFocusedKey}
+                expandedKeys={expandedKeys}
+                onToggleExpanded={toggleExpanded}
+              />
+            ))}
+          </div>
+        </>
+      )}
       {focusedNode && focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
       {focusedNode && focusedNode.splitTrace && <SplitCellExplorer node={focusedNode} byKey={byKey} />}
     </section>

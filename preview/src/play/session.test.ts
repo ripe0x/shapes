@@ -172,6 +172,7 @@ test("buildCompleteShape: builds every rung from independent 0.01 ETH origins", 
   assert.equal(s.nodes.length, 13);
   assert.equal(liveNodes(s).length, 1);
   assert.equal(liveNodes(s)[0].denomIndex, 2);
+  assert.equal(liveNodes(s)[0].complete, true);
   assert.equal(liveNodes(s)[0].parents?.length, 2);
   assert.equal(s.nodes.filter((node) => node.denomIndex === 1).every((node) => node.parents?.length === 5), true);
 });

@@ -47,6 +47,8 @@ export interface PlayNode {
   /** Set iff this node has been sacrificed: renders inverted, and can no longer be composed,
    *  split, decomposed, or selected. */
   black?: true;
+  /** Set on the root produced by the playground's full rung-by-rung Complete simulation. */
+  complete?: true;
 }
 
 export interface PlaySession {
@@ -147,7 +149,11 @@ export function buildCompleteShape(
     currentKeys = producedKeys;
   }
 
-  return next;
+  const rootKey = currentKeys[0];
+  return {
+    ...next,
+    nodes: next.nodes.map((node) => (node.key === rootKey ? { ...node, complete: true } : node)),
+  };
 }
 
 /** Remove a live (unconsumed) node from the session. No-op if `key` is not live. */
