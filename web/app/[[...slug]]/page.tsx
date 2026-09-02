@@ -142,7 +142,7 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   }
 
   if (slug.length === 0) {
-    return appOnly() ? <LaunchLanding live /> : <LaunchLanding />;
+    return appOnly() ? <SiteRoot initialView="home" initialTokenId={null} /> : <LaunchLanding />;
   }
 
   if (slug.length === 1 && slug[0] === "play") {

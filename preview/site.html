@@ -55,12 +55,14 @@
       .shape-mode-toggle button:disabled { color: var(--border); cursor: default; }
       .shape-mode-toggle button:not(:disabled):not([aria-pressed="true"]):hover, .shape-mode-toggle button:focus-visible { background: var(--row); color: var(--ink); outline: none; }
       .row-denom:hover { background: var(--row) !important; }
+      /* Removes the native up/down spinner so the quantity field reads as a plain boxed number,
+         matching the − / + buttons either side of it. */
+      .qty-input::-webkit-outer-spin-button, .qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+      .qty-input { -moz-appearance: textfield; }
       /* Modal. The overlay dims the page; the panel reuses the section rule colour so it reads
          as the same surface rather than a floating card. */
       .modal-overlay { position: fixed; inset: 0; background: rgba(17,17,15,0.35); display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 50; animation: artin .18s ease both; }
       .modal-panel { background: var(--page); border: 1px solid var(--border); max-width: 480px; width: 100%; padding: 30px 32px 28px; }
-      .btn-step { border: 1px solid var(--rule); background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
-      .btn-step:hover { border-color: var(--border); color: var(--ink); }
       .manage-action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
       .manage-action-card:not(:disabled):hover { border-color: var(--ink) !important; transform: translateY(-1px); }
       .manage-outcome { display: grid; grid-template-columns: minmax(160px, auto) 36px minmax(0, 1fr); gap: 20px; align-items: center; max-width: 920px; padding: 24px; border: 1px solid var(--rule); background: var(--row); }
@@ -147,17 +149,11 @@
         .tier { min-height: 205px; }
         .tier-value strong { font-size: 42px; }
       }
-      /* The mint page (/mint): sans font for the moved heading/prose rules (the app shell's
-         default is monospace), tighter section clamp, no trailing border before the footer,
-         and independent per-card borders (with a gap so adjoining cards don't double up)
-         for the selected/hover states the read-only landing cards don't need. */
+      /* The mint page (/mint): tighter section clamp than the hero landing, and no trailing
+         border before the footer. */
       .mint-page .launch-section { padding-block: clamp(56px, 7vw, 96px); }
       .mint-page .launch-about { grid-template-columns: 1fr; }
       .mint-page > .launch-section:last-child { border-bottom: none; }
-      .mint-page .tier-grid { border-top: none; border-left: none; gap: 1px; }
-      .mint-page .tier { cursor: pointer; border: 1px solid var(--rule); text-align: left; }
-      .mint-page .tier:not([aria-pressed="true"]):hover { border-color: var(--border); }
-      .mint-page .tier[aria-pressed="true"] { border-color: var(--ink); }
     </style>
   </head>
   <body>

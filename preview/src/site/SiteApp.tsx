@@ -1,5 +1,5 @@
 import React from "react";
-import {parseEventLogs} from "viem";
+import {formatEther, parseEventLogs} from "viem";
 import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagmi";
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
@@ -9,6 +9,7 @@ import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
 import {MintView} from "./MintView";
+import {MintPanel} from "./MintPanel";
 import {GalleryView} from "./GalleryView";
 import {MyShapesView} from "./MyShapesView";
 import {TokenView} from "./TokenView";
@@ -19,7 +20,7 @@ import {breakdown, loadAuction, loadLotImage, type AuctionSlot} from "./auction"
 import {useEnsDisplay} from "./ens";
 import {SiteFooter} from "./SiteFooter";
 
-export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage";
+export type View = "home" | "mint" | "auction" | "gallery" | "collection" | "token" | "manage";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -39,6 +40,7 @@ export function SiteApp({
   initialView,
   initialTokenId,
   onNavigate,
+  renderHome,
 }: {
   dep: Deployment;
   /** Starting view, and a callback fired when the view changes, so a host (the Next.js site) can
@@ -46,6 +48,10 @@ export function SiteApp({
   initialView?: View;
   initialTokenId?: bigint | null;
   onNavigate?: (view: View, tokenId: bigint | null) => void;
+  /** When the view is "home", renders the mint panel and footer inside the host's own page shell
+   *  (the landing page) instead of SiteApp's header/footer/mint view. Without it, "home" falls
+   *  back to the mint view. */
+  renderHome?: (mint: React.ReactNode, footer: React.ReactNode) => React.ReactNode;
 }) {
   const {address, isConnected} = useAccount();
   const {disconnect} = useDisconnect();
@@ -420,7 +426,39 @@ export function SiteApp({
     window.scrollTo({top: 0, behavior: "smooth"});
   };
 
-  const navColor = (v: View) => (view === v ? C.ink : C.muted);
+  // Without a host to render into, "home" has no shell of its own and falls back to the mint
+  // view, so the header nav and the mint view's own render check both treat it as "mint".
+  const shownView = view === "home" && !renderHome ? "mint" : view;
+  const navColor = (v: View) => (shownView === v ? C.ink : C.muted);
+
+  const reserveLine = data
+    ? `The contract holds ${formatEther(data.reserve)} ETH backing ${data.supply.toString()} Shapes.`
+    : null;
+
+  // The home view hosts the mint panel inside the host's own landing page shell, with no
+  // header or action toast; the panel's own status text carries mint feedback, and the footer
+  // still carries the reserve line and attribution.
+  if (view === "home" && renderHome) {
+    return renderHome(
+      <MintPanel
+        data={data}
+        chainId={dep.chainId}
+        connected={isConnected}
+        sel={sel}
+        setSel={(i) => {
+          setSel(i);
+          if (mint.status === "failed") setMint({status: "idle"});
+        }}
+        qty={qty}
+        setQty={setQty}
+        mint={mint}
+        onMint={() => void doMint()}
+        onOpenToken={openToken}
+        onConnect={() => openConnectModal?.()}
+      />,
+      <SiteFooter reserve={reserveLine} />,
+    );
+  }
 
   return (
     <div id="top" style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
@@ -515,7 +553,7 @@ export function SiteApp({
         </div>
       </header>
 
-      {view === "mint" && (
+      {shownView === "mint" && (
         <MintView
           data={data}
           chainId={dep.chainId}
@@ -530,6 +568,7 @@ export function SiteApp({
           mint={mint}
           onMint={() => void doMint()}
           onOpenToken={openToken}
+          onConnect={() => openConnectModal?.()}
         />
       )}
       {view === "auction" && (
@@ -673,7 +712,7 @@ export function SiteApp({
         </div>
       )}
 
-      <SiteFooter dep={dep} topRule />
+      <SiteFooter dep={dep} topRule reserve={reserveLine} />
     </div>
   );
 }

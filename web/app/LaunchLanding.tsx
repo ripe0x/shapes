@@ -200,11 +200,14 @@ function useCountdown() {
 function Countdown({
   countdown,
   forceLive,
+  mintSlot,
 }: {
   countdown: ReturnType<typeof useCountdown>;
   forceLive: boolean;
+  mintSlot?: React.ReactNode;
 }) {
   const live = forceLive || countdown.live;
+  const slotted = live && mintSlot !== undefined;
   const units = [
     [countdown.hours, "hours"],
     [countdown.minutes, "minutes"],
@@ -212,7 +215,11 @@ function Countdown({
   ] as const;
 
   return (
-    <section className="launch-countdown" aria-labelledby="mint-time">
+    <section
+      id="mint"
+      className={slotted ? "launch-countdown launch-countdown--panel" : "launch-countdown"}
+      aria-labelledby="mint-time"
+    >
       <div>
         <p className="launch-kicker">{forceLive ? "Mint" : "Mint opens"}</p>
         <h2 id="mint-time">
@@ -220,7 +227,9 @@ function Countdown({
         </h2>
       </div>
 
-      {!live ? (
+      {slotted ? (
+        mintSlot
+      ) : !live ? (
         <div className="countdown-units" aria-live="polite" aria-label="Time until mint">
           {units.map(([value, label]) => (
             <div className="countdown-unit" key={label}>
@@ -238,7 +247,17 @@ function Countdown({
   );
 }
 
-export function LaunchLanding({ live: forceLive = false }: { live?: boolean }) {
+export function LaunchLanding({
+  live: forceLive = false,
+  mintSlot,
+  footer,
+}: {
+  live?: boolean;
+  mintSlot?: React.ReactNode;
+  /** Replaces the default footer, e.g. with one carrying the reserve line for the app-mode
+   *  index route. Pre-launch and the plain landing keep the default (no reserve line). */
+  footer?: React.ReactNode;
+}) {
   const countdown = useCountdown();
   const live = forceLive || countdown.live;
 
@@ -248,7 +267,7 @@ export function LaunchLanding({ live: forceLive = false }: { live?: boolean }) {
       <nav className="launch-play-link" aria-label="Primary navigation">
         {live ? (
           <div className="launch-nav-links">
-            <Link href="/mint">Mint</Link>
+            <Link href="#mint">Mint</Link>
             <Link href="/gallery">Gallery</Link>
             <Link href="/play">Play</Link>
           </div>
@@ -278,7 +297,7 @@ export function LaunchLanding({ live: forceLive = false }: { live?: boolean }) {
         </figure>
       </section>
 
-      <Countdown countdown={countdown} forceLive={forceLive} />
+      <Countdown countdown={countdown} forceLive={forceLive} mintSlot={mintSlot} />
 
       <section className="launch-section launch-about" id="about" aria-labelledby="about-title">
         <div>
@@ -411,7 +430,7 @@ export function LaunchLanding({ live: forceLive = false }: { live?: boolean }) {
         </div>
       </section>
 
-      <SiteFooter />
+      {footer ?? <SiteFooter />}
     </main>
   );
 }

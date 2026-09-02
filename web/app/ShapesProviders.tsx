@@ -10,6 +10,7 @@ import { getPublicClient } from "@wagmi/core";
 import { shapesAbi, type Deployment } from "@shared/chain/abi";
 import { buildConfig } from "@shared/chain/wagmi";
 import { LADDER_NAME, UNIT } from "@shared/canonical/denominations";
+import { LaunchLanding } from "./LaunchLanding";
 
 type WalletState = {
   dep: Deployment;
@@ -29,12 +30,20 @@ const centered: React.CSSProperties = {
 
 /**
  * Keeps the wallet stack above routed pages so client navigation cannot replace it. The playground
- * remains deliberately wallet-free and does not wait for deployment metadata or an RPC; "/" is the
- * launch landing in every site mode and needs no chain either.
+ * remains deliberately wallet-free and does not wait for deployment metadata or an RPC. "/" needs
+ * no chain either, except in app mode (`chainOnIndex`), where it hosts the mint panel inline and
+ * so waits for the same deployment load as every other routed page.
  */
-export function ShapesProviders({ children }: { children: React.ReactNode }) {
+export function ShapesProviders({
+  children,
+  chainOnIndex,
+}: {
+  children: React.ReactNode;
+  chainOnIndex: boolean;
+}) {
   const pathname = usePathname();
-  const skipsChain = pathname === "/play" || pathname === "/";
+  const isIndex = pathname === "/";
+  const skipsChain = pathname === "/play" || (isIndex && !chainOnIndex);
   const [state, setState] = React.useState<WalletState | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
@@ -87,8 +96,16 @@ export function ShapesProviders({ children }: { children: React.ReactNode }) {
   }, [err, skipsChain, state]);
 
   if (skipsChain) return children;
-  if (err) return <div style={centered}>{err}</div>;
-  if (!state) return <div style={centered}>Connecting…</div>;
+  // The index route in app mode hosts the mint panel inline: the hero renders immediately
+  // rather than sitting behind "Connecting…", and a load failure surfaces inside the mint
+  // section rather than replacing the whole page.
+  if (isIndex && chainOnIndex) {
+    if (err) return <LaunchLanding live mintSlot={<p className="launch-mint-unavailable">{err}</p>} />;
+    if (!state) return <LaunchLanding live />;
+  } else {
+    if (err) return <div style={centered}>{err}</div>;
+    if (!state) return <div style={centered}>Connecting…</div>;
+  }
 
   return (
     <WagmiProvider config={state.config} reconnectOnMount>

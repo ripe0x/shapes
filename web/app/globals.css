@@ -173,17 +173,15 @@ button {
 .row-denom:hover {
   background: var(--row) !important;
 }
-.btn-step {
-  border: 1px solid var(--rule);
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
+/* Removes the native up/down spinner so the quantity field reads as a plain boxed number,
+   matching the − / + buttons either side of it. */
+.qty-input::-webkit-outer-spin-button,
+.qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
-.btn-step:hover {
-  border-color: var(--border);
-  color: var(--ink);
+.qty-input {
+  -moz-appearance: textfield;
 }
 .manage-action-grid {
   display: grid;
@@ -693,11 +691,8 @@ button {
 
 /* The mint page (/mint): its .launch-section children already center and inset themselves via
    the unscoped .launch-hero/.launch-countdown/.launch-section/.launch-faq rule above, so this
-   scope sets the sans font the moved heading/prose rules expect (the app shell's own default is
-   monospace, unlike .launch-page which sets sans itself), the tighter vertical clamp (a working
-   page, not the hero landing), the trailing border removed before the app shell's own footer
-   rule, and the selected/hover states its tier cards need that the read-only landing cards
-   don't. */
+   scope sets the tighter vertical clamp (a working page, not the hero landing) and removes the
+   trailing border before the app shell's own footer rule. */
 .mint-page .launch-section {
   padding-block: clamp(56px, 7vw, 96px);
 }
@@ -708,30 +703,6 @@ button {
 
 .mint-page > .launch-section:last-child {
   border-bottom: none;
-}
-
-/* The landing's tier cells share their border with the grid container and their neighbours
-   (each cell draws only its own right/bottom edge). The mint page's cards need an independent
-   border per card to show the selected/hover state, so the container's own border is dropped
-   and a 1px gap keeps adjoining cards from doubling into a 2px line. */
-.mint-page .tier-grid {
-  border-top: none;
-  border-left: none;
-  gap: 1px;
-}
-
-.mint-page .tier {
-  cursor: pointer;
-  border: 1px solid var(--rule);
-  text-align: left;
-}
-
-.mint-page .tier:not([aria-pressed="true"]):hover {
-  border-color: var(--border);
-}
-
-.mint-page .tier[aria-pressed="true"] {
-  border-color: var(--ink);
 }
 
 /* Pre-mint landing page. Kept under its own scope for the class names, but the app now shares
@@ -891,6 +862,20 @@ button {
   font-size: 9px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+/* The mint-panel variant of the countdown section: heading row on top, the mint panel full
+   width below, in place of the two-column heading/countdown-units layout above. */
+.launch-countdown--panel {
+  grid-template-columns: 1fr;
+  row-gap: 32px;
+}
+
+.launch-mint-unavailable {
+  margin: 0;
+  color: var(--launch-muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
 }
 
 .launch-button {
@@ -1243,6 +1228,10 @@ button {
 
   .launch-countdown {
     gap: 28px;
+  }
+
+  .launch-countdown--panel {
+    row-gap: 24px;
   }
 
   .countdown-unit {
