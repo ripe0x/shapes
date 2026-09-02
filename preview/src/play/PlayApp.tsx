@@ -1,15 +1,19 @@
 import React from "react";
-import { C, FONT, label as labelStyle } from "../site/theme";
+import { FONT } from "../site/theme";
 import { forDisplay, C as PROV_C } from "../app/ui";
 import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/provenance";
 import { CANONICAL } from "../canonical/params";
 import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
 import { WAD } from "../canonical/wad";
 import { composeSampledShape, grammarSplitPoolBytes, type ComposeTraceCell } from "../canonical/sampling";
-import { DENOMINATIONS, GRIDS, LABELS, UNIT, unitsAt } from "../canonical/denominations";
+import { DENOMINATIONS, GRIDS, UNIT, unitsAt } from "../canonical/denominations";
+// The playground presents mainnet values even when the adjacent app is built for Sepolia. The
+// denomination indexes, grids, and composition ratios are identical between both ladders.
+import { LABELS } from "../canonical/ladders/mainnet";
 import { geneAtMint } from "../canonical/ink";
 import { decodeModuleByte } from "../canonical/moduleCodec";
 import {
+  buildCompleteShape,
   composeNodes,
   composeSummedIndex,
   decomposeNode,
@@ -21,7 +25,6 @@ import {
   removeNode,
   sacrificeNode,
   splitNode,
-  textSeed,
   type PlayNode,
   type PlaySession,
 } from "./session";
@@ -40,9 +43,31 @@ const SPLIT_COLOR = PROV_C.warn;
  * state (`./session`).
  */
 
+const C = {
+  page: "#f7f7f3",
+  ink: "#11110f",
+  body: "#2f2f2b",
+  bodyDim: "#4f4f49",
+  muted: "#686862",
+  faint: "#aaa9a1",
+  rule: "#d8d8d1",
+  ruleInner: "#e7e7e1",
+  border: "#b9b9b1",
+  row: "#efefe9",
+  art: "#000000",
+} as const;
+
 const mono: React.CSSProperties = { fontFamily: FONT };
+const sans: React.CSSProperties = { fontFamily: "Arial, Helvetica, sans-serif" };
+const labelStyle: React.CSSProperties = {
+  ...mono,
+  fontSize: 10,
+  letterSpacing: "0.14em",
+  color: C.muted,
+};
 
 const REPO_URL = "https://github.com/ripe0x/shapes";
+const MAX_TRAY_CARDS = 100;
 
 function seedHex(seed: bigint): string {
   return "0x" + seed.toString(16).padStart(64, "0");
@@ -83,9 +108,9 @@ function PlayButton({
       disabled={disabled}
       style={{
         ...mono,
-        fontSize: small ? 10 : 11.5,
-        letterSpacing: "0.04em",
-        padding: small ? "5px 9px" : "8px 14px",
+        fontSize: small ? 9.5 : 10.5,
+        letterSpacing: "0.06em",
+        padding: small ? "6px 9px" : "9px 13px",
         border: `1px solid ${active ? C.ink : C.border}`,
         background: active ? C.ink : "transparent",
         color: disabled ? C.faint : active ? C.page : C.ink,
@@ -98,7 +123,7 @@ function PlayButton({
   );
 }
 
-/** A rendered card, no border radius, no shadow, always exactly 2.5:3.5. */
+/** A rendered card, always exactly 2.5:3.5. */
 function RawCard({
   svg,
   width,
@@ -115,6 +140,7 @@ function RawCard({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, width }}>
       <div
+        data-play-card={onClick ? "interactive" : undefined}
         onClick={onClick}
         style={{
           position: "relative",
@@ -123,8 +149,10 @@ function RawCard({
           overflow: "hidden",
           lineHeight: 0,
           cursor: onClick ? "pointer" : "default",
-          outline: selected ? `2px solid ${C.ink}` : `1px solid ${C.border}`,
-          outlineOffset: selected ? -2 : -1,
+          outline: selected ? `3px solid ${C.page}` : `1px solid ${C.border}`,
+          outlineOffset: selected ? -3 : -1,
+          boxShadow: selected ? `0 0 0 2px ${C.ink}` : "none",
+          borderRadius: 3,
         }}
         dangerouslySetInnerHTML={{ __html: forDisplay(svg) }}
       />
@@ -174,7 +202,7 @@ function PlayDetailPanel({
 }
 
 function Prose({ children }: { children: React.ReactNode }) {
-  return <p style={{ ...mono, fontSize: 12, lineHeight: 1.6, color: C.body, margin: 0 }}>{children}</p>;
+  return <p style={{ ...sans, fontSize: 14, lineHeight: 1.55, color: C.body, margin: 0 }}>{children}</p>;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -188,28 +216,20 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function DrawBeat({
   denomIndex,
   onDenomIndex,
-  seedText,
-  onSeedText,
   onRoll,
   effectiveSeed,
-  onKeep,
-  keepDisabled,
-  inverted,
-  onToggleInverted,
+  onComplete,
+  completeBusy,
 }: {
   denomIndex: number;
   onDenomIndex: (i: number) => void;
-  seedText: string;
-  onSeedText: (v: string) => void;
   onRoll: () => void;
   effectiveSeed: bigint;
-  onKeep: () => void;
-  keepDisabled: boolean;
-  inverted: boolean;
-  onToggleInverted: () => void;
+  onComplete: () => void;
+  completeBusy: boolean;
 }) {
   const amountWei = DENOMINATIONS[denomIndex];
-  // The gene a kept card of this seed/denomination would get (session.keepCard uses the same call).
+  // The gene a tray card of this seed/denomination would get (session.keepCard uses the same call).
   const composition = React.useMemo(
     () => composeShape(effectiveSeed, amountWei, geneAtMint(effectiveSeed, denomIndex), CANONICAL),
     [effectiveSeed, amountWei, denomIndex],
@@ -218,20 +238,20 @@ function DrawBeat({
   const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, false), [composition]);
 
   return (
-    <section style={sectionStyle}>
-      <SectionLabel>Draw</SectionLabel>
-      <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ width: "min(320px, 80vw)" }}>
+    <section className="play-section play-draw-section">
+      <SectionLabel>Generator</SectionLabel>
+      <div className="play-draw-grid">
+        <div className="play-draw-card">
           <RawCard svg={svg} width="100%" />
-          <div style={{ ...mono, fontSize: 9.5, color: C.muted, marginTop: 8, wordBreak: "break-all" }}>
+          <div className="play-seed">
             {seedHex(effectiveSeed)}
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 260, flex: 1 }}>
-          <div>
-            <div style={{ ...mono, fontSize: 10, color: C.muted, marginBottom: 8 }}>denomination</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div className="play-draw-controls">
+          <div className="play-control-group">
+            <div className="play-control-label">Denomination</div>
+            <div className="play-tier-grid">
               {LABELS.map((lab, i) => (
                 <PlayButton key={i} active={denomIndex === i} onClick={() => onDenomIndex(i)}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -243,83 +263,19 @@ function DrawBeat({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <PlayButton onClick={onRoll}>Roll</PlayButton>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              <span style={{ ...mono, fontSize: 10, color: C.muted }}>Seed it with a name</span>
-              <input
-                value={seedText}
-                onChange={(e) => onSeedText(e.target.value)}
-                placeholder="a name, handle, anything"
-                style={{
-                  ...mono,
-                  fontSize: 12,
-                  padding: "7px 9px",
-                  border: `1px solid ${C.border}`,
-                  background: "transparent",
-                  color: C.ink,
-                  width: 220,
-                }}
-              />
-            </label>
-          </div>
-
-          <PlayButton onClick={onKeep} disabled={keepDisabled}>
-            Keep
-          </PlayButton>
-          {keepDisabled && (
-            <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>
-              The share link is full. Remove a card to continue.
+          <div className="play-action-row">
+            <div className="play-action-group">
+              <PlayButton onClick={onRoll}>Roll</PlayButton>
+              <PlayButton onClick={onComplete} disabled={completeBusy}>
+                {completeBusy ? "Generating…" : "Generate"}
+              </PlayButton>
             </div>
-          )}
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
-              Card PNG
-            </PlayButton>
-            <PlayButton small onClick={() => downloadLadderPng(effectiveSeed, inverted)}>
-              Ladder PNG
-            </PlayButton>
-            <PlayButton small active={inverted} onClick={onToggleInverted}>
-              Black
-            </PlayButton>
           </div>
 
-          <Prose>Simulation. Nothing is minted. No wallet is used. Real seeds are assigned at mint.</Prose>
+          <p className="play-note">Generate builds this denomination from independent origins and reveals its full provenance.</p>
         </div>
       </div>
     </section>
-  );
-}
-
-/** "Copy link" plus a quiet confirmation. Copies `location.href`, which the page-level URL-sync
- *  effect keeps equal to `/play?s=<encodeSession(session)>` at all times. No animation here: the
- *  compose reveal is the only animation this page runs. */
-function ShareLink() {
-  const [copied, setCopied] = React.useState(false);
-  React.useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <PlayButton
-          small
-          onClick={() => {
-            navigator.clipboard
-              .writeText(location.href)
-              .then(() => setCopied(true))
-              .catch(() => {});
-          }}
-        >
-          Copy link
-        </PlayButton>
-        {copied && <span style={{ ...mono, fontSize: 10, color: C.muted }}>copied</span>}
-      </div>
-      <Prose>This link reproduces it exactly.</Prose>
-    </div>
   );
 }
 
@@ -332,8 +288,7 @@ function ShareLink() {
 type TrayMenu = { key: number; kind: "split" | "sacrifice" } | null;
 
 /** The one-row split tier picker: one button per denomination below the card, labeled with its
- *  child count. A tier is disabled, with the same "share link is full" reason `keepDisabled`
- *  uses, whenever splitting into it would push the session past what a share link can carry. */
+ *  child count. */
 function SplitPicker({
   node,
   session,
@@ -346,16 +301,11 @@ function SplitPicker({
   onCancel: () => void;
 }) {
   const options = React.useMemo(() => {
-    const opts: { i: number; count: number; shareable: boolean }[] = [];
+    const liveCount = liveNodes(session).length;
+    const opts: { i: number; count: number; fits: boolean }[] = [];
     for (let i = 0; i < node.denomIndex; i++) {
       const count = Number(unitsAt(node.denomIndex) / unitsAt(i));
-      let shareable: boolean;
-      try {
-        shareable = sessionShareable(splitNode(session, node.key, i));
-      } catch {
-        shareable = false;
-      }
-      opts.push({ i, count, shareable });
+      opts.push({ i, count, fits: liveCount - 1 + count <= MAX_TRAY_CARDS });
     }
     return opts;
   }, [node, session]);
@@ -364,15 +314,15 @@ function SplitPicker({
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, width: 180 }}>
       <Prose>Backing divides exactly. Every child cell samples from the parent.</Prose>
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-        {options.map(({ i, count, shareable }) => (
-          <PlayButton key={i} small disabled={!shareable} onClick={() => onSplit(i)}>
+        {options.map(({ i, count, fits }) => (
+          <PlayButton key={i} small disabled={!fits} onClick={() => onSplit(i)}>
             {LABELS[i]} ×{count}
           </PlayButton>
         ))}
       </div>
-      {options.some((o) => !o.shareable) && (
+      {options.some((option) => !option.fits) && (
         <div style={{ ...mono, fontSize: 10, color: C.muted }}>
-          The share link is full. Remove a card to continue.
+          Large splits are limited to keep the tray usable.
         </div>
       )}
       <PlayButton small onClick={onCancel}>
@@ -427,9 +377,6 @@ function TrayCard({
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const isTop = node.denomIndex === DENOMINATIONS.length - 1;
   const showDecompose = node.trace != null && !node.black;
-  // Split children have no remove control: a split encodes as one atomic URL op, so a missing
-  // sibling could not be reproduced by a share link (removeNode rejects them too).
-  const showRemove = !showDecompose && node.splitTrace == null;
   const menuOpen = menu?.key === node.key ? menu.kind : null;
 
   return (
@@ -438,34 +385,12 @@ function TrayCard({
         svg={svg}
         width="100%"
         selected={selected}
-        onClick={node.black ? undefined : () => onToggle(node.key)}
         caption={
           node.black
             ? `#${node.demoId} · Black`
             : `#${node.demoId} · ${LABELS[node.denomIndex]} ETH`
         }
       />
-      {showRemove && (
-        <button
-          onClick={() => onRemove(node.key)}
-          title="remove"
-          style={{
-            ...mono,
-            position: "absolute",
-            top: 2,
-            right: 2,
-            fontSize: 10,
-            lineHeight: 1,
-            padding: "2px 5px",
-            border: "none",
-            background: "rgba(0,0,0,0.55)",
-            color: C.ink,
-            cursor: "pointer",
-          }}
-        >
-          ×
-        </button>
-      )}
       {!node.black && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
           {node.denomIndex > 0 && (
@@ -527,12 +452,10 @@ function TrayBeat({
   onSacrifice: (key: number) => void;
 }) {
   return (
-    <section style={sectionStyle}>
-      <SectionLabel>
-        Tray ({nodes.length})
-      </SectionLabel>
+    <section className="play-section">
+      <SectionLabel>{nodes.length === 1 ? "Generated Shape" : `Generated Shapes (${nodes.length})`}</SectionLabel>
       {nodes.length === 0 ? (
-        <div style={{ ...mono, fontSize: 11, color: C.muted }}>—</div>
+        <p className="play-empty">Add a card to begin.</p>
       ) : (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
           {nodes.map((n) => (
@@ -552,7 +475,6 @@ function TrayBeat({
           ))}
         </div>
       )}
-      {nodes.length > 0 && <ShareLink />}
     </section>
   );
 }
@@ -711,22 +633,26 @@ function ComposeBeat({
   };
 
   return (
-    <section style={sectionStyle}>
+    <section className="play-section">
       <SectionLabel>Compose</SectionLabel>
-      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-        <div style={{ ...mono, fontSize: 11, color: C.body }}>
-          {selectedNodes.length} selected · {formatEth(sumWei)}
-        </div>
-        {reason && <div style={{ ...mono, fontSize: 11, color: C.muted }}>{reason}</div>}
-        {!reason && summedIndex >= 0 && (
-          <div style={{ ...mono, fontSize: 11, color: C.body }}>
-            → {LABELS[summedIndex]} ETH ({GRIDS[summedIndex][0]}×{GRIDS[summedIndex][1]})
+      {nodes.length === 0 ? (
+        <p className="play-empty">Select cards from the tray to compose them.</p>
+      ) : (
+        <div className="play-compose-bar">
+          <div style={{ ...mono, fontSize: 10.5, color: C.body }}>
+            {selectedNodes.length} selected · {formatEth(sumWei)}
           </div>
-        )}
-        <PlayButton onClick={onCompose} disabled={!canCompose}>
-          Compose
-        </PlayButton>
-      </div>
+          {reason && <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>{reason}</div>}
+          {!reason && summedIndex >= 0 && (
+            <div style={{ ...mono, fontSize: 10.5, color: C.body }}>
+              → {LABELS[summedIndex]} ETH ({GRIDS[summedIndex][0]}×{GRIDS[summedIndex][1]})
+            </div>
+          )}
+          <PlayButton onClick={onCompose} disabled={!canCompose}>
+            Compose
+          </PlayButton>
+        </div>
+      )}
       {error && <div style={{ ...mono, fontSize: 11, color: C.muted, marginBottom: 16 }}>{error}</div>}
 
       {lastResult && resultComposition && (
@@ -778,34 +704,205 @@ function LineageNode({
   byKey,
   focusedKey,
   onSelect,
+  depth = 0,
+  expandedKeys,
+  onToggleExpanded,
 }: {
   node: PlayNode;
   byKey: Map<number, PlayNode>;
   focusedKey: number | null;
   onSelect: (key: number) => void;
+  depth?: number;
+  expandedKeys?: Set<number>;
+  onToggleExpanded?: (key: number) => void;
 }) {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
   const selectable = node.trace != null || node.splitTrace != null;
+  const widths = [120, 76, 52, 36, 26, 20];
+  const width = widths[Math.min(depth, widths.length - 1)];
+  const stub = 18;
+  const collapsible = expandedKeys != null && onToggleExpanded != null;
+  const expanded = !collapsible || expandedKeys.has(node.key);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-      {parents.length > 0 && (
-        <>
-          <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
-            {parents.map((p) => (
-              <LineageNode key={p.key} node={p} byKey={byKey} focusedKey={focusedKey} onSelect={onSelect} />
-            ))}
-          </div>
-          <div style={{ width: 1, height: 14, background: C.border }} />
-        </>
-      )}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
       <RawCard
         svg={svg}
-        width={64}
-        caption={`#${node.demoId}`}
+        width={width}
+        caption={width >= 26 ? `#${node.demoId}` : undefined}
         onClick={selectable ? () => onSelect(node.key) : undefined}
         selected={selectable && focusedKey === node.key}
       />
+      {parents.length > 0 && expanded && (
+        <>
+          <div style={{ width: 1, height: stub, background: C.border }} />
+          <div style={{ display: "flex", alignItems: "flex-start" }}>
+            {parents.map((parent, index) => {
+              const first = index === 0;
+              const last = index === parents.length - 1;
+              const solo = parents.length === 1;
+              return (
+                <div key={parent.key} style={{ position: "relative", padding: `${stub}px 9px 0` }}>
+                  {!solo && !first && (
+                    <div style={{ position: "absolute", top: 0, left: 0, width: "50%", height: 1, background: C.border }} />
+                  )}
+                  {!solo && !last && (
+                    <div style={{ position: "absolute", top: 0, left: "50%", width: "50%", height: 1, background: C.border }} />
+                  )}
+                  <div style={{ position: "absolute", top: 0, left: "50%", width: 1, height: stub, background: C.border }} />
+                  <LineageNode
+                    node={parent}
+                    byKey={byKey}
+                    focusedKey={focusedKey}
+                    onSelect={onSelect}
+                    depth={depth + 1}
+                    expandedKeys={expandedKeys}
+                    onToggleExpanded={onToggleExpanded}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+      {parents.length > 0 && collapsible && !expanded && (
+        <>
+          <div style={{ width: 1, height: stub, background: C.border }} />
+          <button type="button" className="play-tree-rollup" onClick={() => onToggleExpanded(node.key)}>
+            {parents.length} {parents.length === 1 ? "source" : "sources"}
+          </button>
+        </>
+      )}
+      {parents.length > 0 && collapsible && expanded && depth >= 2 && (
+        <button type="button" className="play-tree-collapse" onClick={() => onToggleExpanded(node.key)}>
+          collapse
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ZoomableTree({ children, resetKey }: { children: React.ReactNode; resetKey: number }) {
+  const viewportRef = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [view, setView] = React.useState({ x: 0, y: 0, scale: 1 });
+  const [dragging, setDragging] = React.useState(false);
+  const dragRef = React.useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
+
+  const fit = React.useCallback(() => {
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    const contentWidth = content.scrollWidth;
+    const contentHeight = content.scrollHeight;
+    if (contentWidth === 0 || contentHeight === 0) return;
+    const inset = 40;
+    const scale = Math.min(1.25, (viewport.clientWidth - inset * 2) / contentWidth, (viewport.clientHeight - inset * 2) / contentHeight);
+    const safeScale = Math.max(0.12, scale);
+    setView({
+      scale: safeScale,
+      x: (viewport.clientWidth - contentWidth * safeScale) / 2,
+      y: Math.max(inset, (viewport.clientHeight - contentHeight * safeScale) / 2),
+    });
+  }, []);
+
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => fit());
+    return () => cancelAnimationFrame(frame);
+  }, [fit, resetKey]);
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [fit]);
+
+  const zoomAtCenter = (factor: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const cx = viewport.clientWidth / 2;
+    const cy = viewport.clientHeight / 2;
+    setView((current) => {
+      const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
+      const ratio = scale / current.scale;
+      return {
+        scale,
+        x: cx - (cx - current.x) * ratio,
+        y: cy - (cy - current.y) * ratio,
+      };
+    });
+  };
+
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    setView((current) => {
+      const factor = Math.exp(-event.deltaY * 0.0015);
+      const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
+      const ratio = scale / current.scale;
+      return {
+        scale,
+        x: px - (px - current.x) * ratio,
+        y: py - (py - current.y) * ratio,
+      };
+    });
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button") || target.closest('[data-play-card="interactive"]')) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: view.x, originY: view.y };
+    setDragging(true);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setView((current) => ({
+      ...current,
+      x: drag.originX + event.clientX - drag.x,
+      y: drag.originY + event.clientY - drag.y,
+    }));
+  };
+
+  const stopDragging = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+  };
+
+  return (
+    <div className="play-tree-frame">
+      <div className="play-tree-toolbar" aria-label="Provenance view controls">
+        <PlayButton small onClick={() => zoomAtCenter(1.25)}>+</PlayButton>
+        <PlayButton small onClick={() => zoomAtCenter(0.8)}>−</PlayButton>
+        <PlayButton small onClick={fit}>Fit</PlayButton>
+        <span>{Math.round(view.scale * 100)}%</span>
+      </div>
+      <div
+        ref={viewportRef}
+        className={`play-tree-viewport${dragging ? " is-dragging" : ""}`}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+      >
+        <div
+          ref={contentRef}
+          className="play-tree-content"
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+        >
+          {children}
+        </div>
+      </div>
+      <p className="play-tree-help">Drag to pan · scroll to zoom</p>
     </div>
   );
 }
@@ -847,8 +944,8 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
   const activeCell = active != null ? trace[active] : null;
 
   return (
-    <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
-      <div style={{ width: "min(280px, 80vw)" }}>
+    <div className="play-inspector-body">
+      <div className="play-inspector-result">
         <div
           style={{
             position: "relative",
@@ -885,7 +982,8 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="play-inspector-meta">
+        <div className="play-inspector-subhead">Cell sources</div>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           {donorLabels.map((lab, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -904,8 +1002,10 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
         )}
       </div>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        {donorNodes.map((d, i) => {
+      <div className="play-inspector-sources">
+        <div className="play-inspector-subhead">Source Shapes</div>
+        <div className="play-source-cards">
+          {donorNodes.map((d, i) => {
           const dc = nodeComposition(d);
           const dsvg = svgFromComposition(dc, 0n, CANONICAL, d.black === true);
           return (
@@ -941,7 +1041,8 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
               </div>
             </div>
           );
-        })}
+          })}
+        </div>
       </div>
     </div>
   );
@@ -996,8 +1097,8 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
   const activeCell = active != null ? trace[active] : null;
 
   return (
-    <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
-      <div style={{ width: "min(280px, 80vw)" }}>
+    <div className="play-inspector-body">
+      <div className="play-inspector-result">
         <div
           style={{
             position: "relative",
@@ -1033,7 +1134,8 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="play-inspector-meta">
+        <div className="play-inspector-subhead">Cell source</div>
         {activeCell && (
           <PlayDetailPanel
             label={recordBranch ? `#${parent.demoId} merge pool` : `#${parent.demoId} seed at ${LABELS[node.denomIndex]} ETH`}
@@ -1048,7 +1150,9 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
       </div>
 
       {poolComposition && poolSvg && (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div className="play-inspector-sources">
+          <div className="play-inspector-subhead">Source Shape</div>
+          <div className="play-source-cards">
           <div style={{ width: 120 }}>
             <div
               style={{
@@ -1080,8 +1184,89 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
               #{parent.demoId} seed at {LABELS[node.denomIndex]} ETH
             </div>
           </div>
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function formatCount(count: number): string {
+  return String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+function CompleteLineageTree({
+  root,
+  session,
+  byKey,
+  focusedKey,
+  onSelect,
+}: {
+  root: PlayNode;
+  session: PlaySession;
+  byKey: Map<number, PlayNode>;
+  focusedKey: number | null;
+  onSelect: (key: number) => void;
+}) {
+  const layers = React.useMemo(() => {
+    const ancestry = new Set<number>();
+    const pending = [root.key];
+    while (pending.length > 0) {
+      const key = pending.pop()!;
+      if (ancestry.has(key)) continue;
+      ancestry.add(key);
+      for (const parentKey of byKey.get(key)?.parents ?? []) pending.push(parentKey);
+    }
+
+    return Array.from({ length: root.denomIndex + 1 }, (_, denomIndex) => ({
+      denomIndex,
+      nodes: session.nodes.filter((node) => ancestry.has(node.key) && node.denomIndex === denomIndex),
+    })).reverse();
+  }, [root.key, root.denomIndex, session.nodes, byKey]);
+
+  const originCount = layers.at(-1)?.nodes.length ?? 0;
+  const initiallyExpanded = React.useMemo(() => {
+    const keys = new Set<number>();
+    const visit = (node: PlayNode, depth: number) => {
+      if (depth >= 3 || !node.parents?.length) return;
+      keys.add(node.key);
+      for (const parentKey of node.parents) {
+        const parent = byKey.get(parentKey);
+        if (parent) visit(parent, depth + 1);
+      }
+    };
+    visit(root, 0);
+    return keys;
+  }, [root.key, byKey]);
+  const [expandedKeys, setExpandedKeys] = React.useState<Set<number>>(initiallyExpanded);
+
+  const toggleExpanded = (key: number) => {
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  return (
+    <div className="play-provenance-tree-block">
+      <Prose>
+        Complete {LABELS[root.denomIndex]} ETH · {formatCount(originCount)} independent origins · {layers.length} tiers.
+        {layers.length > 1
+          ? " Select a composed card to inspect its sampling. Open a source count to trace that branch further."
+          : " This is an independent origin Shape."}
+      </Prose>
+      <ZoomableTree resetKey={root.key}>
+        <LineageNode
+          node={root}
+          byKey={byKey}
+          focusedKey={focusedKey}
+          onSelect={onSelect}
+          expandedKeys={expandedKeys}
+          onToggleExpanded={toggleExpanded}
+        />
+      </ZoomableTree>
     </div>
   );
 }
@@ -1089,6 +1274,13 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
 function LineageBeat({ session }: { session: PlaySession }) {
   const byKey = React.useMemo(() => new Map(session.nodes.map((n) => [n.key, n])), [session.nodes]);
   const tips = liveNodes(session);
+  const completeRoot = React.useMemo(() => {
+    const liveKeys = new Set(tips.map((tip) => tip.key));
+    for (let i = session.nodes.length - 1; i >= 0; i--) {
+      if (session.nodes[i].complete && liveKeys.has(session.nodes[i].key)) return session.nodes[i];
+    }
+    return null;
+  }, [session.nodes, tips]);
   const mostRecentProduced = React.useMemo(() => {
     for (let i = session.nodes.length - 1; i >= 0; i--) {
       if (session.nodes[i].trace || session.nodes[i].splitTrace) return session.nodes[i];
@@ -1097,7 +1289,8 @@ function LineageBeat({ session }: { session: PlaySession }) {
   }, [session.nodes]);
   const [focusedKey, setFocusedKey] = React.useState<number | null>(null);
   React.useEffect(() => {
-    if (mostRecentProduced) setFocusedKey(mostRecentProduced.key);
+    if (!mostRecentProduced) return;
+    setFocusedKey(mostRecentProduced.key);
   }, [mostRecentProduced?.key]);
 
   const focusedNode = focusedKey != null ? byKey.get(focusedKey) ?? null : null;
@@ -1105,16 +1298,52 @@ function LineageBeat({ session }: { session: PlaySession }) {
   if (tips.length === 0) return null;
 
   return (
-    <section style={sectionStyle}>
-      <SectionLabel>Lineage</SectionLabel>
-      <Prose>This session&apos;s compose and split history.</Prose>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "18px 0 28px" }}>
-        {tips.map((tip) => (
-          <LineageNode key={tip.key} node={tip} byKey={byKey} focusedKey={focusedKey} onSelect={setFocusedKey} />
-        ))}
-      </div>
-      {focusedNode && focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
-      {focusedNode && focusedNode.splitTrace && <SplitCellExplorer node={focusedNode} byKey={byKey} />}
+    <section className="play-section">
+      <SectionLabel>Provenance</SectionLabel>
+      {completeRoot ? (
+        <CompleteLineageTree
+          key={completeRoot.key}
+          root={completeRoot}
+          session={session}
+          byKey={byKey}
+          focusedKey={focusedKey}
+          onSelect={setFocusedKey}
+        />
+      ) : (
+        <>
+          <Prose>Every Shape the surviving object was built from.</Prose>
+          <ZoomableTree resetKey={tips.map((tip) => tip.key).reduce((sum, key) => sum + key, 0)}>
+            <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
+              {tips.map((tip) => (
+              <LineageNode
+                key={tip.key}
+                node={tip}
+                byKey={byKey}
+                focusedKey={focusedKey}
+                onSelect={setFocusedKey}
+              />
+              ))}
+            </div>
+          </ZoomableTree>
+        </>
+      )}
+      {focusedNode && (focusedNode.trace || focusedNode.splitTrace) && (
+        <div className="play-provenance-inspector">
+          <header className="play-inspector-header">
+            <div>
+              <div className="play-inspector-eyebrow">↳ Selected from the provenance tree</div>
+              <h3>Shape #{focusedNode.demoId} · {LABELS[focusedNode.denomIndex]} ETH</h3>
+            </div>
+            <p>
+              {focusedNode.trace
+                ? "Each colour connects a cell in this Shape to the source Shape it came from."
+                : "The highlighted cells connect this Shape to the state it was split from."}
+            </p>
+          </header>
+          {focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
+          {focusedNode.splitTrace && <SplitCellExplorer node={focusedNode} byKey={byKey} />}
+        </div>
+      )}
     </section>
   );
 }
@@ -1123,12 +1352,6 @@ function LineageBeat({ session }: { session: PlaySession }) {
  * Page
  * ------------------------------------------------------------------ */
 
-const sectionStyle: React.CSSProperties = {
-  borderTop: `1px solid ${C.rule}`,
-  paddingTop: 28,
-  marginBottom: 44,
-};
-
 export function PlayApp() {
   const [session, setSession] = React.useState<PlaySession>(emptySession);
   const [denomIndex, setDenomIndex] = React.useState(0);
@@ -1136,15 +1359,10 @@ export function PlayApp() {
   // which returns a different value on the server render than on the client's first paint,
   // producing a hydration mismatch. The mount effect below replaces it with a real roll.
   const [seed, setSeed] = React.useState<bigint>(0n);
-  const [seedText, setSeedText] = React.useState("");
-  const [selected, setSelected] = React.useState<Set<number>>(new Set());
-  const [composeError, setComposeError] = React.useState<string | null>(null);
+  const [completeBusy, setCompleteBusy] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
   // Which tray card's split picker or sacrifice confirmation is open, if any.
   const [menu, setMenu] = React.useState<TrayMenu>(null);
-  // Exports-only: Card/Square/Ladder PNG and GIF render inverted when set. On-page cards never
-  // invert, so this never touches anything the visitor is looking at directly.
-  const [inverted, setInverted] = React.useState(false);
 
   // Client-only setup on mount: roll the real starting seed (see the placeholder note above),
   // and restore session state from `?s=` if present. A state initializer would read `location`
@@ -1163,67 +1381,48 @@ export function PlayApp() {
     setHydrated(true);
   }, []);
 
-  // Keep the URL in sync with the session: every action (keep, remove, compose) replaces the
-  // `?s=` query so the address bar always reproduces the current state, with no navigation.
+  // Keep compact sessions reproducible in the URL. Full-lineage sessions intentionally stay at
+  // `/play`: their thousands of nodes are useful on-page but do not belong in an address bar.
   React.useEffect(() => {
     if (!hydrated) return;
-    const url = session.nodes.length > 0 ? `/play?s=${encodeSession(session)}` : "/play";
+    const url = session.nodes.length > 0 && sessionShareable(session)
+      ? `/play?s=${encodeSession(session)}`
+      : "/play";
     history.replaceState(null, "", url);
   }, [hydrated, session]);
 
-  const trimmedText = seedText.trim();
-  const effectiveSeed = trimmedText ? textSeed(trimmedText) : seed;
+  const effectiveSeed = seed;
 
   const nodes = liveNodes(session);
-  // Keep is blocked only when the session it would produce no longer fits in a share link
-  // (urlCodec's 64-op / 4KiB decode limits) — the demo's one growth bound, unreachable in
-  // normal play. keepCard is pure and cheap, so projecting it per render is fine.
-  const keepDisabled = React.useMemo(
-    () => !sessionShareable(keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined)),
-    [session, denomIndex, effectiveSeed, trimmedText],
-  );
-
-  const lastResult = React.useMemo(() => {
-    for (let i = session.nodes.length - 1; i >= 0; i--) {
-      if (session.nodes[i].trace) return session.nodes[i];
-    }
-    return null;
-  }, [session.nodes]);
-
-  const handleKeep = () => {
-    if (keepDisabled) return;
-    setSession(keepCard(session, denomIndex, effectiveSeed, trimmedText || undefined));
-    // Advance the draft: a kept card stays in the tray, so the same seed has nothing more to
-    // give (a text seed is fully determined by its text). Roll fresh for the next draw.
-    setSeedText("");
-    setSeed(randomSeed());
-  };
-
-  const handleToggle = (key: number) => {
-    setSelected((cur) => {
-      const next = new Set(cur);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  const handleComplete = () => {
+    if (completeBusy) return;
+    const targetDenomIndex = denomIndex;
+    setCompleteBusy(true);
+    window.setTimeout(() => {
+      try {
+        let seedIndex = 0;
+        setSession(buildCompleteShape(emptySession(), targetDenomIndex, () => seedIndex++ === 0 ? effectiveSeed : randomSeed()));
+        setMenu(null);
+      } catch (error) {
+        console.error("generation failed", error);
+      } finally {
+        setCompleteBusy(false);
+      }
+    }, 0);
   };
 
   const handleRemove = (key: number) => {
     setSession((s) => removeNode(s, key));
-    setSelected((cur) => {
-      if (!cur.has(key)) return cur;
-      const next = new Set(cur);
-      next.delete(key);
-      return next;
-    });
     setMenu((m) => (m?.key === key ? null : m));
   };
 
   const handleSplit = (key: number, childDenomIndex: number) => {
     try {
-      const next = splitNode(session, key, childDenomIndex);
-      if (!sessionShareable(next)) return; // SplitPicker already disables this tier; ignore a stale click.
-      setSession(next);
+      const node = liveNodes(session).find((candidate) => candidate.key === key);
+      if (!node) return;
+      const childCount = Number(unitsAt(node.denomIndex) / unitsAt(childDenomIndex));
+      if (liveNodes(session).length - 1 + childCount > MAX_TRAY_CARDS) return;
+      setSession(splitNode(session, key, childDenomIndex));
       setMenu(null);
     } catch (e) {
       console.error("split failed", e);
@@ -1247,23 +1446,8 @@ export function PlayApp() {
     }
   };
 
-  const handleCompose = () => {
-    try {
-      const next = composeNodes(session, [...selected]);
-      if (!sessionShareable(next)) {
-        setComposeError("The share link is full. Remove a card first.");
-        return;
-      }
-      setSession(next);
-      setSelected(new Set());
-      setComposeError(null);
-    } catch (e) {
-      setComposeError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
   return (
-    <div style={{ background: C.page, minHeight: "100vh", color: C.ink }}>
+    <div className="launch-play-page" style={{ background: C.page, minHeight: "100vh", color: C.ink }}>
       <style>{`
         /* The compose reveal is the only animation on this page. Default (and reduced-motion)
            state: no cover, no animation -- the plain finished card. Motion is opted back in only
@@ -1282,71 +1466,457 @@ export function PlayApp() {
             animation-name: playRevealFade;
           }
         }
+        .launch-play-page {
+          color-scheme: light;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: 16px;
+          line-height: 1.5;
+        }
+        .launch-play-page a {
+          color: inherit;
+        }
+        .play-page-nav,
+        .play-page-shell {
+          width: min(100% - 64px, 1360px);
+          margin-inline: auto;
+        }
+        .play-page-nav {
+          min-height: 84px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-bottom: 1px solid ${C.rule};
+          font-family: ${FONT};
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .play-page-nav a {
+          font-weight: 500;
+          text-decoration: none;
+        }
+        .play-page-shell {
+          padding: clamp(56px, 7vw, 96px) 0 42px;
+        }
+        .play-page-intro {
+          max-width: 760px;
+          margin-bottom: clamp(56px, 7vw, 88px);
+        }
+        .play-page-intro h1 {
+          max-width: 12ch;
+          margin: 0;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: clamp(58px, 7vw, 104px);
+          font-weight: 500;
+          letter-spacing: -0.065em;
+          line-height: 0.94;
+        }
+        .play-page-intro > p:last-child {
+          max-width: 620px;
+          margin-top: 28px !important;
+          font-size: clamp(16px, 1.35vw, 19px) !important;
+          letter-spacing: -0.01em;
+          line-height: 1.45 !important;
+        }
+        .play-page-content {
+          max-width: 1120px;
+        }
+        .play-section {
+          border-top: 1px solid ${C.rule};
+          padding-top: 24px;
+          margin-bottom: clamp(48px, 6vw, 72px);
+        }
+        .play-draw-grid {
+          display: grid;
+          grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+          gap: clamp(32px, 5vw, 64px);
+          align-items: start;
+        }
+        .play-draw-card {
+          width: 100%;
+        }
+        .play-seed {
+          margin-top: 8px;
+          overflow-wrap: anywhere;
+          font-family: ${FONT};
+          font-size: 8.5px;
+          line-height: 1.45;
+          color: ${C.muted};
+        }
+        .play-draw-controls {
+          display: flex;
+          min-width: 0;
+          flex-direction: column;
+          gap: 22px;
+        }
+        .play-control-group {
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+        }
+        .play-control-label {
+          font-family: ${FONT};
+          font-size: 8.5px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: ${C.muted};
+        }
+        .play-tier-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(84px, 1fr));
+          gap: 6px;
+        }
+        .play-tier-grid button {
+          width: 100%;
+        }
+        .play-action-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 22px;
+          flex-wrap: wrap;
+        }
+        .play-action-group {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .play-complete-group {
+          max-width: 330px;
+          padding-left: 22px;
+          border-left: 1px solid ${C.rule};
+        }
+        .play-complete-group > span,
+        .play-note,
+        .play-empty {
+          margin: 0;
+          color: ${C.muted};
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: 12.5px;
+          line-height: 1.45;
+        }
+        .play-quantity {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+        }
+        .play-quantity > span {
+          font-family: ${FONT};
+          font-size: 9px;
+          color: ${C.muted};
+        }
+        .play-export-row {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding-top: 18px;
+          border-top: 1px solid ${C.ruleInner};
+        }
+        .play-export-row > div {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .play-note {
+          max-width: 460px;
+          font-size: 11.5px;
+        }
+        .play-empty {
+          padding-bottom: 4px;
+        }
+        .play-compose-bar {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: 16px;
+        }
+        .play-tree-frame {
+          position: relative;
+          margin: 24px 0 0;
+        }
+        .play-tree-viewport {
+          position: relative;
+          height: clamp(440px, 62vh, 680px);
+          overflow: hidden;
+          border: 1px solid ${C.rule};
+          background-color: ${C.page};
+          background-image: radial-gradient(${C.rule} 0.7px, transparent 0.7px);
+          background-size: 16px 16px;
+          cursor: grab;
+          touch-action: none;
+          user-select: none;
+        }
+        .play-tree-viewport.is-dragging {
+          cursor: grabbing;
+        }
+        .play-tree-content {
+          position: absolute;
+          top: 0;
+          left: 0;
+          display: inline-flex;
+          width: max-content;
+          align-items: flex-start;
+          transform-origin: 0 0;
+          will-change: transform;
+        }
+        .play-tree-toolbar {
+          position: absolute;
+          z-index: 2;
+          top: 12px;
+          right: 12px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px;
+          border: 1px solid ${C.rule};
+          background: color-mix(in srgb, ${C.page} 94%, transparent);
+        }
+        .play-tree-toolbar > span {
+          min-width: 38px;
+          padding: 0 4px;
+          font-family: ${FONT};
+          font-size: 8.5px;
+          color: ${C.muted};
+          text-align: right;
+        }
+        .play-tree-help {
+          margin: 0;
+          padding: 8px 12px;
+          border: 1px solid ${C.rule};
+          border-top: 0;
+          font-family: ${FONT};
+          font-size: 8.5px;
+          letter-spacing: 0.04em;
+          color: ${C.muted};
+        }
+        .play-provenance-tree-block {
+          margin: 20px 0 0;
+        }
+        .play-provenance-inspector {
+          padding: clamp(22px, 3vw, 36px);
+          border: 1px solid ${C.rule};
+          border-top: 3px solid ${C.ink};
+          background: ${C.row};
+        }
+        .play-inspector-header {
+          display: grid;
+          grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr);
+          gap: 24px 48px;
+          align-items: end;
+          margin-bottom: 28px;
+          padding-bottom: 22px;
+          border-bottom: 1px solid ${C.rule};
+        }
+        .play-inspector-eyebrow,
+        .play-inspector-subhead {
+          font-family: ${FONT};
+          font-size: 8.5px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: ${C.muted};
+        }
+        .play-inspector-header h3 {
+          margin: 8px 0 0;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: clamp(22px, 2.4vw, 32px);
+          font-weight: 500;
+          letter-spacing: -0.035em;
+          line-height: 1.05;
+        }
+        .play-inspector-header p {
+          max-width: 600px;
+          margin: 0;
+          color: ${C.bodyDim};
+          font-size: 13px;
+          line-height: 1.5;
+        }
+        .play-inspector-body {
+          display: grid;
+          grid-template-columns: minmax(200px, 280px) minmax(170px, 220px) minmax(240px, 1fr);
+          gap: clamp(22px, 3vw, 40px);
+          align-items: start;
+        }
+        .play-inspector-result {
+          width: 100%;
+        }
+        .play-inspector-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .play-inspector-sources {
+          min-width: 0;
+        }
+        .play-inspector-subhead {
+          margin-bottom: 12px;
+        }
+        .play-source-cards {
+          display: flex;
+          gap: 14px;
+          flex-wrap: wrap;
+        }
+        .play-tree-rollup,
+        .play-tree-collapse {
+          font-family: ${FONT};
+          color: ${C.muted};
+          background: transparent;
+          cursor: pointer;
+        }
+        .play-tree-rollup {
+          padding: 5px 7px;
+          border: 1px solid ${C.border};
+          font-size: 9px;
+          letter-spacing: 0.04em;
+        }
+        .play-tree-collapse {
+          margin-top: 6px;
+          padding: 0;
+          border: 0;
+          font-size: 8px;
+          text-decoration: underline;
+          text-underline-offset: 2px;
+        }
+        .launch-play-page button,
+        .launch-play-page input {
+          border-radius: 0;
+        }
+        .launch-play-page button:not(:disabled):hover {
+          border-color: ${C.ink} !important;
+        }
+        .launch-play-page input:focus-visible,
+        .launch-play-page button:focus-visible,
+        .launch-play-page a:focus-visible {
+          outline: 2px solid ${C.ink};
+          outline-offset: 3px;
+        }
+        .play-page-footer {
+          margin-top: 72px;
+          padding-top: 28px;
+          border-top: 1px solid ${C.ink};
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 24px;
+          font-family: ${FONT};
+          font-size: 9px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+        .play-page-footer nav {
+          display: flex;
+          gap: 22px;
+        }
+        @media (max-width: 620px) {
+          .play-page-nav,
+          .play-page-shell {
+            width: min(100% - 36px, 1360px);
+          }
+          .play-page-nav {
+            min-height: 70px;
+          }
+          .play-page-shell {
+            padding-top: 52px;
+          }
+          .play-page-intro h1 {
+            font-size: clamp(58px, 20vw, 82px);
+          }
+          .play-page-intro {
+            margin-bottom: 60px;
+          }
+          .play-draw-grid {
+            grid-template-columns: 1fr;
+            gap: 28px;
+          }
+          .play-draw-card {
+            width: min(260px, 78vw);
+          }
+          .play-tier-grid {
+            grid-template-columns: repeat(3, minmax(76px, 1fr));
+          }
+          .play-complete-group {
+            max-width: none;
+            padding-left: 0;
+            border-left: 0;
+          }
+          .play-action-row {
+            gap: 14px;
+          }
+          .play-section {
+            margin-bottom: 48px;
+          }
+          .play-tree-viewport {
+            height: min(62vh, 520px);
+          }
+          .play-inspector-header,
+          .play-inspector-body {
+            grid-template-columns: 1fr;
+          }
+          .play-inspector-header {
+            gap: 12px;
+            margin-bottom: 22px;
+            padding-bottom: 18px;
+          }
+          .play-inspector-result {
+            width: min(240px, 100%);
+          }
+          .play-provenance-inspector {
+            padding: 20px;
+          }
+          .play-page-footer {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+        }
       `}</style>
-      <div style={{ maxWidth: 760, margin: "0 auto", padding: "48px 20px 80px" }}>
-        <header style={{ marginBottom: 40 }}>
-          <div style={{ ...mono, fontSize: 10, letterSpacing: "0.14em", color: C.muted, marginBottom: 10 }}>
-            PLAYGROUND
-          </div>
-          <h1 style={{ ...mono, fontSize: 18, fontWeight: 500, color: C.ink, margin: "0 0 14px" }}>
-            Draw a Shape. Compose Shapes. Trace every cell to a parent.
-          </h1>
+      <header className="play-page-nav">
+        <a href="/">shapes</a>
+      </header>
+      <main className="play-page-shell">
+        <header className="play-page-intro">
+          <h1>Generate. Split. Trace.</h1>
           <Prose>
-            This playground runs the same renderer and the same sampling procedure as the contract. A minted
-            Shape with this seed at this denomination would be byte-identical.
+            Choose a denomination, roll an output, then generate the complete Shape and explore where it came from.
           </Prose>
         </header>
 
-        <DrawBeat
-          denomIndex={denomIndex}
-          onDenomIndex={setDenomIndex}
-          seedText={seedText}
-          onSeedText={setSeedText}
-          onRoll={() => {
-            setSeedText("");
-            setSeed(randomSeed());
-          }}
-          effectiveSeed={effectiveSeed}
-          onKeep={handleKeep}
-          keepDisabled={keepDisabled}
-          inverted={inverted}
-          onToggleInverted={() => setInverted((v) => !v)}
-        />
+        <div className="play-page-content">
+          <DrawBeat
+            denomIndex={denomIndex}
+            onDenomIndex={setDenomIndex}
+            onRoll={() => setSeed(randomSeed())}
+            effectiveSeed={effectiveSeed}
+            onComplete={handleComplete}
+            completeBusy={completeBusy}
+          />
 
-        <TrayBeat
-          nodes={nodes}
-          session={session}
-          selected={selected}
-          menu={menu}
-          onToggle={handleToggle}
-          onRemove={handleRemove}
-          onOpenMenu={setMenu}
-          onSplit={handleSplit}
-          onDecompose={handleDecompose}
-          onSacrifice={handleSacrifice}
-        />
+          {nodes.length > 0 && (
+            <TrayBeat
+              nodes={nodes}
+              session={session}
+              selected={new Set()}
+              menu={menu}
+              onToggle={() => {}}
+              onRemove={handleRemove}
+              onOpenMenu={setMenu}
+              onSplit={handleSplit}
+              onDecompose={handleDecompose}
+              onSacrifice={handleSacrifice}
+            />
+          )}
 
-        <ComposeBeat
-          nodes={nodes}
-          selected={selected}
-          onCompose={handleCompose}
-          error={composeError}
-          lastResult={lastResult}
-          inverted={inverted}
-          onToggleInverted={() => setInverted((v) => !v)}
-        />
+          <LineageBeat session={session} />
+        </div>
 
-        <LineageBeat session={session} />
-
-        <footer style={{ ...mono, fontSize: 11, color: C.muted, display: "flex", gap: 20 }}>
-          <a href="/how-it-works" style={{ color: C.muted }}>
-            how it works
-          </a>
-          <a href={REPO_URL} style={{ color: C.muted }}>
-            source
-          </a>
+        <footer className="play-page-footer">
+          <span>
+            An Ethereum primitive by <a href="https://x.com/ripe0x">ripe</a>
+          </span>
+          <nav aria-label="Playground footer">
+            <a href="/">Back to launch</a>
+            <a href={REPO_URL}>Source</a>
+          </nav>
         </footer>
-      </div>
+      </main>
     </div>
   );
 }

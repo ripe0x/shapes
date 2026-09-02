@@ -6,7 +6,7 @@ import "@fontsource/ibm-plex-mono/500.css";
 import { SiteApp, type View } from "@shared/site/SiteApp";
 import { useShapesDeployment } from "./ShapesProviders";
 
-// Route slug <-> SiteApp view. "/" is the mint home; the others get their own path.
+// Route slug <-> SiteApp view. The launch page owns "/"; the full mint app lives at "/mint".
 function pathFor(view: View, tokenId: bigint | null): string {
   if (view === "auction") return "/auction";
   if (view === "gallery") return "/gallery";
@@ -14,7 +14,7 @@ function pathFor(view: View, tokenId: bigint | null): string {
   if (view === "about") return "/how-it-works";
   if (view === "token" && tokenId !== null) return `/shape/${tokenId.toString()}`;
   if (view === "manage" && tokenId !== null) return `/shape/${tokenId.toString()}/manage`;
-  return "/";
+  return "/mint";
 }
 
 /**

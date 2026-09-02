@@ -16,7 +16,7 @@ const OG = { width: 1200, height: 630 };
 // Portrait card, the 250:350 ratio the artwork is drawn at. Height leaves a ~7% top/bottom margin.
 const CARD_H = 540;
 const CARD_W = Math.round((CARD_H * 250) / 350);
-const BG = "#0d0d0c";
+const BG = "#f7f7f3";
 
 // Cards over this length in `?s=` are never decoded, only rendered as the default card.
 const MAX_S_LENGTH = 6000;
