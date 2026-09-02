@@ -941,8 +941,8 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
   const activeCell = active != null ? trace[active] : null;
 
   return (
-    <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
-      <div style={{ width: "min(280px, 80vw)" }}>
+    <div className="play-inspector-body">
+      <div className="play-inspector-result">
         <div
           style={{
             position: "relative",
@@ -979,7 +979,8 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="play-inspector-meta">
+        <div className="play-inspector-subhead">Cell sources</div>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           {donorLabels.map((lab, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -998,8 +999,10 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
         )}
       </div>
 
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        {donorNodes.map((d, i) => {
+      <div className="play-inspector-sources">
+        <div className="play-inspector-subhead">Source Shapes</div>
+        <div className="play-source-cards">
+          {donorNodes.map((d, i) => {
           const dc = nodeComposition(d);
           const dsvg = svgFromComposition(dc, 0n, CANONICAL, d.black === true);
           return (
@@ -1035,7 +1038,8 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
               </div>
             </div>
           );
-        })}
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1090,8 +1094,8 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
   const activeCell = active != null ? trace[active] : null;
 
   return (
-    <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
-      <div style={{ width: "min(280px, 80vw)" }}>
+    <div className="play-inspector-body">
+      <div className="play-inspector-result">
         <div
           style={{
             position: "relative",
@@ -1127,7 +1131,8 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="play-inspector-meta">
+        <div className="play-inspector-subhead">Cell source</div>
         {activeCell && (
           <PlayDetailPanel
             label={recordBranch ? `#${parent.demoId} merge pool` : `#${parent.demoId} seed at ${LABELS[node.denomIndex]} ETH`}
@@ -1142,7 +1147,9 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
       </div>
 
       {poolComposition && poolSvg && (
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <div className="play-inspector-sources">
+          <div className="play-inspector-subhead">Source Shape</div>
+          <div className="play-source-cards">
           <div style={{ width: 120 }}>
             <div
               style={{
@@ -1173,6 +1180,7 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
             <div style={{ ...mono, fontSize: 9.5, color: C.muted, textAlign: "center", marginTop: 6 }}>
               #{parent.demoId} seed at {LABELS[node.denomIndex]} ETH
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -1239,7 +1247,7 @@ function CompleteLineageTree({
   };
 
   return (
-    <div style={{ margin: "20px 0 32px" }}>
+    <div className="play-provenance-tree-block">
       <Prose>
         Complete {LABELS[root.denomIndex]} ETH · {formatCount(originCount)} independent origins · {layers.length} tiers.
         {layers.length > 1
@@ -1316,8 +1324,23 @@ function LineageBeat({ session }: { session: PlaySession }) {
           </ZoomableTree>
         </>
       )}
-      {focusedNode && focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
-      {focusedNode && focusedNode.splitTrace && <SplitCellExplorer node={focusedNode} byKey={byKey} />}
+      {focusedNode && (focusedNode.trace || focusedNode.splitTrace) && (
+        <div className="play-provenance-inspector">
+          <header className="play-inspector-header">
+            <div>
+              <div className="play-inspector-eyebrow">↳ Selected from the provenance tree</div>
+              <h3>Shape #{focusedNode.demoId} · {LABELS[focusedNode.denomIndex]} ETH</h3>
+            </div>
+            <p>
+              {focusedNode.trace
+                ? "Each colour connects a cell in this Shape to the source Shape it came from."
+                : "The highlighted cells connect this Shape to the state it was split from."}
+            </p>
+          </header>
+          {focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
+          {focusedNode.splitTrace && <SplitCellExplorer node={focusedNode} byKey={byKey} />}
+        </div>
+      )}
     </section>
   );
 }
@@ -1606,7 +1629,7 @@ export function PlayApp() {
         }
         .play-tree-frame {
           position: relative;
-          margin: 24px 0 32px;
+          margin: 24px 0 0;
         }
         .play-tree-viewport {
           position: relative;
@@ -1654,11 +1677,80 @@ export function PlayApp() {
           text-align: right;
         }
         .play-tree-help {
-          margin: 8px 0 0;
+          margin: 0;
+          padding: 8px 12px;
+          border: 1px solid ${C.rule};
+          border-top: 0;
           font-family: ${FONT};
           font-size: 8.5px;
           letter-spacing: 0.04em;
           color: ${C.muted};
+        }
+        .play-provenance-tree-block {
+          margin: 20px 0 0;
+        }
+        .play-provenance-inspector {
+          padding: clamp(22px, 3vw, 36px);
+          border: 1px solid ${C.rule};
+          border-top: 3px solid ${C.ink};
+          background: ${C.row};
+        }
+        .play-inspector-header {
+          display: grid;
+          grid-template-columns: minmax(220px, 0.8fr) minmax(280px, 1.2fr);
+          gap: 24px 48px;
+          align-items: end;
+          margin-bottom: 28px;
+          padding-bottom: 22px;
+          border-bottom: 1px solid ${C.rule};
+        }
+        .play-inspector-eyebrow,
+        .play-inspector-subhead {
+          font-family: ${FONT};
+          font-size: 8.5px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: ${C.muted};
+        }
+        .play-inspector-header h3 {
+          margin: 8px 0 0;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: clamp(22px, 2.4vw, 32px);
+          font-weight: 500;
+          letter-spacing: -0.035em;
+          line-height: 1.05;
+        }
+        .play-inspector-header p {
+          max-width: 600px;
+          margin: 0;
+          color: ${C.bodyDim};
+          font-size: 13px;
+          line-height: 1.5;
+        }
+        .play-inspector-body {
+          display: grid;
+          grid-template-columns: minmax(200px, 280px) minmax(170px, 220px) minmax(240px, 1fr);
+          gap: clamp(22px, 3vw, 40px);
+          align-items: start;
+        }
+        .play-inspector-result {
+          width: 100%;
+        }
+        .play-inspector-meta {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .play-inspector-sources {
+          min-width: 0;
+        }
+        .play-inspector-subhead {
+          margin-bottom: 12px;
+        }
+        .play-source-cards {
+          display: flex;
+          gap: 14px;
+          flex-wrap: wrap;
         }
         .play-tree-rollup,
         .play-tree-collapse {
@@ -1751,6 +1843,21 @@ export function PlayApp() {
           }
           .play-tree-viewport {
             height: min(62vh, 520px);
+          }
+          .play-inspector-header,
+          .play-inspector-body {
+            grid-template-columns: 1fr;
+          }
+          .play-inspector-header {
+            gap: 12px;
+            margin-bottom: 22px;
+            padding-bottom: 18px;
+          }
+          .play-inspector-result {
+            width: min(240px, 100%);
+          }
+          .play-provenance-inspector {
+            padding: 20px;
           }
           .play-page-footer {
             align-items: flex-start;
