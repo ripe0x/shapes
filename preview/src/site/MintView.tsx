@@ -3,11 +3,10 @@ import {formatEther} from "viem";
 import {useAccount, useBalance} from "wagmi";
 import {DENOMINATIONS} from "../chain/abi";
 import {GRIDS, LABELS} from "../canonical/denominations";
-import {C, SANS} from "./theme";
-import {Section, Art, txUrl} from "./ui";
+import {C, FONT, SANS} from "./theme";
+import {Art, txUrl} from "./ui";
 import {localArt, sampleSeed} from "./art";
 import {mintGene} from "../previewGene";
-import {facts} from "./copy";
 import type {SiteData} from "./data";
 import type {MintState} from "./SiteApp";
 
@@ -17,95 +16,65 @@ const marksText = (di: number) => {
 };
 const gridText = (di: number) => `${GRIDS[di][0]} × ${GRIDS[di][1]}`;
 
-/** The nine-row denomination ladder. Interactive on the mint screen, static on how-it-works. */
-export function DenomLadder({
+/** One tier card in the mint page's denomination grid. Hovering cycles its thumbnail every
+ *  300ms starting from a random frame, matching the landing page's tier cards. Clicking selects
+ *  the tier. */
+function TierCard({
+  i,
+  d,
   sel,
   onSelect,
 }: {
-  sel?: number;
-  onSelect?: (i: number) => void;
+  i: number;
+  d: {label: string; wei: bigint};
+  sel: number;
+  onSelect: (i: number) => void;
 }) {
-  const [hover, setHover] = React.useState(-1);
+  const [hover, setHover] = React.useState(false);
   const [tick, setTick] = React.useState(0);
-  // Random per hover, so each hover shows a different sample sequence. Non-zero, so the first
-  // hovered frame already differs from the resting artwork.
   const hoverBase = React.useRef(0);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Hovering a row swaps its thumbnail immediately and then cycles every 300ms. One timer at
-  // a time.
-  const enter = (i: number) => {
+  const enter = () => {
     if (timer.current) clearInterval(timer.current);
     hoverBase.current = 1 + Math.floor(Math.random() * 4096);
-    setHover(i);
+    setHover(true);
     setTick(0);
     timer.current = setInterval(() => setTick((t) => t + 1), 300);
   };
   const leave = () => {
     if (timer.current) clearInterval(timer.current);
     timer.current = null;
-    setHover(-1);
+    setHover(false);
     setTick(0);
   };
   React.useEffect(() => () => {
     if (timer.current) clearInterval(timer.current);
   }, []);
 
-  const interactive = !!onSelect;
+  const t = hover ? hoverBase.current + tick : 0;
+  const seed = sampleSeed(1000 + i + t * 613);
+  const art = localArt(seed, d.wei, mintGene(seed, d.wei));
+
   return (
-    <>
-      {DENOMINATIONS.map((d, i) => {
-        const t = hover === i ? hoverBase.current + tick : 0;
-        const sampleArtSeed = sampleSeed(1000 + i + t * 613);
-        const art = localArt(sampleArtSeed, d.wei, mintGene(sampleArtSeed, d.wei));
-        const row = (
-          <>
-            <Art src={art} width={34} />
-            <div>{d.label} ETH</div>
-            <div style={{color: C.muted}}>{gridText(i)}</div>
-            <div style={{color: C.muted}}>{marksText(i)}</div>
-          </>
-        );
-        const base: React.CSSProperties = {
-          display: "grid",
-          gridTemplateColumns: "34px 96px 78px minmax(0, 1fr)",
-          gap: 24,
-          alignItems: "center",
-          borderBottom: `1px solid ${C.ruleInner}`,
-          fontSize: 13,
-        };
-        if (!interactive) {
-          return (
-            <div key={d.label} style={{...base, padding: "9px 12px"}}>
-              {row}
-            </div>
-          );
-        }
-        return (
-          <button
-            key={d.label}
-            type="button"
-            className="row-denom"
-            onClick={() => onSelect!(i)}
-            onMouseEnter={() => enter(i)}
-            onMouseLeave={leave}
-            style={{
-              ...base,
-              width: "100%",
-              textAlign: "left",
-              padding: "9px 12px",
-              border: 0,
-              borderBottom: `1px solid ${C.ruleInner}`,
-              background: sel === i ? C.row : "transparent",
-              color: sel === i ? C.ink : C.bodyDim,
-              cursor: "pointer",
-            }}
-          >
-            {row}
-          </button>
-        );
-      })}
-    </>
+    <button
+      type="button"
+      className="tier"
+      aria-pressed={sel === i}
+      onClick={() => onSelect(i)}
+      onMouseEnter={enter}
+      onMouseLeave={leave}
+    >
+      <div className="tier-value">
+        <strong>{d.label}</strong>
+        <span>ETH</span>
+      </div>
+      <img className="tier-art" src={art} alt="" />
+      <div className="tier-cost">
+        <span>{gridText(i)} grid</span>
+        <strong>{marksText(i)}</strong>
+      </div>
+    </button>
   );
 }
 
@@ -164,24 +133,41 @@ export function MintView({
     connected && balance !== undefined && total !== null && balance.value < total;
 
   return (
-    <main>
-      <div style={{padding: "72px 48px 64px", borderBottom: `1px solid ${C.rule}`}}>
-        <div style={{fontFamily: SANS, fontSize: 24, lineHeight: 1.62, maxWidth: "54ch"}}>
-          ETH in, Shape out.
-          <br />
-          Shape burned, ETH returned.
+    <main className="mint-page">
+      <section className="launch-section launch-about">
+        <div>
+          <p className="launch-kicker">Mint</p>
+          <h2>
+            ETH in, Shape out.
+            <br />
+            Shape burned, ETH returned.
+          </h2>
         </div>
-        <p style={{margin: "34px 0 0", fontFamily: SANS, fontSize: 15, lineHeight: 1.6, maxWidth: "62ch", color: C.bodyDim}}>
-          A Shape holds an exact amount of ETH and gives back the same amount, exactly. Nine
-          denominations, {LABELS[0]} to {LABELS[LABELS.length - 1]} ETH. Higher value, fewer marks.
-        </p>
-      </div>
+        <div className="launch-prose">
+          <p>
+            A Shape holds an exact amount of ETH and gives back the same amount, exactly. Nine
+            denominations, {LABELS[0]} to {LABELS[LABELS.length - 1]} ETH. Higher value, fewer
+            marks.
+          </p>
+        </div>
+      </section>
 
-      <Section title="DENOMINATIONS" pad="14px 48px 22px 32px">
-        <DenomLadder sel={sel} onSelect={setSel} />
-      </Section>
+      <section className="launch-section">
+        <div className="launch-section-heading">
+          <div>
+            <p className="launch-kicker">Nine fixed tiers</p>
+            <h2>Choose a value</h2>
+          </div>
+        </div>
+        <div className="tier-grid">
+          {DENOMINATIONS.map((d, i) => (
+            <TierCard key={d.label} i={i} d={d} sel={sel} onSelect={setSel} />
+          ))}
+        </div>
+      </section>
 
-      <Section title="MINT" pad="26px 48px 40px 32px">
+      <section className="launch-section">
+        <p className="launch-kicker">Mint</p>
         <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
           <div style={{flex: "0 0 180px", width: 180}}>
             <Art src={localArt(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei, mintGene(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei))} />
@@ -304,10 +290,17 @@ export function MintView({
             </p>
           </div>
         </div>
-      </Section>
+
+        <div style={{marginTop: 40, fontFamily: FONT, fontSize: 11, color: C.muted}}>
+          {data
+            ? `The contract holds ${formatEther(data.reserve)} ETH backing ${data.supply.toString()} Shapes.`
+            : ""}
+        </div>
+      </section>
 
       {mint.status === "done" && minted && minted.tokens.length === 1 && (
-        <Section title="MINTED" pad="32px 48px 40px 32px">
+        <section className="launch-section">
+          <p className="launch-kicker">Minted</p>
           <div style={{display: "flex", flexWrap: "wrap", gap: 40, alignItems: "flex-start"}}>
             <Art src={localArt(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei, mintGene(minted.tokens[0].seed, DENOMINATIONS[minted.di].wei))} width={250} />
             <div style={{flex: "1 1 300px", minWidth: 0}}>
@@ -352,11 +345,12 @@ export function MintView({
               </button>
             </div>
           </div>
-        </Section>
+        </section>
       )}
 
       {mint.status === "done" && minted && minted.tokens.length > 1 && (
-        <Section title="MINTED" pad="32px 48px 40px 32px">
+        <section className="launch-section">
+          <p className="launch-kicker">Minted</p>
           <div style={{fontSize: 26}}>
             {minted.tokens.length} Shapes, #{minted.tokens[0].id.toString()}–#
             {minted.tokens[minted.tokens.length - 1].id.toString()}
@@ -401,22 +395,8 @@ export function MintView({
             The contract holds {DENOMINATIONS[minted.di].label} ETH for each of these Shapes. Burn
             one and you receive {DENOMINATIONS[minted.di].label} ETH.
           </p>
-        </Section>
+        </section>
       )}
-
-      {facts(fee).map((f) => (
-        <Section key={f.k} title={f.k}>
-          <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, maxWidth: "70ch", color: C.body}}>{f.v}</div>
-        </Section>
-      ))}
-
-      <Section title="RESERVE" pad="24px 48px 72px 32px" last>
-        <div style={{fontSize: 13, color: C.muted}}>
-          {data
-            ? `The contract holds ${formatEther(data.reserve)} ETH backing ${data.supply.toString()} Shapes.`
-            : ""}
-        </div>
-      </Section>
     </main>
   );
 }

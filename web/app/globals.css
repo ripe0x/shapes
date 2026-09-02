@@ -524,6 +524,216 @@ button {
   }
 }
 
+/* Shared with the launch page: kicker label, section rhythm, and tier card grid. Moved here
+   (from the .launch-page block below) because /mint uses them too; kept under the same class
+   names so the launch page's markup and CSS need no change. Declared with the :root tokens
+   instead of the --launch-* aliases the launch page defines for itself. */
+.launch-kicker {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.13em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.launch-section {
+  padding-block: clamp(96px, 11vw, 160px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.launch-section h2 {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  max-width: 15ch;
+  font-size: clamp(42px, 5.2vw, 78px);
+  font-weight: 500;
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.launch-about h2 {
+  max-width: none;
+  font-size: clamp(36px, 4.2vw, 66px);
+}
+
+.launch-prose {
+  align-self: end;
+  font-family: Arial, Helvetica, sans-serif;
+  max-width: 650px;
+  font-size: clamp(18px, 1.65vw, 23px);
+  letter-spacing: -0.02em;
+  line-height: 1.5;
+}
+
+.launch-prose p {
+  margin: 0;
+}
+
+.launch-prose p + p {
+  margin-top: 26px;
+  color: var(--muted);
+}
+
+.launch-section-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 60px;
+  margin-bottom: 62px;
+}
+
+.launch-section-heading > p {
+  max-width: 430px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--ink);
+  border-left: 1px solid var(--ink);
+}
+
+.tier {
+  min-height: 244px;
+  padding: 25px;
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.tier-value {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.tier-value strong {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: clamp(32px, 3.4vw, 50px);
+  font-weight: 400;
+  letter-spacing: -0.06em;
+  line-height: 1;
+}
+
+.tier-value span,
+.tier-cost {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tier-art {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  display: block;
+  width: 48px;
+  height: auto;
+  background: #000;
+  border-radius: 3px;
+}
+
+.tier-cost {
+  margin: auto 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  text-transform: none;
+}
+
+.tier-cost strong {
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .launch-section-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 620px) {
+  .launch-section {
+    padding-block: 86px;
+  }
+
+  .launch-section-heading {
+    gap: 34px;
+    margin-bottom: 42px;
+  }
+
+  .tier-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tier {
+    min-height: 205px;
+  }
+
+  .tier-value strong {
+    font-size: 42px;
+  }
+}
+
+/* The mint page (/mint): its .launch-section children already center and inset themselves via
+   the unscoped .launch-hero/.launch-countdown/.launch-section/.launch-faq rule above, so this
+   scope sets the sans font the moved heading/prose rules expect (the app shell's own default is
+   monospace, unlike .launch-page which sets sans itself), the tighter vertical clamp (a working
+   page, not the hero landing), the trailing border removed before the app shell's own footer
+   rule, and the selected/hover states its tier cards need that the read-only landing cards
+   don't. */
+.mint-page .launch-section {
+  padding-block: clamp(56px, 7vw, 96px);
+}
+
+.mint-page .launch-about {
+  grid-template-columns: 1fr;
+}
+
+.mint-page > .launch-section:last-child {
+  border-bottom: none;
+}
+
+/* The landing's tier cells share their border with the grid container and their neighbours
+   (each cell draws only its own right/bottom edge). The mint page's cards need an independent
+   border per card to show the selected/hover state, so the container's own border is dropped
+   and a 1px gap keeps adjoining cards from doubling into a 2px line. */
+.mint-page .tier-grid {
+  border-top: none;
+  border-left: none;
+  gap: 1px;
+}
+
+.mint-page .tier {
+  cursor: pointer;
+  border: 1px solid var(--rule);
+  text-align: left;
+}
+
+.mint-page .tier:not([aria-pressed="true"]):hover {
+  border-color: var(--border);
+}
+
+.mint-page .tier[aria-pressed="true"] {
+  border-color: var(--ink);
+}
+
 /* Pre-mint landing page. Kept under its own scope for the class names, but the app now shares
    this same paper palette at /mint and the collection routes; these vars alias the root tokens. */
 .launch-page {
@@ -587,17 +797,6 @@ button {
   gap: clamp(48px, 7vw, 120px);
   min-height: min(760px, 100vh);
   padding-block: 70px;
-}
-
-.launch-kicker {
-  margin: 0 0 22px;
-  color: var(--launch-muted);
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.13em;
-  line-height: 1.4;
-  text-transform: uppercase;
 }
 
 .launch-intro h1 {
@@ -711,133 +910,11 @@ button {
   color: var(--launch-ink) !important;
 }
 
-.launch-section {
-  padding-block: clamp(96px, 11vw, 160px);
-  border-bottom: 1px solid var(--launch-rule);
-}
-
-.launch-section h2 {
-  margin: 0;
-  max-width: 15ch;
-  font-size: clamp(42px, 5.2vw, 78px);
-  font-weight: 500;
-  letter-spacing: -0.06em;
-  line-height: 0.98;
-}
-
-/* One sentence per line (split by <br /> in markup). Font and column sized so
-   "Shape burned, ETH returned." fits on one line down to the 900px breakpoint. */
-.launch-about h2 {
-  max-width: none;
-  font-size: clamp(36px, 4.2vw, 66px);
-}
-
 .launch-about {
   display: grid;
   grid-template-columns: minmax(300px, 1.2fr) minmax(300px, 0.75fr);
   justify-content: space-between;
   gap: 64px;
-}
-
-.launch-prose {
-  align-self: end;
-  max-width: 650px;
-  font-size: clamp(18px, 1.65vw, 23px);
-  letter-spacing: -0.02em;
-  line-height: 1.5;
-}
-
-.launch-prose p {
-  margin: 0;
-}
-
-.launch-prose p + p {
-  margin-top: 26px;
-  color: var(--launch-muted);
-}
-
-.launch-section-heading {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 60px;
-  margin-bottom: 62px;
-}
-
-.launch-section-heading > p {
-  max-width: 430px;
-  margin: 0;
-  color: var(--launch-muted);
-  font-size: 15px;
-}
-
-.tier-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--launch-ink);
-  border-left: 1px solid var(--launch-ink);
-}
-
-.tier {
-  min-height: 244px;
-  padding: 25px;
-  border-right: 1px solid var(--launch-ink);
-  border-bottom: 1px solid var(--launch-ink);
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-
-.tier-value {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-}
-
-.tier-value strong {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: clamp(32px, 3.4vw, 50px);
-  font-weight: 400;
-  letter-spacing: -0.06em;
-  line-height: 1;
-}
-
-.tier-value span,
-.tier-cost {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.tier-art {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  display: block;
-  width: 48px;
-  height: auto;
-  background: #000;
-  border-radius: 3px;
-}
-
-.tier-cost {
-  margin: auto 0 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--launch-rule);
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  color: var(--launch-muted);
-  text-transform: none;
-}
-
-.tier-cost strong {
-  color: var(--launch-ink);
-  font-size: 10px;
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
 }
 
 .launch-mechanics {
@@ -1130,11 +1207,6 @@ button {
     width: 100%;
     grid-template-columns: repeat(3, 1fr);
   }
-
-  .launch-section-heading {
-    align-items: start;
-    flex-direction: column;
-  }
 }
 
 @media (max-width: 620px) {
@@ -1186,29 +1258,8 @@ button {
     font-size: 7px;
   }
 
-  .launch-section {
-    padding-block: 86px;
-  }
-
   .launch-about {
     gap: 50px;
-  }
-
-  .launch-section-heading {
-    gap: 34px;
-    margin-bottom: 42px;
-  }
-
-  .tier-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .tier {
-    min-height: 205px;
-  }
-
-  .tier-value strong {
-    font-size: 42px;
   }
 
   .launch-mechanics {
