@@ -161,7 +161,7 @@ contract ShapeLens is IShapeLens {
         returns (ShapeChildPreview[] memory children)
     {
         uint256 k = outDenoms.length;
-        if (k < 2) revert IShapes.EmptyRecomposition();
+        if (k < 2) revert IShapes.SplitTooFewOutputs();
 
         if (shapes.isBlack(tokenId)) revert IShapes.TokenIsBlack(tokenId); // also existence
 

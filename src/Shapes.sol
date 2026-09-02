@@ -31,10 +31,12 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 /// @notice ETH in, Shape out.
 ///         Shape burned, ETH returned.
 ///
-/// @dev Two paths move ETH out of the reserve, both through `_sendEth`: redemption, reached from
-///      `redeem`, `burn` and their batch/recipient variants after the token is burned, and
-///      `sacrifice`, which sends a fixed 100 ETH to an unspendable address. `compose`, `decompose`
-///      and `split` reshape tokens at constant summed backing and leave the reserve unchanged.
+/// @dev Three paths move ETH out of the contract, all through `_sendEth`: redemption, reached
+///      from `redeem`, `burn` and their batch/recipient variants after the token is burned, out
+///      of the reserve; `sacrifice`, which sends a fixed 100 ETH to an unspendable address, out of
+///      the reserve; and `withdrawFees`, which forwards accrued mint fees to `feeRecipient`, out
+///      of `pendingFees` rather than the reserve. `compose`, `decompose` and `split` reshape
+///      tokens at constant summed backing and leave the reserve unchanged.
 ///
 ///      The admin may replace the renderer via `setRenderer` and the collection metadata
 ///      contract via `setCollection`, and freeze both via `lockRenderer`. The renderer is read
@@ -54,15 +56,15 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 ///      is stored directly in Shapes and grants no authority.
 ///
 ///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
-///      `split`, `sacrifice`, `burn`, the `redeem` entrypoints and every `*To` recipient variant
-///      are guarded. The inherited ERC721 transfer and approval functions are not, so a receiver
-///      can redeem a Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
-///      Accounting stays exact; an integrator that assumes the token still exists after a safe
-///      transfer can be griefed into reverting.
+///      `split`, `sacrifice`, `burn`, `withdrawFees`, the `redeem` entrypoints and every `*To`
+///      recipient variant are guarded. The inherited ERC721 transfer and approval functions are
+///      not, so a receiver can redeem a Shape from inside its own `onERC721Received` during a
+///      `safeTransferFrom`. Accounting stays exact; an integrator that assumes the token still
+///      exists after a safe transfer can be griefed into reverting.
 ///
-///      Reserve invariant: `address(this).balance >= redeemableBacking()`, with equality in
-///      normal operation. The inequality accommodates ETH forced in through paths that bypass
-///      `receive`; such a surplus is permanently inaccessible.
+///      Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`, with
+///      equality in normal operation. The inequality accommodates ETH forced in through paths
+///      that bypass `receive`; such a surplus is permanently inaccessible.
 contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* ------------------------------ state ------------------------------ */
 
@@ -187,7 +189,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* --------------------------- fee and renderer --------------------------- */
 
     /// @inheritdoc IShapes
-    uint256 public immutable mintFee;
+    uint256 public mintFee;
+    /// @dev Cap on `mintFee`, enforced at construction and by `setMintFee`. Equals `unit()`.
+    uint256 private constant MAX_MINT_FEE = Denominations.UNIT;
+    /// @inheritdoc IShapes
+    uint256 public pendingFees;
     /// @inheritdoc IShapes
     address public feeRecipient;
 
@@ -240,10 +246,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     address private _admin;
 
     /// @param mintFee_ Flat fee in wei for every Shape created. Charged on top of backing and may
-    ///        be zero. A batch of `quantity` Shapes pays exactly `mintFee_ * quantity`.
-    /// @param feeRecipient_ Initial destination for mint fees. The admin may redirect future fees.
-    ///        It MUST be able to receive ETH: a recipient that reverts disables minting until the
-    ///        admin replaces it. Prefer an EOA, or a splitter audited for a non-reverting `receive`.
+    ///        be zero, up to `MAX_MINT_FEE`. A batch of `quantity` Shapes pays exactly
+    ///        `mintFee_ * quantity`. Admin-adjustable afterward via `setMintFee`.
+    /// @param feeRecipient_ Initial destination for accrued mint fees, forwarded only by
+    ///        `withdrawFees`. The admin may redirect future withdrawals. A reverting recipient
+    ///        blocks only `withdrawFees`, never minting.
     /// @param renderer_ The onchain renderer. Replaceable by the admin until locked. An address
     ///        with no renderer code is refused here and by `setRenderer`.
     /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-ownership
@@ -253,9 +260,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         payable
         ERC721("Shapes", "SHAPE")
     {
-        require(feeRecipient_ != address(0), "fee recipient is zero");
+        if (feeRecipient_ == address(0)) revert AdminInvalidFeeRecipient(address(0));
         _requireRendererHasCode(renderer_);
         _requireCollectionHasCode(collection_);
+        _requireFeeWithinCap(mintFee_);
         mintFee = mintFee_;
         feeRecipient = feeRecipient_;
         artist = msg.sender;
@@ -338,6 +346,19 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         address previousRecipient = feeRecipient;
         feeRecipient = newRecipient;
         emit FeeRecipientUpdated(previousRecipient, newRecipient);
+    }
+
+    /// @dev Shared by the constructor and `setMintFee`, the two places a fee amount is accepted.
+    function _requireFeeWithinCap(uint256 fee) private pure {
+        if (fee > MAX_MINT_FEE) revert MintFeeAboveCap(fee);
+    }
+
+    /// @inheritdoc IAdminControl
+    function setMintFee(uint256 newFee) external onlyAdmin {
+        _requireFeeWithinCap(newFee);
+        uint256 previousFee = mintFee;
+        mintFee = newFee;
+        emit MintFeeUpdated(previousFee, newFee);
     }
 
     /// @dev Shared by every entrypoint that requires the renderer/collection pointers to still be
@@ -435,10 +456,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @dev Applied at construction and on every replacement. Metadata has no fallback path.
+    ///      A zero address has no code, so the length check also rejects `address(0)`.
     function _requireRendererHasCode(address renderer_) private view {
-        require(renderer_ != address(0), "renderer is zero");
-        require(renderer_.code.length != 0, "renderer has no code");
-        if (!_supportsInterfaceOrFalse(renderer_, type(IShapeRenderer).interfaceId)) {
+        if (
+            renderer_.code.length == 0
+                || !_supportsInterfaceOrFalse(renderer_, type(IShapeRenderer).interfaceId)
+        ) {
             revert UnsupportedRenderer(renderer_);
         }
     }
@@ -535,6 +558,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         totalMinted = firstTokenId + quantity;
         totalSupply += quantity;
         redeemableBacking += backing;
+        // Fees accrue in aggregate and never join the reserve. No external call is made here, so
+        // `address(this).balance` already equals `redeemableBacking + pendingFees` by the time any
+        // ERC721 receiver callback below runs.
+        if (fees != 0) {
+            pendingFees += fees;
+            emit MintFeeAccrued(fees);
+        }
 
         for (uint256 i = 0; i < quantity; ++i) {
             uint256 tokenId = firstTokenId + i;
@@ -548,19 +578,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         }
 
         // -------- interactions --------
-        // Fees are forwarded in aggregate and never join the reserve. Forwarding before the mint
-        // loop means `address(this).balance` already equals `redeemableBacking` by the time any
-        // ERC721 receiver callback runs.
-        if (fees != 0) {
-            // Snapshot before the external call. An admin contract may also be the fee recipient
-            // and redirect later fees from its receive hook; this mint and its event must still
-            // name the address that actually received this payment.
-            address recipient = feeRecipient;
-            (bool sent,) = recipient.call{value: fees}("");
-            if (!sent) revert MintFeeTransferFailed(recipient, fees);
-            emit MintFeePaid(recipient, fees, quantity);
-        }
-
         // Minting after all storage writes, behind the reentrancy guard.
         //
         // During a batch `totalSupply` and `redeemableBacking` already reflect the whole batch
@@ -569,6 +586,19 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         for (uint256 i = 0; i < quantity; ++i) {
             _safeMint(to, firstTokenId + i);
         }
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev The destination is snapshotted before the transfer: an admin contract may also be the
+    ///      fee recipient and redirect itself from its own `receive` hook, but the event and the
+    ///      transfer must still name the address that actually received this withdrawal.
+    function withdrawFees() external nonReentrant {
+        uint256 amount = pendingFees;
+        if (amount == 0) revert NoFeesPending();
+        address recipient = feeRecipient;
+        pendingFees = 0;
+        emit FeesWithdrawn(recipient, amount);
+        _sendEth(recipient, amount);
     }
 
     /* ---------------------------- redemption ---------------------------- */
@@ -667,9 +697,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _burn(tokenId);
     }
 
-    /// @dev The two paths that move ETH out of the reserve: a redemption payout, reached only
-    ///      after the corresponding tokens are burned and the accounting is updated, and
-    ///      `sacrifice`'s fixed 100 ETH transfer. A failed transfer reverts the whole call.
+    /// @dev The three paths that move ETH out of the contract: a redemption payout, reached only
+    ///      after the corresponding tokens are burned and the accounting is updated;
+    ///      `sacrifice`'s fixed 100 ETH transfer, out of the reserve; and `withdrawFees`, out of
+    ///      accrued fees rather than the reserve. A failed transfer reverts the whole call.
     function _sendEth(address to, uint256 amountWei) private {
         (bool sent,) = to.call{value: amountWei}("");
         if (!sent) revert EthTransferFailed(to, amountWei);
@@ -865,7 +896,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         returns (uint256[] memory newIds)
     {
         uint256 k = outDenoms.length;
-        if (k < 2) revert EmptyRecomposition();
+        if (k < 2) revert SplitTooFewOutputs();
 
         ShapeData storage p = _requireCallerOwnsLive(tokenId);
 
@@ -1131,7 +1162,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* ------------------------------- views ------------------------------ */
 
     /// @inheritdoc IShapes
-    function formationOf(uint256 tokenId) external view returns (ShapeFormation) {
+    function formationOf(uint256 tokenId) public view returns (ShapeFormation) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
         return ShapeMath.formation(d.denomIndex, d.originCount, d.isBlack);
@@ -1187,9 +1218,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function isComplete(uint256 tokenId) public view returns (bool) {
-        _requireOwned(tokenId);
-        ShapeData storage d = _shapes[tokenId];
-        return ShapeMath.formation(d.denomIndex, d.originCount, d.isBlack) == ShapeFormation.Complete;
+        return formationOf(tokenId) == ShapeFormation.Complete;
     }
 
     /// @inheritdoc IShapes

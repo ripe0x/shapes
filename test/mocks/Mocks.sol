@@ -106,8 +106,9 @@ contract EthRejectingReceiver is IERC721Receiver {
     }
 }
 
-/// @notice A fee recipient that reverts on receipt. Minting is blocked while it remains selected;
-///         admin may redirect future fees, and redemption remains unaffected.
+/// @notice A fee recipient that reverts on receipt. Minting is never affected — the mint path
+///         never calls it. Only `withdrawFees` reverts while it remains selected; admin may
+///         redirect future withdrawals via `setFeeRecipient`, and redemption is unaffected.
 contract RevertingFeeRecipient {
     receive() external payable {
         revert("no fees");
@@ -166,7 +167,9 @@ contract ReentrantRedeemer is IERC721Receiver {
     }
 }
 
-/// @notice A fee recipient that tries to re-enter `mint` from the fee payout.
+/// @notice A fee recipient that tries to re-enter `mint` from its `receive` callback. That
+///         callback fires only from `withdrawFees`, never from a mint, since minting no longer
+///         calls the fee recipient at all.
 contract ReentrantFeeRecipient {
     IShapes public shapes;
     bool public attempted;

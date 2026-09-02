@@ -114,15 +114,18 @@ its own seed.
 
 ## The mint fee
 
-The mainnet deployment value is a flat **0.001 ETH per Shape created**, independent of backing.
-`mintFee` is immutable. The initial `feeRecipient` is chosen at deployment, and `admin()` may
-redirect only future fees. A 100 ETH Shape and a 0.01 ETH Shape each pay 0.001 ETH. The isolated
-testnet build scales the fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
+The mainnet deployment's initial value is a flat **0.001 ETH per Shape created**, independent of
+backing. `admin()` may adjust `mintFee` afterward via `setMintFee`, up to the compile-time cap
+one denomination unit (`unit()`), and may redirect `feeRecipient` for future withdrawals. A
+100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee. The isolated testnet build scales
+the initial fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
 
-`mintFee()` returns the per-Shape fee. Fees are forwarded to the recipient in the same transaction
-and never join the reserve; a batch pays and forwards `quantity * mintFee` once.
-Redemption is unaffected: a 1 ETH Shape always redeems for exactly 1 ETH, fee already paid at
-mint.
+`mintFee()` returns the current per-Shape fee, read live by every mint. Fees accrue to
+`pendingFees()` in the same transaction as the mint and never join the reserve; a batch accrues
+`quantity * mintFee` once. Anyone may call `withdrawFees()` to forward the accrued total to the
+current `feeRecipient` — minting never calls the recipient directly, so a reverting recipient
+blocks only the withdrawal, never minting. Redemption is unaffected: a 1 ETH Shape always redeems
+for exactly 1 ETH, fee already paid at mint.
 
 There is no burn fee, no transfer fee, no royalty requirement, and no recurring protocol fee.
 
@@ -266,20 +269,23 @@ of Shape #0:
 - The positions and market pointers may each be set, replaced or cleared through `setPointer` until
   `lockPointer` permanently freezes that entry. Pointer id 0 is Positions and 1 is Market; other
   ids revert. Either entry may be locked while zero.
-- `setFeeRecipient` redirects only subsequent mint fees. It cannot change `mintFee`, recover fees
-  already paid, withdraw ETH, or reach backing or redemption.
+- `setFeeRecipient` redirects only future `withdrawFees` calls. It cannot recover fees already
+  withdrawn, withdraw ETH itself, or reach backing or redemption.
+- `setMintFee` changes the per-Shape fee, up to the compile-time cap of one denomination unit (`unit()`). It takes
+  effect for every later mint and for the auction house's ETH-bid card minting, which reads the
+  fee live. It cannot touch backing, redemption or already-accrued fees.
 
 Locking freezes the stored address, not the target's code or trust model. Renouncing admin makes
-every still-unlocked pointer practically permanent because no caller can pass the admin check.
+every still-unlocked pointer practically permanent because no caller can pass the admin check,
+and freezes the mint fee and the current fee recipient at their last values.
 
-`mintFee` is immutable. Renouncing admin freezes the current fee recipient along with any unlocked
-settings. The reserve, denominations and redemption path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
-withdrawal, redemption pause, asset recovery, backing modification, token seizure,
-fee change, upgradeability, proxies, allowlists, supply caps, royalties.
+The reserve, denominations and redemption path have no admin access at all. Deliberately absent:
+emergency withdrawal, treasury withdrawal, redemption pause, asset recovery, backing modification,
+token seizure, upgradeability, proxies, allowlists, supply caps, royalties.
 
-There are three value-bearing external calls: the fee forward during minting, settlement after
-redemption or burn, and the fixed 100 ETH sacrifice to `0x…dEaD`. No administrative function
-reaches any of them.
+There are three value-bearing external calls: `withdrawFees`'s transfer of accrued mint fees,
+settlement after redemption or burn, and the fixed 100 ETH sacrifice to `0x…dEaD`. No
+administrative function reaches any of them.
 
 See [`SECURITY.md`](SECURITY.md) for the adversarial review, including the findings that were
 fixed and the residual risks that were accepted deliberately.

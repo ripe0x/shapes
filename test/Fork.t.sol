@@ -131,7 +131,7 @@ contract ForkTest is Test {
         assertFalse(positionsLocked, "positions should start unlocked");
         assertFalse(marketLocked, "market should start unlocked");
         assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");
-        assertGt(address(r).code.length, 0, "renderer has no code");
+        assertGt(address(r).code.length, 0, "renderer missing code");
         // Smoke the renderer through the interface the token uses; no mint needed.
         assertGt(
             bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x")).length,
@@ -157,13 +157,19 @@ contract ForkTest is Test {
             _assertMetadataValid(ids[i]);
         }
 
-        // The fee left the contract on every mint; only backing (plus any stray wei) remains.
-        assertEq(address(shapes).balance, shapes.redeemableBacking() + strayWei, "unexpected reserve");
+        // Fees accrued on every mint but never left the contract; only backing plus pending fees
+        // (and any stray wei) remain.
+        assertEq(
+            address(shapes).balance,
+            shapes.redeemableBacking() + shapes.pendingFees() + strayWei,
+            "unexpected reserve"
+        );
         uint256 expectedFees;
         for (uint256 i = 0; i < DENOMS.length; i++) {
             expectedFees += feeOf(DENOMS[i]);
         }
-        assertEq(feeRecipient.balance, expectedFees, "fees not forwarded");
+        assertEq(shapes.pendingFees(), expectedFees, "fees not accrued");
+        assertEq(feeRecipient.balance, 0, "fees stay pending until withdrawFees is called");
 
         // Transfer the 1 ETH token to bob; redemption rights follow the token. Found by amount
         // rather than a hard-coded index so the ladder can change without silently miscasting
@@ -204,8 +210,12 @@ contract ForkTest is Test {
         // that the complete collection reserve and supply reached zero.
         shapes.redeemTo(0, payable(alice));
         assertEq(shapes.redeemableBacking(), 0, "backing remains");
-        // Backing is fully unwound; only the pre-existing stray wei is left behind, stranded.
-        assertEq(address(shapes).balance, strayWei, "reserve not unwound to stray");
+        // Backing is fully unwound; only pending fees and the pre-existing stray wei remain.
+        assertEq(
+            address(shapes).balance,
+            shapes.pendingFees() + strayWei,
+            "reserve not unwound to pending fees plus stray"
+        );
         assertEq(shapes.totalSupply(), 0, "supply remains");
     }
 

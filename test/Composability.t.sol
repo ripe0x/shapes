@@ -250,10 +250,10 @@ contract ComposabilityTest is Test {
 
         uint8[] memory single = new uint8[](1);
         single[0] = 2; // the parent's own denomination
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitTooFewOutputs.selector));
         lens.previewSplit(parent, single);
         vm.prank(alice);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitTooFewOutputs.selector));
         shapes.split(parent, single);
 
         uint8[] memory shortfall = new uint8[](2);

@@ -65,6 +65,7 @@ contract HostileReentrant is IERC721Receiver {
 contract Handler is Test, IERC721Receiver {
     Shapes public immutable shapes;
     uint256 public immutable mintFee;
+    address public immutable admin;
 
     address[4] public actors;
 
@@ -98,6 +99,7 @@ contract Handler is Test, IERC721Receiver {
     constructor(Shapes shapes_) {
         shapes = shapes_;
         mintFee = shapes_.mintFee();
+        admin = shapes_.admin();
         actors = [address(0xA1), address(0xA2), address(0xA3), address(0xA4)];
         for (uint256 i = 0; i < actors.length; ++i) {
             vm.deal(actors[i], 100_000 ether);
@@ -565,6 +567,21 @@ contract Handler is Test, IERC721Receiver {
             }
         } catch {}
     }
+
+    /// @dev Forwards whatever is currently pending to the fee recipient. No ghost accounting
+    ///      changes: `pendingFees` and `feeRecipient.balance` are read directly by the invariant.
+    function withdrawFees() public {
+        try shapes.withdrawFees() {} catch {}
+    }
+
+    /// @dev Pranks the admin to change the mint fee within the cap. Every mint action reads
+    ///      `shapes.mintFee()` live, so this is exercised against real mints regardless of when it
+    ///      lands in a fuzz sequence.
+    function setMintFee(uint256 feeSeed) public {
+        uint256 newFee = bound(feeSeed, 0, shapes.unit());
+        vm.prank(admin);
+        try shapes.setMintFee(newFee) {} catch {}
+    }
 }
 
 /* ==================================================================== *
@@ -594,7 +611,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](18);
+        bytes4[] memory selectors = new bytes4[](20);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -613,6 +630,8 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[15] = Handler.composeMixed.selector;
         selectors[16] = Handler.splitUneven.selector;
         selectors[17] = Handler.decomposeMany.selector;
+        selectors[18] = Handler.withdrawFees.selector;
+        selectors[19] = Handler.setMintFee.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -620,8 +639,8 @@ contract ShapesInvariantTest is StdInvariant, Test {
     function invariant_ReserveIsSolvent() public view {
         assertGe(
             address(shapes).balance,
-            shapes.redeemableBacking(),
-            "contract balance fell below redeemableBacking"
+            shapes.redeemableBacking() + shapes.pendingFees(),
+            "contract balance fell below redeemableBacking + pendingFees"
         );
     }
 
@@ -692,12 +711,18 @@ contract ShapesInvariantTest is StdInvariant, Test {
         }
     }
 
-    /// @notice Fees never enter the reserve, and every minted token paid exactly one.
+    /// @notice Fees never enter the reserve. Every fee ever charged is accounted for either as
+    ///         still pending or as already paid to whichever recipient was current at withdrawal
+    ///         time; `setMintFee` makes the fee itself variable, so this no longer checks a fixed
+    ///         per-mint amount, only that nothing was created or destroyed.
     function invariant_FeesAreSeparateFromBacking() public view {
-        assertEq(feeRecipient.balance, handler.ghostFeesPaid(), "fee accounting drifted");
-        assertEq(handler.ghostFeesPaid(), handler.ghostMints() * handler.mintFee(), "one fee per mint");
+        assertEq(
+            feeRecipient.balance + shapes.pendingFees(), handler.ghostFeesPaid(), "fee accounting drifted"
+        );
         assertGe(
-            address(shapes).balance, shapes.redeemableBacking(), "fees leaked into or out of the reserve"
+            address(shapes).balance,
+            shapes.redeemableBacking() + shapes.pendingFees(),
+            "fees leaked into or out of the reserve"
         );
     }
 
@@ -1003,6 +1028,14 @@ contract AuctionHandler is Test, IERC721Receiver {
     function warp(uint256 s) public {
         vm.warp(block.timestamp + bound(s, 1, 2 days));
     }
+
+    /// @dev Forwards whatever mint fee has accrued to the current `feeRecipient`. Registered so
+    ///      `AuctionInvariantHostileFeeTest`'s hostile recipient still gets a chance to reenter
+    ///      from its `receive` during fuzzing, now that the callback lives here instead of inside
+    ///      a bid's escrow mint.
+    function withdrawFees() public {
+        try shapes.withdrawFees() {} catch {}
+    }
 }
 
 contract AuctionInvariantTest is StdInvariant, Test {
@@ -1028,7 +1061,7 @@ contract AuctionInvariantTest is StdInvariant, Test {
     function _wire() internal {
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](10);
+        bytes4[] memory selectors = new bytes4[](11);
         selectors[0] = AuctionHandler.createAuction.selector;
         selectors[1] = AuctionHandler.bidEth.selector;
         selectors[2] = AuctionHandler.bidCards.selector;
@@ -1039,6 +1072,7 @@ contract AuctionInvariantTest is StdInvariant, Test {
         selectors[7] = AuctionHandler.cancel.selector;
         selectors[8] = AuctionHandler.claimLot.selector;
         selectors[9] = AuctionHandler.warp.selector;
+        selectors[10] = AuctionHandler.withdrawFees.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
