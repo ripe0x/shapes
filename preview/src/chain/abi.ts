@@ -41,6 +41,7 @@ export const shapesAbi = parseAbi([
   "function denominationCount() pure returns (uint8)",
   "function unit() pure returns (uint256)",
   "function owner() view returns (address)",
+  "function ownerToken() view returns (uint256)",
   "function artist() view returns (address)",
   "function artistReleaseHash() view returns (bytes32)",
   "function artistSignature() view returns (bytes)",
@@ -87,6 +88,7 @@ export const shapesAbi = parseAbi([
   "event MarketSet(address indexed market)",
   "event MarketLocked(address indexed market)",
   "event AdminTransferred(address indexed previousAdmin, address indexed newAdmin)",
+  "event OwnerTokenMoved(uint256 indexed fromTokenId, uint256 indexed toTokenId)",
   "event FeeRecipientUpdated(address indexed previousRecipient, address indexed newRecipient)",
   "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
@@ -116,6 +118,7 @@ export const shapesAbi = parseAbi([
   "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
   "error NotASplitChild(uint256 tokenId)",
   "error DuplicateComposeInput(uint256 tokenId)",
+  "error NoOwnerToken()",
 ]);
 
 // ShapeLens: the read-only periphery holding `shapeState`, `previewCompose`, `previewSplit`,
