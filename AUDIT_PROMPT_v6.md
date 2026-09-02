@@ -162,7 +162,7 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
 - Medusa 1.5.1 passes 10/10 reserve/lifecycle properties across 44,411 calls.
 - The local Anvil rehearsal passes deploy, artist attestation, every denomination, exact reserve
   unwind, auction ETH bid, settlement, both claims and zero retained ETH/Shapes.
-- All 127 preview tests, preview TypeScript/build, web lint/build, indexer tests/codegen/typecheck,
+- All 128 preview tests, preview TypeScript/build, web lint/build, indexer tests/codegen/typecheck,
   documentation selectors and shell syntax pass. Indexer production dependency audit reports zero
   vulnerabilities.
 - Renderer verify/sweep and both-ladder fixture regeneration are clean and unchanged.
@@ -171,9 +171,12 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
   23,331/23,330; ShapeAuctionHouse 7,872/7,862 to 7,939/7,930. Shapes retains only 214/235 bytes
   below EIP-170.
 - `IShapes` changes from `0xbdf217ea` to `0x86cf5406` before any mainnet deployment.
-- The currently live Sepolia release is historical `dba4dbf`, uses 100 bps and does not validate
-  this candidate's flat-fee ABI. A fresh Sepolia deployment and lifecycle walkthrough remain
-  required after merge.
+- The candidate runtime is live on Sepolia through metadata-only release commit
+  `eb9e8834553f199a4c94e7ba307686c8bd0d64e8`, from block 11616988. Shapes is
+  `0xb142c4b09c24d639d8c154c93a539cbc09566152`; all eleven deployed contracts/libraries are
+  Etherscan-verified, postflight wiring/reserve/fee/pointer checks passed, and the indexer/site are
+  cut over. This deployment began with zero auctions. The completed two-bid D-13 auction lifecycle
+  used an earlier implementation, so it is protocol evidence but not flat-fee auction evidence.
 - `SECURITY.md`, `project/DECISIONS.md`, `project/RISKS.md` and experiment records document accepted
   risks and prior evidence. Re-report an accepted item when its assumptions are false here.
 
