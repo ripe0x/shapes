@@ -1,8 +1,8 @@
 export type SiteMode = "landing" | "app" | "hybrid";
 
 /**
- * `hybrid` is local-only convenience: the launch page at `/`, with the Sepolia app at `/mint`.
- * Every Netlify build must explicitly choose `landing` or `app` before it is allowed to build.
+ * `hybrid` keeps the launch page at `/` and exposes the Sepolia app at `/mint` plus its related
+ * routes. Netlify must always choose a mode explicitly before it is allowed to build.
  */
 export function siteMode(): SiteMode {
   const value = process.env.SHAPES_SITE_MODE;
