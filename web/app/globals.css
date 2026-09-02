@@ -430,6 +430,7 @@ button {
 /* Pre-mint landing page. Kept under one scope so the existing dark application retains its
    original visual system at /mint and the collection routes. */
 .launch-page {
+  position: relative;
   --launch-paper: #f7f7f3;
   --launch-ink: #11110f;
   --launch-muted: #686862;
@@ -446,7 +447,6 @@ button {
   color: inherit;
 }
 
-.launch-header,
 .launch-hero,
 .launch-countdown,
 .launch-section,
@@ -456,37 +456,27 @@ button {
   margin-inline: auto;
 }
 
-.launch-header {
-  min-height: 84px;
+/* Where the removed header's nav sat: the header was 84px tall and min(100% - 64px, 1360px)
+   wide, centered, so the link's right edge stays at max(32px, half the leftover width). */
+.launch-play-link {
+  position: absolute;
+  top: 0;
+  right: max(32px, calc((100% - 1360px) / 2));
+  height: 84px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--launch-rule);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.launch-header-nav {
-  display: flex;
-  align-items: center;
-  gap: clamp(20px, 4vw, 56px);
-}
-
-.launch-header-nav a {
+.launch-play-link a {
   text-decoration: none;
 }
 
-.launch-header-nav a:hover {
+.launch-play-link a:hover {
   opacity: 0.55;
-}
-
-.launch-wordmark {
-  font-size: inherit;
-  font-weight: 500;
-  letter-spacing: inherit;
-  text-decoration: none;
 }
 
 .launch-hero {
@@ -494,7 +484,7 @@ button {
   grid-template-columns: minmax(0, 0.88fr) minmax(440px, 1.12fr);
   align-items: center;
   gap: clamp(48px, 7vw, 120px);
-  min-height: min(760px, calc(100vh - 84px));
+  min-height: min(760px, 100vh);
   padding-block: 70px;
 }
 
@@ -1056,7 +1046,6 @@ button {
 }
 
 @media (max-width: 620px) {
-  .launch-header,
   .launch-hero,
   .launch-countdown,
   .launch-section,
@@ -1065,13 +1054,9 @@ button {
     width: min(100% - 36px, 1360px);
   }
 
-  .launch-header {
-    min-height: 70px;
-  }
-
-  .launch-header-nav span {
-    max-width: 12ch;
-    text-align: right;
+  .launch-play-link {
+    right: 18px;
+    height: 70px;
   }
 
   .launch-hero {
