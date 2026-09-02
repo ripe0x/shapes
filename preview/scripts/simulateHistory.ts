@@ -557,23 +557,36 @@ async function main() {
     ctx.auctionsOpen++;
   }
 
-  /** Shape #0 (the genesis token, held by the deployer) goes up for auction and draws bids
-   *  from several wallets: ETH-only, cards-only, cards plus ETH, an outbid withdrawal and a
-   *  top-up. Left open at the end of the run so the site shows a live auction on #0. */
-  async function tokenZeroAuction() {
-    const owner = ARTIST;
-    const [b1, b2, b3] = pickDistinct(wallets.filter((w) => w !== owner), 3);
-    await sim.setApprovalForAll(owner, dep.auctionHouse!, true);
-    const auctionId = await sim.createAuction(owner, 0n, 20 * 24 * 3600, 10n, 500, 3600);
-    await sim.auctionBid(b1!, auctionId, [], 10n * UNIT); // 0.1 ETH, ETH-only
+  /** Shape #0 (the genesis token, held by the deployer) goes up for auction as auction id 0,
+   *  which is the auction the site displays, so it is created before any other auction in the
+   *  run. The 30-day duration (the contract maximum) starts at the first bid, three days later,
+   *  so the auction is still open when the run ends. */
+  let tokenZeroAuctionId: bigint | undefined;
+  async function tokenZeroAuctionCreate() {
+    await sim.setApprovalForAll(ARTIST, dep.auctionHouse!, true);
+    tokenZeroAuctionId = await sim.createAuction(ARTIST, 0n, 30 * 24 * 3600, 10n, 500, 3600);
+    ctx.auctionsOpen++;
+    console.log(`  auction #${tokenZeroAuctionId} on Shape #0 created by the deployer`);
+  }
+
+  /** Bids on Shape #0 from three wallets: ETH-only, cards-only, cards plus ETH, an outbid
+   *  withdrawal and a later top-up. */
+  const tokenZeroBidders = pickDistinct(wallets.filter((w) => w !== ARTIST), 3);
+  async function tokenZeroAuctionBids() {
+    const auctionId = tokenZeroAuctionId!;
+    const [b1, b2, b3] = tokenZeroBidders;
+    await sim.auctionBid(b1!, auctionId, [], 10n * UNIT); // 0.1 ETH, ETH-only, starts the clock
     const [card] = await sim.mint(b2!, 3, 1); // a 0.5 ETH card
     await sim.setApprovalForAll(b2!, dep.auctionHouse!, true);
     await sim.auctionBid(b2!, auctionId, [card!], 0n); // cards-only, 0.5 ETH
     await sim.auctionBid(b3!, auctionId, [], 100n * UNIT); // 1 ETH, ETH-only, outbids
     await sim.auctionWithdraw(b1!, auctionId); // outbid, pulls its cards back
-    const [card2] = await sim.mint(b2!, 3, 1);
-    await sim.auctionBid(b2!, auctionId, [card2!], 10n * UNIT); // cards + ETH top-up, 1.1 ETH, leads
-    ctx.auctionsOpen++;
+  }
+  async function tokenZeroAuctionTopUp() {
+    const auctionId = tokenZeroAuctionId!;
+    const b2 = tokenZeroBidders[1]!;
+    const [card2] = await sim.mint(b2, 3, 1);
+    await sim.auctionBid(b2, auctionId, [card2!], 10n * UNIT); // cards + ETH top-up, 1.1 ETH, leads
     console.log(`  auction #${auctionId} on Shape #0: 4 bids from 3 wallets, still open`);
   }
 
@@ -624,10 +637,16 @@ async function main() {
   });
   at(8, simpleDecomposeDemo);
   at(9, splitDemo);
-  at(10, splitBranchDemo);
+  at(10, async () => {
+    await splitBranchDemo();
+    await tokenZeroAuctionCreate(); // auction id 0: the one the site displays
+  });
   at(11, () => ownershipHandoff(true));
   at(12, () => ownershipHandoff(false));
-  at(13, () => ownershipHandoff(false));
+  at(13, async () => {
+    await ownershipHandoff(false);
+    await tokenZeroAuctionBids();
+  });
   at(14, redemptionDemo);
   at(15, async () => {
     const lower = sim.mintFee() / 2n;
@@ -661,7 +680,7 @@ async function main() {
   at(34, async () => {
     await sim.burn(ctx.black2Owner!, ctx.black2!); // burned Black token, zero payout
   });
-  at(36, tokenZeroAuction);
+  at(36, tokenZeroAuctionTopUp);
   at(35, withdrawFeesIfAny);
 
   for (let day = 0; day < DAYS; day++) {
