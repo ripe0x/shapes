@@ -8,7 +8,7 @@ import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/cano
 import { localArt, sampleSeed } from "@shared/site/art";
 import { mintGene } from "@shared/previewGene";
 
-const LAUNCH_AT = new Date("2026-09-02T12:00:00-04:00").getTime();
+const LAUNCH_AT = new Date("2026-09-03T12:00:00-04:00").getTime();
 
 const TIERS = [
   { value: "0.01", grid: "5 × 5", marks: 25 },
@@ -208,7 +208,7 @@ function Countdown() {
       <div>
         <p className="launch-kicker">Public mint</p>
         <h2 id="mint-time">
-          {countdown.live ? "Minting is live." : "September 2, 12:00 PM ET"}
+          {countdown.live ? "Minting is live." : "September 3, 12:00 PM ET"}
         </h2>
       </div>
 
@@ -235,11 +235,10 @@ export function LaunchLanding() {
     <main className="launch-page">
       <header className="launch-header">
         <a className="launch-wordmark" href="#top" aria-label="Shapes, top of page">
-          shapes
+          SHAPES
         </a>
         <nav className="launch-header-nav" aria-label="Primary navigation">
           <Link href="/play">Play</Link>
-          <span>Onchain on Ethereum</span>
         </nav>
       </header>
 

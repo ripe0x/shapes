@@ -195,11 +195,9 @@ button {
 }
 
 .launch-wordmark {
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 19px;
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  text-transform: lowercase;
+  font-size: inherit;
+  font-weight: 500;
+  letter-spacing: inherit;
   text-decoration: none;
 }
 

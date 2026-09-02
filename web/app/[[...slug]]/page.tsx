@@ -63,11 +63,11 @@ export async function generateMetadata({
     return {
       title: "Shapes · ETH, shaped",
       description:
-        "Shapes are generative onchain objects backed by exact amounts of ETH. Public mint opens September 2 at 12:00 PM ET.",
+        "Shapes are generative onchain objects backed by exact amounts of ETH. Public mint opens September 3 at 12:00 PM ET.",
       openGraph: {
         title: "Shapes · ETH, shaped",
         description:
-          "Fungible value as a non-fungible, generative object. Mint opens September 2 at 12:00 PM ET.",
+          "Fungible value as a non-fungible, generative object. Mint opens September 3 at 12:00 PM ET.",
         url: "/",
       },
     };

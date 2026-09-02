@@ -7,6 +7,7 @@ import { centerGene, geneAtCompose, geneAtMint } from "../canonical/ink";
 import { DENOMINATIONS, unitsAt } from "../canonical/denominations";
 import { sampleComposeTraced, sampleSplitChildTraced, type SampleBurn, type SampleDonor } from "../canonical/sampling";
 import {
+  buildCompleteShape,
   composeNodes,
   composeSummedIndex,
   decomposeNode,
@@ -159,6 +160,20 @@ test("keepCard: has no fixed capacity", () => {
   let s: PlaySession = emptySession();
   for (let i = 0; i < 12; i++) s = keepCard(s, 0, BigInt(i + 1));
   assert.equal(liveNodes(s).length, 12);
+});
+
+test("buildCompleteShape: builds every rung from independent 0.01 ETH origins", () => {
+  let nextSeed = 1n;
+  const s = buildCompleteShape(emptySession(), 2, () => nextSeed++); // complete 0.1 ETH
+  const counts = [0, 0, 0];
+  for (const node of s.nodes) counts[node.denomIndex]++;
+
+  assert.deepEqual(counts, [10, 2, 1]);
+  assert.equal(s.nodes.length, 13);
+  assert.equal(liveNodes(s).length, 1);
+  assert.equal(liveNodes(s)[0].denomIndex, 2);
+  assert.equal(liveNodes(s)[0].parents?.length, 2);
+  assert.equal(s.nodes.filter((node) => node.denomIndex === 1).every((node) => node.parents?.length === 5), true);
 });
 
 test("removeNode: drops a live node, is a no-op for a consumed one", () => {

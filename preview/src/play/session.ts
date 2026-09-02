@@ -92,8 +92,7 @@ export function randomSeed(): bigint {
   return productionSeed(bytesToBigInt(indexBytes));
 }
 
-/** Add a card to the tray. The session's only growth bound is shareability: callers gate on
- *  `sessionShareable` (urlCodec.ts) so every reachable session still fits in a share link. */
+/** Add one seed-derived card to the tray. */
 export function keepCard(s: PlaySession, denomIndex: number, seed: bigint, seedText?: string): PlaySession {
   const node: PlayNode = {
     key: s.nextKey,
@@ -104,6 +103,51 @@ export function keepCard(s: PlaySession, denomIndex: number, seed: bigint, seedT
     seedText,
   };
   return { nodes: [...s.nodes, node], nextKey: s.nextKey + 1, nextDemoId: s.nextDemoId + 1 };
+}
+
+/** Add a protocol-accurate Complete Shape at `targetDenomIndex`. It starts with the required
+ *  number of independent 0.01 ETH origins, then composes them one ladder rung at a time. The
+ *  returned session retains the entire tree so every intermediate composition can be explored. */
+export function buildCompleteShape(
+  s: PlaySession,
+  targetDenomIndex: number,
+  seedFactory: () => bigint = randomSeed,
+): PlaySession {
+  if (!Number.isInteger(targetDenomIndex) || targetDenomIndex < 0 || targetDenomIndex >= DENOMINATIONS.length) {
+    throw new Error(`targetDenomIndex out of range: ${targetDenomIndex}`);
+  }
+
+  const originCount = Number(unitsAt(targetDenomIndex));
+  const nodes = [...s.nodes];
+  let nextKey = s.nextKey;
+  let nextDemoId = s.nextDemoId;
+  let currentKeys: number[] = [];
+
+  for (let i = 0; i < originCount; i++) {
+    const seed = seedFactory();
+    currentKeys.push(nextKey);
+    nodes.push({
+      key: nextKey++,
+      demoId: nextDemoId++,
+      denomIndex: 0,
+      inkGene: geneAtMint(seed, 0),
+      seed,
+    });
+  }
+
+  let next: PlaySession = { nodes, nextKey, nextDemoId };
+  for (let level = 0; level < targetDenomIndex; level++) {
+    const groupSize = Number(unitsAt(level + 1) / unitsAt(level));
+    const producedKeys: number[] = [];
+    for (let offset = 0; offset < currentKeys.length; offset += groupSize) {
+      const resultKey = next.nextKey;
+      next = composeNodes(next, currentKeys.slice(offset, offset + groupSize));
+      producedKeys.push(resultKey);
+    }
+    currentKeys = producedKeys;
+  }
+
+  return next;
 }
 
 /** Remove a live (unconsumed) node from the session. No-op if `key` is not live. */

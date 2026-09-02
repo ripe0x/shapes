@@ -10,6 +10,7 @@ import { DENOMINATIONS, GRIDS, LABELS, UNIT, unitsAt } from "../canonical/denomi
 import { geneAtMint } from "../canonical/ink";
 import { decodeModuleByte } from "../canonical/moduleCodec";
 import {
+  buildCompleteShape,
   composeNodes,
   composeSummedIndex,
   decomposeNode,
@@ -63,6 +64,7 @@ const labelStyle: React.CSSProperties = {
 };
 
 const REPO_URL = "https://github.com/ripe0x/shapes";
+const MAX_TRAY_CARDS = 100;
 
 function seedHex(seed: bigint): string {
   return "0x" + seed.toString(16).padStart(64, "0");
@@ -215,7 +217,8 @@ function DrawBeat({
   onRoll,
   effectiveSeed,
   onAdd,
-  addDisabled,
+  onComplete,
+  completeBusy,
   inverted,
   onToggleInverted,
 }: {
@@ -226,7 +229,8 @@ function DrawBeat({
   onRoll: () => void;
   effectiveSeed: bigint;
   onAdd: () => void;
-  addDisabled: boolean;
+  onComplete: () => void;
+  completeBusy: boolean;
   inverted: boolean;
   onToggleInverted: () => void;
 }) {
@@ -290,15 +294,17 @@ function DrawBeat({
                 }}
               />
             </label>
-            <PlayButton onClick={onAdd} disabled={addDisabled}>
+            <PlayButton onClick={onAdd}>
               Add
             </PlayButton>
+            <PlayButton onClick={onComplete} disabled={completeBusy}>
+              {completeBusy ? "Building…" : "Complete"}
+            </PlayButton>
           </div>
-          {addDisabled && (
-            <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>
-              The share link is full. Remove a card to continue.
-            </div>
-          )}
+
+          <Prose>
+            Complete builds the selected tier from independent 0.01 ETH origins, one rung at a time.
+          </Prose>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
@@ -319,37 +325,6 @@ function DrawBeat({
   );
 }
 
-/** "Copy link" plus a quiet confirmation. Copies `location.href`, which the page-level URL-sync
- *  effect keeps equal to `/play?s=<encodeSession(session)>` at all times. No animation here: the
- *  compose reveal is the only animation this page runs. */
-function ShareLink() {
-  const [copied, setCopied] = React.useState(false);
-  React.useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(t);
-  }, [copied]);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <PlayButton
-          small
-          onClick={() => {
-            navigator.clipboard
-              .writeText(location.href)
-              .then(() => setCopied(true))
-              .catch(() => {});
-          }}
-        >
-          Copy link
-        </PlayButton>
-        {copied && <span style={{ ...mono, fontSize: 10, color: C.muted }}>copied</span>}
-      </div>
-      <Prose>This link reproduces it exactly.</Prose>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ *
  * Beat 2 — tray
  * ------------------------------------------------------------------ */
@@ -359,8 +334,7 @@ function ShareLink() {
 type TrayMenu = { key: number; kind: "split" | "sacrifice" } | null;
 
 /** The one-row split tier picker: one button per denomination below the card, labeled with its
- *  child count. A tier is disabled, with the same "share link is full" reason the add control
- *  uses, whenever splitting into it would push the session past what a share link can carry. */
+ *  child count. */
 function SplitPicker({
   node,
   session,
@@ -373,16 +347,11 @@ function SplitPicker({
   onCancel: () => void;
 }) {
   const options = React.useMemo(() => {
-    const opts: { i: number; count: number; shareable: boolean }[] = [];
+    const liveCount = liveNodes(session).length;
+    const opts: { i: number; count: number; fits: boolean }[] = [];
     for (let i = 0; i < node.denomIndex; i++) {
       const count = Number(unitsAt(node.denomIndex) / unitsAt(i));
-      let shareable: boolean;
-      try {
-        shareable = sessionShareable(splitNode(session, node.key, i));
-      } catch {
-        shareable = false;
-      }
-      opts.push({ i, count, shareable });
+      opts.push({ i, count, fits: liveCount - 1 + count <= MAX_TRAY_CARDS });
     }
     return opts;
   }, [node, session]);
@@ -391,15 +360,15 @@ function SplitPicker({
     <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, width: 180 }}>
       <Prose>Backing divides exactly. Every child cell samples from the parent.</Prose>
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-        {options.map(({ i, count, shareable }) => (
-          <PlayButton key={i} small disabled={!shareable} onClick={() => onSplit(i)}>
+        {options.map(({ i, count, fits }) => (
+          <PlayButton key={i} small disabled={!fits} onClick={() => onSplit(i)}>
             {LABELS[i]} ×{count}
           </PlayButton>
         ))}
       </div>
-      {options.some((o) => !o.shareable) && (
+      {options.some((option) => !option.fits) && (
         <div style={{ ...mono, fontSize: 10, color: C.muted }}>
-          The share link is full. Remove a card to continue.
+          Large splits are limited to keep the tray usable.
         </div>
       )}
       <PlayButton small onClick={onCancel}>
@@ -454,8 +423,8 @@ function TrayCard({
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const isTop = node.denomIndex === DENOMINATIONS.length - 1;
   const showDecompose = node.trace != null && !node.black;
-  // Split children have no remove control: a split encodes as one atomic URL op, so a missing
-  // sibling could not be reproduced by a share link (removeNode rejects them too).
+  // Split children have no remove control: the session codec records a split atomically, so a
+  // missing sibling would be unrepresentable (removeNode rejects them too).
   const showRemove = !showDecompose && node.splitTrace == null;
   const menuOpen = menu?.key === node.key ? menu.kind : null;
 
@@ -579,7 +548,6 @@ function TrayBeat({
           ))}
         </div>
       )}
-      {nodes.length > 0 && <ShareLink />}
     </section>
   );
 }
@@ -805,22 +773,35 @@ function LineageNode({
   byKey,
   focusedKey,
   onSelect,
+  expandedKeys,
+  onToggleExpanded,
 }: {
   node: PlayNode;
   byKey: Map<number, PlayNode>;
   focusedKey: number | null;
   onSelect: (key: number) => void;
+  expandedKeys: Set<number>;
+  onToggleExpanded: (key: number) => void;
 }) {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
   const selectable = node.trace != null || node.splitTrace != null;
+  const expanded = expandedKeys.has(node.key);
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-      {parents.length > 0 && (
+      {parents.length > 0 && expanded && (
         <>
           <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
             {parents.map((p) => (
-              <LineageNode key={p.key} node={p} byKey={byKey} focusedKey={focusedKey} onSelect={onSelect} />
+              <LineageNode
+                key={p.key}
+                node={p}
+                byKey={byKey}
+                focusedKey={focusedKey}
+                onSelect={onSelect}
+                expandedKeys={expandedKeys}
+                onToggleExpanded={onToggleExpanded}
+              />
             ))}
           </div>
           <div style={{ width: 1, height: 14, background: C.border }} />
@@ -833,6 +814,11 @@ function LineageNode({
         onClick={selectable ? () => onSelect(node.key) : undefined}
         selected={selectable && focusedKey === node.key}
       />
+      {parents.length > 0 && (
+        <PlayButton small onClick={() => onToggleExpanded(node.key)}>
+          {expanded ? "Hide sources" : `${parents.length} ${parents.length === 1 ? "source" : "sources"}`}
+        </PlayButton>
+      )}
     </div>
   );
 }
@@ -1123,9 +1109,21 @@ function LineageBeat({ session }: { session: PlaySession }) {
     return null;
   }, [session.nodes]);
   const [focusedKey, setFocusedKey] = React.useState<number | null>(null);
+  const [expandedKeys, setExpandedKeys] = React.useState<Set<number>>(new Set());
   React.useEffect(() => {
-    if (mostRecentProduced) setFocusedKey(mostRecentProduced.key);
+    if (!mostRecentProduced) return;
+    setFocusedKey(mostRecentProduced.key);
+    setExpandedKeys((current) => new Set(current).add(mostRecentProduced.key));
   }, [mostRecentProduced?.key]);
+
+  const toggleExpanded = (key: number) => {
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   const focusedNode = focusedKey != null ? byKey.get(focusedKey) ?? null : null;
 
@@ -1137,7 +1135,15 @@ function LineageBeat({ session }: { session: PlaySession }) {
       <Prose>This session&apos;s compose and split history.</Prose>
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", margin: "18px 0 28px" }}>
         {tips.map((tip) => (
-          <LineageNode key={tip.key} node={tip} byKey={byKey} focusedKey={focusedKey} onSelect={setFocusedKey} />
+          <LineageNode
+            key={tip.key}
+            node={tip}
+            byKey={byKey}
+            focusedKey={focusedKey}
+            onSelect={setFocusedKey}
+            expandedKeys={expandedKeys}
+            onToggleExpanded={toggleExpanded}
+          />
         ))}
       </div>
       {focusedNode && focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
@@ -1166,6 +1172,7 @@ export function PlayApp() {
   const [seed, setSeed] = React.useState<bigint>(0n);
   const [selected, setSelected] = React.useState<Set<number>>(new Set());
   const [composeError, setComposeError] = React.useState<string | null>(null);
+  const [completeBusy, setCompleteBusy] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
   // Which tray card's split picker or sacrifice confirmation is open, if any.
   const [menu, setMenu] = React.useState<TrayMenu>(null);
@@ -1190,25 +1197,19 @@ export function PlayApp() {
     setHydrated(true);
   }, []);
 
-  // Keep the URL in sync with the session: every action (keep, remove, compose) replaces the
-  // `?s=` query so the address bar always reproduces the current state, with no navigation.
+  // Keep compact sessions reproducible in the URL. Full-lineage sessions intentionally stay at
+  // `/play`: their thousands of nodes are useful on-page but do not belong in an address bar.
   React.useEffect(() => {
     if (!hydrated) return;
-    const url = session.nodes.length > 0 ? `/play?s=${encodeSession(session)}` : "/play";
+    const url = session.nodes.length > 0 && sessionShareable(session)
+      ? `/play?s=${encodeSession(session)}`
+      : "/play";
     history.replaceState(null, "", url);
   }, [hydrated, session]);
 
   const effectiveSeed = seed;
 
   const nodes = liveNodes(session);
-  // Adding is blocked only when the projected tray would no longer fit in a share link. Reusing
-  // one seed for the projection is safe: every encoded seed has the same fixed width.
-  const addDisabled = React.useMemo(() => {
-    let projected = session;
-    for (let i = 0; i < quantity; i++) projected = keepCard(projected, denomIndex, effectiveSeed);
-    return !sessionShareable(projected);
-  }, [session, denomIndex, effectiveSeed, quantity]);
-
   const lastResult = React.useMemo(() => {
     for (let i = session.nodes.length - 1; i >= 0; i--) {
       if (session.nodes[i].trace) return session.nodes[i];
@@ -1217,7 +1218,6 @@ export function PlayApp() {
   }, [session.nodes]);
 
   const handleAdd = () => {
-    if (addDisabled) return;
     let next = session;
     let nextSeed = effectiveSeed;
     for (let i = 0; i < quantity; i++) {
@@ -1226,6 +1226,25 @@ export function PlayApp() {
     }
     setSession(next);
     setSeed(nextSeed);
+  };
+
+  const handleComplete = () => {
+    if (completeBusy) return;
+    const targetDenomIndex = denomIndex;
+    const startingSession = session;
+    setCompleteBusy(true);
+    window.setTimeout(() => {
+      try {
+        setSession(buildCompleteShape(startingSession, targetDenomIndex));
+        setSelected(new Set());
+        setComposeError(null);
+        setMenu(null);
+      } catch (error) {
+        setComposeError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setCompleteBusy(false);
+      }
+    }, 0);
   };
 
   const handleToggle = (key: number) => {
@@ -1250,9 +1269,11 @@ export function PlayApp() {
 
   const handleSplit = (key: number, childDenomIndex: number) => {
     try {
-      const next = splitNode(session, key, childDenomIndex);
-      if (!sessionShareable(next)) return; // SplitPicker already disables this tier; ignore a stale click.
-      setSession(next);
+      const node = liveNodes(session).find((candidate) => candidate.key === key);
+      if (!node) return;
+      const childCount = Number(unitsAt(node.denomIndex) / unitsAt(childDenomIndex));
+      if (liveNodes(session).length - 1 + childCount > MAX_TRAY_CARDS) return;
+      setSession(splitNode(session, key, childDenomIndex));
       setMenu(null);
     } catch (e) {
       console.error("split failed", e);
@@ -1279,10 +1300,6 @@ export function PlayApp() {
   const handleCompose = () => {
     try {
       const next = composeNodes(session, [...selected]);
-      if (!sessionShareable(next)) {
-        setComposeError("The share link is full. Remove a card first.");
-        return;
-      }
       setSession(next);
       setSelected(new Set());
       setComposeError(null);
@@ -1429,11 +1446,9 @@ export function PlayApp() {
       `}</style>
       <header className="play-page-nav">
         <a href="/">shapes</a>
-        <span>Simulation · no wallet</span>
       </header>
       <main className="play-page-shell">
         <header className="play-page-intro">
-          <p className="play-page-kicker">Onchain playground</p>
           <h1>Draw. Compose. Trace.</h1>
           <Prose>
             This playground runs the same renderer and the same sampling procedure as the contract. A minted
@@ -1450,7 +1465,8 @@ export function PlayApp() {
             onRoll={() => setSeed(randomSeed())}
             effectiveSeed={effectiveSeed}
             onAdd={handleAdd}
-            addDisabled={addDisabled}
+            onComplete={handleComplete}
+            completeBusy={completeBusy}
             inverted={inverted}
             onToggleInverted={() => setInverted((v) => !v)}
           />
