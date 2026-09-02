@@ -212,7 +212,7 @@ abstract contract ShapeCardEscrow is IShapeCardEscrow, IERC721Receiver, Reentran
     }
 
     function _total(uint256[9] memory counts) internal pure returns (uint256 sum) {
-        for (uint256 i = 0; i < 9; ++i) {
+        for (uint256 i = 0; i < Denominations.COUNT; ++i) {
             sum += counts[i];
         }
     }

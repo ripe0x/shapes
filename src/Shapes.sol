@@ -25,6 +25,7 @@ import {CopyValidation} from "./lib/CopyValidation.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
 import {EIP712Signature} from "./lib/EIP712Signature.sol";
 import {PointerOps} from "./lib/PointerOps.sol";
+import {ShapeMath} from "./lib/ShapeMath.sol";
 
 /// @title Shapes
 /// @notice ETH in, Shape out.
@@ -269,17 +270,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         uint256 genesisBacking = Denominations.amountAt(0);
         if (msg.value != genesisBacking) revert IncorrectPayment(genesisBacking, msg.value);
 
-        bytes32 batchRoot = keccak256(
-            abi.encodePacked(
-                block.prevrandao,
-                _previousBlockHash(),
-                block.number,
-                block.timestamp,
-                block.chainid,
-                address(this),
-                uint256(0)
-            )
-        );
+        bytes32 batchRoot = _batchRoot(0);
         bytes32 seed = keccak256(abi.encodePacked(batchRoot, uint256(0)));
         uint8 gene = InkGenes.geneAtMint(seed, 0);
 
@@ -492,6 +483,23 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _mintBatch(amountWei, quantity, to);
     }
 
+    /// @dev One batch's entropy root, from block-level inputs and the batch's own `firstTokenId`.
+    ///      Shared by the constructor (Shape #0's own one-token batch) and `_mintBatch`. See
+    ///      `_mintBatch`'s seed-selectability comment.
+    function _batchRoot(uint256 firstTokenId) private view returns (bytes32) {
+        return keccak256(
+            abi.encodePacked(
+                block.prevrandao,
+                _previousBlockHash(),
+                block.number,
+                block.timestamp,
+                block.chainid,
+                address(this),
+                firstTokenId
+            )
+        );
+    }
+
     function _mintBatch(uint256 amountWei, uint256 quantity, address to)
         private
         returns (uint256 firstTokenId)
@@ -521,17 +529,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         uint256 backing = amountWei * quantity;
         uint256 fees = mintFee * quantity;
         if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
-        bytes32 batchRoot = keccak256(
-            abi.encodePacked(
-                block.prevrandao,
-                _previousBlockHash(),
-                block.number,
-                block.timestamp,
-                block.chainid,
-                address(this),
-                firstTokenId
-            )
-        );
+        bytes32 batchRoot = _batchRoot(firstTokenId);
 
         // -------- effects --------
         totalMinted = firstTokenId + quantity;
@@ -707,21 +705,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         }
     }
 
-    /// @dev Ink gene pool statistics (INK_GENES_IMPL_SPEC.md §2.3, §3.3) accumulated over
-    ///      {survivor + burns}, plus the running compose backing total and origin count. Folded
-    ///      by `_accumulateBurnDonor` as `_compose` iterates the burn set; seeded from the
-    ///      survivor's own contribution before the loop runs. `ShapeLens.previewCompose` folds
-    ///      the equivalent accumulator over its own copy, read through this contract's getters.
-    struct BurnPoolAccum {
-        uint256 total;
-        uint256 origins;
-        uint256 burnSeedFold;
-        uint8 best;
-        uint8 worst;
-        uint256 sumW;
-        uint256 unitsTotal;
-    }
-
     /// @dev Requires `n` be nonzero, for every batch entrypoint that rejects an empty batch.
     function _requireNonZero(uint256 n) private pure {
         if (n == 0) revert ZeroQuantity();
@@ -742,18 +725,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         ShapeData storage b,
         uint256 burnId,
         bytes memory burnModules,
-        BurnPoolAccum memory acc
+        ShapeMath.BurnPoolAccum memory acc
     ) private view returns (GeometrySampling.Donor memory donor) {
-        acc.total += Denominations.amountAt(b.denomIndex);
-        acc.origins += b.originCount;
-
-        // Fold order-invariantly (XOR), so burnIds calldata order cannot affect the gene.
-        acc.burnSeedFold ^= uint256(b.seed);
-        if (b.inkGene > acc.best) acc.best = b.inkGene;
-        if (b.inkGene < acc.worst) acc.worst = b.inkGene;
-        uint256 bUnits = Denominations.unitsAt(b.denomIndex);
-        acc.sumW += uint256(b.inkGene) * bUnits;
-        acc.unitsTotal += bUnits;
+        uint256 bUnits = ShapeMath.addDonor(acc, b.seed, b.denomIndex, b.originCount, b.inkGene);
 
         donor = GeometrySampling.Donor({
             id: burnId,
@@ -774,14 +748,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         // `oldIndex` and the survivor's own pool contribution are captured before the loop so
         // they are unaffected by what gets burned inside it.
         uint8 oldIndex = s.denomIndex;
-        uint256 survivorUnits = Denominations.unitsAt(oldIndex);
-        BurnPoolAccum memory acc;
-        acc.total = Denominations.amountAt(oldIndex);
-        acc.origins = s.originCount;
-        acc.best = s.inkGene;
-        acc.worst = s.inkGene;
-        acc.sumW = uint256(s.inkGene) * survivorUnits;
-        acc.unitsTotal = survivorUnits;
+        ShapeMath.BurnPoolAccum memory acc;
+        uint256 survivorUnits = ShapeMath.initPool(acc, oldIndex, s.originCount, s.inkGene);
 
         // Push the reversible record and capture the survivor's pre-compose state before the
         // loop mutates anything. `decompose` pops this to restore exactly these values.
@@ -892,37 +860,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _splitTo(tokenId, outDenoms, recipient);
     }
 
-    /// @dev Requires the summed backing of `outDenoms` equal `parentBacking`, or the split is
-    ///      rejected. Used by `_splitTo`; `ShapeLens.previewSplit` runs the same check.
-    function _requireSplitSumMatches(uint256 parentBacking, uint8[] calldata outDenoms) private pure {
-        uint256 sum;
-        for (uint256 i = 0; i < outDenoms.length; ++i) {
-            sum += Denominations.amountAt(outDenoms[i]);
-        }
-        if (sum != parentBacking) revert SplitMismatch(parentBacking, sum);
-    }
-
-    /// @dev Per-child origin-count allocation for a split: fills each output's capacity from
-    ///      `originCount`, in order, until exhausted. Used by `_splitTo`; `ShapeLens.previewSplit`
-    ///      runs the same allocation.
-    function _allocateSplitOrigins(uint256 originCount, uint8[] calldata outDenoms)
-        private
-        pure
-        returns (uint32[] memory give)
-    {
-        uint256 k = outDenoms.length;
-        give = new uint32[](k);
-        uint256 remaining = originCount;
-        for (uint256 i = 0; i < k; ++i) {
-            uint256 cap = Denominations.unitsAt(outDenoms[i]);
-            uint256 g = remaining < cap ? remaining : cap;
-            remaining -= g;
-            give[i] = uint32(g);
-        }
-        // Sum of capacities == parentBacking/UNIT >= parent origin count, so the fill exhausts it.
-        assert(remaining == 0);
-    }
-
     function _splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         private
         returns (uint256[] memory newIds)
@@ -966,11 +903,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         // this same branch decision later via `parentId` and `Shapes.composeDepth`.
         uint256 recordDepth = _composeStack[tokenId].length;
         bool hasRecordPool = recordDepth > 0;
-        bytes memory recordPool =
-            hasRecordPool ? _buildSplitRecordPool(_composeStack[tokenId][recordDepth - 1], rec.parentSeed) : bytes("");
+        bytes memory recordPool = hasRecordPool
+            ? _buildSplitRecordPool(_composeStack[tokenId][recordDepth - 1], rec.parentSeed)
+            : bytes("");
 
-        _requireSplitSumMatches(Denominations.amountAt(rec.parentDenomIndex), outDenoms);
-        uint32[] memory give = _allocateSplitOrigins(p.originCount, outDenoms);
+        ShapeMath.requireSplitSumMatches(Denominations.amountAt(rec.parentDenomIndex), outDenoms);
+        uint32[] memory give = ShapeMath.allocateSplitOrigins(p.originCount, outDenoms);
 
         // -------- effects --------
         delete _shapes[tokenId];
@@ -992,7 +930,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             uint256 nid = firstId + i;
             newIds[i] = nid;
             _shapes[nid] = ShapeData({
-                seed: _childSeed(rec.parentSeed, i),
+                seed: ShapeMath.childSeed(rec.parentSeed, i),
                 denomIndex: outDenoms[i],
                 originCount: give[i],
                 isBlack: false,
@@ -1192,24 +1130,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /* ------------------------------- views ------------------------------ */
 
-    function _formation(uint8 denomIndex, uint32 originCount, bool black)
-        private
-        pure
-        returns (ShapeFormation)
-    {
-        if (black) return ShapeFormation.Black;
-        uint256 units = Denominations.unitsAt(denomIndex);
-        if (units > 1 && originCount == units) return ShapeFormation.Complete;
-        if (originCount == 0) return ShapeFormation.Fragment;
-        if (originCount == 1) return ShapeFormation.Direct;
-        return ShapeFormation.Composed;
-    }
-
     /// @inheritdoc IShapes
     function formationOf(uint256 tokenId) external view returns (ShapeFormation) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
-        return _formation(d.denomIndex, d.originCount, d.isBlack);
+        return ShapeMath.formation(d.denomIndex, d.originCount, d.isBlack);
     }
 
     /// @inheritdoc IShapes
@@ -1264,8 +1189,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     function isComplete(uint256 tokenId) public view returns (bool) {
         _requireOwned(tokenId);
         ShapeData storage d = _shapes[tokenId];
-        uint256 units = Denominations.unitsAt(d.denomIndex);
-        return !d.isBlack && units > 1 && d.originCount == units;
+        return ShapeMath.formation(d.denomIndex, d.originCount, d.isBlack) == ShapeFormation.Complete;
     }
 
     /// @inheritdoc IShapes
@@ -1356,10 +1280,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         );
     }
 
-    function _childSeed(bytes32 parentSeed, uint256 childIndex) private pure returns (bytes32) {
-        return keccak256(abi.encodePacked(parentSeed, childIndex));
-    }
-
     /// @dev A fresh local EVM may execute at genesis. Production transactions cannot, but making
     ///      the entropy input total keeps constructor simulation and local deployment reliable.
     function _previousBlockHash() private view returns (bytes32) {
@@ -1368,7 +1288,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32) {
-        return _childSeed(parentSeed, childIndex);
+        return ShapeMath.childSeed(parentSeed, childIndex);
     }
 
     /// @inheritdoc IShapes
@@ -1450,9 +1370,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         }
         SplitRecord storage rec = _splitRecords[ref.recordIndex];
         return SplitProvenance({
-            isSplitChild: true,
-            parentDenomIndex: rec.parentDenomIndex,
-            originDenomIndex: rec.originDenomIndex
+            isSplitChild: true, parentDenomIndex: rec.parentDenomIndex, originDenomIndex: rec.originDenomIndex
         });
     }
 

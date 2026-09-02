@@ -89,8 +89,9 @@ library GeometrySampling {
         uint8 survivorInkGene,
         Donor[] memory sortedInputs
     ) public pure returns (bytes memory pool) {
-        bytes memory survivorEff =
-            effectiveModulesOf(survivorModules, survivorSeed, survivorDenomIndex, survivorInkGene);
+        bytes memory survivorEff = effectiveModulesOf(
+            survivorModules, survivorSeed, survivorDenomIndex, survivorInkGene
+        );
 
         bytes[] memory inputEff = new bytes[](sortedInputs.length);
         uint256 total = survivorEff.length;
@@ -126,7 +127,8 @@ library GeometrySampling {
         Donor[] memory inputs
     ) public pure returns (bytes memory) {
         inputs = sortDonorsById(inputs);
-        return buildSplitRecordPool(survivorModules, survivorSeed, survivorDenomIndex, survivorInkGene, inputs);
+        return
+            buildSplitRecordPool(survivorModules, survivorSeed, survivorDenomIndex, survivorInkGene, inputs);
     }
 
     /// @notice Sort the burn-side donors ascending by token id. Stable, iterative bottom-up
@@ -218,34 +220,50 @@ library GeometrySampling {
 
         for (uint256 j = 0; j < n; ++j) {
             uint256 d = rnd.nextBelow(totalUnits);
-            uint256 cum;
-            uint256 donorIdx;
-            for (uint256 i = 0; i < donors.length; ++i) {
-                cum += donors[i].units;
-                if (d < cum) {
-                    donorIdx = i;
-                    break;
-                }
-            }
+            uint256 donorIdx = _pickDonor(donors, d);
 
             uint256 k = rnd.nextBelow(remaining[donorIdx]);
-            uint256 mask = consumedMask[donorIdx];
             bytes memory donorMods = mods[donorIdx];
-            uint256 unusedSeen;
-            uint256 moduleIdx;
-            for (uint256 m = 0; m < donorMods.length; ++m) {
-                if ((mask >> m) & 1 == 0) {
-                    if (unusedSeen == k) {
-                        moduleIdx = m;
-                        break;
-                    }
-                    ++unusedSeen;
-                }
-            }
+            uint256 moduleIdx = _nthUnusedIndex(consumedMask[donorIdx], k, donorMods.length);
 
-            consumedMask[donorIdx] = mask | (1 << moduleIdx);
+            consumedMask[donorIdx] |= (1 << moduleIdx);
             --remaining[donorIdx];
             result[j] = donorMods[moduleIdx];
+        }
+    }
+
+    /// @dev Units-weighted donor pick: the first donor whose cumulative unit count exceeds `d`.
+    ///      Split out of `sampleCompose` to keep that function's stack depth low enough for
+    ///      `forge coverage`'s non-optimized codegen.
+    function _pickDonor(Donor[] memory donors, uint256 d) private pure returns (uint256 donorIdx) {
+        uint256 cum;
+        for (uint256 i = 0; i < donors.length; ++i) {
+            cum += donors[i].units;
+            if (d < cum) {
+                donorIdx = i;
+                break;
+            }
+        }
+    }
+
+    /// @dev The index of the `k`-th unset bit in `mask` below `length`: the module index of the
+    ///      `k`-th not-yet-used module in a donor's module array. Split out of `sampleCompose` to
+    ///      keep that function's stack depth low enough for `forge coverage`'s non-optimized
+    ///      codegen.
+    function _nthUnusedIndex(uint256 mask, uint256 k, uint256 length)
+        private
+        pure
+        returns (uint256 moduleIdx)
+    {
+        uint256 unusedSeen;
+        for (uint256 m = 0; m < length; ++m) {
+            if ((mask >> m) & 1 == 0) {
+                if (unusedSeen == k) {
+                    moduleIdx = m;
+                    break;
+                }
+                ++unusedSeen;
+            }
         }
     }
 
@@ -319,7 +337,9 @@ library GeometrySampling {
         uint8 childDenom,
         uint256 childIndex
     ) public pure returns (bytes memory) {
-        bytes memory pool = hasRecordPool ? recordPool : grammarSplitPool(parentSeed, childDenom, parentInkGene);
+        bytes memory pool = hasRecordPool
+            ? recordPool
+            : grammarSplitPool(parentSeed, childDenom, parentInkGene);
         return sampleSplitChild(pool, parentSeed, childDenom, childIndex);
     }
 }

@@ -451,6 +451,120 @@ contract Handler is Test, IERC721Receiver {
         }
         return 9;
     }
+
+    /* -------------------- heterogeneous compose/split/decompose -------------------- */
+
+    /// @dev Compose a survivor one tier up using a burn set gathered across whatever
+    ///      denominations the owner currently holds, instead of `compose`'s same-denomination
+    ///      siblings: greedily takes same-owner, non-Black, non-survivor live tokens whose
+    ///      backing does not exceed the remaining gap, largest first, until the gap closes or the
+    ///      12-id cap is reached. Exercises a heterogeneous burn set (SAMPLING_SPEC.md section 5).
+    function composeMixed(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 survivor = liveTokens[seed % liveTokens.length];
+        uint256 amt = shapes.backingOf(survivor);
+        uint256 di = _denomIndex(amt);
+        if (di == 9 || di == 8) return; // unknown, or already the top tier
+        address owner = shapes.ownerOf(survivor);
+        uint256 need = DENOMS[di + 1] - amt;
+
+        uint256[] memory candidates = new uint256[](liveTokens.length);
+        uint256 nCand;
+        for (uint256 i = 0; i < liveTokens.length; ++i) {
+            uint256 id = liveTokens[i];
+            if (id == survivor) continue;
+            if (shapes.ownerOf(id) != owner) continue;
+            if (shapes.isBlack(id)) continue;
+            candidates[nCand++] = id;
+        }
+
+        uint256[] memory burn = new uint256[](12);
+        uint256 got;
+        while (got < 12 && need > 0) {
+            uint256 bestIdx = type(uint256).max;
+            uint256 bestBacking;
+            for (uint256 i = 0; i < nCand; ++i) {
+                uint256 id = candidates[i];
+                if (id == type(uint256).max) continue;
+                uint256 b = shapes.backingOf(id);
+                if (b <= need && b > bestBacking) {
+                    bestBacking = b;
+                    bestIdx = i;
+                }
+            }
+            if (bestIdx == type(uint256).max) break;
+            burn[got++] = candidates[bestIdx];
+            need -= bestBacking;
+            candidates[bestIdx] = type(uint256).max;
+        }
+        if (need != 0) return;
+
+        uint256[] memory finalBurn = new uint256[](got);
+        for (uint256 i = 0; i < got; ++i) {
+            finalBurn[i] = burn[i];
+        }
+
+        vm.prank(owner);
+        try shapes.compose(survivor, finalBurn) {
+            for (uint256 i = 0; i < got; ++i) {
+                _untrack(finalBurn[i]);
+            }
+        } catch {}
+    }
+
+    /// @dev Split a live token into non-equal output denominations: one tier-(di-1) output
+    ///      followed by `(DENOMS[di] - DENOMS[di-1]) / DENOMS[di-2]` tier-(di-2) outputs, an
+    ///      integer count on every rung of this ladder from di == 2 upward. Exercises an uneven
+    ///      split, distinct from `split`'s equal-outDenoms breakdown.
+    function splitUneven(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 id = liveTokens[seed % liveTokens.length];
+        uint256 amt = shapes.backingOf(id);
+        uint256 di = _denomIndex(amt);
+        if (di == 9 || di < 2) return;
+        address owner = shapes.ownerOf(id);
+
+        uint256 n = (DENOMS[di] - DENOMS[di - 1]) / DENOMS[di - 2];
+        uint8[] memory outs = new uint8[](1 + n);
+        outs[0] = uint8(di - 1);
+        for (uint256 i = 0; i < n; ++i) {
+            outs[1 + i] = uint8(di - 2);
+        }
+
+        vm.prank(owner);
+        try shapes.split(id, outs) returns (uint256[] memory kids) {
+            _untrack(id);
+            for (uint256 i = 0; i < kids.length; ++i) {
+                _track(kids[i]);
+            }
+        } catch {}
+    }
+
+    /// @dev Reverses up to two stacked compose records on one survivor through the batch
+    ///      `decomposeMany` entrypoint, instead of `decompose`'s single-record call, by repeating
+    ///      the survivor's id `min(depth, 2)` times.
+    function decomposeMany(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 survivor = liveTokens[seed % liveTokens.length];
+        uint256 depth = shapes.composeDepth(survivor);
+        if (depth == 0) return;
+        uint256 reps = depth < 2 ? depth : 2;
+        address owner = shapes.ownerOf(survivor);
+
+        uint256[] memory ids = new uint256[](reps);
+        for (uint256 i = 0; i < reps; ++i) {
+            ids[i] = survivor;
+        }
+
+        vm.prank(owner);
+        try shapes.decomposeMany(ids) returns (uint256[][] memory restored) {
+            for (uint256 i = 0; i < restored.length; ++i) {
+                for (uint256 j = 0; j < restored[i].length; ++j) {
+                    _track(restored[i][j]);
+                }
+            }
+        } catch {}
+    }
 }
 
 /* ==================================================================== *
@@ -480,7 +594,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](15);
+        bytes4[] memory selectors = new bytes4[](18);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -496,6 +610,9 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[12] = Handler.splitToHostile.selector;
         selectors[13] = Handler.decompose.selector;
         selectors[14] = Handler.decomposeToHostile.selector;
+        selectors[15] = Handler.composeMixed.selector;
+        selectors[16] = Handler.splitUneven.selector;
+        selectors[17] = Handler.decomposeMany.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -641,6 +758,52 @@ contract ShapesInvariantTest is StdInvariant, Test {
         assertEq(sink.balance - before, expected, "a live Shape could not pay out in full");
         assertEq(shapes.redeemableBacking(), 0, "reserve not fully drained by redeeming everything");
         vm.revertToState(snapshot);
+    }
+
+    /// @dev The index of `tokenId` in the handler's current live set, for turning a token id into
+    ///      the `seed` argument an action expects (`seed % liveTokenCount == index` when
+    ///      `seed == index`).
+    function _indexInLive(uint256 tokenId) internal view returns (uint256) {
+        uint256 n = handler.liveTokenCount();
+        for (uint256 i = 0; i < n; ++i) {
+            if (handler.liveTokens(i) == tokenId) return i;
+        }
+        revert("token not live");
+    }
+
+    /// @notice Guards against `composeMixed`, `splitUneven` and `decomposeMany` going silently
+    ///         inert (a consumed `vm.prank` leaving every call a no-op), the same failure mode
+    ///         `AuctionInvariantTest.test_HandlerActuallyDrivesTheHouse` guards against for the
+    ///         auction handler. Hand-drives a 0.5 ETH plus five 0.1 ETH mint to one actor, composes
+    ///         them into 1 ETH with `composeMixed`, splits an independently minted 1 ETH token
+    ///         unevenly with `splitUneven`, and reverses the compose with `decomposeMany`,
+    ///         asserting `totalSupply` and `composeDepth` move at every step.
+    function test_HandlerHeterogeneousActionsFire() public {
+        uint256 actorSeed = 7; // arbitrary; only needs to stay fixed across every call below
+
+        handler.mint(3, actorSeed); // DENOMS[3] = 0.5 ETH
+        uint256 survivor = handler.liveTokens(handler.liveTokenCount() - 1);
+        handler.mintBatch(2, actorSeed, 5); // 5 x DENOMS[2] = 0.1 ETH
+        handler.mint(4, actorSeed); // an independent 1 ETH original, for splitUneven
+        uint256 splitTarget = handler.liveTokens(handler.liveTokenCount() - 1);
+
+        uint256 supply0 = shapes.totalSupply();
+        assertEq(supply0, 7, "one 0.5, five 0.1, one 1 ETH");
+
+        handler.composeMixed(_indexInLive(survivor));
+        assertEq(shapes.composeDepth(survivor), 1, "composeMixed did not push a compose record");
+        assertEq(shapes.backingOf(survivor), Denominations.amountAt(4), "0.5 + 5 x 0.1 composed to 1 ETH");
+        assertEq(shapes.totalSupply(), supply0 - 5, "five burns removed from supply");
+
+        uint256 supply1 = shapes.totalSupply();
+        handler.splitUneven(_indexInLive(splitTarget));
+        assertEq(shapes.totalSupply(), supply1 + 5, "1 ETH split into 6 children, net +5");
+
+        uint256 supply2 = shapes.totalSupply();
+        handler.decomposeMany(_indexInLive(survivor));
+        assertEq(shapes.composeDepth(survivor), 0, "decomposeMany did not pop the record");
+        assertEq(shapes.backingOf(survivor), Denominations.amountAt(3), "survivor reverted to 0.5 ETH");
+        assertEq(shapes.totalSupply(), supply2 + 5, "five inputs restored by decomposeMany");
     }
 }
 

@@ -9,13 +9,13 @@ import {
     ComposeInputView,
     ComposeRecordView,
     ShapeChildPreview,
-    ShapeFormation,
     ShapeState
 } from "./interfaces/IShapeCapabilities.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
+import {ShapeMath} from "./lib/ShapeMath.sol";
 
 /// @title ShapeLens
 /// @notice Read-only periphery for `Shapes`, deployed separately to keep the core token's runtime
@@ -66,39 +66,14 @@ contract ShapeLens is IShapeLens {
             originCount: originCount,
             inkGene: inkGene,
             isBlack: black,
-            formation: _formation(denomIndex, originCount, black),
+            formation: ShapeMath.formation(denomIndex, originCount, black),
             faceValueWei: faceValue,
             redeemableValueWei: black ? 0 : faceValue,
             modules: modules
         });
     }
 
-    function _formation(uint8 denomIndex, uint32 originCount, bool black)
-        private
-        pure
-        returns (ShapeFormation)
-    {
-        if (black) return ShapeFormation.Black;
-        uint256 units = Denominations.unitsAt(denomIndex);
-        if (units > 1 && originCount == units) return ShapeFormation.Complete;
-        if (originCount == 0) return ShapeFormation.Fragment;
-        if (originCount == 1) return ShapeFormation.Direct;
-        return ShapeFormation.Composed;
-    }
-
     /* ----------------------------- previewCompose ---------------------------- */
-
-    /// @dev Mirrors `Shapes.BurnPoolAccum`: the same pool statistics, folded here from external
-    ///      reads instead of storage.
-    struct BurnPoolAccum {
-        uint256 total;
-        uint256 origins;
-        uint256 burnSeedFold;
-        uint8 best;
-        uint8 worst;
-        uint256 sumW;
-        uint256 unitsTotal;
-    }
 
     /// @inheritdoc IShapeLens
     function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
@@ -117,14 +92,8 @@ contract ShapeLens is IShapeLens {
         uint32 survivorOriginCount = uint32(shapes.originCountOf(survivorId));
         uint8 survivorInkGene = shapes.inkGeneOf(survivorId);
 
-        uint256 survivorUnits = Denominations.unitsAt(oldIndex);
-        BurnPoolAccum memory acc;
-        acc.total = Denominations.amountAt(oldIndex);
-        acc.origins = survivorOriginCount;
-        acc.best = survivorInkGene;
-        acc.worst = survivorInkGene;
-        acc.sumW = uint256(survivorInkGene) * survivorUnits;
-        acc.unitsTotal = survivorUnits;
+        ShapeMath.BurnPoolAccum memory acc;
+        uint256 survivorUnits = ShapeMath.initPool(acc, oldIndex, survivorOriginCount, survivorInkGene);
 
         GeometrySampling.Donor[] memory burnDonors = new GeometrySampling.Donor[](n);
 
@@ -164,7 +133,7 @@ contract ShapeLens is IShapeLens {
     /// @dev One burn-side donor's contribution to `acc`, plus its `Donor` snapshot for module
     ///      sampling. Mirrors `Shapes._accumulateBurnDonor`, reading the donor's fields through
     ///      `Shapes`'s getters instead of storage.
-    function _accumulateBurnDonor(uint256 burnId, BurnPoolAccum memory acc)
+    function _accumulateBurnDonor(uint256 burnId, ShapeMath.BurnPoolAccum memory acc)
         private
         view
         returns (GeometrySampling.Donor memory donor)
@@ -175,15 +144,7 @@ contract ShapeLens is IShapeLens {
         bytes32 seed = shapes.seedOf(burnId);
         uint8 inkGene = shapes.inkGeneOf(burnId);
 
-        acc.total += Denominations.amountAt(denomIndex);
-        acc.origins += originCount;
-        // Fold order-invariantly (XOR), matching `Shapes._accumulateBurnDonor`.
-        acc.burnSeedFold ^= uint256(seed);
-        if (inkGene > acc.best) acc.best = inkGene;
-        if (inkGene < acc.worst) acc.worst = inkGene;
-        uint256 units = Denominations.unitsAt(denomIndex);
-        acc.sumW += uint256(inkGene) * units;
-        acc.unitsTotal += units;
+        uint256 units = ShapeMath.addDonor(acc, seed, denomIndex, originCount, inkGene);
 
         donor = GeometrySampling.Donor({
             id: burnId, units: units, seed: seed, denomIndex: denomIndex, inkGene: inkGene, modules: modules
@@ -209,52 +170,19 @@ contract ShapeLens is IShapeLens {
         uint8 inkGene = shapes.inkGeneOf(tokenId);
 
         uint256 parentBacking = Denominations.amountAt(denomIndex);
-        _requireSplitSumMatches(parentBacking, outDenoms);
-        uint32[] memory give = _allocateSplitOrigins(originCount, outDenoms);
+        ShapeMath.requireSplitSumMatches(parentBacking, outDenoms);
+        uint32[] memory give = ShapeMath.allocateSplitOrigins(originCount, outDenoms);
 
         children = new ShapeChildPreview[](k);
         for (uint256 i = 0; i < k; ++i) {
             children[i] = ShapeChildPreview({
-                seed: _childSeed(seed, i),
+                seed: ShapeMath.childSeed(seed, i),
                 denominationIndex: outDenoms[i],
                 originCount: give[i],
                 inkGene: inkGene,
                 faceValueWei: Denominations.amountAt(outDenoms[i])
             });
         }
-    }
-
-    /// @dev Mirrors `Shapes._requireSplitSumMatches`.
-    function _requireSplitSumMatches(uint256 parentBacking, uint8[] calldata outDenoms) private pure {
-        uint256 sum;
-        for (uint256 i = 0; i < outDenoms.length; ++i) {
-            sum += Denominations.amountAt(outDenoms[i]);
-        }
-        if (sum != parentBacking) revert IShapes.SplitMismatch(parentBacking, sum);
-    }
-
-    /// @dev Mirrors `Shapes._allocateSplitOrigins`.
-    function _allocateSplitOrigins(uint256 originCount, uint8[] calldata outDenoms)
-        private
-        pure
-        returns (uint32[] memory give)
-    {
-        uint256 k = outDenoms.length;
-        give = new uint32[](k);
-        uint256 remaining = originCount;
-        for (uint256 i = 0; i < k; ++i) {
-            uint256 cap = Denominations.unitsAt(outDenoms[i]);
-            uint256 g = remaining < cap ? remaining : cap;
-            remaining -= g;
-            give[i] = uint32(g);
-        }
-        // Sum of capacities == parentBacking/UNIT >= parent origin count, so the fill exhausts it.
-        assert(remaining == 0);
-    }
-
-    /// @dev Mirrors `Shapes._childSeed`.
-    function _childSeed(bytes32 parentSeed, uint256 childIndex) private pure returns (bytes32) {
-        return keccak256(abi.encodePacked(parentSeed, childIndex));
     }
 
     /* ------------------------------ unicodeCard ------------------------------ */

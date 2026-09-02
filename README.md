@@ -381,9 +381,10 @@ FOUNDRY_PROFILE=ci forge test # heavier fuzzing
 # excludes the deploy scripts, which are tooling rather than audited contracts and carry the
 # same stack pressure. test/legacy/ holds the pre-refactor renderer that RendererDiff.t.sol
 # compares against: it is deliberately the flat form, which is exactly what cannot survive
-# coverage's codegen, so it is excluded too.
+# coverage's codegen, so it is excluded too. --no-match-test Gas drops the two gas-ceiling
+# assertions, which measure the optimized build and trip under coverage's unoptimized one.
 forge coverage --ir-minimum --skip script \
-  --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --report summary
+  --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --no-match-test Gas --report summary
 ```
 
 ### Against a mainnet fork
