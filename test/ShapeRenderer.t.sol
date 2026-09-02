@@ -503,7 +503,7 @@ contract OutputTest is RendererTestBase {
                 assertTrue(raw[raw.length - 1] != bytes1("0"), label);
             }
             string memory json = renderer.metadataJSON(
-                bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+                bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
             );
             assertEq(
                 vm.parseJsonString(json, ".attributes[0].value"),
@@ -516,7 +516,7 @@ contract OutputTest is RendererTestBase {
     /// @notice The token number lives in the metadata name, not on the card.
     function test_TokenNumberIsInMetadataOnly() public view {
         string memory json = renderer.metadataJSON(
-            bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
         assertEq(vm.parseJsonString(json, ".name"), "Shape 123");
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), DENOMS[4], false, 0), "123"));
@@ -525,14 +525,14 @@ contract OutputTest is RendererTestBase {
     /// @notice Shape #0 carries its collection role in both its fixed title and one boolean trait.
     function test_CollectionOwnerTokenHasDistinctMetadataIdentity() public view {
         string memory ownerJson = renderer.metadataJSON(
-            bytes32(uint256(1)), DENOMS[0], 0, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            bytes32(uint256(1)), DENOMS[0], 0, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, true
         );
         assertEq(vm.parseJsonString(ownerJson, ".name"), "Shapes Collection Owner");
         assertEq(vm.parseJsonString(ownerJson, ".attributes[15].trait_type"), "Collection Owner");
         assertEq(vm.parseJsonString(ownerJson, ".attributes[15].value"), "true");
 
         string memory ordinaryJson = renderer.metadataJSON(
-            bytes32(uint256(1)), DENOMS[0], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            bytes32(uint256(1)), DENOMS[0], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
         assertEq(vm.parseJsonString(ordinaryJson, ".name"), "Shape 1");
         assertFalse(_contains(ordinaryJson, '"trait_type":"Collection Owner"'));
@@ -541,8 +541,9 @@ contract OutputTest is RendererTestBase {
     /// @notice tokenURI must decode to real JSON containing a real inline SVG.
     function testFuzz_TokenUriIsValidBase64Json(bytes32 seed, uint8 which, uint16 tokenId) public view {
         uint256 amount = DENOMS[which % 9];
-        string memory uri =
-            renderer.tokenURI(seed, amount, tokenId, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION);
+        string memory uri = renderer.tokenURI(
+            seed, amount, tokenId, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION, tokenId == 0
+        );
 
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "json data uri");
         string memory json = string(Base64Decode.decode(_after(uri, "data:application/json;base64,")));
@@ -567,7 +568,7 @@ contract OutputTest is RendererTestBase {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
         string memory json =
-            renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION);
+            renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION, false);
 
         assertEq(vm.parseJsonString(json, ".attributes[0].trait_type"), "ETH Value");
         assertEq(
@@ -603,8 +604,9 @@ contract OutputTest is RendererTestBase {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
         uint8 gene = _gene(seed);
-        string memory json =
-            renderer.metadataJSON(seed, amount, 1, 1, false, gene, composeDepth, NAME_PREFIX, DESCRIPTION);
+        string memory json = renderer.metadataJSON(
+            seed, amount, 1, 1, false, gene, composeDepth, NAME_PREFIX, DESCRIPTION, false
+        );
 
         assertEq(vm.parseJsonString(json, ".attributes[6].trait_type"), "Primitive");
         string memory primitive = vm.parseJsonString(json, ".attributes[6].value");
@@ -936,7 +938,7 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(
             shapes.tokenURI(id),
             renderer.tokenURI(
-                seed, DENOMS[4], id, 1, false, shapes.inkGeneOf(id), 0, NAME_PREFIX, DESCRIPTION
+                seed, DENOMS[4], id, 1, false, shapes.inkGeneOf(id), 0, NAME_PREFIX, DESCRIPTION, false
             )
         );
     }

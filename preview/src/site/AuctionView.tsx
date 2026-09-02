@@ -160,9 +160,8 @@ export function AuctionView({
   // for some reason, in which case the name falls back to the tokenId directly.
   const lotToken = data?.tokens.find((t) => t.id === auction.tokenId);
   const lotDenomLabel = lotToken ? DENOMINATIONS[lotToken.di]!.label : null;
-  const tokenName = auction.tokenId === 0n
-    ? shapeTitle(auction.tokenId)
-    : lotToken?.meta.name || shapeTitle(auction.tokenId);
+  const lotIsOwnerToken = data?.ownerToken != null && data.ownerToken === auction.tokenId;
+  const tokenName = lotToken?.meta.name || shapeTitle(auction.tokenId, lotIsOwnerToken);
 
   // Cards the connected wallet holds, offered as bid material.
   const owned: SiteToken[] = (data?.tokens ?? []).filter(

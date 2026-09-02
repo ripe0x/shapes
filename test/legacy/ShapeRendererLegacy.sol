@@ -1177,6 +1177,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
     }
 
     /// @inheritdoc IShapeRenderer
+    /// @dev Fixture renderer: never named the owner token specially, so `ownerToken` is unused.
     function metadataJSON(
         bytes32 seed,
         uint256 amountWei,
@@ -1186,7 +1187,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint8 inkGene,
         uint256 composeDepth,
         string memory namePrefix,
-        string memory description
+        string memory description,
+        bool ownerToken
     ) public pure returns (string memory) {
         Card memory card = compose(seed, amountWei, inkGene);
         return _metadataFromCard(
@@ -1204,6 +1206,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
     }
 
     /// @inheritdoc IShapeRenderer
+    /// @dev Fixture renderer: never named the owner token specially, so `ownerToken` is unused.
     function metadataJSONSampled(
         bytes memory modules,
         uint256 amountWei,
@@ -1214,7 +1217,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint256 composeDepth,
         string memory namePrefix,
         string memory description,
-        SplitProvenance memory splitInfo
+        SplitProvenance memory splitInfo,
+        bool ownerToken
     ) public pure returns (string memory) {
         Card memory card = composeSampled(modules, amountWei, inkGene);
         return _metadataFromCard(
@@ -1316,6 +1320,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
     }
 
     /// @inheritdoc IShapeRenderer
+    /// @dev Fixture renderer: never named the owner token specially, so `ownerToken` is unused.
     function tokenURI(
         bytes32 seed,
         uint256 amountWei,
@@ -1325,7 +1330,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint8 inkGene,
         uint256 composeDepth,
         string calldata namePrefix,
-        string calldata description
+        string calldata description,
+        bool ownerToken
     ) external pure returns (string memory) {
         return _wrapTokenURI(
             metadataJSON(
@@ -1337,12 +1343,14 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
                 inkGene,
                 composeDepth,
                 namePrefix,
-                description
+                description,
+                ownerToken
             )
         );
     }
 
     /// @inheritdoc IShapeRenderer
+    /// @dev Fixture renderer: never named the owner token specially, so `ownerToken` is unused.
     function tokenURISampled(
         bytes calldata modules,
         uint256 amountWei,
@@ -1353,7 +1361,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint256 composeDepth,
         string calldata namePrefix,
         string calldata description,
-        SplitProvenance calldata splitInfo
+        SplitProvenance calldata splitInfo,
+        bool ownerToken
     ) external pure returns (string memory) {
         return _wrapTokenURI(
             metadataJSONSampled(
@@ -1366,7 +1375,8 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
                 composeDepth,
                 namePrefix,
                 description,
-                splitInfo
+                splitInfo,
+                ownerToken
             )
         );
     }

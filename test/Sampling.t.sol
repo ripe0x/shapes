@@ -131,7 +131,8 @@ contract SamplingTest is ShapesBase {
             shapes.inkGeneOf(id),
             0,
             shapes.tokenNamePrefix(),
-            shapes.description()
+            shapes.description(),
+            false
         );
         assertEq(shapes.tokenURI(id), expected, "an unmaterialized token must render via grammar v1");
     }
@@ -337,7 +338,9 @@ contract SamplingTest is ShapesBase {
             bytes memory childMods = lens.shapeState(kids[i]).modules;
             assertEq(childMods.length, cols * rows, "child length != 50 ETH grid cell count");
             bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, 7, i);
-            assertEq(childMods, expected, "grammar-branch child must match the pool sample, not the apex byte");
+            assertEq(
+                childMods, expected, "grammar-branch child must match the pool sample, not the apex byte"
+            );
             for (uint256 j = 0; j < childMods.length; ++j) {
                 assertTrue(ModuleCodec.isValid(childMods[j]), "invalid child module byte");
             }
@@ -373,7 +376,9 @@ contract SamplingTest is ShapesBase {
             assertEq(childMods, expected, "record-branch child must match the compose record's donor pool");
             for (uint256 j = 0; j < 25; ++j) {
                 assertTrue(ModuleCodec.isValid(childMods[j]));
-                assertTrue(_containsByte(pool, childMods[j]), "split child byte not drawn from the record pool");
+                assertTrue(
+                    _containsByte(pool, childMods[j]), "split child byte not drawn from the record pool"
+                );
             }
         }
     }

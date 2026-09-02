@@ -239,15 +239,18 @@ and the narrow compose/decompose identity-revival exception.
 
 ## Immutability
 
-Shape #0 represents ownership of the contract as a collectible object. It is minted atomically to the
-deployer with minimum-denomination backing, and `owner()` always returns its current holder. It is otherwise a
-normal Shape: it can be transferred, redeemed, composed, decomposed, or split. While #0 does not
-exist, `owner()` returns zero. Its metadata title is `Shapes Collection Owner`, with the exclusive
-trait `Collection Owner: true`. Holding it grants no administrative rights. Permissionless artwork
-minting starts at #1, which is the launch-auction lot.
+One live Shape is the owner token, and `owner()` always returns its current holder. It starts as
+#0, minted atomically to the deployer with minimum-denomination backing, and is otherwise a normal
+Shape: it can be transferred, redeemed, composed, decomposed, or split. A compose that absorbs it
+moves it to the survivor, the matching decompose restores it to that input, and splitting it gives
+it to the first output. Redeeming or burning the owner token ends collection ownership
+permanently: `owner()` returns zero and no other token inherits. Its metadata name is `Shapes
+Collection Owner`, with the exclusive trait `Collection Owner: true`. Holding it grants no
+administrative rights. Permissionless artwork minting starts at #1, which is the launch-auction
+lot.
 
 The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move
-ETH, administer metadata, receive fees, control Shape #0, or authorize any operation. The artist may
+ETH, administer metadata, receive fees, control the owner token, or authorize any operation. The artist may
 submit one EIP-712 signature directly to Shapes, or have anyone relay it, approving the exact chain,
 Shapes address, artist address and chosen `releaseHash`. `artistSignature()` and
 `artistReleaseHash()` then remain onchain permanently, along with proof that the signature was valid
@@ -259,7 +262,7 @@ artist-controlled mutable text.
 A separate `admin()` role controls presentation, positions, market configuration and the
 destination of future mint fees. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
-of Shape #0:
+of the owner token:
 
 - Presentation: the renderer and collection metadata contracts may be replaced until
   `lockRenderer` permanently freezes both pointers. The metadata copy, the token name prefix and
@@ -338,6 +341,7 @@ src/
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
+    AdminOps.sol              artist attestation, metadata copy, and fee-config mutators
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
     EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
     PointerOps.sol            positions/market pointer configuration and one-way locks

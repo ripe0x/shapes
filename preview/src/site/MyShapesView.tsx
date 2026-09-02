@@ -79,7 +79,7 @@ export function MyShapesView({
           This wallet does not currently own any Shapes.
         </div>
       ) : (
-        <ShapeGrid tokens={tokens} onOpenToken={onOpenToken} />
+        <ShapeGrid tokens={tokens} ownerTokenId={data?.ownerToken ?? null} onOpenToken={onOpenToken} />
       )}
     </main>
   );

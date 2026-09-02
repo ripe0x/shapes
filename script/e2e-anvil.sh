@@ -50,6 +50,14 @@ echo "  Shapes        $SHAPES"
 echo "  ShapeRenderer $RENDERER"
 echo "  AuctionHouse  $HOUSE"
 
+say "Reading back the owner token"
+OWNER_TOKEN=$(cast call "$SHAPES" "ownerToken()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+OWNER=$(cast call "$SHAPES" "owner()(address)" --rpc-url "$RPC")
+echo "  ownerToken $OWNER_TOKEN"
+echo "  owner      $OWNER"
+[ "$OWNER_TOKEN" = "0" ] && echo "  ok: ownerToken is 0 (Shape #0)" || fail "ownerToken was $OWNER_TOKEN, expected 0"
+[ "$OWNER" = "$ADDR0" ] && echo "  ok: owner is the deployer" || fail "owner was $OWNER, expected $ADDR0"
+
 say "Signing the deployment as artist"
 RELEASE_HASH=$(cast keccak "shapes-e2e-release")
 DIGEST=$(cast call "$SHAPES" "artistAttestationDigest(bytes32)(bytes32)" "$RELEASE_HASH" --rpc-url "$RPC")
@@ -87,11 +95,14 @@ for d in "${DENOMS[@]}"; do
   printf '  minted %s wei\n' "$d"
 done
 
-TOTAL=$(cast call "$SHAPES" "redeemableBacking()(uint256)" --rpc-url "$RPC")
+TOTAL=$(cast call "$SHAPES" "redeemableBacking()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+FEES=$(cast call "$SHAPES" "pendingFees()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
 BAL=$(cast balance "$SHAPES" --rpc-url "$RPC")
 echo "  redeemableBacking $TOTAL"
+echo "  pendingFees       $FEES"
 echo "  contract balance  $BAL"
-[ "${TOTAL%% *}" = "$BAL" ] && echo "  ok: balance == redeemableBacking" || { echo "  FAIL"; exit 1; }
+[ "$(big "$TOTAL + $FEES")" = "$BAL" ] \
+  && echo "  ok: balance == redeemableBacking + pendingFees" || { echo "  FAIL"; exit 1; }
 
 # Backed Shape #0 is minted at deploy. The nine public mints are therefore ids 1..9 in
 # denomination order, so 1 ETH (the fifth denomination) is token 5.
@@ -135,12 +146,15 @@ for t in 0 1 2 3 4 5 6 7 8 9; do [ "$t" = "$ETH1_ID" ] && continue; REST="$REST,
 REST="[${REST#,}]"
 send_wait "$SHAPES" "redeemBatch(uint256[])" "$REST" \
   --private-key "$PK0" --rpc-url "$RPC" >/dev/null
-FINAL_BACKING=$(cast call "$SHAPES" "redeemableBacking()(uint256)" --rpc-url "$RPC")
+FINAL_BACKING=$(cast call "$SHAPES" "redeemableBacking()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+FINAL_FEES=$(cast call "$SHAPES" "pendingFees()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
 FINAL_BAL=$(cast balance "$SHAPES" --rpc-url "$RPC")
 echo "  redeemableBacking $FINAL_BACKING"
+echo "  pendingFees       $FINAL_FEES"
 echo "  contract balance  $FINAL_BAL"
-[ "${FINAL_BACKING%% *}" = "0" ] && [ "$FINAL_BAL" = "0" ] \
-  && echo "  ok: reserve fully unwound" || { echo "  FAIL"; exit 1; }
+[ "$FINAL_BACKING" = "0" ] && [ "$(big "$FINAL_BACKING + $FINAL_FEES")" = "$FINAL_BAL" ] \
+  && echo "  ok: reserve fully unwound (contract balance is fees awaiting withdrawal)" \
+  || { echo "  FAIL"; exit 1; }
 
 # ---------------------------------------------------------------------------------------------
 # The auction house. Mints its own lot, so nothing here depends on what the redemption left.

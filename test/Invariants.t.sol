@@ -759,6 +759,23 @@ contract ShapesInvariantTest is StdInvariant, Test {
         }
     }
 
+    /// @dev Set once `ownerToken()` has reverted, so later runs of the invariant below can catch
+    ///      it ever coming back.
+    bool internal ownerTokenEverAbsent;
+
+    /// @notice While the owner token exists, `owner()` is exactly its ERC-721 holder and the
+    ///         token is live. Once `ownerToken()` reverts (redeemed or burned), it never
+    ///         succeeds again for the rest of the run: ownership does not silently reappear.
+    function invariant_OwnerTokenTracksItsHolder() public {
+        try shapes.ownerToken() returns (uint256 id) {
+            assertFalse(ownerTokenEverAbsent, "owner token reappeared after ending");
+            assertEq(shapes.owner(), shapes.ownerOf(id), "owner() did not match the owner token's holder");
+        } catch {
+            ownerTokenEverAbsent = true;
+            assertEq(shapes.owner(), address(0), "owner() nonzero with no owner token");
+        }
+    }
+
     /// @notice Whatever the sequence was, every live Shape's backing can still be extracted in
     ///         full. Solvency in the sense that actually matters. Drained via `redeemTo` to a
     ///         benign sink rather than `redeem`, so a Shape that a hostile recipient came to own
