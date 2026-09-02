@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type {PublicClient} from "viem";
 
 import {loadSite} from "./data";
-import {BLACK_FILTER, filterGalleryTokens} from "./GalleryView";
+import {BLACK_FILTER, filterGalleryTokens, originsLabel} from "./GalleryView";
 import {filterOwnedTokens} from "./MyShapesView";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {GENE_NAMES} from "../canonical/ink";
@@ -395,4 +395,14 @@ test("loadSite: oversized indexer response bodies fall back", async () => {
   });
 
   assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("originsLabel counts mint origins and flags Complete", () => {
+  const meta = (attrs: {trait_type: string; value: string}[]) => ({name: "", description: "", attributes: attrs});
+  assert.equal(originsLabel({originCount: 1, meta: meta([])}), "1 origin");
+  assert.equal(originsLabel({originCount: 6, meta: meta([{trait_type: "Complete", value: "false"}])}), "6 origins");
+  assert.equal(
+    originsLabel({originCount: 10_000, meta: meta([{trait_type: "Complete", value: "true"}])}),
+    "10,000 origins, Complete",
+  );
 });

@@ -19,6 +19,7 @@ function token(id: bigint, di: number, owner = OWNER): SiteToken {
     backing: di < 0 ? 0n : DENOMINATIONS[di].wei,
     seed: 0n,
     inkGene: 0,
+    originCount: 1,
     composeDepth: 0,
     image: "",
     meta: {name: `Shape ${id}`, description: "", attributes: []},

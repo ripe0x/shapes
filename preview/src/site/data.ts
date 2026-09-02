@@ -22,6 +22,7 @@ export interface SiteToken {
   image: string; // svg data URI from tokenURI
   meta: TokenMeta; // the rest of the tokenURI JSON, parsed
   inkGene: number; // stored ink gene, from the tokenURI "Ink" trait
+  originCount: number; // direct-mint events credited to the token, from the "Independent Origins" trait
   composeDepth: number; // stacked composes decompose(tokenId) can still reverse
 }
 
@@ -29,6 +30,13 @@ export interface SiteToken {
 function geneOfMeta(meta: TokenMeta): number {
   const ink = meta.attributes.find((a) => a.trait_type === "Ink");
   return geneIndexOfName(ink?.value ?? "Murk");
+}
+
+/** Origin count from a parsed tokenURI's "Independent Origins" trait. */
+function originsOfMeta(meta: TokenMeta): number {
+  const v = meta.attributes.find((a) => a.trait_type === "Independent Origins")?.value;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
 }
 
 export interface SiteData {
@@ -395,6 +403,7 @@ async function tokensFromIndexer(
       image,
       meta,
       inkGene: geneOfMeta(meta),
+      originCount: originsOfMeta(meta),
       composeDepth: Number(composeDepth),
     });
   }
@@ -474,6 +483,7 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
       image,
       meta,
       inkGene: geneOfMeta(meta),
+      originCount: originsOfMeta(meta),
       composeDepth: Number(composeDepth),
     });
   }
