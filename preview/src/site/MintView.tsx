@@ -135,6 +135,20 @@ export function MintView({
   const [sample, setSample] = React.useState(0);
   React.useEffect(() => setSample(0), [sel]);
 
+  // The sample preview cycles on its own every 1.2s. `manual` restarts the interval after a
+  // step button press so the auto-advance does not override a click a moment later. Off under
+  // prefers-reduced-motion; the step buttons still work.
+  const [manual, setManual] = React.useState(0);
+  React.useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const id = setInterval(() => setSample((s) => s + 1), 1200);
+    return () => clearInterval(id);
+  }, [sel, manual]);
+  const step = (delta: number) => {
+    setSample((s) => s + delta);
+    setManual((m) => m + 1);
+  };
+
   const wei = DENOMINATIONS[sel].wei;
   const fee = data?.fees[sel] ?? null;
   const q = BigInt(qty);
@@ -172,10 +186,10 @@ export function MintView({
           <div style={{flex: "0 0 180px", width: 180}}>
             <Art src={localArt(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei, mintGene(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei))} />
             <div style={{marginTop: 10, display: "flex", alignItems: "center", gap: 8}}>
-              <button type="button" className="btn-step" onClick={() => setSample((s) => s - 1)} style={{width: 26, height: 24}}>
+              <button type="button" className="btn-step" onClick={() => step(-1)} style={{width: 26, height: 24}}>
                 ‹
               </button>
-              <button type="button" className="btn-step" onClick={() => setSample((s) => s + 1)} style={{width: 26, height: 24}}>
+              <button type="button" className="btn-step" onClick={() => step(1)} style={{width: 26, height: 24}}>
                 ›
               </button>
               <span style={{marginLeft: "auto", fontSize: 10, letterSpacing: "0.1em", color: C.faint}}>
