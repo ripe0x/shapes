@@ -3,7 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { DENOMINATIONS } from "@shared/chain/abi";
+import { AMOUNTS as MAINNET_DENOMINATIONS } from "@shared/canonical/ladders/mainnet";
 import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/canonical/sampling";
 import { localArt, sampleSeed } from "@shared/site/art";
 import { mintGene } from "@shared/previewGene";
@@ -47,11 +47,11 @@ function buildProvenanceExample(): ProvenanceExample {
 
   const origin = (seedNumber: number, key: string): BuiltShape => {
     const seed = sampleSeed(seedNumber);
-    const gene = mintGene(seed, DENOMINATIONS[0].wei);
+    const gene = mintGene(seed, MAINNET_DENOMINATIONS[0]);
     return {
       key,
       value: "0.01",
-      image: localArt(seed, DENOMINATIONS[0].wei, gene),
+      image: localArt(seed, MAINNET_DENOMINATIONS[0], gene),
       seed,
       gene,
     };
@@ -149,7 +149,8 @@ function TierCard({ tier, index }: { tier: (typeof TIERS)[number]; index: number
 
   const frame = hovered ? hoverBase + tick : 0;
   const seed = sampleSeed(12_000 + index * 127 + frame * 613);
-  const image = localArt(seed, DENOMINATIONS[index].wei, mintGene(seed, DENOMINATIONS[index].wei));
+  const denomination = MAINNET_DENOMINATIONS[index];
+  const image = localArt(seed, denomination, mintGene(seed, denomination));
 
   return (
     <article className="tier" onMouseEnter={start} onMouseLeave={stop}>

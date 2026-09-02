@@ -10,17 +10,16 @@ const PUBLIC_FILES = new Set([
 ]);
 
 /**
- * Domain-level backstop for the launch site. Even if its Netlify environment is edited
- * incorrectly, the production hostname can never serve wallet, token, gallery, or auction
- * routes. `/play` is an explicit exception: it is chain-free and uses no wallet or RPC.
+ * Domain-level backstop for the launch site. Landing mode exposes only the chain-free launch
+ * surface. Hybrid mode deliberately adds the Sepolia app while retaining the launch page at `/`.
  */
 export function proxy(request: NextRequest) {
   const host = request.headers.get("host")?.split(":", 1)[0]?.toLowerCase();
   if (host !== PRODUCTION_HOST) return NextResponse.next();
 
-  if (process.env.SHAPES_SITE_MODE !== "landing") {
-    return new NextResponse("Production deployment is not in landing mode.", { status: 503 });
-  }
+  const mode = process.env.SHAPES_SITE_MODE;
+  if (mode === "hybrid") return NextResponse.next();
+  if (mode !== "landing") return new NextResponse("Invalid production site mode.", { status: 503 });
 
   const path = request.nextUrl.pathname;
   if (PUBLIC_FILES.has(path) || path.startsWith("/_next/")) return NextResponse.next();
