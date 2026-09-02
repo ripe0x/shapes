@@ -212,27 +212,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function DrawBeat({
   denomIndex,
   onDenomIndex,
-  quantity,
-  onQuantity,
   onRoll,
   effectiveSeed,
-  onAdd,
   onComplete,
   completeBusy,
-  inverted,
-  onToggleInverted,
 }: {
   denomIndex: number;
   onDenomIndex: (i: number) => void;
-  quantity: number;
-  onQuantity: (quantity: number) => void;
   onRoll: () => void;
   effectiveSeed: bigint;
-  onAdd: () => void;
   onComplete: () => void;
   completeBusy: boolean;
-  inverted: boolean;
-  onToggleInverted: () => void;
 }) {
   const amountWei = DENOMINATIONS[denomIndex];
   // The gene a tray card of this seed/denomination would get (session.keepCard uses the same call).
@@ -245,7 +235,7 @@ function DrawBeat({
 
   return (
     <section className="play-section play-draw-section">
-      <SectionLabel>Draw</SectionLabel>
+      <SectionLabel>Generator</SectionLabel>
       <div className="play-draw-grid">
         <div className="play-draw-card">
           <RawCard svg={svg} width="100%" />
@@ -272,55 +262,13 @@ function DrawBeat({
           <div className="play-action-row">
             <div className="play-action-group">
               <PlayButton onClick={onRoll}>Roll</PlayButton>
-              <label className="play-quantity">
-                <span>Quantity</span>
-              <input
-                type="number"
-                min={1}
-                max={25}
-                inputMode="numeric"
-                value={quantity}
-                onChange={(event) => {
-                  const next = Number.parseInt(event.target.value, 10);
-                  onQuantity(Number.isFinite(next) ? Math.min(25, Math.max(1, next)) : 1);
-                }}
-                style={{
-                  ...mono,
-                  width: 52,
-                  padding: "8px 8px",
-                  border: `1px solid ${C.border}`,
-                  background: "transparent",
-                  color: C.ink,
-                  fontSize: 12,
-                }}
-              />
-              </label>
-              <PlayButton onClick={onAdd}>Add</PlayButton>
-            </div>
-            <div className="play-action-group play-complete-group">
               <PlayButton onClick={onComplete} disabled={completeBusy}>
-                {completeBusy ? "Building…" : "Complete"}
-              </PlayButton>
-              <span>Build every rung from independent 0.01 ETH origins.</span>
-            </div>
-          </div>
-
-          <div className="play-export-row">
-            <span className="play-control-label">Export</span>
-            <div>
-              <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
-                Card PNG
-              </PlayButton>
-              <PlayButton small onClick={() => downloadLadderPng(effectiveSeed, inverted)}>
-                Ladder PNG
-              </PlayButton>
-              <PlayButton small active={inverted} onClick={onToggleInverted}>
-                Black
+                {completeBusy ? "Generating…" : "Generate"}
               </PlayButton>
             </div>
           </div>
 
-          <p className="play-note">Nothing is minted here. Real seeds are assigned at mint.</p>
+          <p className="play-note">Generate builds this denomination from independent origins and reveals its full provenance.</p>
         </div>
       </div>
     </section>
@@ -425,9 +373,6 @@ function TrayCard({
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const isTop = node.denomIndex === DENOMINATIONS.length - 1;
   const showDecompose = node.trace != null && !node.black;
-  // Split children have no remove control: the session codec records a split atomically, so a
-  // missing sibling would be unrepresentable (removeNode rejects them too).
-  const showRemove = !showDecompose && node.splitTrace == null;
   const menuOpen = menu?.key === node.key ? menu.kind : null;
 
   return (
@@ -436,34 +381,12 @@ function TrayCard({
         svg={svg}
         width="100%"
         selected={selected}
-        onClick={node.black ? undefined : () => onToggle(node.key)}
         caption={
           node.black
             ? `#${node.demoId} · Black`
             : `#${node.demoId} · ${LABELS[node.denomIndex]} ETH`
         }
       />
-      {showRemove && (
-        <button
-          onClick={() => onRemove(node.key)}
-          title="remove"
-          style={{
-            ...mono,
-            position: "absolute",
-            top: 2,
-            right: 2,
-            fontSize: 10,
-            lineHeight: 1,
-            padding: "2px 5px",
-            border: "none",
-            background: "rgba(0,0,0,0.55)",
-            color: "#fff",
-            cursor: "pointer",
-          }}
-        >
-          ×
-        </button>
-      )}
       {!node.black && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
           {node.denomIndex > 0 && (
@@ -526,9 +449,7 @@ function TrayBeat({
 }) {
   return (
     <section className="play-section">
-      <SectionLabel>
-        Tray ({nodes.length})
-      </SectionLabel>
+      <SectionLabel>{nodes.length === 1 ? "Generated Shape" : `Generated Shapes (${nodes.length})`}</SectionLabel>
       {nodes.length === 0 ? (
         <p className="play-empty">Add a card to begin.</p>
       ) : (
@@ -1196,7 +1117,9 @@ function CompleteLineageTree({
     <div style={{ margin: "20px 0 32px" }}>
       <Prose>
         Complete {LABELS[root.denomIndex]} ETH · {formatCount(originCount)} independent origins · {layers.length} tiers.
-        Select a composed card to inspect its sampling. Open a source count to trace that branch further.
+        {layers.length > 1
+          ? " Select a composed card to inspect its sampling. Open a source count to trace that branch further."
+          : " This is an independent origin Shape."}
       </Prose>
       <div className="play-lineage-scroll">
         <LineageNode
@@ -1279,20 +1202,14 @@ function LineageBeat({ session }: { session: PlaySession }) {
 export function PlayApp() {
   const [session, setSession] = React.useState<PlaySession>(emptySession);
   const [denomIndex, setDenomIndex] = React.useState(0);
-  const [quantity, setQuantity] = React.useState(1);
   // A fixed placeholder, not a real draw: `randomSeed()` draws from `crypto.getRandomValues`,
   // which returns a different value on the server render than on the client's first paint,
   // producing a hydration mismatch. The mount effect below replaces it with a real roll.
   const [seed, setSeed] = React.useState<bigint>(0n);
-  const [selected, setSelected] = React.useState<Set<number>>(new Set());
-  const [composeError, setComposeError] = React.useState<string | null>(null);
   const [completeBusy, setCompleteBusy] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
   // Which tray card's split picker or sacrifice confirmation is open, if any.
   const [menu, setMenu] = React.useState<TrayMenu>(null);
-  // Exports-only: Card/Square/Ladder PNG and GIF render inverted when set. On-page cards never
-  // invert, so this never touches anything the visitor is looking at directly.
-  const [inverted, setInverted] = React.useState(false);
 
   // Client-only setup on mount: roll the real starting seed (see the placeholder note above),
   // and restore session state from `?s=` if present. A state initializer would read `location`
@@ -1324,60 +1241,25 @@ export function PlayApp() {
   const effectiveSeed = seed;
 
   const nodes = liveNodes(session);
-  const lastResult = React.useMemo(() => {
-    for (let i = session.nodes.length - 1; i >= 0; i--) {
-      if (session.nodes[i].trace) return session.nodes[i];
-    }
-    return null;
-  }, [session.nodes]);
-
-  const handleAdd = () => {
-    let next = session;
-    let nextSeed = effectiveSeed;
-    for (let i = 0; i < quantity; i++) {
-      next = keepCard(next, denomIndex, nextSeed);
-      nextSeed = randomSeed();
-    }
-    setSession(next);
-    setSeed(nextSeed);
-  };
-
   const handleComplete = () => {
     if (completeBusy) return;
     const targetDenomIndex = denomIndex;
-    const startingSession = session;
     setCompleteBusy(true);
     window.setTimeout(() => {
       try {
-        setSession(buildCompleteShape(startingSession, targetDenomIndex));
-        setSelected(new Set());
-        setComposeError(null);
+        let seedIndex = 0;
+        setSession(buildCompleteShape(emptySession(), targetDenomIndex, () => seedIndex++ === 0 ? effectiveSeed : randomSeed()));
         setMenu(null);
       } catch (error) {
-        setComposeError(error instanceof Error ? error.message : String(error));
+        console.error("generation failed", error);
       } finally {
         setCompleteBusy(false);
       }
     }, 0);
   };
 
-  const handleToggle = (key: number) => {
-    setSelected((cur) => {
-      const next = new Set(cur);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
   const handleRemove = (key: number) => {
     setSession((s) => removeNode(s, key));
-    setSelected((cur) => {
-      if (!cur.has(key)) return cur;
-      const next = new Set(cur);
-      next.delete(key);
-      return next;
-    });
     setMenu((m) => (m?.key === key ? null : m));
   };
 
@@ -1408,17 +1290,6 @@ export function PlayApp() {
       setMenu(null);
     } catch (e) {
       console.error("sacrifice failed", e);
-    }
-  };
-
-  const handleCompose = () => {
-    try {
-      const next = composeNodes(session, [...selected]);
-      setSession(next);
-      setSelected(new Set());
-      setComposeError(null);
-    } catch (e) {
-      setComposeError(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -1718,10 +1589,9 @@ export function PlayApp() {
       </header>
       <main className="play-page-shell">
         <header className="play-page-intro">
-          <h1>Draw. Compose. Trace.</h1>
+          <h1>Generate. Split. Trace.</h1>
           <Prose>
-            This playground runs the same renderer and the same sampling procedure as the contract. A minted
-            Shape with this seed at this denomination would be byte-identical.
+            Choose a denomination, roll an output, then generate the complete Shape and explore where it came from.
           </Prose>
         </header>
 
@@ -1729,39 +1599,26 @@ export function PlayApp() {
           <DrawBeat
             denomIndex={denomIndex}
             onDenomIndex={setDenomIndex}
-            quantity={quantity}
-            onQuantity={setQuantity}
             onRoll={() => setSeed(randomSeed())}
             effectiveSeed={effectiveSeed}
-            onAdd={handleAdd}
             onComplete={handleComplete}
             completeBusy={completeBusy}
-            inverted={inverted}
-            onToggleInverted={() => setInverted((v) => !v)}
           />
 
-          <TrayBeat
-            nodes={nodes}
-            session={session}
-            selected={selected}
-            menu={menu}
-            onToggle={handleToggle}
-            onRemove={handleRemove}
-            onOpenMenu={setMenu}
-            onSplit={handleSplit}
-            onDecompose={handleDecompose}
-            onSacrifice={handleSacrifice}
-          />
-
-          <ComposeBeat
-            nodes={nodes}
-            selected={selected}
-            onCompose={handleCompose}
-            error={composeError}
-            lastResult={lastResult}
-            inverted={inverted}
-            onToggleInverted={() => setInverted((v) => !v)}
-          />
+          {nodes.length > 0 && (
+            <TrayBeat
+              nodes={nodes}
+              session={session}
+              selected={new Set()}
+              menu={menu}
+              onToggle={() => {}}
+              onRemove={handleRemove}
+              onOpenMenu={setMenu}
+              onSplit={handleSplit}
+              onDecompose={handleDecompose}
+              onSacrifice={handleSacrifice}
+            />
+          )}
 
           <LineageBeat session={session} />
         </div>
