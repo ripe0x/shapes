@@ -236,14 +236,10 @@ function Countdown() {
 export function LaunchLanding() {
   return (
     <main className="launch-page">
-      <header className="launch-header">
-        <a className="launch-wordmark" href="#top" aria-label="Shapes, top of page">
-          SHAPES
-        </a>
-        <nav className="launch-header-nav" aria-label="Primary navigation">
-          <Link href="/play">Play</Link>
-        </nav>
-      </header>
+      {/* No header: the hero title is the wordmark. The play link keeps the header's slot. */}
+      <nav className="launch-play-link" aria-label="Primary navigation">
+        <Link href="/play">Play</Link>
+      </nav>
 
       <section className="launch-hero" id="top">
         <div className="launch-intro">
