@@ -46,4 +46,8 @@ interface IShapeCardEscrow {
     /// @notice The minimal card set for `backingWei`: `counts[i]` cards at denomination `i`.
     ///         Reverts unless `backingWei` is a whole multiple of `UNIT`.
     function cardsFor(uint256 backingWei) external pure returns (uint256[9] memory counts);
+
+    /// @notice Exact ETH required to mint the minimal card set for `backingWei`.
+    /// @dev Returns backing plus one flat Shapes mint fee for every card `cardsFor` produces.
+    function mintCostFor(uint256 backingWei) external view returns (uint256);
 }

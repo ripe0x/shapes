@@ -54,7 +54,7 @@ contract AuctionHouseArbitraryLotTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, feeRecipient, address(renderer), address(collection)
+            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection)
         );
         house = new ShapeAuctionHouse(address(shapes));
         nft = new PlainNFT();
@@ -72,7 +72,7 @@ contract AuctionHouseArbitraryLotTest is Test {
     }
 
     function _cardFor(address to, uint256 amount) internal returns (uint256 id) {
-        uint256 fee = amount / 100;
+        uint256 fee = Denominations.UNIT / 10;
         vm.prank(to);
         id = shapes.mint{value: amount + fee}(amount);
     }

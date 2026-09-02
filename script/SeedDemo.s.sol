@@ -22,11 +22,11 @@ import {Denominations} from "../src/lib/Denominations.sol";
 ///      The deployer needs about 420 ETH plus fees; anvil's default accounts hold 10,000.
 contract SeedDemo is Script {
     Shapes internal shapes;
-    uint256 internal feeBps;
+    uint256 internal mintFee;
 
     function run() external {
         shapes = Shapes(payable(vm.envAddress("SHAPES_ADDRESS")));
-        feeBps = shapes.feeBps();
+        mintFee = shapes.mintFee();
 
         vm.startBroadcast();
 
@@ -91,7 +91,7 @@ contract SeedDemo is Script {
     ///         `run`. `forge script script/SeedDemo.s.sol --sig "runTiered()" ...`
     function runTiered() external {
         shapes = Shapes(payable(vm.envAddress("SHAPES_ADDRESS")));
-        feeBps = shapes.feeBps();
+        mintFee = shapes.mintFee();
         vm.startBroadcast();
         _seedTiered();
         vm.stopBroadcast();
@@ -133,12 +133,12 @@ contract SeedDemo is Script {
 
     function _mint(uint256 di) internal returns (uint256 id) {
         uint256 wei_ = Denominations.amountAt(di);
-        id = shapes.mint{value: wei_ + (wei_ * feeBps) / 10_000}(wei_);
+        id = shapes.mint{value: wei_ + mintFee}(wei_);
     }
 
     function _mintBatch(uint256 di, uint256 quantity) internal returns (uint256 firstId) {
         uint256 wei_ = Denominations.amountAt(di);
-        uint256 unit = wei_ + (wei_ * feeBps) / 10_000;
+        uint256 unit = wei_ + mintFee;
         firstId = shapes.mintBatch{value: unit * quantity}(wei_, quantity);
     }
 

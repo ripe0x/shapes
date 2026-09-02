@@ -183,7 +183,7 @@ contract ReentrantFeeRecipient {
     receive() external payable {
         if (attempted || address(shapes) == address(0)) return;
         attempted = true;
-        uint256 need = amountWei + shapes.mintFeeFor(amountWei);
+        uint256 need = amountWei + shapes.mintFee();
         if (address(this).balance < need) return;
         try shapes.mintTo{value: need}(amountWei, address(this)) {
             reentryReverted = false;
@@ -218,7 +218,7 @@ contract ReentrantMinter is IERC721Receiver {
     function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
         if (!attempted) {
             attempted = true;
-            uint256 need = amountWei + shapes.mintFeeFor(amountWei);
+            uint256 need = amountWei + shapes.mintFee();
             if (address(this).balance >= need) {
                 try shapes.mintTo{value: need}(amountWei, address(this)) {
                     reentryReverted = false;

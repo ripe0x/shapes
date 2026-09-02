@@ -16,7 +16,7 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      its current holder, including returning zero while #0 is burned. Ownership grants no
 ///      permissions. A separate `admin()` role may administer and independently lock the renderer,
 ///      positions pointer and market pointer, and may redirect future mint fees without changing
-///      the fee rate or touching backing. It may be transferred or renounced without moving Shape #0.
+///      the fee amount or touching backing. It may be transferred or renounced without moving Shape #0.
 ///
 ///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
 ///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
@@ -185,12 +185,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error NotASplitChild(uint256 tokenId);
     /* ----------------------- fee and deployment reads ----------------------- */
 
-    /// @notice The mint fee in basis points of the backing, charged on top of it. 100 is 1%.
+    /// @notice Flat fee in wei for every Shape created, charged on top of backing.
     ///         Never enters backing. Set at construction, never changeable.
-    function feeBps() external view returns (uint256);
-
-    /// @notice The mint fee in wei for a given backing amount: `amountWei * feeBps / 10000`.
-    function mintFeeFor(uint256 amountWei) external view returns (uint256);
+    function mintFee() external view returns (uint256);
 
     /// @notice Where mint fees are currently forwarded. Admin-updateable for future mints.
     function feeRecipient() external view returns (address);
@@ -277,7 +274,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /* ---------------------------- minting ----------------------------- */
 
     /// @notice Mint one Shape backed by `amountWei`, to the caller.
-    /// @dev `msg.value` must equal exactly `amountWei + mintFeeFor(amountWei)`.
+    /// @dev `msg.value` must equal exactly `amountWei + mintFee()`.
     function mint(uint256 amountWei) external payable returns (uint256 tokenId);
 
     /// @notice Mint one Shape backed by `amountWei`, to `to`.
@@ -286,7 +283,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function mintTo(uint256 amountWei, address to) external payable returns (uint256 tokenId);
 
     /// @notice Mint `quantity` Shapes, each backed by `amountWei`, to the caller.
-    /// @dev `msg.value` must equal exactly `quantity * (amountWei + mintFeeFor(amountWei))`.
+    /// @dev `msg.value` must equal exactly `quantity * (amountWei + mintFee())`.
     ///      Each token receives a distinct id and a distinct seed.
     function mintBatch(uint256 amountWei, uint256 quantity) external payable returns (uint256 firstTokenId);
 

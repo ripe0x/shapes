@@ -19,7 +19,7 @@ contract SepoliaAuctionEvidence is Script {
     address private constant BIDDER = 0xea194A186EBe76A84E2B2027f5f23F81939c05AD;
 
     uint256 private constant UNIT = 0.0001 ether;
-    uint256 private constant FEE_BPS = 100;
+    uint256 private constant MINT_FEE = 0.00001 ether;
     uint256 private constant LOT_ID = 1;
     uint256 private constant AUCTION_ID = 0;
     uint64 private constant DURATION = 60;
@@ -42,7 +42,7 @@ contract SepoliaAuctionEvidence is Script {
             payable(BIDDER).transfer(BIDDER_TARGET_BALANCE - BIDDER.balance);
         }
 
-        uint256 fee = SHAPES_TOKEN.mintFeeFor(UNIT);
+        uint256 fee = SHAPES_TOKEN.mintFee();
         uint256 lot = SHAPES_TOKEN.mint{value: UNIT + fee}(UNIT);
         require(lot == LOT_ID, "unexpected lot id");
         SHAPES_TOKEN.approve(HOUSE_ADDRESS, lot);
@@ -119,7 +119,7 @@ contract SepoliaAuctionEvidence is Script {
         require(SHAPES_ADDRESS.code.length != 0 && HOUSE_ADDRESS.code.length != 0, "release missing");
         require(BIDDER.code.length == 0, "bidder must be an EOA");
         require(SHAPES_TOKEN.denominationAt(0) == UNIT, "wrong ladder");
-        require(SHAPES_TOKEN.feeBps() == FEE_BPS, "wrong fee");
+        require(SHAPES_TOKEN.mintFee() == MINT_FEE, "wrong fee");
         require(SHAPES_TOKEN.feeRecipient() == FEE_RECIPIENT, "wrong fee recipient");
         require(AUCTION_HOUSE.shapes() == SHAPES_ADDRESS, "wrong auction house");
     }

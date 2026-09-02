@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { ShapesProviders } from "./ShapesProviders";
 import "./globals.css";
 
 // Canonical origin for absolute OG/Twitter URLs. Env-overridable so a preview deploy can stamp its
@@ -44,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {`delete console.timeStamp;`}
           </Script>
         )}
-        {children}
+        <ShapesProviders>{children}</ShapesProviders>
       </body>
     </html>
   );

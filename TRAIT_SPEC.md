@@ -46,9 +46,18 @@ Maps the 7-state ink gene to a tier. The four extremes are dust-mint-only, hence
 `Compose Depth` surfaces `Shapes.composeDepth(tokenId)` — how many stacked composes `decompose`
 can still reverse. This is **contract state, not seed-derived**: it is the last argument to
 `IShapeRenderer.metadataJSON` / `tokenURI`, plumbed through from `Shapes.tokenURI`'s
-`_composeStack[tokenId].length`. Emitted as the **last** attribute in the array, after `Black`:
+`_composeStack[tokenId].length`. Emitted after `Black`, before any conditional token #0 or split
+traits:
 `,{"trait_type":"Compose Depth","value":"<n>"}`, value a plain decimal string. 0 at mint;
 incremented by each `compose`, decremented back by the matching `decompose`.
+
+## Token #0 — Collection Owner (implemented)
+
+Token #0 has the fixed metadata name `Shapes Collection Owner`, independent of the editable token
+name prefix. It alone appends `{"trait_type":"Collection Owner","value":"true"}` after
+`Compose Depth`. The trait identifies the transferable collection-ownership token. It is
+descriptive only: holding #0 grants no administrative authority, and all privileged calls remain
+gated by the separate `admin()` role.
 
 ## Parity + tests
 
@@ -60,3 +69,5 @@ incremented by each `compose`, decremented back by the matching `decompose`.
   `composeDepth > 0` to cover the trait's non-zero rendering.
 - `Parity.t.sol` (SVG + metadata byte-parity) must pass; add a metadata test asserting each new
   trait, including that `Compose Depth` tracks `compose`/`decompose` on a live token.
+- Include token #0 in the parity corpus and assert its fixed name and collection-owner trait in
+  direct Solidity and TypeScript metadata tests.

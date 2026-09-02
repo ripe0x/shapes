@@ -66,7 +66,7 @@ abstract contract AuctionBase is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, feeRecipient, address(renderer), address(collection)
+            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection)
         );
         house = new ShapeAuctionHouse(address(shapes));
 
@@ -85,8 +85,8 @@ abstract contract AuctionBase is Test {
         shapes.setApprovalForAll(address(house), true);
     }
 
-    function feeOf(uint256 wei_) internal pure returns (uint256) {
-        return wei_ / 100;
+    function feeOf(uint256) internal pure returns (uint256) {
+        return Denominations.UNIT / 10;
     }
 
     function _mintCard(address to, uint256 amount) internal returns (uint256 id) {
@@ -241,9 +241,11 @@ contract AuctionHouseTest is AuctionBase {
     function test_EthBidMintsTheMinimalCardSet() public {
         uint256 id = _open();
         uint256 backing = DENOMS[3] + DENOMS[4];
+        uint256 exactCost = backing + 2 * feeOf(backing);
+        assertEq(house.mintCostFor(backing), exactCost, "quote charges one flat fee per card");
 
         vm.prank(alice);
-        house.bid{value: backing + feeOf(backing)}(id, _none(), backing);
+        house.bid{value: exactCost}(id, _none(), backing);
 
         // Minting walks the ladder upward, so the escrow lists ascending by denomination.
         uint256[] memory ids = house.escrowedCards(id, alice);
@@ -262,6 +264,19 @@ contract AuctionHouseTest is AuctionBase {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, exact, backing));
         house.bid{value: backing}(id, _none(), backing);
+    }
+
+    function test_EthBidChargesPerGeneratedCardNotPerBid() public {
+        uint256 id = _open();
+        uint256 backing = DENOMS[3] + DENOMS[4];
+        uint256 oneFeeShort = backing + feeOf(backing);
+        uint256 exact = backing + 2 * feeOf(backing);
+
+        vm.prank(alice);
+        vm.expectRevert(
+            abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, exact, oneFeeShort)
+        );
+        house.bid{value: oneFeeShort}(id, _none(), backing);
     }
 
     function test_EthBidRejectsAnOffLatticeAmount() public {

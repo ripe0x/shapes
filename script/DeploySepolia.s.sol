@@ -15,12 +15,12 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///         gallery has content, all in one broadcast (one keystore prompt).
 ///
 /// @dev The initial Sepolia fee recipient is pinned below. The deployer starts as `admin()` and
-///      may redirect only future mint fees; the fee rate and reserve rules remain immutable.
+///      may redirect only future mint fees; the fee amount and reserve rules remain immutable.
 ///
 ///      Backed Shape #0 is minted atomically to the deployer as the powerless contract-ownership
 ///      token. When seeding is enabled, the launch auction therefore lists Shape #1.
 ///
-///        SHAPES_FEE_BPS   mint fee in basis points. Defaults to 100 (1%).
+///        SHAPES_MINT_FEE_WEI   flat fee per Shape in wei. Pinned to 0.00001 ETH on Sepolia.
 ///        SEED_ETH         set to "false" to deploy without seeding any mints.
 ///
 ///      Prefer the wrapper, which always verifies on Etherscan (deploy + verify in one step):
@@ -32,7 +32,7 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///
 ///      FOUNDRY_PROFILE=testnet selects the 100x-smaller ladder. The run reverts without it.
 contract DeploySepolia is LensEquivalence {
-    uint256 internal constant DEFAULT_FEE_BPS = 100; // 1%
+    uint256 internal constant DEFAULT_MINT_FEE = Denominations.UNIT / 10;
     address internal constant SEPOLIA_FEE_RECIPIENT = 0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4;
 
     error WrongLadder(string compiled, string expected);
@@ -63,7 +63,7 @@ contract DeploySepolia is LensEquivalence {
         address deployer,
         bool seeded
     ) private {
-        require(shapes.feeBps() == DEFAULT_FEE_BPS, "fee bps mismatch");
+        require(shapes.mintFee() == DEFAULT_MINT_FEE, "mint fee mismatch");
         require(shapes.feeRecipient() == SEPOLIA_FEE_RECIPIENT, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         require(shapes.collection() == address(collection), "collection mismatch");
@@ -87,7 +87,7 @@ contract DeploySepolia is LensEquivalence {
         console.log("ShapeRenderer ", address(renderer));
         console.log("Shapes        ", address(shapes));
         console.log("ShapeLens     ", address(lens));
-        console.log("fee (bps)     ", DEFAULT_FEE_BPS);
+        console.log("mint fee (wei)", DEFAULT_MINT_FEE);
         console.log("fee recipient ", shapes.feeRecipient());
         console.log("artist        ", shapes.artist());
         console.log("total minted  ", shapes.totalMinted());
@@ -100,13 +100,13 @@ contract DeploySepolia is LensEquivalence {
     function run() external {
         _requireTestnetLadder();
 
-        uint256 feeBps = vm.envOr("SHAPES_FEE_BPS", DEFAULT_FEE_BPS);
+        uint256 mintFee = vm.envOr("SHAPES_MINT_FEE_WEI", DEFAULT_MINT_FEE);
         bool seed = vm.envOr("SEED_ETH", true);
         address me = msg.sender;
 
         // This script is the approved Sepolia release path, not a general-purpose deployer.
         // Keep the mutable shell environment from silently changing the reviewed fee terms.
-        require(feeBps == DEFAULT_FEE_BPS, "Sepolia fee must be 100 bps");
+        require(mintFee == DEFAULT_MINT_FEE, "Sepolia fee must be 0.00001 ETH per Shape");
 
         // Shapes.mint reads blockhash(block.number - 1), which underflows at genesis. Only a
         // freshly started local chain sits at block 0; a real network is far past it.
@@ -118,7 +118,7 @@ contract DeploySepolia is LensEquivalence {
 
         ShapeCollection collection = new ShapeCollection(address(renderer));
         Shapes shapes = new Shapes{value: Denominations.amountAt(0)}(
-            feeBps, SEPOLIA_FEE_RECIPIENT, address(renderer), address(collection)
+            mintFee, SEPOLIA_FEE_RECIPIENT, address(renderer), address(collection)
         );
         ShapeLens lens = new ShapeLens(address(shapes));
         ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
@@ -127,20 +127,18 @@ contract DeploySepolia is LensEquivalence {
             // Shape #0 already represents contract ownership. Shape #1 is the first ordinary artwork
             // and the launch lot. 24 hour clock from the first bid, no reserve, 5% minimum
             // increment, 15 minute extension window.
-            uint256 lotFee = (Denominations.amountAt(0) * feeBps) / 10_000;
-            uint256 lot = shapes.mint{value: Denominations.amountAt(0) + lotFee}(Denominations.amountAt(0));
+            uint256 lot = shapes.mint{value: Denominations.amountAt(0) + mintFee}(Denominations.amountAt(0));
             require(lot == 1, "launch lot must be Shape #1");
             shapes.approve(address(house), lot);
             house.createAuction(address(shapes), lot, 1 days, 0, 500, 15 minutes);
 
             // A modest spread across the low denominations: five 0.01, two 0.05, one 0.1. Total
-            // backing ~0.15 ETH; with the 1% fee and gas, fund the deployer with ~0.25 Sepolia ETH.
+            // Backing is ~0.15 ETH. Each seeded Shape adds the same 0.00001 ETH fee.
             uint8[3] memory counts = [5, 2, 1]; // by denomination index 0,1,2
             for (uint256 di = 0; di < counts.length; di++) {
                 uint256 wei_ = Denominations.amountAt(di);
-                uint256 fee = (wei_ * feeBps) / 10_000;
                 for (uint256 n = 0; n < counts[di]; n++) {
-                    shapes.mintTo{value: wei_ + fee}(wei_, me);
+                    shapes.mintTo{value: wei_ + mintFee}(wei_, me);
                 }
             }
         }

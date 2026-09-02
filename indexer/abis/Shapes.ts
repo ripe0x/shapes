@@ -213,14 +213,8 @@ export const shapesAbi = [
   },
   {
     "type": "function",
-    "name": "mintFeeFor",
-    "inputs": [
-      {
-        "name": "amountWei",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "mintFee",
+    "inputs": [],
     "outputs": [
       {
         "name": "",

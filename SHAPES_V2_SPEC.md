@@ -40,7 +40,8 @@ fixed 100 ETH to `0x…dEaD`.
   `balance >= totalBacking`, asserted by stateful fuzz invariants. Two value-bearing calls exist:
   the mint-fee forward (money received the same tx) and `_payRedemption` (redemption payout, reached only
   after the token is burned).
-- Mint charges a fee of `feeBps` (1%) on new ETH; `msg.value == backing + fee`. Seed derives from
+- Mint charges the immutable flat `mintFee` for each Shape created; the mainnet value is 0.001 ETH
+  and `msg.value == backing + mintFee`. Seed derives from
   block data only (no caller-controlled input): `keccak(prevrandao, blockhash, number, timestamp,
   chainid, address(this), firstTokenId)`, then `seed = keccak(batchRoot, tokenId)`.
 - Redemption is owner-only, all-or-nothing, `nonReentrant`, checks-effects-interactions; the token
@@ -86,8 +87,9 @@ increases it except a fresh mint of new ETH.
 - **Origin density** (display): `originCount / units`, expressed as a percentage.
 - **Complete** (canonical, on-chain): `!isBlack && units > 1 && originCount == units`.
 
-**Fee neutrality falls out:** building a top Shape from 10,000 × 0.01 pays the same total fee as
-minting it directly (10,000 × 1% of 0.01 = 1% of 100 ETH). No fee arbitrage between paths.
+**Fees are deliberately per object, not backing-neutral:** building a top Shape from 10,000 ×
+0.01 pays 10 ETH in fees at the mainnet setting, while minting one direct 100 ETH Shape pays
+0.001 ETH. This changes collectible and reroll economics but never backing or redemption.
 
 ---
 
@@ -107,12 +109,10 @@ children up to capacity, which can concentrate credits onto backing they did not
 origins were 1 ETH mints. This is inherent to integer conservation plus fungible composition and
 cannot be closed by any partition rule.
 
-**Why concentration is economically irrelevant.** One origin is created per mint, and the mint fee
-is proportional to size, so the cheapest origin is a 0.01 mint. Reaching any given `originCount` by
-the honest all-0.01 path is therefore always the cheapest route; concentration requires minting
-larger, more expensive tokens to earn the origins and then stranding those credits on smaller
-backing, which is strictly more costly than minting the 0.01 tokens directly. No rational actor
-fabricates density.
+**Origin conservation, not the fee, protects provenance.** One origin is created per Shape mint.
+The flat fee makes an origin cost the same at every tier, so the previous claim that dust origins
+were always cheapest no longer holds. Concentrating origins still cannot create origin credit or
+forge Complete without the required number of distinct mints, but path costs now differ sharply.
 
 **Complete propagates upward.** Composing all-Complete pieces yields a Complete, because
 `Σ units_i = units_out` and `Σ originCount_i = originCount_out`, so `originCount_out == units_out`.
@@ -239,7 +239,7 @@ uint256 public blackCount;          // monotonic; number of Shapes ever made Bla
 uint256 public totalSupply;         // live tokens, INCLUDING Black
 uint256 public totalMinted;         // ids issued; the highest is totalMinted-1 (bumped by split mints; NOT by decompose, which reuses ids)
 
-// feeBps is immutable; feeRecipient is admin-updateable for future mints;
+// mintFee is immutable; feeRecipient is admin-updateable for future mints;
 // renderer and rendererLocked are admin-controlled and one-way lockable
 
 // per-survivor LIFO stack of self-contained compose records, enabling decompose (§9.3)
@@ -293,8 +293,8 @@ composition). Grid mapping (density by tier index) is unchanged.
 ## 9. Functions
 
 ### 9.1 Mint (existing, one change)
-`_mintBatch` sets `originCount = 1` per token; `redeemableBacking += backing`. Fee still 1% on new
-ETH only. Seed derivation unchanged. Recompose functions take no `msg.value`, so **no fee** applies
+`_mintBatch` sets `originCount = 1` per token; `redeemableBacking += backing`. The flat fee applies
+to each newly minted Shape. Seed derivation unchanged. Recompose functions take no `msg.value`, so **no fee** applies
 to already-wrapped ETH.
 
 ### 9.2 compose — many → one, survivor keeps ID

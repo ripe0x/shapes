@@ -11,15 +11,23 @@ type SearchParams = { s?: string | string[] };
 
 const MAX_OG_STATE_LENGTH = 6000;
 
+function shapeTitle(tokenId: bigint): string {
+  return tokenId === 0n ? "Shapes Collection Owner" : `Shape ${tokenId.toString()}`;
+}
+
 // Resolve a URL path into the SiteApp view it shows. Returns null for an unknown path.
 function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | null } | null {
   const parts = slug ?? [];
   if (parts.length === 1 && parts[0] === "mint") return { view: "mint", tokenId: null };
   if (parts.length === 1 && parts[0] === "auction") return { view: "auction", tokenId: null };
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
+  if (parts.length === 1 && parts[0] === "my-shapes") return { view: "collection", tokenId: null };
   if (parts.length === 1 && parts[0] === "how-it-works") return { view: "about", tokenId: null };
   if (parts.length === 2 && parts[0] === "shape" && /^\d+$/.test(parts[1])) {
     return { view: "token", tokenId: BigInt(parts[1]) };
+  }
+  if (parts.length === 3 && parts[0] === "shape" && /^\d+$/.test(parts[1]) && parts[2] === "manage") {
+    return { view: "manage", tokenId: BigInt(parts[1]) };
   }
   return null;
 }
@@ -91,6 +99,13 @@ export async function generateMetadata({
       openGraph: { title: "Gallery · Shapes", url: "/gallery" },
     };
   }
+  if (r.view === "collection") {
+    return {
+      title: "My Shapes",
+      description: "The live Shapes currently owned by your connected wallet.",
+      openGraph: { title: "My Shapes · Shapes", url: "/my-shapes" },
+    };
+  }
   if (r.view === "about") {
     return {
       title: "How it works",
@@ -101,15 +116,24 @@ export async function generateMetadata({
   }
   if (r.view === "token" && r.tokenId !== null) {
     const id = r.tokenId.toString();
+    const title = shapeTitle(r.tokenId);
     return {
-      title: `Shape ${id}`,
-      description: `Shape ${id} — an ETH-backed on-chain object, redeemable for exactly its denomination.`,
+      title,
+      description: `${title}, an ETH-backed on-chain object redeemable for exactly its denomination.`,
       openGraph: {
-        title: `Shape ${id} · Shapes`,
+        title: `${title} · Shapes`,
         url: `/shape/${id}`,
         images: [{ url: `/og/shape/${id}`, width: 1200, height: 630 }],
       },
       twitter: { card: "summary_large_image", images: [`/og/shape/${id}`] },
+    };
+  }
+  if (r.view === "manage" && r.tokenId !== null) {
+    const id = r.tokenId.toString();
+    return {
+      title: `Manage Shape ${id}`,
+      description: `Review and manage the available lifecycle actions for Shape ${id}.`,
+      openGraph: {title: `Manage Shape ${id} · Shapes`, url: `/shape/${id}/manage`},
     };
   }
   return {

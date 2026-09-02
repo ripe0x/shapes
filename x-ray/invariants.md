@@ -1,6 +1,6 @@
 # Invariant Map
 
-> Shapes | 55 guards | 20 inferred | 3 not enforced on-chain
+> Shapes | D-36 flat-fee update applied; guard counts require regeneration before external audit
 
 ---
 
@@ -9,7 +9,8 @@
 Per-call preconditions. Heading IDs below (`G-N`) are anchor targets from x-ray.md attack surfaces.
 
 #### G-1
-`require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%")` · `Shapes.sol:242` · Bounds the immutable mint fee at construction so it can never exceed 100% of backing; no setter exists afterward.
+`mintFee = mintFee_` · constructor · Records the immutable per-Shape fee. Core imposes no
+percentage-style bound; release scripts enforce the intended deployment value.
 
 #### G-2
 `require(feeRecipient_ != address(0), "fee recipient is zero")` · `Shapes.sol:243` · The initial recipient cannot be zero. Admin may later redirect future fees, also only to a nonzero address; a reverting target blocks minting until corrected or forever after renunciation.
@@ -199,9 +200,11 @@ Each block is classified `Conservation` · `Bound` · `Ratio` · `StateMachine` 
 
 `Bound` · On-chain: **Yes**
 
-> `feeBps ∈ [0, 10000]` (0%–100%).
+> `mintFee` is constructor-set and immutable.
 
-**Derivation** — guard-lift: `require(feeBps_ <= BPS_DENOMINATOR, "fee exceeds 100%")` (`Shapes.sol:242`) is the sole write site, since `feeBps` is `immutable` with no setter anywhere in scope.
+**Derivation** — the constructor is the sole write site, since `mintFee` is immutable and has no
+setter. The release deployment value is 0.001 ETH per mainnet Shape and 0.00001 ETH per testnet
+Shape; those values are operational guards rather than core range checks.
 
 **If violated** — not reachable; would require a new constructor path.
 
@@ -377,11 +380,14 @@ On-chain: **Yes**
 
 On-chain: **Yes**
 
-> `ShapeCardEscrow._mintCards` assumes `IShapes(shapes).mintFeeFor(amount)` is exactly what `Shapes._mintBatch` itself will require as payment for the same `amount`, so the escrow's precomputed `cost` (`ShapeCardEscrow.sol:93`) never diverges from `Shapes`'s own `IncorrectPayment` check.
+> `ShapeCardEscrow._mintCards` uses the same immutable `IShapes(shapes).mintFee()` that
+> `Shapes._mintBatch` requires per output, so its quote cannot vary by denomination.
 
-**Caller side** — `ShapeCardEscrow.sol:93,99` — `uint256 cost = (amount + IShapes(shapes).mintFeeFor(amount)) * count;` then `IShapes(shapes).mintBatchTo{value: cost}(amount, count, address(this));`
+**Caller side** — `_mintCards` computes `cost = (amount + mintFee) * count` for each tier, while
+`mintCostFor` returns total backing plus `cardCount * mintFee`.
 
-**Callee side** — `Shapes.sol:257-259,439-440` — `mintFeeFor` is `(amountWei * feeBps) / BPS_DENOMINATOR`, a pure function of the immutable `feeBps`; `_mintBatch` computes and checks against the identical function, so both call sites can never disagree.
+**Callee side** — `_mintBatch` requires `quantity * (amountWei + mintFee)`, using the same
+immutable getter read by the escrow.
 
 **If violated** — not reachable without a second, divergent fee computation being introduced in one of the two call sites.
 
