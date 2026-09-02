@@ -422,6 +422,16 @@ const REL_TEXT: Record<ProvNode["rel"], string> = {
   self: "same token, earlier state",
 };
 
+/** Caption under a node card for every relation that is not a plain compose donor, so a lone
+ *  split parent or the survivor's own earlier state does not read as a one-input merge. */
+const REL_CAPTION: Record<ProvNode["rel"], string> = {
+  root: "",
+  merged: "",
+  splitSource: "split from",
+  piece: "restored",
+  self: "earlier state",
+};
+
 /** Node card width per generation. */
 const TREE_W = [120, 76, 52, 36, 26, 20];
 const treeWidth = (depth: number) => TREE_W[Math.min(depth, TREE_W.length - 1)];
@@ -471,6 +481,11 @@ function ProvTree({
       {w >= 26 && (
         <div style={{marginTop: 5, fontSize: 10, color: C.muted, textAlign: "center"}}>
           #{node.id.toString()}
+          {REL_CAPTION[node.rel] && (
+            <div style={{marginTop: 2, fontSize: 9, color: C.faint, letterSpacing: "0.08em"}}>
+              {REL_CAPTION[node.rel]}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -505,7 +520,14 @@ function ProvTree({
                   {!solo && !last && (
                     <div style={{position: "absolute", top: 0, left: "50%", width: "50%", height: 1, background: C.border}} />
                   )}
-                  <div style={{position: "absolute", top: 0, left: "50%", width: 1, height: STUB, background: C.border}} />
+                  {/* A split parent hangs on a dashed stub: the child was cut from it, not merged. */}
+                  <div
+                    style={
+                      c.rel === "splitSource"
+                        ? {position: "absolute", top: 0, left: "50%", width: 0, height: STUB, borderLeft: `1px dashed ${C.border}`}
+                        : {position: "absolute", top: 0, left: "50%", width: 1, height: STUB, background: C.border}
+                    }
+                  />
                   <ProvTree node={c} depth={depth + 1} live={live} onOpen={onOpen} />
                 </div>
               );
