@@ -154,6 +154,20 @@
       .mint-page .launch-section { padding-block: clamp(56px, 7vw, 96px); }
       .mint-page .launch-about { grid-template-columns: 1fr; }
       .mint-page > .launch-section:last-child { border-bottom: none; }
+      /* Mint panel: denomination ladder left, sample art and summary right. Two columns from
+         900px up; below that the grid falls back to one column and stacks the ladder above the
+         summary, with the grid gap doubling as the stack's vertical spacing. */
+      .mint-panel { display: grid; grid-template-columns: minmax(0, 520px) minmax(0, 1fr); gap: clamp(40px, 5vw, 80px); align-items: start; }
+      .mint-panel-ladder { min-width: 0; }
+      /* Sticky so the summary and mint button stay in view while the ladder scrolls. top: 24px
+         clears the viewport edge; .mint-page overrides this below since its header is sticky
+         and 84px tall. */
+      .mint-panel-side { position: sticky; top: 24px; align-self: start; min-width: 0; }
+      .mint-page .mint-panel-side { top: 108px; }
+      @media (max-width: 900px) {
+        .mint-panel { grid-template-columns: 1fr; }
+        .mint-panel-side { position: static; }
+      }
     </style>
   </head>
   <body>

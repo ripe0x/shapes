@@ -160,131 +160,135 @@ export function MintPanel({
 
   return (
     <div style={{fontFamily: FONT, width: "100%"}}>
-      <div style={{marginBottom: 40}}>
-        <DenomLadder sel={sel} onSelect={setSel} />
-      </div>
-
-      <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
-        <div style={{flex: "0 0 180px", width: 180}}>
-          <Art src={localArt(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei, mintGene(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei))} />
+      <div className="mint-panel">
+        <div className="mint-panel-ladder">
+          <DenomLadder sel={sel} onSelect={setSel} />
         </div>
 
-        <div style={{flex: "1 1 360px", minWidth: 0}}>
-          <div style={{display: "grid", gridTemplateColumns: "130px auto", gap: "9px 28px", fontSize: 13}}>
-            <div style={{color: C.muted}}>selected</div>
-            <div>
-              {DENOMINATIONS[sel].label} ETH · {gridText(sel)} · {marksText(sel)}
+        <div className="mint-panel-side">
+          <div style={{display: "flex", flexWrap: "wrap", gap: 44, alignItems: "flex-start"}}>
+            <div style={{flex: "0 0 260px", width: 260}}>
+              <Art src={localArt(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei, mintGene(sampleSeed(6100 + sel * 97 + sampleNo * 7), wei))} width={260} />
             </div>
-            <div style={{color: C.muted}}>quantity</div>
-            <div style={{display: "flex", alignItems: "center", gap: 0}}>
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => setQty(clampQty(qty - 1))}
-                style={{width: 28, height: 28, padding: 0}}
-              >
-                −
-              </button>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={MAX_QTY}
-                className="qty-input"
-                value={qtyText}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setQtyText(raw);
-                  const n = Math.round(Number(raw));
-                  if (raw.trim() !== "" && Number.isFinite(n) && n > 0) setQty(n);
-                }}
-                onBlur={(e) => commitQty(e.target.value)}
+
+            <div style={{flex: "1 1 360px", minWidth: 0}}>
+              <div style={{display: "grid", gridTemplateColumns: "130px auto", gap: "9px 28px", fontSize: 13}}>
+                <div style={{color: C.muted}}>selected</div>
+                <div>
+                  {DENOMINATIONS[sel].label} ETH · {gridText(sel)} · {marksText(sel)}
+                </div>
+                <div style={{color: C.muted}}>quantity</div>
+                <div style={{display: "flex", alignItems: "center", gap: 0}}>
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setQty(clampQty(qty - 1))}
+                    style={{width: 28, height: 28, padding: 0}}
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={MAX_QTY}
+                    className="qty-input"
+                    value={qtyText}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setQtyText(raw);
+                      const n = Math.round(Number(raw));
+                      if (raw.trim() !== "" && Number.isFinite(n) && n > 0) setQty(n);
+                    }}
+                    onBlur={(e) => commitQty(e.target.value)}
+                    style={{
+                      minWidth: 40,
+                      height: 28,
+                      border: `1px solid ${C.border}`,
+                      borderLeft: 0,
+                      borderRight: 0,
+                      textAlign: "center",
+                      fontSize: 13,
+                      fontFamily: FONT,
+                      color: C.ink,
+                      background: "transparent",
+                      padding: 0,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn-outline"
+                    onClick={() => setQty(clampQty(qty + 1))}
+                    style={{width: 28, height: 28, padding: 0}}
+                  >
+                    +
+                  </button>
+                </div>
+                <div style={{color: C.muted}}>backing</div>
+                <div>
+                  {formatEther(wei * q)} ETH
+                  {qty > 1 && <span style={{color: C.muted}}> · {qty} × {DENOMINATIONS[sel].label}</span>}
+                </div>
+                <div style={{color: C.muted}}>mint fee</div>
+                <div>
+                  {fee === null ? "" : `${formatEther(fee * q)} ETH`}
+                  {fee !== null && qty > 1 && <span style={{color: C.muted}}> · {qty} × {formatEther(fee)}</span>}
+                </div>
+              </div>
+
+              <div
                 style={{
-                  minWidth: 40,
-                  height: 28,
-                  border: `1px solid ${C.border}`,
-                  borderLeft: 0,
-                  borderRight: 0,
-                  textAlign: "center",
-                  fontSize: 13,
-                  fontFamily: FONT,
-                  color: C.ink,
-                  background: "transparent",
-                  padding: 0,
+                  margin: "18px 0 0",
+                  paddingTop: 14,
+                  borderTop: `1px solid ${C.border}`,
+                  display: "grid",
+                  gridTemplateColumns: "130px auto",
+                  gap: 28,
+                  fontSize: 15,
                 }}
-              />
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={() => setQty(clampQty(qty + 1))}
-                style={{width: 28, height: 28, padding: 0}}
               >
-                +
-              </button>
-            </div>
-            <div style={{color: C.muted}}>backing</div>
-            <div>
-              {formatEther(wei * q)} ETH
-              {qty > 1 && <span style={{color: C.muted}}> · {qty} × {DENOMINATIONS[sel].label}</span>}
-            </div>
-            <div style={{color: C.muted}}>mint fee</div>
-            <div>
-              {fee === null ? "" : `${formatEther(fee * q)} ETH`}
-              {fee !== null && qty > 1 && <span style={{color: C.muted}}> · {qty} × {formatEther(fee)}</span>}
-            </div>
-          </div>
+                <div style={{color: C.muted, fontSize: 13, paddingTop: 2}}>total</div>
+                <div>{fee === null ? "" : `${formatEther((wei + fee) * q)} ETH`}</div>
+              </div>
 
-          <div
-            style={{
-              margin: "18px 0 0",
-              paddingTop: 14,
-              borderTop: `1px solid ${C.border}`,
-              display: "grid",
-              gridTemplateColumns: "130px auto",
-              gap: 28,
-              fontSize: 15,
-            }}
-          >
-            <div style={{color: C.muted, fontSize: 13, paddingTop: 2}}>total</div>
-            <div>{fee === null ? "" : `${formatEther((wei + fee) * q)} ETH`}</div>
+              <div style={{marginTop: 30, display: "flex", flexWrap: "wrap", gap: 12}}>
+                {!connected ? (
+                  <button type="button" className="btn-filled" onClick={onConnect} style={{padding: "11px 30px"}}>
+                    Connect wallet
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn-filled"
+                    onClick={onMint}
+                    disabled={mint.status === "pending" || fee === null || insufficient}
+                    style={{padding: "11px 30px"}}
+                  >
+                    {mint.status === "pending"
+                      ? "Waiting for confirmation"
+                      : insufficient
+                        ? "Insufficient balance"
+                        : qty > 1
+                          ? `Mint ${qty}`
+                          : "Mint"}
+                  </button>
+                )}
+              </div>
+              {statusText && (
+                <p
+                  style={{
+                    margin: "16px 0 0",
+                    fontSize: 12,
+                    lineHeight: 1.7,
+                    color: insufficient || (mint.status === "failed" && mint.error) ? C.ink : C.muted,
+                    maxWidth: "62ch",
+                  }}
+                >
+                  {statusText}
+                </p>
+              )}
+            </div>
           </div>
-
-          <div style={{marginTop: 30, display: "flex", flexWrap: "wrap", gap: 12}}>
-            {!connected ? (
-              <button type="button" className="btn-filled" onClick={onConnect} style={{padding: "11px 30px"}}>
-                Connect wallet
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn-filled"
-                onClick={onMint}
-                disabled={mint.status === "pending" || fee === null || insufficient}
-                style={{padding: "11px 30px"}}
-              >
-                {mint.status === "pending"
-                  ? "Waiting for confirmation"
-                  : insufficient
-                    ? "Insufficient balance"
-                    : qty > 1
-                      ? `Mint ${qty}`
-                      : "Mint"}
-              </button>
-            )}
-          </div>
-          {statusText && (
-            <p
-              style={{
-                margin: "16px 0 0",
-                fontSize: 12,
-                lineHeight: 1.7,
-                color: insufficient || (mint.status === "failed" && mint.error) ? C.ink : C.muted,
-                maxWidth: "62ch",
-              }}
-            >
-              {statusText}
-            </p>
-          )}
         </div>
       </div>
 
