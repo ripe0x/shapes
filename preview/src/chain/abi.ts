@@ -128,7 +128,7 @@ export const shapeLensAbi = parseAbi([
   "struct ShapeChildPreview { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; bytes modules; }",
   "struct ShapeState { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bool isBlack; uint8 formation; uint256 faceValueWei; uint256 redeemableValueWei; bytes modules; }",
   "struct ComposeInputView { uint256 id; bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bytes modules; }",
-  "struct ComposeRecordView { uint8 survivorDenominationIndex; uint32 survivorOriginCount; uint8 survivorInkGene; bytes survivorModules; ComposeInputView[] inputs; }",
+  "struct ComposeRecordView { uint8 survivorDenominationIndex; uint32 survivorOriginCount; uint8 survivorInkGene; bytes survivorModules; uint256 ownerTokenFrom; ComposeInputView[] inputs; }",
   "function previewCompose(uint256 survivorId, uint256[] burnIds) view returns (ShapeState result)",
   "function previewSplit(uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
   "function shapeState(uint256 tokenId) view returns (ShapeState)",

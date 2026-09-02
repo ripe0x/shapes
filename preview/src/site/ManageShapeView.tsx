@@ -1,5 +1,5 @@
 import React from "react";
-import {hexToBytes, type Hex, type PublicClient} from "viem";
+import {hexToBytes, maxUint256, type Hex, type PublicClient} from "viem";
 import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
 import {CANONICAL, renderShape} from "../canonical/render";
 import {
@@ -21,6 +21,8 @@ interface ComposeRecordPreview {
   survivorDenominationIndex: number;
   survivorInkGene: number;
   survivorModules: Hex;
+  /** The input that carried collection ownership before this compose, or null when none did. */
+  restoredOwnerTokenId: bigint | null;
   inputs: {
     id: bigint;
     seed: Hex;
@@ -115,6 +117,7 @@ export function ManageShapeView({
           survivorDenominationIndex: record.survivorDenominationIndex,
           survivorInkGene: record.survivorInkGene,
           survivorModules: record.survivorModules,
+          restoredOwnerTokenId: record.ownerTokenFrom === maxUint256 ? null : record.ownerTokenFrom,
           inputs: record.inputs.map((input) => ({
             id: input.id,
             seed: input.seed,
@@ -262,6 +265,7 @@ export function ManageShapeView({
     action: "decompose",
     actingTokenId: token.id,
     ownerTokenId,
+    restoredOwnerTokenId: composeRecord?.restoredOwnerTokenId ?? null,
   });
 
   const availability = (allowed: boolean, unavailable: string) =>

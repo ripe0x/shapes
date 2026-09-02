@@ -56,10 +56,16 @@ test("split: a non-owner token being split gets no notice", () => {
   );
 });
 
-test("decompose: undoing the owner-token survivor hedges without a recipient", () => {
+test("decompose: the undone compose carried ownership, so it moves back to that input", () => {
   assert.deepEqual(
-    ownerTokenNotices({action: "decompose", actingTokenId: 6n, donorIds: [1n, 2n], ownerTokenId: 6n}),
-    [{text: "Collection ownership may move to one of the restored Shapes.", severity: "info"}],
+    ownerTokenNotices({
+      action: "decompose",
+      actingTokenId: 6n,
+      donorIds: [1n, 2n],
+      ownerTokenId: 6n,
+      restoredOwnerTokenId: 2n,
+    }),
+    [{text: "Collection ownership moves back to Shape #2.", severity: "info"}],
   );
 });
 
@@ -71,8 +77,25 @@ test("decomposeTo: a different recipient becomes the collection owner", () => {
       donorIds: [1n, 2n],
       recipient: "0xABCD…1234",
       ownerTokenId: 6n,
+      restoredOwnerTokenId: 2n,
     }),
-    [{text: "0xABCD…1234 becomes the collection owner.", severity: "info"}],
+    [
+      {text: "Collection ownership moves back to Shape #2.", severity: "info"},
+      {text: "0xABCD…1234 becomes the collection owner.", severity: "info"},
+    ],
+  );
+});
+
+test("decompose: the undone compose never carried ownership, so it stays with the survivor", () => {
+  assert.deepEqual(
+    ownerTokenNotices({
+      action: "decompose",
+      actingTokenId: 6n,
+      donorIds: [1n, 2n],
+      ownerTokenId: 6n,
+      restoredOwnerTokenId: null,
+    }),
+    [],
   );
 });
 

@@ -18,6 +18,9 @@ export interface OwnerTokenNoticeInput {
   recipient?: string | null;
   /** The current owner-token id, or null when no Shape currently holds collection ownership. */
   ownerTokenId: bigint | null;
+  /** Decompose only: the input that carried collection ownership before the compose being undone
+   *  (`ComposeRecordView.ownerTokenFrom`), or null when none did. */
+  restoredOwnerTokenId?: bigint | null;
 }
 
 export interface OwnerTokenNotice {
@@ -30,7 +33,7 @@ export interface OwnerTokenNotice {
 /** Returns the notices to show for this action, in display order. Empty when the action does not
  *  touch the current owner token at all. */
 export function ownerTokenNotices(input: OwnerTokenNoticeInput): OwnerTokenNotice[] {
-  const {action, actingTokenId, donorIds = [], recipient, ownerTokenId} = input;
+  const {action, actingTokenId, donorIds = [], recipient, ownerTokenId, restoredOwnerTokenId = null} = input;
   if (ownerTokenId === null) return [];
 
   switch (action) {
@@ -54,14 +57,17 @@ export function ownerTokenNotices(input: OwnerTokenNoticeInput): OwnerTokenNotic
     }
     case "decompose": {
       if (ownerTokenId !== actingTokenId) return [];
-      // Undoing the top compose record only moves ownership when that record is the one that
-      // carried it onto the survivor; the client cannot distinguish that case from "the survivor
-      // was already the owner token before this compose" without the record's ownerTokenFrom
-      // flag, which is not exposed on ShapeLens. Hedge rather than assert a specific recipient.
+      // The compose record's ownerTokenFrom names the input that carried ownership before the
+      // compose being undone. Null means that compose did not move ownership onto the survivor,
+      // so decompose leaves it with the survivor and there is nothing to announce.
+      if (restoredOwnerTokenId === null) return [];
+      const notices: OwnerTokenNotice[] = [
+        {text: `Collection ownership moves back to Shape #${restoredOwnerTokenId}.`, severity: "info"},
+      ];
       if (recipient) {
-        return [{text: `${recipient} becomes the collection owner.`, severity: "info"}];
+        notices.push({text: `${recipient} becomes the collection owner.`, severity: "info"});
       }
-      return [{text: "Collection ownership may move to one of the restored Shapes.", severity: "info"}];
+      return notices;
     }
     case "redeem":
     case "burn": {
