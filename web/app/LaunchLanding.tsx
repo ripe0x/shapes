@@ -7,6 +7,7 @@ import { DENOMINATIONS as RENDER_DENOMINATIONS } from "@shared/canonical/denomin
 import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/canonical/sampling";
 import { localArt, sampleSeed } from "@shared/site/art";
 import { mintGene } from "@shared/previewGene";
+import { SiteFooter } from "@shared/site/SiteFooter";
 
 const LAUNCH_AT = new Date("2026-09-03T12:00:00-04:00").getTime();
 
@@ -196,8 +197,14 @@ function useCountdown() {
   };
 }
 
-function Countdown() {
-  const countdown = useCountdown();
+function Countdown({
+  countdown,
+  forceLive,
+}: {
+  countdown: ReturnType<typeof useCountdown>;
+  forceLive: boolean;
+}) {
+  const live = forceLive || countdown.live;
   const units = [
     [countdown.hours, "hours"],
     [countdown.minutes, "minutes"],
@@ -207,13 +214,13 @@ function Countdown() {
   return (
     <section className="launch-countdown" aria-labelledby="mint-time">
       <div>
-        <p className="launch-kicker">Mint opens</p>
+        <p className="launch-kicker">{forceLive ? "Mint" : "Mint opens"}</p>
         <h2 id="mint-time">
-          {countdown.live ? "Minting is live." : "September 3, 12:00 PM ET"}
+          {live ? "Minting is live." : "September 3, 12:00 PM ET"}
         </h2>
       </div>
 
-      {!countdown.live ? (
+      {!live ? (
         <div className="countdown-units" aria-live="polite" aria-label="Time until mint">
           {units.map(([value, label]) => (
             <div className="countdown-unit" key={label}>
@@ -231,12 +238,23 @@ function Countdown() {
   );
 }
 
-export function LaunchLanding() {
+export function LaunchLanding({ live: forceLive = false }: { live?: boolean }) {
+  const countdown = useCountdown();
+  const live = forceLive || countdown.live;
+
   return (
     <main className="launch-page">
       {/* No header: the hero title is the wordmark. The play link keeps the header's slot. */}
       <nav className="launch-play-link" aria-label="Primary navigation">
-        <Link href="/play">Play</Link>
+        {live ? (
+          <div className="launch-nav-links">
+            <Link href="/mint">Mint</Link>
+            <Link href="/gallery">Gallery</Link>
+            <Link href="/play">Play</Link>
+          </div>
+        ) : (
+          <Link href="/play">Play</Link>
+        )}
       </nav>
 
       <section className="launch-hero" id="top">
@@ -260,9 +278,9 @@ export function LaunchLanding() {
         </figure>
       </section>
 
-      <Countdown />
+      <Countdown countdown={countdown} forceLive={forceLive} />
 
-      <section className="launch-section launch-about" aria-labelledby="about-title">
+      <section className="launch-section launch-about" id="about" aria-labelledby="about-title">
         <div>
           <p className="launch-kicker">The project</p>
           <h2 id="about-title">
@@ -393,15 +411,7 @@ export function LaunchLanding() {
         </div>
       </section>
 
-      <footer className="launch-footer">
-        <span>
-          An Ethereum primitive by{" "}
-          <a href="https://x.com/ripe0x" target="_blank" rel="noreferrer">
-            ripe
-          </a>
-        </span>
-        <a href="#top">Back to top</a>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

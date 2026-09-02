@@ -1,9 +1,9 @@
 import {formatEther} from "viem";
 import {DENOMINATIONS} from "../chain/abi";
 
-/** Fact rows shared by the mint screen and the how-it-works screen. Copy is final, from the
- *  handoff. The FEE row is built from the live mintFee() and the built ladder's apex, so the
- *  numbers match the contract and ladder in use; null (not read yet) gives the row without them. */
+/** Fact rows shown on the mint screen. Copy is final, from the handoff. The FEE row is built from
+ *  the live mintFee() and the built ladder's apex, so the numbers match the contract and ladder in
+ *  use; null (not read yet) gives the row without them. */
 
 export interface Fact {
   k: string;
@@ -35,13 +35,4 @@ export const facts = (feeWei: bigint | null): Fact[] => [
     k: "ARTWORK",
     v: "Generated onchain when it is asked for. No IPFS, no server, no fonts. 2000 × 2800, black ground, white marks, no other colours and no type on the face.",
   },
-];
-
-export const aboutFacts = (feeWei: bigint | null): Fact[] => [
-  ...facts(feeWei).slice(0, 2),
-  {
-    k: "RECOMPOSITION",
-    v: "Shapes you own can be composed into one, or split into smaller denominations. Composing keeps one token's id and seed and burns the others into it; splitting burns the input and issues a fresh token per output. Output denominations must sum to exactly the input's backing. No ETH moves, and no fee is charged either way.",
-  },
-  ...facts(feeWei).slice(2),
 ];

@@ -346,6 +346,8 @@ button {
     padding: 12px 20px 0 !important;
     gap: 12px !important;
     flex-wrap: wrap;
+    width: 100% !important;
+    margin-inline: 0 !important;
   }
   .site-nav {
     order: 3;
@@ -440,6 +442,88 @@ button {
   padding: 30px 32px 28px;
 }
 
+/* App shell header/footer, sized to match the launch page's nav geometry (min(100% - 64px,
+   1360px), centered) so the top-right links land in the same place on both. */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--page);
+  border-bottom: 1px solid var(--rule);
+}
+.site-header-inner {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  width: min(100% - 64px, 1360px);
+  margin-inline: auto;
+  height: 84px;
+}
+.site-nav-link {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.site-nav-link:hover {
+  opacity: 0.55;
+}
+.site-connect-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: 220px;
+  padding: 8px 14px;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--page);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.site-connect-btn:hover {
+  background: transparent;
+  color: var(--ink);
+}
+.site-footer-outer.site-footer-ruled {
+  border-top: 1px solid var(--rule);
+}
+.site-footer {
+  width: min(100% - 64px, 1360px);
+  margin-inline: auto;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 32px;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.site-footer a {
+  color: inherit;
+}
+.site-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+@media (max-width: 620px) {
+  .site-header-inner {
+    width: min(100% - 36px, 1360px);
+    height: 70px;
+  }
+  .site-footer {
+    width: min(100% - 36px, 1360px);
+  }
+}
+
 /* Pre-mint landing page. Kept under its own scope for the class names, but the app now shares
    this same paper palette at /mint and the collection routes; these vars alias the root tokens. */
 .launch-page {
@@ -463,8 +547,7 @@ button {
 .launch-hero,
 .launch-countdown,
 .launch-section,
-.launch-faq,
-.launch-footer {
+.launch-faq {
   width: min(100% - 64px, 1360px);
   margin-inline: auto;
 }
@@ -490,6 +573,11 @@ button {
 
 .launch-play-link a:hover {
   opacity: 0.55;
+}
+
+.launch-nav-links {
+  display: flex;
+  gap: clamp(20px, 4vw, 56px);
 }
 
 .launch-hero {
@@ -1012,22 +1100,6 @@ button {
   line-height: 1.55;
 }
 
-.launch-footer {
-  min-height: 110px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--launch-muted);
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.launch-footer a {
-  color: inherit;
-}
-
 @media (max-width: 900px) {
   .launch-hero {
     grid-template-columns: 1fr;
@@ -1069,8 +1141,7 @@ button {
   .launch-hero,
   .launch-countdown,
   .launch-section,
-  .launch-faq,
-  .launch-footer {
+  .launch-faq {
     width: min(100% - 36px, 1360px);
   }
 

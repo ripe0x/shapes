@@ -29,16 +29,17 @@ const centered: React.CSSProperties = {
 
 /**
  * Keeps the wallet stack above routed pages so client navigation cannot replace it. The playground
- * remains deliberately wallet-free and does not wait for deployment metadata or an RPC.
+ * remains deliberately wallet-free and does not wait for deployment metadata or an RPC; "/" is the
+ * launch landing in every site mode and needs no chain either.
  */
 export function ShapesProviders({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPlayground = pathname === "/play";
+  const skipsChain = pathname === "/play" || pathname === "/";
   const [state, setState] = React.useState<WalletState | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    if (isPlayground || state || err) return;
+    if (skipsChain || state || err) return;
 
     let active = true;
     // A local dev target (script/lived-in.sh, web/public/deployment.local.json, gitignored)
@@ -83,9 +84,9 @@ export function ShapesProviders({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [err, isPlayground, state]);
+  }, [err, skipsChain, state]);
 
-  if (isPlayground) return children;
+  if (skipsChain) return children;
   if (err) return <div style={centered}>{err}</div>;
   if (!state) return <div style={centered}>Connecting…</div>;
 

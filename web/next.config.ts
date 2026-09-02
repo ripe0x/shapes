@@ -22,6 +22,10 @@ const nextConfig: NextConfig = {
   env: {
     SHAPES_LADDER: process.env.SHAPES_LADDER || defaultLadder(),
   },
+  async redirects() {
+    // /how-it-works was retired; its content lives in the landing page's mechanics section.
+    return [{ source: "/how-it-works", destination: "/#lineage", permanent: true }];
+  },
   experimental: {
     externalDir: true,
   },

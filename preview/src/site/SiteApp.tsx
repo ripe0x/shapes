@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagm
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {addrUrl, txUrl} from "./ui";
+import {txUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
@@ -14,12 +14,12 @@ import {MyShapesView} from "./MyShapesView";
 import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
-import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
 import {breakdown, loadAuction, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
+import {SiteFooter} from "./SiteFooter";
 
-export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
+export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -423,75 +423,54 @@ export function SiteApp({
   const navColor = (v: View) => (view === v ? C.ink : C.muted);
 
   return (
-    <div style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
-      <header
-        style={{
-          borderBottom: `1px solid ${C.rule}`,
-          position: "sticky",
-          top: 0,
-          background: C.page,
-          zIndex: 10,
-        }}
-      >
-        <div
-          className="site-header-inner"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 32,
-            padding: "0 48px",
-            height: 54,
-            fontSize: 11,
-            letterSpacing: "0.14em",
-          }}
-        >
-          <div>SHAPES</div>
-          <nav className="site-nav" style={{display: "flex", gap: 26}}>
-            <button type="button" className="btn-ghost" onClick={() => go("mint")} style={{letterSpacing: "0.14em", color: navColor("mint")}}>
+    <div id="top" style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
+      <header className="site-header">
+        <div className="site-header-inner">
+          {/* The Next host navigates "/" as a real route outside SiteApp's view state, so the
+              wordmark links there directly; the Vite preview has no such route and falls back to
+              the mint view, mirroring the /play link below. */}
+          {onNavigate ? (
+            <a href="/" className="site-nav-link">SHAPES</a>
+          ) : (
+            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")}>SHAPES</button>
+          )}
+          <nav className="site-nav" style={{display: "flex", gap: "clamp(20px, 4vw, 40px)"}}>
+            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
               MINT
             </button>
             {dep.auctionHouse && (
-              <button type="button" className="btn-ghost" onClick={() => go("auction")} style={{letterSpacing: "0.14em", color: navColor("auction")}}>
+              <button type="button" className="btn-ghost site-nav-link" onClick={() => go("auction")} style={{color: navColor("auction")}}>
                 AUCTION
               </button>
             )}
-            <button type="button" className="btn-ghost" onClick={() => go("gallery")} style={{letterSpacing: "0.14em", color: navColor("gallery")}}>
+            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
               GALLERY
             </button>
-            <button type="button" className="btn-ghost" onClick={() => go("about")} style={{letterSpacing: "0.14em", color: navColor("about")}}>
+            <a href="/#lineage" className="site-nav-link" style={{color: C.muted}}>
               HOW IT WORKS
-            </button>
+            </a>
             {/* /play is a Next.js route outside SiteApp's view state, so it links as a plain
                 anchor. Only the Next host serves it; the Vite preview (no onNavigate) omits it. */}
             {onNavigate && (
-              <a href="/play" style={{letterSpacing: "0.14em", color: C.muted, textDecoration: "none"}}>
-                PLAYGROUND
+              <a href="/play" className="site-nav-link" style={{color: C.muted}}>
+                PLAY
               </a>
             )}
           </nav>
           <div className="site-account" ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
             <button
               type="button"
-              className="btn-outline"
+              className="site-connect-btn"
               aria-haspopup={isConnected ? "menu" : undefined}
               aria-expanded={isConnected ? accountMenuOpen : undefined}
               onClick={() =>
                 isConnected ? setAccountMenuOpen((open) => !open) : openConnectModal?.()
               }
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                maxWidth: 220,
-                padding: "6px 13px",
-                fontSize: 11,
-                letterSpacing: "0.1em",
-              }}
             >
               <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
                 {isConnected ? accountLabel : "CONNECT"}
               </span>
-              {isConnected && <span aria-hidden="true" style={{color: C.muted}}>▾</span>}
+              {isConnected && <span aria-hidden="true">▾</span>}
             </button>
             {isConnected && accountMenuOpen && (
               <div
@@ -632,7 +611,6 @@ export function SiteApp({
           onSacrifice={(t) => void doSacrifice(t)}
         />
       )}
-      {view === "about" && <AboutView dep={dep} data={data} />}
 
       {actionNotice && (
         <div
@@ -695,25 +673,7 @@ export function SiteApp({
         </div>
       )}
 
-      <footer style={{borderTop: `1px solid ${C.rule}`}}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "12px 32px",
-            padding: "24px 48px",
-            fontSize: 11,
-            color: C.muted,
-          }}
-        >
-          <span style={{letterSpacing: "0.14em"}}>SHAPES</span>
-          <span style={{marginLeft: "auto", display: "flex", gap: 20}}>
-            <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 11}}>
-              Contract
-            </a>
-          </span>
-        </div>
-      </footer>
+      <SiteFooter dep={dep} topRule />
     </div>
   );
 }
