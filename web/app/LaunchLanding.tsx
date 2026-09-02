@@ -3,7 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { AMOUNTS as MAINNET_DENOMINATIONS } from "@shared/canonical/ladders/mainnet";
+import { DENOMINATIONS as RENDER_DENOMINATIONS } from "@shared/canonical/denominations";
 import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/canonical/sampling";
 import { localArt, sampleSeed } from "@shared/site/art";
 import { mintGene } from "@shared/previewGene";
@@ -47,11 +47,11 @@ function buildProvenanceExample(): ProvenanceExample {
 
   const origin = (seedNumber: number, key: string): BuiltShape => {
     const seed = sampleSeed(seedNumber);
-    const gene = mintGene(seed, MAINNET_DENOMINATIONS[0]);
+    const gene = mintGene(seed, RENDER_DENOMINATIONS[0]);
     return {
       key,
       value: "0.01",
-      image: localArt(seed, MAINNET_DENOMINATIONS[0], gene),
+      image: localArt(seed, RENDER_DENOMINATIONS[0], gene),
       seed,
       gene,
     };
@@ -149,7 +149,9 @@ function TierCard({ tier, index }: { tier: (typeof TIERS)[number]; index: number
 
   const frame = hovered ? hoverBase + tick : 0;
   const seed = sampleSeed(12_000 + index * 127 + frame * 613);
-  const denomination = MAINNET_DENOMINATIONS[index];
+  // Geometry is tier-indexed and identical on both ladders. Use the active build's amount so
+  // hybrid Sepolia builds can render the landing page's mainnet-labeled examples safely.
+  const denomination = RENDER_DENOMINATIONS[index];
   const image = localArt(seed, denomination, mintGene(seed, denomination));
 
   return (
