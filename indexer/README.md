@@ -1,9 +1,9 @@
 # shapes-indexer
 
 A [Ponder](https://ponder.sh) indexer for the standalone Shapes ERC721
-(`src/Shapes.sol`). Turns the nine consumed onchain events into two Postgres tables —
-`token` and `lineage_edge` — queryable over GraphQL or `@ponder/client`
-SQL-over-HTTP, so a frontend never has to scan chain logs directly. Log
+(`src/Shapes.sol`). Turns the ten consumed onchain events into three Postgres tables —
+`token`, `lineage_edge`, and the `collection_owner` singleton — queryable over GraphQL
+or `@ponder/client` SQL-over-HTTP, so a frontend never has to scan chain logs directly. Log
 scanning is fatal on mainnet and for any token with a deep composition /
 decomposition history, since a single Shape can have thousands of ancestor
 edges.
@@ -142,6 +142,21 @@ and `decompose`.
 
 Indexes: `parentId` and `childId`, one for each query direction below.
 
+### `collection_owner`
+
+Single row tracking the collection owner token (issue #56): one live Shape can be the owner
+token at a time, starting as #0 and moved by compose, decompose, and split, ended by redeem or
+`burn()`. Keyed by a constant id since there is never more than one row.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `text` (PK) | constant `"singleton"` |
+| `ownerTokenId` | `bigint?` | current owner token id; `null` when no token holds ownership |
+| `ownerAddress` | `hex?` | ERC-721 holder of `ownerTokenId`; `null` when `ownerTokenId` is `null` |
+| `updatedAtBlock` | `bigint` | block of the last `OwnerTokenMoved` or correcting `Transfer` |
+
+No indexes: single row, looked up by its constant id.
+
 ## The two frontend queries
 
 **Gallery: live tokens, filterable by denomination, newest first, paginated.**
@@ -203,7 +218,7 @@ call site.
 
 ## Event handling notes
 
-The nine events and what each does to the two tables (`src/index.ts`):
+The ten events and what each does to the three tables (`src/index.ts`):
 
 - **`ShapeMinted(tokenId, to, amountWei, seed, originCount)`** — inserts a
   `token` row. `originCount` is always `1` on this event.
@@ -236,11 +251,19 @@ The nine events and what each does to the two tables (`src/index.ts`):
   still exists and still has an owner.
 - **`ShapeRedeemed(tokenId, to, amountWei, originCount)`** — marks `tokenId`
   `live: false`.
+- **`OwnerTokenMoved(fromTokenId, toTokenId)`** — upserts the `collection_owner`
+  singleton. `toTokenId == type(uint256).max` means no token holds ownership:
+  `ownerTokenId`/`ownerAddress` become `null`. Otherwise `ownerTokenId` is set
+  and `ownerAddress` is read off the target token's row if it already carries
+  the right owner (compose survivor, decompose restore, an insert that already
+  knew its final owner); where that row isn't there yet or is still stale, the
+  `Transfer` handler below corrects it.
 - **`Transfer(from, to, tokenId)`** — sets `owner: to` for every non-burn
   transfer, including mints. This is required for `splitTo`/`decomposeTo`:
   their aggregate events omit the recipient, while the following ERC721 mint
   transfer carries it exactly. Burn transfers are ignored because a dead row's
-  owner is no longer meaningful.
+  owner is no longer meaningful. Also checks the `collection_owner` singleton:
+  if `tokenId` is the current owner token, updates its `ownerAddress` to `to`.
 
 ## ABI
 
