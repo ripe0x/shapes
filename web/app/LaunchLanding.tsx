@@ -288,7 +288,7 @@ export function LaunchLanding() {
         <div className="launch-section-heading">
           <div>
             <p className="launch-kicker">Nine fixed tiers</p>
-            <h2 id="tiers-title">Mainnet value tiers</h2>
+            <h2 id="tiers-title">Value tiers</h2>
           </div>
           <p>
             Each value is exact and fully redeemable. A one-time 0.001 ETH mint fee applies to
