@@ -20,7 +20,11 @@ interface IShapeLens {
         view
         returns (ShapeState memory result);
 
-    /// @notice Validate a split and return every deterministic child before changing state.
+    /// @notice The children `Shapes.split(tokenId, outDenoms)` would produce, one entry per
+    ///         `outDenoms` index: seed, denomination, origin count, ink gene, face value and
+    ///         materialized module bytes. Requires no caller ownership and moves no state. Applies
+    ///         split's validation: existence, not-Black, and an output sum matching the parent's
+    ///         backing.
     function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
         external
         view

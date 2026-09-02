@@ -112,6 +112,7 @@ contract HeterogeneousTest is ShapesBase {
             assertEq(preview[i].originCount, st.originCount, "preview origin count matches");
             assertEq(preview[i].inkGene, st.inkGene, "preview ink gene matches");
             assertEq(preview[i].faceValueWei, st.faceValueWei, "preview face value matches");
+            assertEq(preview[i].modules, modules, "preview modules match stored child modules");
         }
 
         assertEq(shapes.redeemableBacking(), reserveBefore, "split moves no ETH");
@@ -179,6 +180,7 @@ contract HeterogeneousTest is ShapesBase {
             bytes memory modules = shapes.modulesOf(kids[i]);
             bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, outs[i], i);
             assertEq(modules, expected, "record-branch child must match the compose record's donor pool");
+            assertEq(preview[i].modules, modules, "preview modules match stored child modules");
         }
         assertEq(originSum, 10, "all ten origins partitioned");
 
@@ -209,6 +211,71 @@ contract HeterogeneousTest is ShapesBase {
         for (uint256 i = 0; i < 6; ++i) {
             assertEq(shapes.originCountOf(kids[i]), expectedGive[i], "origin fill is positional");
             assertEq(shapes.backingOf(kids[i]), DENOMS[outs[i]], "child backing");
+        }
+        _assertSolvent();
+    }
+
+    /// @notice `previewSplit`'s module bytes on the two branches `test_SplitUnevenOriginalParent`
+    ///         and `test_SplitUnevenOriginAllocationFillsCapsInOrder` do not cover: a materialized
+    ///         but recordless parent (a split child split again, grammar branch at each child's
+    ///         own denomination, ignoring the parent's stored bytes), and a parent with a stacked
+    ///         compose record (depth 2, record branch off the TOP record only).
+    function test_PreviewSplitMatchesGrammarBranchOnRecordlessParentAndRecordBranchOnStackedRecord() public {
+        // -------- (a) materialized, recordless parent: grammar branch --------
+        uint256 grandparent = _mint(alice, DENOMS[2]); // 0.1 ETH
+        uint8[] memory firstOuts = new uint8[](2);
+        firstOuts[0] = 1; // 0.05
+        firstOuts[1] = 1;
+        vm.prank(alice);
+        uint256[] memory firstKids = shapes.split(grandparent, firstOuts);
+        uint256 recordlessParent = firstKids[0]; // materialized split child, no compose record
+        assertGt(shapes.modulesOf(recordlessParent).length, 0, "split child is materialized");
+        assertEq(shapes.composeDepth(recordlessParent), 0, "split child never composed");
+
+        uint8[] memory outsA = new uint8[](5); // 5 x 0.01 ETH
+        ShapeChildPreview[] memory previewA = lens.previewSplit(recordlessParent, outsA);
+
+        vm.prank(alice);
+        uint256[] memory kidsA = shapes.split(recordlessParent, outsA);
+
+        for (uint256 i = 0; i < kidsA.length; ++i) {
+            assertEq(
+                previewA[i].modules,
+                shapes.modulesOf(kidsA[i]),
+                "grammar-branch preview must match stored child modules"
+            );
+        }
+
+        // -------- (b) parent with a stacked compose record (depth 2): TOP record only --------
+        uint256 first = _mint(alice, DENOMS[0]); // 0.01 ETH
+        uint256[] memory burnsRound1 = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burnsRound1[i] = _mint(alice, DENOMS[0]);
+        }
+        vm.prank(alice);
+        uint256 survivor = shapes.compose(first, burnsRound1); // 0.05 ETH, depth 1
+
+        uint256[] memory burnsRound2 = new uint256[](1);
+        burnsRound2[0] = _mint(alice, DENOMS[1]); // 0.05 ETH
+        vm.prank(alice);
+        shapes.compose(survivor, burnsRound2); // 0.1 ETH, depth 2 (stacked on the same survivor)
+        assertEq(shapes.composeDepth(survivor), 2, "two stacked compose records");
+
+        uint8[] memory outsB = new uint8[](2);
+        outsB[0] = 1; // 0.05
+        outsB[1] = 1;
+
+        ShapeChildPreview[] memory previewB = lens.previewSplit(survivor, outsB);
+
+        vm.prank(alice);
+        uint256[] memory kidsB = shapes.split(survivor, outsB);
+
+        for (uint256 i = 0; i < kidsB.length; ++i) {
+            assertEq(
+                previewB[i].modules,
+                shapes.modulesOf(kidsB[i]),
+                "record-branch preview must match stored child modules, drawn from the top record"
+            );
         }
         _assertSolvent();
     }

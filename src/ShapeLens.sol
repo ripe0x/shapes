@@ -21,13 +21,14 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 /// @notice Read-only periphery for `Shapes`, deployed separately to keep the core token's runtime
 ///         bytecode under the EIP-170 size limit.
 /// @dev Holds no state and no owner. Every view here reads token state through `Shapes`'s own
-///      getters (`isBlack`, `seedOf`, `denomIndexOf`, `originCountOf`, `inkGeneOf`, `modulesOf`) and
-///      recomputes its result with the same externally linked libraries `Shapes` links and
-///      executes with (`GeometrySampling`, `ComposeCompute`, `InkGenes`), so `previewCompose` and
-///      `previewSplit` are bit-identical to what `Shapes.compose` / `Shapes.split` would produce,
-///      and `shapeState` is bit-identical to what `Shapes` itself has stored. Reverts propagate
-///      the same custom errors `Shapes` declares (`IShapes.TokenIsBlack`, and so on), since this
-///      contract applies the identical validation before computing a result.
+///      getters (`isBlack`, `seedOf`, `denomIndexOf`, `originCountOf`, `inkGeneOf`, `modulesOf`,
+///      `composeDepth`, `composeRecordHeaderAt`, `composeRecordInputAt`) and recomputes its result
+///      with the same externally linked libraries `Shapes` links and executes with
+///      (`GeometrySampling`, `ComposeCompute`, `InkGenes`), so `previewCompose` and `previewSplit`
+///      are bit-identical to what `Shapes.compose` / `Shapes.split` would produce, module bytes
+///      included, and `shapeState` is bit-identical to what `Shapes` itself has stored. Reverts
+///      propagate the same custom errors `Shapes` declares (`IShapes.TokenIsBlack`, and so on),
+///      since this contract applies the identical validation before computing a result.
 contract ShapeLens is IShapeLens {
     IShapes public immutable shapes;
 
@@ -173,15 +174,74 @@ contract ShapeLens is IShapeLens {
         ShapeMath.requireSplitSumMatches(parentBacking, outDenoms);
         uint32[] memory give = ShapeMath.allocateSplitOrigins(originCount, outDenoms);
 
+        // Split's sampling pool (SAMPLING_SPEC.md §6, D3'): the parent's top compose record's
+        // donor pool when it has one (child-denomination-independent, built once and reused by
+        // every child below), else grammar v1 at each child's own denomination (denomination-
+        // dependent, read fresh per child by `sampleSplitChildFromPool`). Mirrors
+        // `Shapes._splitTo`'s branch decision.
+        uint256 depth = shapes.composeDepth(tokenId);
+        bool hasRecordPool = depth > 0;
+        bytes memory recordPool = hasRecordPool ? _splitRecordPool(tokenId, depth, seed) : bytes("");
+
         children = new ShapeChildPreview[](k);
         for (uint256 i = 0; i < k; ++i) {
+            bytes memory childModules = GeometrySampling.sampleSplitChildFromPool(
+                hasRecordPool, recordPool, seed, inkGene, outDenoms[i], i
+            );
             children[i] = ShapeChildPreview({
                 seed: ShapeMath.childSeed(seed, i),
                 denominationIndex: outDenoms[i],
                 originCount: give[i],
                 inkGene: inkGene,
-                faceValueWei: Denominations.amountAt(outDenoms[i])
+                faceValueWei: Denominations.amountAt(outDenoms[i]),
+                modules: childModules
             });
+        }
+    }
+
+    /// @dev Assembles a materialized-parent split's sampling pool from `parentId`'s top compose
+    ///      record (SAMPLING_SPEC.md §6, D3'), mirroring `Shapes._buildSplitRecordPool`: the
+    ///      record's pre-compose survivor effective modules first, then its inputs' effective
+    ///      modules ascending by donor id. `depth` is `shapes.composeDepth(parentId)`; the top
+    ///      record is at index `depth - 1`.
+    function _splitRecordPool(uint256 parentId, uint256 depth, bytes32 parentSeed)
+        private
+        view
+        returns (bytes memory)
+    {
+        (uint8 survivorDenomIndex,, uint8 survivorInkGene, bytes memory survivorModules, uint256 inputCount) =
+            shapes.composeRecordHeaderAt(parentId, depth - 1);
+
+        ComposeInputView[] memory inputs = _readComposeInputs(parentId, depth - 1, inputCount);
+        GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](inputCount);
+        for (uint256 i = 0; i < inputCount; ++i) {
+            ComposeInputView memory inp = inputs[i];
+            inputDonors[i] = GeometrySampling.Donor({
+                id: inp.id,
+                units: 0, // unused: split's pool concatenates every donor's modules, no weighting
+                seed: inp.seed,
+                denomIndex: inp.denominationIndex,
+                inkGene: inp.inkGene,
+                modules: inp.modules
+            });
+        }
+        return GeometrySampling.buildSplitRecordPoolSorted(
+            survivorModules, parentSeed, survivorDenomIndex, survivorInkGene, inputDonors
+        );
+    }
+
+    /// @dev Reads every input of one compose record via `Shapes.composeRecordInputAt`. Shared by
+    ///      `composeRecordAt` and `_splitRecordPool`.
+    function _readComposeInputs(uint256 survivorId, uint256 depth, uint256 inputCount)
+        private
+        view
+        returns (ComposeInputView[] memory inputs)
+    {
+        inputs = new ComposeInputView[](inputCount);
+        for (uint256 i = 0; i < inputCount; ++i) {
+            ComposeInputView memory inp = inputs[i];
+            (inp.id, inp.seed, inp.denominationIndex, inp.originCount, inp.inkGene, inp.modules) =
+                shapes.composeRecordInputAt(survivorId, depth, i);
         }
     }
 
@@ -221,25 +281,7 @@ contract ShapeLens is IShapeLens {
             uint256 inputCount
         ) = shapes.composeRecordHeaderAt(survivorId, depth);
 
-        ComposeInputView[] memory inputs = new ComposeInputView[](inputCount);
-        for (uint256 i = 0; i < inputCount; ++i) {
-            (
-                uint256 id,
-                bytes32 seed,
-                uint8 denomIndex,
-                uint32 originCount,
-                uint8 inkGene,
-                bytes memory modules
-            ) = shapes.composeRecordInputAt(survivorId, depth, i);
-            inputs[i] = ComposeInputView({
-                id: id,
-                seed: seed,
-                denominationIndex: denomIndex,
-                originCount: originCount,
-                inkGene: inkGene,
-                modules: modules
-            });
-        }
+        ComposeInputView[] memory inputs = _readComposeInputs(survivorId, depth, inputCount);
 
         return ComposeRecordView({
             survivorDenominationIndex: survivorDenomIndex,

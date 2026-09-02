@@ -206,6 +206,11 @@ contract ComposabilityTest is Test {
             assertEq(actual.denominationIndex, preview[i].denominationIndex);
             assertEq(actual.originCount, preview[i].originCount);
             assertEq(actual.inkGene, preview[i].inkGene);
+            assertEq(
+                preview[i].modules,
+                shapes.modulesOf(children[i]),
+                "preview modules match stored child modules"
+            );
         }
     }
 
