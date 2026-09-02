@@ -137,6 +137,7 @@ function RawCard({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, width }}>
       <div
+        data-play-card={onClick ? "interactive" : undefined}
         onClick={onClick}
         style={{
           position: "relative",
@@ -779,6 +780,130 @@ function LineageNode({
   );
 }
 
+function ZoomableTree({ children, resetKey }: { children: React.ReactNode; resetKey: number }) {
+  const viewportRef = React.useRef<HTMLDivElement>(null);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const [view, setView] = React.useState({ x: 0, y: 0, scale: 1 });
+  const [dragging, setDragging] = React.useState(false);
+  const dragRef = React.useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
+
+  const fit = React.useCallback(() => {
+    const viewport = viewportRef.current;
+    const content = contentRef.current;
+    if (!viewport || !content) return;
+    const contentWidth = content.scrollWidth;
+    const contentHeight = content.scrollHeight;
+    if (contentWidth === 0 || contentHeight === 0) return;
+    const inset = 40;
+    const scale = Math.min(1.25, (viewport.clientWidth - inset * 2) / contentWidth, (viewport.clientHeight - inset * 2) / contentHeight);
+    const safeScale = Math.max(0.12, scale);
+    setView({
+      scale: safeScale,
+      x: (viewport.clientWidth - contentWidth * safeScale) / 2,
+      y: Math.max(inset, (viewport.clientHeight - contentHeight * safeScale) / 2),
+    });
+  }, []);
+
+  React.useEffect(() => {
+    const frame = requestAnimationFrame(() => fit());
+    return () => cancelAnimationFrame(frame);
+  }, [fit, resetKey]);
+
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [fit]);
+
+  const zoomAtCenter = (factor: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const cx = viewport.clientWidth / 2;
+    const cy = viewport.clientHeight / 2;
+    setView((current) => {
+      const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
+      const ratio = scale / current.scale;
+      return {
+        scale,
+        x: cx - (cx - current.x) * ratio,
+        y: cy - (cy - current.y) * ratio,
+      };
+    });
+  };
+
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const px = event.clientX - rect.left;
+    const py = event.clientY - rect.top;
+    setView((current) => {
+      const factor = Math.exp(-event.deltaY * 0.0015);
+      const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
+      const ratio = scale / current.scale;
+      return {
+        scale,
+        x: px - (px - current.x) * ratio,
+        y: py - (py - current.y) * ratio,
+      };
+    });
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button") || target.closest('[data-play-card="interactive"]')) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: view.x, originY: view.y };
+    setDragging(true);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    setView((current) => ({
+      ...current,
+      x: drag.originX + event.clientX - drag.x,
+      y: drag.originY + event.clientY - drag.y,
+    }));
+  };
+
+  const stopDragging = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    setDragging(false);
+  };
+
+  return (
+    <div className="play-tree-frame">
+      <div className="play-tree-toolbar" aria-label="Provenance view controls">
+        <PlayButton small onClick={() => zoomAtCenter(1.25)}>+</PlayButton>
+        <PlayButton small onClick={() => zoomAtCenter(0.8)}>−</PlayButton>
+        <PlayButton small onClick={fit}>Fit</PlayButton>
+        <span>{Math.round(view.scale * 100)}%</span>
+      </div>
+      <div
+        ref={viewportRef}
+        className={`play-tree-viewport${dragging ? " is-dragging" : ""}`}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+      >
+        <div
+          ref={contentRef}
+          className="play-tree-content"
+          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
+        >
+          {children}
+        </div>
+      </div>
+      <p className="play-tree-help">Drag to pan · scroll to zoom</p>
+    </div>
+  );
+}
+
 function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, PlayNode> }) {
   const composition = nodeComposition(node);
   const svg = React.useMemo(
@@ -1121,7 +1246,7 @@ function CompleteLineageTree({
           ? " Select a composed card to inspect its sampling. Open a source count to trace that branch further."
           : " This is an independent origin Shape."}
       </Prose>
-      <div className="play-lineage-scroll">
+      <ZoomableTree resetKey={root.key}>
         <LineageNode
           node={root}
           byKey={byKey}
@@ -1130,7 +1255,7 @@ function CompleteLineageTree({
           expandedKeys={expandedKeys}
           onToggleExpanded={toggleExpanded}
         />
-      </div>
+      </ZoomableTree>
     </div>
   );
 }
@@ -1176,8 +1301,9 @@ function LineageBeat({ session }: { session: PlaySession }) {
       ) : (
         <>
           <Prose>Every Shape the surviving object was built from.</Prose>
-          <div className="play-lineage-scroll">
-            {tips.map((tip) => (
+          <ZoomableTree resetKey={tips.map((tip) => tip.key).reduce((sum, key) => sum + key, 0)}>
+            <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
+              {tips.map((tip) => (
               <LineageNode
                 key={tip.key}
                 node={tip}
@@ -1185,8 +1311,9 @@ function LineageBeat({ session }: { session: PlaySession }) {
                 focusedKey={focusedKey}
                 onSelect={setFocusedKey}
               />
-            ))}
-          </div>
+              ))}
+            </div>
+          </ZoomableTree>
         </>
       )}
       {focusedNode && focusedNode.trace && <CellExplorer node={focusedNode} byKey={byKey} />}
@@ -1477,17 +1604,61 @@ export function PlayApp() {
           flex-wrap: wrap;
           margin-bottom: 16px;
         }
-        .play-lineage-scroll {
-          display: flex;
-          align-items: flex-start;
-          gap: 32px;
+        .play-tree-frame {
+          position: relative;
           margin: 24px 0 32px;
-          padding: 0 0 18px;
-          overflow-x: auto;
-          overscroll-behavior-x: contain;
         }
-        .play-lineage-scroll > div {
-          min-width: max-content;
+        .play-tree-viewport {
+          position: relative;
+          height: clamp(440px, 62vh, 680px);
+          overflow: hidden;
+          border: 1px solid ${C.rule};
+          background-color: ${C.page};
+          background-image: radial-gradient(${C.rule} 0.7px, transparent 0.7px);
+          background-size: 16px 16px;
+          cursor: grab;
+          touch-action: none;
+          user-select: none;
+        }
+        .play-tree-viewport.is-dragging {
+          cursor: grabbing;
+        }
+        .play-tree-content {
+          position: absolute;
+          top: 0;
+          left: 0;
+          display: inline-flex;
+          width: max-content;
+          align-items: flex-start;
+          transform-origin: 0 0;
+          will-change: transform;
+        }
+        .play-tree-toolbar {
+          position: absolute;
+          z-index: 2;
+          top: 12px;
+          right: 12px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          padding: 5px;
+          border: 1px solid ${C.rule};
+          background: color-mix(in srgb, ${C.page} 94%, transparent);
+        }
+        .play-tree-toolbar > span {
+          min-width: 38px;
+          padding: 0 4px;
+          font-family: ${FONT};
+          font-size: 8.5px;
+          color: ${C.muted};
+          text-align: right;
+        }
+        .play-tree-help {
+          margin: 8px 0 0;
+          font-family: ${FONT};
+          font-size: 8.5px;
+          letter-spacing: 0.04em;
+          color: ${C.muted};
         }
         .play-tree-rollup,
         .play-tree-collapse {
@@ -1577,6 +1748,9 @@ export function PlayApp() {
           }
           .play-section {
             margin-bottom: 48px;
+          }
+          .play-tree-viewport {
+            height: min(62vh, 520px);
           }
           .play-page-footer {
             align-items: flex-start;
