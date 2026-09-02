@@ -64,15 +64,15 @@ contract ComposabilityTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, feeRecipient, address(renderer), address(collection)
+            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection)
         );
         lens = new ShapeLens(address(shapes));
         receiver = new ComposableReceiver();
         vm.deal(alice, 1_000 ether);
     }
 
-    function _fee(uint256 amount) internal pure returns (uint256) {
-        return amount / 100;
+    function _fee(uint256) internal pure returns (uint256) {
+        return Denominations.UNIT / 10;
     }
 
     function _mint(address to, uint256 amount) internal returns (uint256 id) {

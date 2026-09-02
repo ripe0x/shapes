@@ -18,8 +18,8 @@ optimizer = true
 # stayed on `Shapes`: a review (issue #21A) found the first pass had also moved them, which left
 # `supportsInterface` advertising `IShapeValue`/`IShapeProvenance` (SPEC.md's stable capability
 # interfaces) with members that no longer existed on the token, so they came back. At 100,
-# `Shapes`'s current runtime size is 24,474 bytes: a 102-byte margin under the EIP-170 24,576
-# limit after the explicit positions/market pointers landed. Runtime size rises with
+# `Shapes`'s current runtime size is 24,362 bytes: a 214-byte margin under the EIP-170 24,576
+# limit after the explicit positions/market pointers and flat mint fee landed. Runtime size rises with
 # `optimizer_runs` because more inlining trades size for gas. Re-measure both the default and
 # testnet profiles with `forge build --sizes` before changing this value in either direction.
 optimizer_runs = 100

@@ -195,7 +195,7 @@ export function MintView({
               </div>
               <div style={{color: C.muted}}>backing</div>
               <div>{formatEther(wei * q)} ETH</div>
-              <div style={{color: C.muted}}>mint fee, 1%</div>
+              <div style={{color: C.muted}}>mint fee, per Shape</div>
               <div>{fee === null ? "" : `${formatEther(fee * q)} ETH`}</div>
               <div style={{color: C.muted}}>quantity</div>
               <div style={{display: "flex", alignItems: "center", gap: 0}}>

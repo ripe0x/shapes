@@ -12,7 +12,7 @@ RPC=${RPC:-http://127.0.0.1:8545}
 PK0=${PK0:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}
 ADDR0=0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266
 ADDR1=0x70997970C51812dc3A010C7d01b50e0d17dc79C8
-FEE_BPS=100 # 1% of backing, per token
+MINT_FEE=1000000000000000 # 0.001 ETH per Shape
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 fail() { echo "  FAIL: $*" >&2; exit 1; }
@@ -71,7 +71,7 @@ fi
 
 say "Rejecting an unsupported denomination (2 ETH)"
 if cast send "$SHAPES" "mint(uint256)" 2000000000000000000 \
-     --value "$(big "2000000000000000000 + 2000000000000000000*$FEE_BPS//10000")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
+     --value "$(big "2000000000000000000 + $MINT_FEE")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
   echo "  FAIL: 2 ETH was accepted"; exit 1
 else
   echo "  ok: reverted"
@@ -83,7 +83,7 @@ DENOMS=(10000000000000000 50000000000000000 100000000000000000 50000000000000000
         100000000000000000000)
 for d in "${DENOMS[@]}"; do
   send_wait "$SHAPES" "mint(uint256)" "$d" \
-    --value "$(big "$d + $d*$FEE_BPS//10000")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null
+    --value "$(big "$d + $MINT_FEE")wei" --private-key "$PK0" --rpc-url "$RPC" >/dev/null
   printf '  minted %s wei\n' "$d"
 done
 
@@ -148,7 +148,7 @@ echo "  contract balance  $FINAL_BAL"
 
 say "Opening an auction"
 send_wait "$SHAPES" "mint(uint256)" 100000000000000000 \
-  --value "$(big "100000000000000000 + 100000000000000000*$FEE_BPS//10000")wei" \
+  --value "$(big "100000000000000000 + $MINT_FEE")wei" \
   --private-key "$PK0" --rpc-url "$RPC" >/dev/null
 LOT=$(($(cast call "$SHAPES" "totalMinted()(uint256)" --rpc-url "$RPC" | awk '{print $1}') - 1))
 send_wait "$SHAPES" "setApprovalForAll(address,bool)" "$HOUSE" true \
@@ -164,14 +164,14 @@ send_wait "$HOUSE" "createAuction(address,uint256,uint64,uint64,uint16,uint32)" 
 say "Bidding 1 ETH through the ETH path"
 # The bidder brings no Shapes; the house mints the minimal card set and charges the mint fee on top.
 GAS=3000000 send_wait "$HOUSE" "bid(uint256,uint256[],uint256)" 0 "[]" 1000000000000000000 \
-  --value "$(big "1000000000000000000 + 1000000000000000000*$FEE_BPS//10000")wei" \
+  --value "$(big "1000000000000000000 + $MINT_FEE")wei" \
   --private-key "$PK1" --rpc-url "$RPC" >/dev/null
 UNITS=$(cast call "$HOUSE" "bidUnits(uint256,address)(uint64)" 0 "$ADDR1" --rpc-url "$RPC" | awk '{print $1}')
 [ "$UNITS" = "100" ] && echo "  ok: 100 units escrowed (1 ETH)" || fail "bid units were $UNITS, expected 100"
 
 say "The seller cannot bid its own lot"
 if cast send "$HOUSE" "bid(uint256,uint256[],uint256)" 0 "[]" 2000000000000000000 \
-     --value "$(big "2000000000000000000 + 2000000000000000000*$FEE_BPS//10000")wei" \
+     --value "$(big "2000000000000000000 + 2*$MINT_FEE")wei" \
      --private-key "$PK0" --rpc-url "$RPC" >/dev/null 2>&1; then
   fail "the seller bid its own auction"
 else

@@ -8,7 +8,7 @@ export interface Fact {
 export const FACTS: Fact[] = [
   {
     k: "FEE",
-    v: "1% of the backing, paid on top of it, once at mint. A 1 ETH Shape costs 1 ETH + 0.01 ETH fee = 1.01 ETH total. There is no burn fee and no transfer fee.",
+    v: "0.001 ETH per Shape, paid on top of its backing at mint. A 1 ETH Shape costs 1.001 ETH total. There is no burn fee and no transfer fee.",
   },
   {
     k: "REDEMPTION",

@@ -25,10 +25,10 @@ contract HardeningTest is Test {
         Denominations.amountAt(7),
         Denominations.amountAt(8)
     ];
-    uint256 internal constant FEE_BPS = 100; // 1%
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
 
-    function feeOf(uint256 amount) internal pure returns (uint256) {
-        return (amount * FEE_BPS) / 10_000;
+    function feeOf(uint256) internal pure returns (uint256) {
+        return MINT_FEE;
     }
 
     ShapeRenderer internal renderer;
@@ -44,7 +44,7 @@ contract HardeningTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection)
         );
         shapes.redeemTo(0, payable(address(0xD15CA4D)));
         vm.deal(alice, 10_000 ether);
@@ -131,12 +131,12 @@ contract HardeningTest is Test {
     function test_RendererWithoutCodeIsRejected() public {
         vm.expectRevert(bytes("renderer has no code"));
         new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(0xDEAD), address(collection)
+            MINT_FEE, feeRecipient, address(0xDEAD), address(collection)
         );
 
         // an EOA is equally unacceptable
         vm.expectRevert(bytes("renderer has no code"));
-        new Shapes{value: Denominations.amountAt(0)}(FEE_BPS, feeRecipient, alice, address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, alice, address(collection));
     }
 
     /* ---------------- self-custody ---------------- */
@@ -161,7 +161,7 @@ contract HardeningTest is Test {
         ShapeRenderer ownershipRenderer = new ShapeRenderer();
         ShapeCollection ownershipCollection = new ShapeCollection(address(ownershipRenderer));
         Shapes ownershipShapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(ownershipRenderer), address(ownershipCollection)
+            MINT_FEE, feeRecipient, address(ownershipRenderer), address(ownershipCollection)
         );
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));

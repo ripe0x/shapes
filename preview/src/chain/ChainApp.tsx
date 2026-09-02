@@ -180,13 +180,13 @@ export function ChainApp({dep}: {dep: Deployment}) {
   const [tokens, setTokens] = React.useState<OwnedToken[]>([]);
   const [reserve, setReserve] = React.useState<Reserve | null>(null);
   const [acctBalance, setAcctBalance] = React.useState<bigint>(0n);
-  const [feeBps, setFeeBps] = React.useState<bigint>(0n);
+  const [mintFee, setMintFee] = React.useState<bigint>(0n);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [splitPreview, setSplitPreview] = React.useState(false); // show split preview on the open detail
   const [view, setView] = React.useState<bigint | null>(null); // null = grid; else the detail token id
   const [history, setHistory] = React.useState<HistEvent[] | null>(null);
 
-  const feePerNft = (amountWei * feeBps) / 10_000n;
+  const feePerNft = mintFee;
 
   const refresh = React.useCallback(async () => {
     if (!publicClient || !address) return;
@@ -199,12 +199,12 @@ export function ChainApp({dep}: {dep: Deployment}) {
         publicClient.readContract({...shapes, functionName: "blackCount"}),
         publicClient.readContract({...shapes, functionName: "totalSupply"}),
         publicClient.readContract({...shapes, functionName: "totalMinted"}),
-        publicClient.readContract({...shapes, functionName: "feeBps"}),
+        publicClient.readContract({...shapes, functionName: "mintFee"}),
         publicClient.getBalance({address: dep.shapes}),
         publicClient.getBalance({address}),
       ]);
     setReserve({redeemableBacking, sacrificedBacking, blackCount, balance, supply, minted});
-    setFeeBps(fee);
+    setMintFee(fee);
     setAcctBalance(acct);
 
     // No enumerable extension; in a dev harness the id space is tiny, so scan it and keep the
@@ -423,7 +423,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
           />
         ) : (
           <>
-            <ReserveCard reserve={reserve} feeBps={feeBps} feePerNft={feePerNft} acctBalance={acctBalance} />
+            <ReserveCard reserve={reserve} feePerNft={feePerNft} acctBalance={acctBalance} />
             <MintPanel
               amountWei={amountWei}
               setAmountWei={setAmountWei}
@@ -832,17 +832,14 @@ function Prov({k, v}: {k: string; v: string}) {
 
 function ReserveCard({
   reserve,
-  feeBps,
   feePerNft,
   acctBalance,
 }: {
   reserve: Reserve;
-  feeBps: bigint;
   feePerNft: bigint;
   acctBalance: bigint;
 }) {
   const solvent = reserve.balance >= reserve.redeemableBacking;
-  const feePct = Number(feeBps) / 100;
   return (
     <section style={{...S.card, borderColor: solvent ? "#1c5" : "#e33"}}>
       <Row k="contract balance" v={`${formatEther(reserve.balance)} ETH`} />
@@ -852,7 +849,7 @@ function ReserveCard({
         <Row k="sacrificed (Black)" v={`${formatEther(reserve.sacrificedBacking)} ETH · ${reserve.blackCount} black`} />
       )}
       <Row k="live / minted" v={`${reserve.supply} / ${reserve.minted}`} />
-      <Row k="mint fee" v={`${feePct}% · ${formatEther(feePerNft)} ETH this denomination`} />
+      <Row k="mint fee" v={`${formatEther(feePerNft)} ETH per Shape`} />
       <Row k="your balance" v={`${formatEther(acctBalance)} ETH`} />
     </section>
   );

@@ -15,11 +15,11 @@ import {Denominations} from "../src/lib/Denominations.sol";
 ///           --rpc-url $RPC --account <account> --sender 0x<you> --broadcast
 contract SeedExamples is Script {
     Shapes internal shapes;
-    uint256 internal feeBps;
+    uint256 internal mintFee;
 
     function run() external {
         shapes = Shapes(payable(vm.envAddress("SHAPES_ADDRESS")));
-        feeBps = shapes.feeBps();
+        mintFee = shapes.mintFee();
 
         vm.startBroadcast();
 
@@ -55,12 +55,12 @@ contract SeedExamples is Script {
 
     function _mint(uint256 di) internal returns (uint256) {
         uint256 wei_ = Denominations.amountAt(di);
-        return shapes.mint{value: wei_ + (wei_ * feeBps) / 10_000}(wei_);
+        return shapes.mint{value: wei_ + mintFee}(wei_);
     }
 
     function _mintBatch(uint256 di, uint256 quantity) internal returns (uint256) {
         uint256 wei_ = Denominations.amountAt(di);
-        uint256 unit = wei_ + (wei_ * feeBps) / 10_000;
+        uint256 unit = wei_ + mintFee;
         return shapes.mintBatch{value: unit * quantity}(wei_, quantity);
     }
 

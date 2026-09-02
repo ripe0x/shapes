@@ -133,8 +133,9 @@ go:
 3. Refresh `AUDIT_PROMPT_v2.md` to cover ink genes (new attack surface: gene walk,
    simulate views, InkGene event) and run a full audit pass against it — at minimum a
    thorough self-audit; recommend an external reviewer before mainnet given immutability.
-4. Constructor arguments decided and double-checked: `feeBps` (committed 1%?), initial
-   `feeRecipient` (prefer an EOA or audited non-reverting receiver), and admin. A reverting
+4. Constructor arguments decided and double-checked: immutable `mintFee` (currently committed to
+   0.001 ETH per mainnet Shape), initial `feeRecipient` (prefer an EOA or audited non-reverting
+   receiver), and admin. A reverting
    recipient blocks minting until admin redirects future fees; renouncing admin freezes the final
    recipient (SECURITY.md). Renderer address deployed first and verified.
 5. `script/DeployShapes.s.sol` + `script/e2e-anvil.sh` run clean end-to-end on anvil,

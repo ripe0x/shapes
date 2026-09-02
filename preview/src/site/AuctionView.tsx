@@ -180,7 +180,12 @@ export function AuctionView({
   const addedWei = mode === "eth" ? (ethInvalid ? 0n : ethWei) : cardsWei;
   const totalUnits = auction.yourUnits + addedWei / UNIT;
   const clears = totalUnits >= auction.minimumUnits;
-  const mintFee = mode === "eth" && !ethInvalid ? ethWei / 100n : 0n;
+  const mintFee = mode === "eth" && !ethInvalid
+    ? breakdown(ethWei).reduce(
+        (sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n),
+        0n,
+      )
+    : 0n;
   // A bid worth stating: something was actually entered or picked, and it would take the lead.
   // The submit button stays disabled and unlabeled with an amount until both hold.
   const hasValidBid = addedWei > 0n && clears;

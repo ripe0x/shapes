@@ -29,7 +29,7 @@ RPC="${SEPOLIA_RPC_URL:-$PUBLIC_RPC}"
 SENDER="${DEPLOYER:-0xCB43078C32423F5348Cab5885911C3B5faE217F9}"
 PAYOUT="0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4"
 SEED="${SEED_ETH:-false}"
-FEE_BPS="${SHAPES_FEE_BPS:-100}"
+MINT_FEE="${SHAPES_MINT_FEE_WEI:-10000000000000}"
 WALLET_ARGS=(--account ripe0x)
 if [ -n "${KEYSTORE_PASSWORD_FILE:-}" ]; then
   [ -r "$KEYSTORE_PASSWORD_FILE" ] \
@@ -37,8 +37,8 @@ if [ -n "${KEYSTORE_PASSWORD_FILE:-}" ]; then
   WALLET_ARGS=(--keystore "$HOME/.foundry/keystores/ripe0x" --password-file "$KEYSTORE_PASSWORD_FILE")
 fi
 
-[ "$FEE_BPS" = "100" ] \
-  || { echo "Sepolia fee must remain the approved 100 bps" >&2; exit 1; }
+[ "$MINT_FEE" = "10000000000000" ] \
+  || { echo "Sepolia fee must remain 0.00001 ETH per Shape" >&2; exit 1; }
 [ "$(cast chain-id --rpc-url "$RPC")" = "11155111" ] \
   || { echo "refusing deployment: RPC is not Sepolia" >&2; exit 1; }
 [ "$(cast code "$PAYOUT" --rpc-url "$RPC")" = "0x" ] \
@@ -104,7 +104,7 @@ wait_for_verification() {
   return 1
 }
 
-FOUNDRY_PROFILE=testnet SHAPES_FEE_BPS="$FEE_BPS" SEED_ETH="$SEED" \
+FOUNDRY_PROFILE=testnet SHAPES_MINT_FEE_WEI="$MINT_FEE" SEED_ETH="$SEED" \
   forge script script/DeploySepolia.s.sol \
   --rpc-url "$RPC" \
   "${WALLET_ARGS[@]}" \
@@ -166,7 +166,7 @@ require_address_read 'collection renderer' "$(cast call "$COLLECTION" 'renderer(
 require_address_read 'lens target' "$(cast call "$LENS" 'shapes()(address)' --rpc-url "$RPC")" "$SHAPES"
 require_address_read 'auction-house target' "$(cast call "$HOUSE" 'shapes()(address)' --rpc-url "$RPC")" "$SHAPES"
 
-require_uint_read 'fee bps' "$(cast call "$SHAPES" 'feeBps()(uint256)' --rpc-url "$RPC")" 100
+require_uint_read 'mint fee' "$(cast call "$SHAPES" 'mintFee()(uint256)' --rpc-url "$RPC")" 10000000000000
 require_uint_read 'denomination count' "$(cast call "$SHAPES" 'denominationCount()(uint8)' --rpc-url "$RPC")" 9
 require_uint_read 'testnet minimum denomination' \
   "$(cast call "$SHAPES" 'denominationAt(uint8)(uint256)' 0 --rpc-url "$RPC")" 100000000000000
@@ -208,8 +208,8 @@ jq -n \
   --arg auctionHouse "$HOUSE" \
   --arg deploymentTx "$SHAPES_TX" \
   --argjson fromBlock "$FROM_BLOCK" \
-  --arg feeBps "100" \
-  '{rpc:$rpc,chainId:$chainId,renderer:$renderer,collection:$collection,shapes:$shapes,lens:$lens,auctionHouse:$auctionHouse,deploymentTx:$deploymentTx,feeBps:$feeBps,fromBlock:$fromBlock}' \
+  --arg mintFeeWei "10000000000000" \
+  '{rpc:$rpc,chainId:$chainId,renderer:$renderer,collection:$collection,shapes:$shapes,lens:$lens,auctionHouse:$auctionHouse,deploymentTx:$deploymentTx,mintFeeWei:$mintFeeWei,fromBlock:$fromBlock}' \
   > "$SUMMARY_FILE"
 
 echo "Fresh Sepolia deployment verified"

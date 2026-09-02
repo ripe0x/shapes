@@ -99,13 +99,13 @@ mintBatch(uint256 amountWei, uint256 quantity) payable returns (uint256 firstTok
 mintBatchTo(uint256 amountWei, uint256 quantity, address to) payable returns (uint256 firstTokenId)
 ```
 
-You send the backing **plus a mint fee that is a percentage of it**:
+You send the backing **plus the flat fee for each Shape created**:
 
 ```
-mint a 1 ETH Shape   ->  msg.value = 1 ETH + 1% = 1.01 ETH
+mint a 1 ETH Shape   ->  msg.value = 1 ETH + 0.001 ETH = 1.001 ETH
                          the NFT's redemption value = exactly 1 ETH
 
-ten 1 ETH Shapes     ->  msg.value = 10 x 1.01 ETH = 10.1 ETH
+ten 1 ETH Shapes     ->  msg.value = 10 x 1.001 ETH = 10.01 ETH
                          backing obligation = exactly 10 ETH
 ```
 
@@ -114,14 +114,13 @@ its own seed.
 
 ## The mint fee
 
-Shapes charges a mint fee of 1% of the backing, on top of it. `feeBps` (100 basis points = 1%)
-is immutable. The initial `feeRecipient` is chosen at deployment, and `admin()` may redirect only
-future fees. The fee scales with the amount wrapped:
-a 100 ETH Shape pays 1 ETH, a 0.01 ETH Shape pays 0.0001 ETH. One percent of every denomination
-is a whole number of wei, so the fee is exact at each — no rounding.
+The mainnet deployment value is a flat **0.001 ETH per Shape created**, independent of backing.
+`mintFee` is immutable. The initial `feeRecipient` is chosen at deployment, and `admin()` may
+redirect only future fees. A 100 ETH Shape and a 0.01 ETH Shape each pay 0.001 ETH. The isolated
+testnet build scales the fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
 
-`mintFeeFor(amountWei)` returns the fee for a given backing. Fees are forwarded to the recipient
-in the same transaction and never join the reserve; a batch forwards its aggregate once.
+`mintFee()` returns the per-Shape fee. Fees are forwarded to the recipient in the same transaction
+and never join the reserve; a batch pays and forwards `quantity * mintFee` once.
 Redemption is unaffected: a 1 ETH Shape always redeems for exactly 1 ETH, fee already paid at
 mint.
 
@@ -267,13 +266,13 @@ of Shape #0:
 - The positions and market pointers may each be set, replaced or cleared through `setPointer` until
   `lockPointer` permanently freezes that entry. Pointer id 0 is Positions and 1 is Market; other
   ids revert. Either entry may be locked while zero.
-- `setFeeRecipient` redirects only subsequent mint fees. It cannot change `feeBps`, recover fees
+- `setFeeRecipient` redirects only subsequent mint fees. It cannot change `mintFee`, recover fees
   already paid, withdraw ETH, or reach backing or redemption.
 
 Locking freezes the stored address, not the target's code or trust model. Renouncing admin makes
 every still-unlocked pointer practically permanent because no caller can pass the admin check.
 
-`feeBps` is immutable. Renouncing admin freezes the current fee recipient along with any unlocked
+`mintFee` is immutable. Renouncing admin freezes the current fee recipient along with any unlocked
 settings. The reserve, denominations and redemption path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
 withdrawal, redemption pause, asset recovery, backing modification, token seizure,
 fee change, upgradeability, proxies, allowlists, supply caps, royalties.
@@ -609,11 +608,11 @@ forge script script/DeployShapes.s.sol \
 ./script/e2e-anvil.sh                        # mint all nine, transfer, redeem, verify
 ```
 
-For a live deployment, set both parameters explicitly. The fee rate is permanent; admin may later
+For a live deployment, set both parameters explicitly. The flat fee is permanent; admin may later
 redirect only future fees:
 
 ```bash
-SHAPES_FEE_BPS=100 \
+SHAPES_MINT_FEE_WEI=1000000000000000 \
 SHAPES_FEE_RECIPIENT=0x... \
 forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
 ```

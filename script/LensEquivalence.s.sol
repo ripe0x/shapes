@@ -75,7 +75,7 @@ abstract contract LensEquivalence is Script {
 
         address probe = address(uint160(uint256(keccak256("shapes.lens.equivalence.probe"))));
         uint256 amountWei = Denominations.amountAt(PROBE_PARENT_INDEX);
-        uint256 cost = amountWei + shapes.mintFeeFor(amountWei);
+        uint256 cost = amountWei + shapes.mintFee();
         vm.deal(probe, cost);
 
         vm.startPrank(probe);

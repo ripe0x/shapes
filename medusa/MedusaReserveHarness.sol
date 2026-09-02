@@ -12,6 +12,8 @@ import {Denominations} from "../src/lib/Denominations.sol";
 ///      through arbitrary mint/compose/split/decompose/redeem sequences without wasting most of
 ///      the campaign on invalid calldata or non-owner reverts.
 contract MedusaReserveHarness {
+    uint256 private constant MINT_FEE = Denominations.UNIT / 10;
+
     Shapes public shapes;
     uint256 public lastId;
 
@@ -24,7 +26,7 @@ contract MedusaReserveHarness {
         ShapeRenderer renderer = new ShapeRenderer();
         ShapeCollection collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, address(0xFEE), address(renderer), address(collection)
+            MINT_FEE, address(0xFEE), address(renderer), address(collection)
         );
         // Harness is the genesis owner. Keep #0 live, because it contributes its backing to the
         // property from the beginning of every Medusa sequence.
@@ -34,14 +36,14 @@ contract MedusaReserveHarness {
     function mintDust() external {
         if (address(shapes) == address(0)) return;
         uint256 amount = Denominations.amountAt(0);
-        if (address(this).balance < amount + amount / 100) return;
-        lastId = shapes.mint{value: amount + amount / 100}(amount);
+        if (address(this).balance < amount + MINT_FEE) return;
+        lastId = shapes.mint{value: amount + MINT_FEE}(amount);
     }
 
     function composeDust() external {
         if (address(shapes) == address(0)) return;
         uint256 amount = Denominations.amountAt(0);
-        uint256 cost = 5 * (amount + amount / 100);
+        uint256 cost = 5 * (amount + MINT_FEE);
         if (address(this).balance < cost) return;
         uint256 first = shapes.mintBatch{value: cost}(amount, 5);
         uint256[] memory burns = new uint256[](4);

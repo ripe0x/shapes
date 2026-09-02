@@ -20,7 +20,7 @@ contract ContractOwnershipTest is Test {
     address internal alice = address(0xA11CE);
     address internal bob = address(0xB0B);
 
-    uint256 internal constant FEE_BPS = 100;
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
 
     function setUp() public {
         vm.deal(address(this), 100 ether);
@@ -29,13 +29,13 @@ contract ContractOwnershipTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection)
         );
     }
 
     function _mintDust(address to, uint256 quantity) private returns (uint256 firstTokenId) {
         uint256 backing = Denominations.amountAt(0);
-        uint256 fee = shapes.mintFeeFor(backing);
+        uint256 fee = shapes.mintFee();
         vm.prank(to);
         return shapes.mintBatch{value: quantity * (backing + fee)}(backing, quantity);
     }
@@ -60,7 +60,7 @@ contract ContractOwnershipTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.IncorrectPayment.selector, Denominations.amountAt(0), 0)
         );
-        new Shapes(FEE_BPS, feeRecipient, address(renderer), address(collection));
+        new Shapes(MINT_FEE, feeRecipient, address(renderer), address(collection));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -68,14 +68,14 @@ contract ContractOwnershipTest is Test {
             )
         );
         new Shapes{value: Denominations.amountAt(0) + 1}(
-            FEE_BPS, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection)
         );
     }
 
     function test_ConstructorCanSimulateAtGenesisBlock() public {
         vm.roll(0);
         Shapes genesisShapes = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection)
         );
 
         assertEq(genesisShapes.ownerOf(0), address(this));
@@ -152,7 +152,7 @@ contract ContractOwnershipTest is Test {
 
     function test_AdminRedirectsOnlyFutureMintFees() public {
         uint256 backing = Denominations.amountAt(0);
-        uint256 fee = shapes.mintFeeFor(backing);
+        uint256 fee = shapes.mintFee();
 
         _mintDust(alice, 1);
         assertEq(feeRecipient.balance, fee);
@@ -176,10 +176,10 @@ contract ContractOwnershipTest is Test {
     function test_AdminCanRecoverMintingFromRevertingFeeRecipient() public {
         RevertingFeeRecipient revertingRecipient = new RevertingFeeRecipient();
         Shapes recoverable = new Shapes{value: Denominations.amountAt(0)}(
-            FEE_BPS, address(revertingRecipient), address(renderer), address(collection)
+            MINT_FEE, address(revertingRecipient), address(renderer), address(collection)
         );
         uint256 backing = Denominations.amountAt(0);
-        uint256 fee = recoverable.mintFeeFor(backing);
+        uint256 fee = recoverable.mintFee();
 
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(revertingRecipient), fee)
@@ -237,7 +237,7 @@ contract ContractOwnershipTest is Test {
         // The explicit positions/market pointer getters and generic admin pair replace the old
         // specialized resolver surface. Update this constant only when the function set changes
         // on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0xbdf217ea), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x86cf5406), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0xe135adbe), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

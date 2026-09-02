@@ -710,13 +710,14 @@ contract OutputTest is RendererTestBase {
  * ==================================================================== */
 
 contract TokenMetadataTest is RendererTestBase {
+    uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
     Shapes internal shapes;
     address internal alice = address(0xA11CE);
 
     function setUp() public override {
         super.setUp();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            100, address(0xFEE), address(renderer), address(collection)
+            MINT_FEE, address(0xFEE), address(renderer), address(collection)
         );
         vm.deal(alice, 1_000 ether);
     }
@@ -725,7 +726,7 @@ contract TokenMetadataTest is RendererTestBase {
     function test_MetadataValueMatchesOnchainBacking() public {
         for (uint256 i = 0; i < 9; ++i) {
             vm.prank(alice);
-            uint256 id = shapes.mint{value: DENOMS[i] + DENOMS[i] / 100}(DENOMS[i]);
+            uint256 id = shapes.mint{value: DENOMS[i] + MINT_FEE}(DENOMS[i]);
 
             string memory json =
                 string(Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,")));
@@ -764,7 +765,7 @@ contract TokenMetadataTest is RendererTestBase {
     function test_ProvenanceTraitsReflectOnchainState() public {
         // Direct: one 1 ETH mint. units 100, originCount 1.
         vm.prank(alice);
-        uint256 direct = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        uint256 direct = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         string memory dj = _decodeJson(direct);
         // attributes[6..8] are Primitive/Variety/Ink Tier, [9..13] are the provenance block.
         assertEq(vm.parseJsonString(dj, ".attributes[9].value"), "Direct", "direct formation");
@@ -775,7 +776,7 @@ contract TokenMetadataTest is RendererTestBase {
 
         // Complete: five 0.01 direct mints composed into one 0.05. units 5, originCount 5.
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + DENOMS[0] / 100)}(DENOMS[0], 5);
+        uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + MINT_FEE)}(DENOMS[0], 5);
         uint256[] memory burn = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
             burn[i] = first + 1 + i;
@@ -791,7 +792,7 @@ contract TokenMetadataTest is RendererTestBase {
         // Fragment: split a Direct 100 ETH into two 50s. Origins partition survivor-first, so the
         // first child takes the lone origin and the second is a zero-origin Fragment.
         vm.prank(alice);
-        uint256 whole = shapes.mint{value: DENOMS[8] + DENOMS[4]}(DENOMS[8]);
+        uint256 whole = shapes.mint{value: DENOMS[8] + MINT_FEE}(DENOMS[8]);
         uint8[] memory halves = new uint8[](2);
         halves[0] = 7; // 50 ETH
         halves[1] = 7;
@@ -811,7 +812,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         the matching `decompose`.
     function test_ComposeDepthTraitTracksComposeAndDecompose() public {
         vm.prank(alice);
-        uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + DENOMS[0] / 100)}(DENOMS[0], 5);
+        uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + MINT_FEE)}(DENOMS[0], 5);
 
         assertEq(shapes.composeDepth(first), 0, "fresh mint has no compose record");
         assertEq(vm.parseJsonString(_decodeJson(first), ".attributes[14].trait_type"), "Compose Depth");
@@ -854,14 +855,14 @@ contract TokenMetadataTest is RendererTestBase {
     function test_SplitProvenanceTraitsOnlyOnSplitChildren() public {
         // Non-split token: no Split From / Split Origin trait at all.
         vm.prank(alice);
-        uint256 direct = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        uint256 direct = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         string memory dj = _decodeJson(direct);
         assertFalse(_contains(dj, "Split From"), "non-split token carries no Split From trait");
         assertFalse(_contains(dj, "Split Origin"), "non-split token carries no Split Origin trait");
 
         // Top tier: a direct-minted 100 ETH, split into two 50 ETH children.
         vm.prank(alice);
-        uint256 top = shapes.mint{value: DENOMS[8] + DENOMS[4]}(DENOMS[8]);
+        uint256 top = shapes.mint{value: DENOMS[8] + MINT_FEE}(DENOMS[8]);
         uint8[] memory topOuts = new uint8[](2);
         topOuts[0] = 7; // 50 ETH
         topOuts[1] = 7;
@@ -911,7 +912,7 @@ contract TokenMetadataTest is RendererTestBase {
         vm.startPrank(alice);
         uint256[] memory burnList = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
-            burnList[i] = shapes.mint{value: DENOMS[6] + DENOMS[6] / 100}(DENOMS[6]);
+            burnList[i] = shapes.mint{value: DENOMS[6] + MINT_FEE}(DENOMS[6]);
         }
         shapes.compose(bottom[0], burnList);
         vm.stopPrank();
@@ -930,7 +931,7 @@ contract TokenMetadataTest is RendererTestBase {
 
     function test_TokenUriUsesTheStoredSeed() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         bytes32 seed = shapes.seedOf(id);
         assertEq(
             shapes.tokenURI(id),
@@ -943,7 +944,7 @@ contract TokenMetadataTest is RendererTestBase {
     /// @dev Artwork is fixed at mint. Nothing about later chain state may change it.
     function test_ArtworkIsStableForTheLifeOfTheToken() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: DENOMS[5] + DENOMS[1]}(DENOMS[5]);
+        uint256 id = shapes.mint{value: DENOMS[5] + MINT_FEE}(DENOMS[5]);
         string memory atMint = shapes.tokenURI(id);
 
         vm.roll(block.number + 100_000);
@@ -965,7 +966,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         token's metadata immediately.
     function test_AdminCanUpdateTokenCopy() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         string memory idStr = vm.toString(id);
         assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat("Shape ", idStr), "default name");
 
@@ -1002,7 +1003,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         whole supply so marketplaces re-read every token.
     function test_TokenCopyUpdateEmitsRefresh() public {
         vm.prank(alice);
-        shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]); // genesis #0 plus public #1
+        shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]); // genesis #0 plus public #1
 
         vm.expectEmit(true, true, true, true, address(shapes));
         emit BatchMetadataUpdate(0, 1);
@@ -1095,7 +1096,7 @@ contract TokenMetadataTest is RendererTestBase {
     ///         and back out of the parsed metadata. Guards against a future tightening to ASCII-only.
     function test_CopyAcceptsValidUtf8() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
 
         string memory prefix = unicode"Formeß ";
         string memory desc = unicode"Formes — «carrés» 形 🜂";
@@ -1117,7 +1118,7 @@ contract TokenMetadataTest is RendererTestBase {
     /// @notice Empty copy is allowed: the name is the bare token id, the description empty.
     function test_EmptyCopyIsValidJson() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         shapes.setMetadataCopy("", "");
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".name"), vm.toString(id), "name is the bare id");
@@ -1144,7 +1145,7 @@ contract TokenMetadataTest is RendererTestBase {
     /// @notice A copy edit is presentation only: it moves no backing, seed or artwork bytes.
     function test_CopyEditLeavesValueStateUntouched() public {
         vm.prank(alice);
-        uint256 id = shapes.mint{value: DENOMS[4] + DENOMS[0]}(DENOMS[4]);
+        uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
 
         uint256 backing = shapes.backingOf(id);
         uint256 reserve = shapes.redeemableBacking();

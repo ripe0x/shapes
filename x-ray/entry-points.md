@@ -9,7 +9,7 @@
 
 ### Deployment (Deployer)
 
-`new Shapes(feeBps_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful; records `artist=deployer` and mints backed Shape #0 to the deployer → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
+`new Shapes(mintFee_, feeRecipient_, renderer_, collection_)` ◄── requires `renderer_`/`collection_` already deployed and codeful; records `artist=deployer` and mints backed Shape #0 to the deployer → `new ShapeLens(shapes_)` (optional periphery, any time) → `new ShapeAuctionHouse(shapes_)` (optional periphery, any time)
 
 ### Artist attestation (Artist signature / any relayer)
 
@@ -72,7 +72,7 @@
 | Parameters | `amountWei` (user-controlled, must be one of nine fixed denominations) |
 | Call chain | `→ Shapes._mintBatch() → Denominations.indexOf() → InkGenes.geneAtMint() → feeRecipient.call{value}() → Shapes._safeMint()` |
 | State modified | `totalMinted`, `totalSupply`, `redeemableBacking`, `_shapes[tokenId]` |
-| Value flow | in — `msg.value = amountWei + mintFeeFor(amountWei)`, fee forwarded to `feeRecipient` |
+| Value flow | in — `msg.value = amountWei + mintFee`, fee forwarded to `feeRecipient` |
 | Reentrancy guard | yes |
 
 ### `Shapes.mintTo(uint256 amountWei, address to)`
@@ -96,7 +96,7 @@
 | Parameters | `amountWei` (user-controlled), `quantity` (user-controlled, unbounded — self-inflicted gas cost only, SECURITY.md #7) |
 | Call chain | `→ Shapes._mintBatch()` (loop of `quantity` mints, one entropy root shared) |
 | State modified | same as `mint`, scaled by `quantity` |
-| Value flow | in — `msg.value = quantity * (amountWei + mintFeeFor(amountWei))` |
+| Value flow | in — `msg.value = quantity * (amountWei + mintFee)` |
 | Reentrancy guard | yes |
 
 ### `Shapes.mintBatchTo(uint256 amountWei, uint256 quantity, address to)`
@@ -130,7 +130,7 @@
 | Visibility | external payable, nonReentrant |
 | Caller | Any user except the auction's seller |
 | Parameters | `auctionId` (user-controlled), `cardIds` (user-controlled, must be caller-owned live Shapes), `ethBackingWei` (user-controlled) |
-| Call chain | `→ ShapeCardEscrow._takeBid() → _takeCards() → IShapes.backingOf()/IERC721(shapes).transferFrom() → _mintCards() → IShapes.mintFeeFor()/mintBatchTo{value}()` |
+| Call chain | `→ ShapeCardEscrow._takeBid() → _takeCards() → IShapes.backingOf()/IERC721(shapes).transferFrom() → _mintCards() → IShapes.mintFee()/mintBatchTo{value}()` |
 | State modified | `_auctions[auctionId].highestUnits/highestBidder/endTime`, `_escrow[auctionId][msg.sender]`, `_units[auctionId][msg.sender]` |
 | Value flow | in — Shape cards and/or ETH (minted into cards held in escrow) |
 | Reentrancy guard | yes |

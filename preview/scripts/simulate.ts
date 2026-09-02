@@ -47,7 +47,11 @@ const actors = KEYS.map((k) =>
 );
 
 const D = DENOMINATIONS; // index: 0=0.01 1=0.05 2=0.1 3=0.5 4=1 5=5 6=10 7=50 8=100
-const feeOf = (wei: bigint) => wei / 100n;
+const MINT_FEE = await pub.readContract({
+  address: dep.shapes,
+  abi: shapesAbi,
+  functionName: "mintFee",
+});
 
 let txCount = 0;
 async function send(actor: number, fn: string, args: unknown[], value?: bigint) {
@@ -71,7 +75,7 @@ async function send(actor: number, fn: string, args: unknown[], value?: bigint) 
 
 async function mint(actor: number, di: number, qty: number): Promise<bigint[]> {
   const wei = D[di].wei;
-  const value = (wei + feeOf(wei)) * BigInt(qty);
+  const value = (wei + MINT_FEE) * BigInt(qty);
   const receipt =
     qty === 1
       ? await send(actor, "mint", [wei], value)

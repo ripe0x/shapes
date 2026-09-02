@@ -70,19 +70,18 @@ abstract contract ShapeCardEscrow is IShapeCardEscrow, IERC721Receiver, Reentran
         }
     }
 
-    /// @dev Mints the minimal card set for `backingWei` into escrow. The Shapes mint fee is
-    ///      charged on top and is exactly `backingWei * feeBps / 10000`: the fee is linear in
-    ///      backing and lands on a whole number of wei at every denomination.
+    /// @dev Mints the minimal card set for `backingWei` into escrow. Each card is a newly created
+    ///      Shape and therefore pays the token's flat per-Shape mint fee.
     function _mintCards(uint256 auctionId, uint256 backingWei) internal returns (uint256) {
-        if (backingWei % Denominations.UNIT != 0) revert NotAUnitMultiple(backingWei);
-
-        uint256 expected = backingWei + IShapes(shapes).mintFeeFor(backingWei);
+        uint256[9] memory counts = _cardsFor(backingWei);
+        uint256 cardCount = _total(counts);
+        uint256 fee = IShapes(shapes).mintFee();
+        uint256 expected = backingWei + fee * cardCount;
         if (msg.value != expected) revert IncorrectPayment(expected, msg.value);
 
-        uint256[9] memory counts = _cardsFor(backingWei);
         uint256[] storage held = _escrow[auctionId][msg.sender];
-        if (held.length + _total(counts) > MAX_CARDS_PER_BID) {
-            revert TooManyCards(held.length + _total(counts));
+        if (held.length + cardCount > MAX_CARDS_PER_BID) {
+            revert TooManyCards(held.length + cardCount);
         }
 
         for (uint256 d = 0; d < Denominations.COUNT; ++d) {
@@ -90,7 +89,7 @@ abstract contract ShapeCardEscrow is IShapeCardEscrow, IERC721Receiver, Reentran
             if (count == 0) continue;
 
             uint256 amount = Denominations.amountAt(d);
-            uint256 cost = (amount + IShapes(shapes).mintFeeFor(amount)) * count;
+            uint256 cost = (amount + fee) * count;
             // The window is open only across the mint call that fills it, not across the whole
             // loop, so nothing between two calls can slip a token in under the flag.
             _minting = true;
@@ -192,6 +191,11 @@ abstract contract ShapeCardEscrow is IShapeCardEscrow, IERC721Receiver, Reentran
     /// @inheritdoc IShapeCardEscrow
     function cardsFor(uint256 backingWei) external pure returns (uint256[9] memory) {
         return _cardsFor(backingWei);
+    }
+
+    /// @inheritdoc IShapeCardEscrow
+    function mintCostFor(uint256 backingWei) external view returns (uint256) {
+        return backingWei + IShapes(shapes).mintFee() * _total(_cardsFor(backingWei));
     }
 
     /// @dev Largest denomination first, as many as fit, repeat. On this ladder that is provably

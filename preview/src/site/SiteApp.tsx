@@ -16,7 +16,7 @@ import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
-import {loadAuction, loadLotImage, type AuctionSlot} from "./auction";
+import {breakdown, loadAuction, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 
 export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
@@ -386,8 +386,11 @@ export function SiteApp({
 
   const doBid = (cardIds: bigint[], ethBackingWei: bigint) => {
     const sorted = [...cardIds].sort((a, b) => (a < b ? -1 : 1));
-    // The mint fee rides on top of the backing, and only on the ETH portion.
-    void runHouse("bid", "bid", [0n, sorted, ethBackingWei], ethBackingWei + ethBackingWei / 100n);
+    const fee = breakdown(ethBackingWei).reduce(
+      (sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n),
+      0n,
+    );
+    void runHouse("bid", "bid", [0n, sorted, ethBackingWei], ethBackingWei + fee);
   };
 
   const openToken = (id: bigint) => {
