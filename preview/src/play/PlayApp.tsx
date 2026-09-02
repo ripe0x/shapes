@@ -780,12 +780,16 @@ function LineageNode({
   focusedKey,
   onSelect,
   depth = 0,
+  expandedKeys,
+  onToggleExpanded,
 }: {
   node: PlayNode;
   byKey: Map<number, PlayNode>;
   focusedKey: number | null;
   onSelect: (key: number) => void;
   depth?: number;
+  expandedKeys?: Set<number>;
+  onToggleExpanded?: (key: number) => void;
 }) {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
@@ -793,6 +797,8 @@ function LineageNode({
   const widths = [120, 76, 52, 36, 26, 20];
   const width = widths[Math.min(depth, widths.length - 1)];
   const stub = 18;
+  const collapsible = expandedKeys != null && onToggleExpanded != null;
+  const expanded = !collapsible || expandedKeys.has(node.key);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
@@ -803,7 +809,7 @@ function LineageNode({
         onClick={selectable ? () => onSelect(node.key) : undefined}
         selected={selectable && focusedKey === node.key}
       />
-      {parents.length > 0 && (
+      {parents.length > 0 && expanded && (
         <>
           <div style={{ width: 1, height: stub, background: C.border }} />
           <div style={{ display: "flex", alignItems: "flex-start" }}>
@@ -826,12 +832,27 @@ function LineageNode({
                     focusedKey={focusedKey}
                     onSelect={onSelect}
                     depth={depth + 1}
+                    expandedKeys={expandedKeys}
+                    onToggleExpanded={onToggleExpanded}
                   />
                 </div>
               );
             })}
           </div>
         </>
+      )}
+      {parents.length > 0 && collapsible && !expanded && (
+        <>
+          <div style={{ width: 1, height: stub, background: C.border }} />
+          <button type="button" className="play-tree-rollup" onClick={() => onToggleExpanded(node.key)}>
+            {parents.length} {parents.length === 1 ? "source" : "sources"}
+          </button>
+        </>
+      )}
+      {parents.length > 0 && collapsible && expanded && depth >= 2 && (
+        <button type="button" className="play-tree-collapse" onClick={() => onToggleExpanded(node.key)}>
+          collapse
+        </button>
       )}
     </div>
   );
@@ -1113,13 +1134,11 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
   );
 }
 
-const COMPLETE_LAYER_PAGE_SIZE = 10;
-
 function formatCount(count: number): string {
   return String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function CompleteLineageLadder({
+function CompleteLineageTree({
   root,
   session,
   byKey,
@@ -1148,91 +1167,46 @@ function CompleteLineageLadder({
     })).reverse();
   }, [root.key, root.denomIndex, session.nodes, byKey]);
 
-  const [pages, setPages] = React.useState<Record<number, number>>({});
   const originCount = layers.at(-1)?.nodes.length ?? 0;
+  const initiallyExpanded = React.useMemo(() => {
+    const keys = new Set<number>();
+    const visit = (node: PlayNode, depth: number) => {
+      if (depth >= 3 || !node.parents?.length) return;
+      keys.add(node.key);
+      for (const parentKey of node.parents) {
+        const parent = byKey.get(parentKey);
+        if (parent) visit(parent, depth + 1);
+      }
+    };
+    visit(root, 0);
+    return keys;
+  }, [root.key, byKey]);
+  const [expandedKeys, setExpandedKeys] = React.useState<Set<number>>(initiallyExpanded);
+
+  const toggleExpanded = (key: number) => {
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   return (
     <div style={{ margin: "20px 0 32px" }}>
       <Prose>
         Complete {LABELS[root.denomIndex]} ETH · {formatCount(originCount)} independent origins · {layers.length} tiers.
-        Select any composed card to inspect how its cells were sampled.
+        Select a composed card to inspect its sampling. Open a source count to trace that branch further.
       </Prose>
-
-      <div style={{ marginTop: 24, borderBottom: `1px solid ${C.rule}` }}>
-        {layers.map((layer, layerIndex) => {
-          const pageCount = Math.max(1, Math.ceil(layer.nodes.length / COMPLETE_LAYER_PAGE_SIZE));
-          const page = Math.min(pages[layer.denomIndex] ?? 0, pageCount - 1);
-          const first = page * COMPLETE_LAYER_PAGE_SIZE;
-          const visible = layer.nodes.slice(first, first + COMPLETE_LAYER_PAGE_SIZE);
-          const countLabel = `${formatCount(layer.nodes.length)} ${layer.nodes.length === 1 ? "Shape" : "Shapes"}`;
-
-          return (
-            <React.Fragment key={layer.denomIndex}>
-              {layerIndex > 0 && (
-                <div style={{ ...mono, fontSize: 9, color: C.muted, padding: "9px 0 9px 112px" }}>
-                  built from
-                </div>
-              )}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "92px minmax(0, 1fr)",
-                  gap: 20,
-                  padding: "20px 0",
-                  borderTop: `1px solid ${C.rule}`,
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                  <strong style={{ ...sans, fontSize: 18, fontWeight: 500, color: C.ink }}>
-                    {LABELS[layer.denomIndex]} ETH
-                  </strong>
-                  <span style={{ ...mono, fontSize: 9.5, color: C.muted }}>{countLabel}</span>
-                </div>
-
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                    {visible.map((node) => {
-                      const selectable = node.trace != null || node.splitTrace != null;
-                      return (
-                        <RawCard
-                          key={node.key}
-                          svg={svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true)}
-                          width={64}
-                          caption={`#${node.demoId}`}
-                          onClick={selectable ? () => onSelect(node.key) : undefined}
-                          selected={selectable && focusedKey === node.key}
-                        />
-                      );
-                    })}
-                  </div>
-
-                  {pageCount > 1 && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-                      <PlayButton
-                        small
-                        disabled={page === 0}
-                        onClick={() => setPages((current) => ({ ...current, [layer.denomIndex]: page - 1 }))}
-                      >
-                        Previous
-                      </PlayButton>
-                      <span style={{ ...mono, fontSize: 9.5, color: C.muted }}>
-                        {formatCount(first + 1)}–{formatCount(Math.min(first + COMPLETE_LAYER_PAGE_SIZE, layer.nodes.length))}
-                        {" of "}{formatCount(layer.nodes.length)}
-                      </span>
-                      <PlayButton
-                        small
-                        disabled={page === pageCount - 1}
-                        onClick={() => setPages((current) => ({ ...current, [layer.denomIndex]: page + 1 }))}
-                      >
-                        Next
-                      </PlayButton>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </React.Fragment>
-          );
-        })}
+      <div className="play-lineage-scroll">
+        <LineageNode
+          node={root}
+          byKey={byKey}
+          focusedKey={focusedKey}
+          onSelect={onSelect}
+          expandedKeys={expandedKeys}
+          onToggleExpanded={toggleExpanded}
+        />
       </div>
     </div>
   );
@@ -1268,7 +1242,7 @@ function LineageBeat({ session }: { session: PlaySession }) {
     <section className="play-section">
       <SectionLabel>Provenance</SectionLabel>
       {completeRoot ? (
-        <CompleteLineageLadder
+        <CompleteLineageTree
           key={completeRoot.key}
           root={completeRoot}
           session={session}
@@ -1643,6 +1617,27 @@ export function PlayApp() {
         }
         .play-lineage-scroll > div {
           min-width: max-content;
+        }
+        .play-tree-rollup,
+        .play-tree-collapse {
+          font-family: ${FONT};
+          color: ${C.muted};
+          background: transparent;
+          cursor: pointer;
+        }
+        .play-tree-rollup {
+          padding: 5px 7px;
+          border: 1px solid ${C.border};
+          font-size: 9px;
+          letter-spacing: 0.04em;
+        }
+        .play-tree-collapse {
+          margin-top: 6px;
+          padding: 0;
+          border: 0;
+          font-size: 8px;
+          text-decoration: underline;
+          text-underline-offset: 2px;
         }
         .launch-play-page button,
         .launch-play-page input {
