@@ -9,7 +9,7 @@ import {
   type SampleDonor,
 } from "../canonical/sampling";
 import {C, SANS, label} from "./theme";
-import {Art, Modal, Section, short} from "./ui";
+import {Art, Modal, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
 import type {SiteData, SiteToken} from "./data";
 import {buildComposeResultPreview} from "./composePreview";
 import {shapeTitle} from "./shapeTitle";
@@ -46,6 +46,7 @@ export function ManageShapeView({
   address,
   tokenId,
   busy,
+  pendingTx,
   txErr,
   onBack,
   onStartCompose,
@@ -60,6 +61,7 @@ export function ManageShapeView({
   address: `0x${string}` | undefined;
   tokenId: bigint;
   busy: string | null;
+  pendingTx: PendingTx | null;
   txErr: {op: string; text: string} | null;
   onBack: () => void;
   onStartCompose: (tokenId: bigint) => void;
@@ -81,6 +83,12 @@ export function ManageShapeView({
     setAction(null);
     setConfirming(null);
   }, [tokenId]);
+
+  // The confirm modal stays open for the duration of its op and closes once busy drops back to
+  // null. On success the view has already navigated away by then; on failure this dismisses it.
+  React.useEffect(() => {
+    if (busy === null) setConfirming(null);
+  }, [busy]);
 
   const candidates = React.useMemo(
     () =>
@@ -387,6 +395,8 @@ export function ManageShapeView({
               record={composeRecord}
               unavailable={recordUnavailable}
               busy={busy}
+              pendingTx={pendingTx}
+              chainId={dep.chainId}
               onSubmit={() => onDecompose(token)}
             />
           )}
@@ -418,12 +428,12 @@ export function ManageShapeView({
             The total ETH backing remains unchanged.
           </p>
           <ConfirmButtons
-            busy={busy === "split"}
+            op="split"
+            busy={busy}
+            pendingTx={pendingTx}
+            chainId={dep.chainId}
             confirmLabel={`Split #${token.id.toString()} into ${splitRatio} new Shapes`}
-            onConfirm={() => {
-              setConfirming(null);
-              onSplit(token);
-            }}
+            onConfirm={() => onSplit(token)}
             onCancel={() => setConfirming(null)}
           />
         </Modal>
@@ -439,12 +449,12 @@ export function ManageShapeView({
             The token, its artwork, and its remaining compose history will no longer be live.
           </p>
           <ConfirmButtons
-            busy={busy === "redeem"}
+            op="redeem"
+            busy={busy}
+            pendingTx={pendingTx}
+            chainId={dep.chainId}
             confirmLabel={`Redeem #${token.id.toString()}`}
-            onConfirm={() => {
-              setConfirming(null);
-              onRedeem(token);
-            }}
+            onConfirm={() => onRedeem(token)}
             onCancel={() => setConfirming(null)}
           />
         </Modal>
@@ -460,12 +470,12 @@ export function ManageShapeView({
             It can never be redeemed, split, composed, or restored. No person can recover the ETH.
           </p>
           <ConfirmButtons
-            busy={busy === "sacrifice"}
+            op="sacrifice"
+            busy={busy}
+            pendingTx={pendingTx}
+            chainId={dep.chainId}
             confirmLabel={`Sacrifice #${token.id.toString()}`}
-            onConfirm={() => {
-              setConfirming(null);
-              onSacrifice(token);
-            }}
+            onConfirm={() => onSacrifice(token)}
             onCancel={() => setConfirming(null)}
           />
         </Modal>
@@ -660,12 +670,16 @@ function DecomposeFlow({
   record,
   unavailable,
   busy,
+  pendingTx,
+  chainId,
   onSubmit,
 }: {
   token: SiteToken;
   record: ComposeRecordPreview | null;
   unavailable: boolean;
   busy: string | null;
+  pendingTx: PendingTx | null;
+  chainId: number;
   onSubmit: () => void;
 }) {
   const survivor = record
@@ -734,8 +748,14 @@ function DecomposeFlow({
         {token.composeDepth === 1 ? "" : "s"} remaining, and they can only be undone newest first.
       </p>
       <button type="button" className="btn-filled" onClick={onSubmit} disabled={!!busy || !record} style={{marginTop: 26, padding: "11px 24px"}}>
-        {busy === "decompose" ? "Waiting for confirmation" : `Restore #${token.id.toString()} and ${record?.inputs.length ?? 0} absorbed Shape${record?.inputs.length === 1 ? "" : "s"}`}
+        {txStageLabel(
+          "decompose",
+          `Restore #${token.id.toString()} and ${record?.inputs.length ?? 0} absorbed Shape${record?.inputs.length === 1 ? "" : "s"}`,
+          busy,
+          pendingTx,
+        )}
       </button>
+      <TxStage op="decompose" busy={busy} pendingTx={pendingTx} chainId={chainId} />
     </>
   );
 }
@@ -802,24 +822,34 @@ function PreviewStatus({unavailable}: {unavailable: boolean}) {
 }
 
 function ConfirmButtons({
+  op,
   busy,
+  pendingTx,
+  chainId,
   confirmLabel,
   onConfirm,
   onCancel,
 }: {
-  busy: boolean;
+  op: ManageAction;
+  busy: string | null;
+  pendingTx: PendingTx | null;
+  chainId: number;
   confirmLabel: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const active = busy === op;
   return (
-    <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
-      <button type="button" className="btn-filled" onClick={onConfirm} disabled={busy} style={{padding: "11px 20px"}}>
-        {busy ? "Waiting for confirmation" : confirmLabel}
-      </button>
-      <button type="button" className="btn-outline" onClick={onCancel} disabled={busy} style={{padding: "11px 20px"}}>
-        Cancel
-      </button>
+    <div>
+      <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
+        <button type="button" className="btn-filled" onClick={onConfirm} disabled={active} style={{padding: "11px 20px"}}>
+          {txStageLabel(op, confirmLabel, busy, pendingTx)}
+        </button>
+        <button type="button" className="btn-outline" onClick={onCancel} disabled={active} style={{padding: "11px 20px"}}>
+          Cancel
+        </button>
+      </div>
+      <TxStage op={op} busy={busy} pendingTx={pendingTx} chainId={chainId} />
     </div>
   );
 }

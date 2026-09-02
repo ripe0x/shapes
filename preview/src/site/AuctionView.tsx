@@ -3,7 +3,7 @@ import {formatEther, type PublicClient} from "viem";
 import {useBalance} from "wagmi";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, label} from "./theme";
-import {Section, Modal, Art, txUrl} from "./ui";
+import {Section, Modal, Art, txUrl, TxStage, txStageLabel, type PendingTx} from "./ui";
 import {localArt} from "./art";
 import {useEnsDisplay} from "./ens";
 import {
@@ -68,6 +68,7 @@ export function AuctionView({
   publicClient,
   address,
   busy,
+  pendingTx,
   txErr,
   txHash,
   onBid,
@@ -84,6 +85,7 @@ export function AuctionView({
   publicClient: PublicClient | undefined;
   address: `0x${string}` | undefined;
   busy: string | null;
+  pendingTx: PendingTx | null;
   txErr: {op: string; text: string} | null;
   txHash: string | null;
   onBid: (cardIds: bigint[], ethBackingWei: bigint) => void;
@@ -335,7 +337,7 @@ export function AuctionView({
                 disabled={!!busy}
                 style={{width: "100%", padding: "13px 20px"}}
               >
-                {busy === "settle" ? "Waiting for confirmation" : "Settle"}
+                {txStageLabel("settle", "Settle", busy, pendingTx)}
               </button>
               {errLine("settle")}
             </div>
@@ -494,12 +496,14 @@ export function AuctionView({
                 disabled={!!busy || !address || !hasValidBid}
                 style={{width: "100%", padding: "13px 20px"}}
               >
-                {busy === "bid"
-                  ? "Waiting for confirmation"
-                  : hasValidBid
-                    ? `Place bid worth ${unitsToEth(totalUnits)} ETH`
-                    : "Place bid"}
+                {txStageLabel(
+                  "bid",
+                  hasValidBid ? `Place bid worth ${unitsToEth(totalUnits)} ETH` : "Place bid",
+                  busy,
+                  pendingTx,
+                )}
               </button>
+              <TxStage op="bid" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
               {errLine("bid")}
 
               <p style={{margin: 0, fontSize: 11, lineHeight: 1.7, color: C.bodyDim}}>
@@ -548,7 +552,7 @@ export function AuctionView({
                       disabled={!!busy}
                       style={{padding: "11px 26px"}}
                     >
-                      {busy === "bid" ? "Waiting for confirmation" : `Place bid worth ${unitsToEth(totalUnits)} ETH`}
+                      {txStageLabel("bid", `Place bid worth ${unitsToEth(totalUnits)} ETH`, busy, pendingTx)}
                     </button>
                     <button
                       type="button"
@@ -633,7 +637,7 @@ export function AuctionView({
                 disabled={!!busy}
                 style={{marginTop: 24, padding: "10px 20px"}}
               >
-                {busy === "withdraw" ? "Waiting for confirmation" : "Take them back"}
+                {txStageLabel("withdraw", "Take them back", busy, pendingTx)}
               </button>
               {errLine("withdraw")}
             </>
@@ -654,7 +658,7 @@ export function AuctionView({
             disabled={!!busy}
             style={{padding: "11px 26px"}}
           >
-            {busy === "claim" ? "Waiting for confirmation" : "Claim the bid"}
+            {txStageLabel("claim", "Claim the bid", busy, pendingTx)}
           </button>
           {errLine("claim")}
         </Section>

@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagm
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {txUrl} from "./ui";
+import {txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
@@ -77,6 +77,7 @@ export function SiteApp({
   const [mint, setMint] = React.useState<MintState>({status: "idle"});
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [pendingTx, setPendingTx] = React.useState<PendingTx | null>(null);
   const [txErr, setTxErr] = React.useState<{op: string; text: string} | null>(null);
   const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
@@ -150,8 +151,11 @@ export function SiteApp({
     void refresh();
   }, [refresh]);
 
-  const write = (functionName: string, args: readonly unknown[], value?: bigint) =>
-    writeContractAsync({
+  // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
+  // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
+  // (no hash yet) apart from "pending" (hash in hand, waiting for the receipt).
+  const write = async (op: string, functionName: string, args: readonly unknown[], value?: bigint) => {
+    const hash = await writeContractAsync({
       address: dep.shapes,
       abi: shapesAbi,
       functionName,
@@ -159,14 +163,18 @@ export function SiteApp({
       value,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
+    setPendingTx({op, hash});
+    return hash;
+  };
 
-  const writeHouse = (
+  const writeHouse = async (
+    op: string,
     functionName: string,
     args: readonly unknown[],
     value?: bigint,
     gas?: bigint,
-  ) =>
-    writeContractAsync({
+  ) => {
+    const hash = await writeContractAsync({
       address: dep.auctionHouse!,
       abi: auctionHouseAbi,
       functionName,
@@ -175,6 +183,9 @@ export function SiteApp({
       gas,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
+    setPendingTx({op, hash});
+    return hash;
+  };
 
   const doMint = async () => {
     if (!address || !publicClient || !data) return;
@@ -206,7 +217,7 @@ export function SiteApp({
     setActionNotice(null);
     setRedeem({status: "pending"});
     try {
-      const hash = await write("redeem", [t.id]);
+      const hash = await write("redeem", "redeem", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
       setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
@@ -224,6 +235,7 @@ export function SiteApp({
       setTxErr({op: "redeem", text});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -235,7 +247,7 @@ export function SiteApp({
     try {
       const downWei = DENOMINATIONS[t.di - 1].wei;
       const ratio = Number(t.backing / downWei);
-      const hash = await write("split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
+      const hash = await write("split", "split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs});
       const newIds = logs[0]?.args.newIds ?? [];
@@ -252,6 +264,7 @@ export function SiteApp({
       setTxErr({op: "split", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -263,7 +276,7 @@ export function SiteApp({
     setTxErr(null);
     setActionNotice(null);
     try {
-      const hash = await write("decompose", [t.id]);
+      const hash = await write("decompose", "decompose", [t.id]);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs});
       const restoredIds = logs[0]?.args.restoredIds ?? [];
@@ -280,6 +293,7 @@ export function SiteApp({
       setTxErr({op: "decompose", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -290,7 +304,7 @@ export function SiteApp({
     setActionNotice(null);
     try {
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
-      const hash = await write("compose", [t.id, sorted]);
+      const hash = await write("compose", "compose", [t.id, sorted]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh(); // the survivor keeps its id; the open detail shows the new denomination
       setActionNotice({
@@ -308,6 +322,7 @@ export function SiteApp({
       setTxErr({op: "compose", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -317,7 +332,7 @@ export function SiteApp({
     setTxErr(null);
     setActionNotice(null);
     try {
-      const hash = await write("sacrifice", [t.id]);
+      const hash = await write("sacrifice", "sacrifice", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
       setActionNotice({
@@ -332,6 +347,7 @@ export function SiteApp({
       setTxErr({op: "sacrifice", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -379,7 +395,7 @@ export function SiteApp({
         value,
         account: address!,
       } as Parameters<typeof publicClient.estimateContractGas>[0]);
-      const hash = await writeHouse(fn, args, value, (estimate * 3n) / 2n);
+      const hash = await writeHouse(op, fn, args, value, (estimate * 3n) / 2n);
       await publicClient.waitForTransactionReceipt({hash});
       setTxHash(hash);
       await Promise.all([refresh(), refreshAuction()]);
@@ -387,6 +403,7 @@ export function SiteApp({
       setTxErr({op, text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -580,6 +597,7 @@ export function SiteApp({
           publicClient={publicClient}
           address={address}
           busy={busy}
+          pendingTx={pendingTx}
           txErr={txErr}
           txHash={txHash}
           onBid={doBid}
@@ -612,6 +630,7 @@ export function SiteApp({
           publicClient={publicClient}
           address={address}
           busy={busy}
+          pendingTx={pendingTx}
           txErr={txErr}
           onChange={setComposeDraft}
           onCancel={() => setComposeMode(false)}
@@ -641,6 +660,7 @@ export function SiteApp({
           address={address}
           tokenId={tokenId}
           busy={busy}
+          pendingTx={pendingTx}
           txErr={txErr}
           onBack={() => go("token")}
           onStartCompose={(id) => startCompose(id)}
