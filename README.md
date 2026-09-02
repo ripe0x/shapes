@@ -338,6 +338,7 @@ src/
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
+    AdminOps.sol              artist attestation, metadata copy, and fee-config mutators
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
     EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
     PointerOps.sol            positions/market pointer configuration and one-way locks

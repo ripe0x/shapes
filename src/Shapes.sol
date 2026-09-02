@@ -18,10 +18,10 @@ import {
     IShapeValue,
     ShapeFormation
 } from "./interfaces/IShapeCapabilities.sol";
+import {AdminOps} from "./lib/AdminOps.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
-import {CopyValidation} from "./lib/CopyValidation.sol";
 import {ComposeCompute} from "./lib/ComposeCompute.sol";
 import {EIP712Signature} from "./lib/EIP712Signature.sol";
 import {PointerOps} from "./lib/PointerOps.sol";
@@ -188,23 +188,42 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /* --------------------------- fee and renderer --------------------------- */
 
-    /// @inheritdoc IShapes
-    uint256 public mintFee;
-    /// @dev Cap on `mintFee`, enforced at construction and by `setMintFee`. Equals `unit()`.
-    uint256 private constant MAX_MINT_FEE = Denominations.UNIT;
+    /// @dev Mint fee and fee recipient, grouped so `AdminOps.setFeeRecipient`/`setMintFee` can
+    ///      mutate either through one storage pointer, `PointerOps`-style. `mintFee()` and
+    ///      `feeRecipient()` below replicate the public state variables' auto-generated getters
+    ///      this replaced, so the external ABI is unchanged.
+    AdminOps.FeeConfig private _feeConfig;
     /// @inheritdoc IShapes
     uint256 public pendingFees;
+
     /// @inheritdoc IShapes
-    address public feeRecipient;
+    function mintFee() public view returns (uint256) {
+        return _feeConfig.mintFee;
+    }
+
+    /// @inheritdoc IShapes
+    function feeRecipient() public view returns (address) {
+        return _feeConfig.feeRecipient;
+    }
 
     /// @inheritdoc IShapes
     address public immutable artist;
 
-    /// @inheritdoc IShapes
-    bytes32 public artistReleaseHash;
+    /// @dev The artist's release hash and signature, grouped so `AdminOps.attestArtist` can
+    ///      mutate both through one storage pointer, `PointerOps`-style. `artistReleaseHash()` and
+    ///      `artistSignature()` below replicate the public state variables' auto-generated getters
+    ///      this replaced, so the external ABI is unchanged.
+    AdminOps.ArtistAttestation private _artistAttestation;
 
     /// @inheritdoc IShapes
-    bytes public artistSignature;
+    function artistReleaseHash() public view returns (bytes32) {
+        return _artistAttestation.releaseHash;
+    }
+
+    /// @inheritdoc IShapes
+    function artistSignature() public view returns (bytes memory) {
+        return _artistAttestation.signature;
+    }
 
     /// @inheritdoc IShapes
     /// @dev Not immutable: the admin may replace it via `setRenderer` to fix a rendering bug,
@@ -226,14 +245,25 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
         "Burning it returns exactly that amount to its owner. Higher denominations resolve "
         "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+    /// @dev Token name prefix and shared description, grouped so `AdminOps.setMetadataCopy` can
+    ///      mutate both through one storage pointer, `PointerOps`-style. `tokenNamePrefix()` and
+    ///      `description()` below replicate the public state variables' auto-generated getters
+    ///      this replaced, so the external ABI is unchanged.
+    AdminOps.CopyConfig private _copyConfig;
+
     /// @inheritdoc IShapes
     /// @dev Editorial copy, admin-editable via `setMetadataCopy`, written verbatim into every token's
     ///      metadata by the renderer. Independent of `rendererLocked`.
-    string public tokenNamePrefix;
+    function tokenNamePrefix() public view returns (string memory) {
+        return _copyConfig.tokenNamePrefix;
+    }
+
     /// @inheritdoc IShapes
     /// @dev Shared by token and collection metadata so the collection cannot describe itself
     ///      differently from its tokens.
-    string public description;
+    function description() public view returns (string memory) {
+        return _copyConfig.description;
+    }
 
     /// @dev Explicit positions and market pointers with independent locks. `PointerOps` keeps
     ///      their administration outside this contract's EIP-170-constrained runtime.
@@ -246,7 +276,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     address private _admin;
 
     /// @param mintFee_ Flat fee in wei for every Shape created. Charged on top of backing and may
-    ///        be zero, up to `MAX_MINT_FEE`. A batch of `quantity` Shapes pays exactly
+    ///        be zero, up to `AdminOps.MAX_MINT_FEE`. A batch of `quantity` Shapes pays exactly
     ///        `mintFee_ * quantity`. Admin-adjustable afterward via `setMintFee`.
     /// @param feeRecipient_ Initial destination for accrued mint fees, forwarded only by
     ///        `withdrawFees`. The admin may redirect future withdrawals. A reverting recipient
@@ -264,13 +294,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _requireRendererHasCode(renderer_);
         _requireCollectionHasCode(collection_);
         _requireFeeWithinCap(mintFee_);
-        mintFee = mintFee_;
-        feeRecipient = feeRecipient_;
+        _feeConfig.mintFee = mintFee_;
+        _feeConfig.feeRecipient = feeRecipient_;
         artist = msg.sender;
         renderer = renderer_;
         collection = collection_;
-        tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
-        description = DEFAULT_DESCRIPTION;
+        _copyConfig.tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
+        _copyConfig.description = DEFAULT_DESCRIPTION;
 
         _admin = msg.sender;
         emit AdminTransferred(address(0), msg.sender);
@@ -304,15 +334,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
+    /// @dev Body in `AdminOps`, out of this contract's EIP-170-constrained runtime.
     function attestArtist(bytes32 releaseHash, bytes calldata signature_) external {
-        if (artistReleaseHash != bytes32(0)) revert ArtistAlreadyAttested();
-        if (releaseHash == bytes32(0)) revert InvalidArtistReleaseHash();
-        bytes32 digest = artistAttestationDigest(releaseHash);
-        if (!EIP712Signature.isValidNow(artist, digest, signature_)) revert InvalidArtistSignature();
-
-        artistReleaseHash = releaseHash;
-        artistSignature = signature_;
-        emit ArtistAttested(artist, releaseHash, signature_);
+        AdminOps.attestArtist(_artistAttestation, artist, releaseHash, signature_);
     }
 
     /// @inheritdoc IAdminControl
@@ -341,24 +365,21 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IAdminControl
+    /// @dev Body in `AdminOps`, out of this contract's EIP-170-constrained runtime.
     function setFeeRecipient(address newRecipient) external onlyAdmin {
-        if (newRecipient == address(0)) revert AdminInvalidFeeRecipient(address(0));
-        address previousRecipient = feeRecipient;
-        feeRecipient = newRecipient;
-        emit FeeRecipientUpdated(previousRecipient, newRecipient);
+        AdminOps.setFeeRecipient(_feeConfig, newRecipient);
     }
 
-    /// @dev Shared by the constructor and `setMintFee`, the two places a fee amount is accepted.
+    /// @dev The constructor's copy of the cap check `AdminOps.setMintFee` runs for every later
+    ///      call; construction has no prior fee to hand `AdminOps` as the "current" value.
     function _requireFeeWithinCap(uint256 fee) private pure {
-        if (fee > MAX_MINT_FEE) revert MintFeeAboveCap(fee);
+        if (fee > AdminOps.MAX_MINT_FEE) revert MintFeeAboveCap(fee);
     }
 
     /// @inheritdoc IAdminControl
+    /// @dev Body in `AdminOps`, out of this contract's EIP-170-constrained runtime.
     function setMintFee(uint256 newFee) external onlyAdmin {
-        _requireFeeWithinCap(newFee);
-        uint256 previousFee = mintFee;
-        mintFee = newFee;
-        emit MintFeeUpdated(previousFee, newFee);
+        AdminOps.setMintFee(_feeConfig, newFee);
     }
 
     /// @dev Shared by every entrypoint that requires the renderer/collection pointers to still be
@@ -393,24 +414,15 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         emit RendererLocked();
     }
 
-    /// @dev Longest a name or name prefix may be, in bytes.
-    uint256 private constant MAX_NAME_BYTES = 64;
-    /// @dev Longest a description may be, in bytes.
-    uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
-
     /// @inheritdoc IShapes
     /// @dev Admin only. All arguments are validated so copy cannot break or restructure metadata
-    ///      JSON. Token and collection descriptions deliberately share one value.
+    ///      JSON. Token and collection descriptions share one value. Body in `AdminOps`, out of
+    ///      this contract's EIP-170-constrained runtime.
     function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_)
         external
         onlyAdmin
     {
-        CopyValidation.requireJsonSafe(tokenNamePrefix_, MAX_NAME_BYTES, 0);
-        CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
-        tokenNamePrefix = tokenNamePrefix_;
-        description = description_;
-        _emitBatchMetadataUpdate();
-        emit ContractURIUpdated();
+        AdminOps.setMetadataCopy(_copyConfig, tokenNamePrefix_, description_, totalMinted);
     }
 
     /// @inheritdoc IShapes
@@ -550,7 +562,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             if (!ok) revert UnsupportedDenomination(amountWei);
         }
         uint256 backing = amountWei * quantity;
-        uint256 fees = mintFee * quantity;
+        uint256 fees = _feeConfig.mintFee * quantity;
         if (msg.value != backing + fees) revert IncorrectPayment(backing + fees, msg.value);
         bytes32 batchRoot = _batchRoot(firstTokenId);
 
@@ -595,7 +607,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     function withdrawFees() external nonReentrant {
         uint256 amount = pendingFees;
         if (amount == 0) revert NoFeesPending();
-        address recipient = feeRecipient;
+        address recipient = _feeConfig.feeRecipient;
         pendingFees = 0;
         emit FeesWithdrawn(recipient, amount);
         _sendEth(recipient, amount);
@@ -1344,7 +1356,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function contractURI() external view returns (string memory) {
-        return IShapeCollection(collection).contractURI(name(), description);
+        return IShapeCollection(collection).contractURI(name(), _copyConfig.description);
     }
 
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.
@@ -1370,8 +1382,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                     d.isBlack,
                     d.inkGene,
                     depth,
-                    tokenNamePrefix,
-                    description,
+                    _copyConfig.tokenNamePrefix,
+                    _copyConfig.description,
                     _splitProvenanceOf(tokenId)
                 );
         }
@@ -1384,8 +1396,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 d.isBlack,
                 d.inkGene,
                 depth,
-                tokenNamePrefix,
-                description
+                _copyConfig.tokenNamePrefix,
+                _copyConfig.description
             );
     }
 
