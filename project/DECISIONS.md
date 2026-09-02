@@ -4,6 +4,7 @@ Append-only. Two sections: decided (never silently revived if rejected) and open
 
 ## Decided (recovered from specs and session history)
 
+- 2026-09-02: D-35/D-36 SEPOLIA EVIDENCE COMPLETE. Exact clean `origin/main` commit `eb9e8834553f199a4c94e7ba307686c8bd0d64e8`, carrying code-bearing audit target `1054db2455f7d6d3542a422130262bc872c34464`, deployed from block 11616988. Shapes `0xb142c4b09c24d639d8c154c93a539cbc09566152` reads the exact 10000000000000-wei testnet flat fee and points to renderer `0xd9c3278d1277cef31b54e98a43db4243ada05610`; collection `0x8c5203d5cd480f7e0b266a2f6d27f0ed9919e8e1`, lens `0x259e90f875b7b975c09f05e5972f359ee0a3fa84` and auction house `0x351b7c9637c6abc1982be95f87961aff2f38647a` are wired exactly. Shapes creation transaction `0xeb47218282fe64db1124b8369c5f54056fb23391e14b1dd2decfb8079a4cfdec` and all other creation receipts succeeded; all eleven contracts/libraries are Etherscan-verified. Reserve, roles, Shape #0 backing/ownership, empty unlocked pointers and zero-auction postflights passed. Fly schema `shapes_sepolia_v3` and the production hybrid site are synchronized to this deployment. External audit, D-15, R25 signoff and D-05 remain open; no mainnet deployment is authorized.
 - 2026-07: Ladder rung 25 ETH replaced by 0.05 ETH; the x2.5 gap at 10 to 25 broke integer composition (SHAPES_V2_SPEC.md §8).
 - 2026-07: Core "Token Path" registry cut for EIP-170 and write-only-no-reader reasons. Must not return as a shared global registry; lineage is per-work at the write authority, global graph only ever a derived read layer.
 - 2026-07/08: `seal` mechanism rejected outright (ZERO_AUCTION_DRAFT.md F1). Not a deferral.
@@ -100,7 +101,7 @@ Append-only. Two sections: decided (never silently revived if rejected) and open
 
 ### Requires security review
 
-- D-16 External audit. Scope: Shapes + all linked libraries + lens + auction house/escrow, including direct artist attestation, the payable genesis constructor, Shape #0 lifecycle, owner/admin separation, the D-31 liveness/denomination views, D-34 pointer isolation, and capability ABI. Deploy scripts, immutables, and ladder guards stay in scope. `AUDIT_PROMPT_v4.md`'s exact `020a85e` target is superseded; regenerate it against the eventual merged D-34 commit before choosing or engaging the independent auditor. Gate for P2->P3. In-repo x-ray and PoCs are inputs, not substitutes.
+- D-16 External audit. Scope: Shapes + all linked libraries + lens + auction house/escrow, including direct artist attestation, the payable genesis constructor, Shape #0 lifecycle, owner/admin separation, the D-31 liveness/denomination views, D-34 pointer isolation, flat mint fees, and capability ABI. Deploy scripts, immutables, and ladder guards stay in scope. `AUDIT_PROMPT_v6.md` pins code-bearing commit `1054db2455f7d6d3542a422130262bc872c34464`, which is the exact code deployed on Sepolia through metadata-only commit `eb9e8834553f199a4c94e7ba307686c8bd0d64e8`. Gate for P2->P3. In-repo x-ray and PoCs are inputs, not substitutes.
 - D-17 minIncrementBps bound. Seller-supplied uint16, no explicit cap found in createAuction. Matters: probably harmless (seller cannot bid) but unverified against bidder-side edge cases. Resolution: reviewer pass; add a bound or record why none is needed.
 
 ### Deferred (explicitly parked, revisit at the phase named)
