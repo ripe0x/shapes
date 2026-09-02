@@ -6,7 +6,10 @@ import { CANONICAL } from "../canonical/params";
 import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
 import { WAD } from "../canonical/wad";
 import { composeSampledShape, grammarSplitPoolBytes, type ComposeTraceCell } from "../canonical/sampling";
-import { DENOMINATIONS, GRIDS, LABELS, UNIT, unitsAt } from "../canonical/denominations";
+import { DENOMINATIONS, GRIDS, UNIT, unitsAt } from "../canonical/denominations";
+// The playground presents mainnet values even when the adjacent app is built for Sepolia. The
+// denomination indexes, grids, and composition ratios are identical between both ladders.
+import { LABELS } from "../canonical/ladders/mainnet";
 import { geneAtMint } from "../canonical/ink";
 import { decodeModuleByte } from "../canonical/moduleCodec";
 import {
