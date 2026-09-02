@@ -557,6 +557,39 @@ async function main() {
     ctx.auctionsOpen++;
   }
 
+  /** Shape #0 (the genesis token, held by the deployer) goes up for auction as auction id 0,
+   *  which is the auction the site displays, so it is created before any other auction in the
+   *  run. The 30-day duration (the contract maximum) starts at the first bid, three days later,
+   *  so the auction is still open when the run ends. */
+  let tokenZeroAuctionId: bigint | undefined;
+  async function tokenZeroAuctionCreate() {
+    await sim.setApprovalForAll(ARTIST, dep.auctionHouse!, true);
+    tokenZeroAuctionId = await sim.createAuction(ARTIST, 0n, 30 * 24 * 3600, 10n, 500, 3600);
+    ctx.auctionsOpen++;
+    console.log(`  auction #${tokenZeroAuctionId} on Shape #0 created by the deployer`);
+  }
+
+  /** Bids on Shape #0 from three wallets: ETH-only, cards-only, cards plus ETH, an outbid
+   *  withdrawal and a later top-up. */
+  const tokenZeroBidders = pickDistinct(wallets.filter((w) => w !== ARTIST), 3);
+  async function tokenZeroAuctionBids() {
+    const auctionId = tokenZeroAuctionId!;
+    const [b1, b2, b3] = tokenZeroBidders;
+    await sim.auctionBid(b1!, auctionId, [], 10n * UNIT); // 0.1 ETH, ETH-only, starts the clock
+    const [card] = await sim.mint(b2!, 3, 1); // a 0.5 ETH card
+    await sim.setApprovalForAll(b2!, dep.auctionHouse!, true);
+    await sim.auctionBid(b2!, auctionId, [card!], 0n); // cards-only, 0.5 ETH
+    await sim.auctionBid(b3!, auctionId, [], 100n * UNIT); // 1 ETH, ETH-only, outbids
+    await sim.auctionWithdraw(b1!, auctionId); // outbid, pulls its cards back
+  }
+  async function tokenZeroAuctionTopUp() {
+    const auctionId = tokenZeroAuctionId!;
+    const b2 = tokenZeroBidders[1]!;
+    const [card2] = await sim.mint(b2, 3, 1);
+    await sim.auctionBid(b2, auctionId, [card2!], 10n * UNIT); // cards + ETH top-up, 1.1 ETH, leads
+    console.log(`  auction #${auctionId} on Shape #0: 4 bids from 3 wallets, still open`);
+  }
+
   async function dailyFiller() {
     const n = randInt(1, 3);
     for (let i = 0; i < n; i++) {
@@ -604,10 +637,16 @@ async function main() {
   });
   at(8, simpleDecomposeDemo);
   at(9, splitDemo);
-  at(10, splitBranchDemo);
+  at(10, async () => {
+    await splitBranchDemo();
+    await tokenZeroAuctionCreate(); // auction id 0: the one the site displays
+  });
   at(11, () => ownershipHandoff(true));
   at(12, () => ownershipHandoff(false));
-  at(13, () => ownershipHandoff(false));
+  at(13, async () => {
+    await ownershipHandoff(false);
+    await tokenZeroAuctionBids();
+  });
   at(14, redemptionDemo);
   at(15, async () => {
     const lower = sim.mintFee() / 2n;
@@ -641,6 +680,7 @@ async function main() {
   at(34, async () => {
     await sim.burn(ctx.black2Owner!, ctx.black2!); // burned Black token, zero payout
   });
+  at(36, tokenZeroAuctionTopUp);
   at(35, withdrawFeesIfAny);
 
   for (let day = 0; day < DAYS; day++) {
@@ -664,6 +704,34 @@ async function main() {
   console.log(`  #${ctx.recordBranchChild} - a split child of a record-branch parent`);
   await sim.transfer(ctx.revivedOwner!, PRESENTS_TO, ctx.revivedInput!);
   console.log(`  #${ctx.revivedInput} - a revived input, restored by a decompose`);
+
+  // Merged tokens the browsing wallet can still decompose or split itself: each carries one
+  // compose record, built here and handed over intact.
+  {
+    const a = pick(wallets);
+    const dimes = await sim.mint(a, 2, 5);
+    const mergedHalf = await sim.compose(a, dimes[0]!, dimes.slice(1)); // 5 x 0.1 -> 0.5
+    await sim.transfer(a, PRESENTS_TO, mergedHalf);
+    console.log(`  #${mergedHalf} - a 0.5 ETH merged from five 0.1 ETH, composeDepth 1`);
+
+    const [half] = await sim.mint(a, 3, 1);
+    const moreDimes = await sim.mint(a, 2, 5);
+    const mergedOne = await sim.compose(a, half!, moreDimes); // 0.5 + 5 x 0.1 -> 1 ETH
+    await sim.transfer(a, PRESENTS_TO, mergedOne);
+    console.log(`  #${mergedOne} - a 1 ETH merged from 0.5 + five 0.1 ETH, composeDepth 1`);
+
+    const ones = await sim.mint(a, 4, 5);
+    const mergedFive = await sim.compose(a, ones[0]!, ones.slice(1)); // 5 x 1 -> 5 ETH
+    const [five] = await sim.mint(a, 5, 1);
+    await sim.compose(a, mergedFive, [five!]); // 5 + 5 -> 10 ETH, composeDepth 2
+    await sim.safeTransferFrom(a, PRESENTS_TO, mergedFive);
+    console.log(`  #${mergedFive} - a 10 ETH merged in two steps (5 x 1, then + 5), composeDepth 2`);
+
+    const splitKids = await sim.split(a, (await sim.mint(a, 4, 1))[0]!, [3, 2, 2, 2, 2, 2]); // 1 -> 0.5 + 5 x 0.1
+    await sim.transfer(a, PRESENTS_TO, splitKids[0]!);
+    await sim.transfer(a, PRESENTS_TO, splitKids[1]!);
+    console.log(`  #${splitKids[0]}, #${splitKids[1]} - two pieces of an uneven split (0.5 and 0.1)`);
+  }
 
   /* -------------------------------- totals -------------------------------- */
 
