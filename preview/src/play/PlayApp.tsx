@@ -105,9 +105,9 @@ function PlayButton({
       disabled={disabled}
       style={{
         ...mono,
-        fontSize: small ? 10 : 11.5,
-        letterSpacing: "0.04em",
-        padding: small ? "5px 9px" : "8px 14px",
+        fontSize: small ? 9.5 : 10.5,
+        letterSpacing: "0.06em",
+        padding: small ? "6px 9px" : "9px 13px",
         border: `1px solid ${active ? C.ink : C.border}`,
         background: active ? C.ink : "transparent",
         color: disabled ? C.faint : active ? C.page : C.ink,
@@ -244,20 +244,20 @@ function DrawBeat({
   const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, false), [composition]);
 
   return (
-    <section style={sectionStyle}>
+    <section className="play-section play-draw-section">
       <SectionLabel>Draw</SectionLabel>
-      <div style={{ display: "flex", gap: 28, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ width: "min(320px, 80vw)" }}>
+      <div className="play-draw-grid">
+        <div className="play-draw-card">
           <RawCard svg={svg} width="100%" />
-          <div style={{ ...mono, fontSize: 9.5, color: C.muted, marginTop: 8, wordBreak: "break-all" }}>
+          <div className="play-seed">
             {seedHex(effectiveSeed)}
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 260, flex: 1 }}>
-          <div>
-            <div style={{ ...mono, fontSize: 10, color: C.muted, marginBottom: 8 }}>denomination</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <div className="play-draw-controls">
+          <div className="play-control-group">
+            <div className="play-control-label">Denomination</div>
+            <div className="play-tier-grid">
               {LABELS.map((lab, i) => (
                 <PlayButton key={i} active={denomIndex === i} onClick={() => onDenomIndex(i)}>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -269,10 +269,11 @@ function DrawBeat({
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <PlayButton onClick={onRoll}>Roll</PlayButton>
-            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ ...mono, fontSize: 10, color: C.muted }}>Quantity</span>
+          <div className="play-action-row">
+            <div className="play-action-group">
+              <PlayButton onClick={onRoll}>Roll</PlayButton>
+              <label className="play-quantity">
+                <span>Quantity</span>
               <input
                 type="number"
                 min={1}
@@ -285,40 +286,41 @@ function DrawBeat({
                 }}
                 style={{
                   ...mono,
-                  width: 58,
-                  padding: "7px 8px",
+                  width: 52,
+                  padding: "8px 8px",
                   border: `1px solid ${C.border}`,
                   background: "transparent",
                   color: C.ink,
                   fontSize: 12,
                 }}
               />
-            </label>
-            <PlayButton onClick={onAdd}>
-              Add
-            </PlayButton>
-            <PlayButton onClick={onComplete} disabled={completeBusy}>
-              {completeBusy ? "Building…" : "Complete"}
-            </PlayButton>
+              </label>
+              <PlayButton onClick={onAdd}>Add</PlayButton>
+            </div>
+            <div className="play-action-group play-complete-group">
+              <PlayButton onClick={onComplete} disabled={completeBusy}>
+                {completeBusy ? "Building…" : "Complete"}
+              </PlayButton>
+              <span>Build every rung from independent 0.01 ETH origins.</span>
+            </div>
           </div>
 
-          <Prose>
-            Complete builds the selected tier from independent 0.01 ETH origins, one rung at a time.
-          </Prose>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
-              Card PNG
-            </PlayButton>
-            <PlayButton small onClick={() => downloadLadderPng(effectiveSeed, inverted)}>
-              Ladder PNG
-            </PlayButton>
-            <PlayButton small active={inverted} onClick={onToggleInverted}>
-              Black
-            </PlayButton>
+          <div className="play-export-row">
+            <span className="play-control-label">Export</span>
+            <div>
+              <PlayButton small onClick={() => downloadCardPng(composition, LABELS[denomIndex], effectiveSeed, inverted)}>
+                Card PNG
+              </PlayButton>
+              <PlayButton small onClick={() => downloadLadderPng(effectiveSeed, inverted)}>
+                Ladder PNG
+              </PlayButton>
+              <PlayButton small active={inverted} onClick={onToggleInverted}>
+                Black
+              </PlayButton>
+            </div>
           </div>
 
-          <Prose>Simulation. Nothing is minted. No wallet is used. Real seeds are assigned at mint.</Prose>
+          <p className="play-note">Nothing is minted here. Real seeds are assigned at mint.</p>
         </div>
       </div>
     </section>
@@ -523,12 +525,12 @@ function TrayBeat({
   onSacrifice: (key: number) => void;
 }) {
   return (
-    <section style={sectionStyle}>
+    <section className="play-section">
       <SectionLabel>
         Tray ({nodes.length})
       </SectionLabel>
       {nodes.length === 0 ? (
-        <div style={{ ...mono, fontSize: 11, color: C.muted }}>—</div>
+        <p className="play-empty">Add a card to begin.</p>
       ) : (
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 18 }}>
           {nodes.map((n) => (
@@ -706,22 +708,26 @@ function ComposeBeat({
   };
 
   return (
-    <section style={sectionStyle}>
+    <section className="play-section">
       <SectionLabel>Compose</SectionLabel>
-      <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
-        <div style={{ ...mono, fontSize: 11, color: C.body }}>
-          {selectedNodes.length} selected · {formatEth(sumWei)}
-        </div>
-        {reason && <div style={{ ...mono, fontSize: 11, color: C.muted }}>{reason}</div>}
-        {!reason && summedIndex >= 0 && (
-          <div style={{ ...mono, fontSize: 11, color: C.body }}>
-            → {LABELS[summedIndex]} ETH ({GRIDS[summedIndex][0]}×{GRIDS[summedIndex][1]})
+      {nodes.length === 0 ? (
+        <p className="play-empty">Select cards from the tray to compose them.</p>
+      ) : (
+        <div className="play-compose-bar">
+          <div style={{ ...mono, fontSize: 10.5, color: C.body }}>
+            {selectedNodes.length} selected · {formatEth(sumWei)}
           </div>
-        )}
-        <PlayButton onClick={onCompose} disabled={!canCompose}>
-          Compose
-        </PlayButton>
-      </div>
+          {reason && <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>{reason}</div>}
+          {!reason && summedIndex >= 0 && (
+            <div style={{ ...mono, fontSize: 10.5, color: C.body }}>
+              → {LABELS[summedIndex]} ETH ({GRIDS[summedIndex][0]}×{GRIDS[summedIndex][1]})
+            </div>
+          )}
+          <PlayButton onClick={onCompose} disabled={!canCompose}>
+            Compose
+          </PlayButton>
+        </div>
+      )}
       {error && <div style={{ ...mono, fontSize: 11, color: C.muted, marginBottom: 16 }}>{error}</div>}
 
       {lastResult && resultComposition && (
@@ -1262,7 +1268,7 @@ function LineageBeat({ session }: { session: PlaySession }) {
   if (tips.length === 0) return null;
 
   return (
-    <section style={sectionStyle}>
+    <section className="play-section">
       <SectionLabel>Lineage</SectionLabel>
       {completeRoot ? (
         <CompleteLineageLadder
@@ -1300,12 +1306,6 @@ function LineageBeat({ session }: { session: PlaySession }) {
 /* ------------------------------------------------------------------ *
  * Page
  * ------------------------------------------------------------------ */
-
-const sectionStyle: React.CSSProperties = {
-  borderTop: `1px solid ${C.rule}`,
-  paddingTop: 34,
-  marginBottom: 88,
-};
 
 export function PlayApp() {
   const [session, setSession] = React.useState<PlaySession>(emptySession);
@@ -1503,38 +1503,139 @@ export function PlayApp() {
           text-decoration: none;
         }
         .play-page-shell {
-          padding: clamp(72px, 9vw, 132px) 0 42px;
+          padding: clamp(56px, 7vw, 96px) 0 42px;
         }
         .play-page-intro {
-          max-width: 900px;
-          margin-bottom: clamp(80px, 10vw, 144px);
+          max-width: 760px;
+          margin-bottom: clamp(56px, 7vw, 88px);
         }
-        .play-page-kicker {
-          margin: 0 0 18px;
+        .play-page-intro h1 {
+          max-width: 12ch;
+          margin: 0;
+          font-family: Arial, Helvetica, sans-serif;
+          font-size: clamp(58px, 7vw, 104px);
+          font-weight: 500;
+          letter-spacing: -0.065em;
+          line-height: 0.94;
+        }
+        .play-page-intro > p:last-child {
+          max-width: 620px;
+          margin-top: 28px !important;
+          font-size: clamp(16px, 1.35vw, 19px) !important;
+          letter-spacing: -0.01em;
+          line-height: 1.45 !important;
+        }
+        .play-page-content {
+          max-width: 1120px;
+        }
+        .play-section {
+          border-top: 1px solid ${C.rule};
+          padding-top: 24px;
+          margin-bottom: clamp(48px, 6vw, 72px);
+        }
+        .play-draw-grid {
+          display: grid;
+          grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+          gap: clamp(32px, 5vw, 64px);
+          align-items: start;
+        }
+        .play-draw-card {
+          width: 100%;
+        }
+        .play-seed {
+          margin-top: 8px;
+          overflow-wrap: anywhere;
           font-family: ${FONT};
-          font-size: 10px;
-          letter-spacing: 0.14em;
+          font-size: 8.5px;
+          line-height: 1.45;
+          color: ${C.muted};
+        }
+        .play-draw-controls {
+          display: flex;
+          min-width: 0;
+          flex-direction: column;
+          gap: 22px;
+        }
+        .play-control-group {
+          display: flex;
+          flex-direction: column;
+          gap: 9px;
+        }
+        .play-control-label {
+          font-family: ${FONT};
+          font-size: 8.5px;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
           color: ${C.muted};
         }
-        .play-page-intro h1 {
-          max-width: 10ch;
+        .play-tier-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(84px, 1fr));
+          gap: 6px;
+        }
+        .play-tier-grid button {
+          width: 100%;
+        }
+        .play-action-row {
+          display: flex;
+          align-items: flex-start;
+          gap: 22px;
+          flex-wrap: wrap;
+        }
+        .play-action-group {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .play-complete-group {
+          max-width: 330px;
+          padding-left: 22px;
+          border-left: 1px solid ${C.rule};
+        }
+        .play-complete-group > span,
+        .play-note,
+        .play-empty {
           margin: 0;
+          color: ${C.muted};
           font-family: Arial, Helvetica, sans-serif;
-          font-size: clamp(64px, 9vw, 126px);
-          font-weight: 500;
-          letter-spacing: -0.075em;
-          line-height: 0.88;
+          font-size: 12.5px;
+          line-height: 1.45;
         }
-        .play-page-intro > p:last-child {
-          max-width: 660px;
-          margin-top: 38px !important;
-          font-size: clamp(18px, 1.65vw, 23px) !important;
-          letter-spacing: -0.02em;
-          line-height: 1.5 !important;
+        .play-quantity {
+          display: flex;
+          align-items: center;
+          gap: 7px;
         }
-        .play-page-content {
-          max-width: 1040px;
+        .play-quantity > span {
+          font-family: ${FONT};
+          font-size: 9px;
+          color: ${C.muted};
+        }
+        .play-export-row {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+          padding-top: 18px;
+          border-top: 1px solid ${C.ruleInner};
+        }
+        .play-export-row > div {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+        .play-note {
+          max-width: 460px;
+          font-size: 11.5px;
+        }
+        .play-empty {
+          padding-bottom: 4px;
+        }
+        .play-compose-bar {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: 16px;
         }
         .launch-play-page button,
         .launch-play-page input {
@@ -1550,7 +1651,7 @@ export function PlayApp() {
           outline-offset: 3px;
         }
         .play-page-footer {
-          margin-top: 96px;
+          margin-top: 72px;
           padding-top: 28px;
           border-top: 1px solid ${C.ink};
           display: flex;
@@ -1575,13 +1676,34 @@ export function PlayApp() {
             min-height: 70px;
           }
           .play-page-shell {
-            padding-top: 66px;
+            padding-top: 52px;
           }
           .play-page-intro h1 {
             font-size: clamp(58px, 20vw, 82px);
           }
           .play-page-intro {
-            margin-bottom: 86px;
+            margin-bottom: 60px;
+          }
+          .play-draw-grid {
+            grid-template-columns: 1fr;
+            gap: 28px;
+          }
+          .play-draw-card {
+            width: min(260px, 78vw);
+          }
+          .play-tier-grid {
+            grid-template-columns: repeat(3, minmax(76px, 1fr));
+          }
+          .play-complete-group {
+            max-width: none;
+            padding-left: 0;
+            border-left: 0;
+          }
+          .play-action-row {
+            gap: 14px;
+          }
+          .play-section {
+            margin-bottom: 48px;
           }
           .play-page-footer {
             align-items: flex-start;

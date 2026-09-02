@@ -247,8 +247,7 @@ export function LaunchLanding() {
 
       <section className="launch-hero" id="top">
         <div className="launch-intro">
-          <p className="launch-kicker">Fungible value, given a form</p>
-          <h1>ETH, shaped.</h1>
+          <h1>Shapes</h1>
           <p className="launch-subhead">
             Each Shape holds an exact amount of ETH. That value determines its appearance, and
             the holder can destroy the Shape at any time to get the ETH back.
