@@ -68,22 +68,19 @@ contract PresentationLockOrderingTest is AuditBase {
         collection.setMetadataCopy("After ", "after");
     }
 
-    /// @notice A collection installed before the lock is what the lock freezes. A collection whose
-    ///         copy is mutable by someone other than the token's admin therefore keeps a mutable
-    ///         copy after the lock. The lock's promise is only as strong as the contract behind
-    ///         the pointer at the moment it is taken.
-    function test_LockDoesNotFreezeCopyHeldByANonCanonicalCollection() public {
+    /// @notice `setCollection` refuses a collection not bound to this token, so a rogue collection
+    ///         whose copy is mutable by someone other than the token's admin can never be installed
+    ///         in the first place, before or after the lock. Fixed at 887497c
+    ///         (`AdminOps.requireCollection` checks `IShapeCollection(newCollection).shapes() ==
+    ///         address(this)`).
+    function test_SetCollectionRejectsACollectionBoundToADifferentShapes() public {
         RogueCollection rogue = new RogueCollection();
+
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedCollection.selector, address(rogue)));
         shapes.setCollection(address(rogue));
-        shapes.lockPresentation();
 
-        vm.expectRevert(IShapes.PresentationIsLocked.selector);
-        shapes.setCollection(address(collection));
-
-        // The token cannot repoint, but the rogue collection answers to its own owner.
-        vm.prank(alice);
-        rogue.setCopy("Rogue ", "rogue description");
-        assertEq(IShapeCollection(address(rogue)).tokenNamePrefix(), "Rogue ", "rogue copy not editable");
+        // The canonical collection is unaffected and still installed.
+        assertEq(shapes.collection(), address(collection), "collection pointer moved");
 
         // Backing, redemption and ownership are untouched by any of it.
         uint256 id = _mint(bob, DENOMS[1]);
@@ -146,22 +143,32 @@ contract PresentationLockOrderingTest is AuditBase {
     /// @notice `lockPresentation` does not require a collection, so locking before
     ///         `setCollection` freezes `tokenURI` and `contractURI` in their reverting state
     ///         permanently. Every value path keeps working.
-    function test_LockingBeforeSetCollectionPermanentlyBricksMetadata() public {
+    /// @notice `lockPresentation` itself refuses to run while the collection pointer is zero, so
+    ///         metadata can no longer be bricked by locking before `setCollection`. Fixed at
+    ///         887497c (`AdminOps.lockPresentation` reverts `CollectionNotSet` first).
+    function test_LockingBeforeSetCollectionRevertsCollectionNotSet() public {
         ShapeRenderer r = new ShapeRenderer();
-        Shapes fresh =
-            new Shapes{value: Denominations.amountAt(0)}(0, feeRecipient, address(r), 0);
+        Shapes fresh = new Shapes{value: Denominations.amountAt(0)}(0, feeRecipient, address(r), 0);
         ShapeCollection c = new ShapeCollection(r, fresh);
 
         assertEq(fresh.collection(), address(0), "collection should start empty");
-        fresh.lockPresentation();
 
+        vm.expectRevert(IShapes.CollectionNotSet.selector);
+        fresh.lockPresentation();
+        assertFalse(fresh.presentationLocked(), "lock took despite the missing collection");
+
+        // Metadata reverts, matching the still-unset collection, but the token remains lockable
+        // and configurable once a collection is installed.
         vm.expectRevert(IShapes.CollectionNotSet.selector);
         fresh.tokenURI(0);
         vm.expectRevert(IShapes.CollectionNotSet.selector);
         fresh.contractURI();
 
-        vm.expectRevert(IShapes.PresentationIsLocked.selector);
         fresh.setCollection(address(c));
+        assertGt(bytes(fresh.tokenURI(0)).length, 500, "metadata did not recover once collection was set");
+
+        fresh.lockPresentation();
+        assertTrue(fresh.presentationLocked(), "lock did not take once a collection was set");
 
         // Backing is untouched: the token still redeems for exactly its denomination.
         uint256 before = bob.balance;
@@ -194,6 +201,12 @@ contract RogueCollection is IERC165 {
     function setCopy(string calldata p, string calldata d) external {
         _prefix = p;
         _description = d;
+    }
+
+    /// @dev Bound to an unrelated address, never the `Shapes` under test, so `requireCollection`
+    ///      rejects it.
+    function shapes() external pure returns (address) {
+        return address(0xBEEF);
     }
 
     function tokenNamePrefix() external view returns (string memory) {

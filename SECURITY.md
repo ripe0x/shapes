@@ -138,16 +138,19 @@ with no external call in the mint path, so
 `mint` revert while it remained the target. Redemption was unaffected and no funds were at risk,
 but minting itself could stall.
 
-**Fix chosen:** mint fees no longer call out to the recipient at all. They accrue to `pendingFees`
-during the mint's own effects block, and only `withdrawFees` — a separate, permissionless,
-`nonReentrant` call — forwards the accrued total to `feeRecipient`. A reverting recipient now
-blocks only `withdrawFees`; minting is unaffected regardless of the recipient's behavior. If
-`withdrawFees` fails, `pendingFees` is untouched (the whole call reverts), and the admin can
-redirect `feeRecipient` via `setFeeRecipient` and retry. The deploy script still refuses an
-initial contract recipient unless `SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true` is set explicitly;
-prefer an EOA. Renouncing admin freezes the final recipient, so its ability to accept ETH should
-be confirmed first, though a reverting recipient at that point only strands the withdrawal, never
-the fee itself, which stays in the contract as `pendingFees`.
+**Fix chosen:** mint fees no longer call out to the recipient at all. They accrue to whichever
+recipient `feeRecipient()` names at the time, tracked per recipient (`feesOwedTo`) and summed in
+`pendingFees()`, in the mint's own effects block, and only `withdrawFees(recipient)` — a separate,
+permissionless, `nonReentrant` call — forwards that recipient's own balance to it. A reverting
+recipient now blocks only its own `withdrawFees` call; minting and every other recipient's
+withdrawal are unaffected. If `withdrawFees` fails, the balance it targeted is untouched (the
+whole call reverts), and `setFeeRecipient` only points future accrual elsewhere — it does not move
+what is already owed to the reverting recipient, which stays stuck until that recipient can accept
+ETH. The deploy script still refuses an initial contract recipient unless
+`SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true` is set explicitly; prefer an EOA. Renouncing admin
+freezes the final recipient, so its ability to accept ETH should be confirmed first, though a
+reverting recipient at that point only strands its own balance, never anyone else's, and never the
+reserve.
 
 ### 7. No batch size cap — accepted, documented
 
@@ -224,6 +227,29 @@ callback never fires during `bid`, and the same attempt from `withdrawFees` fail
 exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defense in depth
 (`test/AuctionSecurity.t.sol`).
 
+### 12. `setFeeRecipient` could redirect already-accrued fees — fixed
+
+*Confirmed against the single shared `pendingFees` counter.* `withdrawFees` read `feeRecipient` at
+withdrawal time rather than at accrual time, so an admin could call `setFeeRecipient(attacker)`
+then `withdrawFees()` and take every fee that accrued while a different recipient was configured.
+`IAdminControl` documented the opposite in two places: the admin "cannot reach ... accrued fees",
+and `setFeeRecipient`'s own doc said already-accrued fees are unaffected. Real ETH only, never
+backing; bounded by the pending balance at the time of the redirect; requires the admin key.
+
+**Fix.** Fee accrual is now per recipient: `feesOwed[recipient]` credits whoever `feeRecipient()`
+names at the moment a batch mint charges its fee, and `pendingFees()` is the running sum across
+every recipient. `withdrawFees(recipient)` pays only `recipient`'s own balance and zeroes only
+that entry. `setFeeRecipient` still writes one pointer for future accrual and moves nothing:
+fees already credited to the outgoing recipient stay owed to it, withdrawable by anyone via
+`withdrawFees`, whether or not it is still the configured `feeRecipient`. This also closes the
+stranding case from finding #6's caveat: a later recipient's balance is no longer held hostage by
+an earlier reverting one. `test/audit/FeeAccounting.t.sol` pins the closure directly
+(`test_SetFeeRecipientCannotRedirectAlreadyAccruedFees`,
+`test_EachRecipientWithdrawsExactlyItsOwnShare`,
+`test_RevertingRecipientBlocksOnlyItsOwnWithdrawal`), and `test/Invariants.t.sol`'s stateful suite
+drives `setFeeRecipient` and `withdrawFees` against two known recipients, asserting
+`sum(feesOwedTo(r)) == pendingFees()` on every run. See DECISIONS.md D-43.
+
 ---
 
 ## Verified safe
@@ -234,7 +260,7 @@ exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defe
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Mint-start gate | `mintStart` is set once in the constructor and stored `immutable`; no admin path can read or change it. `_mintBatch` reverts `MintNotOpen()` while `block.timestamp < mintStart`, which covers `mint`, `mintTo`, `mintBatch`, `mintBatchTo`, and the ETH-backed auction bids that mint cards through `ShapeCardEscrow._mintCards` calling `mintBatchTo`. The constructor mint of Shape #0 is unconditional and unaffected, so its transfer, auction listing and redemption all work before `mintStart`. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
-| Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), `withdrawFees`'s transfer (out of `pendingFees`, decremented before the call, never counted as backing), and `burnBacking` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking + pendingFees`, backing conservation net of burnBacking, `valueOf == backingOf`, `burnedBacking == 100 ether * blackShapeCount`, and a full drain of every live Shape. |
+| Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), `withdrawFees(recipient)`'s transfer (out of that recipient's own `feesOwedTo` balance, decremented before the call, never counted as backing), and `burnBacking` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking + pendingFees`, `sum(feesOwedTo(r)) == pendingFees()` across every recipient a fee has accrued to, backing conservation net of burnBacking, `valueOf == backingOf`, `burnedBacking == 100 ether * blackShapeCount`, and a full drain of every live Shape. |
 | ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. Admin can select the recipient of fees entering in future mint calls, but cannot withdraw ETH already held by Shapes or alter the reserve. Shape #0 ownership grants no permissions. External-library delegate targets are fixed in bytecode and cannot be selected by users or admin; there is no `selfdestruct` or inline assembly in `Shapes.sol`. |
 | Administrative isolation | The renderer and collection are called only by metadata reads. Core state-changing operations never call the positions or market target; only `positionOf` queries positions, with bounded gas and failure-to-zero behavior. Reverting targets are regression-tested against the full token lifecycle. `setFeeRecipient` changes one address used for future fee withdrawals; `setMintFee` changes the fee amount within the compile-time cap of one denomination unit. Neither can move already-accrued fees or touch backing, redemption or token ownership. |
 | Draft ERC-8060 | `valueOf` exactly aliases `backingOf`; owner-only `burn` destroys a normal Shape for its exact value or a Black Shape for zero. Structural burns never settle ETH. The current draft interface ID is advertised through ERC-165; the proposal is not final and may change. |
@@ -253,9 +279,11 @@ exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defe
 
 ## Standing caveats for anyone deploying this
 
-1. **`feeRecipient` should be an EOA.** A reverting recipient blocks only `withdrawFees`; minting
-   is never affected. Admin can redirect the recipient and retry the withdrawal; `pendingFees` is
-   never lost while blocked. Renouncing admin freezes the current recipient permanently.
+1. **`feeRecipient` should be an EOA.** A reverting recipient blocks only its own `withdrawFees`
+   call; minting and every other recipient's withdrawal are never affected. Redirecting
+   `feeRecipient` only starts a new accrual for the new recipient — it does not move the blocked
+   recipient's own balance, which stays owed to it, unlost, until it can accept ETH. Renouncing
+   admin freezes the current recipient permanently.
 2. **The mint fee is bounded, not immutable.** The mainnet initial value is 0.001 ETH per Shape and
    the 1/100 testnet build uses 0.00001 ETH per Shape. Admin may change it afterward via
    `setMintFee`, up to the compile-time cap of one compiled denomination unit (`unit()`). The

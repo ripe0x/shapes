@@ -119,16 +119,18 @@ its own seed.
 
 The mainnet deployment's initial value is a flat **0.001 ETH per Shape created**, independent of
 backing. `admin()` may adjust `mintFee` afterward via `setMintFee`, up to the compile-time cap
-one denomination unit (`unit()`), and may redirect `feeRecipient` for future withdrawals. A
-100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee. The isolated testnet build scales
-the initial fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
+one denomination unit (`unit()`), and may redirect `feeRecipient` so future fees accrue to a new
+address. A 100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee. The isolated testnet
+build scales the initial fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
 
-`mintFee()` returns the current per-Shape fee, read live by every mint. Fees accrue to
-`pendingFees()` in the same transaction as the mint and never join the reserve; a batch accrues
-`quantity * mintFee` once. Anyone may call `withdrawFees()` to forward the accrued total to the
-current `feeRecipient` — minting never calls the recipient directly, so a reverting recipient
-blocks only the withdrawal, never minting. Redemption is unaffected: a 1 ETH Shape always redeems
-for exactly 1 ETH, fee already paid at mint.
+`mintFee()` returns the current per-Shape fee, read live by every mint. Fees accrue per recipient,
+credited to whoever `feeRecipient()` names at the time of the mint, and never join the reserve;
+`pendingFees()` is the sum owed across every recipient, and `feesOwedTo(recipient)` is one
+recipient's own share. A batch accrues `quantity * mintFee` once, to the recipient current at that
+call. Anyone may call `withdrawFees(recipient)` to forward that recipient's own balance to it —
+minting never calls the recipient directly, so a reverting recipient blocks only its own
+withdrawal, never minting or any other recipient's withdrawal. Redemption is unaffected: a 1 ETH
+Shape always redeems for exactly 1 ETH, fee already paid at mint.
 
 There is no burn fee, no transfer fee, no royalty requirement, and no recurring protocol fee.
 
@@ -282,8 +284,9 @@ of the owner token:
 - The positions and market pointers may each be set, replaced or cleared through `setPointer` until
   `lockPointer` permanently freezes that entry. Pointer id 0 is Positions and 1 is Market; other
   ids revert. Either entry may be locked while zero.
-- `setFeeRecipient` redirects only future `withdrawFees` calls. It cannot recover fees already
-  withdrawn, withdraw ETH itself, or reach backing or redemption.
+- `setFeeRecipient` redirects only future accrual. Fees already credited to the outgoing recipient
+  stay owed to it, withdrawable by anyone via `withdrawFees`; the setter cannot move that balance,
+  withdraw ETH itself, or reach backing or redemption.
 - `setMintFee` changes the per-Shape fee, up to the compile-time cap of one denomination unit (`unit()`). It takes
   effect for every later mint and for the auction house's ETH-bid card minting, which reads the
   fee live. It cannot touch backing, redemption or already-accrued fees.
@@ -296,9 +299,9 @@ The reserve, denominations and redemption path have no admin access at all. Deli
 emergency withdrawal, treasury withdrawal, redemption pause, asset recovery, backing modification,
 token seizure, upgradeability, proxies, allowlists, supply caps, royalties.
 
-There are three value-bearing external calls: `withdrawFees`'s transfer of accrued mint fees,
-settlement after redemption or burn, and the fixed 100 ETH burnBacking to `0x…dEaD`. No
-administrative function reaches any of them.
+There are three value-bearing external calls: `withdrawFees`'s transfer of a recipient's own
+accrued mint fees, settlement after redemption or burn, and the fixed 100 ETH burnBacking to
+`0x…dEaD`. No administrative function reaches any of them.
 
 See [`SECURITY.md`](SECURITY.md) for the adversarial review, including the findings that were
 fixed and the residual risks that were accepted deliberately.

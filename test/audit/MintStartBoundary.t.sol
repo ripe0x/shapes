@@ -29,9 +29,8 @@ contract MintStartBoundaryTest is Test {
     function setUp() public {
         vm.warp(1);
         renderer = new ShapeRenderer();
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), START
-        );
+        shapes =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), START);
         collection = new ShapeCollection(renderer, shapes);
         shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
@@ -112,9 +111,7 @@ contract MintStartBoundaryTest is Test {
         uint8[] memory outs = new uint8[](2);
         vm.expectRevert(
             abi.encodeWithSelector(
-                IShapes.SplitSumMismatch.selector,
-                Denominations.amountAt(0),
-                2 * Denominations.amountAt(0)
+                IShapes.SplitSumMismatch.selector, Denominations.amountAt(0), 2 * Denominations.amountAt(0)
             )
         );
         shapes.split(0, outs);
@@ -236,9 +233,7 @@ contract DummyNft {
 
     function transferFrom(address from, address to, uint256 id) external {
         require(_owner[id] == from, "not owner");
-        require(
-            msg.sender == from || _all[from][msg.sender] || _approved[id] == msg.sender, "not approved"
-        );
+        require(msg.sender == from || _all[from][msg.sender] || _approved[id] == msg.sender, "not approved");
         _owner[id] = to;
         _approved[id] = address(0);
     }

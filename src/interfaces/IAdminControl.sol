@@ -26,7 +26,9 @@ interface IAdminControl {
 
     function renounceAdmin() external;
 
-    /// @notice Redirect future mint fees. Already-accrued fees and the reserve are unaffected.
+    /// @notice Redirect future mint fees to `newRecipient`. Fees already accrued to the previous
+    ///         recipient stay owed to it, withdrawable by anyone via `withdrawFees`; the reserve
+    ///         is unaffected either way.
     function setFeeRecipient(address newRecipient) external;
 
     /// @notice Change the flat per-Shape mint fee. Takes effect for every later mint and for the

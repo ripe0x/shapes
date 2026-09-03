@@ -7,7 +7,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "Shapes",
     "kind": "token",
     "description": "ETH-backed ERC-721 tokens with exact redemption value.",
-    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure and keep total redeemable backing unchanged. Three operations move ETH out. Redemption sends a burned token's backing to the caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends `pendingFees`, which is accounted separately from the reserve. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. Holding it grants no permissions. Administration is the separate `admin()` role, which configures presentation and fees and cannot reach backing, redemption or token ownership. `artist()` records the deployer for attribution and grants no authority. Reentrancy: the mint, redemption, fee and recomposition entrypoints are guarded. The admin functions, `attestArtist` and the inherited ERC-721 transfer and approval functions are not. During a `safeTransferFrom` the receiver may redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are part of the trusted implementation. They are public libraries whose addresses are linked into this bytecode at deploy time, with no setter, and their functions run under `DELEGATECALL` in this contract's storage context. Every access check runs here before a call reaches them. Token and recomposition state lives in `_store`. ETH accounting, the owner token, the admin address and presentation state live in `Shapes`. See project/ARCHITECTURE.md.",
+    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure and keep total redeemable backing unchanged. Three operations move ETH out. Redemption sends a burned token's backing to the caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends one recipient's accrued balance, tracked per recipient and summed in `pendingFees()`, accounted separately from the reserve. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. Holding it grants no permissions. Administration is the separate `admin()` role, which configures presentation and fees and cannot reach backing, redemption or token ownership. `artist()` records the deployer for attribution and grants no authority. Reentrancy: the mint, redemption, fee and recomposition entrypoints are guarded. The admin functions, `attestArtist` and the inherited ERC-721 transfer and approval functions are not. During a `safeTransferFrom` the receiver may redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are part of the trusted implementation. They are public libraries whose addresses are linked into this bytecode at deploy time, with no setter, and their functions run under `DELEGATECALL` in this contract's storage context. Every access check runs here before a call reaches them. Token and recomposition state lives in `_store`. ETH accounting, the owner token, the admin address and presentation state live in `Shapes`. See project/ARCHITECTURE.md.",
     "functions": [
       {
         "name": "admin",
@@ -1072,7 +1072,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "address"
           }
         ],
-        "notice": "Where `withdrawFees` currently forwards accrued fees. Admin-updateable.",
+        "notice": "Destination new mint fees credit. Admin-updateable; changing it does not move a balance already credited to the previous recipient.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -1084,6 +1084,44 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             {
               "name": "",
               "type": "address"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
+        "name": "feesOwedTo",
+        "signature": "feesOwedTo(address)",
+        "stateMutability": "view",
+        "inputs": [
+          {
+            "name": "recipient",
+            "type": "address"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "",
+            "type": "uint256"
+          }
+        ],
+        "notice": "One recipient's own accrued and not yet withdrawn balance. `pendingFees()` is the sum of this over every recipient a mint fee has ever accrued to.",
+        "dev": "",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "feesOwedTo",
+          "inputs": [
+            {
+              "name": "recipient",
+              "type": "address"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint256"
             }
           ],
           "stateMutability": "view"
@@ -1894,7 +1932,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "uint256"
           }
         ],
-        "notice": "Mint fees accrued and not yet withdrawn. Never part of `redeemableBacking`.",
+        "notice": "Mint fees accrued and not yet withdrawn, summed across every recipient. Never part of `redeemableBacking`.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -2688,7 +2726,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "outputs": [],
-        "notice": "Redirect future mint fees. Already-accrued fees and the reserve are unaffected.",
+        "notice": "Redirect future mint fees to `newRecipient`. Fees already accrued to the previous recipient stay owed to it, withdrawable by anyone via `withdrawFees`; the reserve is unaffected either way.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -3397,18 +3435,28 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "withdrawFees",
-        "signature": "withdrawFees()",
+        "signature": "withdrawFees(address)",
         "stateMutability": "nonpayable",
-        "inputs": [],
+        "inputs": [
+          {
+            "name": "recipient",
+            "type": "address"
+          }
+        ],
         "outputs": [],
-        "notice": "Forward every accrued mint fee to the current `feeRecipient`. Callable by anyone; the destination is always the recipient at the time of the call. Reverts `NoFeesPending` when nothing has accrued. A recipient that reverts on receipt makes only this call revert; minting is never affected, and the admin can redirect `feeRecipient` and retry.",
-        "dev": "The recipient is read before the transfer, so the event names the address that received this withdrawal even when the recipient changes `feeRecipient` from its own `receive` hook.",
+        "notice": "Forward `recipient`'s own accrued balance to it. Callable by anyone; the payout always goes to `recipient`, never the caller. Reverts `NoFeesPending` when nothing is owed to `recipient`. A recipient that reverts on receipt makes only this call revert for that recipient; minting and every other recipient's withdrawal are unaffected.",
+        "dev": "Pays `recipient` its own accrued balance, tracked independently of every other recipient's. `setFeeRecipient` never moves an entry here, so a recipient that changed or reverts cannot block another recipient's withdrawal.",
         "params": {},
         "returns": {},
         "abi": {
           "type": "function",
           "name": "withdrawFees",
-          "inputs": [],
+          "inputs": [
+            {
+              "name": "recipient",
+              "type": "address"
+            }
+          ],
           "outputs": [],
           "stateMutability": "nonpayable"
         }
@@ -3647,7 +3695,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "indexed": false
           }
         ],
-        "notice": "Emitted when `withdrawFees` forwards the accrued fee to the current fee recipient.",
+        "notice": "Emitted when `withdrawFees` forwards a recipient's accrued balance to it.",
         "dev": ""
       },
       {
@@ -3717,7 +3765,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "indexed": false
           }
         ],
-        "notice": "Emitted once per mint call that charges a nonzero fee: the aggregate fee accrued to `pendingFees`, not yet forwarded to anyone. Quantity minted is recoverable from the same transaction's `ShapeMinted` events.",
+        "notice": "Emitted once per mint call that charges a nonzero fee: the aggregate fee, credited to `feeRecipient()` at the time of the call, not yet forwarded. Quantity minted is recoverable from the same transaction's `ShapeMinted` events.",
         "dev": ""
       },
       {
@@ -4350,7 +4398,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "signature": "NoFeesPending()",
         "inputs": [],
         "notice": "",
-        "dev": "`withdrawFees` found nothing accrued."
+        "dev": "`withdrawFees` found nothing owed to the requested recipient."
       },
       {
         "name": "NoOwnerToken",
@@ -8642,7 +8690,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setFeeRecipient`.",
+        "dev": "Body of `Shapes.setFeeRecipient`. Only points future accrual at `newRecipient`; fees already credited to `previousRecipient` stay owed to it and are untouched here.",
         "params": {},
         "returns": {}
       },

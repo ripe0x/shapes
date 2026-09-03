@@ -9,7 +9,10 @@ import {Denominations} from "../../src/lib/Denominations.sol";
 
 /// @notice Required adversarial attempt 5: attack the fee ledger across `setMintFee`,
 ///         `setFeeRecipient`, `withdrawFees` and batch mints, including a fee recipient that
-///         reverts and one that reenters from its own `receive`.
+///         reverts and one that reenters from its own `receive`. Fees accrue per recipient
+///         (`feesOwedTo`), so this also covers a recipient switch mid-accrual: each recipient
+///         withdraws exactly its own share, a reverting recipient cannot block another's
+///         withdrawal, and `setFeeRecipient` changes nothing already owed.
 contract FeeAccountingTest is AuditBase {
     /// @notice Fees never enter the reserve, and the reserve is never paid out as a fee.
     function test_FeesAndReserveAreDisjointAcrossEveryPath() public {
@@ -20,7 +23,7 @@ contract FeeAccountingTest is AuditBase {
 
         uint256 balBefore = address(shapes).balance;
         uint256 pending = shapes.pendingFees();
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
         assertEq(address(shapes).balance, balBefore - pending, "withdrawFees moved more than the fees");
         assertEq(shapes.redeemableBacking(), DENOMS[0] + 7 * DENOMS[1], "withdrawFees touched the reserve");
         _assertReserveInvariant();
@@ -103,31 +106,33 @@ contract FeeAccountingTest is AuditBase {
         _assertReserveInvariant();
     }
 
-    /// @notice A reverting fee recipient blocks only `withdrawFees`. Minting, redemption and
-    ///         recomposition keep working, and the admin can redirect.
+    /// @notice A reverting fee recipient blocks only `withdrawFees` for that recipient. Minting,
+    ///         redemption and recomposition keep working, and a redirect only starts a fresh
+    ///         accrual for the new recipient: it does not recover what is stuck with the old one.
     function test_RevertingRecipientBlocksOnlyItsOwnWithdrawal() public {
         Reverter r = new Reverter();
         shapes.setFeeRecipient(address(r));
 
         uint256 id = _mint(alice, DENOMS[1]);
-        assertEq(shapes.pendingFees(), MINT_FEE, "mint did not accrue while blocked");
+        assertEq(shapes.feesOwedTo(address(r)), MINT_FEE, "mint did not accrue while blocked");
 
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(r), MINT_FEE)
-        );
-        shapes.withdrawFees();
-        assertEq(shapes.pendingFees(), MINT_FEE, "a failed withdrawal consumed the ledger");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(r), MINT_FEE));
+        shapes.withdrawFees(address(r));
+        assertEq(shapes.feesOwedTo(address(r)), MINT_FEE, "a failed withdrawal consumed the ledger");
 
         uint256 before = alice.balance;
         vm.prank(alice);
         shapes.redeem(id);
         assertEq(alice.balance, before + DENOMS[1], "redemption blocked by the fee recipient");
 
+        // The redirect starts a new accrual for bob; it does not move what is stuck with `r`.
         shapes.setFeeRecipient(bob);
+        _mint(alice, DENOMS[1]);
         uint256 bobBefore = bob.balance;
-        shapes.withdrawFees();
-        assertEq(bob.balance, bobBefore + MINT_FEE, "redirect did not pay");
-        assertEq(shapes.pendingFees(), 0, "ledger not cleared");
+        shapes.withdrawFees(bob);
+        assertEq(bob.balance, bobBefore + MINT_FEE, "bob withdrew only the fee that accrued to bob");
+        assertEq(shapes.feesOwedTo(address(r)), MINT_FEE, "the reverting recipient's balance is still stuck");
+        assertEq(shapes.pendingFees(), MINT_FEE, "the stuck balance still counts toward the total");
         _assertReserveInvariant();
     }
 
@@ -141,7 +146,7 @@ contract FeeAccountingTest is AuditBase {
         _mintBatchTo(alice, DENOMS[0], 5);
         uint256 pending = shapes.pendingFees();
 
-        shapes.withdrawFees();
+        shapes.withdrawFees(address(r));
 
         assertEq(address(r).balance, pending, "the recipient was not paid exactly once");
         assertEq(shapes.pendingFees(), 0, "ledger not cleared");
@@ -150,12 +155,12 @@ contract FeeAccountingTest is AuditBase {
         _assertReserveInvariant();
     }
 
-    /// @notice `setFeeRecipient` redirects the whole pending balance, including fees accrued while
-    ///         a different recipient was configured. `IAdminControl.setFeeRecipient` documents the
-    ///         opposite ("Already-accrued fees and the reserve are unaffected"), and
-    ///         `IAdminControl`'s contract-level note says the admin "cannot reach ... accrued
-    ///         fees". This is the exploit: the admin takes the standing recipient's balance.
-    function test_AdminCanRedirectAlreadyAccruedFeesDespiteTheDocumentedPromise() public {
+    /// @notice `setFeeRecipient` redirects only future accrual. Fees already credited to the
+    ///         standing recipient stay owed to it and are not reachable by a later recipient.
+    ///         Closes S-1: the code now matches `IAdminControl.setFeeRecipient`'s documented
+    ///         promise ("Already-accrued fees ... are unaffected") and the contract-level note
+    ///         that the admin "cannot reach ... accrued fees".
+    function test_SetFeeRecipientCannotRedirectAlreadyAccruedFees() public {
         // Fees accrue while `feeRecipient` is the configured recipient.
         _mintBatchTo(alice, DENOMS[0], 5);
         uint256 accrued = shapes.pendingFees();
@@ -165,15 +170,21 @@ contract FeeAccountingTest is AuditBase {
         uint256 originalBefore = feeRecipient.balance;
         uint256 attackerBefore = bob.balance;
 
-        // The admin points the recipient somewhere else and takes the accrued balance.
+        // The admin points the recipient somewhere else. The already-accrued balance stays owed
+        // to the original recipient; the new recipient has nothing to withdraw yet.
         shapes.setFeeRecipient(bob);
-        shapes.withdrawFees();
 
-        assertEq(bob.balance, attackerBefore + accrued, "the accrued balance did not follow the change");
-        assertEq(feeRecipient.balance, originalBefore, "the original recipient received anything");
+        vm.expectRevert(IShapes.NoFeesPending.selector);
+        shapes.withdrawFees(bob);
+
+        shapes.withdrawFees(feeRecipient);
+        assertEq(bob.balance, attackerBefore, "the accrued balance followed the recipient change");
+        assertEq(
+            feeRecipient.balance, originalBefore + accrued, "the original recipient received its own accrual"
+        );
         assertEq(shapes.pendingFees(), 0, "ledger not cleared");
 
-        // The reserve is untouched, which is the part the documentation gets right.
+        // The reserve is untouched.
         assertEq(shapes.redeemableBacking(), DENOMS[0] + 5 * DENOMS[0], "the reserve was reached");
         _assertReserveInvariant();
     }
@@ -189,12 +200,14 @@ contract FeeAccountingTest is AuditBase {
         _mintBatchTo(alice, DENOMS[0], 2);
         assertGt(shapes.pendingFees(), 0, "no fee accrued");
 
-        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this)));
+        vm.expectRevert(
+            abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
+        );
         shapes.setFeeRecipient(bob);
 
         // The fees are now permanently unclaimable, because the recipient refuses them.
         vm.expectRevert();
-        shapes.withdrawFees();
+        shapes.withdrawFees(address(r));
 
         // Backing is unaffected; every token still redeems.
         uint256 before = alice.balance;
@@ -206,10 +219,42 @@ contract FeeAccountingTest is AuditBase {
 
     /// @notice `setFeeRecipient(0)` is refused, so a withdrawal can never burn the fees.
     function test_ZeroRecipientRefused() public {
-        vm.expectRevert(
-            abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0)));
         shapes.setFeeRecipient(address(0));
+    }
+
+    /// @notice The straightforward per-recipient case: accrue under A, redirect to B, accrue more,
+    ///         and each recipient withdraws exactly its own share. The total goes to zero only
+    ///         once both have withdrawn.
+    function test_EachRecipientWithdrawsExactlyItsOwnShare() public {
+        address recipientA = feeRecipient;
+        address recipientB = bob;
+
+        _mintBatchTo(alice, DENOMS[0], 3);
+        uint256 aShare = shapes.pendingFees();
+        assertEq(aShare, 3 * MINT_FEE, "A's accrual wrong");
+
+        shapes.setFeeRecipient(recipientB);
+        _mintBatchTo(alice, DENOMS[0], 2);
+        uint256 bShare = shapes.pendingFees() - aShare;
+        assertEq(bShare, 2 * MINT_FEE, "B's accrual wrong");
+
+        assertEq(shapes.feesOwedTo(recipientA), aShare, "A owed the wrong amount");
+        assertEq(shapes.feesOwedTo(recipientB), bShare, "B owed the wrong amount");
+        assertEq(shapes.pendingFees(), aShare + bShare, "total wrong before either withdrawal");
+
+        uint256 aBefore = recipientA.balance;
+        shapes.withdrawFees(recipientA);
+        assertEq(recipientA.balance, aBefore + aShare, "A did not receive exactly its share");
+        assertEq(shapes.pendingFees(), bShare, "B's share moved by A's withdrawal");
+
+        uint256 bBefore = recipientB.balance;
+        shapes.withdrawFees(recipientB);
+        assertEq(recipientB.balance, bBefore + bShare, "B did not receive exactly its share");
+        assertEq(shapes.pendingFees(), 0, "total did not reach zero");
+        assertEq(shapes.feesOwedTo(recipientA), 0);
+        assertEq(shapes.feesOwedTo(recipientB), 0);
+        _assertReserveInvariant();
     }
 
     /// @notice `withdrawFees` is permissionless, which lets anyone push accrued fees to the
@@ -221,7 +266,7 @@ contract FeeAccountingTest is AuditBase {
         uint256 bobBefore = bob.balance;
 
         vm.prank(bob);
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
 
         assertEq(feeRecipient.balance, recipientBefore + pending, "recipient not paid");
         assertEq(bob.balance, bobBefore, "the caller was paid");
@@ -250,14 +295,13 @@ contract Reentrant {
         if (_entered) return;
         _entered = true;
 
-        (bool ok,) = address(shapes).call(abi.encodeCall(IShapes.withdrawFees, ()));
+        (bool ok,) = address(shapes).call(abi.encodeCall(IShapes.withdrawFees, (address(this))));
         reentrantWithdrawReverted = !ok;
 
         // Redirecting here must not affect the transfer already under way.
         (ok,) = address(shapes).call(abi.encodeCall(IAdminControl.setFeeRecipient, (address(0xBEEF))));
         if (ok) {
-            (ok,) =
-                address(shapes).call(abi.encodeCall(IAdminControl.setFeeRecipient, (address(this))));
+            (ok,) = address(shapes).call(abi.encodeCall(IAdminControl.setFeeRecipient, (address(this))));
         }
     }
 }

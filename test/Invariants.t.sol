@@ -72,6 +72,10 @@ contract Handler is Test, IERC721Receiver {
     /// @dev Hostile recipients for the recipient-directed `*To` paths: [rejectETH, rejectNFT, reentrant].
     address[3] public hostiles;
 
+    /// @dev The two addresses `setFeeRecipient` ever points at during a run: the constructor's
+    ///      initial recipient and one alternate, so fees can accrue under one and then the other.
+    address[2] public feeRecipients;
+
     /// @dev Ghost accounting, maintained independently of the contract's own counters.
     uint256 public ghostBackingIn;
     uint256 public ghostBackingOut;
@@ -115,6 +119,7 @@ contract Handler is Test, IERC721Receiver {
             address(new HostileRejectNFT()),
             address(new HostileReentrant(shapes_))
         ];
+        feeRecipients = [shapes_.feeRecipient(), address(0xFEE2)];
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
@@ -591,10 +596,20 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-    /// @dev Forwards whatever is currently pending to the fee recipient. No ghost accounting
-    ///      changes: `pendingFees` and `feeRecipient.balance` are read directly by the invariant.
-    function withdrawFees() public {
-        try shapes.withdrawFees() {} catch {}
+    /// @dev Forwards whatever is owed to one of the two known fee recipients. No ghost accounting
+    ///      changes: `feesOwedTo` and each recipient's balance are read directly by the invariant.
+    function withdrawFees(uint256 seed) public {
+        address recipient = feeRecipients[seed % feeRecipients.length];
+        try shapes.withdrawFees(recipient) {} catch {}
+    }
+
+    /// @dev Pranks the admin to redirect future fee accrual between the two known recipients.
+    ///      Registered so `invariant_FeesAreSeparateFromBacking` exercises a recipient change
+    ///      against real accrual, proving the outgoing recipient's balance survives it.
+    function setFeeRecipient(uint256 seed) public {
+        address newRecipient = feeRecipients[seed % feeRecipients.length];
+        vm.prank(admin);
+        try shapes.setFeeRecipient(newRecipient) {} catch {}
     }
 
     /// @dev Pranks the admin to change the mint fee within the cap. Every mint action reads
@@ -633,7 +648,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](21);
+        bytes4[] memory selectors = new bytes4[](22);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -655,6 +670,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[18] = Handler.withdrawFees.selector;
         selectors[19] = Handler.setMintFee.selector;
         selectors[20] = Handler.burnBlack.selector;
+        selectors[21] = Handler.setFeeRecipient.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -742,17 +758,31 @@ contract ShapesInvariantTest is StdInvariant, Test {
     }
 
     /// @notice Fees never enter the reserve. Every fee ever charged is accounted for either as
-    ///         still pending or as already paid to whichever recipient was current at withdrawal
-    ///         time; `setMintFee` makes the fee itself variable, so this no longer checks a fixed
-    ///         per-mint amount, only that nothing was created or destroyed.
+    ///         still owed to whichever recipient it accrued to, or as already paid to that same
+    ///         recipient; `setFeeRecipient` never moves a balance between the handler's two known
+    ///         recipients, and `setMintFee` makes the fee itself variable, so this no longer checks
+    ///         a fixed per-mint amount, only that nothing was created, destroyed or reassigned.
     function invariant_FeesAreSeparateFromBacking() public view {
         assertEq(
-            feeRecipient.balance + shapes.pendingFees(), handler.ghostFeesPaid(), "fee accounting drifted"
+            handler.feeRecipients(0).balance + handler.feeRecipients(1).balance + shapes.pendingFees(),
+            handler.ghostFeesPaid(),
+            "fee accounting drifted"
         );
         assertGe(
             address(shapes).balance,
             shapes.redeemableBacking() + shapes.pendingFees(),
             "fees leaked into or out of the reserve"
+        );
+    }
+
+    /// @notice `pendingFees()` is exactly the sum of every recipient's own owed balance. The
+    ///         handler only ever names one of its two known recipients, so summing `feesOwedTo`
+    ///         over both is the whole ledger.
+    function invariant_PerRecipientFeesSumToPendingFees() public view {
+        assertEq(
+            shapes.feesOwedTo(handler.feeRecipients(0)) + shapes.feesOwedTo(handler.feeRecipients(1)),
+            shapes.pendingFees(),
+            "sum(feesOwed) != pendingFees()"
         );
     }
 
@@ -1081,7 +1111,7 @@ contract AuctionHandler is Test, IERC721Receiver {
     ///      from its `receive` during fuzzing, now that the callback lives here instead of inside
     ///      a bid's escrow mint.
     function withdrawFees() public {
-        try shapes.withdrawFees() {} catch {}
+        try shapes.withdrawFees(shapes.feeRecipient()) {} catch {}
     }
 }
 

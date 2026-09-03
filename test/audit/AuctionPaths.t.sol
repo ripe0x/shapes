@@ -23,10 +23,7 @@ contract AuctionPathsTest is AuditBase {
     }
 
     /// @dev List `tokenId` (a Shape) as the lot, sold by `seller`.
-    function _list(address seller, uint256 tokenId, uint64 reserveUnits)
-        private
-        returns (uint256 auctionId)
-    {
+    function _list(address seller, uint256 tokenId, uint64 reserveUnits) private returns (uint256 auctionId) {
         vm.prank(seller);
         shapes.approve(address(house), tokenId);
         vm.prank(seller);
@@ -74,9 +71,7 @@ contract AuctionPathsTest is AuditBase {
 
         // The leader cannot withdraw.
         vm.prank(carol);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, auctionId, carol)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, auctionId, carol));
         house.withdraw(auctionId);
 
         vm.warp(block.timestamp + 2 days);
@@ -84,9 +79,7 @@ contract AuctionPathsTest is AuditBase {
 
         // Still cannot withdraw once settled: those cards are the seller's proceeds.
         vm.prank(carol);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, auctionId, carol)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.NothingToWithdraw.selector, auctionId, carol));
         house.withdraw(auctionId);
 
         uint256[] memory proceeds = house.escrowedCards(auctionId, carol);
@@ -231,9 +224,7 @@ contract AuctionPathsTest is AuditBase {
 
         // Wrong payment is refused exactly.
         vm.prank(carol);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, cost, cost - 1)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapeCardEscrow.IncorrectPayment.selector, cost, cost - 1));
         house.bid{value: cost - 1}(auctionId, none, backing);
 
         // ETH alongside a cards-only bid is refused rather than stranded.

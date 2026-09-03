@@ -316,7 +316,7 @@ contract AuctionSecurityTest is Test {
 
         // The same push attempt, now made from inside `withdrawFees`: `onERC721Received` still
         // refuses it, so the Shape stays put.
-        shapes2.withdrawFees();
+        shapes2.withdrawFees(address(mal));
         assertFalse(mal.armed(), "the callback ran and consumed the one-shot attempt");
         assertEq(shapes2.ownerOf(pushed), address(mal), "the pushed Shape was refused, not stranded");
     }
@@ -366,7 +366,7 @@ contract AuctionSecurityTest is Test {
         uint256 b = mal2.list(DENOMS[2], 1 days);
         mal2.arm();
 
-        shapes4.withdrawFees();
+        shapes4.withdrawFees(address(mal2));
 
         assertTrue(mal2.cancelled(), "the callback reached cancelAuction, unobstructed by reentrancy");
         assertEq(
@@ -413,7 +413,7 @@ contract AuctionSecurityTest is Test {
         // exists) rejects it, and the whole withdrawal reverts along with the reentrant attempt.
         uint256 pending = shapes3.pendingFees();
         vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(mal), pending));
-        shapes3.withdrawFees();
+        shapes3.withdrawFees(address(mal));
 
         assertTrue(mal.armed(), "the reverted withdrawal undid even the one-shot arm consumption");
         assertFalse(mal.cancelled(), "the cancel attempt did not go through");

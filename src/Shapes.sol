@@ -38,8 +38,8 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 ///
 ///      Three operations move ETH out. Redemption sends a burned token's backing to the caller or
 ///      a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable
-///      address. Fee withdrawal sends `pendingFees`, which is accounted separately from the
-///      reserve.
+///      address. Fee withdrawal sends one recipient's accrued balance, tracked per recipient and
+///      summed in `pendingFees()`, accounted separately from the reserve.
 ///
 ///      One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is
 ///      redeemed or burned. Holding it grants no permissions. Administration is the separate
@@ -101,8 +101,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @dev Mint fee and fee recipient, grouped so `AdminOps` reaches both through one pointer.
     AdminOps.FeeConfig private _feeConfig;
-    /// @inheritdoc IShapes
-    uint256 public pendingFees;
+
+    /// @dev Fee accrual is per recipient: each mint's fee credits whoever `_feeConfig.feeRecipient`
+    ///      names at accrual time, so `setFeeRecipient` cannot move a balance already credited to
+    ///      the outgoing recipient. `_totalFeesOwed` is the sum of every entry, kept as a running
+    ///      total rather than summed on read.
+    mapping(address => uint256) private _feesOwed;
+    uint256 private _totalFeesOwed;
 
     /// @inheritdoc IShapes
     function mintFee() public view returns (uint256) {
@@ -112,6 +117,16 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     function feeRecipient() public view returns (address) {
         return _feeConfig.feeRecipient;
+    }
+
+    /// @inheritdoc IShapes
+    function pendingFees() public view returns (uint256) {
+        return _totalFeesOwed;
+    }
+
+    /// @inheritdoc IShapes
+    function feesOwedTo(address recipient) external view returns (uint256) {
+        return _feesOwed[recipient];
     }
 
     /// @inheritdoc IShapes
@@ -416,11 +431,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _store.totalMinted = firstTokenId + quantity;
         _store.totalSupply += quantity;
         redeemableBacking += backing;
-        // Fees accrue in aggregate and are held outside the reserve. The receiver callbacks below
-        // are the first external calls, so `address(this).balance` already equals
+        // Fees accrue to whoever `feeRecipient` names right now, credited to that recipient's own
+        // balance rather than a shared pool, and are held outside the reserve. The receiver
+        // callbacks below are the first external calls, so `address(this).balance` already equals
         // `redeemableBacking + pendingFees` when any of them runs.
         if (fees != 0) {
-            pendingFees += fees;
+            _feesOwed[_feeConfig.feeRecipient] += fees;
+            _totalFeesOwed += fees;
             emit MintFeeAccrued(fees);
         }
 
@@ -445,14 +462,14 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev The recipient is read before the transfer, so the event names the address that
-    ///      received this withdrawal even when the recipient changes `feeRecipient` from its own
-    ///      `receive` hook.
-    function withdrawFees() external nonReentrant {
-        uint256 amount = pendingFees;
+    /// @dev Pays `recipient` its own accrued balance, tracked independently of every other
+    ///      recipient's. `setFeeRecipient` never moves an entry here, so a recipient that changed
+    ///      or reverts cannot block another recipient's withdrawal.
+    function withdrawFees(address recipient) external nonReentrant {
+        uint256 amount = _feesOwed[recipient];
         if (amount == 0) revert NoFeesPending();
-        address recipient = _feeConfig.feeRecipient;
-        pendingFees = 0;
+        _feesOwed[recipient] = 0;
+        _totalFeesOwed -= amount;
         emit FeesWithdrawn(recipient, amount);
         _sendEth(recipient, amount);
     }

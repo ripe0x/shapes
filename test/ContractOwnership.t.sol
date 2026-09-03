@@ -153,14 +153,14 @@ contract ContractOwnershipTest is Test {
         uint256 fee = shapes.mintFee();
 
         _mintDust(alice, 1);
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
         assertEq(feeRecipient.balance, fee, "the first withdrawal paid the original recipient");
 
         vm.expectEmit(true, true, false, true, address(shapes));
         emit IAdminControl.FeeRecipientUpdated(feeRecipient, bob);
         shapes.setFeeRecipient(bob);
         _mintDust(alice, 1);
-        shapes.withdrawFees();
+        shapes.withdrawFees(bob);
 
         assertEq(shapes.feeRecipient(), bob);
         assertEq(feeRecipient.balance, fee, "old recipient keeps only what it was already paid");
@@ -174,8 +174,10 @@ contract ContractOwnershipTest is Test {
     }
 
     /// @notice A reverting fee recipient never blocked minting under pull semantics: only
-    ///         `withdrawFees` can reach it, so the admin recovers a stuck withdrawal, not minting.
-    function test_AdminCanRecoverWithdrawalFromRevertingFeeRecipient() public {
+    ///         `withdrawFees` can reach it. Redirecting to a working recipient does not recover
+    ///         the stuck balance, since fees accrue per recipient; it only lets a later mint's fee
+    ///         withdraw cleanly to the new recipient.
+    function test_RevertingFeeRecipientDoesNotBlockANewRecipientAfterRedirect() public {
         RevertingFeeRecipient revertingRecipient = new RevertingFeeRecipient();
         Shapes recoverable = new Shapes{value: Denominations.amountAt(0)}(
             MINT_FEE, address(revertingRecipient), address(renderer), 0
@@ -184,19 +186,31 @@ contract ContractOwnershipTest is Test {
         uint256 fee = recoverable.mintFee();
 
         recoverable.mintTo{value: backing + fee}(backing, alice);
-        assertEq(recoverable.pendingFees(), fee, "the mint succeeded and the fee accrued");
+        assertEq(
+            recoverable.feesOwedTo(address(revertingRecipient)), fee, "the mint succeeded and the fee accrued"
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(revertingRecipient), fee)
         );
-        recoverable.withdrawFees();
-        assertEq(recoverable.pendingFees(), fee, "the failed withdrawal left the fee pending");
+        recoverable.withdrawFees(address(revertingRecipient));
+        assertEq(
+            recoverable.feesOwedTo(address(revertingRecipient)),
+            fee,
+            "the failed withdrawal left the fee pending"
+        );
 
         recoverable.setFeeRecipient(bob);
-        recoverable.withdrawFees();
-        assertEq(bob.balance, 100 ether + fee);
-        assertEq(recoverable.redeemableBacking(), Denominations.amountAt(0) + backing);
-        assertEq(recoverable.pendingFees(), 0);
+        recoverable.mintTo{value: backing + fee}(backing, alice);
+        recoverable.withdrawFees(bob);
+        assertEq(bob.balance, 100 ether + fee, "bob withdrew only what accrued to bob");
+        assertEq(recoverable.redeemableBacking(), Denominations.amountAt(0) + backing * 2);
+        assertEq(
+            recoverable.feesOwedTo(address(revertingRecipient)),
+            fee,
+            "the reverting recipient's balance is still stuck"
+        );
+        assertEq(recoverable.pendingFees(), fee, "the stuck balance still counts toward the total");
     }
 
     function test_RedeemingShapeZeroClearsOwnershipAndReturnsBacking() public {
@@ -243,7 +257,7 @@ contract ContractOwnershipTest is Test {
         // `supportsInterface` must never advertise an interface whose members are not all
         // implemented here, so the narrower capability interfaces are pinned alongside it in
         // Composability.t.sol.
-        assertEq(type(IShapes).interfaceId, bytes4(0x9bde7d5a), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x9529d8c4), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

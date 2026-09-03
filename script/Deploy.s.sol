@@ -21,13 +21,13 @@ import {Script} from "forge-std/Script.sol";
 ///      script/env/*.env), not a fork of this file.
 ///
 ///      `mintFee` is admin-adjustable afterward via `setMintFee`, up to the on-chain cap of one
-///      denomination unit. The initial admin is the deployer and may redirect future fee
-///      withdrawals or change the fee amount, so the initial recipient must be chosen here.
+///      denomination unit. The initial admin is the deployer and may redirect where future fees
+///      accrue or change the fee amount, so the initial recipient must be chosen here.
 ///
 ///        SHAPES_MINT_FEE_WEI   flat fee per Shape in wei. Defaults to one tenth of a
 ///                              denomination unit.
-///        SHAPES_FEE_RECIPIENT  where accrued fees are sent by `withdrawFees`. Required off
-///                              chain id 31337, where it defaults to the deployer.
+///        SHAPES_FEE_RECIPIENT  where fees accrue and, by default, are sent by `withdrawFees`.
+///                              Required off chain id 31337, where it defaults to the deployer.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
 ///        SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT  set true to allow a contract fee recipient.
 ///        SHAPES_MINT_START     unix timestamp at or after which mintBatch/mintBatchTo accept
@@ -45,8 +45,9 @@ import {Script} from "forge-std/Script.sol";
 ///      Shape #0 to the deployer. Its holder is returned by `owner()` and `ownerToken()` but
 ///      receives no administrative permissions. Permissionless artwork minting therefore begins
 ///      at #1. The deployer is also the initial `admin()` and may transfer or renounce that
-///      separate role. Admin can redirect only future mint fees; it cannot change the amount,
-///      touch backing, or alter redemption.
+///      separate role. Admin can redirect where future mint fees accrue and adjust the fee amount
+///      within its compile-time cap, but reaches no balance already accrued to a previous
+///      recipient, and cannot touch backing or redemption.
 ///
 ///      The collection is constructed with the token's address and therefore cannot be a
 ///      constructor argument to the token. The token's collection pointer starts zero and
@@ -131,8 +132,10 @@ contract Deploy is Script {
         );
         require(
             feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
-            "fee recipient is a contract: a reverting receive would block withdrawFees until admin "
-            "redirects it. Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is audited to always accept ETH"
+            "fee recipient is a contract: a reverting receive would block its own withdrawFees call "
+            "permanently, since a later redirect starts a new accrual for the new recipient rather "
+            "than recovering this one's. Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is "
+            "audited to always accept ETH"
         );
 
         // Shapes derives the genesis seed from the previous block. A fresh local chain is still

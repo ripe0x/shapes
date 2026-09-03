@@ -32,7 +32,8 @@ import {EIP712Signature} from "./EIP712Signature.sol";
 ///      member reached via the pointer works, which is why these fields live in structs.
 library AdminOps {
     /// @dev Mint fee and fee recipient, grouped so `setFeeRecipient` and `setMintFee` take one
-    ///      storage pointer. `pendingFees` stays on `Shapes`.
+    ///      storage pointer. The per-recipient owed balances and their running total stay on
+    ///      `Shapes`, since accrual happens in `_mintBatch`, not here.
     struct FeeConfig {
         uint256 mintFee;
         address feeRecipient;
@@ -127,7 +128,8 @@ library AdminOps {
 
     /* -------------------------------- fees -------------------------------- */
 
-    /// @dev Body of `Shapes.setFeeRecipient`.
+    /// @dev Body of `Shapes.setFeeRecipient`. Only points future accrual at `newRecipient`; fees
+    ///      already credited to `previousRecipient` stay owed to it and are untouched here.
     function setFeeRecipient(FeeConfig storage fees, address newRecipient) public {
         if (newRecipient == address(0)) revert IAdminControl.AdminInvalidFeeRecipient(address(0));
         address previousRecipient = fees.feeRecipient;

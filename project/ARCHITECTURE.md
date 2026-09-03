@@ -75,8 +75,8 @@ assumed, and run the same validation and the same sampling code the mutators run
 
 Collection views: `redeemableBacking`, `burnedBacking`, `blackShapeCount`, `totalSupply`,
 `totalMinted`, `owner`, `ownerToken`, `admin`, `artist`, `mintFee`, `mintStart`, `pendingFees`,
-`feeRecipient`, `renderer`, `collection`, `presentationLocked`, `positions`, `market`,
-`contractURI`.
+`feesOwedTo`, `feeRecipient`, `renderer`, `collection`, `presentationLocked`, `positions`,
+`market`, `contractURI`.
 
 The metadata copy is one hop out: `IShapeCollection.tokenNamePrefix` and
 `IShapeCollection.description` live on the address `collection()` returns, and
@@ -151,10 +151,11 @@ totalSupply      live token count
 totalMinted      the id counter
 ```
 
-Declared and written by `Shapes`: `redeemableBacking`, `burnedBacking`, `blackShapeCount`,
-`pendingFees`, the owner token id and the admin address. `AdminOps` receives narrow pointers to the
-four groups it writes: the fee config, the presentation config (`renderer`, `collection`, the
-lock), the artist attestation and the pointer group.
+Declared and written by `Shapes`: `redeemableBacking`, `burnedBacking`, `blackShapeCount`, the
+per-recipient owed-fees mapping and its running total (`pendingFees()`), the owner token id and
+the admin address. `AdminOps` receives narrow pointers to the four groups it writes: the fee
+config, the presentation config (`renderer`, `collection`, the lock), the artist attestation and
+the pointer group.
 
 The owner token id is written by `Shapes`, which moves collection ownership.
 
@@ -295,14 +296,16 @@ address(this).balance >= redeemableBacking() + pendingFees()
 Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not
 withdrawable by anyone.
 
-- Minting adds backing to `redeemableBacking` and the flat fee to `pendingFees`. Fees never enter
-  backing.
+- Minting adds backing to `redeemableBacking` and the flat fee to the current `feeRecipient`'s own
+  owed balance, counted in `pendingFees()`. Fees never enter backing.
 - Redeeming and burning subtract exactly the token's backing and pay it out.
 - Compose, decompose and split move no ETH and leave `redeemableBacking` untouched by construction:
   the summed backing of the tokens involved is unchanged.
 - `burnBacking` moves an apex token's backing out of `redeemableBacking`, adds it to `burnedBacking`,
   and sends that ETH to `0x...dEaD`.
-- `withdrawFees` pays only `pendingFees`, which is never part of the reserve.
+- `withdrawFees(recipient)` pays only `recipient`'s own owed balance, which is never part of the
+  reserve. `setFeeRecipient` writes only where future fees accrue and moves no owed balance, so a
+  recipient change cannot reach what an earlier recipient is owed.
 
 No pause, no upgrade path, no recovery function and no admin path reaches the reserve.
 

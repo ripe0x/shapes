@@ -45,11 +45,7 @@ contract LibraryDirectCallTest is AuditBase {
             shapes.presentationLocked()
         );
         bytes memory roles = abi.encode(
-            shapes.admin(),
-            shapes.owner(),
-            shapes.ownerToken(),
-            shapes.artistReleaseHash(),
-            shapes.ownerOf(0)
+            shapes.admin(), shapes.owner(), shapes.ownerToken(), shapes.artistReleaseHash(), shapes.ownerOf(0)
         );
         return keccak256(bytes.concat(counters, config, roles));
     }
@@ -106,9 +102,7 @@ contract LibraryDirectCallTest is AuditBase {
         // Views and pures carry no guard, by design: they cannot write. Under a direct CALL the
         // storage pointer resolves against the library's own account, which holds nothing.
         _call(address(RecompositionOps), abi.encodeWithSelector(bytes4(0x22dadb29), SLOT_STORE, survivor));
-        _call(
-            address(RecompositionOps), abi.encodeWithSelector(bytes4(0x8e66ac36), SLOT_STORE, survivor, 0)
-        );
+        _call(address(RecompositionOps), abi.encodeWithSelector(bytes4(0x8e66ac36), SLOT_STORE, survivor, 0));
         _call(
             address(RecompositionOps),
             abi.encodeWithSelector(bytes4(0x65e1e9f6), SLOT_STORE, alice, survivor, burnIds)
@@ -120,8 +114,15 @@ contract LibraryDirectCallTest is AuditBase {
         _call(address(RecompositionOps), abi.encodeWithSelector(bytes4(0x5f7cde24), burnIds));
 
         // The same calls aimed at every other slot in the token's layout.
-        uint256[7] memory slots =
-            [SLOT_STORE, SLOT_FEE_CONFIG, SLOT_ARTIST, SLOT_PRESENTATION, SLOT_POINTERS, SLOT_ADMIN, SLOT_OWNER_TOKEN];
+        uint256[7] memory slots = [
+            SLOT_STORE,
+            SLOT_FEE_CONFIG,
+            SLOT_ARTIST,
+            SLOT_PRESENTATION,
+            SLOT_POINTERS,
+            SLOT_ADMIN,
+            SLOT_OWNER_TOKEN
+        ];
         for (uint256 i = 0; i < slots.length; ++i) {
             _call(
                 address(RecompositionOps),
@@ -144,8 +145,7 @@ contract LibraryDirectCallTest is AuditBase {
         uint256[] memory ids = new uint256[](2);
         ids[0] = 7;
         ids[1] = 9;
-        (bool ok,) =
-            address(RecompositionOps).staticcall(abi.encodeWithSelector(bytes4(0x5f7cde24), ids));
+        (bool ok,) = address(RecompositionOps).staticcall(abi.encodeWithSelector(bytes4(0x5f7cde24), ids));
         assertTrue(ok, "the dispatcher did not run the pure body");
 
         ids[1] = 7;
@@ -177,7 +177,9 @@ contract LibraryDirectCallTest is AuditBase {
             "setCollection"
         );
         _mustRevert(
-            address(AdminOps), abi.encodeWithSelector(bytes4(0xfdec4941), SLOT_FEE_CONFIG, uint256(0)), "setMintFee"
+            address(AdminOps),
+            abi.encodeWithSelector(bytes4(0xfdec4941), SLOT_FEE_CONFIG, uint256(0)),
+            "setMintFee"
         );
         _mustRevert(
             address(AdminOps),
@@ -190,7 +192,9 @@ contract LibraryDirectCallTest is AuditBase {
             "setPointer"
         );
         _mustRevert(
-            address(AdminOps), abi.encodeWithSelector(bytes4(0xdb97eed6), SLOT_POINTERS, uint8(0)), "lockPointer"
+            address(AdminOps),
+            abi.encodeWithSelector(bytes4(0xdb97eed6), SLOT_POINTERS, uint8(0)),
+            "lockPointer"
         );
         _mustRevert(
             address(AdminOps),
@@ -221,7 +225,15 @@ contract LibraryDirectCallTest is AuditBase {
         _call(
             address(InkGenes),
             abi.encodeWithSelector(
-                bytes4(0x11bd920a), keccak256("s"), uint256(1), uint8(3), uint8(0), uint8(4), uint8(6), uint8(0), uint8(3)
+                bytes4(0x11bd920a),
+                keccak256("s"),
+                uint256(1),
+                uint8(3),
+                uint8(0),
+                uint8(4),
+                uint8(6),
+                uint8(0),
+                uint8(3)
             )
         );
         _call(
@@ -240,7 +252,10 @@ contract LibraryDirectCallTest is AuditBase {
             address(EIP712Signature),
             abi.encodeWithSelector(bytes4(0xf00ecd2c), address(this), keccak256("r"), bytes(""))
         );
-        _call(address(CopyValidation), abi.encodeWithSelector(bytes4(0x5a4e4fdb), "hello", uint256(64), uint8(0)));
+        _call(
+            address(CopyValidation),
+            abi.encodeWithSelector(bytes4(0x5a4e4fdb), "hello", uint256(64), uint8(0))
+        );
 
         _assertSame(before);
         _assertRawSlotsSame(raw);
@@ -259,7 +274,13 @@ contract LibraryDirectCallTest is AuditBase {
         bytes32 before = _snap();
         bytes32[] memory raw = _rawSlots();
 
-        // `Presentation` at slot 21: `locked` sits in slot 22, byte 20.
+        // `Presentation` at slot 21: `collection` and `locked` share slot 22 (`collection` in the
+        // low 160 bits, `locked` at byte 20). Since 887497c, `lockPresentation` reverts
+        // `CollectionNotSet` while `collection` is zero; seed the clone's own copy of that field
+        // so the call reaches the write this test is about, entirely within the clone's isolated
+        // storage and independent of Shapes, which never had `setCollection` called on the clone.
+        vm.store(clone, bytes32(uint256(22)), bytes32(uint256(uint160(address(0xC011)))));
+
         bytes32 cloneSlot22Before = vm.load(clone, bytes32(uint256(22)));
         (bool ok,) = clone.call(abi.encodeWithSelector(bytes4(0xaefafe15), SLOT_PRESENTATION));
         assertTrue(ok, "the library body did not run without the call protection");

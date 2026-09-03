@@ -52,14 +52,14 @@ contract ForcedEthTest is AuditBase {
         uint256 pending = shapes.pendingFees();
         assertGt(pending, 0, "no fee accrued to test against");
         uint256 recipientBefore = feeRecipient.balance;
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
         assertEq(feeRecipient.balance, recipientBefore + pending, "withdrawFees paid the surplus");
         assertEq(shapes.pendingFees(), 0, "fees not cleared");
         assertEq(address(shapes).balance, reserveBefore + 7 ether, "surplus was spent");
 
         // A second withdrawal has nothing to pay even though 7 ETH sits in the contract.
         vm.expectRevert(IShapes.NoFeesPending.selector);
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
 
         // Redemption still pays exactly the token's backing, not a share of the surplus.
         uint256 aliceBefore = alice.balance;

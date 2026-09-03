@@ -235,7 +235,7 @@ contract ReentrantRecipient is IERC721Receiver {
         _expectRevert(abi.encodeCall(IShapes.decomposeTo, (_target, address(this))));
         _expectRevert(abi.encodeCall(IShapes.compose, (_target, one)));
         _expectRevert(abi.encodeCall(IShapes.burnBacking, (_target)));
-        _expectRevert(abi.encodeCall(IShapes.withdrawFees, ()));
+        _expectRevert(abi.encodeCall(IShapes.withdrawFees, (address(this))));
         _expectRevert(abi.encodeWithSelector(IShapes.mint.selector, uint256(0.01 ether)));
 
         uint8[] memory outs = new uint8[](2);

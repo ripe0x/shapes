@@ -626,16 +626,20 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   immutable ladder, so an out-of-range backing value is not representable.
 - `mintFee` is set at construction, bounded by a compile-time cap of one denomination unit (`unit()`)
   (`Denominations.UNIT`), and admin-adjustable afterward via `setMintFee` within that same cap.
-  The initial `feeRecipient` is set at construction; admin may redirect subsequent withdrawals.
+  The initial `feeRecipient` is set at construction; admin may redirect where future fees accrue,
+  which never moves a balance already credited to the outgoing recipient.
   `renderer` is
   mutable until `lockPresentation`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
 - The committed mainnet initial mint fee is a flat 0.001 ETH for every Shape created, regardless of
-  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees accrue to `pendingFees` in
-  the same transaction as the mint, never enter the reserve, and leave only through `withdrawFees`,
-  a separate permissionless call that forwards the accrued total to `feeRecipient`. A batch accrues
-  `quantity * mintFee` once. Auction ETH bids pay one fee for every minimal-denomination card the
-  escrow creates, exposed exactly by `ShapeAuctionHouse.mintCostFor(backingWei)`.
+  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees accrue per recipient, to
+  whoever `feeRecipient()` names at the time of the mint, in the same transaction as the mint;
+  they never enter the reserve and leave only through `withdrawFees(recipient)`, a separate
+  permissionless call that forwards that recipient's own accrued balance to it. `pendingFees()` is
+  the sum across every recipient; `feesOwedTo(recipient)` is one recipient's share. A batch accrues
+  `quantity * mintFee` once, to the recipient current at that call. Auction ETH bids pay one fee
+  for every minimal-denomination card the escrow creates, exposed exactly by
+  `ShapeAuctionHouse.mintCostFor(backingWei)`.
 - `mintStart` is a `uint64` set once at construction and stored immutable; no admin path can read
   or change it. `mint`, `mintTo`, `mintBatch` and `mintBatchTo` revert `MintNotOpen()` while
   `block.timestamp < mintStart`, which also gates the ETH-backed auction bids that mint cards

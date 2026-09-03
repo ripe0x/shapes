@@ -85,7 +85,8 @@ Reserve and ETH
   reenters cannot extract more than its backing or leave a burned token counted.
 - `burnBacking` moves the exact backing from `redeemableBacking` to `burnedBacking`, sends it to
   the unspendable address, marks the token Black, and never lets a Black token redeem.
-- `withdrawFees` sends exactly `pendingFees` and nothing from the reserve.
+- `withdrawFees(recipient)` sends exactly `feesOwedTo(recipient)` and nothing from the reserve;
+  summed across every recipient a fee has ever accrued to, that equals `pendingFees()`.
 - Compose, decompose and split never change `redeemableBacking` in total.
 
 Recomposition

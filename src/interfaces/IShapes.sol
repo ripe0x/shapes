@@ -42,12 +42,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         origin balance (mint origins − redeemed origins) without a pre-burn state read.
     event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 
-    /// @notice Emitted once per mint call that charges a nonzero fee: the aggregate fee accrued
-    ///         to `pendingFees`, not yet forwarded to anyone. Quantity minted is recoverable from
-    ///         the same transaction's `ShapeMinted` events.
+    /// @notice Emitted once per mint call that charges a nonzero fee: the aggregate fee, credited
+    ///         to `feeRecipient()` at the time of the call, not yet forwarded. Quantity minted is
+    ///         recoverable from the same transaction's `ShapeMinted` events.
     event MintFeeAccrued(uint256 amountWei);
 
-    /// @notice Emitted when `withdrawFees` forwards the accrued fee to the current fee recipient.
+    /// @notice Emitted when `withdrawFees` forwards a recipient's accrued balance to it.
     event FeesWithdrawn(address indexed recipient, uint256 amountWei);
 
     /// @notice Emitted once when the artist cryptographically approves this deployment and release.
@@ -149,7 +149,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error EthTransferFailed(address to, uint256 amountWei);
     /// @notice A recipient-directed redemption named the zero address, which would burn the payout.
     error InvalidRecipient(address recipient);
-    /// @dev `withdrawFees` found nothing accrued.
+    /// @dev `withdrawFees` found nothing owed to the requested recipient.
     error NoFeesPending();
     /// @dev A mint fee, at construction or via `setMintFee`, above the cap, `unit()`.
     error MintFeeAboveCap(uint256 fee);
@@ -221,10 +221,16 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Shape #0 is minted in the constructor and is not subject to this gate.
     function mintStart() external view returns (uint64);
 
-    /// @notice Mint fees accrued and not yet withdrawn. Never part of `redeemableBacking`.
+    /// @notice Mint fees accrued and not yet withdrawn, summed across every recipient. Never part
+    ///         of `redeemableBacking`.
     function pendingFees() external view returns (uint256);
 
-    /// @notice Where `withdrawFees` currently forwards accrued fees. Admin-updateable.
+    /// @notice One recipient's own accrued and not yet withdrawn balance. `pendingFees()` is the
+    ///         sum of this over every recipient a mint fee has ever accrued to.
+    function feesOwedTo(address recipient) external view returns (uint256);
+
+    /// @notice Destination new mint fees credit. Admin-updateable; changing it does not move a
+    ///         balance already credited to the previous recipient.
     function feeRecipient() external view returns (address);
 
     /// @notice Permanent creator attribution: the address that deployed Shapes.
@@ -339,12 +345,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         payable
         returns (uint256 firstTokenId);
 
-    /// @notice Forward every accrued mint fee to the current `feeRecipient`. Callable by anyone;
-    ///         the destination is always the recipient at the time of the call. Reverts
-    ///         `NoFeesPending` when nothing has accrued. A recipient that reverts on receipt makes
-    ///         only this call revert; minting is never affected, and the admin can redirect
-    ///         `feeRecipient` and retry.
-    function withdrawFees() external;
+    /// @notice Forward `recipient`'s own accrued balance to it. Callable by anyone; the payout
+    ///         always goes to `recipient`, never the caller. Reverts `NoFeesPending` when nothing
+    ///         is owed to `recipient`. A recipient that reverts on receipt makes only this call
+    ///         revert for that recipient; minting and every other recipient's withdrawal are
+    ///         unaffected.
+    function withdrawFees(address recipient) external;
 
     /* --------------------------- redemption --------------------------- */
 

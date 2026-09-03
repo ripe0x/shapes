@@ -325,7 +325,7 @@ contract FeeTest is ShapesBase {
         assertEq(shapes.redeemableBacking(), DENOMS[8] + DENOMS[0]);
         assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0] + 2 * MINT_FEE);
 
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
         assertEq(feeRecipient.balance, 2 * MINT_FEE, "the recipient received exactly the accrued amount");
         assertEq(shapes.pendingFees(), 0, "nothing left pending");
         assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0], "only backing remains");
@@ -349,19 +349,21 @@ contract FeeTest is ShapesBase {
     }
 
     /// @notice A reverting fee recipient makes no difference to minting: the mint path never
-    ///         calls it. Only `withdrawFees` can reach it, and only that call reverts.
-    function test_RevertingFeeRecipientBlocksWithdrawalButNotMintingOrRedemption() public {
+    ///         calls it. Only `withdrawFees` can reach it, and only that call reverts, and only
+    ///         for that recipient: redirecting future fees to a working recipient does not move
+    ///         what is already owed to the reverting one, which stays stuck.
+    function test_RevertingFeeRecipientBlocksOnlyItsOwnWithdrawal() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
         Shapes s = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(bad), address(renderer), 0);
 
         vm.prank(alice);
         uint256 id = s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
         assertEq(s.ownerOf(id), alice, "minting to a reverting fee recipient still succeeds");
-        assertEq(s.pendingFees(), MINT_FEE, "the fee accrued regardless");
+        assertEq(s.feesOwedTo(address(bad)), MINT_FEE, "the fee accrued regardless");
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(bad), MINT_FEE));
-        s.withdrawFees();
-        assertEq(s.pendingFees(), MINT_FEE, "the failed withdrawal left the fee pending, not lost");
+        s.withdrawFees(address(bad));
+        assertEq(s.feesOwedTo(address(bad)), MINT_FEE, "the failed withdrawal left the fee pending, not lost");
 
         // Redemption is unaffected by the fee recipient's behavior.
         uint256 before = alice.balance;
@@ -369,14 +371,16 @@ contract FeeTest is ShapesBase {
         s.redeem(id);
         assertEq(alice.balance - before, DENOMS[4]);
 
-        // The admin recovers by redirecting the recipient; the pending fee then withdraws cleanly.
-        uint256 bobBefore = bob.balance;
+        // Redirecting future fees does not recover the stuck balance: it stays owed to `bad`
+        // forever, while a fee accrued after the redirect withdraws cleanly to the new recipient.
         s.setFeeRecipient(bob);
-        s.withdrawFees();
-        assertEq(
-            bob.balance - bobBefore, MINT_FEE, "the redirected recipient received the previously stuck fee"
-        );
-        assertEq(s.pendingFees(), 0);
+        vm.prank(alice);
+        s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
+        uint256 bobBefore = bob.balance;
+        s.withdrawFees(bob);
+        assertEq(bob.balance - bobBefore, MINT_FEE, "bob withdrew only the fee that accrued to bob");
+        assertEq(s.feesOwedTo(address(bad)), MINT_FEE, "the reverting recipient's balance is still stuck");
+        assertEq(s.pendingFees(), MINT_FEE, "the stuck balance still counts toward the total");
     }
 
     function test_ConstructorRejectsZeroAddresses() public {
@@ -465,7 +469,7 @@ contract FeeTest is ShapesBase {
 
     function test_WithdrawFeesWithNothingPendingReverts() public {
         vm.expectRevert(IShapes.NoFeesPending.selector);
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
     }
 
     function test_AnyoneCanTriggerWithdrawFeesToTheRecipient() public {
@@ -473,20 +477,25 @@ contract FeeTest is ShapesBase {
         assertEq(shapes.pendingFees(), MINT_FEE);
 
         vm.prank(bob);
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
         assertEq(feeRecipient.balance, MINT_FEE, "the recipient received it regardless of the caller");
         assertEq(shapes.pendingFees(), 0);
     }
 
-    function test_WithdrawFeesPaysTheRecipientCurrentAtWithdrawTime() public {
-        uint256 bobBefore = bob.balance;
+    /// @notice Fees accrue per recipient: redirecting `feeRecipient` points only future accrual
+    ///         at the new address and leaves what is already owed to the old one untouched and
+    ///         still withdrawable by it. Closes audit finding S-1.
+    function test_SetFeeRecipientDoesNotMoveAlreadyAccruedFees() public {
         _mint(alice, DENOMS[4]);
         shapes.setFeeRecipient(bob);
         assertEq(feeRecipient.balance, 0, "the old recipient never receives a fee accrued before redirect");
 
-        shapes.withdrawFees();
-        assertEq(bob.balance - bobBefore, MINT_FEE, "the new recipient received the withdrawal");
-        assertEq(feeRecipient.balance, 0);
+        vm.expectRevert(IShapes.NoFeesPending.selector);
+        shapes.withdrawFees(bob);
+
+        shapes.withdrawFees(feeRecipient);
+        assertEq(feeRecipient.balance, MINT_FEE, "the original recipient withdraws what it was already owed");
+        assertEq(shapes.pendingFees(), 0);
     }
 
     function test_PendingFeesNeverCountAsBacking() public {
@@ -849,7 +858,7 @@ contract ReserveTest is ShapesBase {
         // Withdrawing hands `fr` control from its `receive`. The reentrant mint attempt is blocked
         // by the shared reentrancy guard, but the withdrawal itself still completes.
         uint256 frBefore = address(fr).balance;
-        s.withdrawFees();
+        s.withdrawFees(address(fr));
 
         assertTrue(fr.attempted(), "the fee callback ran on withdrawal");
         assertTrue(fr.reentryReverted(), "re-entry into mint from the fee callback must revert");

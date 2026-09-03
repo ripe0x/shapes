@@ -208,7 +208,7 @@ contract ReentrantResolver {
     }
 
     function positionOf(uint256) external returns (address) {
-        (bool ok,) = address(shapes).call(abi.encodeCall(IShapes.withdrawFees, ()));
+        (bool ok,) = address(shapes).call(abi.encodeCall(IShapes.withdrawFees, (shapes.feeRecipient())));
         return ok ? WRITE_SUCCEEDED : WRITE_FAILED;
     }
 }

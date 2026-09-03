@@ -203,7 +203,14 @@ export async function createSim(dep: Deployment, keys: readonly Hex[]) {
 
   /* ------------------------------- admin --------------------------------- */
 
-  const withdrawFees = (actor: number) => sSend(actor, "withdrawFees", []);
+  /** Fees accrue per recipient now, so a withdrawal names one; defaults to whoever
+   *  `feeRecipient()` currently names, matching the pre-fee-split behavior these scripts expect. */
+  const withdrawFees = async (actor: number, recipient?: Address) => {
+    const to =
+      recipient ??
+      ((await pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "feeRecipient"})) as Address);
+    return sSend(actor, "withdrawFees", [to]);
+  };
   async function setMintFee(actor: number, newFee: bigint) {
     await sSend(actor, "setMintFee", [newFee]);
     mintFee = newFee;

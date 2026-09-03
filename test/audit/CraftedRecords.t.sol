@@ -169,9 +169,7 @@ contract CraftedRecordsTest is AuditBase {
 
         assertEq(shapes.composeDepth(a), 1, "a's record vanished");
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, a)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, a));
         shapes.decompose(a);
 
         uint256 reserve = shapes.redeemableBacking();
@@ -282,13 +280,9 @@ contract CraftedRecordsTest is AuditBase {
         wrongSum[0] = 0;
         wrongSum[1] = 0; // 0.02 != 0.1
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2));
         shapes.split(parent, wrongSum);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2)
-        );
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2));
         shapes.previewSplit(alice, parent, wrongSum);
 
         uint8[] memory offLadder = new uint8[](2);
