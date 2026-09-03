@@ -96,7 +96,7 @@ function MemberList({title, members}: {title: string; members: DocMember[]}) {
       </summary>
       <div style={{marginTop: 12}}>
         {members.map((m) => (
-          <div key={m.signature} style={{marginBottom: 14}}>
+          <div key={`${title}:${m.signature}`} style={{marginBottom: 14}}>
             <div style={mono}>{displaySignature(m.name, m.inputs)}</div>
             {m.notice && <p style={note}>{m.notice}</p>}
             <DevText text={m.dev} summary="Developer notes" />
@@ -332,7 +332,7 @@ function ContractSection({
         </div>
         {functions.map((fn) => (
           <FunctionRow
-            key={fn.signature}
+            key={`${title}:${fn.signature}`}
             fn={fn}
             address={address}
             chainId={dep.chainId}

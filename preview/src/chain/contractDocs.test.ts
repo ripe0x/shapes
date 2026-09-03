@@ -44,6 +44,10 @@ const FIXTURE: Artifact = {
       anonymous: false,
     },
     {type: "error", name: "TokenIsBlack", inputs: [{name: "tokenId", type: "uint256", internalType: "uint256"}]},
+    // Reachable through two library paths, so the ABI lists it twice; only the second is
+    // positioned where NatSpec attaches, and neither may reach the page as a duplicate.
+    {type: "error", name: "DenominationIndexOutOfRange", inputs: [{name: "index", type: "uint256", internalType: "uint256"}]},
+    {type: "error", name: "DenominationIndexOutOfRange", inputs: [{name: "index", type: "uint256", internalType: "uint256"}]},
   ],
   methodIdentifiers: {
     "compose(uint256,uint256[])": "aaaaaaaa",
@@ -64,7 +68,10 @@ const FIXTURE: Artifact = {
         notice: "A fixture contract.",
         methods: {"compose(uint256,uint256[])": {notice: "Compose several Shapes into one."}},
         events: {"Composed(uint256,uint256[])": {notice: "Several Shapes became one."}},
-        errors: {"TokenIsBlack(uint256)": [{notice: "That Shape is Black."}]},
+        errors: {
+          "TokenIsBlack(uint256)": [{notice: "That Shape is Black."}],
+          "DenominationIndexOutOfRange(uint256)": {notice: "That denomination does not exist."},
+        },
       },
     },
   }),
@@ -150,7 +157,23 @@ test("events keep their indexed flags and errors read the array form of userdoc"
       dev: "Emitted from Shapes.",
     },
   ]);
-  assert.equal(doc.errors[0].notice, "That Shape is Black.");
+  assert.equal(doc.errors.find((e) => e.name === "TokenIsBlack")?.notice, "That Shape is Black.");
+});
+
+test("a member declared through two paths is listed once, keeping the documented entry", () => {
+  const doc = contractDocFromArtifact("Fixture", "token", FIXTURE);
+  const duplicates = doc.errors.filter((e) => e.name === "DenominationIndexOutOfRange");
+  assert.equal(duplicates.length, 1);
+  assert.equal(duplicates[0].notice, "That denomination does not exist.");
+  // An undocumented duplicate still collapses to one entry, keeping the first occurrence.
+  const bare = contractDocFromArtifact("Bare", "token", {abi: FIXTURE.abi});
+  assert.equal(bare.errors.filter((e) => e.name === "DenominationIndexOutOfRange").length, 1);
+  for (const contract of [doc, bare]) {
+    for (const list of [contract.functions, contract.events, contract.errors]) {
+      const signatures = list.map((m) => m.signature);
+      assert.equal(new Set(signatures).size, signatures.length);
+    }
+  }
 });
 
 test("a metadata object rather than a JSON string still parses", () => {
@@ -190,6 +213,10 @@ test("the committed contract docs cover the whole deployment, in page order", ()
     assert.ok(contract.functions.length > 0, `${contract.name} has no functions`);
     const signatures = contract.functions.map((f) => f.signature);
     assert.deepEqual(signatures, [...signatures].sort(), `${contract.name} functions are unsorted`);
+    for (const list of [contract.functions, contract.events, contract.errors]) {
+      const all = list.map((m) => m.signature);
+      assert.equal(new Set(all).size, all.length, `${contract.name} lists a signature twice`);
+    }
   }
   const shapes = CONTRACT_DOCS[0];
   assert.ok(shapes.functions.find((f) => f.signature === "compose(uint256,uint256[])")?.abi);

@@ -6009,18 +6009,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": ""
       },
       {
-        "name": "DenominationIndexOutOfRange",
-        "signature": "DenominationIndexOutOfRange(uint256)",
-        "inputs": [
-          {
-            "name": "index",
-            "type": "uint256"
-          }
-        ],
-        "notice": "",
-        "dev": ""
-      },
-      {
         "name": "InvalidGene",
         "signature": "InvalidGene(uint256)",
         "inputs": [
@@ -6421,18 +6409,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     ],
     "events": [],
     "errors": [
-      {
-        "name": "DenominationIndexOutOfRange",
-        "signature": "DenominationIndexOutOfRange(uint256)",
-        "inputs": [
-          {
-            "name": "index",
-            "type": "uint256"
-          }
-        ],
-        "notice": "",
-        "dev": ""
-      },
       {
         "name": "DenominationIndexOutOfRange",
         "signature": "DenominationIndexOutOfRange(uint256)",

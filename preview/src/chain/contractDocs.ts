@@ -146,6 +146,22 @@ function bySignature(a: {signature: string}, b: {signature: string}): number {
   return a.signature < b.signature ? -1 : a.signature > b.signature ? 1 : 0;
 }
 
+const documented = (member: {notice: string; dev: string}) => member.notice.length > 0 || member.dev.length > 0;
+
+/**
+ * One entry per canonical signature. A member reachable through two inheritance or library paths
+ * is listed once per path in the ABI, and only one of those carries the NatSpec, so the documented
+ * entry wins and position follows the first occurrence.
+ */
+function dedupe<T extends {signature: string; notice: string; dev: string}>(members: T[]): T[] {
+  const kept = new Map<string, T>();
+  for (const member of members) {
+    const existing = kept.get(member.signature);
+    if (!existing || (!documented(existing) && documented(member))) kept.set(member.signature, member);
+  }
+  return [...kept.values()];
+}
+
 /**
  * One contract's documentation from its Foundry artifact: the ABI for the callable surface and
  * the solc NatSpec maps for the prose. A library's public functions that take a storage pointer
@@ -195,8 +211,8 @@ export function contractDocFromArtifact(name: string, kind: ContractKind, artifa
   }
 
   type EntryMap = Record<string, NatSpecEntry | NatSpecEntry[]>;
-  const members = (kindOf: "event" | "error", docs: {u?: EntryMap; d?: EntryMap}): DocMember[] =>
-    abi
+  const members = (kindOf: "event" | "error", docs: {u?: EntryMap; d?: EntryMap}): DocMember[] => {
+    const entries = abi
       .filter((item) => item.type === kindOf && item.name)
       .map((item) => {
         const signature = signatureOf(item.name!, item.inputs);
@@ -207,15 +223,16 @@ export function contractDocFromArtifact(name: string, kind: ContractKind, artifa
           notice: oneParagraph(firstEntry(docs.u?.[signature]).notice),
           dev: oneParagraph(firstEntry(docs.d?.[signature]).details),
         };
-      })
-      .sort(bySignature);
+      });
+    return dedupe(entries.sort(bySignature));
+  };
 
   return {
     name,
     kind,
     description: oneParagraph(userdoc.notice) || oneParagraph(devdoc.title) || name,
     dev: oneParagraph(devdoc.details),
-    functions: functions.sort(bySignature),
+    functions: dedupe(functions.sort(bySignature)),
     events: members("event", {u: userdoc.events, d: devdoc.events}),
     errors: members("error", {u: userdoc.errors as Record<string, NatSpecEntry> | undefined, d: devdoc.errors}),
   };
