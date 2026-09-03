@@ -430,18 +430,27 @@ function ZoomableViewport({
     });
   };
 
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    const py = event.clientY - rect.top;
-    setView((current) => {
-      const factor = Math.exp(-event.deltaY * 0.0015);
-      const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
-      const ratio = scale / current.scale;
-      return {scale, x: px - (px - current.x) * ratio, y: py - (py - current.y) * ratio};
-    });
-  };
+  // Wheel zoom is attached natively with passive: false. React registers wheel listeners as
+  // passive, so preventDefault (which keeps the page from scrolling under the tree) is ignored
+  // there and the browser logs an error on every tick.
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      const px = event.clientX - rect.left;
+      const py = event.clientY - rect.top;
+      setView((current) => {
+        const factor = Math.exp(-event.deltaY * 0.0015);
+        const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
+        const ratio = scale / current.scale;
+        return {scale, x: px - (px - current.x) * ratio, y: py - (py - current.y) * ratio};
+      });
+    };
+    viewport.addEventListener("wheel", onWheel, {passive: false});
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, []);
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement;
@@ -486,7 +495,6 @@ function ZoomableViewport({
       <div
         ref={viewportRef}
         className={`prov-tree-viewport${dragging ? " is-dragging" : ""}`}
-        onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={stopDragging}
