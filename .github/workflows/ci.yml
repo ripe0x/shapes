@@ -89,7 +89,7 @@ jobs:
         run: FOUNDRY_PROFILE=ci forge test -vv
 
   deploy-anvil:
-    name: deploy (anvil) + e2e
+    name: deploy (anvil) + lifecycle
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -110,19 +110,33 @@ jobs:
           restore-keys: |
             forge-build-${{ runner.os }}-
 
-      # script/deploy.sh and script/e2e-anvil.sh both expect a chain already answering on
-      # 127.0.0.1:8545; this job owns starting and stopping it.
+      # The lifecycle walkthrough runs the indexer against the same chain.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: indexer/package-lock.json
+
+      - name: install indexer
+        run: npm ci --prefix indexer --no-audit --no-fund
+
+      # script/deploy.sh and script/lifecycle.sh both expect a chain already answering on
+      # 127.0.0.1:8545; this job owns starting and stopping it. The gas limit is raised because
+      # the lifecycle's apex Complete is folded from 10000 origins in a handful of transactions.
       - name: start anvil
         run: |
-          anvil --port 8545 >/tmp/anvil.log 2>&1 &
+          anvil --port 8545 --gas-limit 5000000000 >/tmp/anvil.log 2>&1 &
           for _ in $(seq 1 50); do
             cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && exit 0
             sleep 0.2
           done
           echo "anvil never came up"; cat /tmp/anvil.log; exit 1
 
-      - name: end-to-end (script/e2e-anvil.sh)
-        run: script/e2e-anvil.sh
+      - name: deploy (script/deploy.sh anvil)
+        run: script/deploy.sh anvil
+
+      - name: lifecycle (script/lifecycle.sh anvil)
+        run: script/lifecycle.sh anvil
 
       - name: stop anvil
         if: always()

@@ -365,7 +365,7 @@ script/
   deploy.sh                   the one wrapper: script/deploy.sh <anvil|sepolia|mainnet>
   env/                        anvil.env, sepolia.env, mainnet.env, values only, no secrets
   SeedShapes.s.sol            seeds an already-deployed Shapes; no seeding inside Deploy.s.sol
-  e2e-anvil.sh                live end-to-end check against a local chain, via deploy.sh anvil
+  lifecycle.sh                every entrypoint walked against a deployed system, plus an indexer diff
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
@@ -407,6 +407,29 @@ FOUNDRY_PROFILE=ci forge test # heavier fuzzing
 # assertions, which measure the optimized build and trip under coverage's unoptimized one.
 forge coverage --ir-minimum --skip script \
   --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --no-match-test Gas --report summary
+```
+
+### Against a live chain
+
+`script/lifecycle.sh <anvil|sepolia>` walks every protocol entrypoint against a system
+`script/deploy.sh` has just deployed, reading the addresses back from
+`deployments/<chainId>.json` and asserting on-chain state around each call: the genesis owner
+token and its pointers, all four mint entrypoints, compose and decompose with the owner token as
+a donor, split and `splitTo`, the two previews against what the transactions then wrote, an apex
+Complete folded from 10000 origins and its `burnBacking`, every redemption path, the admin
+surface up to `lockPresentation` and `renounceAdmin`, the artist attestation, a full auction, and
+the owner token redeemed last. The reserve invariant, `balance == redeemableBacking +
+pendingFees`, is rechecked after every state change. It closes by running the Ponder indexer
+against the same chain in a throwaway database and diffing every live token's owner and
+denomination, the collection-owner row, and the lineage-edge counts against what the run caused.
+It takes the same environment name as `deploy.sh`, so one code path covers a local chain and a
+public testnet; `LIFECYCLE_APEX=0` skips the apex section, which costs 10000 mints, and
+`LIFECYCLE_INDEXER=0` skips the diff.
+
+```bash
+anvil --port 8545 --gas-limit 5000000000   # the apex section folds 10000 origins per transaction
+./script/deploy.sh anvil
+./script/lifecycle.sh anvil
 ```
 
 ### Against a mainnet fork
@@ -655,7 +678,7 @@ simulation with no wallet, broadcast, or verification.
 anvil                       # in one shell
 ./script/deploy.sh anvil    # in another
 
-./script/e2e-anvil.sh       # mint all nine, transfer, redeem, verify
+./script/lifecycle.sh anvil # walk every entrypoint against what was just deployed
 ```
 
 Sepolia and mainnet sign with the ripe0x Foundry keystore (interactive prompt, or
