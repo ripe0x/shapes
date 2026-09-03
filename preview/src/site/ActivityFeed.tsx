@@ -9,6 +9,11 @@ import {short, txUrl} from "./ui";
 
 /** Rows per page, and per "Show more". */
 export const ACTIVITY_PAGE_SIZE = 20;
+/** Live-poll cadence while the feed section is mounted and the document is visible. */
+export const ACTIVITY_LIVE_POLL_MS = 15_000;
+/** Cadence after `ACTIVITY_LIVE_POLL_BACKOFF_THRESHOLD` consecutive poll failures. */
+export const ACTIVITY_LIVE_POLL_BACKOFF_MS = ACTIVITY_LIVE_POLL_MS * 4;
+export const ACTIVITY_LIVE_POLL_BACKOFF_THRESHOLD = 3;
 /** Thumbnails drawn per row before the rest collapse into a count. A compose can name thousands
  *  of inputs; the row still has to fit on a line. */
 export const ACTIVITY_MAX_THUMBS = 6;
@@ -333,6 +338,66 @@ export async function fetchActivityStats(
   return {minted: BigInt(res.data.tokens.totalCount), composed: BigInt(res.data.activitys.totalCount)};
 }
 
+/** Merges a freshly polled first page into the already-loaded events: events already present (by
+ *  id) are left alone, and everything new is prepended in the page's own newest-first order.
+ *  Already-loaded pages beyond the first are untouched. */
+export function mergeLivePage(
+  existing: ActivityEvent[],
+  page: ActivityPage,
+): {events: ActivityEvent[]; addedIds: string[]} {
+  const known = new Set(existing.map((event) => event.id));
+  const fresh = page.events.filter((event) => !known.has(event.id));
+  if (fresh.length === 0) return {events: existing, addedIds: []};
+  return {events: [...fresh, ...existing], addedIds: fresh.map((event) => event.id)};
+}
+
+/**
+ * Runs `tick` on a timer at `intervalMs` while `isHidden()` is false, backing off to `backoffMs`
+ * after `backoffThreshold` consecutive failures (`tick` resolving `false`) and recovering on the
+ * next success. A tick due while hidden is skipped rather than fired late; call the returned
+ * `wake` from a `visibilitychange` handler to poll immediately once the tab is visible again.
+ */
+export function scheduleLivePoll(
+  tick: () => Promise<boolean>,
+  isHidden: () => boolean,
+  opts: {intervalMs?: number; backoffMs?: number; backoffThreshold?: number} = {},
+): {stop: () => void; wake: () => void} {
+  const {
+    intervalMs = ACTIVITY_LIVE_POLL_MS,
+    backoffMs = ACTIVITY_LIVE_POLL_BACKOFF_MS,
+    backoffThreshold = ACTIVITY_LIVE_POLL_BACKOFF_THRESHOLD,
+  } = opts;
+  let stopped = false;
+  let failures = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const fire = () => {
+    if (stopped || isHidden()) return; // paused; `wake` resumes on visibility
+    tick().then((ok) => {
+      failures = ok ? 0 : failures + 1;
+      schedule();
+    });
+  };
+  const schedule = () => {
+    if (stopped) return;
+    timer = setTimeout(fire, failures >= backoffThreshold ? backoffMs : intervalMs);
+  };
+  const wake = () => {
+    if (stopped) return;
+    if (timer) clearTimeout(timer);
+    fire();
+  };
+
+  schedule();
+  return {
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    },
+    wake,
+  };
+}
+
 function Thumb({thumb, onOpenToken}: {thumb: ActivityThumb; onOpenToken: (id: bigint) => void}) {
   return (
     <button
@@ -355,18 +420,24 @@ function ActivityRow({
   chainId,
   nowSeconds,
   onOpenToken,
+  isNew,
 }: {
   row: ActivityRowModel;
   index: number;
   chainId: number;
   nowSeconds: bigint;
   onOpenToken: (id: bigint) => void;
+  /** Just prepended by a live poll: rises on its own, independent of the page cascade below. */
+  isNew: boolean;
 }) {
   const {event} = row;
   // Rows rise in sequence once the list scrolls into view; the delay restarts every page so a
   // "Show more" batch cascades from its own first row.
   return (
-    <li className="activity-row" style={{animationDelay: `${(index % ACTIVITY_PAGE_SIZE) * 45}ms`}}>
+    <li
+      className={`activity-row${isNew ? " is-new" : ""}`}
+      style={{animationDelay: `${(index % ACTIVITY_PAGE_SIZE) * 45}ms`}}
+    >
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
         {row.detail && <span className="activity-detail">{row.detail}</span>}
@@ -452,8 +523,8 @@ export function ActivityFeed({
     if (!indexerUrl || !request) return;
     let cancelled = false;
     setStatus("loading");
-    // The stats row rides the feed's first-page load: one round trip on mount, no separate
-    // polling, refreshed only when the feed itself reloads.
+    // The stats row rides the feed's first-page load: one round trip on mount, refreshed again by
+    // every live poll below.
     Promise.all([fetchActivityPage(indexerUrl, request, null), fetchActivityStats(indexerUrl, request)]).then(
       ([page, s]) => {
         if (cancelled) return;
@@ -469,6 +540,47 @@ export function ActivityFeed({
       cancelled = true;
     };
   }, [indexerUrl, request, absorb]);
+
+  // Live polling reads through the same ref rather than the `events` closure so a tick started
+  // before a "Show more" append still merges against the rows loaded since.
+  const eventsRef = React.useRef(events);
+  React.useEffect(() => {
+    eventsRef.current = events;
+  }, [events]);
+  const [newIds, setNewIds] = React.useState<ReadonlySet<string>>(() => new Set());
+
+  React.useEffect(() => {
+    // Starts only once the first page has loaded; an indexer that never comes up never polls.
+    if (!indexerUrl || !request || status !== "ready") return;
+    const tick = (): Promise<boolean> =>
+      Promise.all([fetchActivityPage(indexerUrl, request, null), fetchActivityStats(indexerUrl, request)]).then(
+        ([page, s]) => {
+          const merged = mergeLivePage(eventsRef.current, page);
+          if (merged.addedIds.length > 0) {
+            setEvents(merged.events);
+            setTokens((previous) => {
+              const next = new Map(previous);
+              for (const row of page.tokens) next.set(row.id.toString(), row);
+              return next;
+            });
+            setNewIds(new Set(merged.addedIds));
+          }
+          setStats(s);
+          return true;
+        },
+        () => false,
+      );
+    const isHidden = () => typeof document !== "undefined" && document.hidden;
+    const {stop, wake} = scheduleLivePoll(tick, isHidden);
+    const onVisibility = () => {
+      if (!isHidden()) wake();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [indexerUrl, request, status]);
 
   if (!indexerUrl || !request) return null;
 
@@ -548,6 +660,7 @@ export function ActivityFeed({
               chainId={chainId}
               nowSeconds={nowSeconds}
               onOpenToken={onOpenToken}
+              isNew={newIds.has(row.event.id)}
             />
           ))}
         </ul>
