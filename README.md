@@ -674,7 +674,9 @@ After a real broadcast, the wrapper reads the broadcast artifact, reads back eve
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
 `indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `auctionHouse`,
-`mintFeeWei`, `mintStart`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
+`mintFeeWei`, `mintStart`, `libraries`, `fromBlock`). `libraries` maps each linked library's
+contract name to its address, taken from the broadcast's `libraries` array; the site's
+`/contracts` page reads it. Cutover to the site is a file copy. `deployments/31337.json` is
 gitignored; Sepolia and mainnet records are committed.
 
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712

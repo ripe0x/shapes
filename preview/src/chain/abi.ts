@@ -148,6 +148,14 @@ export const shapesAbi = parseAbi([
 ]);
 
 
+/** The public libraries whose addresses are linked into `Shapes` at deploy time. */
+export type LibraryName =
+  | "RecompositionOps"
+  | "AdminOps"
+  | "ComposeCompute"
+  | "GeometrySampling"
+  | "InkGenes";
+
 export interface Deployment {
   rpc: string;
   chainId: number;
@@ -169,6 +177,10 @@ export interface Deployment {
    *  `mintStartOf` for parsing this field on its own, e.g. before that load completes). Absent or
    *  "0" means open at deploy. */
   mintStart?: string;
+  /** Linked library addresses, from the deploy broadcast's `libraries` array. A value is null,
+   *  or the key absent, on a record written before this key existed; the contracts page shows
+   *  such a library as not recorded. */
+  libraries?: Partial<Record<LibraryName, `0x${string}` | null>>;
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
   fromBlock?: number;

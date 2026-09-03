@@ -421,6 +421,13 @@ echo "  ok: onchain readback matches the deploy"
 
 mkdir -p deployments
 DEPLOYMENT_FILE="deployments/${CHAIN_ID}.json"
+
+# The linked libraries, keyed by contract name. The broadcast records each as
+# "<source>:<Contract>:<address>"; the site's /contracts page reads this map to place an address
+# beside each library, and shows a missing one as not recorded.
+LIBRARIES_JSON=$(jq -r '[.libraries[]? // empty] | map(split(":")) | map({key: .[1], value: (.[2] | ascii_downcase)}) | from_entries' \
+  "$BROADCAST_FILE")
+
 jq -n \
   --arg rpc "$RPC" \
   --arg indexerUrl "${INDEXER_URL:-}" \
@@ -431,8 +438,9 @@ jq -n \
   --arg auctionHouse "$HOUSE" \
   --arg mintFeeWei "$MINT_FEE_ONCHAIN" \
   --arg mintStart "$MINT_START_ONCHAIN" \
+  --argjson libraries "$LIBRARIES_JSON" \
   --argjson fromBlock "$FROM_BLOCK" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock}' \
+  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,libraries:$libraries,fromBlock:$fromBlock}' \
   >"$DEPLOYMENT_FILE"
 
 echo

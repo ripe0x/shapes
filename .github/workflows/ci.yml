@@ -184,6 +184,12 @@ jobs:
           SHAPES_LADDER=testnet npm run fixtures
           git diff --exit-code -- ../test/fixtures/fixtures.mainnet.json ../test/fixtures/fixtures.testnet.json
 
+      # The /contracts page is generated from the artifacts. Regenerating must be a no-op; a
+      # non-empty diff means an ABI or NatSpec change landed without the committed docs.
+      - name: contract docs are current
+        working-directory: preview
+        run: npm run contracts:docs:check
+
       # and the Solidity port must still match them byte for byte
       - name: byte parity
         run: |
