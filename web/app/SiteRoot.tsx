@@ -39,8 +39,13 @@ export function SiteRoot({
       initialView={initialView}
       initialTokenId={initialTokenId}
       onNavigate={(view, tokenId) => router.push(pathFor(view, tokenId))}
-      renderHome={(mint, footer) => (
-        <LaunchLanding mintSlot={mint} footer={footer} mintStartSeconds={mintStartOf(dep)} />
+      renderHome={(mint, footer, header) => (
+        <LaunchLanding
+          mintSlot={mint}
+          footer={footer}
+          header={header}
+          mintStartSeconds={mintStartOf(dep)}
+        />
       )}
     />
   );
