@@ -101,7 +101,7 @@ function packedKeccakUint(types: readonly string[], values: readonly unknown[]):
  */
 export function effectiveModuleBytes(donor: SampleDonor, p: Params = CANONICAL): Uint8Array {
   requireDenomIndex(donor.denomIndex, "donor.denomIndex");
-  if (donor.modules) {
+  if (donor.modules && donor.modules.length > 0) {
     if (!isValidModuleArray(donor.modules)) {
       throw new Error("donor.modules contains an invalid module byte");
     }
