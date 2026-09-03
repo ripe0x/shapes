@@ -63,7 +63,7 @@ export function SiteApp({
   /** When the view is "home", renders the mint panel and footer inside the host's own page shell
    *  (the landing page) instead of SiteApp's header/footer/mint view. Without it, "home" falls
    *  back to the mint view. */
-  renderHome?: (mint: React.ReactNode, footer: React.ReactNode) => React.ReactNode;
+  renderHome?: (mint: React.ReactNode, footer: React.ReactNode, auctionActive: boolean) => React.ReactNode;
 }) {
   const {address, isConnected, chainId: walletChainId} = useAccount();
   const {switchChainAsync} = useSwitchChain();
@@ -533,6 +533,7 @@ export function SiteApp({
         onConnect={() => openConnectModal?.()}
       />,
       <SiteFooter reserve={reserveLine} onContracts={() => go("contracts")} />,
+      isAuctionActive(auction),
     );
   }
 

@@ -263,6 +263,7 @@ export function LaunchLanding({
   mintSlot,
   footer,
   mintStartSeconds,
+  auctionActive,
 }: {
   mintSlot?: React.ReactNode;
   /** Replaces the default footer, e.g. with one carrying the reserve line for the app-mode
@@ -272,6 +273,9 @@ export function LaunchLanding({
    *  the countdown instead of the hardcoded mainnet date. Omitted on the production landing,
    *  which always counts down to the fixed mainnet launch copy. */
   mintStartSeconds?: bigint;
+  /** Whether the house's latest auction is open for bids or awaiting settlement; adds the Auction
+   *  nav link when true. Omitted on the plain marketing landing, which has no live chain state. */
+  auctionActive?: boolean;
 }) {
   const targetMs = mintStartSeconds === undefined ? LAUNCH_AT : Number(mintStartSeconds) * 1000;
   const countdown = useCountdown(targetMs);
@@ -285,6 +289,7 @@ export function LaunchLanding({
         {live ? (
           <div className="launch-nav-links">
             <Link href="#mint">Mint</Link>
+            {auctionActive && <Link href="/auction">Auction</Link>}
             <Link href="/gallery">Gallery</Link>
             <Link href="/play">Play</Link>
           </div>
