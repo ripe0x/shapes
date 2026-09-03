@@ -92,6 +92,9 @@ export async function openOwnerAuction(sim: Sim, dep: Deployment) {
 
   if (exists) {
     let auction = await sim.getAuction(auctionId);
+    // anvil only stamps time onto mined blocks, so the latest block can be minutes stale between
+    // transactions. Mine an empty block first so the check uses the time the next tx would get.
+    await sim.pub.request({method: "evm_mine", params: []} as never);
     const now = Number((await sim.pub.getBlock()).timestamp);
 
     if (!auction.settled && !isSettleable(auction, now)) {
