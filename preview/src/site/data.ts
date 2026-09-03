@@ -564,9 +564,9 @@ async function readTokensFromChain(
 }
 
 /**
- * Chain state the site renders from. Fine on a dev chain even at SeedDemo scale (10k+ minted
- * ids); a mainnet deployment needs an indexer (or at minimum a deploy-block floor on the log
- * scan in chain/history.ts) before this ships publicly.
+ * Chain state the site renders from when no indexer answers. One request per chunk, paced, so it
+ * completes against a rate-limiting public gateway; at 20k minted ids that is minutes rather than
+ * seconds, which is the cost of the indexer being down.
  *
  * With no `previous` snapshot (first load), scans every id 0..totalMinted-1: ownerOf across all
  * ids to find live tokens, then the per-token fields for live ids only. With a `previous`
