@@ -16,6 +16,7 @@ contract MedusaReserveHarness {
 
     Shapes public shapes;
     uint256 public lastId;
+    bool private ownerTokenEverAbsent;
 
     constructor() payable {}
 
@@ -26,7 +27,7 @@ contract MedusaReserveHarness {
         ShapeRenderer renderer = new ShapeRenderer();
         ShapeCollection collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0xFEE), address(renderer), address(collection)
+            MINT_FEE, address(0xFEE), address(renderer), address(collection), 0
         );
         // Harness is the genesis owner. Keep #0 live, because it contributes its backing to the
         // property from the beginning of every Medusa sequence.
@@ -89,5 +90,22 @@ contract MedusaReserveHarness {
 
     function property_reserve_is_solvent() external view returns (bool) {
         return address(shapes) == address(0) || address(shapes).balance >= shapes.redeemableBacking();
+    }
+
+    /// @dev While the owner token exists, `owner()` must equal its ERC-721 holder; once
+    ///      `ownerToken()` reverts (redeemed or burned), it must never succeed again.
+    function property_owner_token_tracks_its_holder() external returns (bool) {
+        if (address(shapes) == address(0)) return true;
+        try shapes.ownerToken() returns (uint256 id) {
+            if (ownerTokenEverAbsent) return false;
+            try shapes.ownerOf(id) returns (address holder) {
+                return shapes.owner() == holder;
+            } catch {
+                return false;
+            }
+        } catch {
+            ownerTokenEverAbsent = true;
+            return shapes.owner() == address(0);
+        }
     }
 }

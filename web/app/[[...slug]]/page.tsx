@@ -1,18 +1,49 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { BaseError, ContractFunctionRevertedError } from "viem";
 import type { View } from "@shared/site/SiteApp";
+import { shapesAbi } from "@shared/chain/abi";
+import { createShapesPublicClient } from "@shared/chain/rpc";
 import { SiteRoot } from "../SiteRoot";
 import { LaunchLanding } from "../LaunchLanding";
 import { PlayRoot } from "../play/PlayRoot";
 import { appOnly, landingOnly } from "../lib/siteMode";
+import { serverDeployment } from "../lib/deployment";
 
 type Params = { slug?: string[] };
 type SearchParams = { s?: string | string[] };
 
 const MAX_OG_STATE_LENGTH = 6000;
 
-function shapeTitle(tokenId: bigint): string {
-  return tokenId === 0n ? "Shapes Collection Owner" : `Shape ${tokenId.toString()}`;
+// Metadata for a dynamic route is recomputed at most this often; a stale title for up to an hour
+// after ownership moves is an acceptable tradeoff against reading the chain on every request.
+export const revalidate = 3600;
+
+function shapeTitle(tokenId: bigint, isOwnerToken: boolean): string {
+  const base = `Shape ${tokenId.toString()}`;
+  return isOwnerToken ? `${base}, Contract Owner` : base;
+}
+
+/** The live owner-token id for the `<title>`/OG description of `/shape/<id>`, or null when the
+ *  contract reverts `NoOwnerToken`, meaning the collection has been redeemed or burned. Any other
+ *  failure rethrows; the caller falls back to a plain "Shape N" title. */
+async function fetchOwnerToken(): Promise<bigint | null> {
+  const dep = serverDeployment();
+  const client = createShapesPublicClient(dep, {
+    chainName: "Shapes",
+    primaryRpcUrl: process.env.SHAPES_RPC_URL,
+  });
+  try {
+    return await client.readContract({ address: dep.shapes, abi: shapesAbi, functionName: "ownerToken" });
+  } catch (e) {
+    if (e instanceof BaseError) {
+      const reverted = e.walk((err) => err instanceof ContractFunctionRevertedError);
+      if (reverted instanceof ContractFunctionRevertedError && reverted.data?.errorName === "NoOwnerToken") {
+        return null;
+      }
+    }
+    throw e;
+  }
 }
 
 // Resolve a URL path into the SiteApp view it shows. Returns null for an unknown path.
@@ -116,7 +147,13 @@ export async function generateMetadata({
   }
   if (r.view === "token" && r.tokenId !== null) {
     const id = r.tokenId.toString();
-    const title = shapeTitle(r.tokenId);
+    let title = shapeTitle(r.tokenId, false);
+    try {
+      const ownerToken = await fetchOwnerToken();
+      title = shapeTitle(r.tokenId, ownerToken === r.tokenId);
+    } catch {
+      // RPC failure resolving ownerToken; fall back to the plain per-token title.
+    }
     return {
       title,
       description: `${title}, an ETH-backed on-chain object redeemable for exactly its denomination.`,

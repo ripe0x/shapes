@@ -2,10 +2,21 @@
 
 Live continuity doc for the Director session. Read `project/STATE.md` first, then this file for the active packet and exact blockers.
 
-Session: exact-release Sepolia/site cutover, 2026-09-01.
-Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cutover branch `codex/sepolia-site-cutover`.
+Session: flat-fee release Sepolia/site cutover, 2026-09-02.
+Deployed source: exact clean `origin/main` at `eb9e8834553f199a4c94e7ba307686c8bd0d64e8`, carrying code-bearing audit target `1054db2455f7d6d3542a422130262bc872c34464`.
 
 ## Current outcome
+
+- Exact clean `eb9e8834553f199a4c94e7ba307686c8bd0d64e8` is live on Sepolia from block 11616988: Shapes `0xb142c4b09c24d639d8c154c93a539cbc09566152`, renderer `0xd9c3278d1277cef31b54e98a43db4243ada05610`, collection `0x8c5203d5cd480f7e0b266a2f6d27f0ed9919e8e1`, lens `0x259e90f875b7b975c09f05e5972f359ee0a3fa84`, auction house `0x351b7c9637c6abc1982be95f87961aff2f38647a`. Shapes creation transaction: `0xeb47218282fe64db1124b8369c5f54056fb23391e14b1dd2decfb8079a4cfdec`.
+- Every creation receipt and independent code, wiring, role, reserve, ladder, flat-fee, Shape #0, empty-pointer and zero-auction postflight passed. All eleven contracts/libraries are Etherscan-verified. Shape #0 remains with the deployer; no auction was created. Artist release hash/signature remain intentionally empty pending a separate irreversible ceremony.
+- Fly version 3 is live on isolated schema `shapes_sepolia_v3`. Health/ready are 200; status was one block behind Sepolia at 11619404 and GraphQL reported exactly backed Shape #0 with the correct owner.
+- PR #48 merged current deployment metadata into `main`. PR #49 synchronized `main` into production branch `launch`; PR #50 fixed the explicit hybrid build mode. Netlify deploy `6a980da5e9b3a10007115012` serves the launch page at `/` and the Sepolia app at `/mint`; deployment metadata, token, management, My Shapes, auction, OG and playground routes all return 200.
+- Default, testnet and deeper CI Foundry profiles each have 462 passing tests plus 4 expected fork skips; all 4 fork tests pass against live Ethereum; Medusa passes 10/10 properties across 44,411 calls; the full Anvil lifecycle passes; 128 preview tests and preview/web builds pass. Shapes is 24,362/24,341 bytes with 214/235 bytes of margin; ShapeLens is 9,885/9,867; ShapeRenderer is 23,331/23,330; ShapeAuctionHouse is 7,939/7,930. `IShapes` is `0x86cf5406`.
+- P1 PASSED 2026-08-31. `AUDIT_PROMPT_v6.md` is the authoritative flat-fee audit brief, pinned to `1054db2455f7d6d3542a422130262bc872c34464`. Independent audit, qualified legal review, R25 product signoff and D-05 mainnet ceremony decisions remain open. No mainnet broadcast is authorized.
+
+### Superseded 2026-09-01 snapshot
+
+The entries below are retained as historical continuity and do not describe the current deployment.
 
 - PR #46 merged D-35/D-36 as exact mainnet candidate `1054db2455f7d6d3542a422130262bc872c34464`: token #0 identity plus an immutable 0.001 ETH fee per mainnet Shape and 0.00001 ETH per testnet Shape, including one fee per auction-bid card created. Default, testnet and deeper CI Foundry profiles each have 462 passing tests plus 4 expected fork skips, and all 4 fork tests pass against live Ethereum; Medusa passes 10/10 properties across 44,411 calls; the full Anvil lifecycle passes; 127 preview tests and preview/web builds pass. Shapes is 24,362/24,341 bytes with 214/235 bytes of margin; ShapeLens is 9,885/9,867; ShapeRenderer is 23,331/23,330; ShapeAuctionHouse is 7,939/7,930. `IShapes` is `0x86cf5406`. R25 flags the intended but material cheap-high-tier-reroll economics. The merged release is not deployed; current Sepolia still uses 100 bps and cannot validate this ABI.
 - Current Sepolia auction house `0x38445aced30590910e087672FEEa269284F03379` now holds Shape #0 in launch auction #0. Approval `0xafd08c0864d94aa210f0c3f0a30b8da0ba1be5d94ee61882edafe7aa414feb74` and creation `0xd86702d4845a1233ae7420a94e3764d237a27e2d4a536eaa1d2bb9948a133cfb` succeeded. Terms are no reserve, 5% increment, 24 hours from first bid and 15-minute extension. No bid has landed. The local site displays it after correcting the auction-house address casing; production needs that metadata fix merged and published.
@@ -37,16 +48,16 @@ Deployed source: `origin/main` at `dba4dbfe93df64cc72052c3eab70289070e301d9`; cu
 
 ## Deployment configuration
 
-- Sepolia deployer/admin/artist and Shape #0 seller: `0xCB43078C32423F5348Cab5885911C3B5faE217F9` via Foundry account `ripe0x`. Shape #0 is currently escrowed in the launch auction house.
-- Sepolia future mint-fee recipient: `0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4`; it is code-free. The historical deployment is 100 bps; the next D-36 deployment must read exactly 10000000000000 wei per Shape.
-- Deploy only from fetched, clean, exact `main`. Never deploy from this branch. `script/deploy-sepolia.sh` fetches `origin/main` immediately before enforcing branch/commit/cleanliness, then checks chain, ladder, payout, fee, complete wiring, Shape #0 state, unsigned artist state, receipts and Etherscan source visibility. Its portable summary records a credential-free public RPC, never the operational provider URL.
+- Sepolia deployer/admin/artist and Shape #0 holder: `0xCB43078C32423F5348Cab5885911C3B5faE217F9` via Foundry account `ripe0x`.
+- Sepolia future mint-fee recipient: `0x41c3BD8A36f8fE9Bb77900ca02400b32BB35A6A4`; it is code-free. The current deployment reads exactly 10000000000000 wei per Shape.
+- Deploy only from fetched, clean, exact `main`. Never deploy from this branch. `script/deploy.sh sepolia` fetches `origin/main` immediately before enforcing branch/commit/cleanliness, then checks chain, ladder, payout, fee, complete wiring, Shape #0 state, unsigned artist state, receipts and Etherscan source visibility. Its portable summary records a credential-free public RPC, never the operational provider URL. `script/deploy.sh` is the one wrapper for anvil, Sepolia and mainnet alike, driven by `script/env/<name>.env`; the standalone Sepolia script and wrapper it replaces are removed (D-38).
 - The Etherscan key supplied in chat is not persisted. Inject it only into the deployment process. The user enters the Foundry keystore password interactively; never write it to a file.
-- The exact mined Shapes creation transaction is `0x6c162a8b0392e052108912a10b60eedcd7aed4d665032583f5f4724da5dc8d9`. The release hash and artist signature remain empty until the separate one-time ceremony; never treat the creation transaction as signed before that ceremony succeeds.
+- The exact mined Shapes creation transaction is `0xeb47218282fe64db1124b8369c5f54056fb23391e14b1dd2decfb8079a4cfdec`. The release hash and artist signature remain empty until the separate one-time ceremony; never treat the creation transaction as signed before that ceremony succeeds.
 - Older Sepolia deployments remain immutable historical systems. Never sign, relabel or adopt them as the current release.
 
 ## Remaining gates, in order
 
-1. Send `AUDIT_PROMPT_v5.md` to an independent auditor, then close or explicitly accept every finding.
+1. Send `AUDIT_PROMPT_v6.md` to an independent auditor, close or explicitly accept every finding, and obtain explicit R25 product signoff.
 2. Obtain D-15 qualified legal review and record the result.
 3. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody, artist-signing and per-pointer lock/renounce decisions. No mainnet broadcast is authorized.
 

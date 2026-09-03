@@ -868,9 +868,11 @@ export function metadataJsonFromComposition(
     ? `,{"trait_type":"Split From","value":"${LABELS[splitFrom.parentDenomIndex]} ETH"},` +
       `{"trait_type":"Split Origin","value":"${LABELS[splitFrom.originDenomIndex]} ETH"}`
     : "";
-  const name = tokenId === 0n ? "Shapes Collection Owner" : `${namePrefix}${tokenId.toString()}`;
-  const collectionOwnerTrait = tokenId === 0n
-    ? `,{"trait_type":"Collection Owner","value":"true"}`
+  const name = tokenId === 0n
+    ? `${namePrefix}${tokenId.toString()}, Contract Owner`
+    : `${namePrefix}${tokenId.toString()}`;
+  const contractOwnerTrait = tokenId === 0n
+    ? `,{"value":"Contract Owner"}`
     : "";
   return (
     `{"name":"${name}",` +
@@ -892,7 +894,7 @@ export function metadataJsonFromComposition(
     `{"trait_type":"Complete","value":"${complete ? "true" : "false"}"},` +
     `{"trait_type":"Black","value":"${inverted ? "true" : "false"}"},` +
     `{"trait_type":"Compose Depth","value":"${composeDepth.toString()}"}` +
-    collectionOwnerTrait +
+    contractOwnerTrait +
     splitTraits +
     `]}`
   );

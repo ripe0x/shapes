@@ -106,8 +106,9 @@ contract EthRejectingReceiver is IERC721Receiver {
     }
 }
 
-/// @notice A fee recipient that reverts on receipt. Minting is blocked while it remains selected;
-///         admin may redirect future fees, and redemption remains unaffected.
+/// @notice A fee recipient that reverts on receipt. Minting is never affected — the mint path
+///         never calls it. Only `withdrawFees` reverts while it remains selected; admin may
+///         redirect future withdrawals via `setFeeRecipient`, and redemption is unaffected.
 contract RevertingFeeRecipient {
     receive() external payable {
         revert("no fees");
@@ -166,7 +167,9 @@ contract ReentrantRedeemer is IERC721Receiver {
     }
 }
 
-/// @notice A fee recipient that tries to re-enter `mint` from the fee payout.
+/// @notice A fee recipient that tries to re-enter `mint` from its `receive` callback. That
+///         callback fires only from `withdrawFees`, never from a mint, since minting no longer
+///         calls the fee recipient at all.
 contract ReentrantFeeRecipient {
     IShapes public shapes;
     bool public attempted;
@@ -193,6 +196,45 @@ contract ReentrantFeeRecipient {
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
+        return IERC721Receiver.onERC721Received.selector;
+    }
+}
+
+/// @notice Records `owner()`/`ownerToken()` on every `onERC721Received` callback, to catch a
+///         mint loop that moves `_ownerToken` mid-loop and lets an earlier callback observe
+///         `ownerToken()` pointing at an id not minted yet.
+contract OwnerTokenConsistencyRecorder is IERC721Receiver {
+    IShapes public shapes;
+    address[] public recordedOwner;
+    bool[] public recordedOwnerTokenReverted;
+    bool[] public recordedConsistent;
+
+    constructor(IShapes shapes_) {
+        shapes = shapes_;
+    }
+
+    function recordedCount() external view returns (uint256) {
+        return recordedOwner.length;
+    }
+
+    function onERC721Received(address, address, uint256, bytes calldata) external returns (bytes4) {
+        address ownerAddr = shapes.owner();
+        recordedOwner.push(ownerAddr);
+
+        try shapes.ownerToken() returns (uint256 tid) {
+            recordedOwnerTokenReverted.push(false);
+            // ownerOf reverting here means ownerToken() named an id with no live owner: itself
+            // an inconsistency, not something that trivially matches an address(0) owner().
+            try shapes.ownerOf(tid) returns (address holder) {
+                recordedConsistent.push(holder == ownerAddr);
+            } catch {
+                recordedConsistent.push(false);
+            }
+        } catch {
+            recordedOwnerTokenReverted.push(true);
+            recordedConsistent.push(ownerAddr == address(0));
+        }
+
         return IERC721Receiver.onERC721Received.selector;
     }
 }

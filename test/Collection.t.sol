@@ -21,7 +21,7 @@ contract CollectionTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection)
+            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection), 0
         );
     }
 

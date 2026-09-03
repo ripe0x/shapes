@@ -50,10 +50,11 @@ interface IShapeRenderer {
     ///      `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait. `composeDepth`
     ///      is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait;
     ///      it is the one input that is mutable chain state rather than fixed at mint.
-    ///      `namePrefix` and `description` are the editorial copy the caller supplies. For every
-    ///      token except #0, `name` is `namePrefix` followed by the decimal token id. Token #0 is
-    ///      named `Shapes Collection Owner` and carries `Collection Owner: true` in its attributes.
-    ///      `description` is emitted verbatim. The renderer neither stores nor escapes
+    ///      `namePrefix` and `description` are the editorial copy the caller supplies. `ownerToken`
+    ///      names the collection owner token: `true` appends `, Contract Owner` to `namePrefix`
+    ///      plus the decimal token id and adds a value-only `{"value":"Contract Owner"}` attribute
+    ///      (no `trait_type`); `false` uses `namePrefix` plus the decimal token id, with no such
+    ///      attribute. `description` is emitted verbatim. The renderer neither stores nor escapes
     ///      caller-supplied copy; the caller owns its content.
     function metadataJSON(
         bytes32 seed,
@@ -64,7 +65,8 @@ interface IShapeRenderer {
         uint8 inkGene,
         uint256 composeDepth,
         string calldata namePrefix,
-        string calldata description
+        string calldata description,
+        bool ownerToken
     ) external pure returns (string memory);
 
     /// @notice `metadataJSON`, reading a materialized module array instead of a seed.
@@ -83,10 +85,15 @@ interface IShapeRenderer {
         uint256 composeDepth,
         string calldata namePrefix,
         string calldata description,
-        SplitProvenance calldata splitInfo
+        SplitProvenance calldata splitInfo,
+        bool ownerToken
     ) external pure returns (string memory);
 
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSON`.
+    /// @dev `ownerToken` names the collection owner token: `true` appends `, Contract Owner` to
+    ///      `namePrefix` plus the decimal token id and adds a value-only `Contract Owner`
+    ///      attribute; `false` uses `namePrefix` plus the decimal token id, with no such
+    ///      attribute.
     function tokenURI(
         bytes32 seed,
         uint256 amountWei,
@@ -96,10 +103,12 @@ interface IShapeRenderer {
         uint8 inkGene,
         uint256 composeDepth,
         string calldata namePrefix,
-        string calldata description
+        string calldata description,
+        bool ownerToken
     ) external pure returns (string memory);
 
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSONSampled`.
+    /// @dev `ownerToken` names the collection owner token, as in `tokenURI`.
     function tokenURISampled(
         bytes calldata modules,
         uint256 amountWei,
@@ -110,7 +119,8 @@ interface IShapeRenderer {
         uint256 composeDepth,
         string calldata namePrefix,
         string calldata description,
-        SplitProvenance calldata splitInfo
+        SplitProvenance calldata splitInfo,
+        bool ownerToken
     ) external pure returns (string memory);
 
     /// @notice The module glyph sequence used as the `Modules` trait.

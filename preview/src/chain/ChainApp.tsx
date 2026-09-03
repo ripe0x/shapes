@@ -98,7 +98,7 @@ function composedGene(survivor: OwnedToken, burns: OwnedToken[], sumWei: bigint)
 /// source for a Black token's original denomination (used for the density/units display).
 function parseTokenMeta(uri: string): {image: string; denomWei: bigint; inkGene: number} {
   const json = JSON.parse(atob(uri.replace("data:application/json;base64,", "")));
-  const attrs = (json.attributes ?? []) as {trait_type: string; value: string}[];
+  const attrs = (json.attributes ?? []) as {trait_type?: string; value: string}[];
   const ethTrait = attrs.find((a) => a.trait_type === "ETH Value");
   const label = ethTrait ? String(ethTrait.value).split(" ")[0] : "0";
   const inkTrait = attrs.find((a) => a.trait_type === "Ink");

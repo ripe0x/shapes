@@ -33,7 +33,7 @@ contract Token0Test is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, makeAddr("fee"), address(renderer), address(collection)
+            MINT_FEE, makeAddr("fee"), address(renderer), address(collection), 0
         );
         house = new ShapeAuctionHouse(address(shapes));
         vm.deal(artist, 10 ether);

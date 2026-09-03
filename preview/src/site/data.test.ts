@@ -1,12 +1,18 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
-import type {PublicClient} from "viem";
+import {ContractFunctionRevertedError, encodeErrorResult, type PublicClient} from "viem";
 
 import {loadSite} from "./data";
-import {BLACK_FILTER, filterGalleryTokens} from "./GalleryView";
+import {BLACK_FILTER, filterGalleryTokens, originsLabel} from "./GalleryView";
 import {filterOwnedTokens} from "./MyShapesView";
-import {DENOMINATIONS, type Deployment} from "../chain/abi";
+import {DENOMINATIONS, shapesAbi, type Deployment} from "../chain/abi";
 import {GENE_NAMES} from "../canonical/ink";
+
+/** A real decodable `NoOwnerToken()` revert, as viem's readContract would throw it. */
+function noOwnerTokenRevert(): ContractFunctionRevertedError {
+  const data = encodeErrorResult({abi: shapesAbi, errorName: "NoOwnerToken"});
+  return new ContractFunctionRevertedError({abi: shapesAbi, data, functionName: "ownerToken"});
+}
 
 const SHAPES = "0x000000000000000000000000000000000000dEaD" as `0x${string}`;
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`;
@@ -63,6 +69,9 @@ function makeClient(opts: {
   attribution?: boolean;
   legacyFee?: boolean;
   headBlock?: bigint;
+  ownerToken?: bigint | null;
+  /** A non-revert failure on the ownerToken read, distinct from a decoded NoOwnerToken revert. */
+  ownerTokenReadFails?: boolean;
 }) {
   const counts = {multicall: 0, readContract: 0};
 
@@ -82,6 +91,12 @@ function makeClient(opts: {
       case "artistReleaseHash":
         if (opts.attribution === false) throw new Error("function selector was not recognized");
         return RELEASE_HASH;
+      case "ownerToken":
+        if (opts.ownerToken === null) throw noOwnerTokenRevert();
+        if (opts.ownerToken === undefined && opts.ownerTokenReadFails) {
+          throw new Error("RPC unavailable");
+        }
+        return opts.ownerToken ?? 0n;
       case "mintFee":
         if (opts.legacyFee) throw new Error("function selector was not recognized");
         return 1_000_000_000_000_000n;
@@ -221,11 +236,12 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
   assert.equal(site.artist, ARTIST);
   assert.equal(site.artistAttested, true);
   assert.equal(site.artistReleaseHash, RELEASE_HASH);
+  assert.equal(site.ownerToken, 0n);
 
   // 1203 ownerOf calls in 500-call chunks = 3 multicalls, plus 1 for the per-token fields.
   assert.equal(counts.multicall, 4);
-  // Header and the single flat-fee read go one-by-one.
-  assert.equal(counts.readContract, 6);
+  // Header, the single flat-fee read, and ownerToken go one-by-one.
+  assert.equal(counts.readContract, 7);
 });
 
 test("loadSite: falls back to single reads when the chain has no Multicall3", async () => {
@@ -239,8 +255,8 @@ test("loadSite: falls back to single reads when the chain has no Multicall3", as
     [1n],
   );
   assert.equal(counts.multicall, 0);
-  // Header reads, then 3 ownerOf + 5 per-token fields.
-  assert.equal(counts.readContract, 6 + 3 + 5);
+  // Header reads (including ownerToken), then 3 ownerOf + 5 per-token fields.
+  assert.equal(counts.readContract, 7 + 3 + 5);
 });
 
 test("loadSite: superseded percentage-fee Sepolia remains readable until redeployment", async () => {
@@ -277,6 +293,22 @@ test("loadSite: pre-attribution deployments still load", async () => {
   assert.equal(site.artistAttested, false);
 });
 
+test("loadSite: a NoOwnerToken revert reads as no collection owner", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true, ownerToken: null});
+
+  const site = await loadSite(client, dep);
+
+  assert.equal(site.ownerToken, null);
+});
+
+test("loadSite: a non-revert ownerToken failure rejects the load instead of hiding as null", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true, ownerTokenReadFails: true});
+
+  await assert.rejects(loadSite(client, dep), /RPC unavailable/);
+});
+
 test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state stays onchain", async () => {
   const live = new Map<bigint, FakeToken>([
     [2n, NORMAL],
@@ -304,7 +336,7 @@ test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state s
   assert.equal(site.tokens[0]!.composeDepth, 3);
   assert.equal(site.tokens[1]!.di, -1); // Black remains live and visible
   assert.equal(counts.multicall, 1); // six canonical reads for each candidate live id
-  assert.equal(counts.readContract, 5); // live header and one flat-fee read, no totalMinted scan
+  assert.equal(counts.readContract, 6); // live header, one flat-fee read, ownerToken; no totalMinted scan
   assert.deepEqual(metrics, [{source: "indexer", indexerRequests: 1}]);
 });
 
@@ -395,4 +427,14 @@ test("loadSite: oversized indexer response bodies fall back", async () => {
   });
 
   assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("originsLabel counts mint origins and flags Complete", () => {
+  const meta = (attrs: {trait_type: string; value: string}[]) => ({name: "", description: "", attributes: attrs});
+  assert.equal(originsLabel({originCount: 1, meta: meta([])}), "1 origin");
+  assert.equal(originsLabel({originCount: 6, meta: meta([{trait_type: "Complete", value: "false"}])}), "6 origins");
+  assert.equal(
+    originsLabel({originCount: 10_000, meta: meta([{trait_type: "Complete", value: "true"}])}),
+    "10,000 origins, Complete",
+  );
 });

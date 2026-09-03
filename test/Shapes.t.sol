@@ -10,6 +10,7 @@ import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 
 import {Shapes} from "../src/Shapes.sol";
+import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
@@ -70,7 +71,7 @@ abstract contract ShapesBase is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         // Most legacy subsystem tests need an otherwise-empty collection. ContractOwnership.t.sol
         // exercises the live genesis token itself; burn it here while preserving issued id 0.
@@ -131,7 +132,11 @@ contract MintTest is ShapesBase {
             assertEq(shapes.totalSupply(), i + 1);
             assertEq(shapes.totalMinted(), i + 2);
         }
-        assertEq(address(shapes).balance, expectedBacking, "balance equals backing exactly");
+        assertEq(
+            address(shapes).balance,
+            expectedBacking + shapes.pendingFees(),
+            "balance equals backing plus pending fees exactly"
+        );
         _assertSolvent();
     }
 
@@ -244,8 +249,8 @@ contract MintTest is ShapesBase {
         assertEq(shapes.totalMinted(), qty + 1);
         assertEq(shapes.totalSupply(), qty);
         assertEq(shapes.redeemableBacking(), qty * DENOMS[4], "fees are not part of backing");
-        assertEq(address(shapes).balance, qty * DENOMS[4]);
-        assertEq(feeRecipient.balance, qty * feeOf(DENOMS[4]), "aggregate fee forwarded once");
+        assertEq(address(shapes).balance, qty * DENOMS[4] + qty * feeOf(DENOMS[4]));
+        assertEq(shapes.pendingFees(), qty * feeOf(DENOMS[4]), "aggregate fee accrued once");
     }
 
     function test_BatchGivesUniqueIdsAndSeeds() public {
@@ -302,86 +307,206 @@ contract MintTest is ShapesBase {
 contract FeeTest is ShapesBase {
     function test_FeesReachRecipientAndNeverJoinBacking() public {
         _mint(alice, DENOMS[8]);
-        assertEq(feeRecipient.balance, MINT_FEE, "one flat fee for one Shape");
+        assertEq(shapes.pendingFees(), MINT_FEE, "one flat fee accrued for one Shape");
+        assertEq(feeRecipient.balance, 0, "nothing forwarded until withdrawFees is called");
         assertEq(shapes.redeemableBacking(), DENOMS[8]);
-        assertEq(address(shapes).balance, DENOMS[8]);
+        assertEq(address(shapes).balance, DENOMS[8] + MINT_FEE);
 
         _mint(alice, DENOMS[0]);
-        assertEq(feeRecipient.balance, 2 * MINT_FEE, "two Shapes pay two flat fees");
+        assertEq(shapes.pendingFees(), 2 * MINT_FEE, "two Shapes accrue two flat fees");
+        assertEq(feeRecipient.balance, 0);
         assertEq(shapes.redeemableBacking(), DENOMS[8] + DENOMS[0]);
-        assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0]);
+        assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0] + 2 * MINT_FEE);
+
+        shapes.withdrawFees();
+        assertEq(feeRecipient.balance, 2 * MINT_FEE, "the recipient received exactly the accrued amount");
+        assertEq(shapes.pendingFees(), 0, "nothing left pending");
+        assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0], "only backing remains");
     }
 
     function test_FeeIsFlatAtEveryDenomination() public {
         for (uint256 i = 0; i < 9; ++i) {
-            uint256 before = feeRecipient.balance;
+            uint256 before = shapes.pendingFees();
             _mint(alice, DENOMS[i]);
-            assertEq(feeRecipient.balance - before, MINT_FEE, "every Shape pays the same flat fee");
+            assertEq(shapes.pendingFees() - before, MINT_FEE, "every Shape accrues the same flat fee");
         }
     }
 
     function test_ZeroFeeIsSupported() public {
         Shapes free = new Shapes{value: Denominations.amountAt(0)}(
-            0, feeRecipient, address(renderer), address(collection)
+            0, feeRecipient, address(renderer), address(collection), 0
         );
         vm.prank(alice);
         uint256 id = free.mintTo{value: DENOMS[4]}(DENOMS[4], alice);
         assertEq(free.backingOf(id), DENOMS[4]);
+        assertEq(free.pendingFees(), 0);
         assertEq(feeRecipient.balance, 0);
     }
 
-    function test_RevertingFeeRecipientBlocksMintingButNotRedemption() public {
+    /// @notice A reverting fee recipient makes no difference to minting: the mint path never
+    ///         calls it. Only `withdrawFees` can reach it, and only that call reverts.
+    function test_RevertingFeeRecipientBlocksWithdrawalButNotMintingOrRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
         Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(bad), address(renderer), address(collection)
+            MINT_FEE, address(bad), address(renderer), address(collection), 0
         );
 
         vm.prank(alice);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(bad), feeOf(DENOMS[4]))
-        );
-        s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
+        uint256 id = s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
+        assertEq(s.ownerOf(id), alice, "minting to a reverting fee recipient still succeeds");
+        assertEq(s.pendingFees(), MINT_FEE, "the fee accrued regardless");
 
-        // With a zero fee there is no transfer at all, so the same recipient is harmless and
-        // redemption is provably independent of the fee path.
-        Shapes s0 = new Shapes{value: Denominations.amountAt(0)}(
-            0, address(bad), address(renderer), address(collection)
-        );
-        vm.startPrank(alice);
-        uint256 id = s0.mintTo{value: DENOMS[4]}(DENOMS[4], alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(bad), MINT_FEE));
+        s.withdrawFees();
+        assertEq(s.pendingFees(), MINT_FEE, "the failed withdrawal left the fee pending, not lost");
+
+        // Redemption is unaffected by the fee recipient's behavior.
         uint256 before = alice.balance;
-        s0.redeem(id);
-        vm.stopPrank();
+        vm.prank(alice);
+        s.redeem(id);
         assertEq(alice.balance - before, DENOMS[4]);
+
+        // The admin recovers by redirecting the recipient; the pending fee then withdraws cleanly.
+        uint256 bobBefore = bob.balance;
+        s.setFeeRecipient(bob);
+        s.withdrawFees();
+        assertEq(
+            bob.balance - bobBefore, MINT_FEE, "the redirected recipient received the previously stuck fee"
+        );
+        assertEq(s.pendingFees(), 0);
     }
 
     function test_ConstructorRejectsZeroAddresses() public {
-        vm.expectRevert(bytes("fee recipient is zero"));
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0)));
         new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0), address(renderer), address(collection)
+            MINT_FEE, address(0), address(renderer), address(collection), 0
         );
 
-        vm.expectRevert(bytes("renderer is zero"));
-        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(0), address(collection));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0)));
+        new Shapes{value: Denominations.amountAt(0)}(
+            MINT_FEE, feeRecipient, address(0), address(collection), 0
+        );
+    }
+
+    function test_ConstructorRejectsFeeAboveCap() public {
+        uint256 cap = shapes.unit();
+        vm.expectRevert(abi.encodeWithSelector(IShapes.MintFeeAboveCap.selector, cap + 1));
+        new Shapes{value: Denominations.amountAt(0)}(
+            cap + 1, feeRecipient, address(renderer), address(collection), 0
+        );
     }
 
     function test_ConstructorStoresAndChargesTheFlatFee() public {
-        uint256 customFee = 0.123 ether;
+        uint256 customFee = Denominations.UNIT / 2;
         Shapes custom = new Shapes{value: Denominations.amountAt(0)}(
-            customFee, feeRecipient, address(renderer), address(collection)
+            customFee, feeRecipient, address(renderer), address(collection), 0
         );
         assertEq(custom.mintFee(), customFee);
 
         vm.prank(alice);
         custom.mint{value: DENOMS[4] + customFee}(DENOMS[4]);
         assertEq(custom.redeemableBacking(), DENOMS[0] + DENOMS[4], "fee stayed outside backing");
-        assertEq(feeRecipient.balance, customFee, "the flat fee reached the recipient");
+        assertEq(custom.pendingFees(), customFee, "the flat fee accrued");
     }
 
     function test_FeeConfigurationIsExposed() public view {
         assertEq(shapes.mintFee(), MINT_FEE);
         assertEq(shapes.feeRecipient(), feeRecipient);
         assertEq(shapes.renderer(), address(renderer));
+        assertEq(shapes.unit(), Denominations.UNIT);
+        assertEq(shapes.pendingFees(), 0);
+    }
+
+    function test_AdminCanChangeTheFeeWithinTheCap() public {
+        uint256 cap = shapes.unit();
+        uint256 raised = cap;
+        uint256 lowered = cap / 4;
+
+        vm.expectEmit(false, false, false, true, address(shapes));
+        emit IAdminControl.MintFeeUpdated(MINT_FEE, raised);
+        shapes.setMintFee(raised);
+        assertEq(shapes.mintFee(), raised);
+        vm.prank(alice);
+        shapes.mint{value: DENOMS[2] + raised}(DENOMS[2]);
+        assertEq(shapes.pendingFees(), raised, "the raised fee applied to the next mint");
+
+        shapes.setMintFee(lowered);
+        assertEq(shapes.mintFee(), lowered);
+        vm.prank(alice);
+        shapes.mint{value: DENOMS[2] + lowered}(DENOMS[2]);
+        assertEq(shapes.pendingFees(), raised + lowered, "the lowered fee applied to the next mint");
+
+        shapes.setMintFee(0);
+        assertEq(shapes.mintFee(), 0);
+        uint256 pendingBefore = shapes.pendingFees();
+        vm.prank(alice);
+        shapes.mint{value: DENOMS[2]}(DENOMS[2]);
+        assertEq(shapes.pendingFees(), pendingBefore, "a zero fee accrues nothing further");
+
+        // The auction house reads `mintFee()` live for its ETH-bid card minting cost.
+        ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
+        assertEq(house.mintCostFor(DENOMS[2]), DENOMS[2], "mintCostFor follows the current zero fee");
+        shapes.setMintFee(lowered);
+        assertEq(
+            house.mintCostFor(DENOMS[2]),
+            DENOMS[2] + lowered * house.cardsFor(DENOMS[2])[2],
+            "mintCostFor follows the fee once changed again"
+        );
+    }
+
+    function test_SetMintFeeRejectsAboveCap() public {
+        uint256 cap = shapes.unit();
+        vm.expectRevert(abi.encodeWithSelector(IShapes.MintFeeAboveCap.selector, cap + 1));
+        shapes.setMintFee(cap + 1);
+        assertEq(shapes.mintFee(), MINT_FEE, "the fee did not change");
+    }
+
+    function test_SetMintFeeIsAdminOnly() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
+        shapes.setMintFee(0);
+    }
+
+    function test_WithdrawFeesWithNothingPendingReverts() public {
+        vm.expectRevert(IShapes.NoFeesPending.selector);
+        shapes.withdrawFees();
+    }
+
+    function test_AnyoneCanTriggerWithdrawFeesToTheRecipient() public {
+        _mint(alice, DENOMS[4]);
+        assertEq(shapes.pendingFees(), MINT_FEE);
+
+        vm.prank(bob);
+        shapes.withdrawFees();
+        assertEq(feeRecipient.balance, MINT_FEE, "the recipient received it regardless of the caller");
+        assertEq(shapes.pendingFees(), 0);
+    }
+
+    function test_WithdrawFeesPaysTheRecipientCurrentAtWithdrawTime() public {
+        uint256 bobBefore = bob.balance;
+        _mint(alice, DENOMS[4]);
+        shapes.setFeeRecipient(bob);
+        assertEq(feeRecipient.balance, 0, "the old recipient never receives a fee accrued before redirect");
+
+        shapes.withdrawFees();
+        assertEq(bob.balance - bobBefore, MINT_FEE, "the new recipient received the withdrawal");
+        assertEq(feeRecipient.balance, 0);
+    }
+
+    function test_PendingFeesNeverCountAsBacking() public {
+        uint256 a = _mint(alice, DENOMS[4]);
+        uint256 b = _mint(alice, DENOMS[2]);
+        uint256 pending = shapes.pendingFees();
+        assertGt(pending, 0);
+
+        vm.startPrank(alice);
+        shapes.redeem(a);
+        shapes.redeem(b);
+        vm.stopPrank();
+
+        assertEq(shapes.redeemableBacking(), 0, "every Shape redeemed in full");
+        assertEq(shapes.pendingFees(), pending, "the fee is untouched by redemption");
+        assertEq(address(shapes).balance, pending, "only the pending fee remains");
     }
 }
 
@@ -401,7 +526,7 @@ contract RedeemTest is ShapesBase {
         assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
         assertEq(shapes.totalMinted(), 2, "genesis plus the redeemed public id remain issued");
-        assertEq(address(shapes).balance, 0);
+        assertEq(address(shapes).balance, shapes.pendingFees());
     }
 
     function test_RedeemedTokenNoLongerExists() public {
@@ -495,7 +620,7 @@ contract RedeemTest is ShapesBase {
         assertEq(alice.balance - before, total, "one aggregate transfer of the exact total");
         assertEq(shapes.redeemableBacking(), 0);
         assertEq(shapes.totalSupply(), 0);
-        assertEq(address(shapes).balance, 0);
+        assertEq(address(shapes).balance, shapes.pendingFees());
     }
 
     function test_RedeemBatchRejectsForeignToken() public {
@@ -525,7 +650,7 @@ contract RedeemTest is ShapesBase {
         shapes.redeemBatch(ids);
 
         assertEq(shapes.redeemableBacking(), DENOMS[4], "no double spend");
-        assertEq(address(shapes).balance, DENOMS[4]);
+        assertEq(address(shapes).balance, DENOMS[4] + shapes.pendingFees());
     }
 
     function test_RedeemBatchRejectsEmpty() public {
@@ -574,7 +699,7 @@ contract RedeemTest is ShapesBase {
 
         assertEq(to.balance - before, amount);
         assertEq(shapes.redeemableBacking(), 0);
-        assertEq(address(shapes).balance, 0);
+        assertEq(address(shapes).balance, shapes.pendingFees());
     }
 }
 
@@ -624,7 +749,7 @@ contract ReserveTest is ShapesBase {
         uint256 id = _mint(alice, DENOMS[4]);
 
         vm.deal(address(shapes), address(shapes).balance + DENOMS[4] * 3);
-        assertEq(address(shapes).balance, DENOMS[4] * 4);
+        assertEq(address(shapes).balance, DENOMS[4] * 4 + shapes.pendingFees());
         assertEq(shapes.redeemableBacking(), DENOMS[4], "forced ETH does not become backing");
         _assertSolvent();
 
@@ -633,7 +758,7 @@ contract ReserveTest is ShapesBase {
         shapes.redeem(id);
 
         assertEq(alice.balance - before, DENOMS[4], "redeemer gets backing, not the surplus");
-        assertEq(address(shapes).balance, DENOMS[4] * 3, "surplus stays stranded");
+        assertEq(address(shapes).balance, DENOMS[4] * 3 + shapes.pendingFees(), "surplus stays stranded");
         assertEq(shapes.redeemableBacking(), 0);
         _assertSolvent();
     }
@@ -672,7 +797,7 @@ contract ReserveTest is ShapesBase {
         assertEq(address(r).balance, DENOMS[4], "only the first token settled");
         assertEq(shapes.ownerOf(b), address(r), "the second token is untouched");
         assertEq(shapes.redeemableBacking(), DENOMS[5]);
-        assertEq(address(shapes).balance, DENOMS[5]);
+        assertEq(address(shapes).balance, DENOMS[5] + shapes.pendingFees());
         _assertSolvent();
     }
 
@@ -704,14 +829,14 @@ contract ReserveTest is ShapesBase {
         assertEq(shapes.totalSupply(), 1, "exactly one token exists");
         assertEq(shapes.totalMinted(), 2);
         assertEq(shapes.redeemableBacking(), DENOMS[4]);
-        assertEq(address(shapes).balance, DENOMS[4]);
+        assertEq(address(shapes).balance, DENOMS[4] + shapes.pendingFees());
         _assertSolvent();
     }
 
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
         Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(fr), address(renderer), address(collection)
+            MINT_FEE, address(fr), address(renderer), address(collection), 0
         );
         s.redeemTo(0, payable(address(0xD15CA4D)));
         fr.configure(IShapes(address(s)), DENOMS[4]);
@@ -720,12 +845,24 @@ contract ReserveTest is ShapesBase {
         vm.prank(alice);
         s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
 
-        assertTrue(fr.attempted(), "the fee callback ran");
-        assertTrue(fr.reentryReverted(), "re-entry from the fee recipient must revert");
+        // The mint path makes no call to the fee recipient: the callback never fires.
+        assertFalse(fr.attempted(), "the fee recipient receives no callback during mint");
         assertEq(s.totalSupply(), 1);
         assertEq(s.redeemableBacking(), DENOMS[4]);
-        assertEq(address(s).balance, DENOMS[4]);
-        assertGe(address(s).balance, s.redeemableBacking());
+        assertEq(s.pendingFees(), MINT_FEE);
+        assertEq(address(s).balance, DENOMS[4] + MINT_FEE);
+
+        // Withdrawing hands `fr` control from its `receive`. The reentrant mint attempt is blocked
+        // by the shared reentrancy guard, but the withdrawal itself still completes.
+        uint256 frBefore = address(fr).balance;
+        s.withdrawFees();
+
+        assertTrue(fr.attempted(), "the fee callback ran on withdrawal");
+        assertTrue(fr.reentryReverted(), "re-entry into mint from the fee callback must revert");
+        assertEq(s.pendingFees(), 0, "the withdrawal completed");
+        assertEq(address(fr).balance - frBefore, MINT_FEE, "the recipient received the withdrawal");
+        assertEq(s.totalSupply(), 1, "the reentrant mint never landed");
+        assertGe(address(s).balance, s.redeemableBacking() + s.pendingFees());
     }
 }
 
@@ -1458,10 +1595,10 @@ contract RendererAdminTest is ShapesBase {
     }
 
     function test_SetRendererRejectsCodelessAddress() public {
-        vm.expectRevert(bytes("renderer has no code"));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, alice));
         shapes.setRenderer(alice); // an EOA
 
-        vm.expectRevert(bytes("renderer is zero"));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0)));
         shapes.setRenderer(address(0));
     }
 
@@ -1671,7 +1808,7 @@ contract RecompositionTest is ShapesBase {
         uint8[] memory outs = new uint8[](1);
         outs[0] = 1;
         vm.prank(alice);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitTooFewOutputs.selector));
         shapes.split(id, outs);
     }
 
@@ -1716,19 +1853,19 @@ contract RecompositionTest is ShapesBase {
 
     function test_NoFeeChargedOnRecompose() public {
         uint256 first = _mintMany(DENOMS[0], 5);
-        uint256 afterMint = feeRecipient.balance;
+        uint256 afterMint = shapes.pendingFees();
         uint256[] memory burn = new uint256[](4);
         for (uint256 i = 0; i < 4; i++) {
             burn[i] = first + 1 + i;
         }
         vm.prank(alice);
         shapes.compose(first, burn);
-        assertEq(feeRecipient.balance, afterMint, "compose charged no fee");
+        assertEq(shapes.pendingFees(), afterMint, "compose charged no fee");
 
         uint8[] memory outs = new uint8[](5);
         vm.prank(alice);
         shapes.split(first, outs);
-        assertEq(feeRecipient.balance, afterMint, "split charged no fee");
+        assertEq(shapes.pendingFees(), afterMint, "split charged no fee");
     }
 
     function test_SupportsErc4906() public view {

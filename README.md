@@ -90,7 +90,10 @@ remain distinct historical objects. That is the whole design.
 
 ## Minting
 
-Minting is permissionless.
+Minting is permissionless from the immutable `mintStart` timestamp onward. Before it, `mint`,
+`mintTo`, `mintBatch`, `mintBatchTo`, and ETH-backed auction bids that mint through them all
+revert `MintNotOpen()`. Shape #0 is minted unconditionally in the constructor, so it can be
+transferred, listed for auction, and redeemed before `mintStart`.
 
 ```solidity
 mint(uint256 amountWei) payable returns (uint256 tokenId)
@@ -114,15 +117,18 @@ its own seed.
 
 ## The mint fee
 
-The mainnet deployment value is a flat **0.001 ETH per Shape created**, independent of backing.
-`mintFee` is immutable. The initial `feeRecipient` is chosen at deployment, and `admin()` may
-redirect only future fees. A 100 ETH Shape and a 0.01 ETH Shape each pay 0.001 ETH. The isolated
-testnet build scales the fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
+The mainnet deployment's initial value is a flat **0.001 ETH per Shape created**, independent of
+backing. `admin()` may adjust `mintFee` afterward via `setMintFee`, up to the compile-time cap
+one denomination unit (`unit()`), and may redirect `feeRecipient` for future withdrawals. A
+100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee. The isolated testnet build scales
+the initial fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
 
-`mintFee()` returns the per-Shape fee. Fees are forwarded to the recipient in the same transaction
-and never join the reserve; a batch pays and forwards `quantity * mintFee` once.
-Redemption is unaffected: a 1 ETH Shape always redeems for exactly 1 ETH, fee already paid at
-mint.
+`mintFee()` returns the current per-Shape fee, read live by every mint. Fees accrue to
+`pendingFees()` in the same transaction as the mint and never join the reserve; a batch accrues
+`quantity * mintFee` once. Anyone may call `withdrawFees()` to forward the accrued total to the
+current `feeRecipient` — minting never calls the recipient directly, so a reverting recipient
+blocks only the withdrawal, never minting. Redemption is unaffected: a 1 ETH Shape always redeems
+for exactly 1 ETH, fee already paid at mint.
 
 There is no burn fee, no transfer fee, no royalty requirement, and no recurring protocol fee.
 
@@ -227,7 +233,7 @@ outcome: stranding a few stray wei is strictly better than opening a withdrawal 
 reach the reserve.
 
 Direct ETH transfers to the contract revert. ETH arrives through the constructor-backed mint of
-Shape #0 and through later permissionless mints.
+Shape #0 and through later mints once `mintStart` has passed.
 
 Every wei counted by `redeemableBacking()` corresponds to a live non-Black Shape. Stateful
 invariants cover minting, transfer, redemption, burn, composition, decomposition, splitting,
@@ -236,15 +242,19 @@ and the narrow compose/decompose identity-revival exception.
 
 ## Immutability
 
-Shape #0 represents ownership of the contract as a collectible object. It is minted atomically to the
-deployer with minimum-denomination backing, and `owner()` always returns its current holder. It is otherwise a
-normal Shape: it can be transferred, redeemed, composed, decomposed, or split. While #0 does not
-exist, `owner()` returns zero. Its metadata title is `Shapes Collection Owner`, with the exclusive
-trait `Collection Owner: true`. Holding it grants no administrative rights. Permissionless artwork
-minting starts at #1, which is the launch-auction lot.
+One live Shape is the owner token, and `owner()` always returns its current holder. It starts as
+#0, minted atomically to the deployer with minimum-denomination backing, and is otherwise a normal
+Shape: it can be transferred, redeemed, composed, decomposed, or split. A compose that absorbs it
+moves it to the survivor, the matching decompose restores it to that input, and splitting it gives
+it to the first output. Redeeming or burning the owner token ends collection ownership
+permanently: `owner()` returns zero and no other token inherits. Its metadata name is the ordinary
+token name suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), with the exclusive
+value-only attribute `"Contract Owner"` (no `trait_type`). Holding it grants no administrative
+rights. Permissionless artwork minting starts at #1 and opens at the immutable `mintStart`
+timestamp; no admin path can move it.
 
 The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move
-ETH, administer metadata, receive fees, control Shape #0, or authorize any operation. The artist may
+ETH, administer metadata, receive fees, control the owner token, or authorize any operation. The artist may
 submit one EIP-712 signature directly to Shapes, or have anyone relay it, approving the exact chain,
 Shapes address, artist address and chosen `releaseHash`. `artistSignature()` and
 `artistReleaseHash()` then remain onchain permanently, along with proof that the signature was valid
@@ -256,7 +266,7 @@ artist-controlled mutable text.
 A separate `admin()` role controls presentation, positions, market configuration and the
 destination of future mint fees. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
-of Shape #0:
+of the owner token:
 
 - Presentation: the renderer and collection metadata contracts may be replaced until
   `lockRenderer` permanently freezes both pointers. The metadata copy, the token name prefix and
@@ -266,20 +276,23 @@ of Shape #0:
 - The positions and market pointers may each be set, replaced or cleared through `setPointer` until
   `lockPointer` permanently freezes that entry. Pointer id 0 is Positions and 1 is Market; other
   ids revert. Either entry may be locked while zero.
-- `setFeeRecipient` redirects only subsequent mint fees. It cannot change `mintFee`, recover fees
-  already paid, withdraw ETH, or reach backing or redemption.
+- `setFeeRecipient` redirects only future `withdrawFees` calls. It cannot recover fees already
+  withdrawn, withdraw ETH itself, or reach backing or redemption.
+- `setMintFee` changes the per-Shape fee, up to the compile-time cap of one denomination unit (`unit()`). It takes
+  effect for every later mint and for the auction house's ETH-bid card minting, which reads the
+  fee live. It cannot touch backing, redemption or already-accrued fees.
 
 Locking freezes the stored address, not the target's code or trust model. Renouncing admin makes
-every still-unlocked pointer practically permanent because no caller can pass the admin check.
+every still-unlocked pointer practically permanent because no caller can pass the admin check,
+and freezes the mint fee and the current fee recipient at their last values.
 
-`mintFee` is immutable. Renouncing admin freezes the current fee recipient along with any unlocked
-settings. The reserve, denominations and redemption path have no admin access at all. Deliberately absent: emergency withdrawal, treasury
-withdrawal, redemption pause, asset recovery, backing modification, token seizure,
-fee change, upgradeability, proxies, allowlists, supply caps, royalties.
+The reserve, denominations and redemption path have no admin access at all. Deliberately absent:
+emergency withdrawal, treasury withdrawal, redemption pause, asset recovery, backing modification,
+token seizure, upgradeability, proxies, allowlists, supply caps, royalties.
 
-There are three value-bearing external calls: the fee forward during minting, settlement after
-redemption or burn, and the fixed 100 ETH sacrifice to `0x…dEaD`. No administrative function
-reaches any of them.
+There are three value-bearing external calls: `withdrawFees`'s transfer of accrued mint fees,
+settlement after redemption or burn, and the fixed 100 ETH sacrifice to `0x…dEaD`. No
+administrative function reaches any of them.
 
 See [`SECURITY.md`](SECURITY.md) for the adversarial review, including the findings that were
 fixed and the residual risks that were accepted deliberately.
@@ -332,6 +345,7 @@ src/
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
+    AdminOps.sol              artist attestation, metadata copy, and fee-config mutators
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
     EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
     PointerOps.sol            positions/market pointer configuration and one-way locks
@@ -340,10 +354,13 @@ src/
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
     ModuleCodec.sol           one-byte encoding for a module's kind, solid, and rotation
 script/
-  DeployShapes.s.sol
+  Deploy.s.sol                the one deploy script, run for anvil, Sepolia, and mainnet alike
+  deploy.sh                   the one wrapper: script/deploy.sh <anvil|sepolia|mainnet>
+  env/                        anvil.env, sepolia.env, mainnet.env, values only, no secrets
   DeployLens.s.sol            replacement lens for an already-deployed Shapes
   LensEquivalence.s.sol       deploy-time proof that a lens previews what the token executes
-  e2e-anvil.sh                live end-to-end check against a local chain
+  SeedShapes.s.sol            seeds an already-deployed Shapes; no seeding inside Deploy.s.sol
+  e2e-anvil.sh                live end-to-end check against a local chain, via deploy.sh anvil
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
@@ -381,9 +398,10 @@ FOUNDRY_PROFILE=ci forge test # heavier fuzzing
 # excludes the deploy scripts, which are tooling rather than audited contracts and carry the
 # same stack pressure. test/legacy/ holds the pre-refactor renderer that RendererDiff.t.sol
 # compares against: it is deliberately the flat form, which is exactly what cannot survive
-# coverage's codegen, so it is excluded too.
+# coverage's codegen, so it is excluded too. --no-match-test Gas drops the two gas-ceiling
+# assertions, which measure the optimized build and trip under coverage's unoptimized one.
 forge coverage --ir-minimum --skip script \
-  --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --report summary
+  --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --no-match-test Gas --report summary
 ```
 
 ### Against a mainnet fork
@@ -436,10 +454,25 @@ the real deploy script, funds the default seed wallet with 1000 ETH (`SEED_WALLE
 on load. The Next site reads `web/public/deployment.json`, which is updated only for a real public
 deployment. Every local run is a fresh chain; prior tokens are gone.
 
-To browse the collection in a lived-in state, seed the running chain with simulated activity —
-mints across every denomination, compositions up to two 100 ETH apexes (one fully built, one
-half direct), splits, transfers and redemptions. Run it from `preview/`, as many
-times as you like; each run appends another round:
+For a chain that looks like the project has run for weeks, use `script/lived-in.sh` instead of
+the two commands above. One command from the repo root:
+
+```bash
+./script/lived-in.sh
+```
+
+This boots (or reuses) the dev chain, deploys the contracts, then runs
+`preview/scripts/simulateHistory.ts` against it: roughly six weeks of dated activity across 30
+wallets, exercising every external function of `Shapes`, `ShapeLens` and `ShapeAuctionHouse`
+several times each from different wallets, including full auction lifecycles, and ending with a
+curated set of presents sent to the browsing wallet. It then copies the deployment to
+`web/public/deployment.local.json` (gitignored, never the tracked `deployment.json`), which the
+Next site and its OG image route prefer over the bundled deployment when present. Leaves the
+chain running afterward; Ctrl-C stops it.
+
+To seed a shorter, simpler round of activity instead (mints across every denomination,
+compositions up to two 100 ETH apexes, one fully built and one half direct, splits, transfers and
+redemptions), run it from `preview/`, as many times as you like; each run appends another round:
 
 ```bash
 npm run simulate
@@ -567,11 +600,11 @@ You sign every mint and redeem in the wallet, against the deployed contract.
    it to add and switch to the local chain. To add it by hand instead, use the RPC URL and chain
    id the script printed, currency symbol `ETH`.
 
-   The chain uses Anvil's standard id (`31337` by default, `CHAIN_ID` to change), which browser
-   wallets already have configured for `localhost:8545`. One caveat: a wallet keys networks by
-   chain id, so a second local node also on `31337` silently receives transactions meant for
-   this one. When running several local chains at once, give this one a free `CHAIN_ID` (check
-   chainlist.org) and add the network the script prints.
+   The chain uses Anvil's standard id, `31337`, which browser wallets already have configured
+   for `localhost:8545`. One caveat: a wallet keys networks by chain id, so a second local node
+   also on `31337` silently receives transactions meant for this one. Run only one at a time, or
+   give the others a different `PORT` and point the wallet's `localhost:8545` entry at whichever
+   one you're using.
 
 4. **Mint.** Pick a denomination and mint; the wallet prompts you to sign a transaction sending
    backing plus the fee. Once it confirms, the Shape appears with its artwork fetched from the
@@ -589,53 +622,73 @@ browser wallet is required; there is no keyless path.
 
 - **Wallet shows the network as unsupported, or a mint never confirms.** Almost always a chain
   id clash: another local node shares this chain's id, so the wallet holds a different RPC for
-  it and routes there. Restart with a `CHAIN_ID` nothing else uses, remove the stale network
-  from the wallet, and re-add the one the script prints.
+  it and routes there. Stop the other node (or point it at a different `PORT`), remove the stale
+  network from the wallet, and re-add the one the script prints.
 - **Nonce or balance looks wrong after restarting the chain.** The wallet cached state from a
   previous run. Clear the account's activity/nonce data (MetaMask: Settings → Advanced → Clear
   activity tab data) and reload.
 - **Port already in use.** `fork-dev.sh` takes `PORT` for Anvil; the page reads whichever RPC
   the script wrote. Vite picks its own free port for the page.
 
-## Deploying locally
+## Deploying
+
+One script, `script/Deploy.s.sol`, deploys every environment: anvil, Sepolia, and mainnet. Chain
+id selects the required denomination ladder — mainnet requires the mainnet ladder, Sepolia the
+testnet ladder, anvil accepts either — and any other chain id reverts. It sends the minimum
+denomination to `Shapes`, which mints backed Shape #0 to the deployer, then asserts every
+deployment value landed as intended, smoke-tests the renderer, verifies `artist()` is the
+deployer and that Shapes begins with an empty artist release hash and signature, and proves the
+lens previews what the token executes (see below) before reporting success.
+
+One wrapper, `script/deploy.sh <anvil|sepolia|mainnet>`, runs it for every target through the
+same code path, sourcing `script/env/<name>.env` for the values that differ: chain id, Foundry
+profile, default RPC, verify flag, main-branch guard, wallet mode, deployer, fee recipient, mint
+fee, mint start, EOA-recipient guard, indexer URL. `DRY_RUN=1` runs the guards and the forge
+simulation with no wallet, broadcast, or verification.
 
 ```bash
-anvil                                        # in one shell
+anvil                       # in one shell
+./script/deploy.sh anvil    # in another
 
-forge script script/DeployShapes.s.sol \
-  --rpc-url http://127.0.0.1:8545 --broadcast
-
-./script/e2e-anvil.sh                        # mint all nine, transfer, redeem, verify
+./script/e2e-anvil.sh       # mint all nine, transfer, redeem, verify
 ```
 
-For a live deployment, set both parameters explicitly. The flat fee is permanent; admin may later
-redirect only future fees:
+Sepolia and mainnet sign with the ripe0x Foundry keystore (interactive prompt, or
+`KEYSTORE_PASSWORD_FILE` to read the password from a file instead of a prompt). Both require a
+fetched, clean, exact `main` to deploy from; the wrapper checks and refuses otherwise.
 
 ```bash
-SHAPES_MINT_FEE_WEI=1000000000000000 \
-SHAPES_FEE_RECIPIENT=0x... \
-forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
+DRY_RUN=1 script/deploy.sh sepolia   # guards + simulation, nothing broadcast or written
+script/deploy.sh sepolia             # broadcasts, verifies on Etherscan, records the deployment
 ```
 
-The script refuses to proceed off a local chain without an explicit fee recipient, rejects a
-contract fee recipient unless you confirm it, smoke-tests the renderer, and asserts every
-deployment value landed as intended before reporting success. It also verifies that `artist()` is the
-deployer and that Shapes begins with an empty artist release hash and signature. The signature is
-submitted only after deployment because its EIP-712 domain includes Shapes' final address.
+`script/env/mainnet.env` ships with `DEPLOYER`, `FEE_RECIPIENT`, and `MINT_FEE_WEI` empty; the
+wrapper refuses to run, `DRY_RUN` included, until D-05 (`project/DECISIONS.md`) is resolved and
+those values are filled in. Once they are, mainnet deploys the same way:
 
-The Sepolia wrapper forces the `testnet` Foundry profile, verifies every deployment, then repeats
-the artist, unsigned-attestation, admin and payout readbacks directly against Shapes.
-Its reported Shapes deployment transaction hash is the `releaseHash` used by the signing ceremony.
+```bash
+DRY_RUN=1 script/deploy.sh mainnet
+script/deploy.sh mainnet
+```
+
+After a real broadcast, the wrapper reads the broadcast artifact, reads back every deployed
+contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
+`deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
+`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
+`mintFeeWei`, `mintStart`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
+gitignored; Sepolia and mainnet records are committed.
 
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
 digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
 Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the already-decided
-32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. Never issue
-multiple valid signatures for competing hashes because any relayer holding one can submit it first.
+32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. The deploy
+wrapper's reported Shapes deployment transaction hash is the `releaseHash` used in this signing
+ceremony. Never issue multiple valid signatures for competing hashes because any relayer holding
+one can submit it first.
 
-It also proves the lens previews what the token executes. `ShapeLens.previewCompose` matches
-`Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the same
-deployment, so the script mints a probe token, splits it, composes it back, and requires the
+`Deploy.s.sol` also proves the lens previews what the token executes. `ShapeLens.previewCompose`
+matches `Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the
+same deployment, so the script mints a probe token, splits it, composes it back, and requires the
 preview to equal the resulting core state byte for byte. The probe runs in the `forge script`
 simulation and is never broadcast: no probe token, no ETH, no token ids consumed.
 
@@ -650,7 +703,7 @@ SHAPES_ADDRESS=0x... forge script script/DeployLens.s.sol --rpc-url $RPC   # dry
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
 | Mainnet | not deployed | not deployed |
-| Sepolia | `0xb142c4b09c24d639d8c154c93a539cbc09566152` | `0xd9c3278d1277cef31b54e98a43db4243ada05610` |
+| Sepolia | `0xd4e7134cd9fbcb1f48d9e2cc460f2afa40b621b8` | `0x05f70c867f2e4a26ed98e33b59895db09ed12f2c` |
 
 The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
 mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in

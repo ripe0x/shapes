@@ -11,7 +11,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
-import {DeployShapes} from "../script/DeployShapes.s.sol";
+import {Deploy} from "../script/Deploy.s.sol";
 import {Base64Decode} from "./utils/Base64Decode.sol";
 
 /// @notice Full lifecycle against a real mainnet fork.
@@ -81,7 +81,7 @@ contract ForkTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         // The constructor balance includes backed Shape #0. Only the excess is stranded ETH.
         strayWei = address(shapes).balance - shapes.redeemableBacking();
@@ -110,7 +110,7 @@ contract ForkTest is Test {
         // The script requires an explicit recipient off anvil, and refuses a contract one.
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
-        DeployShapes deployer = new DeployShapes();
+        Deploy deployer = new Deploy();
         (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeLens l, ShapeAuctionHouse h) = deployer.run();
 
         assertEq(s.mintFee(), MINT_FEE, "default flat fee not applied");
@@ -120,6 +120,7 @@ contract ForkTest is Test {
         assertEq(s.artist(), s.admin(), "artist should be the deployer");
         assertEq(s.owner(), s.admin(), "contract owner should be the deployer");
         assertEq(s.ownerOf(0), s.admin(), "Shape #0 should belong to the deployer");
+        assertEq(s.ownerToken(), 0, "owner token should be Shape #0");
         assertEq(s.artistReleaseHash(), bytes32(0), "attribution should start unsigned");
         assertEq(s.artistSignature(), bytes(""), "signature should start empty");
         assertEq(address(l.shapes()), address(s), "lens mismatch");
@@ -131,10 +132,10 @@ contract ForkTest is Test {
         assertFalse(positionsLocked, "positions should start unlocked");
         assertFalse(marketLocked, "market should start unlocked");
         assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");
-        assertGt(address(r).code.length, 0, "renderer has no code");
+        assertGt(address(r).code.length, 0, "renderer missing code");
         // Smoke the renderer through the interface the token uses; no mint needed.
         assertGt(
-            bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x")).length,
+            bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x", false)).length,
             500,
             "no metadata"
         );
@@ -157,13 +158,19 @@ contract ForkTest is Test {
             _assertMetadataValid(ids[i]);
         }
 
-        // The fee left the contract on every mint; only backing (plus any stray wei) remains.
-        assertEq(address(shapes).balance, shapes.redeemableBacking() + strayWei, "unexpected reserve");
+        // Fees accrued on every mint but never left the contract; only backing plus pending fees
+        // (and any stray wei) remain.
+        assertEq(
+            address(shapes).balance,
+            shapes.redeemableBacking() + shapes.pendingFees() + strayWei,
+            "unexpected reserve"
+        );
         uint256 expectedFees;
         for (uint256 i = 0; i < DENOMS.length; i++) {
             expectedFees += feeOf(DENOMS[i]);
         }
-        assertEq(feeRecipient.balance, expectedFees, "fees not forwarded");
+        assertEq(shapes.pendingFees(), expectedFees, "fees not accrued");
+        assertEq(feeRecipient.balance, 0, "fees stay pending until withdrawFees is called");
 
         // Transfer the 1 ETH token to bob; redemption rights follow the token. Found by amount
         // rather than a hard-coded index so the ladder can change without silently miscasting
@@ -204,8 +211,12 @@ contract ForkTest is Test {
         // that the complete collection reserve and supply reached zero.
         shapes.redeemTo(0, payable(alice));
         assertEq(shapes.redeemableBacking(), 0, "backing remains");
-        // Backing is fully unwound; only the pre-existing stray wei is left behind, stranded.
-        assertEq(address(shapes).balance, strayWei, "reserve not unwound to stray");
+        // Backing is fully unwound; only pending fees and the pre-existing stray wei remain.
+        assertEq(
+            address(shapes).balance,
+            shapes.pendingFees() + strayWei,
+            "reserve not unwound to pending fees plus stray"
+        );
         assertEq(shapes.totalSupply(), 0, "supply remains");
     }
 

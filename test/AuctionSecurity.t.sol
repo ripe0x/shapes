@@ -54,10 +54,11 @@ contract NoOpShapes {
     }
 }
 
-/// @dev L-02: a contract fee recipient. It gains control when the Shapes mint fee is forwarded to
-///      it, which happens inside the house's bid-path mint, and tries to push a Shape it owns into
-///      the house through `safeTransferFrom`. The house must refuse it: the inbound `from` is this
-///      contract, not `address(0)`, so `onERC721Received` reverts and the Shape is never stranded.
+/// @dev L-02: a contract fee recipient. It gains control only when someone calls
+///      `Shapes.withdrawFees`, which forwards the accrued fee to it, and tries to push a Shape it
+///      owns into the house through `safeTransferFrom`. The house must refuse it: the inbound
+///      `from` is this contract, not `address(0)`, so `onERC721Received` reverts and the Shape is
+///      never stranded. Nothing in the mint path calls this contract at all.
 contract MaliciousFeeRecipient is IERC721Receiver {
     Shapes public shapes;
     address public house;
@@ -84,16 +85,17 @@ contract MaliciousFeeRecipient is IERC721Receiver {
 
     receive() external payable {
         if (armed) {
-            armed = false; // one shot: the fee forwards once per denomination minted
+            armed = false; // one shot: only the first ETH receipt attempts the push
             try IERC721(address(shapes)).safeTransferFrom(address(this), house, held) {} catch {}
         }
     }
 }
 
-/// @dev L-1: a contract that is both the Shapes fee recipient and an auction's seller. The mint
-///      fee forwarded during the house's bid-path mint hands it control mid-`bid`, and it uses
-///      that window to call `cancelAuction`. The call is not wrapped, so whatever it reverts with
-///      propagates out through `bid`.
+/// @dev L-1: a contract that is both the Shapes fee recipient and an auction's seller. It gains
+///      control only when someone calls `Shapes.withdrawFees`, which forwards the accrued fee to
+///      it, and uses that window to call `cancelAuction`. The call is not wrapped, so whatever it
+///      reverts with propagates out through `withdrawFees`. Nothing in `bid` calls this contract
+///      at all: the mint inside `_takeBid` accrues the fee without an external call.
 contract ReentrantCancelSeller is IERC721Receiver {
     Shapes public shapes;
     ShapeAuctionHouse public house;
@@ -123,7 +125,7 @@ contract ReentrantCancelSeller is IERC721Receiver {
 
     receive() external payable {
         if (!armed) return;
-        armed = false; // one shot: the fee forwards once per denomination minted
+        armed = false; // one shot: only the first ETH receipt attempts the cancel
         house.cancelAuction(auctionId);
         cancelled = true;
     }
@@ -153,7 +155,7 @@ contract AuctionSecurityTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, makeAddr("fee"), address(renderer), address(collection)
+            MINT_FEE, makeAddr("fee"), address(renderer), address(collection), 0
         );
         vm.deal(seller, 10 ether);
         house = new ShapeAuctionHouse(address(shapes));
@@ -270,15 +272,19 @@ contract AuctionSecurityTest is Test {
         assertEq(fakeHouse.auctionCount(), 0, "no auction over a lot the house never received");
     }
 
-    /// @notice L-02. A contract fee recipient gains control inside the house's bid-path mint and
-    ///         tries to push a Shape it owns into the house. `onERC721Received` refuses any inbound
-    ///         `safeTransferFrom` (nonzero `from`) even during the mint window, so the Shape is not
-    ///         stranded, and the honest bid still settles.
+    /// @notice L-02. A contract fee recipient tries to push a Shape it owns into the house from
+    ///         its `receive` callback. That callback no longer fires from inside a bid at all —
+    ///         `_takeBid`'s escrow mint accrues the Shapes fee to `pendingFees` with no external
+    ///         call — so an armed recipient never even gets the chance during an honest bid.
+    ///         Separately, the same push attempt made from inside `withdrawFees` (the only call
+    ///         that still hands it control) is refused exactly as before: `onERC721Received`
+    ///         rejects any inbound `safeTransferFrom` whose `from` is not the zero address, so the
+    ///         Shape stays with the recipient, never stranded in the house.
     function test_L02_FeeRecipientCannotStrandAShapeInTheHouse() public {
         MaliciousFeeRecipient mal = new MaliciousFeeRecipient();
         // A separate Shapes whose fee recipient is the malicious contract.
         Shapes shapes2 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection), 0
         );
         ShapeAuctionHouse house2 = new ShapeAuctionHouse(address(shapes2));
         mal.setTargets(shapes2, address(house2));
@@ -298,8 +304,7 @@ contract AuctionSecurityTest is Test {
         vm.prank(seller2);
         uint256 a = house2.createAuction(address(shapes2), lot, 1 days, 1, 0, 0);
 
-        // A bidder takes the ETH path. The mint forwards the fee to `mal`, which fires while the
-        // house is minting and attempts the push.
+        // A bidder takes the ETH path. The escrow mint pays nobody, so `mal`'s callback never runs.
         address carol = makeAddr("carol");
         vm.deal(carol, 10 ether);
         mal.arm();
@@ -307,24 +312,30 @@ contract AuctionSecurityTest is Test {
         vm.prank(carol);
         house2.bid{value: bidCost}(a, new uint256[](0), DENOMS[4]);
 
-        // The push was refused: the Shape stayed with the fee recipient, not the house.
-        assertEq(shapes2.ownerOf(pushed), address(mal), "the pushed Shape was refused, not stranded");
-        // The honest bid still went through.
+        assertTrue(mal.armed(), "the callback never fired, so the arm attempt is untouched");
+        assertEq(shapes2.ownerOf(pushed), address(mal), "the Shape was never even attempted to move");
         assertEq(house2.bidUnits(a, carol), 100, "carol's 1 ETH bid stands at 100 units");
+
+        // The same push attempt, now made from inside `withdrawFees`: `onERC721Received` still
+        // refuses it, so the Shape stays put.
+        shapes2.withdrawFees();
+        assertFalse(mal.armed(), "the callback ran and consumed the one-shot attempt");
+        assertEq(shapes2.ownerOf(pushed), address(mal), "the pushed Shape was refused, not stranded");
     }
 
-    /// @notice L-1. `bid` checks `settled`, then escrows the bid, which mints and forwards the
-    ///         Shapes fee to an arbitrary contract. A fee recipient that is also the seller
-    ///         reaches `cancelAuction` in that window; `cancelAuction` is `nonReentrant`, so the
-    ///         reentrant call reverts inside the fee recipient's `receive`, the fee transfer
-    ///         fails, and `Shapes` surfaces that as `MintFeeTransferFailed`. The auction is left
-    ///         exactly as it was. `bid` also re-reads `settled` after the escrow interaction, so
-    ///         a mutator added later that closes the auction from that window is refused there
-    ///         even if it carries no guard of its own.
+    /// @notice L-1, the callback window itself. `_takeBid`'s escrow mint accrues the Shapes fee to
+    ///         `pendingFees` rather than calling the fee recipient, so a fee-recipient-seller
+    ///         armed to reenter `cancelAuction` never gets the chance during `bid`: the bid is
+    ///         recorded normally, uninterrupted. Separately, on a fresh auction with no bid yet,
+    ///         the same seller's callback can still reach `cancelAuction` from `withdrawFees` —
+    ///         that call originates on `Shapes`, a different contract, so it is a fresh entry into
+    ///         the house rather than reentrancy, and `cancelAuction`'s own guards allow it exactly
+    ///         as they would a direct call. With nothing bid yet, that cancel simply succeeds: the
+    ///         same outcome the seller gets calling `cancelAuction` directly. Not an exploit.
     function test_L1_ABidCannotBeRecordedOnAnAuctionCancelledMidCall() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
         Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection), 0
         );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
@@ -337,39 +348,50 @@ contract AuctionSecurityTest is Test {
         mal.arm();
         uint256 bidCost = house3.mintCostFor(DENOMS[4]);
         vm.prank(carol);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), MINT_FEE)
-        );
         house3.bid{value: bidCost}(a, new uint256[](0), DENOMS[4]);
 
-        // The revert unwound the reentrant cancel along with the bid.
-        assertEq(mal.cancelled(), false, "the cancel was rolled back with the bid");
-        ShapeAuctionHouse.Auction memory open = house3.auctions(a);
-        assertEq(open.settled, false, "the auction is still open");
-        assertEq(open.highestBidder, address(0), "no bidder was recorded");
-        assertEq(open.highestUnits, 0, "no units were recorded");
-        assertEq(house3.bidUnits(a, carol), 0, "no escrow was credited");
+        // The escrow mint paid nobody: the callback never fired, so the bid was never interrupted.
+        assertTrue(mal.armed(), "the callback never ran, so the arm flag is untouched");
+        assertFalse(mal.cancelled(), "no reentrant cancel occurred");
+        ShapeAuctionHouse.Auction memory bidAuction = house3.auctions(a);
+        assertEq(bidAuction.highestBidder, carol, "the bid was recorded, uninterrupted");
+        assertEq(bidAuction.settled, false, "the auction is still open");
+        assertEq(house3.bidUnits(a, carol), 100, "carol's 1 ETH bid stands at 100 units");
 
-        // The seller can still cancel on its own, outside a bid.
-        vm.prank(address(mal));
-        house3.cancelAuction(a);
-        assertEq(house3.auctions(a).settled, true, "a plain cancel still works");
+        // A second, bid-less auction: the seller's callback can still reach cancelAuction from
+        // withdrawFees, and does — harmlessly, since there is nothing bid to steal.
+        ReentrantCancelSeller mal2 = new ReentrantCancelSeller();
+        Shapes shapes4 = new Shapes{value: Denominations.amountAt(0)}(
+            MINT_FEE, address(mal2), address(renderer), address(collection), 0
+        );
+        ShapeAuctionHouse house4 = new ShapeAuctionHouse(address(shapes4));
+        mal2.setTargets(shapes4, house4);
+        vm.deal(address(mal2), 10 ether);
+        uint256 b = mal2.list(DENOMS[2], 1 days);
+        mal2.arm();
+
+        shapes4.withdrawFees();
+
+        assertTrue(mal2.cancelled(), "the callback reached cancelAuction, unobstructed by reentrancy");
+        assertEq(
+            house4.auctions(b).settled, true, "the bid-less auction was cancelled, same as a direct call"
+        );
     }
 
-    /// @notice L-1, the theft the re-check and the guard close. Against the pre-fix code the
-    ///         sequence is: carol calls `bid`; `_takeBid` mints her cards, which forwards the
-    ///         Shapes fee to `mal`; `mal.receive` calls `cancelAuction`, which passes because
-    ///         `mal` is the seller, there is no highest bidder yet and the auction is not
-    ///         settled, and sets `settled = true`; the outer `bid` resumes and records carol as
-    ///         `highestBidder`; `mal` calls `claimProceeds`, which releases carol's escrow to
-    ///         `mal`. Carol cannot `withdraw`, because `withdraw` refuses the standing leader.
-    ///         The whole sequence must not get past the bid. `cancelAuction` is `nonReentrant`,
-    ///         so the reentrant call reverts inside `mal.receive`, the mint fee transfer fails
-    ///         with it, and the bid unwinds with `MintFeeTransferFailed`.
+    /// @notice L-1, the theft scenario. Against the pre-fix code the fee-recipient-seller reached
+    ///         `cancelAuction` from inside `bid`'s escrow mint, before the bid was recorded,
+    ///         letting it later steal the bidder's cards via `claimProceeds`. That callback window
+    ///         is structurally gone: `_takeBid`'s mint forwards no fee, so `mal`'s reentrant
+    ///         attempt never fires and the bid settles honestly with carol as the escrowed
+    ///         bidder. The only remaining path into `cancelAuction` is through `withdrawFees`,
+    ///         called after the bid, by which point `highestBidder` is set — the same guard
+    ///         `cancelAuction` always enforced (`InvalidAuction` once a bid exists) rejects the
+    ///         attempt, and since `ReentrantCancelSeller` does not catch it, the whole
+    ///         `withdrawFees` call reverts along with it. Carol's escrow is never released to `mal`.
     function test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
         Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection), 0
         );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
@@ -381,32 +403,31 @@ contract AuctionSecurityTest is Test {
         vm.deal(carol, 10 ether);
         uint256 carolBefore = carol.balance;
         uint256 malBefore = address(mal).balance;
-        uint256 supplyBefore = shapes3.totalSupply();
 
         mal.arm();
         uint256 bidCost = house3.mintCostFor(DENOMS[4]);
         vm.prank(carol);
-        vm.expectRevert(
-            abi.encodeWithSelector(IShapes.MintFeeTransferFailed.selector, address(mal), MINT_FEE)
-        );
         house3.bid{value: bidCost}(a, new uint256[](0), DENOMS[4]);
 
-        // Carol paid nothing and holds no cards: the mint that would have created them unwound.
-        assertEq(carol.balance, carolBefore, "carol's ETH is intact");
-        assertEq(shapes3.balanceOf(carol), 0, "carol holds no cards");
-        assertEq(shapes3.totalSupply(), supplyBefore, "no cards were minted");
-        assertEq(house3.bidUnits(a, carol), 0, "carol has no escrow in the house");
+        // The bid settled honestly: no callback fired, so nothing interrupted it.
+        assertEq(house3.auctions(a).highestBidder, carol, "carol is the recorded bidder");
+        assertEq(house3.bidUnits(a, carol), 100, "carol's escrow stands at 100 units");
+        assertTrue(mal.armed(), "the callback never ran during the bid");
 
-        // The seller took neither the fee nor a bid it never cleared.
-        assertEq(address(mal).balance, malBefore, "the seller received no mint fee");
+        // mal tries the old theft path via withdrawFees. cancelAuction's own guard (a bid already
+        // exists) rejects it, and the whole withdrawal reverts along with the reentrant attempt.
+        uint256 pending = shapes3.pendingFees();
+        vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(mal), pending));
+        shapes3.withdrawFees();
+
+        assertTrue(mal.armed(), "the reverted withdrawal undid even the one-shot arm consumption");
+        assertFalse(mal.cancelled(), "the cancel attempt did not go through");
+        assertEq(carol.balance, carolBefore - bidCost, "carol's bid payment is unaffected");
+        assertEq(address(mal).balance, malBefore, "the seller received no fee and no stolen bid");
+        assertEq(shapes3.pendingFees(), pending, "the fee is still pending, not lost");
         ShapeAuctionHouse.Auction memory open = house3.auctions(a);
         assertEq(open.settled, false, "the auction is still open");
-        assertEq(open.highestBidder, address(0), "no bidder was recorded");
-
-        // The proceeds leg of the theft is unreachable: nothing settled, so there is nothing to
-        // release, and carol is not the leader so she is not locked out of anything.
-        vm.prank(address(mal));
-        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.AuctionStillRunning.selector, a));
-        house3.claimProceeds(a);
+        assertEq(open.highestBidder, carol, "carol's bid still stands");
+        assertEq(house3.bidUnits(a, carol), 100, "carol's escrow is untouched");
     }
 }

@@ -20,7 +20,11 @@ interface IShapeLens {
         view
         returns (ShapeState memory result);
 
-    /// @notice Validate a split and return every deterministic child before changing state.
+    /// @notice The children `Shapes.split(tokenId, outDenoms)` would produce, one entry per
+    ///         `outDenoms` index: seed, denomination, origin count, ink gene, face value and
+    ///         materialized module bytes. Requires no caller ownership and moves no state. Applies
+    ///         split's validation: existence, not-Black, at least two outputs, and an output sum
+    ///         matching the parent's backing.
     function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
         external
         view
@@ -40,7 +44,9 @@ interface IShapeLens {
     ///         Carries the survivor's pre-compose state and every burned input's snapshot, exactly
     ///         what `decompose` reads to reverse that compose, including each donor's materialized
     ///         module snapshot (SAMPLING_SPEC.md) so a caller can re-run `sampleCompose` off-chain
-    ///         and reproduce the survivor's post-compose bytes. Reassembled from
+    ///         and reproduce the survivor's post-compose bytes. `ownerTokenFrom` on the returned
+    ///         `ComposeRecordView` names the input that carried collection ownership before this
+    ///         compose, or `type(uint256).max` when none did. Reassembled from
     ///         `Shapes.composeRecordHeaderAt` and `Shapes.composeRecordInputAt`.
     /// @dev Reverts `IShapes.ComposeRecordOutOfRange` when `depth >= Shapes.composeDepth(survivorId)`.
     function composeRecordAt(uint256 survivorId, uint256 depth)

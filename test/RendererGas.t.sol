@@ -68,7 +68,8 @@ contract RendererGasTest is Test {
                     3,
                     0,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    false
                 )
             )
             .length,
@@ -88,7 +89,8 @@ contract RendererGasTest is Test {
                     3,
                     0,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    false
                 )
             )
             .length,
@@ -109,7 +111,8 @@ contract RendererGasTest is Test {
                     0,
                     NAME_PREFIX,
                     DESCRIPTION,
-                    _splitInfo()
+                    _splitInfo(),
+                    false
                 )
             )
             .length,
@@ -130,7 +133,8 @@ contract RendererGasTest is Test {
                     0,
                     NAME_PREFIX,
                     DESCRIPTION,
-                    _splitInfo()
+                    _splitInfo(),
+                    false
                 )
             )
             .length,
@@ -150,7 +154,8 @@ contract RendererGasTest is Test {
                     3,
                     0,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    false
                 )
             )
             .length,
@@ -170,7 +175,8 @@ contract RendererGasTest is Test {
                     3,
                     0,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    false
                 )
             )
             .length,
@@ -191,7 +197,8 @@ contract RendererGasTest is Test {
                     0,
                     NAME_PREFIX,
                     DESCRIPTION,
-                    _splitInfo()
+                    _splitInfo(),
+                    false
                 )
             )
             .length,
@@ -212,7 +219,8 @@ contract RendererGasTest is Test {
                     0,
                     NAME_PREFIX,
                     DESCRIPTION,
-                    _splitInfo()
+                    _splitInfo(),
+                    false
                 )
             )
             .length,

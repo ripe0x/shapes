@@ -30,7 +30,7 @@ decision taken and the reason. Nothing was resolved silently.
 | 6 | Solidity port of the canonical renderer | `src/ShapeRenderer.sol`, `src/lib/` |
 | 7 | ERC721 + reserve | `src/Shapes.sol` |
 | 8 | Byte-parity tests, unit tests, fuzz tests, stateful solvency invariant | `test/` |
-| 9 | Deployment script and local Anvil run | `script/DeployShapes.s.sol` |
+| 9 | Deployment script and local Anvil run | `script/Deploy.s.sol` |
 | 10 | Adversarial security review | `SECURITY.md` |
 
 The ordering matters in one respect: **the renderer is written in TypeScript
@@ -593,21 +593,26 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   footprint corners — the same curve as the outlined quarter circle's outer boundary — and the
   flat radial ends lie on the footprint edges.
 
-- **Collectible ownership, separate bounded admin.** Shape #0 is minted to the deployer with
-  minimum-denomination backing. `owner()` follows its holder, or returns zero while #0 is burned;
-  its metadata title is `Shapes Collection Owner`, with `Collection Owner: true`; holding #0 grants
-  no permissions. The separate `admin()` role can replace and permanently lock
+- **Collectible ownership, separate bounded admin.** One live Shape is the owner token. It starts
+  as #0, minted to the deployer with minimum-denomination backing, and moves through `compose`,
+  `decompose` and `split`: a compose absorbing it moves it to the survivor, the matching decompose
+  restores it to that input, and a split of it gives it to the first output. `owner()` follows its
+  current holder, or returns zero once it is redeemed or burned, which ends collection ownership
+  permanently. Its metadata name is the ordinary token name suffixed with `, Contract Owner` (e.g.
+  `Shape 5, Contract Owner`), with a value-only `"Contract Owner"` attribute (no `trait_type`);
+  holding it grants no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including
   locking either forever at zero, and can edit the token name prefix and description shared by token
   and collection metadata via `setMetadataCopy`. The
   renderer and collection are read only by `tokenURI`/`contractURI`; the positions target only by
   `ShapeLens.positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
-  break the JSON. Admin may also redirect future mint fees, but cannot change the fee amount or
-  reach backing, redemption, accrued funds or token ownership. The copy is
+  break the JSON. Admin may also redirect future mint fee withdrawals and adjust the mint fee
+  amount within the cap of one denomination unit, but cannot reach backing, redemption, already-accrued fees or
+  token ownership. The copy is
   deliberately not covered by the renderer lock; it stays editable until admin is renounced.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
-  or renounced without transferring Shape #0.
+  or renounced without moving the owner token.
 - **Permanent artist attribution, separate from ownership and admin.** `artist()` records the
   deployer forever and grants no authority or economics. Shapes itself accepts one EIP-712
   signature, relayed by anyone, over the exact chain, Shapes address, artist and `releaseHash`, and
@@ -617,21 +622,29 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 - `Shapes` stores per token a `bytes32 seed`, `uint8` denomination index, `uint32`
   origin count, Black flag and ink gene. Backing is derived from the index against the
   immutable ladder, so an out-of-range backing value is not representable.
-- `mintFee` is immutable and the initial `feeRecipient` is set at construction. Admin may redirect
-  subsequent mint fees. `renderer` is
+- `mintFee` is set at construction, bounded by a compile-time cap of one denomination unit (`unit()`)
+  (`Denominations.UNIT`), and admin-adjustable afterward via `setMintFee` within that same cap.
+  The initial `feeRecipient` is set at construction; admin may redirect subsequent withdrawals.
+  `renderer` is
   mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
-- The committed mainnet mint fee is a flat 0.001 ETH for every Shape created, regardless of
-  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees are forwarded to
-  `feeRecipient` in the same transaction and never enter the reserve. A batch forwards
+- The committed mainnet initial mint fee is a flat 0.001 ETH for every Shape created, regardless of
+  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees accrue to `pendingFees` in
+  the same transaction as the mint, never enter the reserve, and leave only through `withdrawFees`,
+  a separate permissionless call that forwards the accrued total to `feeRecipient`. A batch accrues
   `quantity * mintFee` once. Auction ETH bids pay one fee for every minimal-denomination card the
   escrow creates, exposed exactly by `ShapeAuctionHouse.mintCostFor(backingWei)`.
+- `mintStart` is a `uint64` set once at construction and stored immutable; no admin path can read
+  or change it. `mint`, `mintTo`, `mintBatch` and `mintBatchTo` revert `MintNotOpen()` while
+  `block.timestamp < mintStart`, which also gates the ETH-backed auction bids that mint cards
+  through `ShapeCardEscrow._mintCards` calling `mintBatchTo`. The constructor mint of Shape #0 is
+  unconditional, so its transfer, auction listing and redemption all work before `mintStart`.
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
-  invariant asserted is `address(this).balance >= redeemableBacking`.
+  invariant asserted is `address(this).balance >= redeemableBacking + pendingFees`.
 - Checks-effects-interactions, plus a reentrancy guard on functions that mint, restructure
   or move ETH: `mint`, `mintBatch`, `redeem`, `burn`, `redeemBatch`, `compose`,
-  `decompose`, `split`, `sacrifice`. The inherited
+  `decompose`, `split`, `sacrifice`, `withdrawFees`. The inherited
   ERC721 transfer and approval functions are **not** guarded, deliberately —
   they move no ETH. One consequence is worth knowing: a receiver can redeem a
   Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
@@ -726,8 +739,8 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 - **Replaceable, clearable, independently lockable.** The transferable admin may set or replace
   either pointer with a contract address, clear it to zero, or permanently lock its current value
   at any time, including zero. Renderer, positions and market locks are independent. Admin transfer
-  moves all still-unlocked authority; renunciation ends it. Shape #0 ownership moves none
-  of this authority. Neither pointer can change
+  moves all still-unlocked authority; renunciation ends it. The owner token moving to a new
+  holder, or through compose, decompose or split, moves none of this authority. Neither pointer can change
   backing, ownership, redemption, composition or reserve accounting.
 - **Fixed pointer identifiers.** `setPointer` and `lockPointer` use `0` for Positions and `1` for
   Market; every other value reverts. A nonzero target must carry code when set, but Shapes does not
