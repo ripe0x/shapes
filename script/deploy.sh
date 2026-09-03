@@ -22,9 +22,32 @@
 #                                                  untracked files) still run, but a failure only
 #                                                  warns instead of exiting, since a real run would
 #                                                  refuse. Every other guard still hard-fails. Only
-#                                                  the wallet, --broadcast and --verify are skipped,
-#                                                  and the run stops after the simulation. Nothing
-#                                                  is written.
+#                                                  the wallet and --broadcast are skipped, and the
+#                                                  run stops after the simulation. Nothing is
+#                                                  written.
+#   RESUME=1                                      skip `forge script --broadcast` entirely and run
+#                                                  only the post-broadcast phase (verification when
+#                                                  VERIFY=true, on-chain readback, deployments/
+#                                                  record) against the existing broadcast file for
+#                                                  this chain. For recording a deployment whose
+#                                                  broadcast already succeeded on chain but whose
+#                                                  wrapper run didn't reach the recording step (e.g.
+#                                                  forge's inline verification failed and aborted
+#                                                  the wrapper before it got there). The REQUIRE_MAIN
+#                                                  git guards still run, but — like DRY_RUN — only
+#                                                  warn: nothing is broadcast from this worktree's
+#                                                  commit, so the exact-commit invariant that guards
+#                                                  a real broadcast doesn't apply to resuming one
+#                                                  that already happened elsewhere.
+#   VERIFY=true|false                             overrides the env file's VERIFY value. Lets a
+#                                                  resumed run skip verification (and the
+#                                                  ETHERSCAN_API_KEY requirement) without editing
+#                                                  the env file.
+#   BROADCAST_FILE                                path to the forge broadcast file to read for the
+#                                                  post-broadcast phase, overriding the default
+#                                                  broadcast/Deploy.s.sol/<chainId>/run-latest.json.
+#                                                  For resuming from a broadcast produced by a
+#                                                  different checkout.
 set -euo pipefail
 
 ENV_NAME="${1:-}"
@@ -42,12 +65,18 @@ cd "$REPO_ROOT"
 ENV_FILE="script/env/${ENV_NAME}.env"
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE" >&2; exit 1; }
 
+DRY_RUN="${DRY_RUN:-0}"
+RESUME="${RESUME:-0}"
+# Captured before sourcing the env file, which unconditionally sets VERIFY: a caller-exported
+# VERIFY wins over the env file's value.
+VERIFY_OVERRIDE="${VERIFY-}"
+
 set -a
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 set +a
 
-DRY_RUN="${DRY_RUN:-0}"
+[ -z "$VERIFY_OVERRIDE" ] || VERIFY="$VERIFY_OVERRIDE"
 
 # Mainnet's env file ships with the deployer, fee recipient and fee left blank until D-05
 # (project/DECISIONS.md) is resolved. Refuse before touching any RPC, dry run included.
@@ -67,11 +96,16 @@ case "$ENV_NAME" in
 esac
 [ -n "$RPC" ] || { echo "refusing: no RPC URL configured for $ENV_NAME" >&2; exit 1; }
 FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-$FOUNDRY_PROFILE_DEFAULT}"
+# Exported once: every forge/solc invocation below (deploy, inspect, verify-contract) must compile
+# against the same profile the broadcast used, or their bytecode won't line up with what's on chain.
+export FOUNDRY_PROFILE
+BROADCAST_FILE="${BROADCAST_FILE:-broadcast/Deploy.s.sol/${CHAIN_ID}/run-latest.json}"
 
 echo "== deploy.sh $ENV_NAME =="
 echo "  rpc      $RPC"
 echo "  profile  $FOUNDRY_PROFILE"
 echo "  dry run  $DRY_RUN"
+echo "  resume   $RESUME"
 
 # Deploy.s.sol reads SHAPES_MINT_FEE_WEI / SHAPES_FEE_RECIPIENT; the env file's own names
 # (MINT_FEE_WEI / FEE_RECIPIENT) are the reviewed values for this target. A caller-supplied
@@ -102,11 +136,14 @@ ACTUAL_CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
 echo "  ok: chain id $ACTUAL_CHAIN_ID"
 
 if [ "$REQUIRE_MAIN" = "true" ]; then
-  # A real run refuses on any failure here. Under DRY_RUN=1 the same checks still run, but a
-  # failure only warns what a real run would refuse, so the rest of the simulation can proceed.
+  # A real broadcast refuses on any failure here. Under DRY_RUN=1 or RESUME=1 the same checks
+  # still run, but a failure only warns what a real broadcast would refuse: DRY_RUN broadcasts
+  # nothing, and RESUME's broadcast already happened (elsewhere, possibly from a different
+  # checkout) — the exact-commit invariant guards a new broadcast, not a resumed readback of one
+  # that already landed on chain.
   git_guard_fail() {
-    if [ "$DRY_RUN" = "1" ]; then
-      echo "  warn: real run would refuse: $1" >&2
+    if [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ]; then
+      echo "  warn: a new broadcast would refuse: $1" >&2
     else
       echo "refusing: $1" >&2
       exit 1
@@ -124,7 +161,7 @@ if [ "$REQUIRE_MAIN" = "true" ]; then
   # there don't make the deployment commit inexact.
   [ -z "$(git ls-files --others --exclude-standard -- . ':!deployments')" ] \
     || git_guard_fail "untracked files exist; deployment commit is not exact"
-  [ "$DRY_RUN" = "1" ] || echo "  ok: clean, exact, fetched main"
+  [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched main"
 fi
 
 if [ "${FEE_RECIPIENT_MUST_BE_EOA:-false}" = "true" ]; then
@@ -139,6 +176,9 @@ if [ "$VERIFY" = "true" ] && [ "$DRY_RUN" != "1" ]; then
 fi
 
 # --- wallet -------------------------------------------------------------------------------------
+# Resolved even for RESUME=1: nothing here signs anything (that only happens if WALLET_ARGS is
+# later passed to a broadcasting forge invocation), but the readback phase needs EFFECTIVE_DEPLOYER
+# regardless of whether this run broadcasts.
 
 WALLET_ARGS=()
 if [ "$DRY_RUN" != "1" ]; then
@@ -167,27 +207,31 @@ if [ "$DRY_RUN" != "1" ]; then
 fi
 
 # --- run ----------------------------------------------------------------------------------------
+# Inline `--verify` is never used: forge aborts the whole invocation (and this wrapper, under
+# set -e) on the first verification failure, before broadcast confirmations are even read back or
+# deployments/<chainId>.json is written. Verification runs as its own step below instead, after a
+# real broadcast or under RESUME, where a failure is recorded and the run continues.
 
-FORGE_ARGS=(script script/Deploy.s.sol --rpc-url "$RPC")
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
-else
-  FORGE_ARGS+=("${WALLET_ARGS[@]}")
-  [ -n "${DEPLOYER:-}" ] && FORGE_ARGS+=(--sender "$DEPLOYER")
-  FORGE_ARGS+=(--broadcast)
-  [ "$VERIFY" = "true" ] && FORGE_ARGS+=(--verify)
-fi
-
-FOUNDRY_PROFILE="$FOUNDRY_PROFILE" forge "${FORGE_ARGS[@]}"
-
-if [ "$DRY_RUN" = "1" ]; then
+  forge script script/Deploy.s.sol --rpc-url "$RPC"
   echo "dry run complete for $ENV_NAME"
   exit 0
 fi
 
+if [ "$RESUME" = "1" ]; then
+  echo "RESUME=1: skipping broadcast, resuming post-broadcast steps from $BROADCAST_FILE"
+  [ -f "$BROADCAST_FILE" ] \
+    || { echo "refusing: RESUME=1 but no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
+else
+  FORGE_ARGS=(script script/Deploy.s.sol --rpc-url "$RPC" "${WALLET_ARGS[@]}")
+  [ -n "${DEPLOYER:-}" ] && FORGE_ARGS+=(--sender "$DEPLOYER")
+  FORGE_ARGS+=(--broadcast)
+  forge "${FORGE_ARGS[@]}"
+fi
+
 # --- postflight: resolve what actually got deployed, read it back on chain ---------------------
 
-BROADCAST_FILE="broadcast/Deploy.s.sol/${CHAIN_ID}/run-latest.json"
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
 
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
@@ -235,6 +279,60 @@ while IFS=: read -r source contract address; do
   [ -n "$address" ] || continue
   require_address "$contract" "$address"
 done < <(jq -r '.libraries[]? // empty' "$BROADCAST_FILE")
+
+# --- verify: forge verify-contract per contract and library, profile- and library-aware ---------
+# A failure here is recorded, not fatal: the readback and the deployments/<chainId>.json record
+# below always run regardless, and the run only reports failure (after writing the record) at the
+# very end. --libraries carries the full set to every call; a contract or library that doesn't
+# reference a given library ignores the extra flag.
+
+VERIFY_FAILURES=()
+
+if [ "$VERIFY" = "true" ]; then
+  echo "Verifying contracts on Etherscan"
+
+  LIB_FLAGS=()
+  while IFS= read -r lib; do
+    [ -n "$lib" ] || continue
+    LIB_FLAGS+=(--libraries "$lib")
+  done < <(jq -r '.libraries[]? // empty' "$BROADCAST_FILE")
+
+  verify_one() {
+    local fq_name="$1" bare_name="$2" address="$3"
+    local ctor_types ctor_args=()
+    ctor_types=$(forge inspect "$bare_name" abi 2>/dev/null \
+      | jq -r '[.[] | select(.type=="constructor") | .inputs[].type] | join(",")')
+    if [ -n "$ctor_types" ]; then
+      local vals=()
+      while IFS= read -r v; do vals+=("$v"); done < <(jq -r --arg name "$bare_name" \
+        '.transactions[] | select(.transactionType=="CREATE" and .contractName==$name) | .arguments[]? // empty' \
+        "$BROADCAST_FILE")
+      ctor_args=(--constructor-args "$(cast abi-encode "constructor($ctor_types)" "${vals[@]}")")
+    fi
+    echo "  verifying $bare_name $address"
+    if forge verify-contract "$address" "$fq_name" --chain "$CHAIN_ID" \
+        --etherscan-api-key "$ETHERSCAN_API_KEY" "${LIB_FLAGS[@]}" "${ctor_args[@]}" --watch; then
+      echo "  ok: verified $bare_name $address"
+    else
+      echo "  FAILED to verify $bare_name $address" >&2
+      local retry="FOUNDRY_PROFILE=$FOUNDRY_PROFILE forge verify-contract $address $fq_name --chain $CHAIN_ID --etherscan-api-key \$ETHERSCAN_API_KEY ${LIB_FLAGS[*]} ${ctor_args[*]:-} --watch"
+      VERIFY_FAILURES+=("$bare_name $address :: $retry")
+    fi
+  }
+
+  verify_one src/ShapeRenderer.sol:ShapeRenderer ShapeRenderer "$RENDERER"
+  verify_one src/ShapeCollection.sol:ShapeCollection ShapeCollection "$COLLECTION"
+  verify_one src/Shapes.sol:Shapes Shapes "$SHAPES"
+  verify_one src/ShapeLens.sol:ShapeLens ShapeLens "$LENS"
+  verify_one src/ShapeAuctionHouse.sol:ShapeAuctionHouse ShapeAuctionHouse "$HOUSE"
+
+  while IFS=: read -r source contract address; do
+    [ -n "$address" ] || continue
+    verify_one "${source}:${contract}" "$contract" "$address"
+  done < <(jq -r '.libraries[]? // empty' "$BROADCAST_FILE")
+fi
+
+# --- readback: always runs, verification failures above notwithstanding -------------------------
 
 # Foundry may broadcast independent CREATE transactions in a different order from the simulated
 # `transactions` array. Resolve the creation hash from the mined receipt whose contract address
@@ -289,43 +387,8 @@ MARKET=$(cast call "$SHAPES" 'market()(address,bool)' --rpc-url "$RPC")
 
 echo "  ok: onchain readback matches the deploy"
 
-if [ "$VERIFY" = "true" ]; then
-  command -v curl >/dev/null || { echo "curl is required to confirm Etherscan verification" >&2; exit 1; }
-
-  wait_for_verification() {
-    local label="$1" address="$2" response source
-    for _ in $(seq 1 8); do
-      response=$(curl -fsS --get 'https://api.etherscan.io/v2/api' \
-        --data-urlencode "chainid=$CHAIN_ID" \
-        --data-urlencode 'module=contract' \
-        --data-urlencode 'action=getsourcecode' \
-        --data-urlencode "address=$address" \
-        --data-urlencode "apikey=$ETHERSCAN_API_KEY" || true)
-      source=$(printf '%s' "$response" | jq -r '.result[0].SourceCode // empty' 2>/dev/null || true)
-      if [ -n "$source" ]; then
-        echo "  verified source   $label $address"
-        return 0
-      fi
-      sleep 5
-    done
-    echo "$label source is not visible through Etherscan after 40 seconds: $address" >&2
-    return 1
-  }
-
-  echo "Confirming verified source on Etherscan"
-  wait_for_verification ShapeRenderer "$RENDERER"
-  wait_for_verification ShapeCollection "$COLLECTION"
-  wait_for_verification Shapes "$SHAPES"
-  wait_for_verification ShapeLens "$LENS"
-  wait_for_verification ShapeAuctionHouse "$HOUSE"
-  while IFS=: read -r source contract address; do
-    [ -n "$address" ] || continue
-    wait_for_verification "$contract" "$address"
-  done < <(jq -r '.libraries[]? // empty' "$BROADCAST_FILE")
-fi
-
 # --- record the deployment: same key set and order as web/public/deployment.json, so cutover ----
-# is a plain file copy.
+# is a plain file copy. Always written, verification failures above notwithstanding.
 
 mkdir -p deployments
 DEPLOYMENT_FILE="deployments/${CHAIN_ID}.json"
@@ -354,3 +417,13 @@ echo "  deployment tx   $SHAPES_TX"
 echo "  from block      $FROM_BLOCK"
 echo "  admin           $EFFECTIVE_DEPLOYER"
 echo "  wrote           $DEPLOYMENT_FILE"
+
+if [ "${#VERIFY_FAILURES[@]}" -gt 0 ]; then
+  echo
+  echo "verification failed for ${#VERIFY_FAILURES[@]} of the deployed contracts/libraries:" >&2
+  for f in "${VERIFY_FAILURES[@]}"; do
+    echo "  ${f%% :: *}" >&2
+    echo "    retry: ${f#* :: }" >&2
+  done
+  exit 1
+fi
