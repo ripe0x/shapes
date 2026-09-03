@@ -410,6 +410,7 @@ export function TokenView({
             expandedKeys={expandedKeys}
             onToggleExpanded={toggleProvExpanded}
             resetKey={tokenId.toString()}
+            exportBase={tokenId.toString()}
           />
         </Section>
       )}

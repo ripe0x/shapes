@@ -11,7 +11,7 @@
  */
 
 import { WAD } from "../canonical/wad";
-import { downloadBlob, svgToImage } from "./exporters";
+import { downloadBlob, downloadSvg, rasterizeSvgToPng } from "./exporters";
 
 export interface TraceGeometry {
   cols: number;
@@ -84,8 +84,7 @@ export function downloadTraceSvg(
   colorForCell: (j: number) => string | undefined,
   base: string,
 ): void {
-  const svg = buildTraceSvg(artworkSvg, geometry, colorForCell);
-  downloadBlob(traceFilename("svg", base), new Blob([svg], { type: "image/svg+xml" }));
+  downloadSvg(traceFilename("svg", base), buildTraceSvg(artworkSvg, geometry, colorForCell));
 }
 
 /** Download the traced artwork rasterized to PNG at its native 2000x2800 size. */
@@ -96,13 +95,6 @@ export async function downloadTracePng(
   base: string,
 ): Promise<void> {
   const svg = buildTraceSvg(artworkSvg, geometry, colorForCell);
-  const img = await svgToImage(svg);
-  const canvas = document.createElement("canvas");
-  canvas.width = RASTER_W;
-  canvas.height = RASTER_H;
-  canvas.getContext("2d")!.drawImage(img, 0, 0, RASTER_W, RASTER_H);
-  const blob = await new Promise<Blob>((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png"),
-  );
+  const blob = await rasterizeSvgToPng(svg, RASTER_W, RASTER_H);
   downloadBlob(traceFilename("png", base), blob);
 }

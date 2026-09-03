@@ -1,5 +1,6 @@
 import React from "react";
 import {FONT} from "./theme";
+import {downloadTreePng, downloadTreeSvg} from "./treeExport";
 
 /**
  * A single node in a provenance/ancestry tree, independent of any particular data source.
@@ -32,6 +33,150 @@ const STUB = 18;
 const AUTO_EXPAND_DEPTH = 3;
 const COLLAPSE_MIN_DEPTH = 2;
 
+// Layout constants shared with `layoutTree`, matching the CSS in `CSS_TEXT` below: card aspect
+// ratio (`.prov-tree-card`), the gap from a card's image to its caption text and between caption
+// lines (`.prov-tree-card-wrap`, `.prov-tree-caption`, `.prov-tree-title`/`.prov-tree-line`), the
+// gap to the truncated hint (`.prov-tree-hint`), the horizontal gap between sibling subtrees (the
+// child wrapper's left/right padding in `TreeCard`), and the gap between top-level roots
+// (`.prov-tree-content`'s `gap`).
+export const CARD_ASPECT = 3.5 / 2.5; // height / width, matching aspect-ratio: 2.5 / 3.5
+export const CAPTION_GAP = 8; // 6px flex gap + 2px caption margin-top
+export const CAPTION_LINE_H = 9.5 * 1.4; // font-size * line-height
+export const HINT_GAP = 6;
+export const HINT_H = 8.5 * 1.3; // approx: font-size * default line-height
+const CHILD_GAP = 18; // 9px padding on each side of a child slot
+const ROOT_GAP = 32; // .prov-tree-content gap
+// A rollup chip's size is text-intrinsic on screen (no fixed width); this approximates it from
+// its monospace character count rather than measuring the DOM, close enough for layout purposes.
+const ROLLUP_CHAR_W = 6; // approx advance width of IBM Plex Mono at 10px
+const ROLLUP_PAD_X = 14; // 7px padding each side
+const ROLLUP_H = 26;
+
+/** One positioned image card in a computed tree layout. */
+export interface LayoutCard {
+  node: TreeNode;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  depth: number;
+}
+
+/** One positioned "+N more" rollup chip in a computed tree layout. */
+export interface LayoutRollup {
+  node: TreeNode;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  depth: number;
+}
+
+/** A straight connector between a parent card's centre and one child's (or rollup chip's)
+ *  centre. */
+export interface LayoutConnector {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface TreeLayout {
+  width: number;
+  height: number;
+  cards: LayoutCard[];
+  connectors: LayoutConnector[];
+  rollups: LayoutRollup[];
+}
+
+interface Measured {
+  node: TreeNode;
+  depth: number;
+  cardW: number;
+  cardH: number;
+  ownH: number; // card + caption + hint block height, excluding any children below it
+  fullH: number; // ownH, plus expanded children's own drop and tallest subtree
+  subtreeW: number; // horizontal footprint this node (and its expanded children) occupies
+  expanded: boolean;
+  children: Measured[]; // populated only when the node is expanded
+  isRollup: boolean;
+}
+
+function captionHeight(node: TreeNode): number {
+  let h = (1 + node.lines.length) * CAPTION_LINE_H;
+  if (node.truncated) h += HINT_GAP + HINT_H;
+  return h;
+}
+
+function measure(node: TreeNode, depth: number, expandedKeys: ReadonlySet<string>): Measured {
+  if (node.rollup != null) {
+    const w = `+${node.rollup} more`.length * ROLLUP_CHAR_W + ROLLUP_PAD_X + 2;
+    return {node, depth, cardW: w, cardH: ROLLUP_H, ownH: ROLLUP_H, fullH: ROLLUP_H, subtreeW: w, expanded: false, children: [], isRollup: true};
+  }
+  const cardW = CARD_WIDTHS[Math.min(depth, CARD_WIDTHS.length - 1)];
+  const cardH = cardW * CARD_ASPECT;
+  const ownH = cardH + CAPTION_GAP + captionHeight(node);
+  const hasChildren = !node.repeat && !node.truncated && node.children.length > 0;
+  const expanded = hasChildren && expandedKeys.has(node.key);
+  if (!expanded) {
+    return {node, depth, cardW, cardH, ownH, fullH: ownH, subtreeW: cardW, expanded: false, children: [], isRollup: false};
+  }
+  const children = node.children.map((child) => measure(child, depth + 1, expandedKeys));
+  const childrenW = children.reduce((sum, c) => sum + c.subtreeW, 0) + CHILD_GAP * Math.max(0, children.length - 1);
+  const subtreeW = Math.max(cardW, childrenW);
+  const fullH = ownH + 2 * STUB + Math.max(...children.map((c) => c.fullH));
+  return {node, depth, cardW, cardH, ownH, fullH, subtreeW, expanded: true, children, isRollup: false};
+}
+
+function place(
+  m: Measured,
+  left: number,
+  top: number,
+  cards: LayoutCard[],
+  connectors: LayoutConnector[],
+  rollups: LayoutRollup[],
+): void {
+  const centerX = left + m.subtreeW / 2;
+  const x = centerX - m.cardW / 2;
+  if (m.isRollup) rollups.push({node: m.node, x, y: top, w: m.cardW, h: m.cardH, depth: m.depth});
+  else cards.push({node: m.node, x, y: top, w: m.cardW, h: m.cardH, depth: m.depth});
+  if (!m.expanded) return;
+
+  const childTop = top + m.ownH + 2 * STUB;
+  const childrenW = m.children.reduce((sum, c) => sum + c.subtreeW, 0) + CHILD_GAP * Math.max(0, m.children.length - 1);
+  const parentCenter = {x: centerX, y: top + m.cardH / 2};
+  let cursor = centerX - childrenW / 2;
+  for (const child of m.children) {
+    const childCenter = {x: cursor + child.subtreeW / 2, y: childTop + child.cardH / 2};
+    connectors.push({x1: parentCenter.x, y1: parentCenter.y, x2: childCenter.x, y2: childCenter.y});
+    place(child, cursor, childTop, cards, connectors, rollups);
+    cursor += child.subtreeW + CHILD_GAP;
+  }
+}
+
+/**
+ * Pure layout for a provenance tree: every visible card and rollup chip's position and size, and
+ * the connector line between each parent and its children, at 1 layout unit = 1px. Uses the same
+ * constants (card widths, stub/gap distances) `ProvenanceTree` renders with, so the on-screen
+ * tree and an export built from this layout never disagree. Only expanded nodes (per
+ * `expandedKeys`) contribute children, matching what the component currently shows.
+ */
+export function layoutTree(root: TreeNode, expandedKeys: ReadonlySet<string>, extraRoots?: TreeNode[]): TreeLayout {
+  const roots = extraRoots && extraRoots.length > 0 ? [root, ...extraRoots] : [root];
+  const measured = roots.map((r) => measure(r, 0, expandedKeys));
+  const cards: LayoutCard[] = [];
+  const connectors: LayoutConnector[] = [];
+  const rollups: LayoutRollup[] = [];
+  let cursor = 0;
+  for (const m of measured) {
+    place(m, cursor, 0, cards, connectors, rollups);
+    cursor += m.subtreeW + ROOT_GAP;
+  }
+  const width = Math.max(0, cursor - ROOT_GAP);
+  const height = measured.length > 0 ? Math.max(...measured.map((m) => m.fullH)) : 0;
+  return {width, height, cards, connectors, rollups};
+}
+
 /** Keys of every node within `maxDepth` generations of `root` that has children, expanded by
  *  default so a tree opens already showing its near ancestry. */
 export function initialExpandedKeys(root: TreeNode, maxDepth = AUTO_EXPAND_DEPTH): Set<string> {
@@ -58,6 +203,7 @@ export function ProvenanceTree({
   expandedKeys,
   onToggleExpanded,
   resetKey,
+  exportBase,
 }: {
   root: TreeNode;
   extraRoots?: TreeNode[];
@@ -66,12 +212,19 @@ export function ProvenanceTree({
   expandedKeys: ReadonlySet<string>;
   onToggleExpanded: (key: string) => void;
   resetKey?: string | number;
+  /** Download filename base (`treeExport.ts`'s `treeFilename` appends `-provenance.<ext>`). */
+  exportBase: string;
 }) {
   const roots = extraRoots && extraRoots.length > 0 ? [root, ...extraRoots] : [root];
+  const layout = React.useMemo(() => layoutTree(root, expandedKeys, extraRoots), [root, expandedKeys, extraRoots]);
   return (
     <>
       <ProvTreeStyle />
-      <ZoomableViewport resetKey={resetKey ?? root.key}>
+      <ZoomableViewport
+        resetKey={resetKey ?? root.key}
+        onExportPng={() => void downloadTreePng(layout, {focusedKey}, exportBase)}
+        onExportSvg={() => downloadTreeSvg(layout, {focusedKey}, exportBase)}
+      >
         {roots.map((r) => (
           <TreeCard
             key={r.key}
@@ -218,7 +371,17 @@ function RollupChip({node}: {node: TreeNode}) {
   );
 }
 
-function ZoomableViewport({children, resetKey}: {children: React.ReactNode; resetKey: string | number}) {
+function ZoomableViewport({
+  children,
+  resetKey,
+  onExportPng,
+  onExportSvg,
+}: {
+  children: React.ReactNode;
+  resetKey: string | number;
+  onExportPng: () => void;
+  onExportSvg: () => void;
+}) {
   const viewportRef = React.useRef<HTMLDivElement>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [view, setView] = React.useState({x: 0, y: 0, scale: 1});
@@ -313,6 +476,12 @@ function ZoomableViewport({children, resetKey}: {children: React.ReactNode; rese
           Fit
         </button>
         <span>{Math.round(view.scale * 100)}%</span>
+        <button type="button" className="btn-outline prov-tree-toolbar-btn" onClick={onExportPng}>
+          PNG
+        </button>
+        <button type="button" className="btn-outline prov-tree-toolbar-btn" onClick={onExportSvg}>
+          SVG
+        </button>
       </div>
       <div
         ref={viewportRef}

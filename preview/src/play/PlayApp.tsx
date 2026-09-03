@@ -1089,6 +1089,7 @@ function LineageBeat({ session }: { session: PlaySession }) {
                 expandedKeys={expandedKeys}
                 onToggleExpanded={toggleExpanded}
                 resetKey={resetKey}
+                exportBase={traceExportBase(completeRoot)}
               />
             </div>
           );
@@ -1104,6 +1105,7 @@ function LineageBeat({ session }: { session: PlaySession }) {
             expandedKeys={expandedKeys}
             onToggleExpanded={toggleExpanded}
             resetKey={resetKey}
+            exportBase={traceExportBase(tips[0])}
           />
         </>
       )}
