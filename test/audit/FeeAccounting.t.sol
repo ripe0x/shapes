@@ -257,6 +257,50 @@ contract FeeAccountingTest is AuditBase {
         _assertReserveInvariant();
     }
 
+    /// @notice A contract recipient that accepts ETH is paid exactly `feesOwedTo(recipient)`, and
+    ///         its own balance grows by that amount.
+    function test_ContractRecipientWithPayableReceiveIsPaidExactly() public {
+        Sink sink = new Sink();
+        shapes.setFeeRecipient(address(sink));
+        _mintBatchTo(alice, DENOMS[0], 3);
+
+        uint256 owed = shapes.feesOwedTo(address(sink));
+        assertEq(owed, 3 * MINT_FEE, "accrual wrong");
+        uint256 before = address(sink).balance;
+
+        shapes.withdrawFees(address(sink));
+
+        assertEq(address(sink).balance, before + owed, "the balance did not grow by what was owed");
+        assertEq(shapes.feesOwedTo(address(sink)), 0, "ledger not cleared");
+        assertEq(shapes.pendingFees(), 0, "total not cleared");
+        _assertReserveInvariant();
+    }
+
+    /// @notice A recipient contract with no payable receive can never be paid, and that failure is
+    ///         its own: another recipient's accrual still withdraws.
+    function test_RecipientWithoutAPayableReceiveBlocksOnlyItself() public {
+        NoReceive stuck = new NoReceive();
+        shapes.setFeeRecipient(address(stuck));
+        _mintBatchTo(alice, DENOMS[0], 2);
+
+        uint256 stuckOwed = shapes.feesOwedTo(address(stuck));
+        assertEq(stuckOwed, 2 * MINT_FEE, "accrual wrong");
+        vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(stuck), stuckOwed));
+        shapes.withdrawFees(address(stuck));
+        assertEq(shapes.feesOwedTo(address(stuck)), stuckOwed, "a failed withdrawal consumed the ledger");
+
+        shapes.setFeeRecipient(bob);
+        _mintBatchTo(alice, DENOMS[0], 4);
+        uint256 bobOwed = shapes.feesOwedTo(bob);
+        assertEq(bobOwed, 4 * MINT_FEE, "bob's accrual wrong");
+
+        uint256 bobBefore = bob.balance;
+        shapes.withdrawFees(bob);
+        assertEq(bob.balance, bobBefore + bobOwed, "a stuck recipient blocked another withdrawal");
+        assertEq(shapes.pendingFees(), stuckOwed, "only the stuck balance should remain owed");
+        _assertReserveInvariant();
+    }
+
     /// @notice `withdrawFees` is permissionless, which lets anyone push accrued fees to the
     ///         standing recipient but never to themselves.
     function test_WithdrawFeesIsPermissionlessButNotSelfDirected() public {
@@ -279,6 +323,15 @@ contract Reverter {
         revert("no");
     }
 }
+
+/// @dev A contract fee recipient that accepts ETH.
+contract Sink {
+    receive() external payable {}
+}
+
+/// @dev A contract fee recipient with neither `receive` nor a payable `fallback`, so a plain
+///      value-bearing call to it always fails.
+contract NoReceive {}
 
 /// @dev A fee recipient that is also the admin. From its payout callback it tries to withdraw
 ///      again and to redirect the recipient mid-flight.
