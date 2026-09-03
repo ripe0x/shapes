@@ -162,8 +162,8 @@ function TierCard({ tier, index }: { tier: (typeof TIERS)[number]; index: number
 
   const frame = hovered ? hoverBase + tick : 0;
   const seed = sampleSeed(12_000 + index * 127 + frame * 613);
-  // Geometry is tier-indexed and identical on both ladders. Use the active build's amount so
-  // hybrid Sepolia builds can render the landing page's mainnet-labeled examples safely.
+  // Geometry is tier-indexed and identical on both ladders. Use the active build's amount so a
+  // testnet-ladder build can render the landing page's mainnet-labeled examples safely.
   const denomination = RENDER_DENOMINATIONS[index];
   const image = localArt(seed, denomination, mintGene(seed, denomination));
 

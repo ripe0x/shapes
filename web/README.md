@@ -26,10 +26,10 @@ Deployed as two isolated Netlify projects (`../netlify.toml`):
 - Sepolia application: separate Netlify URL, branch `main`, `SHAPES_SITE_MODE=app` and
   `SHAPES_LADDER=testnet`.
 
-Netlify builds use `npm run build:netlify`, which refuses a missing or unsafe mode. A domain-level
-proxy blocks wallet, token, gallery, and auction routes on `shapes.ripe.wtf`, even if its
-environment is later misconfigured. Local development defaults to hybrid mode: the launch page at
-`/`, the playground at `/play`, and the app at `/mint`. The root Netlify configuration explicitly
+Netlify builds use `npm run build:netlify`, which refuses an unsafe mode. A domain-level proxy
+blocks wallet, token, gallery, and auction routes on `shapes.ripe.wtf`, even if its environment is
+later misconfigured. `SHAPES_SITE_MODE` defaults to `app` when unset, including local development,
+so the app home with the full mint panel is at `/`. The root Netlify configuration explicitly
 includes `preview/` in its change detection because the playground and canonical renderer are
 shared from that workspace.
 

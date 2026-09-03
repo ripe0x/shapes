@@ -1,13 +1,13 @@
-export type SiteMode = "landing" | "app" | "hybrid";
+export type SiteMode = "landing" | "app";
 
 /**
- * `hybrid` keeps the launch page at `/` and exposes the Sepolia app at `/mint` plus its related
- * routes. Netlify must always choose a mode explicitly before it is allowed to build.
+ * `landing` restricts the production launch domain to the chain-free countdown page and `/play`.
+ * `app` is the app home with the full mint panel at `/` plus all app routes, and is the default
+ * when SHAPES_SITE_MODE is unset (including local dev). Netlify additionally refuses to build an
+ * unsafe value for this env var (scripts/verify-netlify-mode.mjs).
  */
 export function siteMode(): SiteMode {
-  const value = process.env.SHAPES_SITE_MODE;
-  if (value === "landing" || value === "app") return value;
-  return "hybrid";
+  return process.env.SHAPES_SITE_MODE === "landing" ? "landing" : "app";
 }
 
 export const landingOnly = () => siteMode() === "landing";
