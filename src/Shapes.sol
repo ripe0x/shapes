@@ -11,12 +11,14 @@ import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes, IShapeProvenance, IShapeRecomposition, IShapeValue} from "./interfaces/IShapes.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
+import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
 import {IShapeRenderer, SplitProvenance} from "./interfaces/IShapeRenderer.sol";
 import {
-    ComposeInput,
-    ComposeRecord,
+    ComposeRecordView,
+    ShapeChildPreview,
     ShapeData,
     ShapeFormation,
+    ShapeState,
     ShapeStore,
     SplitOriginRef,
     SplitRecord
@@ -879,53 +881,16 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev Returns the stored compose header at `depth`. An out-of-range depth uses Solidity's
-    ///      normal array bounds panic.
-    function composeRecordHeaderAt(uint256 survivorId, uint256 depth)
+    function composeRecordAt(uint256 survivorId, uint256 depth)
         external
         view
-        returns (
-            uint8 survivorDenomIndex,
-            uint32 survivorOriginCount,
-            uint8 survivorInkGene,
-            uint96 ownerTokenFrom,
-            bytes memory survivorModules,
-            uint256 inputCount
-        )
+        returns (ComposeRecordView memory)
     {
-        ComposeRecord storage rec = _store.composeStack[survivorId][depth];
-        return (
-            rec.survivorDenomIndex,
-            rec.survivorOriginCount,
-            rec.survivorInkGene,
-            rec.ownerTokenFrom,
-            rec.survivorModules,
-            rec.inputs.length
-        );
+        return RecompositionOps.composeRecordAt(_store, survivorId, depth);
     }
 
     /// @inheritdoc IShapes
-    /// @dev Returns one stored compose input. An out-of-range input index uses Solidity's normal
-    ///      array bounds panic.
-    function composeRecordInputAt(uint256 survivorId, uint256 depth, uint256 inputIndex)
-        external
-        view
-        returns (
-            uint256 id,
-            bytes32 seed,
-            uint8 denomIndex,
-            uint32 originCount,
-            uint8 inkGene,
-            bytes memory modules
-        )
-    {
-        ComposeInput storage inp = _store.composeStack[survivorId][depth].inputs[inputIndex];
-        return (inp.id, inp.seed, inp.denomIndex, inp.originCount, inp.inkGene, inp.modules);
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev Returns the stored split-origin fields for `childId`, verbatim.
-    function splitOriginRaw(uint256 childId)
+    function splitOriginOf(uint256 childId)
         external
         view
         returns (
@@ -952,6 +917,71 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         );
     }
 
+    /// @inheritdoc IShapes
+    function shapeState(uint256 tokenId) external view returns (ShapeState memory) {
+        _requireOwned(tokenId);
+        return RecompositionOps.shapeState(_store, tokenId);
+    }
+
+    /// @inheritdoc IShapes
+    function exists(uint256 tokenId) external view returns (bool) {
+        return _ownerOf(tokenId) != address(0);
+    }
+
+    /// @inheritdoc IShapes
+    function previewCompose(address account, uint256 survivorId, uint256[] calldata burnIds)
+        external
+        view
+        returns (ShapeState memory)
+    {
+        return RecompositionOps.previewCompose(_store, account, survivorId, burnIds);
+    }
+
+    /// @inheritdoc IShapes
+    function previewSplit(address account, uint256 tokenId, uint8[] calldata outDenoms)
+        external
+        view
+        returns (ShapeChildPreview[] memory children)
+    {
+        return RecompositionOps.previewSplit(_store, account, tokenId, outDenoms);
+    }
+
+    /// @inheritdoc IShapes
+    function unicodeCard(uint256 tokenId) external view returns (string memory) {
+        _requireOwned(tokenId);
+        ShapeData storage d = _store.shapes[tokenId];
+        bytes memory modules = _store.modules[tokenId];
+        uint256 amountWei = Denominations.amountAt(d.denomIndex);
+        IShapeRenderer r = IShapeRenderer(_presentation.renderer);
+        if (modules.length != 0) return r.renderUnicodeSampled(modules, amountWei, d.inkGene);
+        return r.renderUnicode(d.seed, amountWei, d.inkGene);
+    }
+
+    /// @dev Gas forwarded to the untrusted positions contract. Ample for a mapping read; bounds a
+    ///      hostile target's ability to consume the caller's stipend.
+    uint256 private constant POSITIONS_GAS = 50_000;
+
+    /// @inheritdoc IShapes
+    /// @dev The positions contract is untrusted. A revert, an out-of-gas, a return that is not one
+    ///      word, and a word with bits set above the address all resolve to zero. Its only power is
+    ///      to mislead callers of this view.
+    function positionOf(uint256 tokenId) external view returns (address) {
+        address target = _pointers.positions;
+        if (target == address(0)) return address(0);
+
+        (bool success, bytes memory data) = target.staticcall{gas: POSITIONS_GAS}(
+            abi.encodeCall(IShapePositionResolver.positionOf, (tokenId))
+        );
+        if (!success || data.length != 32) return address(0);
+
+        uint256 word;
+        assembly ("memory-safe") {
+            word := mload(add(data, 32))
+        }
+        if (word >> 160 != 0) return address(0);
+        return address(uint160(word));
+    }
+
     /// @dev A fresh local EVM may execute at genesis. Production transactions cannot, but keeping
     ///      this seed input total makes constructor simulation and local deployment reliable.
     function _previousBlockHash() private view returns (bytes32) {
@@ -976,6 +1006,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     function unit() external pure returns (uint256) {
         return Denominations.UNIT;
+    }
+
+    /// @inheritdoc IShapes
+    function isSupportedDenomination(uint256 amountWei) external pure returns (bool) {
+        return Denominations.isSupported(amountWei);
     }
 
     /// @notice EIP-2981 royalty, permanently zero.

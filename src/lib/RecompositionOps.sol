@@ -2,12 +2,17 @@
 pragma solidity 0.8.28;
 
 import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
+import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 import {IShapes} from "../interfaces/IShapes.sol";
 import {
     ComposeInput,
+    ComposeInputView,
     ComposeRecord,
+    ComposeRecordView,
+    ShapeChildPreview,
     ShapeData,
+    ShapeState,
     ShapeStore,
     SplitOriginRef,
     SplitRecord
@@ -19,7 +24,8 @@ import {InkGenes} from "./InkGenes.sol";
 import {ShapeMath} from "./ShapeMath.sol";
 
 /// @title RecompositionOps
-/// @notice The compose, decompose and split state machine.
+/// @notice The compose, decompose and split state machine, the previews of compose and split, and
+///         the decoded reads over the state they write.
 /// @dev Public library called through `DELEGATECALL` from `Shapes`, so it reads and writes
 ///      `Shapes`'s storage and emits `Shapes`'s events from `Shapes`'s address. Each function is
 ///      named after the `Shapes` entrypoint whose body it holds.
@@ -385,5 +391,187 @@ library RecompositionOps {
         return GeometrySampling.buildSplitRecordPoolSorted(
             rec.survivorModules, parentSeed, rec.survivorDenomIndex, rec.survivorInkGene, inputDonors
         );
+    }
+
+    /* -------------------------------- reads -------------------------------- */
+
+    /// @notice Body of `Shapes.shapeState`: every protocol fact about one live Shape.
+    /// @dev The caller has already required the token to exist.
+    function shapeState(ShapeStore storage st, uint256 tokenId) public view returns (ShapeState memory) {
+        ShapeData storage d = st.shapes[tokenId];
+        return _state(d.seed, d.denomIndex, d.originCount, d.inkGene, d.isBlack, st.modules[tokenId]);
+    }
+
+    /// @notice Body of `Shapes.composeRecordAt`: one reversible compose record, decoded.
+    /// @dev `ownerTokenFrom` is returned as a token id, or `type(uint256).max` when that compose
+    ///      moved no collection ownership. The id-plus-one form the record stores is never returned.
+    function composeRecordAt(ShapeStore storage st, uint256 survivorId, uint256 depth)
+        public
+        view
+        returns (ComposeRecordView memory)
+    {
+        ComposeRecord[] storage stack = st.composeStack[survivorId];
+        uint256 depthAvailable = stack.length;
+        if (depth >= depthAvailable) {
+            revert IShapes.ComposeRecordOutOfRange(survivorId, depth, depthAvailable);
+        }
+
+        ComposeRecord storage rec = stack[depth];
+        uint256 m = rec.inputs.length;
+        ComposeInputView[] memory inputs = new ComposeInputView[](m);
+        for (uint256 i = 0; i < m; ++i) {
+            ComposeInput storage inp = rec.inputs[i];
+            inputs[i] = ComposeInputView({
+                id: inp.id,
+                seed: inp.seed,
+                denominationIndex: inp.denomIndex,
+                originCount: inp.originCount,
+                inkGene: inp.inkGene,
+                modules: inp.modules
+            });
+        }
+
+        return ComposeRecordView({
+            survivorDenominationIndex: rec.survivorDenomIndex,
+            survivorOriginCount: rec.survivorOriginCount,
+            survivorInkGene: rec.survivorInkGene,
+            survivorModules: rec.survivorModules,
+            ownerTokenFrom: rec.ownerTokenFrom == 0 ? type(uint256).max : uint256(rec.ownerTokenFrom) - 1,
+            inputs: inputs
+        });
+    }
+
+    /* ------------------------------- previews ------------------------------- */
+
+    /// @notice Body of `Shapes.previewCompose`: the state that compose would leave on the survivor.
+    /// @dev Runs the same gates in the same order as `Shapes.compose` and this library's `compose`,
+    ///      against `account` instead of `msg.sender`, then the same `ComposeCompute` call over the
+    ///      same donor state. Writes nothing.
+    function previewCompose(
+        ShapeStore storage st,
+        address account,
+        uint256 survivorId,
+        uint256[] calldata burnIds
+    ) public view returns (ShapeState memory) {
+        uint256 n = burnIds.length;
+        if (n == 0) revert IShapes.NoComposeInputs();
+
+        requireLiveOwner(st, survivorId, _tokenOwner(survivorId), account);
+        requireDistinct(burnIds);
+
+        ShapeData storage s = st.shapes[survivorId];
+        uint8 oldIndex = s.denomIndex;
+        ShapeMath.BurnPoolAccum memory acc;
+        uint256 survivorUnits = ShapeMath.initPool(acc, oldIndex, s.originCount, s.inkGene);
+
+        GeometrySampling.Donor[] memory burnDonors = new GeometrySampling.Donor[](n);
+        for (uint256 i = 0; i < n; ++i) {
+            uint256 burnId = burnIds[i];
+            requireComposeInput(st, survivorId, burnId, _tokenOwner(burnId), account);
+
+            ShapeData storage b = st.shapes[burnId];
+            uint256 bUnits = ShapeMath.addDonor(acc, b.seed, b.denomIndex, b.originCount, b.inkGene);
+            burnDonors[i] = GeometrySampling.Donor({
+                id: burnId,
+                units: bUnits,
+                seed: b.seed,
+                denomIndex: b.denomIndex,
+                inkGene: b.inkGene,
+                modules: st.modules[burnId]
+            });
+        }
+
+        uint256 newIndex = Denominations.requireIndexOf(acc.total);
+        uint8 centerGene = InkGenes.center(acc.sumW, acc.unitsTotal);
+        (uint8 newGene, bytes memory sampled) = ComposeCompute.composeSampleAndGene(
+            GeometrySampling.Donor({
+                id: survivorId,
+                units: survivorUnits,
+                seed: s.seed,
+                denomIndex: oldIndex,
+                inkGene: s.inkGene,
+                modules: st.modules[survivorId]
+            }),
+            burnDonors,
+            acc.burnSeedFold,
+            uint8(newIndex),
+            acc.best,
+            acc.worst,
+            centerGene
+        );
+
+        return _state(s.seed, uint8(newIndex), uint32(acc.origins), newGene, false, sampled);
+    }
+
+    /// @notice Body of `Shapes.previewSplit`: the children split would mint, in `outDenoms` order.
+    /// @dev Runs the same gates in the same order as `Shapes.split` and this library's `split`,
+    ///      against `account` instead of `msg.sender`, and samples each child from the same pool.
+    ///      Writes nothing. Child ids are not predicted: they depend on `totalMinted` at execution.
+    function previewSplit(ShapeStore storage st, address account, uint256 tokenId, uint8[] calldata outDenoms)
+        public
+        view
+        returns (ShapeChildPreview[] memory children)
+    {
+        uint256 k = outDenoms.length;
+        if (k < 2) revert IShapes.SplitTooFewOutputs();
+        requireLiveOwner(st, tokenId, _tokenOwner(tokenId), account);
+
+        ShapeData storage p = st.shapes[tokenId];
+        bytes32 parentSeed = p.seed;
+        uint8 parentInkGene = p.inkGene;
+
+        ShapeMath.requireSplitSumMatches(Denominations.amountAt(p.denomIndex), outDenoms);
+        uint32[] memory give = ShapeMath.allocateSplitOrigins(p.originCount, outDenoms);
+
+        uint256 recordDepth = st.composeStack[tokenId].length;
+        bool hasRecordPool = recordDepth > 0;
+        bytes memory recordPool = hasRecordPool
+            ? _splitRecordPool(st.composeStack[tokenId][recordDepth - 1], parentSeed)
+            : bytes("");
+
+        children = new ShapeChildPreview[](k);
+        for (uint256 i = 0; i < k; ++i) {
+            children[i] = ShapeChildPreview({
+                seed: ShapeMath.childSeed(parentSeed, i),
+                denominationIndex: outDenoms[i],
+                originCount: give[i],
+                inkGene: parentInkGene,
+                faceValueWei: Denominations.amountAt(outDenoms[i]),
+                modules: GeometrySampling.sampleSplitChildFromPool(
+                    hasRecordPool, recordPool, parentSeed, parentInkGene, outDenoms[i], i
+                )
+            });
+        }
+    }
+
+    /// @dev One `ShapeState` from the fields that define it. Shared by `shapeState`, which reads
+    ///      them from storage, and `previewCompose`, which computes them.
+    function _state(
+        bytes32 seed,
+        uint8 denomIndex,
+        uint32 originCount,
+        uint8 inkGene,
+        bool black,
+        bytes memory modules
+    ) private pure returns (ShapeState memory) {
+        uint256 faceValue = Denominations.amountAt(denomIndex);
+        return ShapeState({
+            seed: seed,
+            denominationIndex: denomIndex,
+            originCount: originCount,
+            inkGene: inkGene,
+            isBlack: black,
+            formation: ShapeMath.formation(denomIndex, originCount, black),
+            faceValueWei: faceValue,
+            redeemableValueWei: black ? 0 : faceValue,
+            modules: modules
+        });
+    }
+
+    /// @dev The token's ERC-721 owner, read back from `Shapes`. This library runs under
+    ///      `DELEGATECALL`, so `address(this)` is the token. Reverts `ERC721NonexistentToken` for an
+    ///      id that does not exist, which is what the mutators' own `ownerOf` call does.
+    function _tokenOwner(uint256 tokenId) private view returns (address) {
+        return IERC721(address(this)).ownerOf(tokenId);
     }
 }

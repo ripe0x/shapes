@@ -79,7 +79,7 @@ contract HeterogeneousTest is ShapesBase {
         outs[5] = 2;
         // sum: 0.5 + 5 x 0.1 = 1 ETH
 
-        ShapeChildPreview[] memory preview = lens.previewSplit(parent, outs);
+        ShapeChildPreview[] memory preview = shapes.previewSplit(alice, parent, outs);
 
         uint256 reserveBefore = shapes.redeemableBacking();
         vm.prank(alice);
@@ -94,7 +94,7 @@ contract HeterogeneousTest is ShapesBase {
             assertEq(shapes.seedOf(kids[i]), shapes.childSeed(parentSeed, i), "child seed derivation");
             assertEq(shapes.inkGeneOf(kids[i]), parentGene, "ink gene copied verbatim");
 
-            (uint256 cols, uint256 rows) = lens.gridForAmount(DENOMS[childDenom]);
+            (uint256 cols, uint256 rows) = _gridForAmount(DENOMS[childDenom]);
             bytes memory modules = shapes.modulesOf(kids[i]);
             assertEq(modules.length, cols * rows, "materialized length matches child's own grid");
 
@@ -106,7 +106,7 @@ contract HeterogeneousTest is ShapesBase {
                 );
             }
 
-            ShapeState memory st = lens.shapeState(kids[i]);
+            ShapeState memory st = shapes.shapeState(kids[i]);
             assertEq(preview[i].seed, st.seed, "preview seed matches executed child");
             assertEq(preview[i].denominationIndex, st.denominationIndex, "preview denomination matches");
             assertEq(preview[i].originCount, st.originCount, "preview origin count matches");
@@ -117,7 +117,7 @@ contract HeterogeneousTest is ShapesBase {
 
         assertEq(shapes.redeemableBacking(), reserveBefore, "split moves no ETH");
         assertEq(shapes.totalSupply(), 6, "parent burned, six children live");
-        assertFalse(lens.exists(parent), "parent burned");
+        assertFalse(shapes.exists(parent), "parent burned");
         _assertSolvent();
     }
 
@@ -141,7 +141,7 @@ contract HeterogeneousTest is ShapesBase {
         assertGt(depth, 0, "compose record present: record branch");
 
         bytes32 parentSeed = shapes.seedOf(parent);
-        ComposeRecordView memory rec = lens.composeRecordAt(parent, depth - 1);
+        ComposeRecordView memory rec = shapes.composeRecordAt(parent, depth - 1);
         bytes memory pool = _reconstructSplitRecordPool(parentSeed, rec);
 
         uint8[] memory outs = new uint8[](11);
@@ -158,7 +158,7 @@ contract HeterogeneousTest is ShapesBase {
         outs[10] = 3; // 0.5
         // sum: 0.05 + 0.05 + 0.4 + 0.5 = 1.0 ETH
 
-        ShapeChildPreview[] memory preview = lens.previewSplit(parent, outs);
+        ShapeChildPreview[] memory preview = shapes.previewSplit(alice, parent, outs);
 
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
@@ -233,7 +233,7 @@ contract HeterogeneousTest is ShapesBase {
         assertEq(shapes.composeDepth(recordlessParent), 0, "split child never composed");
 
         uint8[] memory outsA = new uint8[](5); // 5 x 0.01 ETH
-        ShapeChildPreview[] memory previewA = lens.previewSplit(recordlessParent, outsA);
+        ShapeChildPreview[] memory previewA = shapes.previewSplit(alice, recordlessParent, outsA);
 
         vm.prank(alice);
         uint256[] memory kidsA = shapes.split(recordlessParent, outsA);
@@ -265,7 +265,7 @@ contract HeterogeneousTest is ShapesBase {
         outsB[0] = 1; // 0.05
         outsB[1] = 1;
 
-        ShapeChildPreview[] memory previewB = lens.previewSplit(survivor, outsB);
+        ShapeChildPreview[] memory previewB = shapes.previewSplit(alice, survivor, outsB);
 
         vm.prank(alice);
         uint256[] memory kidsB = shapes.split(survivor, outsB);
@@ -319,7 +319,7 @@ contract HeterogeneousTest is ShapesBase {
             if (g < worst) worst = g;
         }
 
-        ShapeState memory preview = lens.previewCompose(survivor, burns);
+        ShapeState memory preview = shapes.previewCompose(alice, survivor, burns);
 
         vm.prank(alice);
         shapes.compose(survivor, burns);
@@ -330,7 +330,7 @@ contract HeterogeneousTest is ShapesBase {
         assertEq(shapes.composeDepth(survivor), 1, "one compose record");
 
         bytes memory modules = shapes.modulesOf(survivor);
-        (uint256 cols, uint256 rows) = lens.gridForAmount(DENOMS[4]);
+        (uint256 cols, uint256 rows) = _gridForAmount(DENOMS[4]);
         assertEq(modules.length, cols * rows, "9 modules at 1 ETH");
         for (uint256 i = 0; i < modules.length; ++i) {
             assertTrue(ModuleCodec.isValid(modules[i]), "invalid module byte");
@@ -439,7 +439,7 @@ contract HeterogeneousTest is ShapesBase {
             if (g < worst) worst = g;
         }
 
-        ShapeState memory preview = lens.previewCompose(survivor, burns);
+        ShapeState memory preview = shapes.previewCompose(alice, survivor, burns);
 
         vm.prank(alice);
         shapes.compose(survivor, burns);
@@ -449,7 +449,7 @@ contract HeterogeneousTest is ShapesBase {
         assertEq(shapes.composeDepth(survivor), 1);
 
         bytes memory modules = shapes.modulesOf(survivor);
-        (uint256 cols, uint256 rows) = lens.gridForAmount(DENOMS[2]);
+        (uint256 cols, uint256 rows) = _gridForAmount(DENOMS[2]);
         assertEq(modules.length, cols * rows, "16 modules at 0.1 ETH");
         for (uint256 i = 0; i < modules.length; ++i) {
             assertTrue(ModuleCodec.isValid(modules[i]), "invalid module byte");
@@ -509,7 +509,7 @@ contract HeterogeneousTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory kids = shapes.split(survivor, outs);
 
-        assertFalse(lens.exists(survivor), "the split burns the survivor");
+        assertFalse(shapes.exists(survivor), "the split burns the survivor");
         assertEq(shapes.composeDepth(survivor), 1, "the compose record is left inert, not popped");
         for (uint256 i = 0; i < kids.length; ++i) {
             assertEq(shapes.ownerOf(kids[i]), alice, "child live");
@@ -521,7 +521,7 @@ contract HeterogeneousTest is ShapesBase {
 
         for (uint256 i = 0; i < kids.length; ++i) {
             (, uint256 parentId, uint8 parentDenomIndex, uint8 originDenomIndex,,, uint256 childIndex) =
-                lens.splitOriginOf(kids[i]);
+                shapes.splitOriginOf(kids[i]);
             assertEq(parentId, survivor, "split origin parent id");
             assertEq(parentDenomIndex, 4, "split origin parent denomination");
             assertEq(originDenomIndex, 4, "root split origin denomination");
@@ -576,7 +576,7 @@ contract BlackPathsTest is ShapesBase {
         shapes.compose(survivor, burn);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, black));
-        lens.previewCompose(survivor, burn);
+        shapes.previewCompose(alice, survivor, burn);
 
         assertEq(shapes.redeemableBacking(), reserveBefore, "rejected compose moves no backing");
         assertEq(shapes.totalSupply(), supplyBefore, "rejected compose changes no supply");

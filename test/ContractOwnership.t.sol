@@ -238,24 +238,14 @@ contract ContractOwnershipTest is Test {
     }
 
     function test_AdvertisesShapesAndAdminInterfaces() public view {
-        // Pinned snapshot of `type(IShapes).interfaceId`, the XOR of every function selector still
-        // declared on `IShapes`. `positionOf`, `exists`, `isSupportedDenomination`, `gridForAmount`
-        // and `modulesForAmount` moved off it in this pass (issue #21, follow-up to #21B, size
-        // recovery) to `IShapeLens` instead; `denominationAt`, `denominationCount`, `unit`,
-        // `childSeed`, `isComplete` and `formationOf` stayed on `IShapes` because `IShapeValue` and
-        // `IShapeProvenance` (SPEC.md's stable external integration surface, gated by ERC-165) still
-        // declare them, and `supportsInterface` must not advertise a capability it cannot serve.
-        // The explicit positions/market pointer getters and generic admin pair replace the old
-        // specialized resolver surface. `pendingFees` and `withdrawFees` were
-        // added to `IShapes`, and `setMintFee` to `IAdminControl`, when mint fees moved from
-        // push-forwarded-and-immutable to pull-based accrual with an admin-adjustable amount.
-        // `ownerToken` was added when collection ownership moved from being fixed to Shape #0 to
-        // following a movable owner token (issue #56).
-        // `mintStart` was added with the immutable mint-start gate on `mintBatch`/`mintBatchTo`.
-        // `blackCount` became `blackShapeCount` and `sacrificedBacking` became `burnedBacking`,
-        // which changed both selectors.
-        // Update these constants only when the function set changes on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0x902fc02c), "IShapes id changed");
+        // `type(IShapes).interfaceId` is the XOR of every selector `IShapes` declares, so these
+        // two constants change whenever the interface does. Update them only when the function set
+        // changes on purpose, and record the new value in the change that caused it.
+        //
+        // `supportsInterface` must never advertise an interface whose members are not all
+        // implemented here, so the narrower capability interfaces are pinned alongside it in
+        // Composability.t.sol.
+        assertEq(type(IShapes).interfaceId, bytes4(0xaaf9b098), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

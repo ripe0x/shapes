@@ -164,7 +164,7 @@ contract OwnerTokenTest is ShapesBase {
         assertEq(shapes.owner(), alice);
     }
 
-    /* ------------------------- ShapeLens.composeRecordAt ------------------------- */
+    /* ------------------------- composeRecordAt ------------------------- */
 
     function test_LensComposeRecordAtOwnerTokenFromIsNoneWhenSurvivorAlreadyHeldIt() public {
         shapes.transferFrom(address(this), alice, 0);
@@ -172,7 +172,7 @@ contract OwnerTokenTest is ShapesBase {
         vm.prank(alice);
         shapes.compose(0, _ids4(1, 2, 3, 4));
 
-        ComposeRecordView memory rec = lens.composeRecordAt(0, 0);
+        ComposeRecordView memory rec = shapes.composeRecordAt(0, 0);
         assertEq(rec.ownerTokenFrom, type(uint256).max, "no input carried ownership into this compose");
     }
 
@@ -182,7 +182,7 @@ contract OwnerTokenTest is ShapesBase {
         vm.prank(alice);
         shapes.compose(1, _ids4(0, 2, 3, 4));
 
-        ComposeRecordView memory rec = lens.composeRecordAt(1, 0);
+        ComposeRecordView memory rec = shapes.composeRecordAt(1, 0);
         assertEq(rec.ownerTokenFrom, 0, "the burned owner token's id");
     }
 
@@ -200,10 +200,10 @@ contract OwnerTokenTest is ShapesBase {
         vm.prank(alice);
         shapes.compose(1, secondBurn); // depth 1; carries no owner token
 
-        ComposeRecordView memory inner = lens.composeRecordAt(1, 0);
+        ComposeRecordView memory inner = shapes.composeRecordAt(1, 0);
         assertEq(inner.ownerTokenFrom, 0, "depth 0 recorded the donor that carried ownership");
 
-        ComposeRecordView memory outer = lens.composeRecordAt(1, 1);
+        ComposeRecordView memory outer = shapes.composeRecordAt(1, 1);
         assertEq(outer.ownerTokenFrom, type(uint256).max, "depth 1 carried no owner token");
     }
 

@@ -6,15 +6,15 @@ import {console} from "forge-std/Script.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
-import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
-import {LensEquivalence} from "./LensEquivalence.s.sol";
+import {Script} from "forge-std/Script.sol";
 
-/// @notice Deploys the renderer, collection metadata, token, read-only lens, and auction house.
+/// @notice Deploys the renderer, collection metadata, token and auction house, and registers the
+///         auction house as the token's `market` pointer.
 ///
 /// @dev One script for every chain. Chain id selects the required ladder and the fee-recipient
 ///      default; every other input is a value passed in by the caller (see script/deploy.sh and
@@ -34,18 +34,12 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///                              calls. Defaults to 0, which opens them immediately. Immutable
 ///                              once deployed.
 ///
-///      `ShapeLens` is periphery deployed alongside `Shapes`: it holds the rich view surface
-///      (`shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt`,
-///      `splitOriginOf`) that was moved off `Shapes` to keep the token's runtime bytecode under
-///      the EIP-170 size limit (see IShapes.sol and IShapeLens.sol). It takes the deployed
-///      `Shapes` address as its only constructor argument, holds no state of its own, and reads
-///      everything through `Shapes`'s getters. Its previews are bit-identical to what the token
-///      executes only while both link the same `ComposeCompute` deployment, so this script proves
-///      that with `_assertLensEquivalence` before reporting success (see LensEquivalence.s.sol).
+///      Every view and every preview lives on `Shapes` itself, so there is nothing else to deploy
+///      for reads and no second address for a client to discover.
 ///
-///      The auction house is deployed alongside but wired only to `Shapes`: it holds no
-///      privileged position over the token and the token knows nothing about it, so a broken
-///      house costs an auction rather than the collection.
+///      The auction house holds no privileged position over the token. Registering it as the
+///      `market` pointer is discovery only: no token or reserve operation reads that pointer, and
+///      a broken house costs an auction rather than the collection.
 ///
 ///      Deployment sends the minimum denomination to `Shapes`, which atomically mints backed
 ///      Shape #0 to the deployer. Its holder is returned by `owner()` and `ownerToken()` but
@@ -60,7 +54,7 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      values from script/env/<name>.env. Direct invocation:
 ///
 ///        forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
-contract Deploy is LensEquivalence {
+contract Deploy is Script {
     uint256 internal constant DEFAULT_MINT_FEE = Denominations.UNIT / 10;
     uint256 internal constant ANVIL_CHAIN_ID = 31337;
     uint256 internal constant SEPOLIA_CHAIN_ID = 11155111;
@@ -75,11 +69,14 @@ contract Deploy is LensEquivalence {
     error WrongLadder(string compiled, string expected);
     error UnsupportedChain(uint256 chainid);
 
-    function _requirePointersUnset(Shapes shapes) private view {
+    /// @dev The market pointer names the auction house deployed above; positions starts empty
+    ///      because no positions contract exists yet. Neither is locked, so the admin can still
+    ///      replace either one.
+    function _requirePointers(Shapes shapes, address house) private view {
         (address positions, bool positionsLocked) = shapes.positions();
         (address market, bool marketLocked) = shapes.market();
         require(positions == address(0), "positions should start empty");
-        require(market == address(0), "market should start empty");
+        require(market == house, "market should name the deployed auction house");
         require(!positionsLocked, "positions should start unlocked");
         require(!marketLocked, "market should start unlocked");
     }
@@ -108,13 +105,7 @@ contract Deploy is LensEquivalence {
 
     function run()
         external
-        returns (
-            ShapeRenderer renderer,
-            ShapeCollection collection,
-            Shapes shapes,
-            ShapeLens lens,
-            ShapeAuctionHouse house
-        )
+        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
     {
         _requireLadderForChain();
 
@@ -154,8 +145,11 @@ contract Deploy is LensEquivalence {
         shapes = new Shapes{value: Denominations.amountAt(0)}(
             mintFee, feeRecipient, address(renderer), address(collection), mintStart
         );
-        lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
+
+        // Discovery only. `setPointer` requires the target to answer ERC-165 for
+        // `IShapeAuctionHouse`, and no token or reserve operation ever reads the pointer.
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(house));
 
         vm.stopBroadcast();
 
@@ -172,7 +166,7 @@ contract Deploy is LensEquivalence {
 
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
-        _requirePointersUnset(shapes);
+        _requirePointers(shapes, address(house));
         require(shapes.supportsInterface(type(IERC721Value).interfaceId), "draft ERC-8060 interface missing");
         require(address(renderer).code.length != 0, "renderer missing code");
         require(shapes.collection() == address(collection), "collection mismatch");
@@ -194,7 +188,7 @@ contract Deploy is LensEquivalence {
         require(shapes.denominationCount() == 9, "denomination count mismatch");
         require(shapes.denominationAt(0) == Denominations.amountAt(0), "minimum denomination mismatch");
         require(shapes.denomIndexOf(0) == 0, "Shape #0 denomination mismatch");
-        require(lens.exists(0), "Shape #0 must exist");
+        require(shapes.exists(0), "Shape #0 must exist");
 
         // Smoke the renderer through the interface the token will actually use. A renderer
         // that cannot produce metadata would leave every token permanently unrenderable.
@@ -229,10 +223,6 @@ contract Deploy is LensEquivalence {
         // Contract-level metadata is what a marketplace reads for the collection itself.
         require(bytes(shapes.contractURI()).length > 500, "collection produced no metadata");
 
-        // The lens is wired to the token and holds no privileged position over it; it can never
-        // move state, only read it back through `Shapes`'s own getters.
-        require(address(lens.shapes()) == address(shapes), "lens points at another token");
-
         // The house is wired to the token and to nothing else. It holds no role on the token, so
         // this is the whole of the relationship.
         require(house.shapes() == address(shapes), "auction house points at another token");
@@ -242,15 +232,10 @@ contract Deploy is LensEquivalence {
         console.log("renderer=%s", address(renderer));
         console.log("collection=%s", address(collection));
         console.log("shapes=%s", address(shapes));
-        console.log("lens=%s", address(lens));
         console.log("auctionHouse=%s", address(house));
         console.log("mintFeeWei=%s", mintFee);
         console.log("mintStart=%s", mintStart);
         console.log("feeRecipient=%s", feeRecipient);
         console.log("admin=%s", shapes.admin());
-
-        // Runs last: the probe advances simulated token state, so every check and log above it
-        // reads a fresh collection.
-        _assertLensEquivalence(shapes, lens);
     }
 }

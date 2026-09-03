@@ -6,7 +6,6 @@ import {Test, console} from "forge-std/Test.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
-import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
@@ -111,7 +110,7 @@ contract ForkTest is Test {
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
         Deploy deployer = new Deploy();
-        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeLens l, ShapeAuctionHouse h) = deployer.run();
+        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h) = deployer.run();
 
         assertEq(s.mintFee(), MINT_FEE, "default flat fee not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
@@ -123,12 +122,11 @@ contract ForkTest is Test {
         assertEq(s.ownerToken(), 0, "owner token should be Shape #0");
         assertEq(s.artistReleaseHash(), bytes32(0), "attribution should start unsigned");
         assertEq(s.artistSignature(), bytes(""), "signature should start empty");
-        assertEq(address(l.shapes()), address(s), "lens mismatch");
         assertEq(h.shapes(), address(s), "auction house mismatch");
         (address positions, bool positionsLocked) = s.positions();
         (address market, bool marketLocked) = s.market();
         assertEq(positions, address(0), "positions should start empty");
-        assertEq(market, address(0), "market should start empty");
+        assertEq(market, address(h), "market should name the deployed auction house");
         assertFalse(positionsLocked, "positions should start unlocked");
         assertFalse(marketLocked, "market should start unlocked");
         assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");

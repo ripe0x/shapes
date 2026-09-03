@@ -12,9 +12,9 @@ import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
-import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {IShapeGeometry} from "../src/interfaces/IShapeGeometry.sol";
 import {ShapeFormation, ShapeState} from "../src/ShapeTypes.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
@@ -45,7 +45,6 @@ abstract contract ShapesBase is Test {
 
     ShapeCollection internal collection;
     Shapes internal shapes;
-    ShapeLens internal lens;
 
     address internal feeRecipient = address(0xFEE);
     address internal alice = address(0xA11CE);
@@ -76,9 +75,18 @@ abstract contract ShapesBase is Test {
         // Most legacy subsystem tests need an otherwise-empty collection. ContractOwnership.t.sol
         // exercises the live genesis token itself; burn it here while preserving issued id 0.
         if (!_keepGenesisShape()) shapes.redeemTo(0, payable(address(0xD15CA4D)));
-        lens = new ShapeLens(address(shapes));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
+    }
+
+    /// @dev The grid and module count a denomination maps to. Geometry is the renderer's fact,
+    ///      read through `IShapeGeometry.cardGeometry`; the token carries the value ladder only.
+    function _gridForAmount(uint256 amountWei) internal view returns (uint256 cols, uint256 rows) {
+        (, cols, rows,,,,,) = IShapeGeometry(shapes.renderer()).cardGeometry(bytes32(0), amountWei, 0);
+    }
+
+    function _modulesForAmount(uint256 amountWei) internal view returns (uint256 moduleCount) {
+        (,,,,,,, moduleCount) = IShapeGeometry(shapes.renderer()).cardGeometry(bytes32(0), amountWei, 0);
     }
 
     function _mint(address who, uint256 amount) internal returns (uint256 id) {
@@ -126,7 +134,7 @@ contract MintTest is ShapesBase {
             assertEq(id, i + 1, "permissionless token ids are sequential from 1");
             assertEq(shapes.ownerOf(id), alice);
             assertEq(shapes.backingOf(id), DENOMS[i]);
-            assertTrue(lens.exists(id), "freshly minted Shape exists");
+            assertTrue(shapes.exists(id), "freshly minted Shape exists");
             assertEq(shapes.denomIndexOf(id), i, "stored denomination index");
             assertEq(shapes.redeemableBacking(), expectedBacking);
             assertEq(shapes.totalSupply(), i + 1);
@@ -177,7 +185,7 @@ contract MintTest is ShapesBase {
 
     function testFuzz_OnlyLadderAmountsAreAccepted(uint256 amount) public {
         amount = bound(amount, 0, 200 ether);
-        bool supported = lens.isSupportedDenomination(amount);
+        bool supported = shapes.isSupportedDenomination(amount);
 
         vm.deal(alice, amount + feeOf(amount));
         vm.prank(alice);
@@ -875,10 +883,10 @@ contract ViewTest is ShapesBase {
         uint256[9] memory expectedCols = [uint256(5), 4, 4, 3, 3, 2, 2, 1, 1];
         uint256[9] memory expectedRows = [uint256(5), 5, 4, 4, 3, 3, 2, 2, 1];
         for (uint256 i = 0; i < 9; ++i) {
-            (uint256 c, uint256 r) = lens.gridForAmount(DENOMS[i]);
+            (uint256 c, uint256 r) = _gridForAmount(DENOMS[i]);
             assertEq(c, expectedCols[i]);
             assertEq(r, expectedRows[i]);
-            assertEq(lens.modulesForAmount(DENOMS[i]), c * r);
+            assertEq(_modulesForAmount(DENOMS[i]), c * r);
         }
     }
 
@@ -886,27 +894,28 @@ contract ViewTest is ShapesBase {
     function test_ModuleCountStrictlyDecreasesWithValue() public view {
         uint256 previous = type(uint256).max;
         for (uint256 i = 0; i < 9; ++i) {
-            uint256 m = lens.modulesForAmount(DENOMS[i]);
+            uint256 m = _modulesForAmount(DENOMS[i]);
             assertLt(m, previous, "modules must fall as value rises");
             previous = m;
         }
-        assertEq(lens.modulesForAmount(DENOMS[0]), 25);
-        assertEq(lens.modulesForAmount(DENOMS[8]), 1);
+        assertEq(_modulesForAmount(DENOMS[0]), 25);
+        assertEq(_modulesForAmount(DENOMS[8]), 1);
     }
 
     function test_GridForUnsupportedAmountReverts() public {
+        IShapeGeometry geometry = IShapeGeometry(shapes.renderer());
         vm.expectRevert(abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, DENOMS[4] * 2));
-        lens.gridForAmount(DENOMS[4] * 2);
+        geometry.cardGeometry(bytes32(0), DENOMS[4] * 2, 0);
     }
 
     function test_IsSupportedDenomination() public view {
         for (uint256 i = 0; i < 9; ++i) {
-            assertTrue(lens.isSupportedDenomination(DENOMS[i]));
+            assertTrue(shapes.isSupportedDenomination(DENOMS[i]));
         }
-        assertFalse(lens.isSupportedDenomination(0));
-        assertFalse(lens.isSupportedDenomination(DENOMS[4] * 2));
-        assertFalse(lens.isSupportedDenomination(DENOMS[4] + 1));
-        assertFalse(lens.isSupportedDenomination(type(uint256).max));
+        assertFalse(shapes.isSupportedDenomination(0));
+        assertFalse(shapes.isSupportedDenomination(DENOMS[4] * 2));
+        assertFalse(shapes.isSupportedDenomination(DENOMS[4] + 1));
+        assertFalse(shapes.isSupportedDenomination(type(uint256).max));
     }
 
     function test_NameSymbolAndInterfaces() public view {
@@ -930,15 +939,15 @@ contract ViewTest is ShapesBase {
 
 contract CoreStateDiscoveryTest is ShapesBase {
     function test_ExistsTracksEveryTokenLifecycle() public {
-        assertFalse(lens.exists(999), "never-issued id is not live");
+        assertFalse(shapes.exists(999), "never-issued id is not live");
 
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 5);
-        assertTrue(lens.exists(first), "minted id is live");
+        assertTrue(shapes.exists(first), "minted id is live");
 
         vm.prank(alice);
         shapes.transferFrom(alice, bob, first);
-        assertTrue(lens.exists(first), "transfer does not change liveness");
+        assertTrue(shapes.exists(first), "transfer does not change liveness");
         vm.prank(bob);
         shapes.transferFrom(bob, alice, first);
 
@@ -948,10 +957,10 @@ contract CoreStateDiscoveryTest is ShapesBase {
         }
         vm.prank(alice);
         shapes.compose(first, burnIds);
-        assertTrue(lens.exists(first), "compose survivor remains live");
+        assertTrue(shapes.exists(first), "compose survivor remains live");
         assertEq(shapes.denomIndexOf(first), 1, "compose updates stored denomination");
         for (uint256 i = 0; i < burnIds.length; ++i) {
-            assertFalse(lens.exists(burnIds[i]), "compose input is consumed");
+            assertFalse(shapes.exists(burnIds[i]), "compose input is consumed");
         }
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, burnIds[0]));
         shapes.denomIndexOf(burnIds[0]);
@@ -960,7 +969,7 @@ contract CoreStateDiscoveryTest is ShapesBase {
         shapes.decompose(first);
         assertEq(shapes.denomIndexOf(first), 0, "decompose restores survivor denomination");
         for (uint256 i = 0; i < burnIds.length; ++i) {
-            assertTrue(lens.exists(burnIds[i]), "decompose revives input identity");
+            assertTrue(shapes.exists(burnIds[i]), "decompose revives input identity");
             assertEq(shapes.denomIndexOf(burnIds[i]), 0, "decompose restores input denomination");
         }
 
@@ -969,26 +978,26 @@ contract CoreStateDiscoveryTest is ShapesBase {
         uint8[] memory outDenoms = new uint8[](5);
         vm.prank(alice);
         uint256[] memory children = shapes.split(first, outDenoms);
-        assertFalse(lens.exists(first), "split retires parent");
+        assertFalse(shapes.exists(first), "split retires parent");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, first));
         shapes.denomIndexOf(first);
         for (uint256 i = 0; i < children.length; ++i) {
-            assertTrue(lens.exists(children[i]), "split child is live");
+            assertTrue(shapes.exists(children[i]), "split child is live");
             assertEq(shapes.denomIndexOf(children[i]), 0, "split child exposes output denomination");
         }
 
         vm.prank(alice);
         shapes.redeem(children[0]);
-        assertFalse(lens.exists(children[0]), "redeem retires id");
+        assertFalse(shapes.exists(children[0]), "redeem retires id");
 
         vm.prank(alice);
         shapes.burn(children[1]);
-        assertFalse(lens.exists(children[1]), "burn retires id");
+        assertFalse(shapes.exists(children[1]), "burn retires id");
     }
 
     function test_DenomIndexOfNonexistentRevertsWhileExistsDoesNot() public {
         uint256 tokenId = 777;
-        assertFalse(lens.exists(tokenId));
+        assertFalse(shapes.exists(tokenId));
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId));
         shapes.denomIndexOf(tokenId);
     }
@@ -1047,9 +1056,9 @@ contract FormationTest is ShapesBase {
         uint256[5] memory all = [direct, first, a, kids[0], kids[1]];
         for (uint256 i = 0; i < all.length; ++i) {
             assertEq(
-                uint8(lens.shapeState(all[i]).formation),
+                uint8(shapes.shapeState(all[i]).formation),
                 uint8(shapes.formationOf(all[i])),
-                "lens disagreed with the core"
+                "shapeState disagreed with the core"
             );
         }
     }
@@ -1233,8 +1242,8 @@ contract PointersTest is ShapesBase {
         assertFalse(_positionsIsLocked());
         assertEq(_marketAddress(), address(0));
         assertFalse(_marketIsLocked());
-        assertEq(lens.positionOf(1), address(0));
-        assertEq(lens.positionOf(type(uint256).max), address(0));
+        assertEq(shapes.positionOf(1), address(0));
+        assertEq(shapes.positionOf(type(uint256).max), address(0));
     }
 
     function test_AdminSetsExactPositionsResultsAndEvent() public {
@@ -1247,9 +1256,9 @@ contract PointersTest is ShapesBase {
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
 
         assertEq(_positionsAddress(), address(resolver));
-        assertEq(lens.positionOf(1), alice);
-        assertEq(lens.positionOf(2), address(0));
-        assertEq(lens.positionOf(99), address(renderer));
+        assertEq(shapes.positionOf(1), alice);
+        assertEq(shapes.positionOf(2), address(0));
+        assertEq(shapes.positionOf(99), address(renderer));
     }
 
     function test_PositionsCanBeReplacedAndClearedUntilLocked() public {
@@ -1259,12 +1268,12 @@ contract PointersTest is ShapesBase {
         second.setPosition(1, bob);
 
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(first));
-        assertEq(lens.positionOf(1), alice);
+        assertEq(shapes.positionOf(1), alice);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(second));
-        assertEq(lens.positionOf(1), bob);
+        assertEq(shapes.positionOf(1), bob);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(0));
         assertEq(_positionsAddress(), address(0));
-        assertEq(lens.positionOf(1), address(0));
+        assertEq(shapes.positionOf(1), address(0));
     }
 
     function test_PositionsRejectsCodelessNonzeroAddress() public {
@@ -1285,6 +1294,32 @@ contract PointersTest is ShapesBase {
         assertEq(_marketAddress(), address(second));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(0));
         assertEq(_marketAddress(), address(0));
+    }
+
+    /// @notice Each pointer demands the interface its reader calls, so a live contract of the
+    ///         wrong kind is refused rather than stored and silently useless.
+    function test_PointersRefuseATargetThatAnswersTheWrongInterface() public {
+        ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
+        MockPositionResolver resolver = new MockPositionResolver();
+        address neither = address(new ShapeCollection(address(renderer)));
+
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(house));
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), neither);
+
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(resolver));
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), neither);
+
+        assertEq(_positionsAddress(), address(0), "a refused target must not be stored");
+        assertEq(_marketAddress(), address(0), "a refused target must not be stored");
+
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(house));
+        assertEq(_positionsAddress(), address(resolver));
+        assertEq(_marketAddress(), address(house));
     }
 
     function test_MarketRejectsCodelessNonzeroAddress() public {
@@ -1327,7 +1362,7 @@ contract PointersTest is ShapesBase {
         emit IShapes.PositionsLocked(address(0));
         shapes.lockPointer(uint8(IShapes.Pointer.Positions));
         assertTrue(_positionsIsLocked());
-        assertEq(lens.positionOf(123), address(0));
+        assertEq(shapes.positionOf(123), address(0));
 
         MockPositionResolver resolver = new MockPositionResolver();
         vm.expectRevert(IShapes.PointerIsLocked.selector);
@@ -1452,7 +1487,7 @@ contract PointersTest is ShapesBase {
         shapes.renounceAdmin();
         assertEq(_positionsAddress(), address(resolver));
         assertEq(_marketAddress(), address(market_));
-        assertEq(lens.positionOf(7), alice);
+        assertEq(shapes.positionOf(7), alice);
     }
 
     /// @notice A reverting positions target does not make `positionOf` revert; the failure is
@@ -1463,8 +1498,8 @@ contract PointersTest is ShapesBase {
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         uint256 id = _mint(alice, DENOMS[4]);
 
-        assertEq(lens.positionOf(id), address(0), "existing id");
-        assertEq(lens.positionOf(999), address(0), "nonexistent id");
+        assertEq(shapes.positionOf(id), address(0), "existing id");
+        assertEq(shapes.positionOf(999), address(0), "nonexistent id");
     }
 
     /// @notice A positions target that burns unbounded gas cannot drain the caller: `positionOf`
@@ -1474,7 +1509,7 @@ contract PointersTest is ShapesBase {
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
 
         uint256 gasBefore = gasleft();
-        address position = lens.positionOf(1);
+        address position = shapes.positionOf(1);
         uint256 used = gasBefore - gasleft();
 
         assertEq(position, address(0), "hostile positions result swallowed to zero");
@@ -1485,11 +1520,11 @@ contract PointersTest is ShapesBase {
     function test_MalformedPositionResultsAreSwallowedToZero() public {
         ShortReturnResolver shortResult = new ShortReturnResolver();
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(shortResult));
-        assertEq(lens.positionOf(1), address(0), "short result");
+        assertEq(shapes.positionOf(1), address(0), "short result");
 
         DirtyAddressResolver dirtyResult = new DirtyAddressResolver();
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(dirtyResult));
-        assertEq(lens.positionOf(1), address(0), "dirty address result");
+        assertEq(shapes.positionOf(1), address(0), "dirty address result");
     }
 
     function test_SettingAndQueryingPositionsCannotChangeTokenOrReserveState() public {
@@ -1504,7 +1539,7 @@ contract PointersTest is ShapesBase {
         resolver.setPosition(id, bob);
 
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
-        assertEq(lens.positionOf(id), bob);
+        assertEq(shapes.positionOf(id), bob);
 
         assertEq(address(shapes).balance, balanceBefore);
         assertEq(shapes.redeemableBacking(), backingBefore);
@@ -1961,7 +1996,7 @@ contract BlackShapeTest is ShapesBase {
         shapes.sacrifice(id);
 
         assertTrue(shapes.isBlack(id), "now Black");
-        assertTrue(lens.exists(id), "Black remains a live ERC721");
+        assertTrue(shapes.exists(id), "Black remains a live ERC721");
         assertEq(shapes.denomIndexOf(id), 8, "Black retains its apex denomination index");
         assertEq(shapes.blackShapeCount(), 1);
         assertEq(shapes.burnedBacking(), DENOMS[8]);
@@ -2018,7 +2053,7 @@ contract BlackShapeTest is ShapesBase {
         assertEq(alice.balance, balanceBefore, "zero-value burn transfers no ETH");
         assertEq(shapes.burnedBacking(), DENOMS[8], "historical sacrifice remains counted");
         assertEq(shapes.blackShapeCount(), 0, "blackShapeCount counts the Black Shapes alive now");
-        assertFalse(lens.exists(id), "burn retires the Black id");
+        assertFalse(shapes.exists(id), "burn retires the Black id");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
         shapes.ownerOf(id);
 
@@ -2063,7 +2098,7 @@ contract BlackShapeTest is ShapesBase {
         shapes.split(id, outs);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        lens.previewSplit(id, outs);
+        shapes.previewSplit(alice, id, outs);
 
         // As a compose survivor.
         uint256 live = _mint(alice, DENOMS[0]);
@@ -2073,7 +2108,7 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.compose(id, one);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        lens.previewCompose(id, one);
+        shapes.previewCompose(alice, id, one);
 
         // As a compose input.
         one[0] = id;
@@ -2081,15 +2116,15 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.compose(live, one);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        lens.previewCompose(live, one);
+        shapes.previewCompose(alice, live, one);
     }
 
-    /// @notice A Black Shape backs nothing, so `ShapeLens` cannot recover its denomination from
-    ///         `backingOf` and falls back on the apex invariant `sacrifice` enforces. The face
-    ///         value and the artwork survive the sacrifice; only the redeemable value goes.
+    /// @notice A Black Shape backs nothing, so its denomination cannot be recovered from
+    ///         `backingOf`. `shapeState` reports it from the stored index. The face value and the
+    ///         artwork survive the sacrifice; only the redeemable value goes.
     function test_BlackShapeReadsAsApexWithNothingRedeemable() public {
         uint256 id = _buildApexComplete();
-        string memory cardBefore = lens.unicodeCard(id);
+        string memory cardBefore = shapes.unicodeCard(id);
         uint8 geneBefore = shapes.inkGeneOf(id);
 
         vm.prank(alice);
@@ -2099,7 +2134,7 @@ contract BlackShapeTest is ShapesBase {
         assertEq(uint8(shapes.formationOf(id)), uint8(ShapeFormation.Black), "sacrifice sets Black");
         assertFalse(shapes.isComplete(id), "Black is terminal, not Complete");
 
-        ShapeState memory st = lens.shapeState(id);
+        ShapeState memory st = shapes.shapeState(id);
         assertTrue(st.isBlack);
         assertEq(uint8(st.formation), uint8(ShapeFormation.Black), "lens agrees with the core");
         assertEq(st.denominationIndex, 8, "the apex index survives the sacrifice");
@@ -2109,7 +2144,7 @@ contract BlackShapeTest is ShapesBase {
         assertEq(st.inkGene, geneBefore, "the gene is unchanged");
 
         // The card is a function of geometry, denomination and gene, none of which moved.
-        assertEq(lens.unicodeCard(id), cardBefore, "sacrifice must not change the artwork");
+        assertEq(shapes.unicodeCard(id), cardBefore, "sacrifice must not change the artwork");
     }
 }
 
@@ -2392,7 +2427,7 @@ contract InkGenePreviewTest is ShapesBase {
         }
 
         uint256 snapshot = vm.snapshotState();
-        lens.previewCompose(first, burn);
+        shapes.previewCompose(alice, first, burn);
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(burn[i]), alice, "previewCompose burned an input");
         }
@@ -2407,6 +2442,6 @@ contract InkGenePreviewTest is ShapesBase {
         burn[0] = first + 1;
         burn[1] = first + 1;
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
-        lens.previewCompose(first, burn);
+        shapes.previewCompose(alice, first, burn);
     }
 }

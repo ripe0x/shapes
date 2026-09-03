@@ -26,13 +26,13 @@ contract SamplingTest is ShapesBase {
     ///      a genuine cross-check of the on-chain module-derivation contract, not a re-assertion
     ///      of `Shapes`'s own internal helper.
     function _effectiveModules(uint256 id) internal view returns (bytes memory out) {
-        bytes memory stored = lens.shapeState(id).modules;
+        bytes memory stored = shapes.shapeState(id).modules;
         if (stored.length != 0) return stored;
 
         bytes32 seed = shapes.seedOf(id);
         uint256 amount = shapes.backingOf(id);
         uint8 gene = shapes.inkGeneOf(id);
-        uint256 n = lens.modulesForAmount(amount);
+        uint256 n = _modulesForAmount(amount);
         out = new bytes(n);
         for (uint256 i = 0; i < n; ++i) {
             (uint8 kind, bool solid, uint16 rotation,,,,) = renderer.moduleAt(seed, amount, gene, i);
@@ -115,7 +115,7 @@ contract SamplingTest is ShapesBase {
     function test_OriginalMintsAreNeverMaterialized() public {
         for (uint256 i = 0; i < 9; ++i) {
             uint256 id = _mint(alice, DENOMS[i]);
-            assertEq(lens.shapeState(id).modules.length, 0, "original mint must not be materialized");
+            assertEq(shapes.shapeState(id).modules.length, 0, "original mint must not be materialized");
         }
     }
 
@@ -156,8 +156,8 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn);
 
-        bytes memory got = lens.shapeState(survivor).modules;
-        (uint256 cols, uint256 rows) = lens.gridForAmount(shapes.backingOf(survivor));
+        bytes memory got = shapes.shapeState(survivor).modules;
+        (uint256 cols, uint256 rows) = _gridForAmount(shapes.backingOf(survivor));
         assertEq(got.length, cols * rows, "materialized length != new grid cell count");
         assertGt(got.length, 0, "compose must materialize a nonempty array");
 
@@ -193,8 +193,8 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         shapes.compose(a, burnOuter); // 0.1, mixed donor set
 
-        bytes memory got = lens.shapeState(a).modules;
-        (uint256 cols, uint256 rows) = lens.gridForAmount(DENOMS[2]);
+        bytes memory got = shapes.shapeState(a).modules;
+        (uint256 cols, uint256 rows) = _gridForAmount(DENOMS[2]);
         assertEq(got.length, cols * rows);
         for (uint256 i = 0; i < got.length; ++i) {
             assertTrue(ModuleCodec.isValid(got[i]));
@@ -214,10 +214,10 @@ contract SamplingTest is ShapesBase {
             burn[i] = first + 1 + i;
         }
 
-        ShapeState memory preview = lens.previewCompose(first, burn);
+        ShapeState memory preview = shapes.previewCompose(alice, first, burn);
         vm.prank(alice);
         shapes.compose(first, burn);
-        bytes memory actual = lens.shapeState(first).modules;
+        bytes memory actual = shapes.shapeState(first).modules;
         assertEq(actual, preview.modules, "preview bytes must equal executed bytes");
     }
 
@@ -233,7 +233,7 @@ contract SamplingTest is ShapesBase {
         }
         vm.prank(alice);
         shapes.compose(first, forward);
-        bytes memory modsForward = lens.shapeState(first).modules;
+        bytes memory modsForward = shapes.shapeState(first).modules;
 
         vm.revertToState(snapshot);
 
@@ -244,7 +244,7 @@ contract SamplingTest is ShapesBase {
         shuffled[3] = first + 2;
         vm.prank(alice);
         shapes.compose(first, shuffled);
-        bytes memory modsShuffled = lens.shapeState(first).modules;
+        bytes memory modsShuffled = shapes.shapeState(first).modules;
 
         assertEq(modsForward, modsShuffled, "burnIds calldata order changed the sampled modules");
     }
@@ -253,7 +253,7 @@ contract SamplingTest is ShapesBase {
 
     function test_DecomposeRestoresModulesBitExactly_SingleLevel() public {
         uint256 first = _mintDust(5);
-        assertEq(lens.shapeState(first).modules.length, 0, "fresh mint starts unmaterialized");
+        assertEq(shapes.shapeState(first).modules.length, 0, "fresh mint starts unmaterialized");
 
         uint256[] memory burn = new uint256[](4);
         for (uint256 i = 0; i < 4; ++i) {
@@ -262,17 +262,19 @@ contract SamplingTest is ShapesBase {
 
         vm.prank(alice);
         uint256 survivor = shapes.compose(first, burn);
-        bytes memory composed = lens.shapeState(survivor).modules;
+        bytes memory composed = shapes.shapeState(survivor).modules;
         assertGt(composed.length, 0, "compose must materialize");
 
         vm.prank(alice);
         shapes.decompose(survivor);
         assertEq(
-            lens.shapeState(survivor).modules.length, 0, "decompose restores the empty (seed-derived) state"
+            shapes.shapeState(survivor).modules.length, 0, "decompose restores the empty (seed-derived) state"
         );
 
         for (uint256 i = 0; i < 4; ++i) {
-            assertEq(lens.shapeState(first + 1 + i).modules.length, 0, "restored input stays unmaterialized");
+            assertEq(
+                shapes.shapeState(first + 1 + i).modules.length, 0, "restored input stays unmaterialized"
+            );
         }
     }
 
@@ -284,7 +286,7 @@ contract SamplingTest is ShapesBase {
         }
         vm.prank(alice);
         uint256 a = shapes.compose(firstA, burnA); // materialized, depth 1
-        bytes memory level1 = lens.shapeState(a).modules;
+        bytes memory level1 = shapes.shapeState(a).modules;
 
         uint256 firstB = _mintDust(5);
         uint256[] memory burnB = new uint256[](4);
@@ -298,16 +300,16 @@ contract SamplingTest is ShapesBase {
         burnOuter[0] = b;
         vm.prank(alice);
         shapes.compose(a, burnOuter); // a -> 0.1, depth 2
-        bytes memory level2 = lens.shapeState(a).modules;
+        bytes memory level2 = shapes.shapeState(a).modules;
         assertTrue(keccak256(level2) != keccak256(level1), "the second compose should resample");
 
         vm.prank(alice);
         shapes.decompose(a); // pop outer record -> a must equal its depth-1 array exactly
-        assertEq(lens.shapeState(a).modules, level1, "stacked decompose did not restore bit-exactly");
+        assertEq(shapes.shapeState(a).modules, level1, "stacked decompose did not restore bit-exactly");
 
         vm.prank(alice);
         shapes.decompose(a); // pop inner record -> a must be unmaterialized again
-        assertEq(lens.shapeState(a).modules.length, 0, "fully unwound compose must be unmaterialized");
+        assertEq(shapes.shapeState(a).modules.length, 0, "fully unwound compose must be unmaterialized");
     }
 
     /* ------------------------------ split ------------------------------ */
@@ -332,10 +334,10 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
 
-        (uint256 cols, uint256 rows) = lens.gridForAmount(DENOMS[7]);
+        (uint256 cols, uint256 rows) = _gridForAmount(DENOMS[7]);
         bytes memory pool = GeometrySampling.grammarSplitPool(parentSeed, 7, parentGene);
         for (uint256 i = 0; i < 2; ++i) {
-            bytes memory childMods = lens.shapeState(kids[i]).modules;
+            bytes memory childMods = shapes.shapeState(kids[i]).modules;
             assertEq(childMods.length, cols * rows, "child length != 50 ETH grid cell count");
             bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, 7, i);
             assertEq(
@@ -363,14 +365,14 @@ contract SamplingTest is ShapesBase {
         assertGt(depth, 0, "compose survivor has a compose record: record branch");
 
         bytes32 parentSeed = shapes.seedOf(survivor);
-        ComposeRecordView memory rec = lens.composeRecordAt(survivor, depth - 1);
+        ComposeRecordView memory rec = shapes.composeRecordAt(survivor, depth - 1);
         bytes memory pool = _reconstructSplitRecordPool(parentSeed, rec);
 
         uint8[] memory outs = new uint8[](5); // 5 x 0.01
         vm.prank(alice);
         uint256[] memory kids = shapes.split(survivor, outs);
         for (uint256 i = 0; i < 5; ++i) {
-            bytes memory childMods = lens.shapeState(kids[i]).modules;
+            bytes memory childMods = shapes.shapeState(kids[i]).modules;
             assertEq(childMods.length, 25, "0.01 ETH grid is 5x5");
             bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, 0, i);
             assertEq(childMods, expected, "record-branch child must match the compose record's donor pool");
@@ -395,8 +397,8 @@ contract SamplingTest is ShapesBase {
         assertEq(kids.length, 500, "split must produce one child per output denomination");
 
         for (uint256 k = 0; k < 500 - 256; ++k) {
-            bytes memory a = lens.shapeState(kids[k]).modules;
-            bytes memory b = lens.shapeState(kids[k + 256]).modules;
+            bytes memory a = shapes.shapeState(kids[k]).modules;
+            bytes memory b = shapes.shapeState(kids[k + 256]).modules;
             assertEq(a.length, 25, "0.01 ETH grid is 5x5");
             assertTrue(shapes.seedOf(kids[k]) != shapes.seedOf(kids[k + 256]), "child seeds differ");
             assertTrue(keccak256(a) != keccak256(b), "children 256 apart share a sampling stream");
@@ -421,7 +423,7 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
 
-        assertGt(lens.shapeState(kids[0]).modules.length, 0, "split child must be materialized");
+        assertGt(shapes.shapeState(kids[0]).modules.length, 0, "split child must be materialized");
         assertTrue(_rawSampledModulesSlot(kids[0]) != bytes32(0), "materialized slot is nonzero");
 
         vm.prank(alice);
@@ -447,7 +449,7 @@ contract SamplingTest is ShapesBase {
 
         bytes memory pool = GeometrySampling.grammarSplitPool(parentSeed, 1, parentGene);
         for (uint256 i = 0; i < 2; ++i) {
-            bytes memory childMods = lens.shapeState(kids[i]).modules;
+            bytes memory childMods = shapes.shapeState(kids[i]).modules;
             assertGt(childMods.length, 0, "split child of an original parent must materialize");
             bytes memory expected = GeometrySampling.sampleSplitChild(pool, parentSeed, 1, i);
             assertEq(childMods, expected, "grammar-branch child must match the child-denom grammar pool");
@@ -469,7 +471,7 @@ contract SamplingTest is ShapesBase {
         uint256[] memory kids = shapes.split(parent, outs);
 
         uint256 input = kids[3];
-        ShapeState memory before = lens.shapeState(input);
+        ShapeState memory before = shapes.shapeState(input);
         assertGt(before.modules.length, 0, "a split child is materialized");
         uint256 faceValue = shapes.backingOf(input);
 
@@ -488,7 +490,7 @@ contract SamplingTest is ShapesBase {
         vm.prank(alice);
         shapes.decompose(survivor);
 
-        ShapeState memory restored = lens.shapeState(input);
+        ShapeState memory restored = shapes.shapeState(input);
         assertEq(shapes.ownerOf(input), alice, "decompose re-mints the input to the caller");
         assertEq(restored.seed, before.seed, "seed");
         assertEq(restored.denominationIndex, before.denominationIndex, "denomIndex");

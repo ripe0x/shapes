@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IAdminControl} from "./IAdminControl.sol";
-import {ShapeFormation} from "../ShapeTypes.sol";
+import {ComposeRecordView, ShapeChildPreview, ShapeFormation, ShapeState} from "../ShapeTypes.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
 /// @title IShapes
@@ -198,10 +198,10 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error PointerIsLocked();
     /// @dev `pointer` must encode `Pointer.Positions` (0) or `Pointer.Market` (1).
     error InvalidPointer();
-    /// @dev Reverted by `IShapeLens.composeRecordAt` when `depth >= composeDepth(survivorId)`,
-    ///      checked against `composeDepth` there rather than inside `composeRecordHeaderAt`.
+    /// @dev `composeRecordAt` was asked for a depth at or past `composeDepth(survivorId)`. Depths
+    ///      run 0 (oldest) to `composeDepth - 1` (newest, next in line for `decompose`).
     error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable);
-    /// @dev `splitOriginRaw` requires `tokenId` to have been minted as a split child. Original
+    /// @dev `splitOriginOf` requires `tokenId` to have been minted as a split child. Original
     ///      mints and re-minted decompose outputs never carry an entry.
     error NotASplitChild(uint256 tokenId);
     /// @dev `ownerToken` found no live owner token: it was redeemed or burned.
@@ -434,8 +434,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         is no longer held by the contract and can never be redeemed. Monotonic.
     function burnedBacking() external view returns (uint256);
 
-    /// @notice Number of Black Shapes ever created by `sacrifice`. Monotonic: burning a Black
-    ///         Shape does not decrease it.
+    /// @notice Number of Black Shapes alive now. `sacrifice` raises it; burning a Black Shape for
+    ///         zero lowers it. `burnedBacking`, which counts ETH that has already left, does not
+    ///         move when one is burned.
     function blackShapeCount() external view returns (uint256);
 
     /// @notice Whether a live token is a Black Shape.
@@ -483,55 +484,31 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         reverse, newest first. Zero means nothing to decompose.
     function composeDepth(uint256 survivorId) external view returns (uint256);
 
-    /// @notice Raw accessor for one compose record's survivor-side fields on `survivorId`'s stack
-    ///         at `depth` (0 the oldest, `composeDepth(survivorId) - 1` the newest, next in line
-    ///         for `decompose`), plus the record's input count. `ownerTokenFrom` is the owner
-    ///         token's id plus one when that compose moved ownership from one of the record's
-    ///         inputs, else zero.
-    /// @dev An out-of-range `depth` uses Solidity's normal array bounds panic. There is no
-    ///      `ComposeRecordOutOfRange` check here.
-    function composeRecordHeaderAt(uint256 survivorId, uint256 depth)
+    /// @notice One reversible compose record on `survivorId`'s stack, at `depth` (0 the oldest,
+    ///         `composeDepth(survivorId) - 1` the newest, next in line for `decompose`). Carries
+    ///         the survivor's pre-compose state and every burned input's snapshot: exactly what
+    ///         `decompose` reads to reverse that compose, each donor's materialized module bytes
+    ///         included, so the survivor's post-compose geometry can be reproduced off chain.
+    /// @dev `ownerTokenFrom` on the returned record names the input that carried collection
+    ///      ownership before this compose, or `type(uint256).max` when none did. Reverts
+    ///      `ComposeRecordOutOfRange` for a depth at or past `composeDepth(survivorId)`.
+    function composeRecordAt(uint256 survivorId, uint256 depth)
         external
         view
-        returns (
-            uint8 survivorDenomIndex,
-            uint32 survivorOriginCount,
-            uint8 survivorInkGene,
-            uint96 ownerTokenFrom,
-            bytes memory survivorModules,
-            uint256 inputCount
-        );
-
-    /// @notice Raw accessor for one burned input's fields within the compose record at
-    ///         `(survivorId, depth)`, indexed 0..`inputCount - 1` as reported by
-    ///         `composeRecordHeaderAt`. See `IShapeLens.composeRecordAt` for the reassembled view.
-    /// @dev Reverts with the standard out-of-bounds panic for an `inputIndex` at or beyond the
-    ///      record's input count.
-    function composeRecordInputAt(uint256 survivorId, uint256 depth, uint256 inputIndex)
-        external
-        view
-        returns (
-            uint256 id,
-            bytes32 seed,
-            uint8 denomIndex,
-            uint32 originCount,
-            uint8 inkGene,
-            bytes memory modules
-        );
+        returns (ComposeRecordView memory);
 
     /// @notice The split that minted `childId`: the parent's id, pre-split seed, denomination
     ///         index, ink gene and effective module snapshot, the root split ancestor's
     ///         denomination index, plus `childId`'s index among that split's outputs.
-    ///         `parentModules` is kept for provenance. Reproducing the child's sampled module bytes
-    ///         needs the branch decision `parentId` enables, not `parentModules`:
-    ///         `composeDepth(parentId)` selects between the compose-record pool and the grammar
-    ///         pool. See SAMPLING_SPEC.md for the reconstruction recipe.
-    /// @dev The record is written once per split and shared by every child of that split; only
-    ///      `childIndex` distinguishes them. It is never deleted, so it keeps answering how the
-    ///      token was created even after the child is composed or split again. Reverts
-    ///      `NotASplitChild` for a token that was never minted by `split`/`splitTo`, which covers
-    ///      an original mint and an input re-minted by `decompose`.
-    function splitOriginRaw(uint256 childId)
+    /// @dev `parentModules` is kept for provenance. Reproducing the child's sampled module bytes
+    ///      needs the branch decision `parentId` enables, not `parentModules`:
+    ///      `composeDepth(parentId)` selects between the compose-record pool and the grammar pool.
+    ///      See SAMPLING_SPEC.md. The record is written once per split and shared by every child of
+    ///      that split; only `childIndex` distinguishes them. It is never deleted, so it keeps
+    ///      answering how the token was created even after the child is composed or split again.
+    ///      Reverts `NotASplitChild` for a token that was never minted by `split`/`splitTo`, which
+    ///      covers an original mint and an input re-minted by `decompose`.
+    function splitOriginOf(uint256 childId)
         external
         view
         returns (
@@ -544,6 +521,47 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
             uint256 childIndex
         );
 
+    /// @notice Every protocol fact about one live Shape in a single read.
+    /// @dev Reverts for an id that does not exist.
+    function shapeState(uint256 tokenId) external view returns (ShapeState memory);
+
+    /// @notice Whether `tokenId` is a live Shape right now.
+    /// @dev Never reverts. False for never-issued and burned ids, including ids consumed by compose
+    ///      or replaced by split; true for live Black Shapes.
+    function exists(uint256 tokenId) external view returns (bool);
+
+    /// @notice The state `compose(survivorId, burnIds)` would leave on the survivor if `account`
+    ///         called it now. Writes nothing.
+    /// @dev Applies compose's own rules against `account`: every token must exist, be held by
+    ///      `account` and not be Black, the survivor cannot be among `burnIds`, no id may repeat,
+    ///      and the summed backing must land on a denomination. Same errors, same order, same
+    ///      sampling code as `compose`.
+    function previewCompose(address account, uint256 survivorId, uint256[] calldata burnIds)
+        external
+        view
+        returns (ShapeState memory);
+
+    /// @notice The children `split(tokenId, outDenoms)` would mint if `account` called it now, one
+    ///         entry per `outDenoms` index. Writes nothing.
+    /// @dev Applies split's own rules against `account`: the token must exist, be held by `account`
+    ///      and not be Black, there must be at least two outputs, and they must sum to the token's
+    ///      backing. Child ids are not predicted, because they depend on `totalMinted` at the time
+    ///      the split executes.
+    function previewSplit(address account, uint256 tokenId, uint8[] calldata outDenoms)
+        external
+        view
+        returns (ShapeChildPreview[] memory children);
+
+    /// @notice Unicode rendering of a live Shape's module grid, cells separated by spaces and rows
+    ///         by newlines.
+    /// @dev For display. Machine-readable geometry is `IShapeGeometry` on `renderer()`.
+    function unicodeCard(uint256 tokenId) external view returns (string memory);
+
+    /// @notice The position the configured positions contract reports for `tokenId`, or zero.
+    /// @dev Does not require a live token. The positions contract is untrusted and is called with a
+    ///      50,000-gas cap; a revert, an out-of-gas, or a malformed return all resolve to zero.
+    function positionOf(uint256 tokenId) external view returns (address);
+
     /// @notice Deterministic seed assigned to a split child at `childIndex`.
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
 
@@ -555,6 +573,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Smallest denomination and accounting unit, 0.01 ETH.
     function unit() external pure returns (uint256);
+
+    /// @notice Whether `amountWei` is one of the nine supported denominations.
+    function isSupportedDenomination(uint256 amountWei) external pure returns (bool);
 }
 
 /// @title IShapeValue
