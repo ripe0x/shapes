@@ -685,6 +685,15 @@ Sepolia and mainnet sign with the ripe0x Foundry keystore (interactive prompt, o
 `KEYSTORE_PASSWORD_FILE` to read the password from a file instead of a prompt). Both require a
 fetched, clean, exact `main` to deploy from; the wrapper checks and refuses otherwise.
 
+Setting `ALLOW_BRANCH_DEPLOY=1` opts into deploying from a feature branch instead of main, for a
+target whose env file sets `BRANCH_DEPLOY_ALLOWED=true` (anvil and Sepolia; never mainnet, so a
+rehearsal can run from a branch without ever touching mainnet's guard). Without the env file's
+opt-in the wrapper refuses outright, `DRY_RUN` included. With it, the "must run from main" and
+"local main is not the fetched origin/main commit" guards are replaced with the same check against
+the current branch: `HEAD` must equal the fetched `origin/<branch>` commit. The dirty-tree and
+untracked-file guards apply either way. Every deploy, branch or main, records the deployed commit
+and branch as `commit` and `branch` in `deployments/<chainId>.json`.
+
 ```bash
 DRY_RUN=1 script/deploy.sh sepolia   # guards + simulation, nothing broadcast or written
 script/deploy.sh sepolia             # broadcasts, verifies on Etherscan, records the deployment
@@ -702,8 +711,8 @@ script/deploy.sh mainnet
 After a real broadcast, the wrapper reads the broadcast artifact, reads back every deployed
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
-`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
-`mintFeeWei`, `mintStart`, `libraries`, `fromBlock`, `auctionId`, `artistReleaseHash`).
+`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `auctionHouse`, `mintFeeWei`,
+`mintStart`, `libraries`, `fromBlock`, `auctionId`, `artistReleaseHash`, `commit`, `branch`).
 `libraries` maps each linked library's contract name to its address, taken from the broadcast's
 `libraries` array; the site's `/contracts` page reads it. Cutover to the site is a file copy.
 `deployments/31337.json` is gitignored; Sepolia and mainnet records are committed.

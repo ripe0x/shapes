@@ -208,6 +208,10 @@ export interface Deployment {
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
   fromBlock?: number;
+  /** Git commit and branch `script/deploy.sh` was run from. Absent on a record written before
+   *  these keys existed. */
+  commit?: string;
+  branch?: string;
 }
 
 /** Parses `Deployment.mintStart` (a JSON string) to the unix-seconds bigint the site computes

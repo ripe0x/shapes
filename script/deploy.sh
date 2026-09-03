@@ -81,6 +81,20 @@
 #                                                  is skipped rather than refused, so RESUME can
 #                                                  revisit an already-attested chain. DRY_RUN=1
 #                                                  prints what would be signed and submits nothing.
+#   ALLOW_BRANCH_DEPLOY=1                         opt in to deploying from a feature branch
+#                                                  instead of main, for a target whose env file
+#                                                  sets BRANCH_DEPLOY_ALLOWED=true (anvil and
+#                                                  sepolia; never mainnet). Without the env file's
+#                                                  opt-in, refuses outright, DRY_RUN included. With
+#                                                  it, replaces the REQUIRE_MAIN "must run from
+#                                                  main" and "local main is not the fetched
+#                                                  origin/main commit" guards with the same check
+#                                                  against the current branch: HEAD must equal the
+#                                                  fetched origin/<branch> commit. The dirty-tree
+#                                                  and untracked-file guards are unaffected. Records
+#                                                  the deployed commit and branch in
+#                                                  deployments/<chainId>.json regardless of this
+#                                                  flag.
 set -euo pipefail
 
 ENV_NAME="${1:-}"
@@ -109,6 +123,8 @@ VERIFY_OVERRIDE="${VERIFY-}"
 MINT_START_OVERRIDE="${MINT_START:-}"
 # Same pattern for LIST_OWNER_TOKEN: a shell export wins over whatever the env file sets.
 LIST_OWNER_TOKEN_OVERRIDE="${LIST_OWNER_TOKEN-}"
+# Same pattern for ALLOW_BRANCH_DEPLOY: it is a shell opt-in, not something the env file sets.
+ALLOW_BRANCH_DEPLOY_OVERRIDE="${ALLOW_BRANCH_DEPLOY-}"
 
 set -a
 # shellcheck source=/dev/null
@@ -125,6 +141,9 @@ AUCTION_DURATION="${AUCTION_DURATION:-86400}"
 AUCTION_RESERVE_UNITS="${AUCTION_RESERVE_UNITS:-0}"
 AUCTION_MIN_INCREMENT_BPS="${AUCTION_MIN_INCREMENT_BPS:-500}"
 AUCTION_EXTENSION_WINDOW="${AUCTION_EXTENSION_WINDOW:-900}"
+[ -z "$ALLOW_BRANCH_DEPLOY_OVERRIDE" ] || ALLOW_BRANCH_DEPLOY="$ALLOW_BRANCH_DEPLOY_OVERRIDE"
+ALLOW_BRANCH_DEPLOY="${ALLOW_BRANCH_DEPLOY:-0}"
+BRANCH_DEPLOY_ALLOWED="${BRANCH_DEPLOY_ALLOWED:-false}"
 
 # Mainnet's env file ships with the deployer, fee recipient and fee left blank until D-05
 # (project/DECISIONS.md) is resolved. Refuse before touching any RPC, dry run included.
@@ -156,6 +175,7 @@ echo "  dry run  $DRY_RUN"
 echo "  resume   $RESUME"
 echo "  list owner token  $LIST_OWNER_TOKEN"
 echo "  attest artist     $ATTEST_ARTIST"
+echo "  allow branch deploy  $ALLOW_BRANCH_DEPLOY"
 
 # Deploy.s.sol reads SHAPES_MINT_FEE_WEI / SHAPES_FEE_RECIPIENT; the env file's own names
 # (MINT_FEE_WEI / FEE_RECIPIENT) are the reviewed values for this target. A caller-supplied
@@ -187,6 +207,9 @@ ACTUAL_CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
   || { echo "refusing: $RPC reports chain id $ACTUAL_CHAIN_ID, expected $CHAIN_ID" >&2; exit 1; }
 echo "  ok: chain id $ACTUAL_CHAIN_ID"
 
+DEPLOY_BRANCH="$(git branch --show-current)"
+DEPLOY_COMMIT="$(git rev-parse HEAD)"
+
 if [ "$REQUIRE_MAIN" = "true" ]; then
   # A real broadcast refuses on any failure here. Under DRY_RUN=1 or RESUME=1 the same checks
   # still run, but a failure only warns what a real broadcast would refuse: DRY_RUN broadcasts
@@ -202,18 +225,29 @@ if [ "$REQUIRE_MAIN" = "true" ]; then
     fi
   }
 
-  [ "$(git branch --show-current)" = "main" ] \
-    || git_guard_fail "deployments must run from main"
-  git fetch --quiet origin main
-  [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
-    || git_guard_fail "local main is not the fetched origin/main commit"
+  if [ "$ALLOW_BRANCH_DEPLOY" = "1" ]; then
+    # A rehearsal from a feature branch. Refuses outright, DRY_RUN included, on any target whose
+    # env file hasn't opted in (mainnet never does): this is a caller asking for an exception, not
+    # a normal run, so a missing opt-in is refused rather than warned.
+    [ "$BRANCH_DEPLOY_ALLOWED" = "true" ] \
+      || { echo "refusing: branch deploys are not allowed for this target" >&2; exit 1; }
+    git fetch --quiet origin "$DEPLOY_BRANCH"
+    [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$DEPLOY_BRANCH")" ] \
+      || git_guard_fail "local $DEPLOY_BRANCH is not the fetched origin/$DEPLOY_BRANCH commit"
+  else
+    [ "$DEPLOY_BRANCH" = "main" ] \
+      || git_guard_fail "deployments must run from main"
+    git fetch --quiet origin main
+    [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
+      || git_guard_fail "local main is not the fetched origin/main commit"
+  fi
   git diff --quiet && git diff --cached --quiet \
     || git_guard_fail "tracked files are dirty; deployment commit is not exact"
   # deployments/ is written by a previous deploy, not an input to this one; untracked files
   # there don't make the deployment commit inexact.
   [ -z "$(git ls-files --others --exclude-standard -- . ':!deployments')" ] \
     || git_guard_fail "untracked files exist; deployment commit is not exact"
-  [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched main"
+  [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched $DEPLOY_BRANCH"
 fi
 
 if [ "${FEE_RECIPIENT_MUST_BE_EOA:-false}" = "true" ]; then
@@ -659,7 +693,9 @@ jq -n \
   --argjson fromBlock "$FROM_BLOCK" \
   --arg auctionId "$AUCTION_ID" \
   --arg artistReleaseHash "$ARTIST_RELEASE_HASH_RECORD" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,libraries:$libraries,fromBlock:$fromBlock,auctionId:(if $auctionId == "" then null else $auctionId end),artistReleaseHash:(if $artistReleaseHash == "" then null else $artistReleaseHash end)}' \
+  --arg commit "$DEPLOY_COMMIT" \
+  --arg branch "$DEPLOY_BRANCH" \
+  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,libraries:$libraries,fromBlock:$fromBlock,auctionId:(if $auctionId == "" then null else $auctionId end),artistReleaseHash:(if $artistReleaseHash == "" then null else $artistReleaseHash end),commit:$commit,branch:$branch}' \
   >"$DEPLOYMENT_FILE"
 
 echo
@@ -673,6 +709,8 @@ echo "  from block      $FROM_BLOCK"
 echo "  auction id      ${AUCTION_ID:-none}"
 echo "  artist attest   ${ARTIST_RELEASE_HASH_RECORD:-none}"
 echo "  admin           $EFFECTIVE_DEPLOYER"
+echo "  commit          $DEPLOY_COMMIT"
+echo "  branch          $DEPLOY_BRANCH"
 echo "  wrote           $DEPLOYMENT_FILE"
 
 if [ "${#VERIFY_FAILURES[@]}" -gt 0 ]; then
