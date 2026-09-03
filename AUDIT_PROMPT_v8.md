@@ -25,7 +25,7 @@ forge test
 FOUNDRY_PROFILE=testnet forge test
 MAINNET_RPC_URL=https://ethereum-rpc.publicnode.com forge test --match-contract Fork -vv
 ln -sf project/experiments/medusa-reserve.json medusa.json && medusa fuzz --config medusa.json; rm -f medusa.json
-anvil --port 8560 &  # then: RPC_URL=http://127.0.0.1:8560 script/deploy.sh anvil && RPC=http://127.0.0.1:8560 script/e2e-anvil.sh
+anvil --port 8560 --gas-limit 5000000000 &  # then: RPC_URL=http://127.0.0.1:8560 script/deploy.sh anvil && RPC_URL=http://127.0.0.1:8560 script/lifecycle.sh anvil
 ```
 
 Expected at this commit: 532 Foundry tests pass in both profiles, 4 fork tests pass, Medusa
