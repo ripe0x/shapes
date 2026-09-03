@@ -3,11 +3,13 @@ import test from "node:test";
 import {
   ACTIVITY_PAGE_SIZE,
   activityDetail,
+  activityGroupRowModel,
   activityLabel,
   activityRowModel,
   fetchActivityPage,
   fetchActivityStats,
   formatStatCount,
+  groupActivityEvents,
   mergeLivePage,
   relativeTime,
   scheduleLivePoll,
@@ -124,6 +126,187 @@ test("materialized geometry draws a different Shape than the seed alone", () => 
   const sampled = activityRowModel(event({tokenIds: [7n]}), indexOf([token(7n, {modules})]));
 
   assert.notEqual(seedDrawn.thumbs[0].image, sampled.thumbs[0].image);
+});
+
+test("consecutive same-actor redeems within the window group into one", () => {
+  const events = [
+    event({id: "d", kind: "redeem", timestamp: 4_000n, tokenIds: [4n], amountWei: 10n ** 16n}),
+    event({id: "c", kind: "redeem", timestamp: 3_000n, tokenIds: [3n], amountWei: 10n ** 16n}),
+    event({id: "b", kind: "redeem", timestamp: 2_000n, tokenIds: [2n], amountWei: 10n ** 16n}),
+    event({id: "a", kind: "redeem", timestamp: 1_000n, tokenIds: [1n], amountWei: 10n ** 16n}),
+  ];
+
+  const groups = groupActivityEvents(events, {windowSeconds: 1_800});
+
+  assert.equal(groups.length, 1);
+  assert.deepEqual(
+    groups[0].events.map((e) => e.id),
+    ["d", "c", "b", "a"],
+  );
+});
+
+test("a gap past the window starts a new group", () => {
+  const events = [
+    event({id: "b", kind: "redeem", timestamp: 5_000n}),
+    event({id: "a", kind: "redeem", timestamp: 5_000n - 1_801n}),
+  ];
+
+  const groups = groupActivityEvents(events, {windowSeconds: 1_800});
+
+  assert.equal(groups.length, 2);
+
+  const atEdge = [
+    event({id: "b", kind: "redeem", timestamp: 5_000n}),
+    event({id: "a", kind: "redeem", timestamp: 5_000n - 1_800n}),
+  ];
+  assert.equal(groupActivityEvents(atEdge, {windowSeconds: 1_800}).length, 1);
+});
+
+test("compose, split, decompose, owner-token moves and auction events never group", () => {
+  const neverGroupKinds = [
+    "compose",
+    "split",
+    "decompose",
+    "ownerTokenMoved",
+    "auctionCreated",
+    "bid",
+    "auctionSettled",
+    "lotClaimed",
+  ];
+  for (const kind of neverGroupKinds) {
+    const events = [
+      event({id: "b", kind, timestamp: 2_000n}),
+      event({id: "a", kind, timestamp: 1_000n}),
+    ];
+    const groups = groupActivityEvents(events, {windowSeconds: 1_800});
+    assert.equal(groups.length, 2, `${kind} grouped but should not have`);
+  }
+});
+
+test("a change of actor breaks a group even for a groupable kind", () => {
+  const events = [
+    event({id: "b", kind: "mint", actor: ALICE, timestamp: 2_000n}),
+    event({id: "a", kind: "mint", actor: BOB, timestamp: 1_000n}),
+  ];
+
+  const groups = groupActivityEvents(events, {windowSeconds: 1_800});
+
+  assert.equal(groups.length, 2);
+});
+
+test("a change of counterparty breaks a transfer group", () => {
+  const events = [
+    event({id: "b", kind: "transfer", counterparty: ALICE, timestamp: 2_000n}),
+    event({id: "a", kind: "transfer", counterparty: BOB, timestamp: 1_000n}),
+  ];
+
+  const groups = groupActivityEvents(events, {windowSeconds: 1_800});
+
+  assert.equal(groups.length, 2);
+});
+
+test("a change of kind breaks a group", () => {
+  const events = [
+    event({id: "b", kind: "redeem", timestamp: 2_000n}),
+    event({id: "a", kind: "mint", timestamp: 1_000n}),
+  ];
+
+  const groups = groupActivityEvents(events, {windowSeconds: 1_800});
+
+  assert.equal(groups.length, 2);
+});
+
+test("a grouped redeem row sums the shape count and the ETH returned", () => {
+  const tx = (n: number) => `0x${n.toString().repeat(64).slice(0, 64)}` as `0x${string}`;
+  const group = {
+    events: [
+      event({id: "c", kind: "redeem", txHash: tx(3), tokenIds: [3n], amountWei: 10n ** 16n}),
+      event({id: "b", kind: "redeem", txHash: tx(2), tokenIds: [2n], amountWei: 10n ** 16n}),
+      event({id: "a", kind: "redeem", txHash: tx(1), tokenIds: [1n], amountWei: 2n * 10n ** 16n}),
+    ],
+  };
+
+  const row = activityGroupRowModel(group, indexOf([token(1n), token(2n), token(3n)]));
+
+  assert.equal(row.label, "Redeemed");
+  assert.equal(row.detail, "3 Shapes, 0.04 ETH returned");
+  assert.equal(row.txCount, 3);
+});
+
+test("a grouped mint row reads the same shape as a single mint, with totals", () => {
+  const group = {
+    events: [
+      event({id: "b", kind: "mint", tokenIds: [2n], amountWei: 10n ** 16n}),
+      event({id: "a", kind: "mint", tokenIds: [1n], amountWei: 10n ** 16n}),
+    ],
+  };
+
+  const row = activityGroupRowModel(group, indexOf([token(1n), token(2n)]));
+
+  assert.equal(row.detail, "2 Shapes, 0.02 ETH");
+});
+
+test("a grouped transfer row names the shared counterparty", () => {
+  const group = {
+    events: [
+      event({id: "b", kind: "transfer", tokenIds: [2n], counterparty: BOB}),
+      event({id: "a", kind: "transfer", tokenIds: [1n], counterparty: BOB}),
+      event({id: "c", kind: "transfer", tokenIds: [3n], counterparty: BOB}),
+    ],
+  };
+
+  const row = activityGroupRowModel(group, indexOf([token(1n), token(2n), token(3n)]));
+
+  assert.equal(row.detail, `3 Shapes to ${BOB.slice(0, 6)}…${BOB.slice(-4)}`);
+});
+
+test("a grouped row's thumbnails are every id across the group, in the group's own order", () => {
+  const group = {
+    events: [
+      event({id: "b", kind: "redeem", tokenIds: [2n]}),
+      event({id: "a", kind: "redeem", tokenIds: [1n]}),
+    ],
+  };
+
+  const row = activityGroupRowModel(group, indexOf([token(1n), token(2n)]));
+
+  assert.deepEqual(
+    row.thumbs.map((t) => t.id),
+    [2n, 1n],
+  );
+});
+
+test("a grouped row's thumbnail cap and missing-id count match the single-event behavior", () => {
+  const ids = [1n, 2n, 3n, 4n, 5n, 6n, 7n, 8n];
+  const group = {events: [event({id: "a", kind: "redeem", tokenIds: ids})]};
+  const wideRow = activityGroupRowModel(group, indexOf(ids.map((id) => token(id))), 6);
+  assert.equal(wideRow.thumbs.length, 6);
+  assert.equal(wideRow.hidden, 2);
+
+  const missingGroup = {
+    events: [
+      event({id: "b", kind: "redeem", tokenIds: [2n]}),
+      event({id: "a", kind: "redeem", tokenIds: [1n]}),
+    ],
+  };
+  const missingRow = activityGroupRowModel(missingGroup, indexOf([token(1n)]));
+  assert.equal(missingRow.missing, 1);
+});
+
+test("a group's key is its newest event's id, and a lone event round-trips through activityRowModel unchanged", () => {
+  const group = {
+    events: [
+      event({id: "b", kind: "redeem", tokenIds: [2n], amountWei: 10n ** 16n}),
+      event({id: "a", kind: "redeem", tokenIds: [1n], amountWei: 10n ** 16n}),
+    ],
+  };
+  const row = activityGroupRowModel(group, indexOf([token(1n), token(2n)]));
+  assert.equal(row.event.id, "b");
+
+  const singleton = {events: [event({id: "a", kind: "redeem", tokenIds: [1n], amountWei: 10n ** 16n})]};
+  const singleRow = activityGroupRowModel(singleton, indexOf([token(1n)]));
+  assert.equal(singleRow.txCount, 1);
+  assert.deepEqual(singleRow, {...activityRowModel(singleton.events[0], indexOf([token(1n)])), events: singleton.events, txCount: 1});
 });
 
 test("relative time reads in the largest whole unit", () => {

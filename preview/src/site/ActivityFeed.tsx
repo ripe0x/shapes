@@ -17,6 +17,9 @@ export const ACTIVITY_LIVE_POLL_BACKOFF_THRESHOLD = 3;
 /** Thumbnails drawn per row before the rest collapse into a count. A compose can name thousands
  *  of inputs; the row still has to fit on a line. */
 export const ACTIVITY_MAX_THUMBS = 6;
+/** Default gap, in seconds, within which consecutive same-actor events of a groupable kind
+ *  collapse into one row. */
+export const ACTIVITY_GROUP_WINDOW_SECONDS = 1_800;
 /** One bid or settlement unit, the finest amount the denomination ladder expresses. */
 const UNIT_WEI = 10n ** 16n;
 
@@ -114,6 +117,69 @@ export function activityDetail(event: ActivityEvent): string {
   }
 }
 
+/** Kinds where repeated same-actor events plausibly come from one intent (redeeming a batch,
+ *  minting several, transferring to the same counterparty). Every other kind stays one row per
+ *  event: compose/split/decompose change token structure per call, owner-token moves and auction
+ *  events are singular by nature. */
+const GROUPABLE_KINDS = new Set(["mint", "redeem", "transfer", "burnBacking"]);
+
+/** Consecutive events (newest first) from the same actor, same kind, same transfer counterparty
+ *  when applicable, each within `windowSeconds` of the previous event in its group. */
+export interface ActivityGroup {
+  /** Newest first; length 1 for an event that did not group. */
+  events: ActivityEvent[];
+}
+
+/** Pure transform run before `activityRowModel`/`activityGroupRowModel`: no data changes, only
+ *  how already-loaded events are bucketed into rows. */
+export function groupActivityEvents(
+  events: ActivityEvent[],
+  opts: {windowSeconds?: number} = {},
+): ActivityGroup[] {
+  const windowSeconds = BigInt(opts.windowSeconds ?? ACTIVITY_GROUP_WINDOW_SECONDS);
+  const groups: ActivityGroup[] = [];
+  for (const event of events) {
+    const open = groups[groups.length - 1];
+    const prev = open?.events[open.events.length - 1];
+    const gap = prev ? prev.timestamp - event.timestamp : 0n;
+    const joins =
+      prev !== undefined &&
+      GROUPABLE_KINDS.has(event.kind) &&
+      event.kind === prev.kind &&
+      event.actor === prev.actor &&
+      (event.kind !== "transfer" || event.counterparty === prev.counterparty) &&
+      (gap < 0n ? -gap : gap) <= windowSeconds;
+    if (joins) open!.events.push(event);
+    else groups.push({events: [event]});
+  }
+  return groups;
+}
+
+/** Grouped detail for the kinds `groupActivityEvents` ever merges: same wording as the single-event
+ *  case, with counts and amounts summed across the group. */
+function groupedDetail(kind: string, events: ActivityEvent[]): string {
+  const n = events.reduce((sum, e) => sum + e.tokenIds.length, 0);
+  const shapes = `${n} Shape${n === 1 ? "" : "s"}`;
+  const totalWei = events.reduce<bigint | null>(
+    (sum, e) => (e.amountWei === null ? sum : (sum ?? 0n) + e.amountWei),
+    null,
+  );
+  switch (kind) {
+    case "mint":
+      return totalWei === null ? shapes : `${shapes}, ${eth(totalWei)}`;
+    case "redeem":
+      return totalWei === null ? shapes : `${shapes}, ${eth(totalWei)} returned`;
+    case "burnBacking":
+      return totalWei === null ? shapes : `${shapes}, ${eth(totalWei)} burned`;
+    case "transfer": {
+      const counterparty = events[0].counterparty;
+      return counterparty === null ? shapes : `${shapes} to ${addressLabel(counterparty)}`;
+    }
+    default:
+      return "";
+  }
+}
+
 export interface ActivityThumb {
   id: bigint;
   image: string;
@@ -152,6 +218,49 @@ export function activityRowModel(
     event,
     label: activityLabel(event.kind),
     detail: activityDetail(event),
+    thumbs: drawn.map((row) => ({id: row.id, image: tokenArt(row), live: row.live})),
+    missing,
+    hidden: resolved.length - drawn.length,
+  };
+}
+
+/** One feed row for a `groupActivityEvents` group: `activityRowModel` extended with every member
+ *  event and the distinct transaction count. A group of one reuses `activityRowModel` verbatim, so
+ *  an event that never grouped reads exactly as it did before grouping existed. */
+export interface ActivityGroupRowModel extends ActivityRowModel {
+  /** Every event this row represents, newest first. */
+  events: ActivityEvent[];
+  /** Distinct transactions among `events`. */
+  txCount: number;
+}
+
+export function activityGroupRowModel(
+  group: ActivityGroup,
+  tokensById: ReadonlyMap<string, ActivityToken>,
+  maxThumbs = ACTIVITY_MAX_THUMBS,
+): ActivityGroupRowModel {
+  if (group.events.length === 1) {
+    return {...activityRowModel(group.events[0], tokensById, maxThumbs), events: group.events, txCount: 1};
+  }
+
+  const newest = group.events[0];
+  const resolved: ActivityToken[] = [];
+  let missing = 0;
+  for (const event of group.events) {
+    for (const id of event.tokenIds) {
+      const row = tokensById.get(id.toString());
+      if (row) resolved.push(row);
+      else missing++;
+    }
+  }
+
+  const drawn = resolved.slice(0, maxThumbs);
+  return {
+    event: newest,
+    events: group.events,
+    txCount: new Set(group.events.map((e) => e.txHash)).size,
+    label: activityLabel(newest.kind),
+    detail: groupedDetail(newest.kind, group.events),
     thumbs: drawn.map((row) => ({id: row.id, image: tokenArt(row), live: row.live})),
     missing,
     hidden: resolved.length - drawn.length,
@@ -422,7 +531,7 @@ function ActivityRow({
   onOpenToken,
   isNew,
 }: {
-  row: ActivityRowModel;
+  row: ActivityGroupRowModel;
   index: number;
   chainId: number;
   nowSeconds: bigint;
@@ -463,10 +572,15 @@ function ActivityRow({
           href={txUrl(event.txHash, chainId)}
           target="_blank"
           rel="noreferrer"
-          title={`Transaction ${event.txHash} on evm.now`}
+          title={
+            row.txCount > 1
+              ? `${row.txCount} transactions, newest ${event.txHash} on evm.now`
+              : `Transaction ${event.txHash} on evm.now`
+          }
         >
           {relativeTime(event.timestamp, nowSeconds)}
         </a>
+        {row.txCount > 1 && <span className="activity-tx-count">{row.txCount} txs</span>}
       </div>
     </li>
   );
@@ -593,7 +707,12 @@ export function ActivityFeed({
       .finally(() => setBusy(false));
   };
 
-  const rows = events.map((event) => activityRowModel(event, tokens));
+  // Grouping is recomputed from the merged event list on every render, so a live-polled event that
+  // extends an existing group joins it without re-animating the older members; only when the
+  // group's newest member changes does its key change and the row rise as new.
+  const rows = groupActivityEvents(events, {windowSeconds: ACTIVITY_GROUP_WINDOW_SECONDS}).map((group) =>
+    activityGroupRowModel(group, tokens),
+  );
 
   // The cascade runs once, when the list first enters the viewport. Until then the rows stay
   // hidden by the `.activity-list` rule only after this effect arms it, so a render without
@@ -660,7 +779,7 @@ export function ActivityFeed({
               chainId={chainId}
               nowSeconds={nowSeconds}
               onOpenToken={onOpenToken}
-              isNew={newIds.has(row.event.id)}
+              isNew={row.events.some((e) => newIds.has(e.id))}
             />
           ))}
         </ul>
