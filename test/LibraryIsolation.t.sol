@@ -10,15 +10,23 @@ import {AdminOps} from "../src/lib/AdminOps.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {RecompositionOps} from "../src/lib/RecompositionOps.sol";
 
-/// @notice `RecompositionOps` and `AdminOps` are public libraries that `Shapes` reaches with
-///         `DELEGATECALL`, so their bodies write the token's storage. Both are also deployed
-///         contracts with their own addresses, and anyone may `CALL` them there with any
-///         arguments, including a storage-pointer argument naming a slot `Shapes` uses. These
-///         tests pin what such a call can reach: nothing on `Shapes`.
-/// @dev The storage-pointer parameter of a public library function is ABI-encoded as the slot
-///      number, so the calldata below is exactly what a caller aiming at `Shapes`'s own layout
-///      would build: slot 6 is `_store`, slot 22 is `_presentation` (`forge inspect Shapes
-///      storage-layout`).
+/// @notice `Shapes` links five public libraries: `AdminOps`, `EIP712Signature`,
+///         `GeometrySampling`, `InkGenes`, `RecompositionOps` (`forge inspect Shapes bytecode`,
+///         `linkReferences`). Each is also a deployed contract with its own address, reachable by
+///         a plain `CALL` from anyone. These tests pin what such a call can reach on `Shapes`:
+///         nothing, for two different reasons depending on the library.
+/// @dev `AdminOps` and `RecompositionOps` expose public functions that are neither `view` nor
+///      `pure` and take a storage-pointer argument. solc emits call protection into every such
+///      function: the runtime compares `address(this)` against the library address written into
+///      its own code at deployment and reverts when they match, which is exactly the direct-call
+///      case. `EIP712Signature`, `GeometrySampling` and `InkGenes` expose only `pure` or `view`
+///      public functions, so solc emits no call protection for them at all; a direct `CALL`
+///      dispatches normally. They still cannot touch `Shapes` because none of their public
+///      functions takes a storage pointer, so there is nothing in their signatures for a caller to
+///      aim at `Shapes`'s storage. The storage-pointer parameter of a public library function is
+///      ABI-encoded as the slot number, so the calldata below against `AdminOps` and
+///      `RecompositionOps` is exactly what a caller aiming at `Shapes`'s own layout would build:
+///      slot 6 is `_store`, slot 22 is `_presentation` (`forge inspect Shapes storage-layout`).
 contract LibraryIsolationTest is Test {
     uint256 internal constant STORE_SLOT = 6;
     uint256 internal constant PRESENTATION_SLOT = 22;

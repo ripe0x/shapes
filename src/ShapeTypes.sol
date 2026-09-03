@@ -34,8 +34,8 @@ struct ShapeData {
 
 /// @dev One burned compose input, holding everything `decompose` needs to re-mint it verbatim.
 ///      `modules` is the input's materialized geometry, empty when it had none. All ids stored
-///      here must fit in `uint96`: ids are issued one per mint and each mint costs at least one
-///      0.01 ETH unit of backing.
+///      here must fit in `uint96`: `totalMinted` grows by one per mint and by one per split child,
+///      each costing gas, so reaching `2**96` ids is unreachable by gas alone.
 struct ComposeInput {
     bytes32 seed;
     uint96 id;

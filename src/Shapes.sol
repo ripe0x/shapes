@@ -194,8 +194,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @param mintFee_ Flat fee in wei per Shape minted, charged on top of backing. May be zero,
     ///        up to `AdminOps.MAX_MINT_FEE`. The admin can change it later with `setMintFee`.
-    /// @param feeRecipient_ Initial destination for accrued mint fees, paid by `withdrawFees`. A
-    ///        recipient that reverts on receipt blocks `withdrawFees` and leaves minting working.
+    /// @param feeRecipient_ Initial destination for accrued mint fees, paid by `withdrawFees`.
+    ///        Rejects the zero address and this token's own address, for the same reason as
+    ///        `setFeeRecipient`: a recipient that reverts on receipt blocks `withdrawFees` and
+    ///        leaves minting working.
     /// @param renderer_ The onchain renderer. Must carry code and support `IShapeRenderer`.
     ///        Replaceable by the admin until presentation is locked.
     /// @param mintStart_ Unix timestamp at or after which public minting opens. Zero opens minting
@@ -211,7 +213,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         payable
         ERC721("Shapes", "SHAPE")
     {
-        if (feeRecipient_ == address(0)) revert AdminInvalidFeeRecipient(address(0));
+        if (feeRecipient_ == address(0) || feeRecipient_ == address(this)) {
+            revert AdminInvalidFeeRecipient(feeRecipient_);
+        }
         AdminOps.requireRenderer(renderer_);
         _requireFeeWithinCap(mintFee_);
         _feeConfig.mintFee = mintFee_;

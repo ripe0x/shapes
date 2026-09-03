@@ -164,26 +164,20 @@ contract V9FeesAndPresentationTest is AuditBase {
         shapes.setFeeRecipient(address(shapes));
     }
 
-    /// @notice The constructor rejects a zero fee recipient but NOT the token's own address, which
-    ///         `setFeeRecipient` refuses. A deployer that predicts the CREATE address and passes it
-    ///         accrues fees to a balance `withdrawFees` can never pay out, because `receive()`
-    ///         reverts. The reserve invariant still holds; the fees are simply stranded.
-    function test_Finding_ConstructorAcceptsTheTokenItselfAsFeeRecipient() public {
+    /// @notice Fixed: the constructor now rejects the token's own address as fee recipient, the
+    ///         same rule `setFeeRecipient` enforces. A deployer that predicts its CREATE address
+    ///         and passes it gets `AdminInvalidFeeRecipient` instead of a deployed token whose fees
+    ///         can never be withdrawn.
+    function test_Finding_ConstructorRejectsItsOwnPredictedAddressAsFeeRecipient() public {
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)));
-        Shapes self = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, predicted, address(renderer), 0);
-        assertEq(address(self), predicted, "CREATE address prediction");
-        assertEq(self.feeRecipient(), address(self), "the constructor accepted address(this)");
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, predicted));
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, predicted, address(renderer), 0);
+    }
 
-        vm.prank(alice);
-        self.mint{value: DENOMS[0] + MINT_FEE}(DENOMS[0]);
-        assertEq(self.feesOwedTo(address(self)), MINT_FEE);
-
-        vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(self), MINT_FEE));
-        self.withdrawFees(address(self));
-
-        assertGe(
-            address(self).balance, self.redeemableBacking() + self.pendingFees(), "reserve invariant broke"
-        );
+    /// @notice The constructor still rejects the zero address as fee recipient.
+    function test_Finding_ConstructorRejectsZeroFeeRecipient() public {
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0)));
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(0), address(renderer), 0);
     }
 
     /// @notice The mint fee cap holds on every admin path and in the constructor.
