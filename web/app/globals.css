@@ -677,6 +677,37 @@ button {
   font-size: 15px;
 }
 
+/* Activity feed stats row (site/ActivityFeed.tsx): four counts above the list, one row of four
+   wrapping to two columns under 760px. `min-height` on the value holds the row's height while a
+   value is still empty (initial load), so the list below does not jump once data lands. */
+.activity-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 32px;
+  padding-bottom: 48px;
+}
+
+.activity-stat .launch-kicker {
+  margin: 0 0 10px;
+}
+
+.activity-stat-value {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: clamp(26px, 2.6vw, 40px);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  min-height: 1em;
+}
+
+@media (max-width: 760px) {
+  .activity-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 28px 32px;
+  }
+}
+
 /* Activity feed (site/ActivityFeed.tsx): one row per onchain event, under the section rhythm
    above. Rows are a rule-separated list; each row's thumbnails scroll sideways rather than
    wrapping, so a wide compose keeps its line. */
