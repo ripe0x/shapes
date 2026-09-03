@@ -18,7 +18,6 @@ import {
   loadDna,
   loadDnaFromSnapshot,
   deriveSeedDna,
-  geometryPercents,
   type DnaCell,
   type DnaResult,
   type DnaDonor,
@@ -31,6 +30,9 @@ import {moduleBytesToHex} from "../canonical/moduleCodec";
 import type {CardGeometry} from "../canonical/render";
 import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
 import {ProvenanceTree, initialExpandedKeys, type TreeNode} from "./ProvenanceTree";
+import {C as PROV_C, forDisplay} from "../app/ui";
+import {DetailPanel, GridOverlayCells, donorColor, useActiveCell} from "../app/provenance";
+import {downloadTracePng, downloadTraceSvg, svgFromDataUri} from "../app/traceExport";
 import {displayTraits} from "./displayTraits";
 import {shapeTitle} from "./shapeTitle";
 
@@ -522,14 +524,6 @@ function History({history, chainId}: {history: DatedEvent[] | null; chainId: num
   );
 }
 
-/** Distinguishable donor tints for the compose overlay, canonical order: index 0 is the survivor.
- *  Darkened from the original dark-ground palette so the legend swatch reads on the paper page
- *  background; still legible as alpha-blended overlays on the artwork's black ground. */
-const DNA_DONOR_COLORS = ["#866437", "#376286", "#4e8655", "#863755", "#633786", "#868037"];
-function dnaDonorColor(i: number): string {
-  return DNA_DONOR_COLORS[i % DNA_DONOR_COLORS.length];
-}
-
 function seedShort(seed: bigint): string {
   const hex = seed.toString(16).padStart(64, "0");
   return `0x${hex.slice(0, 8)}…${hex.slice(-6)}`;
@@ -541,75 +535,6 @@ function DnaRow({k, v}: {k: string; v: React.ReactNode}) {
       <span style={{color: C.muted, width: 92, flexShrink: 0}}>{k}</span>
       <span style={{color: C.body, wordBreak: "break-all"}}>{v}</span>
     </div>
-  );
-}
-
-/**
- * The per-cell overlay grid, absolutely positioned over the rendered artwork at the geometry's
- * exact percentage bounds. One div per cell, styled by `cellStyle(j)`; hover and click report the
- * cell index to the caller. Shared by the result card and every donor card, so both grids drive
- * their highlight state the same way.
- */
-function DnaGridOverlay({
-  geometry,
-  cellStyle,
-  onEnter,
-  onLeave,
-  onClick,
-}: {
-  geometry: CardGeometry;
-  cellStyle: (j: number) => React.CSSProperties | undefined;
-  onEnter: (j: number) => void;
-  onLeave: () => void;
-  onClick?: (j: number) => void;
-}) {
-  const {leftPct, topPct, widthPct, heightPct} = geometryPercents(geometry);
-  const count = geometry.cols * geometry.rows;
-  return (
-    <div
-      onMouseLeave={onLeave}
-      style={{
-        position: "absolute",
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: `${widthPct}%`,
-        height: `${heightPct}%`,
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${geometry.cols}, 1fr)`,
-          gridTemplateRows: `repeat(${geometry.rows}, 1fr)`,
-          width: "100%",
-          height: "100%",
-        }}
-      >
-        {Array.from({length: count}, (_, j) => (
-          <div
-            key={j}
-            onMouseEnter={() => onEnter(j)}
-            onClick={() => onClick?.(j)}
-            style={{
-              boxSizing: "border-box",
-              cursor: onClick ? "pointer" : "default",
-              outlineOffset: -1,
-              ...cellStyle(j),
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Rewrites a canonical SVG's fixed raster width/height to fill its container, matching how the
- *  harness's Card component displays sampled SVGs (app/ui.tsx forDisplay). Duplicated here rather
- *  than imported since site/ does not import from app/. */
-function svgForDisplay(svg: string): string {
-  return svg.replace(
-    /^(<svg[^>]*?) width="\d+" height="\d+"/,
-    '$1 width="100%" height="100%" style="display:block"',
   );
 }
 
@@ -625,8 +550,6 @@ interface DonorRender {
   burned: boolean;
   svg: string;
   geometry: CardGeometry;
-  /** This donor's own module indices that at least one result cell was sampled from. */
-  sampledModuleIndices: Set<number>;
 }
 
 /** Reconstruct one donor's own card from its compose/split-time snapshot: `effectiveModuleBytes`
@@ -658,9 +581,6 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[], shapeLa
     .filter(({i}) => contributing.has(i))
     .map(({d, i}) => {
       const {svg, geometry} = renderDonor(d.seed, d.denomIndex, d.inkGene, d.modules);
-      const sampledModuleIndices = new Set(
-        cells.filter((c) => (c.donorIndex ?? 0) === i).map((c) => c.moduleIndex),
-      );
       return {
         donorIndex: i,
         roleLabel: d.id === "survivor" ? shapeLabel : `#${d.id}`,
@@ -669,7 +589,6 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[], shapeLa
         burned: d.id !== "survivor",
         svg,
         geometry,
-        sampledModuleIndices,
       };
     });
 }
@@ -682,7 +601,7 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[], shapeLa
  * present — the record branch's pool has no single grid shape (see `DnaSplitResult.pool`'s
  * doc comment) and is shown as pool index/byte in the detail panel instead, with no card.
  */
-function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>, cells: DnaCell[]): DonorRender {
+function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>): DonorRender {
   const {svg, geometry} = renderDonor(pool.seed, pool.denomIndex, pool.inkGene, pool.modules);
   return {
     donorIndex: 0,
@@ -692,14 +611,13 @@ function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>, cells: DnaCel
     burned: true,
     svg,
     geometry,
-    sampledModuleIndices: new Set(cells.map((c) => c.moduleIndex)),
   };
 }
 
-/** One donor's card: rendered SVG, per-cell overlay tinted where the result sampled from it, and
- *  a caption. Hovering a cell reports it up; the caller decides which cell (if any) is "active"
- *  across every card and the result grid together. `onDrill`, when given, makes the whole card a
- *  button that opens this donor's own DNA. */
+/** One donor's card: rendered SVG, its own cell outlined when it is the active cell's source,
+ *  and a caption. Hovering a cell reports it up; the caller decides which cell (if any) is
+ *  "active" across every card and the result grid together. `onDrill`, when given, makes the
+ *  whole card a button that opens this donor's own DNA. */
 function DonorMiniCard({
   donor,
   color,
@@ -716,23 +634,23 @@ function DonorMiniCard({
   onDrill?: () => void;
 }) {
   const cellStyle = (j: number): React.CSSProperties | undefined => {
-    const sampled = donor.sampledModuleIndices.has(j);
     const isActive = activeCell != null && activeCell.donorIndex === donor.donorIndex && activeCell.moduleIndex === j;
-    if (!sampled && !isActive) return undefined;
-    return {
-      background: `${color}${isActive ? "4d" : "22"}`,
-      outline: `${isActive ? 2 : 1}px solid ${color}${isActive ? "" : "66"}`,
-    };
+    if (!isActive) return undefined;
+    return {outline: `2px solid ${color}`, outlineOffset: -1, background: `${color}33`};
   };
   const body = (
     <div style={{display: "flex", flexDirection: "column", gap: 6, width: 108}}>
       <div style={{position: "relative", aspectRatio: "250 / 350", backgroundColor: C.art}}>
         <div
-          dangerouslySetInnerHTML={{__html: svgForDisplay(donor.svg)}}
+          dangerouslySetInnerHTML={{__html: forDisplay(donor.svg)}}
           style={{position: "absolute", inset: 0}}
         />
-        <DnaGridOverlay
-          geometry={donor.geometry}
+        <GridOverlayCells
+          cols={donor.geometry.cols}
+          rows={donor.geometry.rows}
+          cell={donor.geometry.cell}
+          x0={donor.geometry.x0}
+          y0={donor.geometry.y0}
           cellStyle={cellStyle}
           onEnter={onEnterCell}
           onLeave={onLeaveCell}
@@ -773,25 +691,20 @@ function DnaProvenancePanel({
   dna,
   resultArt,
   shapeLabel,
+  exportBase,
   onDrillDonor,
 }: {
   dna: DnaComposeResult | DnaSplitResult | DnaSeedResult;
   resultArt: {type: "image"; src: string} | {type: "svg"; svg: string};
   shapeLabel: string;
+  /** Trace download filename base (`traceExport.ts`'s `traceFilename` appends `-trace.<ext>`). */
+  exportBase: string;
   onDrillDonor?: (target: DnaDrillTarget) => void;
 }) {
-  const [hover, setHover] = React.useState<number | null>(null);
-  const [pin, setPin] = React.useState<number | null>(null);
-  const active = hover ?? pin;
+  const {active, onEnter, onLeave, onClickCell} = useActiveCell();
 
-  // Donor-card cell hover: independent of the result grid's hover/pin. Reset whenever a new DNA
-  // record loads, so a stale cell index from the previous token never carries over.
+  // Donor-card cell hover: independent of the result grid's hover/pin.
   const [donorHover, setDonorHover] = React.useState<{donorIndex: number; moduleIndex: number} | null>(null);
-  React.useEffect(() => {
-    setHover(null);
-    setPin(null);
-    setDonorHover(null);
-  }, [dna]);
 
   // Reverse index built once per DNA record load: (donorIndex, moduleIndex) -> every result cell
   // drawn from it (compose), or moduleIndex -> every result cell (split, one donor). Hovering a
@@ -834,7 +747,7 @@ function DnaProvenancePanel({
     // Split, record branch: the pool spans multiple donors concatenated with no single grid
     // shape, so there is no card to render here (SAMPLING_SPEC.md section 6, D3'). The cell
     // detail panel still shows each cell's pool index and byte.
-    if (dna.kind === "split") return dna.pool ? [splitPoolDonor(dna.pool, dna.cells)] : [];
+    if (dna.kind === "split") return dna.pool ? [splitPoolDonor(dna.pool)] : [];
     return [];
   }, [dna, shapeLabel]);
 
@@ -848,24 +761,34 @@ function DnaProvenancePanel({
   };
 
   const cellColor = (j: number): React.CSSProperties | undefined => {
-    const cell = dna.cells[j];
-    const isActive = highlightedResultCells.has(j);
+    const isHighlighted = highlightedResultCells.has(j);
     if (dna.kind === "compose") {
-      const color = dnaDonorColor(cell.donorIndex ?? 0);
+      const c = donorColor(dna.cells[j].donorIndex ?? 0);
       return {
-        background: `${color}33`,
-        outline: `${isActive ? 2 : 1}px solid ${isActive ? color : `${color}66`}`,
+        background: `${c}4d`,
+        outline: `${isHighlighted ? 2 : 1}px solid ${c}${isHighlighted ? "" : "55"}`,
+        outlineOffset: -1,
       };
     }
     if (dna.kind === "split") {
       return {
-        background: `${C.body}1a`,
-        outline: `${isActive ? 2 : 1}px solid ${isActive ? C.ink : `${C.ink}40`}`,
+        background: `${PROV_C.warn}4d`,
+        outline: `${isHighlighted ? 2 : 1}px solid ${PROV_C.warn}${isHighlighted ? "" : "55"}`,
+        outlineOffset: -1,
       };
     }
-    if (!isActive) return undefined;
-    return {background: `${C.ink}22`, outline: `2px solid ${C.ink}`};
+    if (!isHighlighted) return undefined;
+    return {outline: `2px solid ${PROV_C.ink}`, outlineOffset: -1, background: `${PROV_C.ink}22`};
   };
+
+  // Every cell's color at rest (no hover state), for the trace download: matches `cellColor`'s
+  // non-highlighted fill exactly, computed by `traceExport.ts`'s `buildTraceSvg`.
+  const exportColor = (j: number): string | undefined => {
+    if (dna.kind === "compose") return donorColor(dna.cells[j].donorIndex ?? 0);
+    if (dna.kind === "split") return PROV_C.warn;
+    return undefined;
+  };
+  const artworkSvg = resultArt.type === "svg" ? resultArt.svg : svgFromDataUri(resultArt.src);
 
   const cell = active != null ? dna.cells[active] : null;
   // "Absorbed" counts burns only, not the survivor snapshot (donorIndex 0). Named counts on both
@@ -889,29 +812,53 @@ function DnaProvenancePanel({
               : "Every cell was sampled from the parent's compose record: its pre-compose modules plus the modules of what it had absorbed. Hover a cell for its pool index and byte."}
       </p>
       <div style={{display: "flex", flexWrap: "wrap", gap: 32, alignItems: "flex-start"}}>
-        <div style={{position: "relative", width: 220, aspectRatio: "250 / 350", backgroundColor: C.art}}>
-          {resultArt.type === "image" ? (
-            <img
-              src={resultArt.src}
-              alt=""
-              style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
+        <div style={{display: "flex", flexDirection: "column", gap: 8}}>
+          <div style={{position: "relative", width: 220, aspectRatio: "250 / 350", backgroundColor: C.art}}>
+            {resultArt.type === "image" ? (
+              <img
+                src={resultArt.src}
+                alt=""
+                style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
+              />
+            ) : (
+              <div
+                dangerouslySetInnerHTML={{__html: forDisplay(resultArt.svg)}}
+                style={{position: "absolute", inset: 0}}
+              />
+            )}
+            <GridOverlayCells
+              cols={dna.geometry.cols}
+              rows={dna.geometry.rows}
+              cell={dna.geometry.cell}
+              x0={dna.geometry.x0}
+              y0={dna.geometry.y0}
+              cellStyle={cellColor}
+              onEnter={(j) => {
+                setDonorHover(null);
+                onEnter(j);
+              }}
+              onLeave={onLeave}
+              onClickCell={onClickCell}
             />
-          ) : (
-            <div
-              dangerouslySetInnerHTML={{__html: svgForDisplay(resultArt.svg)}}
-              style={{position: "absolute", inset: 0}}
-            />
-          )}
-          <DnaGridOverlay
-            geometry={dna.geometry}
-            cellStyle={cellColor}
-            onEnter={(j) => {
-              setDonorHover(null);
-              setHover(j);
-            }}
-            onLeave={() => setHover(null)}
-            onClick={(j) => setPin((cur) => (cur === j ? null : j))}
-          />
+          </div>
+          <div style={{display: "flex", gap: 8}}>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{padding: "6px 12px", fontSize: 11}}
+              onClick={() => downloadTracePng(artworkSvg, dna.geometry, exportColor, exportBase)}
+            >
+              PNG
+            </button>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{padding: "6px 12px", fontSize: 11}}
+              onClick={() => downloadTraceSvg(artworkSvg, dna.geometry, exportColor, exportBase)}
+            >
+              SVG
+            </button>
+          </div>
         </div>
         <div style={{flex: "1 1 260px", minWidth: 240, display: "flex", flexDirection: "column", gap: 20}}>
           {dna.kind === "compose" && (
@@ -920,7 +867,7 @@ function DnaProvenancePanel({
               <div style={{display: "flex", flexWrap: "wrap", gap: 14}}>
                 {donorRenders.map((d) => (
                   <div key={d.donorIndex} style={{display: "flex", alignItems: "center", gap: 8}}>
-                    <span style={{width: 10, height: 10, background: dnaDonorColor(d.donorIndex), flexShrink: 0}} />
+                    <span style={{width: 10, height: 10, background: donorColor(d.donorIndex), flexShrink: 0}} />
                     <span style={{fontSize: 12, color: C.body}}>
                       {d.roleLabel}
                       {d.materialized ? " · materialized" : ""}
@@ -957,23 +904,27 @@ function DnaProvenancePanel({
             </div>
           )}
           {cell ? (
-            <div>
-              <div style={{...label, marginBottom: 10}}>cell {active}</div>
-              <DnaRow k="module #" v={cell.moduleIndex} />
-              <DnaRow k="byte" v={`0x${cell.byte.toString(16).padStart(2, "0")}`} />
-              <DnaRow k="kind" v={cell.kind} />
-              <DnaRow k="solid" v={cell.solid ? "solid" : "outline"} />
-              <DnaRow k="rotation" v={`${cell.rot}°`} />
-              {dna.kind === "compose" && (
-                <>
-                  <DnaRow
-                    k="donor"
-                    v={cell.donorId === "survivor" ? shapeLabel : `#${cell.donorId}`}
-                  />
-                  <DnaRow k="materialized" v={cell.donorMaterialized ? "yes" : "no (seed-derived)"} />
-                </>
-              )}
-            </div>
+            dna.kind === "compose" ? (
+              <DetailPanel
+                label={cell.donorId === "survivor" ? shapeLabel : `#${cell.donorId}`}
+                moduleIndex={cell.moduleIndex}
+                byte={cell.byte}
+                color={donorColor(cell.donorIndex ?? 0)}
+              />
+            ) : dna.kind === "split" ? (
+              <DetailPanel
+                label={
+                  dna.branch === "grammar"
+                    ? `parent seed at ${denomLabelAt(dna.parent.denomIndex)} ETH`
+                    : "parent's compose record pool"
+                }
+                moduleIndex={cell.moduleIndex}
+                byte={cell.byte}
+                color={PROV_C.warn}
+              />
+            ) : (
+              <DetailPanel label={`module #${cell.moduleIndex}`} moduleIndex={cell.moduleIndex} byte={cell.byte} />
+            )
           ) : (
             <div style={{fontSize: 12, color: C.muted}}>Hover or tap a cell for its detail.</div>
           )}
@@ -995,7 +946,7 @@ function DnaProvenancePanel({
               <DonorMiniCard
                 key={d.donorIndex}
                 donor={d}
-                color={dna.kind === "compose" ? dnaDonorColor(d.donorIndex) : C.ink}
+                color={dna.kind === "compose" ? donorColor(d.donorIndex) : PROV_C.warn}
                 activeCell={activeDonorCell}
                 onEnterCell={(moduleIndex) => setDonorHover({donorIndex: d.donorIndex, moduleIndex})}
                 onLeaveCell={() => setDonorHover(null)}
@@ -1015,11 +966,13 @@ function DnaStateBody({
   dna,
   resultArt,
   shapeLabel,
+  exportBase,
   onDrillDonor,
 }: {
   dna: DnaResult | null;
   resultArt: {type: "image"; src: string} | {type: "svg"; svg: string};
   shapeLabel: string;
+  exportBase: string;
   onDrillDonor?: (target: DnaDrillTarget) => void;
 }) {
   if (dna === null) {
@@ -1028,7 +981,15 @@ function DnaStateBody({
   if (dna.kind === "unavailable" || dna.kind === "mismatch") {
     return <div style={{fontSize: 13, color: C.muted, lineHeight: 1.7, maxWidth: "60ch"}}>{dna.message}</div>;
   }
-  return <DnaProvenancePanel dna={dna} resultArt={resultArt} shapeLabel={shapeLabel} onDrillDonor={onDrillDonor} />;
+  return (
+    <DnaProvenancePanel
+      dna={dna}
+      resultArt={resultArt}
+      shapeLabel={shapeLabel}
+      exportBase={exportBase}
+      onDrillDonor={onDrillDonor}
+    />
+  );
 }
 
 /** The page's own DNA section: the live token's `tokenURI` image as the result card, wrapped in
@@ -1071,6 +1032,7 @@ function DnaSection({
             dna={dna}
             resultArt={{type: "image", src: image}}
             shapeLabel={`#${tokenId.toString()} (this Shape)`}
+            exportBase={`shape-${tokenId.toString()}`}
             onDrillDonor={onDrillDonor}
           />
         </div>
@@ -1211,6 +1173,11 @@ function DnaDrillModal({
         dna={top.dna}
         resultArt={{type: "svg", svg: top.art.svg}}
         shapeLabel={`${top.subjectId === null ? top.label : `#${top.subjectId.toString()}`} (this Shape)`}
+        exportBase={
+          top.subjectId !== null
+            ? `shape-${top.subjectId.toString()}`
+            : `shape-${top.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+        }
         onDrillDonor={onDrillDonor}
       />
     </Modal>

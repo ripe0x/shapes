@@ -1,7 +1,7 @@
 import React from "react";
 import { C, FONT, SANS } from "../site/theme";
 import { forDisplay, C as PROV_C } from "../app/ui";
-import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/provenance";
+import { donorColor, GridOverlayCells, useActiveCell, DetailPanel } from "../app/provenance";
 import { CANONICAL } from "../canonical/params";
 import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
 import { WAD } from "../canonical/wad";
@@ -11,7 +11,6 @@ import { DENOMINATIONS, GRIDS, UNIT, unitsAt } from "../canonical/denominations"
 // denomination indexes, grids, and composition ratios are identical between both ladders.
 import { LABELS } from "../canonical/ladders/mainnet";
 import { geneAtMint } from "../canonical/ink";
-import { decodeModuleByte } from "../canonical/moduleCodec";
 import {
   buildCompleteShape,
   composeNodes,
@@ -30,7 +29,8 @@ import {
 } from "./session";
 import { decodeSession, encodeSession, sessionShareable } from "./urlCodec";
 import { ProvenanceTree, initialExpandedKeys, type TreeNode } from "../site/ProvenanceTree";
-import { downloadCardPng, downloadComposeGif, downloadLadderPng, downloadSquarePng } from "./exports";
+import { downloadCardPng, downloadComposeGif, downloadLadderPng, downloadSquarePng, exportFilename } from "./exports";
+import { downloadTracePng, downloadTraceSvg } from "../app/traceExport";
 
 /** Split's single-donor highlight color, matching provenance.tsx's convention for split
  *  provenance (`cellStyleAt`/`cellDetailAt`): one warn-color highlight, no per-donor tints. */
@@ -148,42 +148,6 @@ function RawCard({
           {caption}
         </div>
       )}
-    </div>
-  );
-}
-
-function PlayRow({ k, v }: { k: string; v: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", gap: 12, padding: "2px 0" }}>
-      <span style={{ ...mono, fontSize: 10, color: C.muted, width: 120, flexShrink: 0 }}>{k}</span>
-      <span style={{ ...mono, fontSize: 10.5, color: C.ink, wordBreak: "break-all" }}>{v}</span>
-    </div>
-  );
-}
-
-function PlayDetailPanel({
-  label,
-  moduleIndex,
-  byte,
-  color,
-}: {
-  label: string;
-  moduleIndex: number;
-  byte: number;
-  color?: string;
-}) {
-  const decoded = decodeModuleByte(byte);
-  return (
-    <div style={{ border: `1px solid ${C.border}`, padding: 12, minWidth: 220 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        {color && <span style={{ width: 10, height: 10, background: color, flexShrink: 0 }} />}
-        <span style={{ ...mono, fontSize: 11, color: C.ink, fontWeight: 500 }}>{label}</span>
-      </div>
-      <PlayRow k="source module #" v={moduleIndex} />
-      <PlayRow k="byte" v={byteHex(byte)} />
-      <PlayRow k="kind" v={decoded.kind} />
-      <PlayRow k="solid" v={decoded.solid ? "solid" : "outline"} />
-      <PlayRow k="rotation" v={`${decoded.rot}°`} />
     </div>
   );
 }
@@ -708,6 +672,12 @@ function playNodeToTree(node: PlayNode, byKey: Map<number, PlayNode>): TreeNode 
   };
 }
 
+/** Trace export filename base for a node: `exportFilename`'s own card-name convention (seed,
+ *  denomination), minus its `.png` extension, so both trace downloads can append `-trace.<ext>`. */
+function traceExportBase(node: PlayNode): string {
+  return exportFilename("card", node.seed, LABELS[node.denomIndex]).replace(/\.png$/, "");
+}
+
 function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, PlayNode> }) {
   const composition = nodeComposition(node);
   const svg = React.useMemo(
@@ -781,6 +751,28 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
             onClickCell={onClickCell}
           />
         </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn-outline"
+            style={{ padding: "6px 12px", fontSize: 11 }}
+            onClick={() =>
+              downloadTracePng(svg, composition, (j) => donorColor(trace[j].donorIndex), traceExportBase(node))
+            }
+          >
+            PNG
+          </button>
+          <button
+            type="button"
+            className="btn-outline"
+            style={{ padding: "6px 12px", fontSize: 11 }}
+            onClick={() =>
+              downloadTraceSvg(svg, composition, (j) => donorColor(trace[j].donorIndex), traceExportBase(node))
+            }
+          >
+            SVG
+          </button>
+        </div>
       </div>
 
       <div className="play-inspector-meta">
@@ -794,7 +786,7 @@ function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, Play
           ))}
         </div>
         {activeCell && (
-          <PlayDetailPanel
+          <DetailPanel
             label={donorLabels[activeCell.donorIndex] ?? activeCell.donorId}
             moduleIndex={activeCell.moduleIndex}
             byte={activeCell.byte}
@@ -933,12 +925,30 @@ function SplitCellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number,
             onClickCell={onClickCell}
           />
         </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn-outline"
+            style={{ padding: "6px 12px", fontSize: 11 }}
+            onClick={() => downloadTracePng(svg, composition, () => SPLIT_COLOR, traceExportBase(node))}
+          >
+            PNG
+          </button>
+          <button
+            type="button"
+            className="btn-outline"
+            style={{ padding: "6px 12px", fontSize: 11 }}
+            onClick={() => downloadTraceSvg(svg, composition, () => SPLIT_COLOR, traceExportBase(node))}
+          >
+            SVG
+          </button>
+        </div>
       </div>
 
       <div className="play-inspector-meta">
         <div className="play-inspector-subhead">Cell source</div>
         {activeCell && (
-          <PlayDetailPanel
+          <DetailPanel
             label={recordBranch ? `#${parent.demoId} merge pool` : `#${parent.demoId} seed at ${LABELS[node.denomIndex]} ETH`}
             moduleIndex={activeCell.moduleIndex}
             byte={activeCell.byte}
