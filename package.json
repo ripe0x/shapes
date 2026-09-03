@@ -18,5 +18,8 @@
         "ws": "8.21.0"
       }
     }
+  },
+  "scripts": {
+    "e2e:browser": "web/e2e/run.sh"
   }
 }

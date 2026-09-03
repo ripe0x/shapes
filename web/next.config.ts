@@ -12,13 +12,14 @@ const shared = resolve(__dirname, "../preview/src");
 // Selects the denomination ladder at build time, pairing with the foundry profile of the same
 // name (see preview/src/canonical/denominations.ts). An explicit SHAPES_LADDER always wins;
 // production builds must set it (scripts/verify-netlify-mode.mjs). Unset, the default follows the
-// deployment the dev server will serve: public/deployment.local.json when present (written by
-// script/lived-in.sh for a local anvil chain, which deploys with the default mainnet profile),
-// else the bundled deployment.json. A Sepolia target takes the testnet ladder, anything else
-// mainnet, so a plain `next dev` cannot show one ladder against a contract using the other.
+// deployment this build will serve: SHAPES_DEPLOYMENT_FILE when set (see app/lib/deployment.ts),
+// else public/deployment.local.json when present (written by script/lived-in.sh for a local anvil
+// chain, which deploys with the default mainnet profile), else the bundled deployment.json. A
+// Sepolia target takes the testnet ladder, anything else mainnet, so a plain `next dev` cannot
+// show one ladder against a contract using the other.
 function defaultLadder(): string {
   let dep = bundledDeployment as { chainId?: number };
-  const local = resolve(__dirname, "public/deployment.local.json");
+  const local = process.env.SHAPES_DEPLOYMENT_FILE || resolve(__dirname, "public/deployment.local.json");
   if (existsSync(local)) {
     try {
       dep = JSON.parse(readFileSync(local, "utf8")) as { chainId?: number };
