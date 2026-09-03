@@ -633,6 +633,11 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   a separate permissionless call that forwards the accrued total to `feeRecipient`. A batch accrues
   `quantity * mintFee` once. Auction ETH bids pay one fee for every minimal-denomination card the
   escrow creates, exposed exactly by `ShapeAuctionHouse.mintCostFor(backingWei)`.
+- `mintStart` is a `uint64` set once at construction and stored immutable; no admin path can read
+  or change it. `mint`, `mintTo`, `mintBatch` and `mintBatchTo` revert `MintNotOpen()` while
+  `block.timestamp < mintStart`, which also gates the ETH-backed auction bids that mint cards
+  through `ShapeCardEscrow._mintCards` calling `mintBatchTo`. The constructor mint of Shape #0 is
+  unconditional, so its transfer, auction listing and redemption all work before `mintStart`.
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
   invariant asserted is `address(this).balance >= redeemableBacking + pendingFees`.

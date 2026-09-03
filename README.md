@@ -90,7 +90,10 @@ remain distinct historical objects. That is the whole design.
 
 ## Minting
 
-Minting is permissionless.
+Minting is permissionless from the immutable `mintStart` timestamp onward. Before it, `mint`,
+`mintTo`, `mintBatch`, `mintBatchTo`, and ETH-backed auction bids that mint through them all
+revert `MintNotOpen()`. Shape #0 is minted unconditionally in the constructor, so it can be
+transferred, listed for auction, and redeemed before `mintStart`.
 
 ```solidity
 mint(uint256 amountWei) payable returns (uint256 tokenId)
@@ -230,7 +233,7 @@ outcome: stranding a few stray wei is strictly better than opening a withdrawal 
 reach the reserve.
 
 Direct ETH transfers to the contract revert. ETH arrives through the constructor-backed mint of
-Shape #0 and through later permissionless mints.
+Shape #0 and through later mints once `mintStart` has passed.
 
 Every wei counted by `redeemableBacking()` corresponds to a live non-Black Shape. Stateful
 invariants cover minting, transfer, redemption, burn, composition, decomposition, splitting,
@@ -247,7 +250,7 @@ it to the first output. Redeeming or burning the owner token ends collection own
 permanently: `owner()` returns zero and no other token inherits. Its metadata name is `Shapes
 Collection Owner`, with the exclusive trait `Collection Owner: true`. Holding it grants no
 administrative rights. Permissionless artwork minting starts at #1, which is the launch-auction
-lot.
+lot, and opens at the immutable `mintStart` timestamp; no admin path can move it.
 
 The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move
 ETH, administer metadata, receive fees, control the owner token, or authorize any operation. The artist may
