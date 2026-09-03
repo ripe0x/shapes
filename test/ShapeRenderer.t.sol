@@ -719,7 +719,7 @@ contract TokenMetadataTest is RendererTestBase {
     function setUp() public override {
         super.setUp();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0xFEE), address(renderer), address(collection)
+            MINT_FEE, address(0xFEE), address(renderer), address(collection), 0
         );
         vm.deal(alice, 1_000 ether);
     }

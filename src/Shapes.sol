@@ -214,6 +214,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     address public immutable artist;
 
+    /// @inheritdoc IShapes
+    uint64 public immutable mintStart;
+
     /// @dev The artist's release hash and signature, grouped so `AdminOps.attestArtist` can
     ///      mutate both through one storage pointer, `PointerOps`-style. `artistReleaseHash()` and
     ///      `artistSignature()` below replicate the public state variables' auto-generated getters
@@ -292,13 +295,19 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///        blocks only `withdrawFees`, never minting.
     /// @param renderer_ The onchain renderer. Replaceable by the admin until locked. An address
     ///        with no renderer code is refused here and by `setRenderer`.
+    /// @param mintStart_ Unix timestamp at or after which `mintBatch` and `mintBatchTo` accept
+    ///        calls. Zero opens them immediately. Stored immutably; no function can change it.
     /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-ownership
     ///      Shape is fee-exempt and minted atomically to `msg.sender`, so permissionless artwork
-    ///      minting begins at #1.
-    constructor(uint256 mintFee_, address feeRecipient_, address renderer_, address collection_)
-        payable
-        ERC721("Shapes", "SHAPE")
-    {
+    ///      minting begins at #1. The constructor mints Shape #0 unconditionally; `mintStart_`
+    ///      gates only `mintBatch` and `mintBatchTo`.
+    constructor(
+        uint256 mintFee_,
+        address feeRecipient_,
+        address renderer_,
+        address collection_,
+        uint64 mintStart_
+    ) payable ERC721("Shapes", "SHAPE") {
         if (feeRecipient_ == address(0)) revert AdminInvalidFeeRecipient(address(0));
         _requireRendererHasCode(renderer_);
         _requireCollectionHasCode(collection_);
@@ -306,6 +315,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _feeConfig.mintFee = mintFee_;
         _feeConfig.feeRecipient = feeRecipient_;
         artist = msg.sender;
+        mintStart = mintStart_;
         renderer = renderer_;
         collection = collection_;
         _copyConfig.tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
@@ -556,6 +566,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         private
         returns (uint256 firstTokenId)
     {
+        if (block.timestamp < mintStart) revert MintNotOpen();
         _requireNonZero(quantity);
 
         firstTokenId = totalMinted;

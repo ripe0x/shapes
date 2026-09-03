@@ -44,7 +44,7 @@ contract HardeningTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         shapes.redeemTo(0, payable(address(0xD15CA4D)));
         vm.deal(alice, 10_000 ether);
@@ -131,12 +131,12 @@ contract HardeningTest is Test {
     function test_RendererWithoutCodeIsRejected() public {
         vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0xDEAD)));
         new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(0xDEAD), address(collection)
+            MINT_FEE, feeRecipient, address(0xDEAD), address(collection), 0
         );
 
         // an EOA is equally unacceptable
         vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, alice));
-        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, alice, address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, alice, address(collection), 0);
     }
 
     /* ---------------- self-custody ---------------- */
@@ -161,7 +161,7 @@ contract HardeningTest is Test {
         ShapeRenderer ownershipRenderer = new ShapeRenderer();
         ShapeCollection ownershipCollection = new ShapeCollection(address(ownershipRenderer));
         Shapes ownershipShapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(ownershipRenderer), address(ownershipCollection)
+            MINT_FEE, feeRecipient, address(ownershipRenderer), address(ownershipCollection), 0
         );
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.SelfCustodyRejected.selector, 0));
