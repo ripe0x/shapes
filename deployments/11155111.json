@@ -9,5 +9,6 @@
   "auctionHouse": "0x65085c760df92925d23149a9d95624177ba6e637",
   "mintFeeWei": "10000000000000",
   "mintStart": "1788403705",
-  "fromBlock": 11623741
+  "fromBlock": 11623741,
+  "auctionId": null
 }

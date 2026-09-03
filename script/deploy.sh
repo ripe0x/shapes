@@ -77,6 +77,8 @@ VERIFY_OVERRIDE="${VERIFY-}"
 # A shell-provided MINT_START (a rehearsal setting it a few minutes ahead) must survive the env
 # file's own MINT_START assignment below, so it is snapshotted before sourcing.
 MINT_START_OVERRIDE="${MINT_START:-}"
+# Same pattern for LIST_OWNER_TOKEN: a shell export wins over whatever the env file sets.
+LIST_OWNER_TOKEN_OVERRIDE="${LIST_OWNER_TOKEN-}"
 
 set -a
 # shellcheck source=/dev/null
@@ -85,6 +87,14 @@ set +a
 
 [ -z "$VERIFY_OVERRIDE" ] || VERIFY="$VERIFY_OVERRIDE"
 [ -z "$MINT_START_OVERRIDE" ] || MINT_START="$MINT_START_OVERRIDE"
+[ -z "$LIST_OWNER_TOKEN_OVERRIDE" ] || LIST_OWNER_TOKEN="$LIST_OWNER_TOKEN_OVERRIDE"
+# Opt-in, post-broadcast listing of the owner token (#0) in the auction house. Terms fall back to
+# these defaults if the env file leaves them blank.
+LIST_OWNER_TOKEN="${LIST_OWNER_TOKEN:-0}"
+AUCTION_DURATION="${AUCTION_DURATION:-86400}"
+AUCTION_RESERVE_UNITS="${AUCTION_RESERVE_UNITS:-0}"
+AUCTION_MIN_INCREMENT_BPS="${AUCTION_MIN_INCREMENT_BPS:-500}"
+AUCTION_EXTENSION_WINDOW="${AUCTION_EXTENSION_WINDOW:-900}"
 
 # Mainnet's env file ships with the deployer, fee recipient and fee left blank until D-05
 # (project/DECISIONS.md) is resolved. Refuse before touching any RPC, dry run included.
@@ -114,6 +124,7 @@ echo "  rpc      $RPC"
 echo "  profile  $FOUNDRY_PROFILE"
 echo "  dry run  $DRY_RUN"
 echo "  resume   $RESUME"
+echo "  list owner token  $LIST_OWNER_TOKEN"
 
 # Deploy.s.sol reads SHAPES_MINT_FEE_WEI / SHAPES_FEE_RECIPIENT; the env file's own names
 # (MINT_FEE_WEI / FEE_RECIPIENT) are the reviewed values for this target. A caller-supplied
@@ -239,6 +250,9 @@ fi
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
+  if [ "$LIST_OWNER_TOKEN" = "1" ]; then
+    echo "  would list: owner token (#0), duration ${AUCTION_DURATION}s, reserve $AUCTION_RESERVE_UNITS units, min increment ${AUCTION_MIN_INCREMENT_BPS}bps, extension window ${AUCTION_EXTENSION_WINDOW}s"
+  fi
   forge script script/Deploy.s.sol --rpc-url "$RPC"
   echo "dry run complete for $ENV_NAME"
   exit 0
@@ -260,6 +274,21 @@ fi
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
 
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# Mirrors e2e-anvil.sh's send_wait: cast send returns before the transaction is reliably mined on
+# this toolchain, so poll for the receipt before the next sequenced send races it. --gas-limit
+# sidesteps the estimator's under-estimate on a nonReentrant-guarded function (its gas refund is
+# credited only at the end of the transaction, after the estimate is taken). Uses the wallet
+# resolved above, so it only runs where WALLET_ARGS is meaningful (never under DRY_RUN).
+send_wait() {
+  local hash
+  hash=$(cast send --gas-limit 600000 --rpc-url "$RPC" "${WALLET_ARGS[@]}" "$@" --json | jq -r '.transactionHash')
+  for _ in $(seq 1 100); do
+    cast receipt "$hash" --rpc-url "$RPC" >/dev/null 2>&1 && { echo "$hash"; return 0; }
+  done
+  echo "tx $hash was not mined" >&2
+  exit 1
+}
 
 contract_address() {
   jq -r --arg name "$1" \
@@ -376,9 +405,18 @@ FROM_BLOCK=$(cast to-dec "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.blockNumber'
 
 require_address_read admin "$(cast call "$SHAPES" 'admin()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
 require_address_read artist "$(cast call "$SHAPES" 'artist()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
-require_address_read owner "$(cast call "$SHAPES" 'owner()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
-require_address_read 'Shape #0 owner' \
-  "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+# Shapes.owner() and ownerOf(0) both track whoever holds the owner token, which a fresh broadcast
+# always mints to the deployer. RESUME may be revisiting a chain where a previous RESUME +
+# LIST_OWNER_TOKEN=1 run already escrowed it into the auction house, moving both, so it only logs;
+# the owner-token listing step below does its own ownership checks.
+if [ "$RESUME" = "1" ]; then
+  echo "  owner           $(cast call "$SHAPES" 'owner()(address)' --rpc-url "$RPC")"
+  echo "  Shape #0 owner  $(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")"
+else
+  require_address_read owner "$(cast call "$SHAPES" 'owner()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+  require_address_read 'Shape #0 owner' \
+    "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+fi
 [ -z "${FEE_RECIPIENT:-}" ] || require_address_read 'fee recipient' \
   "$(cast call "$SHAPES" 'feeRecipient()(address)' --rpc-url "$RPC")" "$FEE_RECIPIENT"
 require_address_read renderer "$(cast call "$SHAPES" 'renderer()(address)' --rpc-url "$RPC")" "$RENDERER"
@@ -397,7 +435,13 @@ require_uint_read 'denomination count' "$(cast call "$SHAPES" 'denominationCount
 require_uint_read 'Shape #0 denomination' \
   "$(cast call "$SHAPES" 'denomIndexOf(uint256)(uint8)' 0 --rpc-url "$RPC")" 0
 require_uint_read 'owner token' "$(cast call "$SHAPES" 'ownerToken()(uint256)' --rpc-url "$RPC")" 0
-require_uint_read 'auction count' "$(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC")" 0
+# A fresh broadcast has listed nothing yet, so this must read 0. RESUME may be revisiting a chain
+# where a previous RESUME + LIST_OWNER_TOKEN=1 run already listed the owner token, so it only logs.
+if [ "$RESUME" = "1" ]; then
+  echo "  auction count   $(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC" | awk '{print $1}')"
+else
+  require_uint_read 'auction count' "$(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC")" 0
+fi
 
 [ "$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")" \
     = "0x0000000000000000000000000000000000000000000000000000000000000000" ] \
@@ -414,6 +458,57 @@ MARKET=$(cast call "$SHAPES" 'market()(address,bool)' --rpc-url "$RPC")
   || { echo "market pointer did not start empty and unlocked" >&2; exit 1; }
 
 echo "  ok: onchain readback matches the deploy"
+
+# --- optional: list the owner token (#0) in the auction house -----------------------------------
+# A post-broadcast wrapper step, not part of Deploy.s.sol: createAuction only escrows the lot and
+# opens the listing, the clock starts on the first bid (endTime stays 0 until then). Allowed under
+# RESUME too, since it lists the token that already exists on chain rather than anything from this
+# broadcast.
+
+AUCTION_ID=""
+if [ "$LIST_OWNER_TOKEN" = "1" ]; then
+  HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
+  OWNER_TOKEN_HOLDER=$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")
+
+  if [ "$HAS_AUCTION" = "true" ]; then
+    [ "$RESUME" = "1" ] \
+      || { echo "refusing: owner token already has an auction on a supposedly fresh deploy" >&2; exit 1; }
+    echo "  skip: owner token is already listed"
+  elif [ "$RESUME" = "1" ] && [ "$(lower "$OWNER_TOKEN_HOLDER")" != "$(lower "$EFFECTIVE_DEPLOYER")" ]; then
+    echo "  skip: owner token is held by $OWNER_TOKEN_HOLDER, not the deployer; not listing" >&2
+  else
+    [ "$(cast call "$SHAPES" 'ownerToken()(uint256)' --rpc-url "$RPC")" = "0" ] \
+      || { echo "refusing: ownerToken() is not 0" >&2; exit 1; }
+    require_address_read 'owner token holder' "$OWNER_TOKEN_HOLDER" "$EFFECTIVE_DEPLOYER"
+
+    echo "Listing the owner token (#0) in the auction house"
+    echo "  duration            ${AUCTION_DURATION}s"
+    echo "  reserve units       $AUCTION_RESERVE_UNITS"
+    echo "  min increment bps   $AUCTION_MIN_INCREMENT_BPS"
+    echo "  extension window    ${AUCTION_EXTENSION_WINDOW}s"
+
+    send_wait "$SHAPES" 'approve(address,uint256)' "$HOUSE" 0 >/dev/null
+    send_wait "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32)' \
+      "$SHAPES" 0 "$AUCTION_DURATION" "$AUCTION_RESERVE_UNITS" "$AUCTION_MIN_INCREMENT_BPS" \
+      "$AUCTION_EXTENSION_WINDOW" >/dev/null
+
+    HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
+    [ "$HAS_AUCTION" = "true" ] || { echo "owner token listing did not take effect" >&2; exit 1; }
+  fi
+
+  if [ "$HAS_AUCTION" = "true" ]; then
+    AUCTION_INFO=$(cast call "$HOUSE" 'getAuctionFor(address,uint256)(bool,uint256)' "$SHAPES" 0 --rpc-url "$RPC")
+    AUCTION_ID=$(printf '%s' "$AUCTION_INFO" | tail -1 | awk '{print $1}')
+    require_address_read 'Shape #0 owner' "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$HOUSE"
+    AUCTION_STRUCT=$(cast call "$HOUSE" \
+      "auctions(uint256)(address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)" \
+      "$AUCTION_ID" --rpc-url "$RPC")
+    AUCTION_END_TIME=$(printf '%s' "$AUCTION_STRUCT" | sed -n '4p' | awk '{print $1}')
+    [ "$AUCTION_END_TIME" = "0" ] \
+      || { echo "auction $AUCTION_ID has a nonzero endTime ($AUCTION_END_TIME)" >&2; exit 1; }
+    echo "  ok: owner token listed as auction $AUCTION_ID (endTime $AUCTION_END_TIME, still waiting on a first bid)"
+  fi
+fi
 
 # --- record the deployment: same key set and order as web/public/deployment.json, so cutover ----
 # is a plain file copy. Always written, verification failures above notwithstanding.
@@ -432,7 +527,8 @@ jq -n \
   --arg mintFeeWei "$MINT_FEE_ONCHAIN" \
   --arg mintStart "$MINT_START_ONCHAIN" \
   --argjson fromBlock "$FROM_BLOCK" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,lens:$lens,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock}' \
+  --arg auctionId "$AUCTION_ID" \
+  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,lens:$lens,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock,auctionId:(if $auctionId == "" then null else $auctionId end)}' \
   >"$DEPLOYMENT_FILE"
 
 echo
@@ -444,6 +540,7 @@ echo "  ShapeLens       $LENS"
 echo "  AuctionHouse    $HOUSE"
 echo "  deployment tx   $SHAPES_TX"
 echo "  from block      $FROM_BLOCK"
+echo "  auction id      ${AUCTION_ID:-none}"
 echo "  admin           $EFFECTIVE_DEPLOYER"
 echo "  wrote           $DEPLOYMENT_FILE"
 
