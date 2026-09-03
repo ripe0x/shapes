@@ -381,7 +381,9 @@ export function SiteApp({
     try {
       a = await loadAuctionFor(publicClient, dep, 0n, address);
     } catch {
-      a = null;
+      setAuction("error");
+      setLotImage(null);
+      return;
     }
     setAuction(a);
     setLotImage(a ? await loadLotImage(publicClient, dep, a) : null);
@@ -421,7 +423,7 @@ export function SiteApp({
 
   // The house call targets the auction the page loaded for token 0, never a fixed id: on a
   // chain with earlier auctions the owner token's auction is not id 0.
-  const auctionId = auction !== "loading" && auction !== null ? auction.id : null;
+  const auctionId = typeof auction === "object" && auction !== null ? auction.id : null;
 
   const doBid = (cardIds: bigint[], ethBackingWei: bigint) => {
     if (auctionId === null) return;
@@ -623,6 +625,7 @@ export function SiteApp({
           txHash={txHash}
           onBid={doBid}
           onWithdraw={() => { if (auctionId !== null) void runHouse("withdraw", "withdraw", [auctionId]); }}
+          onRetry={() => { setAuction("loading"); void refreshAuction(); }}
           onSettle={() => { if (auctionId !== null) void runHouse("settle", "settle", [auctionId]); }}
           onClaim={() => { if (auctionId !== null) void runHouse("claim", "claimProceeds", [auctionId]); }}
           onOpenToken={openToken}

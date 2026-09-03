@@ -43,7 +43,7 @@ function useNow(auction: AuctionSlot): number {
     const t = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
-  return auction && auction !== "loading" ? chainNowFor(auction) : Math.floor(Date.now() / 1000);
+  return typeof auction === "object" && auction !== null ? chainNowFor(auction) : Math.floor(Date.now() / 1000);
 }
 
 /** Max height available for the hero artwork so it renders fully within the viewport: the window
@@ -77,6 +77,7 @@ export function AuctionView({
   txHash,
   onBid,
   onWithdraw,
+  onRetry,
   onSettle,
   onClaim,
   onOpenToken,
@@ -94,6 +95,8 @@ export function AuctionView({
   txHash: string | null;
   onBid: (cardIds: bigint[], ethBackingWei: bigint) => void;
   onWithdraw: () => void;
+  /** Re-reads the auction after a failed load. */
+  onRetry: () => void;
   onSettle: () => void;
   onClaim: () => void;
   onOpenToken: (id: bigint) => void;
@@ -134,10 +137,10 @@ export function AuctionView({
 
   // The standing bidder's identity, resolved before any early return so the hook order stays
   // fixed regardless of the auction slot's state.
-  const highestBidder = auction && auction !== "loading" ? auction.highestBidder : undefined;
+  const highestBidder = typeof auction === "object" && auction !== null ? auction.highestBidder : undefined;
   const bidderIdentity = useEnsDisplay(publicClient, highestBidder);
 
-  const auctionId = auction && auction !== "loading" ? auction.id : null;
+  const auctionId = typeof auction === "object" && auction !== null ? auction.id : null;
   const [bidHistory, setBidHistory] = React.useState<BidHistoryEntry[] | null>(null);
   React.useEffect(() => {
     if (!publicClient || auctionId === null) return;
@@ -152,6 +155,19 @@ export function AuctionView({
     // txHash re-triggers the load after any confirmed auction transaction; loadBidHistory's own
     // cache (keyed by log count) makes this a no-op unless a new bid actually landed.
   }, [publicClient, dep, auctionId, txHash]);
+
+  if (auction === "error") {
+    return (
+      <Section title="AUCTION" last>
+        <p style={{margin: 0, fontSize: 15, lineHeight: 1.7, color: C.bodyDim, maxWidth: "60ch"}}>
+          Could not read the auction.
+        </p>
+        <button type="button" className="btn-outline" onClick={onRetry} style={{marginTop: 18, padding: "10px 20px"}}>
+          Try again
+        </button>
+      </Section>
+    );
+  }
 
   if (auction === "loading") {
     return (

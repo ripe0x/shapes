@@ -40,12 +40,14 @@ export function chainNowFor(a: AuctionState): number {
 }
 
 /**
- * Auction slot as loaded by the site: "loading" before the first read resolves,
+ * Auction slot as loaded by the site: "loading" before the first read resolves, "error" when the
+ * read failed (dead RPC, mid-redeploy chain) so the page can offer a retry instead of claiming
+ * there is no auction,
  * null once resolved with no live auction, otherwise the loaded state. Kept
  * distinct from `AuctionState | null` so a slow first read cannot render as
  * "no auction is running."
  */
-export type AuctionSlot = AuctionState | null | "loading";
+export type AuctionSlot = AuctionState | null | "loading" | "error";
 
 export type Phase = "pre-bid" | "live" | "ended-unsettled" | "settled";
 
