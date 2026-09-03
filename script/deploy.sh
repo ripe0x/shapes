@@ -38,7 +38,7 @@
 #                                                  wrapper run didn't reach the recording step (e.g.
 #                                                  forge's inline verification failed and aborted
 #                                                  the wrapper before it got there). The REQUIRE_MAIN
-#                                                  git guards still run, but — like DRY_RUN — only
+#                                                  git guards still run, but, like DRY_RUN, only
 #                                                  warn: nothing is broadcast from this worktree's
 #                                                  commit, so the exact-commit invariant that guards
 #                                                  a real broadcast doesn't apply to resuming one
@@ -149,7 +149,7 @@ if [ "$REQUIRE_MAIN" = "true" ]; then
   # A real broadcast refuses on any failure here. Under DRY_RUN=1 or RESUME=1 the same checks
   # still run, but a failure only warns what a real broadcast would refuse: DRY_RUN broadcasts
   # nothing, and RESUME's broadcast already happened (elsewhere, possibly from a different
-  # checkout) — the exact-commit invariant guards a new broadcast, not a resumed readback of one
+  # checkout): the exact-commit invariant guards a new broadcast, not a resumed readback of one
   # that already landed on chain.
   git_guard_fail() {
     if [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ]; then

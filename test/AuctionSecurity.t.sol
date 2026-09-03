@@ -273,9 +273,9 @@ contract AuctionSecurityTest is Test {
     }
 
     /// @notice L-02. A contract fee recipient tries to push a Shape it owns into the house from
-    ///         its `receive` callback. That callback no longer fires from inside a bid at all —
+    ///         its `receive` callback. That callback no longer fires from inside a bid at all:
     ///         `_takeBid`'s escrow mint accrues the Shapes fee to `pendingFees` with no external
-    ///         call — so an armed recipient never even gets the chance during an honest bid.
+    ///         call, so an armed recipient never even gets the chance during an honest bid.
     ///         Separately, the same push attempt made from inside `withdrawFees` (the only call
     ///         that still hands it control) is refused exactly as before: `onERC721Received`
     ///         rejects any inbound `safeTransferFrom` whose `from` is not the zero address, so the
@@ -327,7 +327,7 @@ contract AuctionSecurityTest is Test {
     ///         `pendingFees` rather than calling the fee recipient, so a fee-recipient-seller
     ///         armed to reenter `cancelAuction` never gets the chance during `bid`: the bid is
     ///         recorded normally, uninterrupted. Separately, on a fresh auction with no bid yet,
-    ///         the same seller's callback can still reach `cancelAuction` from `withdrawFees` —
+    ///         the same seller's callback can still reach `cancelAuction` from `withdrawFees`:
     ///         that call originates on `Shapes`, a different contract, so it is a fresh entry into
     ///         the house rather than reentrancy, and `cancelAuction`'s own guards allow it exactly
     ///         as they would a direct call. With nothing bid yet, that cancel simply succeeds: the
@@ -359,7 +359,7 @@ contract AuctionSecurityTest is Test {
         assertEq(house3.bidUnits(a, carol), 100, "carol's 1 ETH bid stands at 100 units");
 
         // A second, bid-less auction: the seller's callback can still reach cancelAuction from
-        // withdrawFees, and does — harmlessly, since there is nothing bid to steal.
+        // withdrawFees, and does, harmlessly, since there is nothing bid to steal.
         ReentrantCancelSeller mal2 = new ReentrantCancelSeller();
         Shapes shapes4 = new Shapes{value: Denominations.amountAt(0)}(
             MINT_FEE, address(mal2), address(renderer), address(collection), 0
@@ -384,7 +384,7 @@ contract AuctionSecurityTest is Test {
     ///         is structurally gone: `_takeBid`'s mint forwards no fee, so `mal`'s reentrant
     ///         attempt never fires and the bid settles honestly with carol as the escrowed
     ///         bidder. The only remaining path into `cancelAuction` is through `withdrawFees`,
-    ///         called after the bid, by which point `highestBidder` is set — the same guard
+    ///         called after the bid, by which point `highestBidder` is set: the same guard
     ///         `cancelAuction` always enforced (`InvalidAuction` once a bid exists) rejects the
     ///         attempt, and since `ReentrantCancelSeller` does not catch it, the whole
     ///         `withdrawFees` call reverts along with it. Carol's escrow is never released to `mal`.

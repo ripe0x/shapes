@@ -334,8 +334,8 @@ contract Handler is Test, IERC721Receiver {
     /* -------------------- recipient-directed value flows (PR #1) -------------------- */
 
     /// @dev Redeem to a hostile recipient. The owner still authorises it; the payout lands on a
-    ///      third party that may revert or reenter. Reserve accounting is identical to `redeem` —
-    ///      only the destination differs — so the ghosts move only if the call actually settles.
+    ///      third party that may revert or reenter. Reserve accounting is identical to `redeem`:
+    ///      only the destination differs, so the ghosts move only if the call actually settles.
     function redeemToHostile(uint256 tokenSeed, uint256 recipSeed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[tokenSeed % liveTokens.length];
@@ -694,7 +694,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
     }
 
     /// @notice Origins are created only by mint and destroyed only by redeem. The sum of live
-    ///         origin counts equals mints minus origins redeemed — no operation manufactures them.
+    ///         origin counts equals mints minus origins redeemed: no operation manufactures them.
     function invariant_OriginsAreConserved() public view {
         uint256 sum;
         uint256 n = handler.liveTokenCount();

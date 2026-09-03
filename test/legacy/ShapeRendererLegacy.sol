@@ -78,7 +78,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
     //
     // There is deliberately no separate "ring". A ring is a circle with a heavier stroke, and
     // carrying it as its own primitive meant one mark on a card ignored the card's stroke
-    // weight and used a hard-coded 0.22 x d instead — 1.3x to 2.2x heavier than the outlined
+    // weight and used a hard-coded 0.22 x d instead: 1.3x to 2.2x heavier than the outlined
     // circle beside it, for no reason a viewer could infer. One stroke weight per card.
     uint256 private constant KIND_CIRCLE = 0;
     uint256 private constant KIND_SQUARE = 1;
@@ -108,7 +108,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         uint256 rot; // 0, 90, 180 or 270, clockwise
         uint256 cx;
         uint256 cy;
-        /// @dev The path footprint handed to the drawing primitive — a diameter, a side, or a
+        /// @dev The path footprint handed to the drawing primitive: a diameter, a side, or a
         ///      triangle's base. Solved backwards from `target` so the painted result, stroke
         ///      and miter joins included, reaches exactly `target` from the cell centre.
         uint256 size;
@@ -125,7 +125,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         /// @dev Painted half-extent every module on this card reaches, in user units.
         uint256 target;
         uint256 weight;
-        /// @dev This card's own probability that any given module comes out solid —
+        /// @dev This card's own probability that any given module comes out solid:
         ///      `InkGenes.geneProbabilityAt(inkGene)`, not the discarded seed-level fill draw.
         uint256 solidProbability;
         /// @dev The token's ink gene (0..6), the value `solidProbability` is drawn from.
@@ -186,7 +186,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
     ///      A single global solid rate makes every card the same mixture. Drawing the rate per
     ///      card instead gives the collection a shape: a small share come out entirely
     ///      outlined, a small share entirely solid, and the rest land in a band. Both extremes
-    ///      are exact — a card that draws 0 contains no solid mark at all — which is why the
+    ///      are exact: a card that draws 0 contains no solid mark at all, which is why the
     ///      per-module test is `draw < p` rather than `draw > t`.
     ///
     ///        r <  PURE_OUTLINE_CHANCE     -> 0    every module outlined
@@ -302,7 +302,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
     ///
     ///        circle, square, halfsquare    drawn as a stroked path. The stroke straddles the
     ///                                      edge, adding w/2 all round, and every painted
-    ///                                      extent — 90 degree miter corners included — lands
+    ///                                      extent, 90 degree miter corners included, lands
     ///                                      exactly on the target -> size = 2 * target - w
     ///
     ///        triangle, rtriangle, diamond, drawn as an even-odd ring whose outer boundary is
@@ -330,20 +330,20 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
 
     /// @notice Resolve a token into its full geometric description.
     /// @dev Draw order, consensus critical (SPEC.md D5):
-    ///        1. fill     — always (consumed and discarded; see below)
-    ///        2. wRatio   — always
+    ///        1. fill     : always (consumed and discarded; see below)
+    ///        2. wRatio   : always
     ///      then per cell, row-major:
-    ///        3. kind     — always
-    ///        3. solid probability — always
+    ///        3. kind     : always
+    ///        3. solid probability : always
     ///      then per cell:
-    ///        4. kind     — always
-    ///        5. solid    — always
-    ///        5. rotation — only when the kind takes more than one orientation
+    ///        4. kind     : always
+    ///        5. solid    : always
+    ///        5. rotation : only when the kind takes more than one orientation
     ///      The conditional consumption is load-bearing. Drawing unconditionally would
     ///      desynchronise the stream and change every subsequent cell on the card.
     ///
     ///      Ink genes (INK_GENES_IMPL_SPEC.md §4.2): the card-level fill draw is superseded by
-    ///      `inkGene`. The draw still happens — the stream must keep consuming it — but its
+    ///      `inkGene`. The draw still happens, the stream must keep consuming it, but its
     ///      value is discarded; `solidProbability` comes from `InkGenes.geneProbabilityAt`
     ///      instead.
     function compose(bytes32 seed, uint256 amountWei, uint8 inkGene) public pure returns (Card memory card) {
@@ -562,7 +562,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
 
     /// @dev An outlined mark built as a filled even-odd ring: the outer subpath is the solid
     ///      geometry itself, the inner subpath the same shape inset by the stroke weight. Every
-    ///      painted edge sits exactly where the solid form's does — no stroke, no miter join.
+    ///      painted edge sits exactly where the solid form's does: no stroke, no miter join.
     function _ring(bytes memory d, uint256 rot, uint256 cx, uint256 cy, string memory fg)
         private
         pure
@@ -963,7 +963,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
                     '<path d="', outer, '"', _transform(m.rot, m.cx, m.cy), _style(true, m.weight, fg)
                 );
             }
-            // Inner region: the half disc's points at least `weight` from its boundary — an
+            // Inner region: the half disc's points at least `weight` from its boundary, an
             // arc of radius r - w about the same centre, chorded where it meets the offset
             // flat edge.
             uint256 ri = r - m.weight;
@@ -1146,7 +1146,7 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
 
     /// @dev The provenance label derived from `(units, originCount, isBlack)`. `units` is the
     ///      backing's 0.01 count. Black takes precedence; then Complete (an origin per unit, above
-    ///      the minimum tier); then Fragment (zero origins — a decompose remainder credited none);
+    ///      the minimum tier); then Fragment (zero origins, a decompose remainder credited none);
     ///      then Direct (a single origin) vs Composed. Fragment is distinct so a zero-origin split
     ///      remainder is not labelled "Composed", which would assert a history it does not have.
     function _formation(uint256 units, uint256 originCount, bool isBlack)

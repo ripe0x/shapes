@@ -34,7 +34,7 @@ library Round03Rand {
         uint256 a;
     }
 
-    /// @dev (a * b) mod 2^32 — the semantics of JavaScript's Math.imul.
+    /// @dev (a * b) mod 2^32: the semantics of JavaScript's Math.imul.
     function _imul(uint256 a, uint256 b) private pure returns (uint256 r) {
         unchecked {
             r = (a * b) & M32;
@@ -70,11 +70,11 @@ library Round03Rand {
         return (nextU32(s) * n) / TWO32;
     }
 
-    /// @notice Whether the next draw falls below `pWad` — an event of probability exactly `pWad`.
+    /// @notice Whether the next draw falls below `pWad`: an event of probability exactly `pWad`.
     /// @dev Stated this way round rather than as `rand() > threshold` so the endpoints are
     ///      exact: `p = 0` is never true and `p = 1` is always true, because a draw lies in
     ///      [0, 1). That matters once the probability is itself drawn per card and allowed to
-    ///      reach 0 and 1 — a card that says "all solid" must contain no outlined mark at all.
+    ///      reach 0 and 1, a card that says "all solid" must contain no outlined mark at all.
     function nextBelowProbability(Stream memory s, uint256 pWad) internal pure returns (bool) {
         return nextU32(s) * FixedPoint.WAD < pWad * TWO32;
     }

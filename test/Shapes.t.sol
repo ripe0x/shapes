@@ -1917,7 +1917,7 @@ contract RecompositionTest is ShapesBase {
         shapes.redeem(id);
     }
 
-    /// @notice The child seeds derive from the parent seed and index alone — no block data. Mutating
+    /// @notice The child seeds derive from the parent seed and index alone, no block data. Mutating
     ///         the block environment before the split cannot change them, so a split cannot be
     ///         re-rolled by waiting for a friendlier block.
     function test_SplitChildSeedsIgnoreBlockEnv() public {
@@ -2236,7 +2236,7 @@ contract InkGeneComposeTest is ShapesBase {
     ///         `burnIds` orders replayed against the identical starting state via
     ///         `vm.snapshotState`/`vm.revertToState`, yield the identical gene. `burnSeedFold` is
     ///         an XOR fold (commutative, associative), so calldata order cannot leak into
-    ///         `geneAtCompose`'s output — this is that guarantee proven against real storage and
+    ///         `geneAtCompose`'s output. This is that guarantee proven against real storage and
     ///         real `_burn`s, not just the pure library function.
     function test_ComposeIsOrderInvariantOnChain() public {
         uint256 first = _mintDust(5);
@@ -2279,7 +2279,7 @@ contract InkGeneComposeTest is ShapesBase {
 
     /// @notice A genuinely homogeneous pool at a single-tier compose (T=1) is a fixed point:
     ///         built by decomposing one dust-gened Shape into children (which `split` copies
-    ///         the parent's gene to verbatim) and recomposing four of them — `best == worst ==
+    ///         the parent's gene to verbatim) and recomposing four of them: `best == worst ==
     ///         center == survivorGene` by construction, so the walk cannot move the gene.
     function test_ComposeHomogeneousPoolIsFixedPointAtOneTier() public {
         uint256 parent = _mint(alice, DENOMS[1]); // denomIndex 1, 5 units
@@ -2340,8 +2340,8 @@ contract InkGeneComposeTest is ShapesBase {
     /// @notice Gas for the 10,000-dust mega-compose, under the same construction the coordinator
     ///         asked about: 10,000 independent direct mints (each drawing its own gene, not a
     ///         forced-homogeneous pool) composed into one apex Complete. Not an assertion on the
-    ///         resulting gene — with 10,000 independently-drawn genes the pool is essentially
-    ///         never homogeneous — only that the ink-gene bookkeeping added to `compose` does not
+    ///         resulting gene (with 10,000 independently-drawn genes the pool is essentially
+    ///         never homogeneous), only that the ink-gene bookkeeping added to `compose` does not
     ///         blow past a sane gas ceiling, and a `console.log` of the true number for the
     ///         record.
     function test_ComposeMegaGasProfile_10000Dust() public {

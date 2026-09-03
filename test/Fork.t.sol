@@ -15,7 +15,7 @@ import {Base64Decode} from "./utils/Base64Decode.sol";
 
 /// @notice Full lifecycle against a real mainnet fork.
 ///
-/// @dev Shapes reads no external contract, so a fork is not needed for correctness — the
+/// @dev Shapes reads no external contract, so a fork is not needed for correctness: the
 ///      default suite already proves that. What the fork adds is a real block environment:
 ///      chain id 1, a post-merge `prevrandao`, a real prior blockhash and timestamp, all of
 ///      which feed the mint seed, plus realistic gas. This suite deploys through the actual
@@ -48,7 +48,7 @@ contract ForkTest is Test {
 
     bool internal live;
     /// @dev A CREATE address on a fork can coincide with a mainnet account that already holds
-    ///      a little ETH. That surplus is outside backing and permanently stranded — exactly
+    ///      a little ETH. That surplus is outside backing and permanently stranded, exactly
     ///      the forced-ETH case in SECURITY.md. Captured post-deploy so the reserve checks
     ///      compare against it instead of assuming a pristine zero balance.
     uint256 internal strayWei;

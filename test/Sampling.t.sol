@@ -315,7 +315,7 @@ contract SamplingTest is ShapesBase {
     /* ------------------------------ split ------------------------------ */
 
     /// @notice The 100 ETH -> 2x50 ETH case, direct-mint parent (no compose record): grammar
-    ///         branch (SAMPLING_SPEC.md §6, D3'). The parent's own apex module is irrelevant —
+    ///         branch (SAMPLING_SPEC.md §6, D3'). The parent's own apex module is irrelevant:
     ///         each child samples from `grammarSplitPool(parentSeed, childDenom, gene)`, the
     ///         grammar v1 expression at the CHILD's own denomination, which escapes the apex's
     ///         one-module monoculture (issue #21B).
@@ -432,7 +432,7 @@ contract SamplingTest is ShapesBase {
     }
 
     /// @notice D3' (SAMPLING_SPEC.md §6): children of an original (never-composed) parent also
-    ///         materialize, sampling from the grammar branch — the parent seed's grammar v1
+    ///         materialize, sampling from the grammar branch: the parent seed's grammar v1
     ///         expression at the CHILD's own denomination, not the parent's own grammar sequence
     ///         at the parent's denomination.
     function test_SplitChildrenOfOriginalParentAlsoMaterialize() public {
