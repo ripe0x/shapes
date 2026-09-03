@@ -92,9 +92,11 @@ contract V9InvariantReplayTest is Test {
         handler.decomposeMany(15841);
     }
 
-    function test_Replay_ReproducesTheRestoreMismatch() public {
+    /// @dev The sequence flagged a false mismatch before the handler compared each popped record
+    ///      on its own; the fixed handler keeps it clean.
+    function test_Replay_StaysCleanAfterTheHandlerFix() public {
         _replay(17);
-        assertTrue(handler.restoreMismatch(), "the recorded sequence did not reproduce");
+        assertFalse(handler.restoreMismatch(), "the replayed sequence flagged a restore mismatch");
     }
 
     /// @dev Which call first sets the flag.
