@@ -7,20 +7,31 @@ export const PUBLIC_SEPOLIA_RPCS = [
   "https://sepolia.gateway.tenderly.co",
 ] as const;
 
+/** Public mainnet endpoints from independent operators, tried after the configured primary and
+ *  the deployment record's RPC. Free gateways rate-limit bursts with HTTP 429; the fallback
+ *  transport moves to the next endpoint on any error. */
+export const PUBLIC_MAINNET_RPCS = [
+  "https://ethereum-rpc.publicnode.com",
+  "https://eth.llamarpc.com",
+  "https://cloudflare-eth.com",
+] as const;
+
 function nonEmpty(value: string | undefined): value is string {
   return value !== undefined && value.trim().length > 0;
 }
 
 /**
- * Keeps a configured provider first, while ensuring the public Sepolia site never depends on a
- * single operator. Local and non-Sepolia deployments intentionally keep their explicit RPC only.
+ * Keeps a configured provider first, then the deployment record's RPC, then public endpoints for
+ * mainnet and Sepolia so neither site depends on a single operator. Local chains keep their
+ * explicit RPC only.
  */
 export function rpcUrlsForChain(
   chainId: number,
   deploymentRpc: string,
   primaryRpc?: string,
 ): string[] {
-  const urls = [primaryRpc, deploymentRpc, ...(chainId === 11155111 ? PUBLIC_SEPOLIA_RPCS : [])]
+  const publicRpcs = chainId === 1 ? PUBLIC_MAINNET_RPCS : chainId === 11155111 ? PUBLIC_SEPOLIA_RPCS : [];
+  const urls = [primaryRpc, deploymentRpc, ...publicRpcs]
     .filter(nonEmpty)
     .map((url) => url.trim());
   return [...new Set(urls)];

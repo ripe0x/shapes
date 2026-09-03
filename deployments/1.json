@@ -1,5 +1,5 @@
 {
-  "rpc": "https://gateway.tenderly.co/public/mainnet",
+  "rpc": "https://ethereum-rpc.publicnode.com",
   "indexerUrl": "https://shapes-indexer-mainnet.fly.dev",
   "chainId": 1,
   "shapes": "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0",
