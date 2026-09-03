@@ -17,11 +17,11 @@ import {RecompositionOps} from "../src/lib/RecompositionOps.sol";
 ///         tests pin what such a call can reach: nothing on `Shapes`.
 /// @dev The storage-pointer parameter of a public library function is ABI-encoded as the slot
 ///      number, so the calldata below is exactly what a caller aiming at `Shapes`'s own layout
-///      would build: slot 6 is `_store`, slot 21 is `_presentation` (`forge inspect Shapes
-///      storageLayout`).
+///      would build: slot 6 is `_store`, slot 22 is `_presentation` (`forge inspect Shapes
+///      storage-layout`).
 contract LibraryIsolationTest is Test {
     uint256 internal constant STORE_SLOT = 6;
-    uint256 internal constant PRESENTATION_SLOT = 21;
+    uint256 internal constant PRESENTATION_SLOT = 22;
 
     Shapes internal shapes;
     ShapeRenderer internal renderer;

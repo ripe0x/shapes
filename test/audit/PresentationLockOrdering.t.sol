@@ -9,6 +9,7 @@ import {ShapeCollection} from "../../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../../src/ShapeRenderer.sol";
 import {IAdminControl} from "../../src/interfaces/IAdminControl.sol";
 import {IShapeCollection} from "../../src/interfaces/IShapeCollection.sol";
+import {IShapeGeometry} from "../../src/interfaces/IShapeGeometry.sol";
 import {IShapeRenderer, SplitProvenance} from "../../src/interfaces/IShapeRenderer.sol";
 import {IShapes} from "../../src/interfaces/IShapes.sol";
 import {Denominations} from "../../src/lib/Denominations.sol";
@@ -226,12 +227,13 @@ contract RogueCollection is IERC165 {
     }
 }
 
-/// @dev Answers ERC-165 for `IShapeRenderer` and reverts on every render call.
+/// @dev Answers ERC-165 for `IShapeRenderer` and `IShapeGeometry` and reverts on every call.
 contract RevertingRenderer is IERC165 {
     error RendererIsHostile();
 
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IERC165).interfaceId || id == type(IShapeRenderer).interfaceId;
+        return id == type(IERC165).interfaceId || id == type(IShapeRenderer).interfaceId
+            || id == type(IShapeGeometry).interfaceId;
     }
 
     fallback() external {
@@ -239,11 +241,12 @@ contract RevertingRenderer is IERC165 {
     }
 }
 
-/// @dev Answers ERC-165 for `IShapeRenderer` and returns a very long string from every render
-///      call.
+/// @dev Answers ERC-165 for `IShapeRenderer` and `IShapeGeometry` and returns a very long string
+///      from every call.
 contract HugeRenderer is IERC165 {
     function supportsInterface(bytes4 id) external pure returns (bool) {
-        return id == type(IERC165).interfaceId || id == type(IShapeRenderer).interfaceId;
+        return id == type(IERC165).interfaceId || id == type(IShapeRenderer).interfaceId
+            || id == type(IShapeGeometry).interfaceId;
     }
 
     fallback() external {

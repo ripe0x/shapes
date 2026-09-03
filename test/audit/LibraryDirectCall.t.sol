@@ -13,19 +13,19 @@ import {RecompositionOps} from "../../src/lib/RecompositionOps.sol";
 ///         the library's own address, with the storage-pointer argument crafted to name the slot
 ///         `Shapes` keeps that struct at, and confirm `Shapes` state is unchanged.
 ///
-/// @dev Slots from `forge inspect Shapes storageLayout` at this commit: `_store` 6,
-///      `_feeConfig` 16, `_artistAttestation` 19, `_presentation` 21, `_pointers` 23, `_admin` 25,
-///      `_ownerToken` 26. Selectors are the library ABI's own, taken from
+/// @dev Slots from `forge inspect Shapes storage-layout` at this commit: `_store` 6,
+///      `_feeConfig` 16, `_artistAttestation` 20, `_presentation` 22, `_pointers` 24, `_admin` 26,
+///      `_ownerToken` 27. Selectors are the library ABI's own, taken from
 ///      `forge inspect <lib> methodIdentifiers`; a storage-pointer parameter is ABI-encoded as the
 ///      slot number.
 contract LibraryDirectCallTest is AuditBase {
     uint256 private constant SLOT_STORE = 6;
     uint256 private constant SLOT_FEE_CONFIG = 16;
-    uint256 private constant SLOT_ARTIST = 19;
-    uint256 private constant SLOT_PRESENTATION = 21;
-    uint256 private constant SLOT_POINTERS = 23;
-    uint256 private constant SLOT_ADMIN = 25;
-    uint256 private constant SLOT_OWNER_TOKEN = 26;
+    uint256 private constant SLOT_ARTIST = 20;
+    uint256 private constant SLOT_PRESENTATION = 22;
+    uint256 private constant SLOT_POINTERS = 24;
+    uint256 private constant SLOT_ADMIN = 26;
+    uint256 private constant SLOT_OWNER_TOKEN = 27;
 
     /// @dev Every protocol fact `Shapes` exposes through a getter, folded into one digest.
     function _snap() private view returns (bytes32) {
@@ -105,11 +105,10 @@ contract LibraryDirectCallTest is AuditBase {
         _call(address(RecompositionOps), abi.encodeWithSelector(bytes4(0x8e66ac36), SLOT_STORE, survivor, 0));
         _call(
             address(RecompositionOps),
-            abi.encodeWithSelector(bytes4(0x65e1e9f6), SLOT_STORE, alice, survivor, burnIds)
+            abi.encodeWithSelector(bytes4(0xfbd9b802), SLOT_STORE, survivor, burnIds)
         );
         _call(
-            address(RecompositionOps),
-            abi.encodeWithSelector(bytes4(0xa3ac9ef9), SLOT_STORE, alice, survivor, outs)
+            address(RecompositionOps), abi.encodeWithSelector(bytes4(0x723eef4c), SLOT_STORE, survivor, outs)
         );
         _call(address(RecompositionOps), abi.encodeWithSelector(bytes4(0x5f7cde24), burnIds));
 
@@ -274,21 +273,21 @@ contract LibraryDirectCallTest is AuditBase {
         bytes32 before = _snap();
         bytes32[] memory raw = _rawSlots();
 
-        // `Presentation` at slot 21: `collection` and `locked` share slot 22 (`collection` in the
+        // `Presentation` at slot 22: `collection` and `locked` share slot 23 (`collection` in the
         // low 160 bits, `locked` at byte 20). Since 887497c, `lockPresentation` reverts
         // `CollectionNotSet` while `collection` is zero; seed the clone's own copy of that field
         // so the call reaches the write this test is about, entirely within the clone's isolated
         // storage and independent of Shapes, which never had `setCollection` called on the clone.
-        vm.store(clone, bytes32(uint256(22)), bytes32(uint256(uint160(address(0xC011)))));
+        vm.store(clone, bytes32(uint256(23)), bytes32(uint256(uint160(address(0xC011)))));
 
-        bytes32 cloneSlot22Before = vm.load(clone, bytes32(uint256(22)));
+        bytes32 cloneSlot23Before = vm.load(clone, bytes32(uint256(23)));
         (bool ok,) = clone.call(abi.encodeWithSelector(bytes4(0xaefafe15), SLOT_PRESENTATION));
         assertTrue(ok, "the library body did not run without the call protection");
 
-        bytes32 cloneSlot22After = vm.load(clone, bytes32(uint256(22)));
-        assertTrue(cloneSlot22Before != cloneSlot22After, "the write did not land anywhere");
+        bytes32 cloneSlot23After = vm.load(clone, bytes32(uint256(23)));
+        assertTrue(cloneSlot23Before != cloneSlot23After, "the write did not land anywhere");
         assertEq(
-            uint256(cloneSlot22After) >> 160, 1, "the lock landed somewhere other than the clone's own slot"
+            uint256(cloneSlot23After) >> 160, 1, "the lock landed somewhere other than the clone's own slot"
         );
 
         assertFalse(shapes.presentationLocked(), "Shapes was locked from another account");
