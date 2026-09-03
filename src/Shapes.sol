@@ -209,7 +209,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      the admin calls `setCollection`, which deployment does immediately.
     constructor(uint256 mintFee_, address feeRecipient_, address renderer_, uint64 mintStart_)
         payable
-        ERC721("Shapes", "SHAPES")
+        ERC721("Shapes", "SHAPE")
     {
         if (feeRecipient_ == address(0)) revert AdminInvalidFeeRecipient(address(0));
         AdminOps.requireRenderer(renderer_);

@@ -915,7 +915,7 @@ contract ViewTest is ShapesBase {
 
     function test_NameSymbolAndInterfaces() public view {
         assertEq(shapes.name(), "Shapes");
-        assertEq(shapes.symbol(), "SHAPES");
+        assertEq(shapes.symbol(), "SHAPE");
         assertTrue(shapes.supportsInterface(type(IERC165).interfaceId));
         assertTrue(shapes.supportsInterface(type(IERC721).interfaceId));
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));
