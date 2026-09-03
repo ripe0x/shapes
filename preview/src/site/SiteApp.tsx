@@ -8,6 +8,8 @@ import {txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
+import {awaitSuccessfulReceipt, bufferGas} from "./tx";
+import {clearStoredActionNotice, storeActionNotice, takeStoredActionNotice, type ActionNotice} from "./actionNotice";
 import {MintView} from "./MintView";
 import {MintPanel} from "./MintPanel";
 import {GalleryView} from "./GalleryView";
@@ -104,12 +106,17 @@ export function SiteApp({
   const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
   const [txHash, setTxHash] = React.useState<string | null>(null);
-  const [actionNotice, setActionNotice] = React.useState<{
-    title: string;
-    detail: string;
-    hash: string;
-    tokenIds: bigint[];
-  } | null>(null);
+  // A route change right after a write remounts SiteApp (the Next host's catch-all segment), so
+  // the notice a previous mount just set would otherwise vanish before it could be read. The
+  // lazy initializer picks up whatever the mount before this one stored.
+  const [actionNotice, setActionNoticeState] = React.useState<ActionNotice | null>(() =>
+    takeStoredActionNotice(),
+  );
+  const setActionNotice = (notice: ActionNotice | null) => {
+    setActionNoticeState(notice);
+    if (notice) storeActionNotice(notice);
+    else clearStoredActionNotice();
+  };
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
   const accountMenuRef = React.useRef<HTMLDivElement>(null);
   const accountLabel = useEnsDisplay(publicClient, address);
@@ -197,28 +204,48 @@ export function SiteApp({
   // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
   // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
   // (no hash yet) apart from "pending" (hash in hand, waiting for the receipt).
+  // Every write is sent with an explicit gas limit: the reentrancy guard re-executes under the
+  // 63/64 rule, so leaving gas to the wallet's own estimate under-funds that re-execution often
+  // enough to matter (most visibly on mintBatch). Estimated with the connected account, then
+  // buffered by `bufferGas`, the same margin auction bids already used.
+  const estimateGas = async (
+    contractAddress: `0x${string}`,
+    abi: typeof shapesAbi | typeof auctionHouseAbi,
+    functionName: string,
+    args: readonly unknown[],
+    value?: bigint,
+  ) => {
+    if (!publicClient || !address) return undefined;
+    const estimate = await publicClient.estimateContractGas({
+      address: contractAddress,
+      abi,
+      functionName,
+      args,
+      value,
+      account: address,
+    } as Parameters<typeof publicClient.estimateContractGas>[0]);
+    return bufferGas(estimate);
+  };
+
   const write = async (op: string, functionName: string, args: readonly unknown[], value?: bigint) => {
     await ensureChain();
+    const gas = await estimateGas(dep.shapes, shapesAbi, functionName, args, value);
     const hash = await writeContractAsync({
       address: dep.shapes,
       abi: shapesAbi,
       functionName,
       args,
       value,
+      gas,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
     setPendingTx({op, hash});
     return hash;
   };
 
-  const writeHouse = async (
-    op: string,
-    functionName: string,
-    args: readonly unknown[],
-    value?: bigint,
-    gas?: bigint,
-  ) => {
+  const writeHouse = async (op: string, functionName: string, args: readonly unknown[], value?: bigint) => {
     await ensureChain();
+    const gas = await estimateGas(dep.auctionHouse!, auctionHouseAbi, functionName, args, value);
     const hash = await writeContractAsync({
       address: dep.auctionHouse!,
       abi: auctionHouseAbi,
@@ -238,8 +265,9 @@ export function SiteApp({
     try {
       const wei = DENOMINATIONS[sel].wei;
       const req = mintRequest(dep, {amountWei: wei, quantity: qty, fee: data.fees[sel]});
-      const hash = await writeContractAsync(req as unknown as Parameters<typeof writeContractAsync>[0]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const gas = await estimateGas(req.address, req.abi, req.functionName, req.args, req.value);
+      const hash = await writeContractAsync({...req, gas} as unknown as Parameters<typeof writeContractAsync>[0]);
+      const receipt = await awaitSuccessfulReceipt(publicClient, hash, req);
       const logs = parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs});
       await refresh(logs.map((l) => l.args.tokenId));
       setMint({
@@ -263,7 +291,7 @@ export function SiteApp({
     setRedeem({status: "pending"});
     try {
       const hash = await write("redeem", "redeem", [t.id]);
-      await publicClient.waitForTransactionReceipt({hash});
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "redeem", args: [t.id]});
       await refresh([t.id]);
       setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
       setActionNotice({
@@ -292,8 +320,9 @@ export function SiteApp({
     try {
       const downWei = DENOMINATIONS[t.di - 1].wei;
       const ratio = Number(t.backing / downWei);
-      const hash = await write("split", "split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const args = [t.id, Array<number>(ratio).fill(t.di - 1)];
+      const hash = await write("split", "split", args);
+      const receipt = await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "split", args});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs});
       const newIds = logs[0]?.args.newIds ?? [];
       await refresh([t.id, ...newIds]);
@@ -322,7 +351,7 @@ export function SiteApp({
     setActionNotice(null);
     try {
       const hash = await write("decompose", "decompose", [t.id]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const receipt = await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "decompose", args: [t.id]});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs});
       const restoredIds = logs[0]?.args.restoredIds ?? [];
       // dirty: the survivor keeps its id but its state reverted, which a same-owner ownerOf
@@ -352,7 +381,7 @@ export function SiteApp({
     try {
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
       const hash = await write("compose", "compose", [t.id, sorted]);
-      await publicClient.waitForTransactionReceipt({hash});
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "compose", args: [t.id, sorted]});
       // dirty: the survivor keeps its id but grew, which a same-owner ownerOf read alone can't
       // reveal.
       await refresh([t.id, ...sorted]);
@@ -382,7 +411,7 @@ export function SiteApp({
     setActionNotice(null);
     try {
       const hash = await write("burnBacking", "burnBacking", [t.id]);
-      await publicClient.waitForTransactionReceipt({hash});
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "burnBacking", args: [t.id]});
       // dirty: backing goes to zero under the same owner, which ownerOf alone can't reveal.
       await refresh([t.id]);
       setActionNotice({
@@ -440,17 +469,9 @@ export function SiteApp({
     try {
       // A bid that mints its own cards lands exactly on the edge where the estimate is too tight
       // and the mint's reentrancy guard runs out of gas re-executing (ReentrancySentryOOG).
-      // Estimate, then buffer; the block gas limit still caps it.
-      const estimate = await publicClient.estimateContractGas({
-        address: dep.auctionHouse,
-        abi: auctionHouseAbi,
-        functionName: fn,
-        args,
-        value,
-        account: address!,
-      } as Parameters<typeof publicClient.estimateContractGas>[0]);
-      const hash = await writeHouse(op, fn, args, value, (estimate * 3n) / 2n);
-      await publicClient.waitForTransactionReceipt({hash});
+      // `writeHouse` estimates and buffers gas itself; the block gas limit still caps it.
+      const hash = await writeHouse(op, fn, args, value);
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.auctionHouse, abi: auctionHouseAbi, functionName: fn, args, value});
       setTxHash(hash);
       await Promise.all([refresh(), refreshAuction()]);
     } catch (e) {
