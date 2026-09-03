@@ -7064,6 +7064,18 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": ""
       },
       {
+        "name": "ShapesUnsupported",
+        "signature": "ShapesUnsupported(address)",
+        "inputs": [
+          {
+            "name": "shapes",
+            "type": "address"
+          }
+        ],
+        "notice": "",
+        "dev": ""
+      },
+      {
         "name": "UnsupportedRenderer",
         "signature": "UnsupportedRenderer(address)",
         "inputs": [

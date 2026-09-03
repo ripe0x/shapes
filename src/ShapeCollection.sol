@@ -5,6 +5,7 @@ import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
+import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
@@ -65,6 +66,7 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     string private _ownerTokenDescription;
 
     error ShapesHasNoCode(address shapes);
+    error ShapesUnsupported(address shapes);
 
     /// @param renderer_ Renderer every card and the collection image are drawn through. Fixed at
     ///        construction and immutable after, so it is validated the same way `Shapes` validates
@@ -72,10 +74,20 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     ///        `Shapes` holds its own renderer pointer, which the admin can replace until
     ///        presentation is locked.
     /// @param shapes_ The `Shapes` token this collection describes. Its `admin()` may edit the
-    ///        metadata copy and its `presentationLocked()` freezes it. Fixed at construction.
+    ///        metadata copy and its `presentationLocked()` freezes it. Fixed at construction and
+    ///        validated the same way `renderer_` is: must have code and answer ERC-165 for
+    ///        `IAdminControl`, `IShapes` and `IERC721Metadata`, the interfaces this collection
+    ///        calls on it.
     constructor(IShapeRenderer renderer_, IShapes shapes_) {
         AdminOps.requireRenderer(address(renderer_));
         if (address(shapes_).code.length == 0) revert ShapesHasNoCode(address(shapes_));
+        if (
+            !_supportsShapes(address(shapes_), type(IAdminControl).interfaceId)
+                || !_supportsShapes(address(shapes_), type(IShapes).interfaceId)
+                || !_supportsShapes(address(shapes_), type(IERC721Metadata).interfaceId)
+        ) {
+            revert ShapesUnsupported(address(shapes_));
+        }
         renderer = address(renderer_);
         shapes = address(shapes_);
         _tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
@@ -212,5 +224,15 @@ contract ShapeCollection is IShapeCollection, IERC165 {
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId || interfaceId == type(IShapeCollection).interfaceId;
+    }
+
+    /// @dev Returns false when the call reverts and when it returns false, so the constructor's
+    ///      revert path is the same however `target` failed the check.
+    function _supportsShapes(address target, bytes4 interfaceId) private view returns (bool) {
+        try IERC165(target).supportsInterface(interfaceId) returns (bool supported) {
+            return supported;
+        } catch {
+            return false;
+        }
     }
 }

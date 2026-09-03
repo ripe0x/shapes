@@ -127,6 +127,18 @@ contract CollectionTest is Test {
         new ShapeCollection(renderer, IShapes(address(0xBEEF)));
     }
 
+    function test_ConstructorRefusesShapesWithoutErc165Support() public {
+        // `renderer` has code and answers ERC-165, but not for `IAdminControl`, `IShapes` or
+        // `IERC721Metadata`, the interfaces this collection calls on `shapes`.
+        vm.expectRevert(abi.encodeWithSelector(ShapeCollection.ShapesUnsupported.selector, address(renderer)));
+        new ShapeCollection(renderer, IShapes(address(renderer)));
+    }
+
+    function test_ConstructorAcceptsARealShapes() public {
+        ShapeCollection fresh = new ShapeCollection(renderer, shapes);
+        assertEq(fresh.shapes(), address(shapes));
+    }
+
     function test_CollectionNamesItsTokenAndRenderer() public view {
         assertEq(collection.shapes(), address(shapes), "collection points at another token");
         assertEq(collection.renderer(), address(renderer), "collection points at another renderer");
