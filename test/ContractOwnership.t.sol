@@ -29,7 +29,7 @@ contract ContractOwnershipTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
     }
 
@@ -60,7 +60,7 @@ contract ContractOwnershipTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.IncorrectPayment.selector, Denominations.amountAt(0), 0)
         );
-        new Shapes(MINT_FEE, feeRecipient, address(renderer), address(collection));
+        new Shapes(MINT_FEE, feeRecipient, address(renderer), address(collection), 0);
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -68,14 +68,14 @@ contract ContractOwnershipTest is Test {
             )
         );
         new Shapes{value: Denominations.amountAt(0) + 1}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
     }
 
     function test_ConstructorCanSimulateAtGenesisBlock() public {
         vm.roll(0);
         Shapes genesisShapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
 
         assertEq(genesisShapes.ownerOf(0), address(this));
@@ -180,7 +180,7 @@ contract ContractOwnershipTest is Test {
     function test_AdminCanRecoverWithdrawalFromRevertingFeeRecipient() public {
         RevertingFeeRecipient revertingRecipient = new RevertingFeeRecipient();
         Shapes recoverable = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(revertingRecipient), address(renderer), address(collection)
+            MINT_FEE, address(revertingRecipient), address(renderer), address(collection), 0
         );
         uint256 backing = Denominations.amountAt(0);
         uint256 fee = recoverable.mintFee();
@@ -251,8 +251,9 @@ contract ContractOwnershipTest is Test {
         // push-forwarded-and-immutable to pull-based accrual with an admin-adjustable amount.
         // `ownerToken` was added when collection ownership moved from being fixed to Shape #0 to
         // following a movable owner token (issue #56).
+        // `mintStart` was added with the immutable mint-start gate on `mintBatch`/`mintBatchTo`.
         // Update these constants only when the function set changes on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0x86df37ba), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0xa381713f), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

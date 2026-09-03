@@ -17,6 +17,8 @@
 #   SHAPES_FEE_RECIPIENT / SHAPES_MINT_FEE_WEI     forwarded to Deploy.s.sol; must agree with a
 #                                                  nonempty FEE_RECIPIENT / MINT_FEE_WEI in the
 #                                                  env file if one is set there.
+#   MINT_START                                     overrides the env file's MINT_START (a
+#                                                  rehearsal sets this a few minutes ahead).
 #   DRY_RUN=1                                     simulate only: the REQUIRE_MAIN git guards
 #                                                  (branch, fetched origin/main, clean tree, no
 #                                                  untracked files) still run, but a failure only
@@ -42,10 +44,16 @@ cd "$REPO_ROOT"
 ENV_FILE="script/env/${ENV_NAME}.env"
 [ -f "$ENV_FILE" ] || { echo "missing $ENV_FILE" >&2; exit 1; }
 
+# A shell-provided MINT_START (a rehearsal setting it a few minutes ahead) must survive the env
+# file's own MINT_START assignment below, so it is snapshotted before sourcing.
+MINT_START_OVERRIDE="${MINT_START:-}"
+
 set -a
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 set +a
+
+[ -z "$MINT_START_OVERRIDE" ] || MINT_START="$MINT_START_OVERRIDE"
 
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -90,9 +98,11 @@ if [ -n "${FEE_RECIPIENT:-}" ]; then
   fi
   export SHAPES_FEE_RECIPIENT="$FEE_RECIPIENT"
 fi
+[ -z "${MINT_START:-}" ] || export SHAPES_MINT_START="$MINT_START"
 # Otherwise FEE_RECIPIENT is empty by design (anvil): pass through whatever the caller already
 # exported as SHAPES_FEE_RECIPIENT (fork-dev.sh does this), or leave it unset so Deploy.s.sol
-# defaults to the deployer on chain id 31337.
+# defaults to the deployer on chain id 31337. MINT_START works the same way: the shell override
+# snapshotted above wins, otherwise the env file's own value (or its blank default) applies.
 
 # --- guards: identical code path for every target, switched only by the env file's values ------
 
@@ -267,6 +277,9 @@ require_address_read 'auction-house target' "$(cast call "$HOUSE" 'shapes()(addr
 
 MINT_FEE_ONCHAIN=$(cast call "$SHAPES" 'mintFee()(uint256)' --rpc-url "$RPC" | awk '{print $1}')
 [ -z "${MINT_FEE_WEI:-}" ] || require_uint_read 'mint fee' "$MINT_FEE_ONCHAIN" "$MINT_FEE_WEI"
+MINT_START_ONCHAIN=$(cast call "$SHAPES" 'mintStart()(uint64)' --rpc-url "$RPC" | awk '{print $1}')
+echo "  mint start   $MINT_START_ONCHAIN"
+[ -z "${MINT_START:-}" ] || require_uint_read 'mint start' "$MINT_START_ONCHAIN" "$MINT_START"
 require_uint_read 'denomination count' "$(cast call "$SHAPES" 'denominationCount()(uint8)' --rpc-url "$RPC")" 9
 require_uint_read 'Shape #0 denomination' \
   "$(cast call "$SHAPES" 'denomIndexOf(uint256)(uint8)' 0 --rpc-url "$RPC")" 0
@@ -339,8 +352,9 @@ jq -n \
   --arg lens "$LENS" \
   --arg auctionHouse "$HOUSE" \
   --arg mintFeeWei "$MINT_FEE_ONCHAIN" \
+  --arg mintStart "$MINT_START_ONCHAIN" \
   --argjson fromBlock "$FROM_BLOCK" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,lens:$lens,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,fromBlock:$fromBlock}' \
+  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,lens:$lens,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock}' \
   >"$DEPLOYMENT_FILE"
 
 echo

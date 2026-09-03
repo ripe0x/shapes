@@ -27,7 +27,7 @@ contract MedusaReserveHarness {
         ShapeRenderer renderer = new ShapeRenderer();
         ShapeCollection collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0xFEE), address(renderer), address(collection)
+            MINT_FEE, address(0xFEE), address(renderer), address(collection), 0
         );
         // Harness is the genesis owner. Keep #0 live, because it contributes its backing to the
         // property from the beginning of every Medusa sequence.

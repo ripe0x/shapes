@@ -639,8 +639,8 @@ lens previews what the token executes (see below) before reporting success.
 One wrapper, `script/deploy.sh <anvil|sepolia|mainnet>`, runs it for every target through the
 same code path, sourcing `script/env/<name>.env` for the values that differ: chain id, Foundry
 profile, default RPC, verify flag, main-branch guard, wallet mode, deployer, fee recipient, mint
-fee, EOA-recipient guard, indexer URL. `DRY_RUN=1` runs the guards and the forge simulation with
-no wallet, broadcast, or verification.
+fee, mint start, EOA-recipient guard, indexer URL. `DRY_RUN=1` runs the guards and the forge
+simulation with no wallet, broadcast, or verification.
 
 ```bash
 anvil                       # in one shell
@@ -671,7 +671,7 @@ After a real broadcast, the wrapper reads the broadcast artifact, reads back eve
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
 `indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
-`mintFeeWei`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
+`mintFeeWei`, `mintStart`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
 gitignored; Sepolia and mainnet records are committed.
 
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712

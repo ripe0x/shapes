@@ -155,7 +155,7 @@ contract AuctionSecurityTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, makeAddr("fee"), address(renderer), address(collection)
+            MINT_FEE, makeAddr("fee"), address(renderer), address(collection), 0
         );
         vm.deal(seller, 10 ether);
         house = new ShapeAuctionHouse(address(shapes));
@@ -284,7 +284,7 @@ contract AuctionSecurityTest is Test {
         MaliciousFeeRecipient mal = new MaliciousFeeRecipient();
         // A separate Shapes whose fee recipient is the malicious contract.
         Shapes shapes2 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection), 0
         );
         ShapeAuctionHouse house2 = new ShapeAuctionHouse(address(shapes2));
         mal.setTargets(shapes2, address(house2));
@@ -335,7 +335,7 @@ contract AuctionSecurityTest is Test {
     function test_L1_ABidCannotBeRecordedOnAnAuctionCancelledMidCall() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
         Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection), 0
         );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
@@ -362,7 +362,7 @@ contract AuctionSecurityTest is Test {
         // withdrawFees, and does — harmlessly, since there is nothing bid to steal.
         ReentrantCancelSeller mal2 = new ReentrantCancelSeller();
         Shapes shapes4 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal2), address(renderer), address(collection)
+            MINT_FEE, address(mal2), address(renderer), address(collection), 0
         );
         ShapeAuctionHouse house4 = new ShapeAuctionHouse(address(shapes4));
         mal2.setTargets(shapes4, house4);
@@ -391,7 +391,7 @@ contract AuctionSecurityTest is Test {
     function test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
         Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection)
+            MINT_FEE, address(mal), address(renderer), address(collection), 0
         );
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);

@@ -602,7 +602,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         // The handler must own and account for every live Shape. Genesis ownership is covered by
         // ContractOwnership.t.sol, so retire it before handing this collection to the handler.
@@ -1066,7 +1066,7 @@ contract AuctionInvariantTest is StdInvariant, Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
         );
         house = new ShapeAuctionHouse(address(shapes));
         handler = new AuctionHandler(shapes, house);
@@ -1211,7 +1211,7 @@ contract AuctionInvariantHostileFeeTest is AuctionInvariantTest {
         collection = new ShapeCollection(address(renderer));
         hostile = new HostileAuctionFeeRecipient();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(hostile), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(hostile), address(renderer), address(collection), 0
         );
         house = new ShapeAuctionHouse(address(shapes));
         hostile.setTargets(shapes, address(house));

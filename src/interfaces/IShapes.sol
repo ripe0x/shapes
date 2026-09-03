@@ -157,6 +157,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev A mint fee, at construction or via `setMintFee`, above the cap, `unit()`.
     error MintFeeAboveCap(uint256 fee);
     error DirectDepositRejected();
+    /// @dev `mintBatch` and `mintBatchTo` revert before `block.timestamp` reaches `mintStart`.
+    error MintNotOpen();
     /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
     ///      minting and transferring to `address(this)` are both refused.
     error SelfCustodyRejected(uint256 tokenId);
@@ -211,6 +213,11 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         cap, enforced at construction and by `setMintFee`, is one denomination unit,
     ///         `unit()`.
     function mintFee() external view returns (uint256);
+
+    /// @notice Unix timestamp at or after which `mintBatch` and `mintBatchTo` accept calls. Zero
+    ///         means open at deploy. Immutable, set at construction. The constructor mints Shape
+    ///         #0 before this gate applies.
+    function mintStart() external view returns (uint64);
 
     /// @notice Mint fees accrued and not yet withdrawn. Never part of `redeemableBacking`.
     function pendingFees() external view returns (uint256);
