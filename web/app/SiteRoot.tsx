@@ -5,13 +5,14 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import { SiteApp, type View } from "@shared/site/SiteApp";
 import { useShapesDeployment } from "./ShapesProviders";
+import { LaunchLanding } from "./LaunchLanding";
 
-// Route slug <-> SiteApp view. The launch page owns "/"; the full mint app lives at "/mint".
+// Route slug <-> SiteApp view. "home" owns "/"; the full mint app lives at "/mint".
 function pathFor(view: View, tokenId: bigint | null): string {
+  if (view === "home") return "/";
   if (view === "auction") return "/auction";
   if (view === "gallery") return "/gallery";
   if (view === "collection") return "/my-shapes";
-  if (view === "about") return "/how-it-works";
   if (view === "token" && tokenId !== null) return `/shape/${tokenId.toString()}`;
   if (view === "manage" && tokenId !== null) return `/shape/${tokenId.toString()}/manage`;
   return "/mint";
@@ -37,6 +38,7 @@ export function SiteRoot({
       initialView={initialView}
       initialTokenId={initialTokenId}
       onNavigate={(view, tokenId) => router.push(pathFor(view, tokenId))}
+      renderHome={(mint, footer) => <LaunchLanding live mintSlot={mint} footer={footer} />}
     />
   );
 }

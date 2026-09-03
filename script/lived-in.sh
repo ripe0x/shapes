@@ -44,6 +44,9 @@ fi
 
 say "Seeding roughly six weeks of lived-in activity (preview/scripts/simulateHistory.ts)"
 (cd preview && npm run simulate:history)
+# Seeding runs on automine so it finishes in minutes. Afterward the chain mines a block every 12s
+# like mainnet, so block timestamps track wall time and auction clocks read correctly in the site.
+cast rpc evm_setIntervalMining 12 --rpc-url "$RPC" >/dev/null
 
 mkdir -p "$(dirname "$LOCAL_DEPLOYMENT_FILE")"
 cp "$DEPLOYMENT_FILE" "$LOCAL_DEPLOYMENT_FILE"

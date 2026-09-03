@@ -8,7 +8,7 @@ import {
   type HistEvent,
   type ProvNode,
 } from "../chain/history";
-import {C, label} from "./theme";
+import {C, FONT, SANS, label} from "./theme";
 import {Section, Art, Modal, short, txUrl} from "./ui";
 import {localArt} from "./art";
 import {mintGene} from "../previewGene";
@@ -18,7 +18,6 @@ import {
   loadDna,
   loadDnaFromSnapshot,
   deriveSeedDna,
-  geometryPercents,
   type DnaCell,
   type DnaResult,
   type DnaDonor,
@@ -30,8 +29,10 @@ import {
 import {moduleBytesToHex} from "../canonical/moduleCodec";
 import type {CardGeometry} from "../canonical/render";
 import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
-import {isProvenanceRollup, provenanceRollupLabel, unrollLineage} from "./provenance";
-import type {Lineage as LineageT} from "./provenance";
+import {ProvenanceTree, initialExpandedKeys, type TreeNode} from "./ProvenanceTree";
+import {C as PROV_C, forDisplay} from "../app/ui";
+import {DetailPanel, GridOverlayCells, donorColor, useActiveCell} from "../app/provenance";
+import {downloadTracePng, downloadTraceSvg, svgFromDataUri} from "../app/traceExport";
 import {displayTraits} from "./displayTraits";
 import {shapeTitle} from "./shapeTitle";
 
@@ -100,6 +101,35 @@ export function TokenView({
       cancelled = true;
     };
   }, [publicClient, dep, tokenId, data]);
+
+  // The provenance tree, plus a lookup from tree key to the live token id it represents (only
+  // live nodes navigate; everything else focuses in place). Rebuilt whenever the chain-derived
+  // ancestry or the set of live tokens changes.
+  const provTree = React.useMemo(() => {
+    if (!prov) return null;
+    const liveIds = new Map<string, bigint>();
+    const root = provNodeToTree(prov, data?.tokens ?? [], "root", liveIds);
+    return {root, liveIds};
+  }, [prov, data?.tokens]);
+
+  const [focusedKey, setFocusedKey] = React.useState<string>("root");
+  const [expandedKeys, setExpandedKeys] = React.useState<ReadonlySet<string>>(new Set());
+  React.useEffect(() => {
+    setFocusedKey("root");
+    setExpandedKeys(provTree ? initialExpandedKeys(provTree.root) : new Set());
+  }, [provTree]);
+
+  const handleSelectProvNode = (key: string) => {
+    const liveId = provTree?.liveIds.get(key);
+    if (liveId != null) onOpenToken(liveId);
+    else setFocusedKey(key);
+  };
+  const toggleProvExpanded = (key: string) =>
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   // Token history from the event log, with block timestamps resolved to dates.
   React.useEffect(() => {
@@ -225,7 +255,7 @@ export function TokenView({
             <div style={{flex: "1 1 320px", minWidth: 0}}>
               {/* Burned: never the live owner token. */}
               <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(snap.id, false)}</div>
-              <div style={{marginTop: 20, fontSize: 13, lineHeight: 1.7}}>
+              <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
                 <div>
                   Redeemed. {DENOMINATIONS[snap.di].wei.toString()} wei ({lbl} ETH) sent to{" "}
                   {address ? short(address) : "the owner"}. The token is burned.
@@ -235,7 +265,7 @@ export function TokenView({
                     href={txUrl(redeem.tx, dep.chainId)}
                     target="_blank"
                     rel="noreferrer"
-                    style={{display: "inline-block", marginTop: 12, fontSize: 12, overflowWrap: "anywhere"}}
+                    style={{display: "inline-block", marginTop: 12, fontFamily: FONT, fontSize: 12, overflowWrap: "anywhere"}}
                   >
                     {redeem.tx.slice(0, 12)}… on evm.now
                   </a>
@@ -258,7 +288,7 @@ export function TokenView({
         <Section title="SHAPE">
           {/* Not live: never the current owner token. */}
           <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId, false)}</div>
-          <div style={{fontSize: 13, lineHeight: 1.75, color: C.bodyDim, maxWidth: "60ch"}}>
+          <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.bodyDim, maxWidth: "60ch"}}>
             {data
               ? `Shape ${tokenId.toString()} is no longer live. It was redeemed or recomposed. Its history is below.`
               : "Reading the chain…"}
@@ -276,9 +306,9 @@ export function TokenView({
         <Section title="BLACK SHAPE" pad="36px 48px 44px 32px">
           <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={token.image} alt={`Black Shape ${token.id}`} width={340} />
-            <div style={{flex: "1 1 320px", minWidth: 0, fontSize: 13, lineHeight: 1.75}}>
+            <div style={{flex: "1 1 320px", minWidth: 0}}>
               <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id, isOwnerToken)}</div>
-              <div style={{marginTop: 20}}>
+              <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
                 #{token.id.toString()} has been sacrificed. It remains part of the collection, but
                 has no redeemable ETH backing and cannot be split, composed, or redeemed.
               </div>
@@ -374,15 +404,17 @@ export function TokenView({
 
       <History history={history} chainId={dep.chainId} />
 
-      {prov && prov.contributors.length > 0 && (
+      {prov && prov.contributors.length > 0 && provTree && (
         <Section title="PROVENANCE" pad="16px 48px 36px 32px">
-          <p style={{margin: "8px 0 26px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
-            How this Shape came to be, oldest first: where it started, every Shape merged into it
-            at each step, and what it is now. Burned Shapes are drawn from their recorded seeds.
-          </p>
-          <div style={{overflowX: "auto", paddingBottom: 8}}>
-            <Lineage lineage={unrollLineage(prov)} live={data?.tokens ?? []} onOpen={onOpenToken} depth={0} />
-          </div>
+          <ProvenanceTree
+            root={provTree.root}
+            focusedKey={focusedKey}
+            onSelect={handleSelectProvNode}
+            expandedKeys={expandedKeys}
+            onToggleExpanded={toggleProvExpanded}
+            resetKey={tokenId.toString()}
+            exportBase={tokenId.toString()}
+          />
         </Section>
       )}
 
@@ -416,177 +448,44 @@ export function TokenView({
   );
 }
 
-/** Node card width per nesting depth (nested "built from N" expansions shrink). */
-const LINEAGE_CARD_W = [130, 76, 52, 40];
-const lineageCardWidth = (depth: number) => LINEAGE_CARD_W[Math.min(depth, LINEAGE_CARD_W.length - 1)];
-// Deepest a "built from N" chip may expand before it stops offering further nesting.
-const LINEAGE_MAX_NEST_DEPTH = LINEAGE_CARD_W.length - 1;
-const LINEAGE_STUB = 14; // vertical run of the dashed split connector
+/// One relation word per non-root `ProvNode.rel`, as shown under a provenance card.
+const PROV_RELATION_LABEL: Partial<Record<ProvNode["rel"], string>> = {
+  merged: "merged",
+  splitSource: "split parent",
+  piece: "piece",
+  self: "earlier state",
+};
 
-/** A token's art card: image plus a one-line caption. Live tokens open their detail page. */
-function LineageCard({
-  node,
-  width,
-  live,
-  onOpen,
-  caption,
-  dim,
-  tooltip,
-}: {
-  node: ProvNode;
-  width: number;
-  live: SiteToken[];
-  onOpen: (id: bigint) => void;
-  caption: string;
-  dim?: boolean;
-  tooltip?: string;
-}) {
-  const isLive = live.some((t) => t.id === node.id);
-  const card = (
-    <div style={{width, opacity: dim ? 0.35 : 1}} title={tooltip}>
-      {/* Provenance nodes carry no gene: the event log (chain/history.ts) does not yet track
-          InkGene events, so a historical node's exact ink is unknown here. mintGene is exact for a
-          direct-mint node and an approximation for a composed one. Threading real genes through the
-          provenance tree needs the indexer extended for InkGene (SPEC.md D17 / preview UX). */}
-      <Art src={localArt(node.seed, DENOMINATIONS[node.di].wei, mintGene(node.seed, DENOMINATIONS[node.di].wei))} />
-      <div style={{marginTop: 5, fontSize: 10, color: C.muted, textAlign: "center"}}>{caption}</div>
-    </div>
-  );
-  return isLive ? (
-    <button type="button" className="btn-ghost" onClick={() => onOpen(node.id)} style={{display: "block"}}>
-      {card}
-    </button>
-  ) : (
-    card
-  );
+/// A rollup placeholder (`more` set) carries no real token: `id: 0n` is not a token reference.
+function isProvenanceRollup(node: ProvNode): node is ProvNode & {more: number} {
+  return typeof node.more === "number" && node.more > 0;
 }
 
 /**
- * A token's ancestry as a timeline, oldest first: where it started (a mint or a split parent),
- * then every state it passed through with what merged in at that step, then what it is now.
- * A donor with its own ancestry expands inline via "built from N"; a repeated ancestor renders
- * dimmed with no expander.
+ * `ProvNode` (chain/history.ts) to `TreeNode` (ProvenanceTree.tsx): each contributor becomes a
+ * child one step further back in ancestry. `path` gives every node a key unique within the tree
+ * even though a `self` chain repeats the same token id across levels. Live token ids are
+ * collected into `liveIds` as they are found, keyed by the same path, so the caller can tell a
+ * navigable card from one that only focuses in place.
  */
-function Lineage({
-  lineage,
-  live,
-  onOpen,
-  depth,
-  showFinal = true,
-}: {
-  lineage: LineageT;
-  live: SiteToken[];
-  onOpen: (id: bigint) => void;
-  depth: number;
-  showFinal?: boolean;
-}) {
-  const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(new Set());
-  const toggle = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-
-  const w = lineageCardWidth(depth);
-  const birthLabel = DENOMINATIONS[lineage.birthDi].label;
-  const finalLive = live.some((t) => t.id === lineage.final.id);
-
-  return (
-    <div style={{display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12}}>
-      {lineage.origin.kind === "split" ? (
-        <div style={{display: "flex", flexDirection: "column", alignItems: "flex-start"}}>
-          <LineageCard
-            node={lineage.origin.parent}
-            width={w}
-            live={live}
-            onOpen={onOpen}
-            caption={`#${lineage.origin.parent.id.toString()} · ${DENOMINATIONS[lineage.origin.parent.di].label} ETH`}
-          />
-          <div style={{width: 0, height: LINEAGE_STUB, borderLeft: `1px dashed ${C.border}`}} />
-          <div style={{fontSize: 11, color: C.muted}}>Split. This Shape took {birthLabel} ETH.</div>
-        </div>
-      ) : lineage.origin.kind === "mint" ? (
-        <div style={{fontSize: 11, color: C.muted}}>Minted at {birthLabel} ETH.</div>
-      ) : (
-        <div style={{fontSize: 11, color: C.faint}} title="earlier history not shown">
-          Earlier history not shown.
-        </div>
-      )}
-
-      {lineage.steps.map((step, i) => {
-        const beforeDi = i === 0 ? lineage.birthDi : lineage.steps[i - 1].state.di;
-        const stepKey = `${step.state.id.toString()}-${i}`;
-        return (
-          <div key={stepKey} style={{display: "flex", flexDirection: "column", gap: 6}}>
-            <div style={{fontSize: 10, color: C.faint, letterSpacing: "0.06em"}}>
-              #{step.state.id.toString()} · {DENOMINATIONS[beforeDi].label} ETH → {DENOMINATIONS[step.state.di].label} ETH
-            </div>
-            <div style={{display: "flex", flexWrap: "wrap", gap: 10}}>
-              {step.donors.map((d, j) => {
-                const donorKey = `${stepKey}-${d.id.toString()}-${j}`;
-                if (isProvenanceRollup(d)) {
-                  return (
-                    <div
-                      key={donorKey}
-                      style={{padding: "5px 7px", border: `1px solid ${C.border}`, color: C.faint, fontSize: 10}}
-                      title="additional contributors not expanded"
-                    >
-                      {provenanceRollupLabel(d)}
-                    </div>
-                  );
-                }
-                const nested = !d.repeat && depth < LINEAGE_MAX_NEST_DEPTH ? unrollLineage(d) : null;
-                const donorCount =
-                  nested == null
-                    ? 0
-                    : nested.steps.reduce((n, s) => n + s.donors.length, 0) + (nested.origin.kind === "split" ? 1 : 0);
-                const canExpand = nested != null && donorCount > 0;
-                return (
-                  <div key={donorKey} style={{display: "flex", flexDirection: "column", alignItems: "center", gap: 4}}>
-                    <LineageCard
-                      node={d}
-                      width={lineageCardWidth(depth + 1)}
-                      live={live}
-                      onOpen={onOpen}
-                      caption={`#${d.id.toString()} · ${DENOMINATIONS[d.di].label} ETH`}
-                      dim={d.repeat}
-                      tooltip={d.repeat ? "shown elsewhere" : undefined}
-                    />
-                    {canExpand && (
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        style={{fontSize: 9, color: C.faint, border: `1px solid ${C.border}`, padding: "2px 6px"}}
-                        onClick={() => toggle(donorKey)}
-                      >
-                        built from {donorCount}
-                      </button>
-                    )}
-                    {canExpand && expanded.has(donorKey) && (
-                      <div style={{marginTop: 4, paddingLeft: 10, borderLeft: `1px dashed ${C.border}`}}>
-                        <Lineage lineage={nested!} live={live} onOpen={onOpen} depth={depth + 1} showFinal={false} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-
-      {showFinal && (
-        <LineageCard
-          node={lineage.final}
-          width={w}
-          live={live}
-          onOpen={onOpen}
-          caption={`#${lineage.final.id.toString()} · ${DENOMINATIONS[lineage.final.di].label} ETH · ${finalLive ? "now" : "last state"}`}
-        />
-      )}
-    </div>
-  );
+function provNodeToTree(node: ProvNode, live: SiteToken[], path: string, liveIds: Map<string, bigint>): TreeNode {
+  if (isProvenanceRollup(node)) {
+    return {key: path, art: "", title: "", lines: [], children: [], rollup: node.more};
+  }
+  if (live.some((t) => t.id === node.id)) liveIds.set(path, node.id);
+  const relLabel = PROV_RELATION_LABEL[node.rel];
+  const children =
+    node.repeat || node.truncated ? [] : node.contributors.map((c, i) => provNodeToTree(c, live, `${path}-${i}`, liveIds));
+  return {
+    key: path,
+    art: localArt(node.seed, DENOMINATIONS[node.di].wei, mintGene(node.seed, DENOMINATIONS[node.di].wei)),
+    title: `#${node.id.toString()}`,
+    lines: relLabel ? [`${DENOMINATIONS[node.di].label} ETH`, relLabel] : [`${DENOMINATIONS[node.di].label} ETH`],
+    children,
+    repeat: node.repeat,
+    truncated: node.truncated,
+    muted: node.repeat,
+  };
 }
 
 function History({history, chainId}: {history: DatedEvent[] | null; chainId: number}) {
@@ -629,12 +528,6 @@ function History({history, chainId}: {history: DatedEvent[] | null; chainId: num
   );
 }
 
-/** Distinguishable donor tints for the compose overlay, canonical order: index 0 is the survivor. */
-const DNA_DONOR_COLORS = ["#d9a25a", "#5a9fd9", "#7ed98a", "#d95a8a", "#a05ad9", "#d9d05a"];
-function dnaDonorColor(i: number): string {
-  return DNA_DONOR_COLORS[i % DNA_DONOR_COLORS.length];
-}
-
 function seedShort(seed: bigint): string {
   const hex = seed.toString(16).padStart(64, "0");
   return `0x${hex.slice(0, 8)}…${hex.slice(-6)}`;
@@ -646,75 +539,6 @@ function DnaRow({k, v}: {k: string; v: React.ReactNode}) {
       <span style={{color: C.muted, width: 92, flexShrink: 0}}>{k}</span>
       <span style={{color: C.body, wordBreak: "break-all"}}>{v}</span>
     </div>
-  );
-}
-
-/**
- * The per-cell overlay grid, absolutely positioned over the rendered artwork at the geometry's
- * exact percentage bounds. One div per cell, styled by `cellStyle(j)`; hover and click report the
- * cell index to the caller. Shared by the result card and every donor card, so both grids drive
- * their highlight state the same way.
- */
-function DnaGridOverlay({
-  geometry,
-  cellStyle,
-  onEnter,
-  onLeave,
-  onClick,
-}: {
-  geometry: CardGeometry;
-  cellStyle: (j: number) => React.CSSProperties | undefined;
-  onEnter: (j: number) => void;
-  onLeave: () => void;
-  onClick?: (j: number) => void;
-}) {
-  const {leftPct, topPct, widthPct, heightPct} = geometryPercents(geometry);
-  const count = geometry.cols * geometry.rows;
-  return (
-    <div
-      onMouseLeave={onLeave}
-      style={{
-        position: "absolute",
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: `${widthPct}%`,
-        height: `${heightPct}%`,
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${geometry.cols}, 1fr)`,
-          gridTemplateRows: `repeat(${geometry.rows}, 1fr)`,
-          width: "100%",
-          height: "100%",
-        }}
-      >
-        {Array.from({length: count}, (_, j) => (
-          <div
-            key={j}
-            onMouseEnter={() => onEnter(j)}
-            onClick={() => onClick?.(j)}
-            style={{
-              boxSizing: "border-box",
-              cursor: onClick ? "pointer" : "default",
-              outlineOffset: -1,
-              ...cellStyle(j),
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Rewrites a canonical SVG's fixed raster width/height to fill its container, matching how the
- *  harness's Card component displays sampled SVGs (app/ui.tsx forDisplay). Duplicated here rather
- *  than imported since site/ does not import from app/. */
-function svgForDisplay(svg: string): string {
-  return svg.replace(
-    /^(<svg[^>]*?) width="\d+" height="\d+"/,
-    '$1 width="100%" height="100%" style="display:block"',
   );
 }
 
@@ -730,8 +554,6 @@ interface DonorRender {
   burned: boolean;
   svg: string;
   geometry: CardGeometry;
-  /** This donor's own module indices that at least one result cell was sampled from. */
-  sampledModuleIndices: Set<number>;
 }
 
 /** Reconstruct one donor's own card from its compose/split-time snapshot: `effectiveModuleBytes`
@@ -763,9 +585,6 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[], shapeLa
     .filter(({i}) => contributing.has(i))
     .map(({d, i}) => {
       const {svg, geometry} = renderDonor(d.seed, d.denomIndex, d.inkGene, d.modules);
-      const sampledModuleIndices = new Set(
-        cells.filter((c) => (c.donorIndex ?? 0) === i).map((c) => c.moduleIndex),
-      );
       return {
         donorIndex: i,
         roleLabel: d.id === "survivor" ? shapeLabel : `#${d.id}`,
@@ -774,7 +593,6 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[], shapeLa
         burned: d.id !== "survivor",
         svg,
         geometry,
-        sampledModuleIndices,
       };
     });
 }
@@ -787,7 +605,7 @@ function contributingComposeDonors(donors: DnaDonor[], cells: DnaCell[], shapeLa
  * present — the record branch's pool has no single grid shape (see `DnaSplitResult.pool`'s
  * doc comment) and is shown as pool index/byte in the detail panel instead, with no card.
  */
-function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>, cells: DnaCell[]): DonorRender {
+function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>): DonorRender {
   const {svg, geometry} = renderDonor(pool.seed, pool.denomIndex, pool.inkGene, pool.modules);
   return {
     donorIndex: 0,
@@ -797,14 +615,13 @@ function splitPoolDonor(pool: NonNullable<DnaSplitResult["pool"]>, cells: DnaCel
     burned: true,
     svg,
     geometry,
-    sampledModuleIndices: new Set(cells.map((c) => c.moduleIndex)),
   };
 }
 
-/** One donor's card: rendered SVG, per-cell overlay tinted where the result sampled from it, and
- *  a caption. Hovering a cell reports it up; the caller decides which cell (if any) is "active"
- *  across every card and the result grid together. `onDrill`, when given, makes the whole card a
- *  button that opens this donor's own DNA. */
+/** One donor's card: rendered SVG, its own cell outlined when it is the active cell's source,
+ *  and a caption. Hovering a cell reports it up; the caller decides which cell (if any) is
+ *  "active" across every card and the result grid together. `onDrill`, when given, makes the
+ *  whole card a button that opens this donor's own DNA. */
 function DonorMiniCard({
   donor,
   color,
@@ -821,23 +638,23 @@ function DonorMiniCard({
   onDrill?: () => void;
 }) {
   const cellStyle = (j: number): React.CSSProperties | undefined => {
-    const sampled = donor.sampledModuleIndices.has(j);
     const isActive = activeCell != null && activeCell.donorIndex === donor.donorIndex && activeCell.moduleIndex === j;
-    if (!sampled && !isActive) return undefined;
-    return {
-      background: `${color}${isActive ? "4d" : "22"}`,
-      outline: `${isActive ? 2 : 1}px solid ${color}${isActive ? "" : "66"}`,
-    };
+    if (!isActive) return undefined;
+    return {outline: `2px solid ${color}`, outlineOffset: -1, background: `${color}33`};
   };
   const body = (
     <div style={{display: "flex", flexDirection: "column", gap: 6, width: 108}}>
       <div style={{position: "relative", aspectRatio: "250 / 350", backgroundColor: C.art}}>
         <div
-          dangerouslySetInnerHTML={{__html: svgForDisplay(donor.svg)}}
+          dangerouslySetInnerHTML={{__html: forDisplay(donor.svg)}}
           style={{position: "absolute", inset: 0}}
         />
-        <DnaGridOverlay
-          geometry={donor.geometry}
+        <GridOverlayCells
+          cols={donor.geometry.cols}
+          rows={donor.geometry.rows}
+          cell={donor.geometry.cell}
+          x0={donor.geometry.x0}
+          y0={donor.geometry.y0}
           cellStyle={cellStyle}
           onEnter={onEnterCell}
           onLeave={onLeaveCell}
@@ -878,25 +695,20 @@ function DnaProvenancePanel({
   dna,
   resultArt,
   shapeLabel,
+  exportBase,
   onDrillDonor,
 }: {
   dna: DnaComposeResult | DnaSplitResult | DnaSeedResult;
   resultArt: {type: "image"; src: string} | {type: "svg"; svg: string};
   shapeLabel: string;
+  /** Trace download filename base (`traceExport.ts`'s `traceFilename` appends `-trace.<ext>`). */
+  exportBase: string;
   onDrillDonor?: (target: DnaDrillTarget) => void;
 }) {
-  const [hover, setHover] = React.useState<number | null>(null);
-  const [pin, setPin] = React.useState<number | null>(null);
-  const active = hover ?? pin;
+  const {active, onEnter, onLeave, onClickCell} = useActiveCell();
 
-  // Donor-card cell hover: independent of the result grid's hover/pin. Reset whenever a new DNA
-  // record loads, so a stale cell index from the previous token never carries over.
+  // Donor-card cell hover: independent of the result grid's hover/pin.
   const [donorHover, setDonorHover] = React.useState<{donorIndex: number; moduleIndex: number} | null>(null);
-  React.useEffect(() => {
-    setHover(null);
-    setPin(null);
-    setDonorHover(null);
-  }, [dna]);
 
   // Reverse index built once per DNA record load: (donorIndex, moduleIndex) -> every result cell
   // drawn from it (compose), or moduleIndex -> every result cell (split, one donor). Hovering a
@@ -939,7 +751,7 @@ function DnaProvenancePanel({
     // Split, record branch: the pool spans multiple donors concatenated with no single grid
     // shape, so there is no card to render here (SAMPLING_SPEC.md section 6, D3'). The cell
     // detail panel still shows each cell's pool index and byte.
-    if (dna.kind === "split") return dna.pool ? [splitPoolDonor(dna.pool, dna.cells)] : [];
+    if (dna.kind === "split") return dna.pool ? [splitPoolDonor(dna.pool)] : [];
     return [];
   }, [dna, shapeLabel]);
 
@@ -953,24 +765,34 @@ function DnaProvenancePanel({
   };
 
   const cellColor = (j: number): React.CSSProperties | undefined => {
-    const cell = dna.cells[j];
-    const isActive = highlightedResultCells.has(j);
+    const isHighlighted = highlightedResultCells.has(j);
     if (dna.kind === "compose") {
-      const color = dnaDonorColor(cell.donorIndex ?? 0);
+      const c = donorColor(dna.cells[j].donorIndex ?? 0);
       return {
-        background: `${color}33`,
-        outline: `${isActive ? 2 : 1}px solid ${isActive ? color : `${color}66`}`,
+        background: `${c}4d`,
+        outline: `${isHighlighted ? 2 : 1}px solid ${c}${isHighlighted ? "" : "55"}`,
+        outlineOffset: -1,
       };
     }
     if (dna.kind === "split") {
       return {
-        background: `${C.body}1a`,
-        outline: `${isActive ? 2 : 1}px solid ${isActive ? C.ink : `${C.ink}40`}`,
+        background: `${PROV_C.warn}4d`,
+        outline: `${isHighlighted ? 2 : 1}px solid ${PROV_C.warn}${isHighlighted ? "" : "55"}`,
+        outlineOffset: -1,
       };
     }
-    if (!isActive) return undefined;
-    return {background: `${C.ink}22`, outline: `2px solid ${C.ink}`};
+    if (!isHighlighted) return undefined;
+    return {outline: `2px solid ${PROV_C.ink}`, outlineOffset: -1, background: `${PROV_C.ink}22`};
   };
+
+  // Every cell's color at rest (no hover state), for the trace download: matches `cellColor`'s
+  // non-highlighted fill exactly, computed by `traceExport.ts`'s `buildTraceSvg`.
+  const exportColor = (j: number): string | undefined => {
+    if (dna.kind === "compose") return donorColor(dna.cells[j].donorIndex ?? 0);
+    if (dna.kind === "split") return PROV_C.warn;
+    return undefined;
+  };
+  const artworkSvg = resultArt.type === "svg" ? resultArt.svg : svgFromDataUri(resultArt.src);
 
   const cell = active != null ? dna.cells[active] : null;
   // "Absorbed" counts burns only, not the survivor snapshot (donorIndex 0). Named counts on both
@@ -982,7 +804,7 @@ function DnaProvenancePanel({
 
   return (
     <>
-      <p style={{margin: "0 0 24px", fontSize: 12, lineHeight: 1.7, color: C.muted, maxWidth: "60ch"}}>
+      <p style={{margin: "0 0 24px", fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.muted, maxWidth: "60ch"}}>
         {dna.kind === "seed"
           ? dna.materialized
             ? "Recorded module bytes with no token id of its own, so its provenance cannot be traced any further. Hover a cell for its detail."
@@ -994,29 +816,53 @@ function DnaProvenancePanel({
               : "Every cell was sampled from the parent's compose record: its pre-compose modules plus the modules of what it had absorbed. Hover a cell for its pool index and byte."}
       </p>
       <div style={{display: "flex", flexWrap: "wrap", gap: 32, alignItems: "flex-start"}}>
-        <div style={{position: "relative", width: 220, aspectRatio: "250 / 350", backgroundColor: C.art}}>
-          {resultArt.type === "image" ? (
-            <img
-              src={resultArt.src}
-              alt=""
-              style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
+        <div style={{display: "flex", flexDirection: "column", gap: 8}}>
+          <div style={{position: "relative", width: 220, aspectRatio: "250 / 350", backgroundColor: C.art}}>
+            {resultArt.type === "image" ? (
+              <img
+                src={resultArt.src}
+                alt=""
+                style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
+              />
+            ) : (
+              <div
+                dangerouslySetInnerHTML={{__html: forDisplay(resultArt.svg)}}
+                style={{position: "absolute", inset: 0}}
+              />
+            )}
+            <GridOverlayCells
+              cols={dna.geometry.cols}
+              rows={dna.geometry.rows}
+              cell={dna.geometry.cell}
+              x0={dna.geometry.x0}
+              y0={dna.geometry.y0}
+              cellStyle={cellColor}
+              onEnter={(j) => {
+                setDonorHover(null);
+                onEnter(j);
+              }}
+              onLeave={onLeave}
+              onClickCell={onClickCell}
             />
-          ) : (
-            <div
-              dangerouslySetInnerHTML={{__html: svgForDisplay(resultArt.svg)}}
-              style={{position: "absolute", inset: 0}}
-            />
-          )}
-          <DnaGridOverlay
-            geometry={dna.geometry}
-            cellStyle={cellColor}
-            onEnter={(j) => {
-              setDonorHover(null);
-              setHover(j);
-            }}
-            onLeave={() => setHover(null)}
-            onClick={(j) => setPin((cur) => (cur === j ? null : j))}
-          />
+          </div>
+          <div style={{display: "flex", gap: 8}}>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{padding: "6px 12px", fontSize: 11}}
+              onClick={() => downloadTracePng(artworkSvg, dna.geometry, exportColor, exportBase)}
+            >
+              PNG
+            </button>
+            <button
+              type="button"
+              className="btn-outline"
+              style={{padding: "6px 12px", fontSize: 11}}
+              onClick={() => downloadTraceSvg(artworkSvg, dna.geometry, exportColor, exportBase)}
+            >
+              SVG
+            </button>
+          </div>
         </div>
         <div style={{flex: "1 1 260px", minWidth: 240, display: "flex", flexDirection: "column", gap: 20}}>
           {dna.kind === "compose" && (
@@ -1025,7 +871,7 @@ function DnaProvenancePanel({
               <div style={{display: "flex", flexWrap: "wrap", gap: 14}}>
                 {donorRenders.map((d) => (
                   <div key={d.donorIndex} style={{display: "flex", alignItems: "center", gap: 8}}>
-                    <span style={{width: 10, height: 10, background: dnaDonorColor(d.donorIndex), flexShrink: 0}} />
+                    <span style={{width: 10, height: 10, background: donorColor(d.donorIndex), flexShrink: 0}} />
                     <span style={{fontSize: 12, color: C.body}}>
                       {d.roleLabel}
                       {d.materialized ? " · materialized" : ""}
@@ -1062,23 +908,27 @@ function DnaProvenancePanel({
             </div>
           )}
           {cell ? (
-            <div>
-              <div style={{...label, marginBottom: 10}}>cell {active}</div>
-              <DnaRow k="module #" v={cell.moduleIndex} />
-              <DnaRow k="byte" v={`0x${cell.byte.toString(16).padStart(2, "0")}`} />
-              <DnaRow k="kind" v={cell.kind} />
-              <DnaRow k="solid" v={cell.solid ? "solid" : "outline"} />
-              <DnaRow k="rotation" v={`${cell.rot}°`} />
-              {dna.kind === "compose" && (
-                <>
-                  <DnaRow
-                    k="donor"
-                    v={cell.donorId === "survivor" ? shapeLabel : `#${cell.donorId}`}
-                  />
-                  <DnaRow k="materialized" v={cell.donorMaterialized ? "yes" : "no (seed-derived)"} />
-                </>
-              )}
-            </div>
+            dna.kind === "compose" ? (
+              <DetailPanel
+                label={cell.donorId === "survivor" ? shapeLabel : `#${cell.donorId}`}
+                moduleIndex={cell.moduleIndex}
+                byte={cell.byte}
+                color={donorColor(cell.donorIndex ?? 0)}
+              />
+            ) : dna.kind === "split" ? (
+              <DetailPanel
+                label={
+                  dna.branch === "grammar"
+                    ? `parent seed at ${denomLabelAt(dna.parent.denomIndex)} ETH`
+                    : "parent's compose record pool"
+                }
+                moduleIndex={cell.moduleIndex}
+                byte={cell.byte}
+                color={PROV_C.warn}
+              />
+            ) : (
+              <DetailPanel label={`module #${cell.moduleIndex}`} moduleIndex={cell.moduleIndex} byte={cell.byte} />
+            )
           ) : (
             <div style={{fontSize: 12, color: C.muted}}>Hover or tap a cell for its detail.</div>
           )}
@@ -1100,7 +950,7 @@ function DnaProvenancePanel({
               <DonorMiniCard
                 key={d.donorIndex}
                 donor={d}
-                color={dna.kind === "compose" ? dnaDonorColor(d.donorIndex) : C.ink}
+                color={dna.kind === "compose" ? donorColor(d.donorIndex) : PROV_C.warn}
                 activeCell={activeDonorCell}
                 onEnterCell={(moduleIndex) => setDonorHover({donorIndex: d.donorIndex, moduleIndex})}
                 onLeaveCell={() => setDonorHover(null)}
@@ -1120,11 +970,13 @@ function DnaStateBody({
   dna,
   resultArt,
   shapeLabel,
+  exportBase,
   onDrillDonor,
 }: {
   dna: DnaResult | null;
   resultArt: {type: "image"; src: string} | {type: "svg"; svg: string};
   shapeLabel: string;
+  exportBase: string;
   onDrillDonor?: (target: DnaDrillTarget) => void;
 }) {
   if (dna === null) {
@@ -1133,7 +985,15 @@ function DnaStateBody({
   if (dna.kind === "unavailable" || dna.kind === "mismatch") {
     return <div style={{fontSize: 13, color: C.muted, lineHeight: 1.7, maxWidth: "60ch"}}>{dna.message}</div>;
   }
-  return <DnaProvenancePanel dna={dna} resultArt={resultArt} shapeLabel={shapeLabel} onDrillDonor={onDrillDonor} />;
+  return (
+    <DnaProvenancePanel
+      dna={dna}
+      resultArt={resultArt}
+      shapeLabel={shapeLabel}
+      exportBase={exportBase}
+      onDrillDonor={onDrillDonor}
+    />
+  );
 }
 
 /** The page's own DNA section: the live token's `tokenURI` image as the result card, wrapped in
@@ -1176,6 +1036,7 @@ function DnaSection({
             dna={dna}
             resultArt={{type: "image", src: image}}
             shapeLabel={`#${tokenId.toString()} (this Shape)`}
+            exportBase={`shape-${tokenId.toString()}`}
             onDrillDonor={onDrillDonor}
           />
         </div>
@@ -1316,6 +1177,11 @@ function DnaDrillModal({
         dna={top.dna}
         resultArt={{type: "svg", svg: top.art.svg}}
         shapeLabel={`${top.subjectId === null ? top.label : `#${top.subjectId.toString()}`} (this Shape)`}
+        exportBase={
+          top.subjectId !== null
+            ? `shape-${top.subjectId.toString()}`
+            : `shape-${top.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+        }
         onDrillDonor={onDrillDonor}
       />
     </Modal>

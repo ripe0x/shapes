@@ -32,6 +32,24 @@ export function downloadText(name: string, text: string, mime = "text/plain") {
   downloadBlob(name, new Blob([text], { type: mime }));
 }
 
+/** Download an SVG document string as a `.svg` file. */
+export function downloadSvg(name: string, svg: string) {
+  downloadBlob(name, new Blob([svg], { type: "image/svg+xml" }));
+}
+
+/** Rasterize an SVG document string to a PNG blob at the given pixel size. Shared by every
+ *  export that offers both an SVG document and a PNG rendering of the same content. */
+export async function rasterizeSvgToPng(svg: string, width: number, height: number): Promise<Blob> {
+  const img = await svgToImage(svg);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+  return await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png"),
+  );
+}
+
 /* ---------------- minimal store-only ZIP ---------------- */
 
 const CRC_TABLE = (() => {

@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "simulate": "tsx scripts/simulate.ts",
     "simulate:history": "tsx scripts/simulateHistory.ts",
+    "sim:owner-auction": "tsx scripts/openOwnerAuction.ts",
     "verify": "tsx scripts/verifyStream.ts",
     "fixtures": "tsx scripts/genFixtures.ts",
     "sweep": "tsx scripts/collisionSweep.ts",

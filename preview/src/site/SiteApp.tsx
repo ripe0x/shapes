@@ -1,25 +1,26 @@
 import React from "react";
-import {parseEventLogs} from "viem";
-import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagmi";
+import {formatEther, parseEventLogs} from "viem";
+import {useAccount, useDisconnect, usePublicClient, useSwitchChain, useWriteContract} from "wagmi";
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {addrUrl, txUrl} from "./ui";
+import {txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
 import {MintView} from "./MintView";
+import {MintPanel} from "./MintPanel";
 import {GalleryView} from "./GalleryView";
 import {MyShapesView} from "./MyShapesView";
 import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
-import {AboutView} from "./AboutView";
 import {AuctionView} from "./AuctionView";
-import {breakdown, loadAuction, loadLotImage, type AuctionSlot} from "./auction";
+import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
+import {SiteFooter} from "./SiteFooter";
 
-export type View = "mint" | "auction" | "gallery" | "collection" | "token" | "manage" | "about";
+export type View = "home" | "mint" | "auction" | "gallery" | "collection" | "token" | "manage";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -39,6 +40,7 @@ export function SiteApp({
   initialView,
   initialTokenId,
   onNavigate,
+  renderHome,
 }: {
   dep: Deployment;
   /** Starting view, and a callback fired when the view changes, so a host (the Next.js site) can
@@ -46,8 +48,20 @@ export function SiteApp({
   initialView?: View;
   initialTokenId?: bigint | null;
   onNavigate?: (view: View, tokenId: bigint | null) => void;
+  /** When the view is "home", renders the mint panel and footer inside the host's own page shell
+   *  (the landing page) instead of SiteApp's header/footer/mint view. Without it, "home" falls
+   *  back to the mint view. */
+  renderHome?: (mint: React.ReactNode, footer: React.ReactNode) => React.ReactNode;
 }) {
-  const {address, isConnected} = useAccount();
+  const {address, isConnected, chainId: walletChainId} = useAccount();
+  const {switchChainAsync} = useSwitchChain();
+  const wrongChain = isConnected && walletChainId !== dep.chainId;
+  // Every write goes through the deployment chain. A wallet on another chain is asked to switch
+  // (wagmi adds the chain to the wallet when it is unknown) before the transaction is built,
+  // instead of failing with a chain mismatch.
+  const ensureChain = async () => {
+    if (walletChainId !== dep.chainId) await switchChainAsync({chainId: dep.chainId});
+  };
   const {disconnect} = useDisconnect();
   const {openConnectModal} = useConnectModal();
   const publicClient = usePublicClient({chainId: dep.chainId});
@@ -71,6 +85,7 @@ export function SiteApp({
   const [mint, setMint] = React.useState<MintState>({status: "idle"});
   const [redeem, setRedeem] = React.useState<RedeemState>({status: "idle"});
   const [busy, setBusy] = React.useState<string | null>(null);
+  const [pendingTx, setPendingTx] = React.useState<PendingTx | null>(null);
   const [txErr, setTxErr] = React.useState<{op: string; text: string} | null>(null);
   const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
@@ -144,8 +159,12 @@ export function SiteApp({
     void refresh();
   }, [refresh]);
 
-  const write = (functionName: string, args: readonly unknown[], value?: bigint) =>
-    writeContractAsync({
+  // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
+  // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
+  // (no hash yet) apart from "pending" (hash in hand, waiting for the receipt).
+  const write = async (op: string, functionName: string, args: readonly unknown[], value?: bigint) => {
+    await ensureChain();
+    const hash = await writeContractAsync({
       address: dep.shapes,
       abi: shapesAbi,
       functionName,
@@ -153,14 +172,19 @@ export function SiteApp({
       value,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
+    setPendingTx({op, hash});
+    return hash;
+  };
 
-  const writeHouse = (
+  const writeHouse = async (
+    op: string,
     functionName: string,
     args: readonly unknown[],
     value?: bigint,
     gas?: bigint,
-  ) =>
-    writeContractAsync({
+  ) => {
+    await ensureChain();
+    const hash = await writeContractAsync({
       address: dep.auctionHouse!,
       abi: auctionHouseAbi,
       functionName,
@@ -169,6 +193,9 @@ export function SiteApp({
       gas,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
+    setPendingTx({op, hash});
+    return hash;
+  };
 
   const doMint = async () => {
     if (!address || !publicClient || !data) return;
@@ -200,7 +227,7 @@ export function SiteApp({
     setActionNotice(null);
     setRedeem({status: "pending"});
     try {
-      const hash = await write("redeem", [t.id]);
+      const hash = await write("redeem", "redeem", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
       setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
@@ -218,6 +245,7 @@ export function SiteApp({
       setTxErr({op: "redeem", text});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -229,7 +257,7 @@ export function SiteApp({
     try {
       const downWei = DENOMINATIONS[t.di - 1].wei;
       const ratio = Number(t.backing / downWei);
-      const hash = await write("split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
+      const hash = await write("split", "split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs});
       const newIds = logs[0]?.args.newIds ?? [];
@@ -246,6 +274,7 @@ export function SiteApp({
       setTxErr({op: "split", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -257,7 +286,7 @@ export function SiteApp({
     setTxErr(null);
     setActionNotice(null);
     try {
-      const hash = await write("decompose", [t.id]);
+      const hash = await write("decompose", "decompose", [t.id]);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs});
       const restoredIds = logs[0]?.args.restoredIds ?? [];
@@ -274,6 +303,7 @@ export function SiteApp({
       setTxErr({op: "decompose", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -284,7 +314,7 @@ export function SiteApp({
     setActionNotice(null);
     try {
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
-      const hash = await write("compose", [t.id, sorted]);
+      const hash = await write("compose", "compose", [t.id, sorted]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh(); // the survivor keeps its id; the open detail shows the new denomination
       setActionNotice({
@@ -302,6 +332,7 @@ export function SiteApp({
       setTxErr({op: "compose", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
@@ -311,7 +342,7 @@ export function SiteApp({
     setTxErr(null);
     setActionNotice(null);
     try {
-      const hash = await write("sacrifice", [t.id]);
+      const hash = await write("sacrifice", "sacrifice", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
       setActionNotice({
@@ -326,14 +357,17 @@ export function SiteApp({
       setTxErr({op: "sacrifice", text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
 
-  // Auction 0 is the collection's own. Reloaded after every auction transaction, and whenever
-  // the wallet changes, since escrow and the lead are both per-address. A deployment with no
-  // auction house has no auction to load, ever, so it resolves to null immediately rather than
-  // sitting in "loading" forever; otherwise the slot stays "loading" until the first read lands.
+  // Token 0 is the collection owner token; its auction is looked up by token id rather than an
+  // assumed auction id, since other auctions may exist before it. Reloaded after every auction
+  // transaction, and whenever the wallet changes, since escrow and the lead are both per-address.
+  // A deployment with no auction house has no auction to load, ever, so it resolves to null
+  // immediately rather than sitting in "loading" forever; otherwise the slot stays "loading"
+  // until the first read lands.
   const refreshAuction = React.useCallback(async () => {
     if (!dep.auctionHouse) {
       setAuction(null);
@@ -343,11 +377,13 @@ export function SiteApp({
     if (!publicClient) return;
     // A failed read (dead RPC, mid-redeploy chain, malformed response) degrades to the empty
     // state instead of surfacing an unhandled rejection.
-    let a: Awaited<ReturnType<typeof loadAuction>> = null;
+    let a: Awaited<ReturnType<typeof loadAuctionFor>> = null;
     try {
-      a = await loadAuction(publicClient, dep, 0n, address);
+      a = await loadAuctionFor(publicClient, dep, 0n, address);
     } catch {
-      a = null;
+      setAuction("error");
+      setLotImage(null);
+      return;
     }
     setAuction(a);
     setLotImage(a ? await loadLotImage(publicClient, dep, a) : null);
@@ -373,7 +409,7 @@ export function SiteApp({
         value,
         account: address!,
       } as Parameters<typeof publicClient.estimateContractGas>[0]);
-      const hash = await writeHouse(fn, args, value, (estimate * 3n) / 2n);
+      const hash = await writeHouse(op, fn, args, value, (estimate * 3n) / 2n);
       await publicClient.waitForTransactionReceipt({hash});
       setTxHash(hash);
       await Promise.all([refresh(), refreshAuction()]);
@@ -381,16 +417,22 @@ export function SiteApp({
       setTxErr({op, text: describeTxError(e)});
     } finally {
       setBusy(null);
+      setPendingTx(null);
     }
   };
 
+  // The house call targets the auction the page loaded for token 0, never a fixed id: on a
+  // chain with earlier auctions the owner token's auction is not id 0.
+  const auctionId = typeof auction === "object" && auction !== null ? auction.id : null;
+
   const doBid = (cardIds: bigint[], ethBackingWei: bigint) => {
+    if (auctionId === null) return;
     const sorted = [...cardIds].sort((a, b) => (a < b ? -1 : 1));
     const fee = breakdown(ethBackingWei).reduce(
       (sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n),
       0n,
     );
-    void runHouse("bid", "bid", [0n, sorted, ethBackingWei], ethBackingWei + fee);
+    void runHouse("bid", "bid", [auctionId, sorted, ethBackingWei], ethBackingWei + fee);
   };
 
   const openToken = (id: bigint) => {
@@ -420,78 +462,93 @@ export function SiteApp({
     window.scrollTo({top: 0, behavior: "smooth"});
   };
 
-  const navColor = (v: View) => (view === v ? C.ink : C.muted);
+  // Without a host to render into, "home" has no shell of its own and falls back to the mint
+  // view, so the header nav and the mint view's own render check both treat it as "mint".
+  const shownView = view === "home" && !renderHome ? "mint" : view;
+  const navColor = (v: View) => (shownView === v ? C.ink : C.muted);
+
+  const reserveLine = data
+    ? `The contract holds ${formatEther(data.reserve)} ETH backing ${data.supply.toString()} Shapes.`
+    : null;
+
+  // The home view hosts the mint panel inside the host's own landing page shell, with no
+  // header or action toast; the panel's own status text carries mint feedback, and the footer
+  // still carries the reserve line and attribution.
+  if (view === "home" && renderHome) {
+    return renderHome(
+      <MintPanel
+        data={data}
+        chainId={dep.chainId}
+        connected={isConnected}
+        sel={sel}
+        setSel={(i) => {
+          setSel(i);
+          if (mint.status === "failed") setMint({status: "idle"});
+        }}
+        qty={qty}
+        setQty={setQty}
+        mint={mint}
+        onMint={() => void doMint()}
+        onOpenToken={openToken}
+        onConnect={() => openConnectModal?.()}
+      />,
+      <SiteFooter reserve={reserveLine} />,
+    );
+  }
 
   return (
-    <div style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
-      <header
-        style={{
-          borderBottom: `1px solid ${C.rule}`,
-          position: "sticky",
-          top: 0,
-          background: C.page,
-          zIndex: 10,
-        }}
-      >
-        <div
-          className="site-header-inner"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 32,
-            padding: "0 48px",
-            height: 54,
-            fontSize: 11,
-            letterSpacing: "0.14em",
-          }}
-        >
-          <div>SHAPES</div>
-          <nav className="site-nav" style={{display: "flex", gap: 26}}>
-            <button type="button" className="btn-ghost" onClick={() => go("mint")} style={{letterSpacing: "0.14em", color: navColor("mint")}}>
+    <div id="top" style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
+      <header className="site-header">
+        <div className="site-header-inner">
+          {/* The Next host navigates "/" as a real route outside SiteApp's view state, so the
+              wordmark links there directly; the Vite preview has no such route and falls back to
+              the mint view, mirroring the /play link below. */}
+          {onNavigate ? (
+            <a href="/" className="site-nav-link">SHAPES</a>
+          ) : (
+            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")}>SHAPES</button>
+          )}
+          <nav className="site-nav" style={{display: "flex", gap: "clamp(20px, 4vw, 40px)"}}>
+            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
               MINT
             </button>
             {dep.auctionHouse && (
-              <button type="button" className="btn-ghost" onClick={() => go("auction")} style={{letterSpacing: "0.14em", color: navColor("auction")}}>
+              <button type="button" className="btn-ghost site-nav-link" onClick={() => go("auction")} style={{color: navColor("auction")}}>
                 AUCTION
               </button>
             )}
-            <button type="button" className="btn-ghost" onClick={() => go("gallery")} style={{letterSpacing: "0.14em", color: navColor("gallery")}}>
+            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
               GALLERY
             </button>
-            <button type="button" className="btn-ghost" onClick={() => go("about")} style={{letterSpacing: "0.14em", color: navColor("about")}}>
+            <a href="/#lineage" className="site-nav-link" style={{color: C.muted}}>
               HOW IT WORKS
-            </button>
+            </a>
             {/* /play is a Next.js route outside SiteApp's view state, so it links as a plain
                 anchor. Only the Next host serves it; the Vite preview (no onNavigate) omits it. */}
             {onNavigate && (
-              <a href="/play" style={{letterSpacing: "0.14em", color: C.muted, textDecoration: "none"}}>
-                PLAYGROUND
+              <a href="/play" className="site-nav-link" style={{color: C.muted}}>
+                PLAY
               </a>
             )}
           </nav>
           <div className="site-account" ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
             <button
               type="button"
-              className="btn-outline"
+              className="site-connect-btn"
               aria-haspopup={isConnected ? "menu" : undefined}
               aria-expanded={isConnected ? accountMenuOpen : undefined}
               onClick={() =>
-                isConnected ? setAccountMenuOpen((open) => !open) : openConnectModal?.()
+                wrongChain
+                  ? void ensureChain()
+                  : isConnected
+                    ? setAccountMenuOpen((open) => !open)
+                    : openConnectModal?.()
               }
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                maxWidth: 220,
-                padding: "6px 13px",
-                fontSize: 11,
-                letterSpacing: "0.1em",
-              }}
             >
               <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
-                {isConnected ? accountLabel : "CONNECT"}
+                {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
               </span>
-              {isConnected && <span aria-hidden="true" style={{color: C.muted}}>▾</span>}
+              {isConnected && <span aria-hidden="true">▾</span>}
             </button>
             {isConnected && accountMenuOpen && (
               <div
@@ -504,7 +561,7 @@ export function SiteApp({
                   minWidth: 180,
                   border: `1px solid ${C.border}`,
                   background: C.page,
-                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.35)",
+                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.12)",
                   zIndex: 30,
                 }}
               >
@@ -536,7 +593,7 @@ export function SiteApp({
         </div>
       </header>
 
-      {view === "mint" && (
+      {shownView === "mint" && (
         <MintView
           data={data}
           chainId={dep.chainId}
@@ -551,6 +608,7 @@ export function SiteApp({
           mint={mint}
           onMint={() => void doMint()}
           onOpenToken={openToken}
+          onConnect={() => openConnectModal?.()}
         />
       )}
       {view === "auction" && (
@@ -562,12 +620,15 @@ export function SiteApp({
           publicClient={publicClient}
           address={address}
           busy={busy}
+          pendingTx={pendingTx}
           txErr={txErr}
           txHash={txHash}
           onBid={doBid}
-          onWithdraw={() => void runHouse("withdraw", "withdraw", [0n])}
-          onSettle={() => void runHouse("settle", "settle", [0n])}
-          onClaim={() => void runHouse("claim", "claimProceeds", [0n])}
+          onWithdraw={() => { if (auctionId !== null) void runHouse("withdraw", "withdraw", [auctionId]); }}
+          onRetry={() => { setAuction("loading"); void refreshAuction(); }}
+          onSettle={() => { if (auctionId !== null) void runHouse("settle", "settle", [auctionId]); }}
+          onClaim={() => { if (auctionId !== null) void runHouse("claim", "claimProceeds", [auctionId]); }}
+          onClaimLot={() => { if (auctionId !== null) void runHouse("claimLot", "claimLot", [auctionId]); }}
           onOpenToken={openToken}
         />
       )}
@@ -594,6 +655,7 @@ export function SiteApp({
           publicClient={publicClient}
           address={address}
           busy={busy}
+          pendingTx={pendingTx}
           txErr={txErr}
           onChange={setComposeDraft}
           onCancel={() => setComposeMode(false)}
@@ -623,6 +685,7 @@ export function SiteApp({
           address={address}
           tokenId={tokenId}
           busy={busy}
+          pendingTx={pendingTx}
           txErr={txErr}
           onBack={() => go("token")}
           onStartCompose={(id) => startCompose(id)}
@@ -632,7 +695,6 @@ export function SiteApp({
           onSacrifice={(t) => void doSacrifice(t)}
         />
       )}
-      {view === "about" && <AboutView dep={dep} data={data} />}
 
       {actionNotice && (
         <div
@@ -652,7 +714,7 @@ export function SiteApp({
             padding: "12px 14px 12px 18px",
             border: `1px solid ${C.ink}`,
             background: C.page,
-            boxShadow: "0 8px 28px rgba(0, 0, 0, 0.18)",
+            boxShadow: "0 8px 28px rgba(0, 0, 0, 0.08)",
             fontSize: 12,
           }}
         >
@@ -695,25 +757,7 @@ export function SiteApp({
         </div>
       )}
 
-      <footer style={{borderTop: `1px solid ${C.rule}`}}>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "12px 32px",
-            padding: "24px 48px",
-            fontSize: 11,
-            color: C.muted,
-          }}
-        >
-          <span style={{letterSpacing: "0.14em"}}>SHAPES</span>
-          <span style={{marginLeft: "auto", display: "flex", gap: 20}}>
-            <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer" style={{fontSize: 11}}>
-              Contract
-            </a>
-          </span>
-        </div>
-      </footer>
+      <SiteFooter dep={dep} topRule reserve={reserveLine} />
     </div>
   );
 }

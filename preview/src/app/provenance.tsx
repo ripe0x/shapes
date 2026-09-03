@@ -190,10 +190,12 @@ export function DetailPanel({
 }) {
   const decoded = decodeModuleByte(byte);
   return (
-    <div style={{ border: `1px solid ${C.hair}`, borderRadius: 5, padding: 12, minWidth: 220 }}>
+    // Square corners and the site's border token, with the harness colour as the fallback where
+    // the root tokens are not defined (the Vite dev harness).
+    <div style={{ border: `1px solid var(--border, ${C.hair})`, padding: 12, minWidth: 220 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        {color && <span style={{ width: 10, height: 10, borderRadius: 2, background: color, flexShrink: 0 }} />}
-        <span style={{ ...mono, fontSize: 11, fontWeight: 600 }}>{label}</span>
+        {color && <span style={{ width: 10, height: 10, background: color, flexShrink: 0 }} />}
+        <span style={{ ...mono, fontSize: 11, fontWeight: 500 }}>{label}</span>
       </div>
       <Row k="source module #" v={moduleIndex} />
       <Row k="byte" v={byteHex(byte)} />

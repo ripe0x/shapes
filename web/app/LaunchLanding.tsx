@@ -7,6 +7,7 @@ import { DENOMINATIONS as RENDER_DENOMINATIONS } from "@shared/canonical/denomin
 import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/canonical/sampling";
 import { localArt, sampleSeed } from "@shared/site/art";
 import { mintGene } from "@shared/previewGene";
+import { SiteFooter } from "@shared/site/SiteFooter";
 
 const LAUNCH_AT = new Date("2026-09-03T12:00:00-04:00").getTime();
 
@@ -190,32 +191,45 @@ function useCountdown() {
   return {
     ready: remaining !== null,
     live: remaining === 0,
-    days: Math.floor(seconds / 86_400),
-    hours: Math.floor((seconds % 86_400) / 3_600),
+    hours: Math.floor(seconds / 3_600),
     minutes: Math.floor((seconds % 3_600) / 60),
     seconds: seconds % 60,
   };
 }
 
-function Countdown() {
-  const countdown = useCountdown();
+function Countdown({
+  countdown,
+  forceLive,
+  mintSlot,
+}: {
+  countdown: ReturnType<typeof useCountdown>;
+  forceLive: boolean;
+  mintSlot?: React.ReactNode;
+}) {
+  const live = forceLive || countdown.live;
+  const slotted = live && mintSlot !== undefined;
   const units = [
-    [countdown.days, "days"],
     [countdown.hours, "hours"],
     [countdown.minutes, "minutes"],
     [countdown.seconds, "seconds"],
   ] as const;
 
   return (
-    <section className="launch-countdown" aria-labelledby="mint-time">
+    <section
+      id="mint"
+      className={slotted ? "launch-countdown launch-countdown--panel" : "launch-countdown"}
+      aria-labelledby="mint-time"
+    >
       <div>
-        <p className="launch-kicker">Public mint</p>
+        <p className="launch-kicker">{forceLive ? "Mint" : "Mint opens"}</p>
         <h2 id="mint-time">
-          {countdown.live ? "Minting is live." : "September 3, 12:00 PM ET"}
+          {live ? "Minting is live." : "September 3, 12:00 PM ET"}
         </h2>
       </div>
 
-      {!countdown.live ? (
+      {slotted ? (
+        mintSlot
+      ) : !live ? (
         <div className="countdown-units" aria-live="polite" aria-label="Time until mint">
           {units.map(([value, label]) => (
             <div className="countdown-unit" key={label}>
@@ -233,12 +247,33 @@ function Countdown() {
   );
 }
 
-export function LaunchLanding() {
+export function LaunchLanding({
+  live: forceLive = false,
+  mintSlot,
+  footer,
+}: {
+  live?: boolean;
+  mintSlot?: React.ReactNode;
+  /** Replaces the default footer, e.g. with one carrying the reserve line for the app-mode
+   *  index route. Pre-launch and the plain landing keep the default (no reserve line). */
+  footer?: React.ReactNode;
+}) {
+  const countdown = useCountdown();
+  const live = forceLive || countdown.live;
+
   return (
     <main className="launch-page">
       {/* No header: the hero title is the wordmark. The play link keeps the header's slot. */}
       <nav className="launch-play-link" aria-label="Primary navigation">
-        <Link href="/play">Play</Link>
+        {live ? (
+          <div className="launch-nav-links">
+            <Link href="#mint">Mint</Link>
+            <Link href="/gallery">Gallery</Link>
+            <Link href="/play">Play</Link>
+          </div>
+        ) : (
+          <Link href="/play">Play</Link>
+        )}
       </nav>
 
       <section className="launch-hero" id="top">
@@ -259,16 +294,19 @@ export function LaunchLanding() {
             priority
             unoptimized
           />
-          <figcaption>18 onchain compositions, moving through all nine value tiers.</figcaption>
         </figure>
       </section>
 
-      <Countdown />
+      <Countdown countdown={countdown} forceLive={forceLive} mintSlot={mintSlot} />
 
-      <section className="launch-section launch-about" aria-labelledby="about-title">
+      <section className="launch-section launch-about" id="about" aria-labelledby="about-title">
         <div>
           <p className="launch-kicker">The project</p>
-          <h2 id="about-title">ETH in, Shape out. Shape burned, ETH returned.</h2>
+          <h2 id="about-title">
+            ETH in, Shape out.
+            <br />
+            Shape burned, ETH returned.
+          </h2>
         </div>
         <div className="launch-prose">
           <p>
@@ -287,11 +325,11 @@ export function LaunchLanding() {
         <div className="launch-section-heading">
           <div>
             <p className="launch-kicker">Nine fixed tiers</p>
-            <h2 id="tiers-title">Mainnet value tiers</h2>
+            <h2 id="tiers-title">Value tiers</h2>
           </div>
           <p>
-            Each value is exact and fully redeemable. A flat 0.001 ETH fee is added once when
-            minting.
+            Each value is exact and fully redeemable. A one-time 0.001 ETH mint fee applies to
+            any shape mint. No fees to merge, split, or redeem.
           </p>
         </div>
 
@@ -392,15 +430,7 @@ export function LaunchLanding() {
         </div>
       </section>
 
-      <footer className="launch-footer">
-        <span>
-          An Ethereum primitive by{" "}
-          <a href="https://x.com/ripe0x" target="_blank" rel="noreferrer">
-            ripe
-          </a>
-        </span>
-        <a href="#top">Back to top</a>
-      </footer>
+      {footer ?? <SiteFooter />}
     </main>
   );
 }

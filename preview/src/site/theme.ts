@@ -1,21 +1,22 @@
 import type React from "react";
 
-/** Design tokens for the public site, from the "Ledger" handoff. */
+/** Design tokens for the public site: the paper system shared with the launch page and the Playground. */
 export const C = {
-  page: "#0d0d0c",
-  ink: "#e6e4dd",
-  body: "#cfcdc6",
-  bodyDim: "#a5a59e",
-  muted: "#71716b",
-  faint: "#4f4f4a",
-  rule: "#262622",
-  ruleInner: "#1c1c19",
-  border: "#3a3a34",
-  row: "#161613",
+  page: "#f7f7f3",
+  ink: "#11110f",
+  body: "#2f2f2b",
+  bodyDim: "#4f4f49",
+  muted: "#686862",
+  faint: "#aaa9a1",
+  rule: "#d8d8d1",
+  ruleInner: "#e7e7e1",
+  border: "#b9b9b1",
+  row: "#efefe9",
   art: "#000000",
 } as const;
 
 export const FONT = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace";
+export const SANS = "Arial, Helvetica, sans-serif";
 
 /** 10px 0.14em uppercase section label. */
 export const label: React.CSSProperties = {

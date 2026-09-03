@@ -3,11 +3,12 @@ import {formatEther, type PublicClient} from "viem";
 import {useBalance} from "wagmi";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, label} from "./theme";
-import {Section, Modal, Art, txUrl} from "./ui";
+import {Section, Modal, Art, txUrl, TxStage, txStageLabel, type PendingTx} from "./ui";
 import {localArt} from "./art";
 import {useEnsDisplay} from "./ens";
 import {
   breakdown,
+  chainNowFor,
   formatCountdown,
   formatRelativeTime,
   getPhase,
@@ -32,14 +33,17 @@ const PRICE_SIZE = 22;
  *  the image sits with matching space above and below within the viewport. */
 const TOP_MARGIN = 32;
 
-/** Ticks once a second so the countdown moves without the caller re-fetching the chain. */
-function useNow(): number {
-  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+/** Ticks once a second so the countdown moves without the caller re-fetching the chain. Anchored
+ *  to the chain's own clock (via `chainNowFor`) rather than `Date.now()`, which can be far from
+ *  the chain's block timestamp on a dev chain whose clock has been advanced. Falls back to
+ *  wall-clock time while no auction has loaded yet; that value goes unused until it has. */
+function useNow(auction: AuctionSlot): number {
+  const [, tick] = React.useState(0);
   React.useEffect(() => {
-    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    const t = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
-  return now;
+  return typeof auction === "object" && auction !== null ? chainNowFor(auction) : Math.floor(Date.now() / 1000);
 }
 
 /** Max height available for the hero artwork so it renders fully within the viewport: the window
@@ -60,6 +64,13 @@ function useArtMaxHeight(): number | null {
   return maxHeight;
 }
 
+/** "24 hours", "10 minutes", "90 seconds": the largest unit that divides the duration evenly. */
+function formatDuration(seconds: number): string {
+  if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? "" : "s"}`;
+  if (seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
+}
+
 export function AuctionView({
   auction,
   lotImage,
@@ -68,12 +79,15 @@ export function AuctionView({
   publicClient,
   address,
   busy,
+  pendingTx,
   txErr,
   txHash,
   onBid,
   onWithdraw,
+  onRetry,
   onSettle,
   onClaim,
+  onClaimLot,
   onOpenToken,
 }: {
   /** "loading" before the first chain read resolves, null once resolved with no live auction. */
@@ -84,19 +98,43 @@ export function AuctionView({
   publicClient: PublicClient | undefined;
   address: `0x${string}` | undefined;
   busy: string | null;
+  pendingTx: PendingTx | null;
   txErr: {op: string; text: string} | null;
   txHash: string | null;
   onBid: (cardIds: bigint[], ethBackingWei: bigint) => void;
   onWithdraw: () => void;
+  /** Re-reads the auction after a failed load. */
+  onRetry: () => void;
   onSettle: () => void;
   onClaim: () => void;
+  /** Winner: claimLot, which delivers the token. */
+  onClaimLot: () => void;
   onOpenToken: (id: bigint) => void;
 }) {
-  const now = useNow();
+  const now = useNow(auction);
   const artMaxHeight = useArtMaxHeight();
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [ethAmount, setEthAmount] = React.useState("");
   const [asking, setAsking] = React.useState(false);
+  // The confirm modal stays open while the bid is in flight so its stage line and the wallet
+  // prompt are seen together. It closes when the op settles; the picks are cleared only on
+  // success so a failed bid can be retried as it was.
+  const bidding = React.useRef(false);
+  React.useEffect(() => {
+    if (busy === "bid") {
+      bidding.current = true;
+      return;
+    }
+    if (busy === null && bidding.current) {
+      bidding.current = false;
+      setAsking(false);
+      if (!(txErr && txErr.op === "bid")) {
+        setPicked(new Set());
+        setEthAmount("");
+      }
+    }
+  }, [busy, txErr]);
+
   // Which input is live: the ETH field mints its own cards, the card picker spends cards the
   // wallet already holds. Mutually exclusive — a bid is whichever mode is active, plus whatever
   // is already escrowed from earlier bids.
@@ -109,10 +147,10 @@ export function AuctionView({
 
   // The standing bidder's identity, resolved before any early return so the hook order stays
   // fixed regardless of the auction slot's state.
-  const highestBidder = auction && auction !== "loading" ? auction.highestBidder : undefined;
+  const highestBidder = typeof auction === "object" && auction !== null ? auction.highestBidder : undefined;
   const bidderIdentity = useEnsDisplay(publicClient, highestBidder);
 
-  const auctionId = auction && auction !== "loading" ? auction.id : null;
+  const auctionId = typeof auction === "object" && auction !== null ? auction.id : null;
   const [bidHistory, setBidHistory] = React.useState<BidHistoryEntry[] | null>(null);
   React.useEffect(() => {
     if (!publicClient || auctionId === null) return;
@@ -127,6 +165,19 @@ export function AuctionView({
     // txHash re-triggers the load after any confirmed auction transaction; loadBidHistory's own
     // cache (keyed by log count) makes this a no-op unless a new bid actually landed.
   }, [publicClient, dep, auctionId, txHash]);
+
+  if (auction === "error") {
+    return (
+      <Section title="AUCTION" last>
+        <p style={{margin: 0, fontSize: 15, lineHeight: 1.7, color: C.bodyDim, maxWidth: "60ch"}}>
+          Could not read the auction.
+        </p>
+        <button type="button" className="btn-outline" onClick={onRetry} style={{marginTop: 18, padding: "10px 20px"}}>
+          Try again
+        </button>
+      </Section>
+    );
+  }
 
   if (auction === "loading") {
     return (
@@ -152,6 +203,7 @@ export function AuctionView({
   const left = secondsLeft(auction, now);
   const yours = address && auction.highestBidder.toLowerCase() === address.toLowerCase();
   const isSeller = address && auction.seller.toLowerCase() === address.toLowerCase();
+  const isWinner = address && auction.highestBidder.toLowerCase() === address.toLowerCase();
   const nearExtension = phase === "live" && left !== null && left <= auction.extensionWindow;
 
   // The lot's own name and denomination, looked up by the lot's tokenId (auction.tokenId), not
@@ -200,9 +252,6 @@ export function AuctionView({
   };
 
   const submit = () => {
-    setAsking(false);
-    setPicked(new Set());
-    setEthAmount("");
     const cardIds = mode === "cards" ? pickedTokens.map((t) => t.id) : [];
     const backingWei = mode === "eth" && !ethInvalid ? ethWei : 0n;
     onBid(cardIds, backingWei);
@@ -339,7 +388,7 @@ export function AuctionView({
                 disabled={!!busy}
                 style={{width: "100%", padding: "13px 20px"}}
               >
-                {busy === "settle" ? "Waiting for confirmation" : "Settle"}
+                {txStageLabel("settle", "Settle", busy, pendingTx)}
               </button>
               {errLine("settle")}
             </div>
@@ -498,12 +547,22 @@ export function AuctionView({
                 disabled={!!busy || !address || !hasValidBid}
                 style={{width: "100%", padding: "13px 20px"}}
               >
-                {busy === "bid"
-                  ? "Waiting for confirmation"
-                  : hasValidBid
-                    ? `Place bid worth ${unitsToEth(totalUnits)} ETH`
-                    : "Place bid"}
+                {txStageLabel(
+                  "bid",
+                  hasValidBid ? `Place bid worth ${unitsToEth(totalUnits)} ETH` : "Place bid",
+                  busy,
+                  pendingTx,
+                )}
               </button>
+              <TxStage op="bid" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
+              {txHash && busy === null && (
+                <div style={{marginTop: 10, fontSize: 11, color: C.muted}}>
+                  Transaction confirmed ·{" "}
+                  <a href={txUrl(txHash, dep.chainId)} target="_blank" rel="noreferrer" style={{color: C.muted}}>
+                    View transaction
+                  </a>
+                </div>
+              )}
               {errLine("bid")}
 
               <p style={{margin: 0, fontSize: 11, lineHeight: 1.7, color: C.bodyDim}}>
@@ -552,7 +611,7 @@ export function AuctionView({
                       disabled={!!busy}
                       style={{padding: "11px 26px"}}
                     >
-                      {busy === "bid" ? "Waiting for confirmation" : `Place bid worth ${unitsToEth(totalUnits)} ETH`}
+                      {txStageLabel("bid", `Place bid worth ${unitsToEth(totalUnits)} ETH`, busy, pendingTx)}
                     </button>
                     <button
                       type="button"
@@ -564,6 +623,7 @@ export function AuctionView({
                       Cancel
                     </button>
                   </div>
+                  <TxStage op="bid" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
                 </Modal>
               )}
             </div>
@@ -637,10 +697,41 @@ export function AuctionView({
                 disabled={!!busy}
                 style={{marginTop: 24, padding: "10px 20px"}}
               >
-                {busy === "withdraw" ? "Waiting for confirmation" : "Take them back"}
+                {txStageLabel("withdraw", "Take them back", busy, pendingTx)}
               </button>
               {errLine("withdraw")}
             </>
+          )}
+        </Section>
+      )}
+
+      {auction.settled && (
+        <Section title="LOT" pad="26px 48px 36px 32px">
+          {auction.lotClaimed ? (
+            <p style={{margin: 0, fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+              {tokenName} was delivered to {bidderIdentity}.
+            </p>
+          ) : isWinner ? (
+            <>
+              <p style={{margin: "0 0 22px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+                {tokenName} is yours. Claim it to take delivery.
+              </p>
+              <button
+                type="button"
+                className="btn-filled"
+                onClick={onClaimLot}
+                disabled={!!busy}
+                style={{padding: "11px 26px"}}
+              >
+                {txStageLabel("claimLot", `Claim ${tokenName}`, busy, pendingTx)}
+              </button>
+              <TxStage op="claimLot" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
+              {errLine("claimLot")}
+            </>
+          ) : (
+            <p style={{margin: 0, fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+              Awaiting delivery to {bidderIdentity}.
+            </p>
           )}
         </Section>
       )}
@@ -658,7 +749,7 @@ export function AuctionView({
             disabled={!!busy}
             style={{padding: "11px 26px"}}
           >
-            {busy === "claim" ? "Waiting for confirmation" : "Claim the bid"}
+            {txStageLabel("claim", "Claim the bid", busy, pendingTx)}
           </button>
           {errLine("claim")}
         </Section>
@@ -669,7 +760,7 @@ export function AuctionView({
           <div>Reserve {unitsToEth(auction.reserveUnits)} ETH</div>
           <div>Each bid clears the last by {auction.minIncrementBps / 100}%, at least {unitsToEth(1n)} ETH</div>
           <div>
-            Runs {Number(auction.duration) / 3600} hours from the first bid
+            Runs {formatDuration(Number(auction.duration))} from the first bid
           </div>
           <div>
             A bid in the last {auction.extensionWindow / 60} minutes pushes the end out by the
@@ -677,13 +768,6 @@ export function AuctionView({
           </div>
           <div>The house takes no fee</div>
         </div>
-        {txHash && (
-          <div style={{marginTop: 20, fontSize: 12}}>
-            <a href={txUrl(txHash, dep.chainId)} target="_blank" rel="noreferrer">
-              View the last transaction
-            </a>
-          </div>
-        )}
       </Section>
     </>
   );

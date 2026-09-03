@@ -6,15 +6,16 @@ import "@fontsource/ibm-plex-mono/500.css";
 import "@rainbow-me/rainbowkit/styles.css";
 import {WagmiProvider} from "wagmi";
 import {QueryClient, QueryClientProvider} from "@tanstack/react-query";
-import {RainbowKitProvider, darkTheme} from "@rainbow-me/rainbowkit";
+import {RainbowKitProvider, lightTheme} from "@rainbow-me/rainbowkit";
 import {SiteApp} from "./SiteApp";
 import {buildConfig} from "../chain/wagmi";
 import type {Deployment} from "../chain/abi";
+import {C} from "./theme";
 
 const queryClient = new QueryClient();
 
 const centered: React.CSSProperties = {
-  color: "#71716b",
+  color: C.muted,
   padding: 48,
   textAlign: "center",
   fontFamily: "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
@@ -59,7 +60,7 @@ function Boot() {
   return (
     <WagmiProvider config={state.config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()}>
+        <RainbowKitProvider theme={lightTheme()}>
           <SiteApp dep={state.dep} />
         </RainbowKitProvider>
       </QueryClientProvider>

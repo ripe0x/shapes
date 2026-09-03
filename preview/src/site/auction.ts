@@ -19,20 +19,37 @@ export interface AuctionState {
   highestUnits: bigint;
   highestBidder: `0x${string}`;
   settled: boolean;
+  /** True once claimLot delivered the token to the winner. */
+  lotClaimed: boolean;
   /** Smallest bid that would take the lead right now, in units. */
   minimumUnits: bigint;
   /** The connected wallet's own escrowed total and cards, if any. */
   yourUnits: bigint;
   yourCards: bigint[];
+  /** Chain block timestamp (unix seconds) read alongside this auction, paired with the
+   *  wall-clock instant (`Date.now()`) it was read at. Anchors the countdown to the chain's
+   *  clock instead of the browser's: on a dev chain whose clock has been advanced far past real
+   *  time, comparing `endTime` to `Date.now()` directly would show a wildly wrong remainder. */
+  chainNow: number;
+  readAt: number;
+}
+
+/** Estimated current chain time: the block timestamp read alongside `a` plus the wall-clock time
+ *  elapsed since that read. Lets a UI tick a countdown every second without re-fetching the
+ *  chain, while staying anchored to the chain's own clock rather than `Date.now()`. */
+export function chainNowFor(a: AuctionState): number {
+  return a.chainNow + (Date.now() - a.readAt) / 1000;
 }
 
 /**
- * Auction slot as loaded by the site: "loading" before the first read resolves,
+ * Auction slot as loaded by the site: "loading" before the first read resolves, "error" when the
+ * read failed (dead RPC, mid-redeploy chain) so the page can offer a retry instead of claiming
+ * there is no auction,
  * null once resolved with no live auction, otherwise the loaded state. Kept
  * distinct from `AuctionState | null` so a slow first read cannot render as
  * "no auction is running."
  */
-export type AuctionSlot = AuctionState | null | "loading";
+export type AuctionSlot = AuctionState | null | "loading" | "error";
 
 export type Phase = "pre-bid" | "live" | "ended-unsettled" | "settled";
 
@@ -73,7 +90,9 @@ export function parseBidEth(input: string): bigint {
 /** Seconds remaining, or null while the auction has not started. */
 export function secondsLeft(a: AuctionState, now: number): number | null {
   if (a.endTime === 0n) return null;
-  return Math.max(0, Number(a.endTime) - now);
+  // `now` (chainNowFor) is fractional, extrapolated between block reads; floored to whole
+  // seconds so the countdown display doesn't render a fractional second.
+  return Math.max(0, Math.floor(Number(a.endTime) - now));
 }
 
 /** Formats seconds as "Hh MMm SSs", dropping units that are always zero at this magnitude
@@ -120,6 +139,44 @@ export function breakdown(backingWei: bigint): {di: number; count: number}[] {
   return out;
 }
 
+/**
+ * The auction listed for a token, resolved through the house's own index rather than an assumed
+ * auction id: the collection owner token is not necessarily the first auction created. Null when
+ * the token has no auction.
+ */
+export async function loadAuctionFor(
+  publicClient: PublicClient,
+  dep: Deployment,
+  tokenId: bigint,
+  viewer: `0x${string}` | undefined,
+): Promise<AuctionState | null> {
+  if (!dep.auctionHouse) return null;
+  const house = {address: dep.auctionHouse, abi: auctionHouseAbi} as const;
+  const [exists, auctionId] = await publicClient.readContract({
+    ...house,
+    functionName: "getAuctionFor",
+    args: [dep.shapes, tokenId],
+  });
+  if (exists) return loadAuction(publicClient, dep, auctionId, viewer);
+
+  // claimLot deletes the token's index entry, so a finished auction is not listed there any
+  // more. The record and its history still exist; the latest AuctionCreated for this token,
+  // read from the house's logs, gives its id.
+  const latest = await publicClient.getBlockNumber();
+  const created = await paginate(dep, latest, (fromBlock, toBlock) =>
+    publicClient.getContractEvents({
+      ...house,
+      eventName: "AuctionCreated",
+      args: {nft: dep.shapes},
+      fromBlock,
+      toBlock,
+    }),
+  );
+  const last = created.filter((log) => log.args.tokenId === tokenId).at(-1);
+  const id = last?.args.auctionId;
+  return id === undefined ? null : loadAuction(publicClient, dep, id, viewer);
+}
+
 export async function loadAuction(
   publicClient: PublicClient,
   dep: Deployment,
@@ -137,7 +194,7 @@ export async function loadAuction(
   const raw = await publicClient.readContract({...house, functionName: "auctions", args: [auctionId]});
   if (raw.seller === ZERO) return null;
 
-  const [minimumUnits, yourUnits, yourCards] = await Promise.all([
+  const [minimumUnits, yourUnits, yourCards, block] = await Promise.all([
     publicClient.readContract({...house, functionName: "minimumBid", args: [auctionId]}),
     viewer
       ? publicClient.readContract({...house, functionName: "bidUnits", args: [auctionId, viewer]})
@@ -145,7 +202,9 @@ export async function loadAuction(
     viewer
       ? publicClient.readContract({...house, functionName: "escrowedCards", args: [auctionId, viewer]})
       : Promise.resolve([] as readonly bigint[]),
+    publicClient.getBlock({blockTag: "latest"}),
   ]);
+  const readAt = Date.now();
 
   return {
     id: auctionId,
@@ -159,9 +218,12 @@ export async function loadAuction(
     highestUnits: raw.highestUnits,
     highestBidder: raw.highestBidder,
     settled: raw.settled,
+    lotClaimed: raw.lotClaimed,
     minimumUnits: BigInt(minimumUnits),
     yourUnits: BigInt(yourUnits),
     yourCards: [...yourCards],
+    chainNow: Number(block.timestamp),
+    readAt,
   };
 }
 

@@ -2,7 +2,7 @@ import React from "react";
 import {type PublicClient} from "viem";
 import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
 import {C, label} from "./theme";
-import {Art, OwnerTokenBanner, Section} from "./ui";
+import {Art, OwnerTokenBanner, Section, TxStage, txStageLabel, type PendingTx} from "./ui";
 import type {SiteData, SiteToken} from "./data";
 import {buildComposeResultPreview, type ComposeResultPreview} from "./composePreview";
 import {
@@ -30,6 +30,7 @@ export function ComposeWorkspace({
   publicClient,
   address,
   busy,
+  pendingTx,
   txErr,
   onChange,
   onCancel,
@@ -42,6 +43,7 @@ export function ComposeWorkspace({
   publicClient: PublicClient | undefined;
   address: `0x${string}` | undefined;
   busy: string | null;
+  pendingTx: PendingTx | null;
   txErr: {op: string; text: string} | null;
   onChange: (next: ComposeDraft) => void;
   onCancel: () => void;
@@ -120,6 +122,7 @@ export function ComposeWorkspace({
         dep={dep}
         publicClient={publicClient}
         busy={busy}
+        pendingTx={pendingTx}
         error={txErr?.op === "compose" ? txErr.text : null}
         lockedSurvivorId={lockedSurvivor}
         ownerTokenId={data?.ownerToken ?? null}
@@ -294,6 +297,7 @@ function ComposeReview({
   dep,
   publicClient,
   busy,
+  pendingTx,
   error,
   lockedSurvivorId,
   ownerTokenId,
@@ -308,6 +312,7 @@ function ComposeReview({
   dep: Deployment;
   publicClient: PublicClient | undefined;
   busy: string | null;
+  pendingTx: PendingTx | null;
   error: string | null;
   lockedSurvivorId: bigint | null;
   ownerTokenId: bigint | null;
@@ -451,10 +456,14 @@ function ComposeReview({
               onClick={() => onSubmit(survivor, burnIds)}
               style={{marginTop: 28, padding: "11px 22px"}}
             >
-              {busy === "compose"
-                ? "WAITING FOR CONFIRMATION"
-                : `COMPOSE ${selected.length} SHAPES INTO SHAPE #${survivor.id.toString()}`}
+              {txStageLabel(
+                "compose",
+                `COMPOSE ${selected.length} SHAPES INTO SHAPE #${survivor.id.toString()}`,
+                busy,
+                pendingTx,
+              ).toUpperCase()}
             </button>
+            <TxStage op="compose" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
           </div>
         )}
 

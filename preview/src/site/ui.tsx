@@ -138,3 +138,54 @@ export const txUrl = (hash: string, chainId: number) =>
 
 export const addrUrl = (address: string, chainId: number) =>
   `https://evm.now/address/${address}?chainId=${chainId}`;
+
+export interface PendingTx {
+  op: string;
+  hash: `0x${string}`;
+}
+
+/** Staged label for a button driving a write: the fallback label while idle, "Confirm in
+ *  wallet" once the op is busy but the wallet has not yet returned a hash, "Pending" once it
+ *  has. */
+export function txStageLabel(
+  op: string,
+  fallback: string,
+  busy: string | null,
+  pendingTx: PendingTx | null,
+): string {
+  if (busy !== op) return fallback;
+  return pendingTx?.op === op ? "Pending" : "Confirm in wallet";
+}
+
+/**
+ * Stage line for one write op: nothing while idle, "Confirm in wallet" once the op is busy but
+ * has no hash yet, "Transaction pending" plus the evm.now link once the wallet returns a hash.
+ * Placed directly under the primary button of the flow it tracks.
+ */
+export function TxStage({
+  op,
+  busy,
+  pendingTx,
+  chainId,
+}: {
+  op: string;
+  busy: string | null;
+  pendingTx: PendingTx | null;
+  chainId: number;
+}) {
+  if (busy !== op) return null;
+  return (
+    <div style={{marginTop: 10, fontSize: 11, color: C.muted}}>
+      {pendingTx?.op === op ? (
+        <>
+          Transaction pending ·{" "}
+          <a href={txUrl(pendingTx.hash, chainId)} target="_blank" rel="noreferrer" style={{color: C.muted}}>
+            View transaction
+          </a>
+        </>
+      ) : (
+        "Confirm in wallet"
+      )}
+    </div>
+  );
+}

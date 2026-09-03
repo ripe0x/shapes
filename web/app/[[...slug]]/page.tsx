@@ -53,7 +53,6 @@ function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | nu
   if (parts.length === 1 && parts[0] === "auction") return { view: "auction", tokenId: null };
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
   if (parts.length === 1 && parts[0] === "my-shapes") return { view: "collection", tokenId: null };
-  if (parts.length === 1 && parts[0] === "how-it-works") return { view: "about", tokenId: null };
   if (parts.length === 2 && parts[0] === "shape" && /^\d+$/.test(parts[1])) {
     return { view: "token", tokenId: BigInt(parts[1]) };
   }
@@ -137,14 +136,6 @@ export async function generateMetadata({
       openGraph: { title: "My Shapes · Shapes", url: "/my-shapes" },
     };
   }
-  if (r.view === "about") {
-    return {
-      title: "How it works",
-      description:
-        "ETH in, Shape out. How Shapes wrap ETH, redeem for exactly their backing, and generate their art entirely on chain.",
-      openGraph: { title: "How it works · Shapes", url: "/how-it-works" },
-    };
-  }
   if (r.view === "token" && r.tokenId !== null) {
     const id = r.tokenId.toString();
     let title = shapeTitle(r.tokenId, false);
@@ -188,9 +179,7 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   }
 
   if (slug.length === 0) {
-    return appOnly()
-      ? <SiteRoot initialView="mint" initialTokenId={null} />
-      : <LaunchLanding />;
+    return appOnly() ? <SiteRoot initialView="home" initialTokenId={null} /> : <LaunchLanding />;
   }
 
   if (slug.length === 1 && slug[0] === "play") {
