@@ -325,7 +325,7 @@ if [ "$VERIFY" = "true" ]; then
   verify_one() {
     local fq_name="$1" bare_name="$2" address="$3"
     local ctor_types ctor_args=()
-    ctor_types=$(forge inspect "$bare_name" abi 2>/dev/null \
+    ctor_types=$(forge inspect "$bare_name" abi --json 2>/dev/null \
       | jq -r '[.[] | select(.type=="constructor") | .inputs[].type] | join(",")')
     if [ -n "$ctor_types" ]; then
       local vals=()

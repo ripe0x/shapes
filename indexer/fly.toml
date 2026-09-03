@@ -18,8 +18,8 @@ kill_timeout = "30s"
   PONDER_DATABASE_DIR = "/data/pglite"
   DATABASE_SCHEMA = "shapes_sepolia_v4"
   SHAPES_LADDER = "testnet"
-  SHAPES_ADDRESS = "0xb142c4b09c24d639d8c154c93a539cbc09566152"
-  SHAPES_START_BLOCK = "11616988"
+  SHAPES_ADDRESS = "0xd4e7134cd9fbcb1f48d9e2cc460f2afa40b621b8"
+  SHAPES_START_BLOCK = "11623741"
 
 [[mounts]]
   source = "shapes_indexer_data"
