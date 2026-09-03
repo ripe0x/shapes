@@ -10,7 +10,7 @@ proof-of-concept tests under `test/audit/` only.
 ```text
 repository  https://github.com/ripe0x/shapes
 branch      claude/contracts-page
-commit      1c2cfd9
+commit      34d2c3b
 phase       pre-mainnet; Sepolia rehearsals only
 ```
 
@@ -28,7 +28,7 @@ ln -sf project/experiments/medusa-reserve.json medusa.json && medusa fuzz --conf
 anvil --port 8560 --gas-limit 5000000000 &  # then: RPC_URL=http://127.0.0.1:8560 script/deploy.sh anvil && RPC_URL=http://127.0.0.1:8560 LIFECYCLE_INDEXER_PORT=42069 script/lifecycle.sh anvil
 ```
 
-Expected at this commit: 618 Foundry tests pass and 4 are skipped (fork tests, skipped without
+Expected at this commit: 669 Foundry tests pass and 4 are skipped (fork tests, skipped without
 `MAINNET_RPC_URL`) in both profiles, matching `forge test` and `FOUNDRY_PROFILE=testnet forge
 test`. With a fork RPC, the same 4 fork tests in `test/Fork.t.sol` pass instead of skipping.
 `MedusaReserveHarness` exposes three properties: `property_reserve_equals_redeemable_backing`,
