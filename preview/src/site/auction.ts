@@ -126,6 +126,16 @@ export function isSettleable(a: AuctionState, now: number): boolean {
   return !a.settled && a.endTime !== 0n && now >= Number(a.endTime);
 }
 
+/**
+ * Whether the header's AUCTION link should show: the house's latest auction has loaded (not
+ * "loading"/"error"/null) and is open for bids or awaiting settlement, i.e. every phase except
+ * "settled".
+ */
+export function isAuctionActive(auction: AuctionSlot): boolean {
+  if (typeof auction !== "object" || auction === null) return false;
+  return getPhase(auction, chainNowFor(auction)) !== "settled";
+}
+
 /** The minimal card set for an amount, as `[denominationIndex, count]` pairs, largest first. */
 export function breakdown(backingWei: bigint): {di: number; count: number}[] {
   const out: {di: number; count: number}[] = [];
