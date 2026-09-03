@@ -8,7 +8,7 @@ import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/cano
 import { localArt, sampleSeed } from "@shared/site/art";
 import { mintGene } from "@shared/previewGene";
 
-const LAUNCH_AT = new Date("2026-09-03T12:00:00-04:00").getTime();
+const LAUNCH_AT = new Date("2026-09-03T15:00:00-04:00").getTime();
 
 const TIERS = [
   { value: "0.01", grid: "5 × 5", marks: 25 },
@@ -209,7 +209,7 @@ function Countdown() {
       <div>
         <p className="launch-kicker">Mint opens</p>
         <h2 id="mint-time">
-          {countdown.live ? "Minting is live." : "September 3, 12:00 PM ET"}
+          {countdown.live ? "Minting is live." : "September 3, 3:00 PM ET"}
         </h2>
       </div>
 
