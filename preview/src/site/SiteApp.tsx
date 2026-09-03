@@ -65,8 +65,14 @@ export function SiteApp({
   onNavigate?: (view: View, tokenId: bigint | null) => void;
   /** When the view is "home", renders the mint panel and footer inside the host's own page shell
    *  (the landing page) instead of SiteApp's header/footer/mint view. Without it, "home" falls
-   *  back to the mint view. */
-  renderHome?: (mint: React.ReactNode, footer: React.ReactNode, header: React.ReactNode) => React.ReactNode;
+   *  back to the mint view. The fourth argument is the current site load (null until it
+   *  resolves), for a host that needs a loaded total such as supply or reserve. */
+  renderHome?: (
+    mint: React.ReactNode,
+    footer: React.ReactNode,
+    header: React.ReactNode,
+    data: SiteData | null,
+  ) => React.ReactNode;
 }) {
   const {address, isConnected, chainId: walletChainId} = useAccount();
   const {switchChainAsync} = useSwitchChain();
@@ -576,6 +582,7 @@ export function SiteApp({
       />,
       <SiteFooter reserve={reserveLine} onContracts={() => go("contracts")} />,
       header(null),
+      data,
     );
   }
 

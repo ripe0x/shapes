@@ -68,6 +68,11 @@ function eth(wei: bigint): string {
   return `${formatEther(wei)} ETH`;
 }
 
+/** Thousands-separated count for the stats row; empty while the value has not loaded. */
+export function formatStatCount(n: bigint | null): string {
+  return n === null ? "" : n.toLocaleString("en-US");
+}
+
 /** The one line of detail a kind carries beyond its label: the value moved, the counterparty, or
  *  the tokens involved. Empty when the label already says everything. */
 export function activityDetail(event: ActivityEvent): string {
@@ -182,6 +187,14 @@ const ACTIVITY_TOKENS_QUERY = `query ActivityTokens($ids: [BigInt!]!) {
   }
 }`;
 
+/** Two aggregates for the stats row, from the `totalCount` Ponder's generated GraphQL reports on
+ *  any connection: every `token` row ever created (minted, including burned, since rows are
+ *  never deleted) and every `compose` activity row. `limit: 1` keeps each side to its count. */
+const ACTIVITY_STATS_QUERY = `query ActivityStats {
+  tokens(limit: 1) { totalCount }
+  activitys(where: { kind: "compose" }, limit: 1) { totalCount }
+}`;
+
 interface RawActivity {
   id: string;
   blockNumber: string;
@@ -216,11 +229,22 @@ interface ActivityTokensResponse {
   errors?: {message?: string}[];
 }
 
+interface ActivityStatsResponse {
+  data?: {tokens?: {totalCount: number}; activitys?: {totalCount: number}};
+  errors?: {message?: string}[];
+}
+
 export interface ActivityPage {
   events: ActivityEvent[];
   tokens: ActivityToken[];
   endCursor: string | null;
   hasNextPage: boolean;
+}
+
+/** The stats row's two indexer-derived counts. */
+export interface ActivityStats {
+  minted: bigint;
+  composed: bigint;
 }
 
 /**
@@ -296,6 +320,21 @@ export async function fetchActivityPage(
   };
 }
 
+/** The stats row's two counts, one request. Fetched once alongside the feed's first page and
+ *  never per render. */
+export async function fetchActivityStats(
+  url: string,
+  fetcher: typeof fetch,
+  timeoutMs = INDEXER_TIMEOUT_MS,
+): Promise<ActivityStats> {
+  const endpoint = indexerEndpoint(url);
+  const res = await queryIndexer<ActivityStatsResponse>(endpoint, fetcher, ACTIVITY_STATS_QUERY, {}, timeoutMs);
+  if (res.errors?.length || !res.data?.tokens || !res.data?.activitys) {
+    throw new Error(res.errors?.[0]?.message ?? "Shapes indexer returned an invalid stats response");
+  }
+  return {minted: BigInt(res.data.tokens.totalCount), composed: BigInt(res.data.activitys.totalCount)};
+}
+
 function Thumb({thumb, onOpenToken}: {thumb: ActivityThumb; onOpenToken: (id: bigint) => void}) {
   return (
     <button
@@ -369,18 +408,27 @@ export function ActivityFeed({
   chainId,
   onOpenToken,
   fetcher,
+  totalSupply,
+  redeemableBacking,
 }: {
   indexerUrl: string | undefined;
   chainId: number;
   onOpenToken: (id: bigint) => void;
   /** Deterministic tests and previews; production uses the global fetch. */
   fetcher?: typeof fetch;
+  /** `SiteData.supply` (`totalSupply()`), for the "Live" stat. Null until the site's own load
+   *  resolves; the stats row renders empty rather than reading the chain itself. */
+  totalSupply: bigint | null;
+  /** `SiteData.reserve` (`redeemableBacking()`), for the "ETH held" stat. Same null-while-loading
+   *  behavior as `totalSupply`. */
+  redeemableBacking: bigint | null;
 }) {
   const [events, setEvents] = React.useState<ActivityEvent[]>([]);
   const [tokens, setTokens] = React.useState<Map<string, ActivityToken>>(() => new Map());
   const [cursor, setCursor] = React.useState<string | null>(null);
   const [hasNextPage, setHasNextPage] = React.useState(false);
   const [status, setStatus] = React.useState<"loading" | "ready" | "failed">("loading");
+  const [stats, setStats] = React.useState<ActivityStats | null>(null);
   const [busy, setBusy] = React.useState(false);
   // Fixed at mount so relative times do not re-render the feed on a timer.
   const [nowSeconds] = React.useState(() => BigInt(Math.floor(Date.now() / 1000)));
@@ -402,10 +450,13 @@ export function ActivityFeed({
     if (!indexerUrl || !request) return;
     let cancelled = false;
     setStatus("loading");
-    fetchActivityPage(indexerUrl, request, null).then(
-      (page) => {
+    // The stats row rides the feed's first-page load: one round trip on mount, no separate
+    // polling, refreshed only when the feed itself reloads.
+    Promise.all([fetchActivityPage(indexerUrl, request, null), fetchActivityStats(indexerUrl, request)]).then(
+      ([page, s]) => {
         if (cancelled) return;
         absorb(page, false);
+        setStats(s);
         setStatus("ready");
       },
       () => {
@@ -441,6 +492,25 @@ export function ActivityFeed({
           Every mint, composition, split, redemption and auction, newest first. Shapes that no
           longer exist are drawn from the record they left behind.
         </p>
+      </div>
+
+      <div className="activity-stats">
+        <div className="activity-stat">
+          <p className="launch-kicker">Minted</p>
+          <p className="activity-stat-value">{formatStatCount(stats?.minted ?? null)}</p>
+        </div>
+        <div className="activity-stat">
+          <p className="launch-kicker">Live</p>
+          <p className="activity-stat-value">{formatStatCount(totalSupply)}</p>
+        </div>
+        <div className="activity-stat">
+          <p className="launch-kicker">ETH held</p>
+          <p className="activity-stat-value">{redeemableBacking === null ? "" : eth(redeemableBacking)}</p>
+        </div>
+        <div className="activity-stat">
+          <p className="launch-kicker">Composed</p>
+          <p className="activity-stat-value">{formatStatCount(stats?.composed ?? null)}</p>
+        </div>
       </div>
 
       {status === "loading" && rows.length === 0 && <p className="activity-note">Reading the index…</p>}

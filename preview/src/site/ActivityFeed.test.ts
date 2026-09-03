@@ -6,6 +6,8 @@ import {
   activityLabel,
   activityRowModel,
   fetchActivityPage,
+  fetchActivityStats,
+  formatStatCount,
   relativeTime,
   type ActivityEvent,
   type ActivityToken,
@@ -240,4 +242,46 @@ test("a GraphQL error rejects rather than showing an empty feed", async () => {
     () => fetchActivityPage("http://indexer.test", fetcher, null),
     /activity is not a table/,
   );
+});
+
+test("the stats query filters the compose count by kind and counts every token row", async () => {
+  let seenQuery = "";
+  let seenVariables: Record<string, unknown> = {};
+  const fetcher: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String((init as RequestInit).body)) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
+    seenQuery = body.query;
+    seenVariables = body.variables;
+    return new Response(
+      JSON.stringify({data: {tokens: {totalCount: 42}, activitys: {totalCount: 7}}}),
+      {headers: {"content-type": "application/json"}},
+    );
+  };
+
+  const stats = await fetchActivityStats("http://indexer.test", fetcher);
+
+  assert.match(seenQuery, /activitys\(where:\s*{\s*kind:\s*"compose"\s*}/);
+  assert.match(seenQuery, /tokens\(limit:\s*1\)\s*{\s*totalCount\s*}/);
+  assert.deepEqual(seenVariables, {});
+  assert.equal(stats.minted, 42n);
+  assert.equal(stats.composed, 7n);
+});
+
+test("a stats response missing either count rejects rather than showing a stale row", async () => {
+  const fetcher: typeof fetch = async () =>
+    new Response(JSON.stringify({data: {tokens: {totalCount: 42}}}), {
+      headers: {"content-type": "application/json"},
+    });
+
+  await assert.rejects(() => fetchActivityStats("http://indexer.test", fetcher));
+});
+
+test("stat counts get thousands separators, and a not-yet-loaded value renders empty", () => {
+  assert.equal(formatStatCount(0n), "0");
+  assert.equal(formatStatCount(950n), "950");
+  assert.equal(formatStatCount(1_000n), "1,000");
+  assert.equal(formatStatCount(1_234_567n), "1,234,567");
+  assert.equal(formatStatCount(null), "");
 });
