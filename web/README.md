@@ -15,6 +15,21 @@ it: the browser receives it as a prop from the root layout (`ShapesProviders`) i
 chain without writing either file. This is how `npm run e2e:browser` points the site at the chain
 it deploys.
 
+### Per-site deployment record
+
+Two Netlify sites build this same `web/` from `main`: a Sepolia app and the mainnet launch app.
+Both read a bundled `public/<name>.json` record, selected at build time by
+`NEXT_PUBLIC_SHAPES_DEPLOYMENT` (default `deployment`, i.e. `public/deployment.json`, the mainnet
+record). The Sepolia site sets `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia` to read
+`public/deployment.sepolia.json` instead, so writing the mainnet record into `deployment.json`
+during cutover cannot also flip the Sepolia site. `next.config.ts` fails the build if the selected
+record's chain id does not match `SHAPES_LADDER`. Netlify env per site:
+
+- Sepolia app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`, `SHAPES_LADDER=testnet`,
+  `SHAPES_SITE_MODE=app`.
+- Mainnet launch app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT` unset (or `deployment`),
+  `SHAPES_LADDER` unset (mainnet default), `SHAPES_SITE_MODE=app`.
+
 For Sepolia, reads use the configured RPC first and then PublicNode, 1RPC, and Tenderly's public
 endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHAPES_RPC_URL` for
 browser reads when a paid/provider RPC is available. Requests are unbatched because shared site

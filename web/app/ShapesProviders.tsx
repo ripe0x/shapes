@@ -10,7 +10,14 @@ import { getPublicClient } from "@wagmi/core";
 import { shapesAbi, type Deployment } from "@shared/chain/abi";
 import { buildConfig } from "@shared/chain/wagmi";
 import { LADDER_NAME, UNIT } from "@shared/canonical/denominations";
+import { deploymentRecordName } from "@shared/site/deploymentRecord";
 import { LaunchLanding } from "./LaunchLanding";
+
+// The bundled record this build fetches, named by NEXT_PUBLIC_SHAPES_DEPLOYMENT so the two
+// Netlify sites building this repo (Sepolia app, mainnet launch) each fetch their own record
+// instead of both reading the same `deployment.json`. See `app/lib/deployment.ts`, which selects
+// the same file on the server.
+const DEPLOYMENT_RECORD_NAME = deploymentRecordName(process.env.NEXT_PUBLIC_SHAPES_DEPLOYMENT);
 
 type WalletState = {
   dep: Deployment;
@@ -61,20 +68,26 @@ export function ShapesProviders({
 
     let active = true;
     // A local dev target (script/lived-in.sh, web/public/deployment.local.json, gitignored)
-    // takes priority over the bundled deployment.json so a local chain is picked up without
-    // touching the tracked file. Falls back to deployment.json when no local target exists.
+    // takes priority over the bundled record so a local chain is picked up without touching a
+    // tracked file. Dev-only: a production build has no such file, so probing for it there is
+    // just a 500/HTML response for nothing. Falls back to the bundled `/<name>.json` (see
+    // DEPLOYMENT_RECORD_NAME above) when no local target exists.
     // The content-type check matters: the catch-all route streams a 200 HTML page for an unknown
     // path before notFound() can set the status, so a missing local file is not a non-ok response.
     const isJson = (response: Response) =>
       response.ok && (response.headers.get("content-type") ?? "").includes("json");
+    const bundled = () => fetch(`/${DEPLOYMENT_RECORD_NAME}.json`, { cache: "no-store" });
     const load: Promise<Deployment> = deployment
       ? Promise.resolve(deployment)
-      : fetch("/deployment.local.json", { cache: "no-store" })
-          .then((response) => (isJson(response) ? response : fetch("/deployment.json", { cache: "no-store" })))
-          .then((response) => {
-            if (!response.ok) throw new Error("no deployment.json");
-            return response.json();
-          });
+      : (process.env.NODE_ENV !== "production"
+          ? fetch("/deployment.local.json", { cache: "no-store" }).then((response) =>
+              isJson(response) ? response : bundled(),
+            )
+          : bundled()
+        ).then((response) => {
+          if (!response.ok) throw new Error("no deployment record");
+          return response.json();
+        });
     load
       .then(async (dep: Deployment) => {
         const config = buildConfig(dep, {
