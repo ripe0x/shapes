@@ -9,6 +9,7 @@ import {localArt, sampleSeed} from "./art";
 import {mintGene} from "../previewGene";
 import type {SiteData} from "./data";
 import type {MintState} from "./SiteApp";
+import {formatCountdown, mintOpensIn} from "./mintOpensIn";
 
 const marksText = (di: number) => {
   const [c, r] = GRIDS[di];
@@ -146,6 +147,16 @@ export function MintPanel({
   const sampleNo = ((sample % 12) + 12) % 12;
   const minted = mint.minted ?? null;
 
+  // One 1s tick drives the "mint opens in" countdown; skipped entirely once already open, since
+  // mintStart is immutable and cannot start blocking again.
+  const [now, setNow] = React.useState(() => Date.now());
+  const mintGate = data ? mintOpensIn(now, data.mintStart) : {open: true, secondsLeft: 0};
+  React.useEffect(() => {
+    if (mintGate.open) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [mintGate.open]);
+
   // The connected account's native balance, to catch a selection that costs more than it holds
   // before the wallet rejects it. This is the backing plus fee only; gas is left to the wallet.
   const {address} = useAccount();
@@ -156,11 +167,13 @@ export function MintPanel({
   const statusText =
     mint.status === "failed" && mint.error
       ? mint.error
-      : insufficient && total !== null && balance !== undefined
-        ? `Not enough ETH. This ${qty > 1 ? `${qty}× mint` : "mint"} needs ${formatEther(total)} ETH; your balance is ${formatEther(balance.value)} ETH. Choose a lower denomination or quantity.`
-        : connected && fee !== null
-          ? `You send ${formatEther((wei + fee) * q)} ETH. The redemption value is ${formatEther(wei * q)} ETH.`
-          : null;
+      : !mintGate.open
+        ? `Mint opens in ${formatCountdown(mintGate.secondsLeft)}.`
+        : insufficient && total !== null && balance !== undefined
+          ? `Not enough ETH. This ${qty > 1 ? `${qty}× mint` : "mint"} needs ${formatEther(total)} ETH; your balance is ${formatEther(balance.value)} ETH. Choose a lower denomination or quantity.`
+          : connected && fee !== null
+            ? `You send ${formatEther((wei + fee) * q)} ETH. The redemption value is ${formatEther(wei * q)} ETH.`
+            : null;
 
   return (
     <div style={{fontFamily: FONT, width: "100%"}}>
@@ -265,16 +278,18 @@ export function MintPanel({
                     type="button"
                     className="btn-filled"
                     onClick={onMint}
-                    disabled={mint.status === "pending" || fee === null || insufficient}
+                    disabled={mint.status === "pending" || fee === null || insufficient || !mintGate.open}
                     style={{padding: "11px 30px"}}
                   >
                     {mint.status === "pending"
                       ? "Waiting for confirmation"
-                      : insufficient
-                        ? "Insufficient balance"
-                        : qty > 1
-                          ? `Mint ${qty}`
-                          : "Mint"}
+                      : !mintGate.open
+                        ? "Mint not open yet"
+                        : insufficient
+                          ? "Insufficient balance"
+                          : qty > 1
+                            ? `Mint ${qty}`
+                            : "Mint"}
                   </button>
                 )}
               </div>
@@ -284,7 +299,7 @@ export function MintPanel({
                     margin: "16px 0 0",
                     fontSize: 12,
                     lineHeight: 1.7,
-                    color: insufficient || (mint.status === "failed" && mint.error) ? C.ink : C.muted,
+                    color: insufficient || !mintGate.open || (mint.status === "failed" && mint.error) ? C.ink : C.muted,
                     maxWidth: "62ch",
                   }}
                 >
