@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import "@rainbow-me/rainbowkit/styles.css";
 import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider } from "wagmi";
+import { WagmiProvider, type State } from "wagmi";
 import { getPublicClient } from "@wagmi/core";
 import { shapesAbi, type Deployment } from "@shared/chain/abi";
 import { buildConfig } from "@shared/chain/wagmi";
@@ -37,9 +37,13 @@ const centered: React.CSSProperties = {
 export function ShapesProviders({
   children,
   chainOnIndex,
+  walletInitialState,
 }: {
   children: React.ReactNode;
   chainOnIndex: boolean;
+  /** Connection state decoded server-side from the request's cookies (see layout.tsx), so the
+   *  first client render already reflects a previously connected wallet. */
+  walletInitialState?: State;
 }) {
   const pathname = usePathname();
   const isIndex = pathname === "/";
@@ -110,7 +114,7 @@ export function ShapesProviders({
   }
 
   return (
-    <WagmiProvider config={state.config} reconnectOnMount>
+    <WagmiProvider config={state.config} initialState={walletInitialState} reconnectOnMount>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={lightTheme()}>
           <DeploymentContext.Provider value={state.dep}>{children}</DeploymentContext.Provider>
