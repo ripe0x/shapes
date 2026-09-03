@@ -29,6 +29,7 @@ import {
   type PlaySession,
 } from "./session";
 import { decodeSession, encodeSession, sessionShareable } from "./urlCodec";
+import { ProvenanceTree, initialExpandedKeys, type TreeNode } from "../site/ProvenanceTree";
 import { downloadCardPng, downloadComposeGif, downloadLadderPng, downloadSquarePng } from "./exports";
 
 /** Split's single-donor highlight color, matching provenance.tsx's convention for split
@@ -685,212 +686,26 @@ function ComposeBeat({
  * Beat 4 — lineage
  * ------------------------------------------------------------------ */
 
-function LineageNode({
-  node,
-  byKey,
-  focusedKey,
-  onSelect,
-  depth = 0,
-  expandedKeys,
-  onToggleExpanded,
-}: {
-  node: PlayNode;
-  byKey: Map<number, PlayNode>;
-  focusedKey: number | null;
-  onSelect: (key: number) => void;
-  depth?: number;
-  expandedKeys?: Set<number>;
-  onToggleExpanded?: (key: number) => void;
-}) {
+/** A session node's rendered card as a data URI, so `ProvenanceTree` can draw it as a plain img
+ *  regardless of host. Only `#demoId` is shown once a card gets small enough to read it. */
+function playCardArt(node: PlayNode): string {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
-  const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
-  const selectable = node.trace != null || node.splitTrace != null;
-  const widths = [120, 76, 52, 36, 26, 20];
-  const width = widths[Math.min(depth, widths.length - 1)];
-  const stub = 18;
-  const collapsible = expandedKeys != null && onToggleExpanded != null;
-  const expanded = !collapsible || expandedKeys.has(node.key);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <RawCard
-        svg={svg}
-        width={width}
-        caption={width >= 26 ? `#${node.demoId}` : undefined}
-        onClick={selectable ? () => onSelect(node.key) : undefined}
-        selected={selectable && focusedKey === node.key}
-      />
-      {parents.length > 0 && expanded && (
-        <>
-          <div style={{ width: 1, height: stub, background: C.border }} />
-          <div style={{ display: "flex", alignItems: "flex-start" }}>
-            {parents.map((parent, index) => {
-              const first = index === 0;
-              const last = index === parents.length - 1;
-              const solo = parents.length === 1;
-              return (
-                <div key={parent.key} style={{ position: "relative", padding: `${stub}px 9px 0` }}>
-                  {!solo && !first && (
-                    <div style={{ position: "absolute", top: 0, left: 0, width: "50%", height: 1, background: C.border }} />
-                  )}
-                  {!solo && !last && (
-                    <div style={{ position: "absolute", top: 0, left: "50%", width: "50%", height: 1, background: C.border }} />
-                  )}
-                  <div style={{ position: "absolute", top: 0, left: "50%", width: 1, height: stub, background: C.border }} />
-                  <LineageNode
-                    node={parent}
-                    byKey={byKey}
-                    focusedKey={focusedKey}
-                    onSelect={onSelect}
-                    depth={depth + 1}
-                    expandedKeys={expandedKeys}
-                    onToggleExpanded={onToggleExpanded}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-      {parents.length > 0 && collapsible && !expanded && (
-        <>
-          <div style={{ width: 1, height: stub, background: C.border }} />
-          <button type="button" className="play-tree-rollup" onClick={() => onToggleExpanded(node.key)}>
-            {parents.length} {parents.length === 1 ? "source" : "sources"}
-          </button>
-        </>
-      )}
-      {parents.length > 0 && collapsible && expanded && depth >= 2 && (
-        <button type="button" className="play-tree-collapse" onClick={() => onToggleExpanded(node.key)}>
-          collapse
-        </button>
-      )}
-    </div>
-  );
+  return `data:image/svg+xml;base64,${btoa(svg)}`;
 }
 
-function ZoomableTree({ children, resetKey }: { children: React.ReactNode; resetKey: number }) {
-  const viewportRef = React.useRef<HTMLDivElement>(null);
-  const contentRef = React.useRef<HTMLDivElement>(null);
-  const [view, setView] = React.useState({ x: 0, y: 0, scale: 1 });
-  const [dragging, setDragging] = React.useState(false);
-  const dragRef = React.useRef<{ pointerId: number; x: number; y: number; originX: number; originY: number } | null>(null);
-
-  const fit = React.useCallback(() => {
-    const viewport = viewportRef.current;
-    const content = contentRef.current;
-    if (!viewport || !content) return;
-    const contentWidth = content.scrollWidth;
-    const contentHeight = content.scrollHeight;
-    if (contentWidth === 0 || contentHeight === 0) return;
-    const inset = 40;
-    const scale = Math.min(1.25, (viewport.clientWidth - inset * 2) / contentWidth, (viewport.clientHeight - inset * 2) / contentHeight);
-    const safeScale = Math.max(0.12, scale);
-    setView({
-      scale: safeScale,
-      x: (viewport.clientWidth - contentWidth * safeScale) / 2,
-      y: Math.max(inset, (viewport.clientHeight - contentHeight * safeScale) / 2),
-    });
-  }, []);
-
-  React.useEffect(() => {
-    const frame = requestAnimationFrame(() => fit());
-    return () => cancelAnimationFrame(frame);
-  }, [fit, resetKey]);
-
-  React.useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const observer = new ResizeObserver(() => fit());
-    observer.observe(viewport);
-    return () => observer.disconnect();
-  }, [fit]);
-
-  const zoomAtCenter = (factor: number) => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-    const cx = viewport.clientWidth / 2;
-    const cy = viewport.clientHeight / 2;
-    setView((current) => {
-      const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
-      const ratio = scale / current.scale;
-      return {
-        scale,
-        x: cx - (cx - current.x) * ratio,
-        y: cy - (cy - current.y) * ratio,
-      };
-    });
+/** `PlayNode` (session.ts) to `TreeNode` (site/ProvenanceTree.tsx): a node's parents become its
+ *  ancestry children. Only a composed or split node is selectable — drawn cards carry no trace
+ *  to inspect. */
+function playNodeToTree(node: PlayNode, byKey: Map<number, PlayNode>): TreeNode {
+  const parents = (node.parents ?? []).map((k) => byKey.get(k)).filter((n): n is PlayNode => n != null);
+  return {
+    key: String(node.key),
+    art: playCardArt(node),
+    title: `#${node.demoId}`,
+    lines: [],
+    children: parents.map((parent) => playNodeToTree(parent, byKey)),
+    selectable: node.trace != null || node.splitTrace != null,
   };
-
-  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const px = event.clientX - rect.left;
-    const py = event.clientY - rect.top;
-    setView((current) => {
-      const factor = Math.exp(-event.deltaY * 0.0015);
-      const scale = Math.min(2.5, Math.max(0.12, current.scale * factor));
-      const ratio = scale / current.scale;
-      return {
-        scale,
-        x: px - (px - current.x) * ratio,
-        y: py - (py - current.y) * ratio,
-      };
-    });
-  };
-
-  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("button") || target.closest('[data-play-card="interactive"]')) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, originX: view.x, originY: view.y };
-    setDragging(true);
-  };
-
-  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    setView((current) => ({
-      ...current,
-      x: drag.originX + event.clientX - drag.x,
-      y: drag.originY + event.clientY - drag.y,
-    }));
-  };
-
-  const stopDragging = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
-    dragRef.current = null;
-    setDragging(false);
-  };
-
-  return (
-    <div className="play-tree-frame">
-      <div className="play-tree-toolbar" aria-label="Provenance view controls">
-        <PlayButton small onClick={() => zoomAtCenter(1.25)}>+</PlayButton>
-        <PlayButton small onClick={() => zoomAtCenter(0.8)}>−</PlayButton>
-        <PlayButton small onClick={fit}>Fit</PlayButton>
-        <span>{Math.round(view.scale * 100)}%</span>
-      </div>
-      <div
-        ref={viewportRef}
-        className={`play-tree-viewport${dragging ? " is-dragging" : ""}`}
-        onWheel={onWheel}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={stopDragging}
-        onPointerCancel={stopDragging}
-      >
-        <div
-          ref={contentRef}
-          className="play-tree-content"
-          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})` }}
-        >
-          {children}
-        </div>
-      </div>
-      <p className="play-tree-help">Drag to pan · scroll to zoom</p>
-    </div>
-  );
 }
 
 function CellExplorer({ node, byKey }: { node: PlayNode; byKey: Map<number, PlayNode> }) {
@@ -1181,80 +996,19 @@ function formatCount(count: number): string {
   return String(count).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
 
-function CompleteLineageTree({
-  root,
-  session,
-  byKey,
-  focusedKey,
-  onSelect,
-}: {
-  root: PlayNode;
-  session: PlaySession;
-  byKey: Map<number, PlayNode>;
-  focusedKey: number | null;
-  onSelect: (key: number) => void;
-}) {
-  const layers = React.useMemo(() => {
-    const ancestry = new Set<number>();
-    const pending = [root.key];
-    while (pending.length > 0) {
-      const key = pending.pop()!;
-      if (ancestry.has(key)) continue;
-      ancestry.add(key);
-      for (const parentKey of byKey.get(key)?.parents ?? []) pending.push(parentKey);
-    }
-
-    return Array.from({ length: root.denomIndex + 1 }, (_, denomIndex) => ({
-      denomIndex,
-      nodes: session.nodes.filter((node) => ancestry.has(node.key) && node.denomIndex === denomIndex),
-    })).reverse();
-  }, [root.key, root.denomIndex, session.nodes, byKey]);
-
-  const originCount = layers.at(-1)?.nodes.length ?? 0;
-  const initiallyExpanded = React.useMemo(() => {
-    const keys = new Set<number>();
-    const visit = (node: PlayNode, depth: number) => {
-      if (depth >= 3 || !node.parents?.length) return;
-      keys.add(node.key);
-      for (const parentKey of node.parents) {
-        const parent = byKey.get(parentKey);
-        if (parent) visit(parent, depth + 1);
-      }
-    };
-    visit(root, 0);
-    return keys;
-  }, [root.key, byKey]);
-  const [expandedKeys, setExpandedKeys] = React.useState<Set<number>>(initiallyExpanded);
-
-  const toggleExpanded = (key: number) => {
-    setExpandedKeys((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  return (
-    <div className="play-provenance-tree-block">
-      <Prose>
-        Complete {LABELS[root.denomIndex]} ETH · {formatCount(originCount)} independent origins · {layers.length} tiers.
-        {layers.length > 1
-          ? " Select a composed card to inspect its sampling. Open a source count to trace that branch further."
-          : " This is an independent origin Shape."}
-      </Prose>
-      <ZoomableTree resetKey={root.key}>
-        <LineageNode
-          node={root}
-          byKey={byKey}
-          focusedKey={focusedKey}
-          onSelect={onSelect}
-          expandedKeys={expandedKeys}
-          onToggleExpanded={toggleExpanded}
-        />
-      </ZoomableTree>
-    </div>
-  );
+/** Ancestor keys reachable from `root` via `parents`, for the "N independent origins" count
+ *  (denomIndex 0: mint draws, which never have parents) and the tier count (denomIndex + 1). */
+function completeRootStats(root: PlayNode, byKey: Map<number, PlayNode>): {originCount: number; tierCount: number} {
+  const ancestry = new Set<number>();
+  const pending = [root.key];
+  while (pending.length > 0) {
+    const key = pending.pop()!;
+    if (ancestry.has(key)) continue;
+    ancestry.add(key);
+    for (const parentKey of byKey.get(key)?.parents ?? []) pending.push(parentKey);
+  }
+  const originCount = Array.from(ancestry).filter((k) => byKey.get(k)?.denomIndex === 0).length;
+  return {originCount, tierCount: root.denomIndex + 1};
 }
 
 function LineageBeat({ session }: { session: PlaySession }) {
@@ -1273,13 +1027,34 @@ function LineageBeat({ session }: { session: PlaySession }) {
     }
     return null;
   }, [session.nodes]);
-  const [focusedKey, setFocusedKey] = React.useState<number | null>(null);
+  const [focusedKey, setFocusedKey] = React.useState<string | null>(null);
   React.useEffect(() => {
     if (!mostRecentProduced) return;
-    setFocusedKey(mostRecentProduced.key);
+    setFocusedKey(String(mostRecentProduced.key));
   }, [mostRecentProduced?.key]);
+  const focusedNode = focusedKey != null ? byKey.get(Number(focusedKey)) ?? null : null;
 
-  const focusedNode = focusedKey != null ? byKey.get(focusedKey) ?? null : null;
+  const treeRoots = React.useMemo(
+    () => (completeRoot ? [playNodeToTree(completeRoot, byKey)] : tips.map((tip) => playNodeToTree(tip, byKey))),
+    [completeRoot, tips, byKey],
+  );
+  const [expandedKeys, setExpandedKeys] = React.useState<ReadonlySet<string>>(new Set());
+  React.useEffect(() => {
+    const next = new Set<string>();
+    for (const root of treeRoots) for (const key of initialExpandedKeys(root)) next.add(key);
+    setExpandedKeys(next);
+    // treeRoots is a fresh array every render; re-seed only when the underlying roots change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completeRoot?.key, tips.map((tip) => tip.key).join(",")]);
+  const toggleExpanded = (key: string) =>
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
+  const resetKey = completeRoot ? completeRoot.key : tips.map((tip) => tip.key).reduce((sum, key) => sum + key, 0);
 
   if (tips.length === 0) return null;
 
@@ -1287,30 +1062,39 @@ function LineageBeat({ session }: { session: PlaySession }) {
     <section className="play-section">
       <SectionLabel>Provenance</SectionLabel>
       {completeRoot ? (
-        <CompleteLineageTree
-          key={completeRoot.key}
-          root={completeRoot}
-          session={session}
-          byKey={byKey}
-          focusedKey={focusedKey}
-          onSelect={setFocusedKey}
-        />
+        (() => {
+          const {originCount, tierCount} = completeRootStats(completeRoot, byKey);
+          return (
+            <div className="play-provenance-tree-block">
+              <Prose>
+                Complete {LABELS[completeRoot.denomIndex]} ETH · {formatCount(originCount)} independent origins · {tierCount} tiers.
+                {tierCount > 1
+                  ? " Select a composed card to inspect its sampling. Open a source count to trace that branch further."
+                  : " This is an independent origin Shape."}
+              </Prose>
+              <ProvenanceTree
+                root={treeRoots[0]}
+                focusedKey={focusedKey}
+                onSelect={setFocusedKey}
+                expandedKeys={expandedKeys}
+                onToggleExpanded={toggleExpanded}
+                resetKey={resetKey}
+              />
+            </div>
+          );
+        })()
       ) : (
         <>
           <Prose>Every Shape the surviving object was built from.</Prose>
-          <ZoomableTree resetKey={tips.map((tip) => tip.key).reduce((sum, key) => sum + key, 0)}>
-            <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
-              {tips.map((tip) => (
-              <LineageNode
-                key={tip.key}
-                node={tip}
-                byKey={byKey}
-                focusedKey={focusedKey}
-                onSelect={setFocusedKey}
-              />
-              ))}
-            </div>
-          </ZoomableTree>
+          <ProvenanceTree
+            root={treeRoots[0]}
+            extraRoots={treeRoots.slice(1)}
+            focusedKey={focusedKey}
+            onSelect={setFocusedKey}
+            expandedKeys={expandedKeys}
+            onToggleExpanded={toggleExpanded}
+            resetKey={resetKey}
+          />
         </>
       )}
       {focusedNode && (focusedNode.trace || focusedNode.splitTrace) && (
@@ -1616,65 +1400,6 @@ export function PlayApp() {
           flex-wrap: wrap;
           margin-bottom: 16px;
         }
-        .play-tree-frame {
-          position: relative;
-          margin: 24px 0 0;
-        }
-        .play-tree-viewport {
-          position: relative;
-          height: clamp(440px, 62vh, 680px);
-          overflow: hidden;
-          border: 1px solid ${C.rule};
-          background-color: ${C.page};
-          background-image: radial-gradient(${C.rule} 0.7px, transparent 0.7px);
-          background-size: 16px 16px;
-          cursor: grab;
-          touch-action: none;
-          user-select: none;
-        }
-        .play-tree-viewport.is-dragging {
-          cursor: grabbing;
-        }
-        .play-tree-content {
-          position: absolute;
-          top: 0;
-          left: 0;
-          display: inline-flex;
-          width: max-content;
-          align-items: flex-start;
-          transform-origin: 0 0;
-          will-change: transform;
-        }
-        .play-tree-toolbar {
-          position: absolute;
-          z-index: 2;
-          top: 12px;
-          right: 12px;
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          padding: 5px;
-          border: 1px solid ${C.rule};
-          background: color-mix(in srgb, ${C.page} 94%, transparent);
-        }
-        .play-tree-toolbar > span {
-          min-width: 38px;
-          padding: 0 4px;
-          font-family: ${FONT};
-          font-size: 8.5px;
-          color: ${C.muted};
-          text-align: right;
-        }
-        .play-tree-help {
-          margin: 0;
-          padding: 8px 12px;
-          border: 1px solid ${C.rule};
-          border-top: 0;
-          font-family: ${FONT};
-          font-size: 8.5px;
-          letter-spacing: 0.04em;
-          color: ${C.muted};
-        }
         .play-provenance-tree-block {
           margin: 20px 0 0;
         }
@@ -1740,27 +1465,6 @@ export function PlayApp() {
           display: flex;
           gap: 14px;
           flex-wrap: wrap;
-        }
-        .play-tree-rollup,
-        .play-tree-collapse {
-          font-family: ${FONT};
-          color: ${C.muted};
-          background: transparent;
-          cursor: pointer;
-        }
-        .play-tree-rollup {
-          padding: 5px 7px;
-          border: 1px solid ${C.border};
-          font-size: 9px;
-          letter-spacing: 0.04em;
-        }
-        .play-tree-collapse {
-          margin-top: 6px;
-          padding: 0;
-          border: 0;
-          font-size: 8px;
-          text-decoration: underline;
-          text-underline-offset: 2px;
         }
         .launch-play-page button,
         .launch-play-page input {
@@ -1829,9 +1533,6 @@ export function PlayApp() {
           }
           .play-section {
             margin-bottom: 48px;
-          }
-          .play-tree-viewport {
-            height: min(62vh, 520px);
           }
           .play-inspector-header,
           .play-inspector-body {

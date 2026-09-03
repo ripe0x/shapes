@@ -30,8 +30,7 @@ import {
 import {moduleBytesToHex} from "../canonical/moduleCodec";
 import type {CardGeometry} from "../canonical/render";
 import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
-import {isProvenanceRollup, provenanceRollupLabel, unrollLineage} from "./provenance";
-import type {Lineage as LineageT} from "./provenance";
+import {ProvenanceTree, initialExpandedKeys, type TreeNode} from "./ProvenanceTree";
 import {displayTraits} from "./displayTraits";
 import {shapeTitle} from "./shapeTitle";
 
@@ -100,6 +99,35 @@ export function TokenView({
       cancelled = true;
     };
   }, [publicClient, dep, tokenId, data]);
+
+  // The provenance tree, plus a lookup from tree key to the live token id it represents (only
+  // live nodes navigate; everything else focuses in place). Rebuilt whenever the chain-derived
+  // ancestry or the set of live tokens changes.
+  const provTree = React.useMemo(() => {
+    if (!prov) return null;
+    const liveIds = new Map<string, bigint>();
+    const root = provNodeToTree(prov, data?.tokens ?? [], "root", liveIds);
+    return {root, liveIds};
+  }, [prov, data?.tokens]);
+
+  const [focusedKey, setFocusedKey] = React.useState<string>("root");
+  const [expandedKeys, setExpandedKeys] = React.useState<ReadonlySet<string>>(new Set());
+  React.useEffect(() => {
+    setFocusedKey("root");
+    setExpandedKeys(provTree ? initialExpandedKeys(provTree.root) : new Set());
+  }, [provTree]);
+
+  const handleSelectProvNode = (key: string) => {
+    const liveId = provTree?.liveIds.get(key);
+    if (liveId != null) onOpenToken(liveId);
+    else setFocusedKey(key);
+  };
+  const toggleProvExpanded = (key: string) =>
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
 
   // Token history from the event log, with block timestamps resolved to dates.
   React.useEffect(() => {
@@ -371,15 +399,16 @@ export function TokenView({
 
       <History history={history} chainId={dep.chainId} />
 
-      {prov && prov.contributors.length > 0 && (
+      {prov && prov.contributors.length > 0 && provTree && (
         <Section title="PROVENANCE" pad="16px 48px 36px 32px">
-          <p style={{margin: "8px 0 26px", fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.muted, maxWidth: "60ch"}}>
-            How this Shape came to be, oldest first: where it started, every Shape merged into it
-            at each step, and what it is now. Burned Shapes are drawn from their recorded seeds.
-          </p>
-          <div style={{overflowX: "auto", paddingBottom: 8}}>
-            <Lineage lineage={unrollLineage(prov)} live={data?.tokens ?? []} onOpen={onOpenToken} depth={0} />
-          </div>
+          <ProvenanceTree
+            root={provTree.root}
+            focusedKey={focusedKey}
+            onSelect={handleSelectProvNode}
+            expandedKeys={expandedKeys}
+            onToggleExpanded={toggleProvExpanded}
+            resetKey={tokenId.toString()}
+          />
         </Section>
       )}
 
@@ -413,177 +442,44 @@ export function TokenView({
   );
 }
 
-/** Node card width per nesting depth (nested "built from N" expansions shrink). */
-const LINEAGE_CARD_W = [130, 76, 52, 40];
-const lineageCardWidth = (depth: number) => LINEAGE_CARD_W[Math.min(depth, LINEAGE_CARD_W.length - 1)];
-// Deepest a "built from N" chip may expand before it stops offering further nesting.
-const LINEAGE_MAX_NEST_DEPTH = LINEAGE_CARD_W.length - 1;
-const LINEAGE_STUB = 14; // vertical run of the dashed split connector
+/// One relation word per non-root `ProvNode.rel`, as shown under a provenance card.
+const PROV_RELATION_LABEL: Partial<Record<ProvNode["rel"], string>> = {
+  merged: "merged",
+  splitSource: "split parent",
+  piece: "piece",
+  self: "earlier state",
+};
 
-/** A token's art card: image plus a one-line caption. Live tokens open their detail page. */
-function LineageCard({
-  node,
-  width,
-  live,
-  onOpen,
-  caption,
-  dim,
-  tooltip,
-}: {
-  node: ProvNode;
-  width: number;
-  live: SiteToken[];
-  onOpen: (id: bigint) => void;
-  caption: string;
-  dim?: boolean;
-  tooltip?: string;
-}) {
-  const isLive = live.some((t) => t.id === node.id);
-  const card = (
-    <div style={{width, opacity: dim ? 0.35 : 1}} title={tooltip}>
-      {/* Provenance nodes carry no gene: the event log (chain/history.ts) does not yet track
-          InkGene events, so a historical node's exact ink is unknown here. mintGene is exact for a
-          direct-mint node and an approximation for a composed one. Threading real genes through the
-          provenance tree needs the indexer extended for InkGene (SPEC.md D17 / preview UX). */}
-      <Art src={localArt(node.seed, DENOMINATIONS[node.di].wei, mintGene(node.seed, DENOMINATIONS[node.di].wei))} />
-      <div style={{marginTop: 5, fontSize: 10, color: C.muted, textAlign: "center"}}>{caption}</div>
-    </div>
-  );
-  return isLive ? (
-    <button type="button" className="btn-ghost" onClick={() => onOpen(node.id)} style={{display: "block"}}>
-      {card}
-    </button>
-  ) : (
-    card
-  );
+/// A rollup placeholder (`more` set) carries no real token: `id: 0n` is not a token reference.
+function isProvenanceRollup(node: ProvNode): node is ProvNode & {more: number} {
+  return typeof node.more === "number" && node.more > 0;
 }
 
 /**
- * A token's ancestry as a timeline, oldest first: where it started (a mint or a split parent),
- * then every state it passed through with what merged in at that step, then what it is now.
- * A donor with its own ancestry expands inline via "built from N"; a repeated ancestor renders
- * dimmed with no expander.
+ * `ProvNode` (chain/history.ts) to `TreeNode` (ProvenanceTree.tsx): each contributor becomes a
+ * child one step further back in ancestry. `path` gives every node a key unique within the tree
+ * even though a `self` chain repeats the same token id across levels. Live token ids are
+ * collected into `liveIds` as they are found, keyed by the same path, so the caller can tell a
+ * navigable card from one that only focuses in place.
  */
-function Lineage({
-  lineage,
-  live,
-  onOpen,
-  depth,
-  showFinal = true,
-}: {
-  lineage: LineageT;
-  live: SiteToken[];
-  onOpen: (id: bigint) => void;
-  depth: number;
-  showFinal?: boolean;
-}) {
-  const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(new Set());
-  const toggle = (key: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-
-  const w = lineageCardWidth(depth);
-  const birthLabel = DENOMINATIONS[lineage.birthDi].label;
-  const finalLive = live.some((t) => t.id === lineage.final.id);
-
-  return (
-    <div style={{display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 12}}>
-      {lineage.origin.kind === "split" ? (
-        <div style={{display: "flex", flexDirection: "column", alignItems: "flex-start"}}>
-          <LineageCard
-            node={lineage.origin.parent}
-            width={w}
-            live={live}
-            onOpen={onOpen}
-            caption={`#${lineage.origin.parent.id.toString()} · ${DENOMINATIONS[lineage.origin.parent.di].label} ETH`}
-          />
-          <div style={{width: 0, height: LINEAGE_STUB, borderLeft: `1px dashed ${C.border}`}} />
-          <div style={{fontSize: 11, color: C.muted}}>Split. This Shape took {birthLabel} ETH.</div>
-        </div>
-      ) : lineage.origin.kind === "mint" ? (
-        <div style={{fontSize: 11, color: C.muted}}>Minted at {birthLabel} ETH.</div>
-      ) : (
-        <div style={{fontSize: 11, color: C.faint}} title="earlier history not shown">
-          Earlier history not shown.
-        </div>
-      )}
-
-      {lineage.steps.map((step, i) => {
-        const beforeDi = i === 0 ? lineage.birthDi : lineage.steps[i - 1].state.di;
-        const stepKey = `${step.state.id.toString()}-${i}`;
-        return (
-          <div key={stepKey} style={{display: "flex", flexDirection: "column", gap: 6}}>
-            <div style={{fontSize: 10, color: C.faint, letterSpacing: "0.06em"}}>
-              #{step.state.id.toString()} · {DENOMINATIONS[beforeDi].label} ETH → {DENOMINATIONS[step.state.di].label} ETH
-            </div>
-            <div style={{display: "flex", flexWrap: "wrap", gap: 10}}>
-              {step.donors.map((d, j) => {
-                const donorKey = `${stepKey}-${d.id.toString()}-${j}`;
-                if (isProvenanceRollup(d)) {
-                  return (
-                    <div
-                      key={donorKey}
-                      style={{padding: "5px 7px", border: `1px solid ${C.border}`, color: C.faint, fontSize: 10}}
-                      title="additional contributors not expanded"
-                    >
-                      {provenanceRollupLabel(d)}
-                    </div>
-                  );
-                }
-                const nested = !d.repeat && depth < LINEAGE_MAX_NEST_DEPTH ? unrollLineage(d) : null;
-                const donorCount =
-                  nested == null
-                    ? 0
-                    : nested.steps.reduce((n, s) => n + s.donors.length, 0) + (nested.origin.kind === "split" ? 1 : 0);
-                const canExpand = nested != null && donorCount > 0;
-                return (
-                  <div key={donorKey} style={{display: "flex", flexDirection: "column", alignItems: "center", gap: 4}}>
-                    <LineageCard
-                      node={d}
-                      width={lineageCardWidth(depth + 1)}
-                      live={live}
-                      onOpen={onOpen}
-                      caption={`#${d.id.toString()} · ${DENOMINATIONS[d.di].label} ETH`}
-                      dim={d.repeat}
-                      tooltip={d.repeat ? "shown elsewhere" : undefined}
-                    />
-                    {canExpand && (
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        style={{fontSize: 9, color: C.faint, border: `1px solid ${C.border}`, padding: "2px 6px"}}
-                        onClick={() => toggle(donorKey)}
-                      >
-                        built from {donorCount}
-                      </button>
-                    )}
-                    {canExpand && expanded.has(donorKey) && (
-                      <div style={{marginTop: 4, paddingLeft: 10, borderLeft: `1px dashed ${C.border}`}}>
-                        <Lineage lineage={nested!} live={live} onOpen={onOpen} depth={depth + 1} showFinal={false} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-
-      {showFinal && (
-        <LineageCard
-          node={lineage.final}
-          width={w}
-          live={live}
-          onOpen={onOpen}
-          caption={`#${lineage.final.id.toString()} · ${DENOMINATIONS[lineage.final.di].label} ETH · ${finalLive ? "now" : "last state"}`}
-        />
-      )}
-    </div>
-  );
+function provNodeToTree(node: ProvNode, live: SiteToken[], path: string, liveIds: Map<string, bigint>): TreeNode {
+  if (isProvenanceRollup(node)) {
+    return {key: path, art: "", title: "", lines: [], children: [], rollup: node.more};
+  }
+  if (live.some((t) => t.id === node.id)) liveIds.set(path, node.id);
+  const relLabel = PROV_RELATION_LABEL[node.rel];
+  const children =
+    node.repeat || node.truncated ? [] : node.contributors.map((c, i) => provNodeToTree(c, live, `${path}-${i}`, liveIds));
+  return {
+    key: path,
+    art: localArt(node.seed, DENOMINATIONS[node.di].wei, mintGene(node.seed, DENOMINATIONS[node.di].wei)),
+    title: `#${node.id.toString()}`,
+    lines: relLabel ? [`${DENOMINATIONS[node.di].label} ETH`, relLabel] : [`${DENOMINATIONS[node.di].label} ETH`],
+    children,
+    repeat: node.repeat,
+    truncated: node.truncated,
+    muted: node.repeat,
+  };
 }
 
 function History({history, chainId}: {history: DatedEvent[] | null; chainId: number}) {
