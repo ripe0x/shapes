@@ -324,7 +324,7 @@ is the retired specification, kept because it records where the values came from
 
 #### Retired: the typographic variant
 
-Values taken from the source, which matches the specification: `SHAPE` at
+Values taken from the source, which matches the specification: `SHAPES` at
 (22, 32) size 8 letter-spacing 3.4; the ETH label at (22, 322) size 11
 letter-spacing 1.2; the token number at (228, 322) size 8, monospace, anchored
 end. Two details the specification omits, taken from the source: the token

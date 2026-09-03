@@ -208,7 +208,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         address renderer_,
         address collection_,
         uint64 mintStart_
-    ) payable ERC721("Shapes", "SHAPE") {
+    ) payable ERC721("Shapes", "SHAPES") {
         if (feeRecipient_ == address(0)) revert AdminInvalidFeeRecipient(address(0));
         AdminOps.requireRenderer(renderer_);
         AdminOps.requireCollection(collection_);
