@@ -87,10 +87,10 @@ Collection views: `redeemableBacking`, `burnedBacking`, `blackShapeCount`, `tota
 
 The metadata copy is one hop out: `IShapeCollection.tokenNamePrefix`,
 `IShapeCollection.description` and `IShapeCollection.ownerTokenDescription` live on the address
-`collection()` returns, and `tokenURI`/`contractURI` read them back from there. `tokenURI` passes
-the renderer the owner-token description for whichever Shape currently carries collection
-ownership and the shared description for every other token; `contractURI` always passes the
-shared one.
+`collection()` returns. `tokenURI` reads them back and passes the renderer the owner-token
+description for whichever Shape currently carries collection ownership and the shared description
+for every other token. `contractURI` forwards to `IShapeCollection.contractURI`, which reads
+`IShapeCollection.description` and the token's ERC-721 `name()` itself.
 
 Ladder views: `unit`, `denominationCount`, `denominationAt`, `isSupportedDenomination`.
 

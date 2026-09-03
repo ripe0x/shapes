@@ -160,7 +160,7 @@ export const shapeCollectionAbi = parseAbi([
   "function description() view returns (string)",
   "function ownerTokenDescription() view returns (string)",
   "function setMetadataCopy(string tokenNamePrefix_, string description_, string ownerTokenDescription_)",
-  "function contractURI(string name_, string description_) view returns (string)",
+  "function contractURI() view returns (string)",
   "function image() view returns (string)",
   "function imageFor(bytes32 root) view returns (string)",
   "function card(uint8 denomIndex) view returns (string)",

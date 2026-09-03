@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
+import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
@@ -128,24 +129,18 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /* ---------------------------- collection ---------------------------- */
 
     /// @inheritdoc IShapeCollection
-    function contractURI(string calldata name_, string calldata description_)
-        external
-        view
-        returns (string memory)
-    {
-        return string(
-            abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json(name_, description_))))
-        );
+    function contractURI() external view returns (string memory) {
+        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json()))));
     }
 
     /// @inheritdoc IShapeCollection
-    function json(string calldata name_, string calldata description_) public view returns (string memory) {
+    function json() public view returns (string memory) {
         return string(
             abi.encodePacked(
                 '{"name":"',
-                name_,
+                IERC721Metadata(shapes).name(),
                 '","description":"',
-                description_,
+                _description,
                 '","image":"data:image/svg+xml;base64,',
                 Base64.encode(bytes(image())),
                 '"}'

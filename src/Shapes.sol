@@ -1137,8 +1137,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function contractURI() external view returns (string memory) {
-        IShapeCollection c = _requireCollection();
-        return c.contractURI(name(), c.description());
+        return _requireCollection().contractURI();
     }
 
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.

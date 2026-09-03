@@ -79,16 +79,14 @@ interface IShapeCollection {
     /* ---------------------------- collection ------------------------------ */
 
     /// @notice Contract-level metadata URI, as a base64 `data:application/json`.
-    /// @dev `name` and `description` are the editorial copy the caller supplies, emitted verbatim;
-    ///      the `image` is generated here. `Shapes.contractURI` supplies its ERC-721 `name()` and
-    ///      the `description` stored here.
-    function contractURI(string calldata name_, string calldata description_)
-        external
-        view
-        returns (string memory);
+    /// @dev `name` is the ERC-721 `name()` of `shapes()`, `description` is `description()` stored
+    ///      here; both are emitted verbatim. The `image` is generated here. `Shapes.contractURI`
+    ///      forwards to this function.
+    function contractURI() external view returns (string memory);
 
-    /// @notice The contract-level metadata JSON: `name` and `description` from the caller, `image` inline.
-    function json(string calldata name_, string calldata description_) external view returns (string memory);
+    /// @notice The contract-level metadata JSON: `name` from `shapes()`, `description` from
+    ///         `description()`, `image` inline.
+    function json() external view returns (string memory);
 
     /// @notice The collection image at the current block's seed.
     function image() external view returns (string memory);

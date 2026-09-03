@@ -217,7 +217,7 @@ contract RogueCollection is IERC165 {
         return _description;
     }
 
-    function contractURI(string calldata, string calldata) external pure returns (string memory) {
+    function contractURI() external pure returns (string memory) {
         return "data:application/json;base64,e30=";
     }
 

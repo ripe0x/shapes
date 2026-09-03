@@ -6611,18 +6611,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "contractURI",
-        "signature": "contractURI(string,string)",
+        "signature": "contractURI()",
         "stateMutability": "view",
-        "inputs": [
-          {
-            "name": "name_",
-            "type": "string"
-          },
-          {
-            "name": "description_",
-            "type": "string"
-          }
-        ],
+        "inputs": [],
         "outputs": [
           {
             "name": "",
@@ -6630,22 +6621,13 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Contract-level metadata URI, as a base64 `data:application/json`.",
-        "dev": "`name` and `description` are the editorial copy the caller supplies, emitted verbatim; the `image` is generated here. `Shapes.contractURI` supplies its ERC-721 `name()` and the `description` stored here.",
+        "dev": "`name` is the ERC-721 `name()` of `shapes()`, `description` is `description()` stored here; both are emitted verbatim. The `image` is generated here. `Shapes.contractURI` forwards to this function.",
         "params": {},
         "returns": {},
         "abi": {
           "type": "function",
           "name": "contractURI",
-          "inputs": [
-            {
-              "name": "name_",
-              "type": "string"
-            },
-            {
-              "name": "description_",
-              "type": "string"
-            }
-          ],
+          "inputs": [],
           "outputs": [
             {
               "name": "",
@@ -6751,41 +6733,23 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "json",
-        "signature": "json(string,string)",
+        "signature": "json()",
         "stateMutability": "view",
-        "inputs": [
-          {
-            "name": "name_",
-            "type": "string"
-          },
-          {
-            "name": "description_",
-            "type": "string"
-          }
-        ],
+        "inputs": [],
         "outputs": [
           {
             "name": "",
             "type": "string"
           }
         ],
-        "notice": "The contract-level metadata JSON: `name` and `description` from the caller, `image` inline.",
+        "notice": "The contract-level metadata JSON: `name` from `shapes()`, `description` from `description()`, `image` inline.",
         "dev": "",
         "params": {},
         "returns": {},
         "abi": {
           "type": "function",
           "name": "json",
-          "inputs": [
-            {
-              "name": "name_",
-              "type": "string"
-            },
-            {
-              "name": "description_",
-              "type": "string"
-            }
-          ],
+          "inputs": [],
           "outputs": [
             {
               "name": "",
