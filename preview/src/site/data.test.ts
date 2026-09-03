@@ -344,6 +344,27 @@ test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state s
   assert.deepEqual(metrics, [{source: "indexer", indexerRequests: 1}]);
 });
 
+test("loadSite: dep.indexerUrl alone (no options override) drives the indexer path, as SiteApp calls it", async () => {
+  // SiteApp.refresh calls loadSite(publicClient, dep) with no options object at all: the
+  // deployment record fetched client-side is the only source of indexerUrl in production. A
+  // fixture that only ever exercises options.indexerUrl would miss a regression that drops
+  // indexerUrl before it reaches this call, or that fails on the "http://" scheme a local
+  // dev indexer uses (deployment.local.json, gitignored, hand-edited to add indexerUrl since
+  // no script currently writes it there).
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client} = makeClient({minted: 2n, live, multicall3: true, headBlock: 100n});
+  const metrics: {source: string; indexerRequests: number}[] = [];
+  const depWithIndexer: Deployment = {...dep, indexerUrl: "http://localhost:42069"};
+
+  const site = await loadSite(client, depWithIndexer, {
+    fetch: indexerFixture({block: 100, tokens: [indexedToken(1n)]}),
+    onMetrics: (metric) => metrics.push(metric),
+  });
+
+  assert.deepEqual(site.tokens.map((t) => t.id), [1n]);
+  assert.deepEqual(metrics, [{source: "indexer", indexerRequests: 1}]);
+});
+
 test("loadSite: stale or unhealthy indexer deterministically falls back to the chain", async () => {
   const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
   for (const fetcher of [
