@@ -64,6 +64,13 @@ function useArtMaxHeight(): number | null {
   return maxHeight;
 }
 
+/** "24 hours", "10 minutes", "90 seconds": the largest unit that divides the duration evenly. */
+function formatDuration(seconds: number): string {
+  if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? "" : "s"}`;
+  if (seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
+}
+
 export function AuctionView({
   auction,
   lotImage,
@@ -714,7 +721,7 @@ export function AuctionView({
           <div>Reserve {unitsToEth(auction.reserveUnits)} ETH</div>
           <div>Each bid clears the last by {auction.minIncrementBps / 100}%, at least {unitsToEth(1n)} ETH</div>
           <div>
-            Runs {Number(auction.duration) / 3600} hours from the first bid
+            Runs {formatDuration(Number(auction.duration))} from the first bid
           </div>
           <div>
             A bid in the last {auction.extensionWindow / 60} minutes pushes the end out by the
