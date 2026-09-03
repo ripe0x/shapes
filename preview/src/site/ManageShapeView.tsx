@@ -1,6 +1,6 @@
 import React from "react";
 import {hexToBytes, maxUint256, type Hex, type PublicClient} from "viem";
-import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
+import {DENOMINATIONS, shapesAbi, type Deployment} from "../chain/abi";
 import {CANONICAL, renderShape} from "../canonical/render";
 import {
   renderSampledShape,
@@ -9,13 +9,13 @@ import {
   type SampleDonor,
 } from "../canonical/sampling";
 import {C, SANS, label} from "./theme";
-import {Art, Modal, OwnerTokenBanner, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
+import {Art, Modal, OwnerTokenBanner, PreviewBoundary, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
 import type {SiteData, SiteToken} from "./data";
-import {buildComposeResultPreview} from "./composePreview";
+import {buildComposeResultPreview, effectiveRecordModules} from "./composePreview";
 import {shapeTitle} from "./shapeTitle";
 import {ownerTokenNotices, type OwnerTokenNotice} from "./ownerTokenNotice";
 
-type ManageAction = "split" | "decompose" | "redeem" | "sacrifice";
+type ManageAction = "split" | "decompose" | "redeem" | "burnBacking";
 
 interface ComposeRecordPreview {
   survivorDenominationIndex: number;
@@ -56,7 +56,7 @@ export function ManageShapeView({
   onSplit,
   onDecompose,
   onRedeem,
-  onSacrifice,
+  onBurnBacking,
 }: {
   data: SiteData | null;
   dep: Deployment;
@@ -71,13 +71,13 @@ export function ManageShapeView({
   onSplit: (token: SiteToken) => void;
   onDecompose: (token: SiteToken) => void;
   onRedeem: (token: SiteToken) => void;
-  onSacrifice: (token: SiteToken) => void;
+  onBurnBacking: (token: SiteToken) => void;
 }) {
   const token = data?.tokens.find((candidate) => candidate.id === tokenId) ?? null;
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
   const ownerTokenId = data?.ownerToken ?? null;
   const [action, setAction] = React.useState<ManageAction | null>(null);
-  const [confirming, setConfirming] = React.useState<"split" | "redeem" | "sacrifice" | null>(null);
+  const [confirming, setConfirming] = React.useState<"split" | "redeem" | "burnBacking" | null>(null);
   const [composeRecord, setComposeRecord] = React.useState<ComposeRecordPreview | null>(null);
   const [recordUnavailable, setRecordUnavailable] = React.useState(false);
   const [splitPreviews, setSplitPreviews] = React.useState<ResultCard[] | null>(null);
@@ -114,8 +114,8 @@ export function ManageShapeView({
 
     void publicClient
       .readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
+        address: dep.shapes,
+        abi: shapesAbi,
         functionName: "composeRecordAt",
         args: [token.id, BigInt(token.composeDepth - 1)],
       })
@@ -142,7 +142,7 @@ export function ManageShapeView({
     return () => {
       cancelled = true;
     };
-  }, [dep.lens, publicClient, token]);
+  }, [dep.shapes, publicClient, token]);
 
   const canSplit = !!token && token.di > 0;
   const splitDenominationIndex = canSplit ? token.di - 1 : -1;
@@ -162,8 +162,8 @@ export function ManageShapeView({
 
     void (async () => {
       const state = await publicClient.readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
+        address: dep.shapes,
+        abi: shapesAbi,
         functionName: "shapeState",
         args: [token.id],
       });
@@ -222,7 +222,7 @@ export function ManageShapeView({
     return () => {
       cancelled = true;
     };
-  }, [action, canSplit, composeRecord, dep.lens, publicClient, recordUnavailable, splitDenominationIndex, splitRatio, token]);
+  }, [action, canSplit, composeRecord, dep.shapes, publicClient, recordUnavailable, splitDenominationIndex, splitRatio, token]);
 
   if (!token) {
     return (
@@ -244,7 +244,7 @@ export function ManageShapeView({
         <Section title="BLACK SHAPE" pad="36px 48px 44px 32px">
           <ManageIdentity token={token} owned={owned} isOwnerToken={token.id === ownerTokenId} />
           <p style={{margin: "26px 0 0", maxWidth: "60ch", fontFamily: SANS, color: C.bodyDim, fontSize: 14, lineHeight: 1.6}}>
-            This Shape has already been sacrificed. It remains transferable, but its backing is
+            This Shape has already had its backing burned. It remains transferable, but its backing is
             permanently unredeemable and no lifecycle actions remain.
           </p>
         </Section>
@@ -255,7 +255,7 @@ export function ManageShapeView({
   const isComplete = token.meta.attributes.some(
     (attribute) => attribute.trait_type === "Complete" && attribute.value.toLowerCase() === "true",
   );
-  const sacrificeEligible = token.di === DENOMINATIONS.length - 1 && isComplete;
+  const burnBackingEligible = token.di === DENOMINATIONS.length - 1 && isComplete;
   const nextDenomination = token.di < DENOMINATIONS.length - 1 ? DENOMINATIONS[token.di + 1] : null;
   const composeInputsNeeded = nextDenomination
     ? Number(nextDenomination.wei / token.backing) - 1
@@ -327,13 +327,13 @@ export function ManageShapeView({
       unavailable: ownerBlock,
     },
     {
-      id: "sacrifice",
-      protocol: "SACRIFICE",
+      id: "burnBacking",
+      protocol: "BURN BACKING",
       title: "Make a Black Shape",
       description: "Permanently remove the backing while keeping the token as a Black Shape.",
       consequence: "Permanent · ETH is unspendable",
       unavailable: availability(
-        sacrificeEligible,
+        burnBackingEligible,
         `Requires a complete ${DENOMINATIONS[DENOMINATIONS.length - 1].label} ETH Shape.`,
       ),
     },
@@ -404,24 +404,26 @@ export function ManageShapeView({
           )}
 
           {action === "decompose" && (
-            <DecomposeFlow
-              token={token}
-              record={composeRecord}
-              unavailable={recordUnavailable}
-              notices={decomposeNotices}
-              busy={busy}
-              pendingTx={pendingTx}
-              chainId={dep.chainId}
-              onSubmit={() => onDecompose(token)}
-            />
+            <PreviewBoundary resetKey={token.id}>
+              <DecomposeFlow
+                token={token}
+                record={composeRecord}
+                unavailable={recordUnavailable}
+                notices={decomposeNotices}
+                busy={busy}
+                pendingTx={pendingTx}
+                chainId={dep.chainId}
+                onSubmit={() => onDecompose(token)}
+              />
+            </PreviewBoundary>
           )}
 
           {action === "redeem" && (
             <RedeemFlow token={token} busy={busy} onConfirm={() => setConfirming("redeem")} />
           )}
 
-          {action === "sacrifice" && (
-            <SacrificeFlow token={token} busy={busy} onConfirm={() => setConfirming("sacrifice")} />
+          {action === "burnBacking" && (
+            <BurnBackingFlow token={token} busy={busy} onConfirm={() => setConfirming("burnBacking")} />
           )}
 
           {actionError && (
@@ -477,8 +479,8 @@ export function ManageShapeView({
         </Modal>
       )}
 
-      {confirming === "sacrifice" && (
-        <Modal title="SACRIFICE IS PERMANENT" onCancel={() => setConfirming(null)}>
+      {confirming === "burnBacking" && (
+        <Modal title="BURN BACKING IS PERMANENT" onCancel={() => setConfirming(null)}>
           <p style={{margin: "0 0 12px", fontFamily: SANS, color: C.ink, fontSize: 15, lineHeight: 1.6}}>
             Shape #{token.id.toString()} will remain as a Black Shape, but its entire
             {` ${DENOMINATIONS[token.di].label} ETH`} backing will be sent to an unspendable address.
@@ -487,12 +489,12 @@ export function ManageShapeView({
             It can never be redeemed, split, composed, or restored. No person can recover the ETH.
           </p>
           <ConfirmButtons
-            op="sacrifice"
+            op="burnBacking"
             busy={busy}
             pendingTx={pendingTx}
             chainId={dep.chainId}
-            confirmLabel={`Sacrifice #${token.id.toString()}`}
-            onConfirm={() => onSacrifice(token)}
+            confirmLabel={`Burn backing on #${token.id.toString()}`}
+            onConfirm={() => onBurnBacking(token)}
             onCancel={() => setConfirming(null)}
           />
         </Modal>
@@ -715,7 +717,15 @@ function DecomposeFlow({
           denominationIndex: record.survivorDenominationIndex,
           inkGene: record.survivorInkGene,
           faceValueWei: DENOMINATIONS[record.survivorDenominationIndex].wei,
-          modules: record.survivorModules,
+          // The record's own seed never changes across a compose, so the survivor's seed is the
+          // token's current one; `survivorModules` is empty when the pre-compose token was itself
+          // seed-drawn rather than materialized.
+          modules: effectiveRecordModules({
+            seed: token.seed,
+            denominationIndex: record.survivorDenominationIndex,
+            inkGene: record.survivorInkGene,
+            modules: record.survivorModules,
+          }),
         },
         token.id,
       )
@@ -726,7 +736,12 @@ function DecomposeFlow({
         denominationIndex: input.denominationIndex,
         inkGene: input.inkGene,
         faceValueWei: DENOMINATIONS[input.denominationIndex].wei,
-        modules: input.modules,
+        modules: effectiveRecordModules({
+          seed: BigInt(input.seed),
+          denominationIndex: input.denominationIndex,
+          inkGene: input.inkGene,
+          modules: input.modules,
+        }),
       },
       input.id,
     ),
@@ -812,7 +827,7 @@ function RedeemFlow({token, busy, onConfirm}: {token: SiteToken; busy: string | 
   );
 }
 
-function SacrificeFlow({token, busy, onConfirm}: {token: SiteToken; busy: string | null; onConfirm: () => void}) {
+function BurnBackingFlow({token, busy, onConfirm}: {token: SiteToken; busy: string | null; onConfirm: () => void}) {
   const blackImage = svgData(renderShape(token.seed, token.backing, token.id, token.inkGene, CANONICAL, true));
   return (
     <>
@@ -835,7 +850,7 @@ function SacrificeFlow({token, busy, onConfirm}: {token: SiteToken; busy: string
         }
       />
       <button type="button" className="btn-outline" onClick={onConfirm} disabled={!!busy} style={{marginTop: 28, padding: "11px 24px"}}>
-        Sacrifice #{token.id.toString()}
+        Burn backing on #{token.id.toString()}
       </button>
     </>
   );

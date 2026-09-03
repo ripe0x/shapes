@@ -9,197 +9,106 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 
 import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
-import {IShapes} from "./interfaces/IShapes.sol";
+import {IShapes, IShapeProvenance, IShapeRecomposition, IShapeValue} from "./interfaces/IShapes.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
+import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
+import {IShapeGeometry} from "./interfaces/IShapeGeometry.sol";
 import {IShapeRenderer, SplitProvenance} from "./interfaces/IShapeRenderer.sol";
 import {
-    IShapeProvenance,
-    IShapeRecomposition,
-    IShapeValue,
-    ShapeFormation
-} from "./interfaces/IShapeCapabilities.sol";
+    ComposeRecordView,
+    ShapeChildPreview,
+    ShapeData,
+    ShapeFormation,
+    ShapeState,
+    ShapeStore,
+    SplitOriginRef,
+    SplitRecord
+} from "./ShapeTypes.sol";
 import {AdminOps} from "./lib/AdminOps.sol";
 import {Denominations} from "./lib/Denominations.sol";
-import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
-import {ComposeCompute} from "./lib/ComposeCompute.sol";
+import {InkGenes} from "./lib/InkGenes.sol";
 import {EIP712Signature} from "./lib/EIP712Signature.sol";
-import {PointerOps} from "./lib/PointerOps.sol";
+import {RecompositionOps} from "./lib/RecompositionOps.sol";
 import {ShapeMath} from "./lib/ShapeMath.sol";
 
 /// @title Shapes
-/// @notice ETH in, Shape out.
-///         Shape burned, ETH returned.
+/// @notice ETH-backed ERC-721 tokens with exact redemption value.
 ///
-/// @dev Three paths move ETH out of the contract, all through `_sendEth`: redemption, reached
-///      from `redeem`, `burn` and their batch/recipient variants after the token is burned, out
-///      of the reserve; `sacrifice`, which sends a fixed 100 ETH to an unspendable address, out of
-///      the reserve; and `withdrawFees`, which forwards accrued mint fees to `feeRecipient`, out
-///      of `pendingFees` rather than the reserve. `compose`, `decompose` and `split` reshape
-///      tokens at constant summed backing and leave the reserve unchanged.
+/// @dev Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose
+///      and split change token structure and keep total redeemable backing unchanged.
 ///
-///      The admin may replace the renderer via `setRenderer` and the collection metadata
-///      contract via `setCollection`, and freeze both via `lockRenderer`. The renderer is read
-///      only by `tokenURI`, the collection only by `contractURI`. The admin also holds the
-///      metadata copy: `setMetadataCopy` atomically sets the token name prefix and the description
-///      shared with `contractURI`, and remains editable after `lockRenderer`. Independently,
-///      the admin may set, clear and permanently lock optional positions and market pointers;
-///      core token and reserve operations never call either. The admin role is transferable and
-///      may be renounced. None of these touch ETH, backing or redeemability.
+///      Three operations move ETH out. Redemption sends a burned token's backing to the caller or
+///      a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable
+///      address. Fee withdrawal sends one recipient's accrued balance, tracked per recipient and
+///      summed in `pendingFees()`, accounted separately from the reserve.
 ///
-///      One live Shape is the owner token, representing ownership of this contract as a
-///      collectible object. It starts as Shape #0 and moves through `compose`, `decompose` and
-///      `split`. `owner()` follows its current holder and returns zero once it is redeemed or
-///      burned. The owner token is otherwise a normal backed Shape and carries no administrative
-///      permissions; authorization uses the separate `admin()` role.
+///      One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is
+///      redeemed or burned. Holding it grants no permissions. Administration is the separate
+///      `admin()` role, which configures fees, presentation, optional pointers and the admin
+///      address. Admin actions do not change Shape ownership or redeemable backing.
 ///
-///      `artist()` permanently attributes the deployment to its deployer. That artist may store
-///      one EIP-712 signature approving this exact contract and a release hash. The attribution
-///      is stored directly in Shapes and grants no authority.
+///      `artist()` records the deployer for attribution and grants no authority.
 ///
-///      Reentrancy: `mint`, `mintBatch`, `compose`, `composeMany`, `decompose`, `decomposeMany`,
-///      `split`, `sacrifice`, `burn`, `withdrawFees`, the `redeem` entrypoints and every `*To`
-///      recipient variant are guarded. The inherited ERC721 transfer and approval functions are
-///      not, so a receiver can redeem a Shape from inside its own `onERC721Received` during a
-///      `safeTransferFrom`. Accounting stays exact; an integrator that assumes the token still
-///      exists after a safe transfer can be griefed into reverting.
+///      Reentrancy: the mint, redemption, fee and recomposition entrypoints are guarded. The
+///      admin functions, `attestArtist` and the inherited ERC-721 transfer and approval functions
+///      are not. During a `safeTransferFrom` the receiver may redeem the Shape from inside its own
+///      `onERC721Received`. Accounting stays exact. An integrator must not assume the token still
+///      exists after that callback returns.
 ///
-///      Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`, with
-///      equality in normal operation. The inequality accommodates ETH forced in through paths
-///      that bypass `receive`; such a surplus is permanently inaccessible.
+///      Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`.
+///      Equality holds in normal use. ETH forced into the contract outside its payable entrypoints
+///      is not withdrawable.
+///
+///      `RecompositionOps` and `AdminOps` are linked libraries and part of the trusted
+///      implementation. They run with `DELEGATECALL` in this contract's storage context.
+///      `GeometrySampling` is a linked pure library. ERC-721 ownership and admin authorization
+///      are checked in `Shapes`. Token and recomposition state lives in `_store`. ETH accounting,
+///      the owner token, admin state and presentation state live in `Shapes`. See
+///      project/ARCHITECTURE.md.
 contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* ------------------------------ state ------------------------------ */
 
-    /// @dev Per token: a visual seed, a denomination index, a provenance credit, a terminal
-    ///      flag and an ink gene. Storing the index rather than a wei amount makes an
-    ///      out-of-ladder backing value unrepresentable. `originCount` is the count of
-    ///      independent direct-mint events credited to this token (one per mint, conserved
-    ///      across composition and decomposition). `isBlack` marks a sacrificed token.
-    ///      `inkGene` (INK_GENES_IMPL_SPEC.md) is assigned once at mint and thereafter evolves
-    ///      only through `compose`; `decompose` restores the pre-compose value and `split` copies
-    ///      it verbatim to every child. The last four pack into one slot.
-    struct ShapeData {
-        bytes32 seed;
-        uint8 denomIndex;
-        uint32 originCount;
-        bool isBlack;
-        uint8 inkGene;
-    }
-
-    mapping(uint256 tokenId => ShapeData) private _shapes;
-
-    /// @dev Materialized module geometry, keyed by token id (SAMPLING_SPEC.md). Empty for a
-    ///      token whose geometry derives from `seed` under grammar v1 (an original mint that has
-    ///      never been composed or split). Nonempty for a compose survivor or a split child:
-    ///      length equals the token's grid cell count at its current denomination, each byte a
-    ///      module encoded per `ModuleCodec`. Restored verbatim by `decompose`.
-    mapping(uint256 tokenId => bytes) private _sampledModules;
-
-    /// @dev One burned compose input, holding everything needed to re-mint it verbatim in
-    ///      `decompose`. `id` is a uint96: the token id, narrowed to help pack the fixed-size
-    ///      fields into two slots (seed, then id+originCount+denomIndex+inkGene); `modules` takes
-    ///      a further slot when nonempty. Overflow needs ~8e28 mints. `modules` is the burned
-    ///      input's materialized geometry snapshot, empty if it had none.
-    struct ComposeInput {
-        bytes32 seed;
-        uint96 id;
-        uint32 originCount;
-        uint8 denomIndex;
-        uint8 inkGene;
-        bytes modules;
-    }
-
-    /// @dev One reversible compose. `survivor*` is the survivor's pre-compose state, restored by
-    ///      `decompose`; `inputs` are the burned tokens, re-minted verbatim. Self-contained: the
-    ///      record alone suffices to reverse the compose, with no caller input and no dependence
-    ///      on event history. `ownerTokenFrom` is the owner token's id plus one if this compose
-    ///      moved ownership from one of `inputs` to the survivor, else zero; read by `decompose`
-    ///      to restore ownership to that input. The fixed-size survivor fields pack into one slot;
-    ///      `survivorModules` (the survivor's pre-compose materialized geometry, empty if none)
-    ///      takes a further slot when nonempty; `inputs` is dynamic.
-    struct ComposeRecord {
-        uint8 survivorDenomIndex;
-        uint32 survivorOriginCount;
-        uint8 survivorInkGene;
-        uint96 ownerTokenFrom;
-        bytes survivorModules;
-        ComposeInput[] inputs;
-    }
-
-    /// @dev A per-survivor LIFO stack of reversible composes: `compose` pushes, `decompose` pops
-    ///      the top. Stacking lets one survivor be composed repeatedly and unwound fully, newest
-    ///      first. A record is abandoned (left inert, never actionable) if the survivor is
-    ///      later burned by `split`/`redeem`/compose-as-input or marked Black — `decompose`'s
-    ///      ownership and `isBlack` guards reject every such case. See DECOMPOSE_SPEC.md.
-    mapping(uint256 survivorId => ComposeRecord[]) private _composeStack;
-
-    /// @dev One split operation's parent snapshot, appended once per `_splitTo` call and shared
-    ///      by every child of that split. `parentModules` is the parent's own effective
-    ///      materialized geometry at split time (stored bytes if materialized, otherwise the
-    ///      grammar v1 sequence derived from `parentSeed` at the parent's own denomination), read
-    ///      before the parent is burned. Informational only since D3' (SAMPLING_SPEC.md section
-    ///      6): the sampling pool split actually draws from is `parentId`'s top compose record
-    ///      when it has one, or grammar v1 at each CHILD's own denomination otherwise, neither of
-    ///      which `parentModules` necessarily equals. `parentId` is the burned parent's token id,
-    ///      needed to re-read `_composeStack[parentId]` (which split does not delete, and which no
-    ///      later operation on `parentId` can ever grow, since the id is burned) for reconstruction.
-    ///      `originDenomIndex` is the root split ancestor's denomination index: the parent's own
-    ///      `originDenomIndex` (via `_splitOriginRef[parentId]`) when the parent was itself a
-    ///      split child, else `parentDenomIndex`. Set once at split time. Not reconstructable from
-    ///      the rest of this struct, since `parentId`'s own `_splitOriginRef` entry may belong to a
-    ///      different `SplitRecord` than this one; that is why it is stored here directly.
-    struct SplitRecord {
-        bytes32 parentSeed;
-        uint96 parentId;
-        uint8 parentDenomIndex;
-        uint8 parentInkGene;
-        uint8 originDenomIndex;
-        bytes parentModules;
-    }
-
-    /// @dev Append-only, one entry per split operation. Referenced by `_splitOriginRef`.
-    SplitRecord[] private _splitRecords;
-
-    /// @dev One split child's reference to its shared `SplitRecord`: which record, and its index
-    ///      among that split's children. `exists` distinguishes a real reference (including
-    ///      `recordIndex == 0, childIndex == 0`) from the mapping's zero default for a token that
-    ///      was never a split child. Packs into one slot.
-    struct SplitOriginRef {
-        bool exists;
-        uint64 recordIndex;
-        uint32 childIndex;
-    }
-
-    /// @dev No entry for an original mint or for a token re-minted verbatim by `decompose` (that
-    ///      path restores a `ComposeInput`, never writes here). A split child's entry survives the
-    ///      child's own later mutation (e.g. becoming a compose survivor); it is never deleted.
-    mapping(uint256 childId => SplitOriginRef) private _splitOriginRef;
+    /// @dev Per-token state, provenance records and the two supply counters. `RecompositionOps`
+    ///      receives a pointer to this struct. Declared in ShapeTypes.sol so this contract and that
+    ///      library share one layout.
+    ShapeStore private _store;
 
     /// @inheritdoc IShapes
     uint256 public redeemableBacking;
     /// @inheritdoc IShapes
-    uint256 public sacrificedBacking;
+    uint256 public burnedBacking;
     /// @inheritdoc IShapes
-    uint256 public blackCount;
-    /// @inheritdoc IShapes
-    uint256 public totalSupply;
-    /// @inheritdoc IShapes
-    uint256 public totalMinted;
+    uint256 public blackShapeCount;
 
-    /// @dev The apex denomination (100 ETH) and its origin count, gating `sacrifice`.
+    /// @inheritdoc IShapes
+    function totalSupply() public view returns (uint256) {
+        return _store.totalSupply;
+    }
+
+    /// @inheritdoc IShapes
+    function totalMinted() public view returns (uint256) {
+        return _store.totalMinted;
+    }
+
+    /// @dev The apex denomination index. `burnBacking` requires an apex Complete Shape.
     uint256 private constant APEX_INDEX = 8;
-    /// @dev Where sacrificed ETH is sent: an address with no known key. Provably unspendable.
+    /// @dev Destination for burned backing. No known key, so the ETH is unspendable.
     address private constant UNSPENDABLE = 0x000000000000000000000000000000000000dEaD;
+    /// @dev Gas forwarded to the untrusted positions contract by `positionOf`. Enough for a
+    ///      mapping read, and bounds what a hostile target can consume.
+    uint256 private constant POSITIONS_GAS = 50_000;
 
-    /* --------------------------- fee and renderer --------------------------- */
+    /* ------------------------ fee and presentation ------------------------ */
 
-    /// @dev Mint fee and fee recipient, grouped so `AdminOps.setFeeRecipient`/`setMintFee` can
-    ///      mutate either through one storage pointer, `PointerOps`-style. `mintFee()` and
-    ///      `feeRecipient()` below replicate the public state variables' auto-generated getters
-    ///      this replaced, so the external ABI is unchanged.
+    /// @dev Mint fee and fee recipient, grouped so `AdminOps` reaches both through one pointer.
     AdminOps.FeeConfig private _feeConfig;
-    /// @inheritdoc IShapes
-    uint256 public pendingFees;
+
+    /// @dev Mint fees accrue to the fee recipient set at mint time.
+    ///      Changing the recipient does not move fees already accrued.
+    ///      `_totalFeesOwed` tracks the sum of all recipient balances.
+    mapping(address => uint256) private _feesOwed;
+    uint256 private _totalFeesOwed;
 
     /// @inheritdoc IShapes
     function mintFee() public view returns (uint256) {
@@ -212,15 +121,23 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
+    function pendingFees() public view returns (uint256) {
+        return _totalFeesOwed;
+    }
+
+    /// @inheritdoc IShapes
+    function feesOwedTo(address recipient) external view returns (uint256) {
+        return _feesOwed[recipient];
+    }
+
+    /// @inheritdoc IShapes
     address public immutable artist;
 
     /// @inheritdoc IShapes
     uint64 public immutable mintStart;
 
-    /// @dev The artist's release hash and signature, grouped so `AdminOps.attestArtist` can
-    ///      mutate both through one storage pointer, `PointerOps`-style. `artistReleaseHash()` and
-    ///      `artistSignature()` below replicate the public state variables' auto-generated getters
-    ///      this replaced, so the external ABI is unchanged.
+    /// @dev The artist's release hash and signature, grouped so `AdminOps` reaches both through
+    ///      one pointer.
     AdminOps.ArtistAttestation private _artistAttestation;
 
     /// @inheritdoc IShapes
@@ -233,93 +150,79 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _artistAttestation.signature;
     }
 
-    /// @inheritdoc IShapes
-    /// @dev Not immutable: the admin may replace it via `setRenderer` to fix a rendering bug,
-    ///      until `lockRenderer` freezes it permanently. It is read only by `tokenURI`, so it
-    ///      never touches ETH, backing, redemption or ownership.
-    address public renderer;
+    /// @dev Renderer, collection and presentation lock.
+    ///      `ShapeCollection` also reads this lock before allowing metadata copy changes.
+    AdminOps.Presentation private _presentation;
 
     /// @inheritdoc IShapes
-    bool public rendererLocked;
-
-    /// @inheritdoc IShapes
-    /// @dev Read only by `contractURI`. Replaceable by the admin until `lockRenderer` freezes
-    ///      both presentation pointers.
-    address public collection;
-
-    /// @dev Default metadata copy, seeded at construction. Mirrors the canonical spec in
-    ///      `preview/src/canonical/render.ts`; the parity suite asserts byte identity against it.
-    string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
-    string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
-        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
-        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
-    /// @dev Token name prefix and shared description, grouped so `AdminOps.setMetadataCopy` can
-    ///      mutate both through one storage pointer, `PointerOps`-style. `tokenNamePrefix()` and
-    ///      `description()` below replicate the public state variables' auto-generated getters
-    ///      this replaced, so the external ABI is unchanged.
-    AdminOps.CopyConfig private _copyConfig;
-
-    /// @inheritdoc IShapes
-    /// @dev Editorial copy, admin-editable via `setMetadataCopy`, written verbatim into every token's
-    ///      metadata by the renderer. Independent of `rendererLocked`.
-    function tokenNamePrefix() public view returns (string memory) {
-        return _copyConfig.tokenNamePrefix;
+    function renderer() public view returns (address) {
+        return _presentation.renderer;
     }
 
     /// @inheritdoc IShapes
-    /// @dev Shared by token and collection metadata so the collection cannot describe itself
-    ///      differently from its tokens.
-    function description() public view returns (string memory) {
-        return _copyConfig.description;
+    function collection() public view returns (address) {
+        return _presentation.collection;
     }
 
-    /// @dev Explicit positions and market pointers with independent locks. `PointerOps` keeps
-    ///      their administration outside this contract's EIP-170-constrained runtime.
-    PointerOps.Pointers private _pointers;
+    /// @inheritdoc IShapes
+    function presentationLocked() public view returns (bool) {
+        return _presentation.locked;
+    }
+
+    /// @dev The collection address, reverting `CollectionNotSet` while it is zero. It stays zero
+    ///      from construction until `setCollection` runs.
+    function _requireCollection() private view returns (IShapeCollection) {
+        address c = _presentation.collection;
+        if (c == address(0)) revert CollectionNotSet();
+        return IShapeCollection(c);
+    }
+
+    /// @dev Optional positions and market pointers, each with its own permanent lock. Discovery
+    ///      only: no token or reserve operation reads them.
+    AdminOps.Pointers private _pointers;
 
     /* -------------------------- ownership/admin -------------------------- */
 
-    /// @dev Administrative authority is deliberately separate from `owner()`, which resolves the
-    ///      holder of the owner token. No authorization check reads collectible ownership.
+    /// @dev Administrative authority. Separate from `owner()`, which resolves the holder of the
+    ///      owner token. No authorization check reads token ownership. Written by `Shapes`.
     address private _admin;
 
-    /// @dev The owner token's id plus one; zero means no owner token. Starts as Shape #0 and
-    ///      moves through `compose`, `decompose` and `split`; cleared by redeeming or burning it.
+    /// @dev The owner token's id plus one; zero means no owner token. Starts as Shape #0 and moves
+    ///      through `compose`, `decompose` and `split`. Redeeming or burning it clears the value.
+    ///      Written by `Shapes`.
     uint256 private _ownerToken;
 
-    /// @param mintFee_ Flat fee in wei for every Shape created. Charged on top of backing and may
-    ///        be zero, up to `AdminOps.MAX_MINT_FEE`. A batch of `quantity` Shapes pays exactly
-    ///        `mintFee_ * quantity`. Admin-adjustable afterward via `setMintFee`.
-    /// @param feeRecipient_ Initial destination for accrued mint fees, forwarded only by
-    ///        `withdrawFees`. The admin may redirect future withdrawals. A reverting recipient
-    ///        blocks only `withdrawFees`, never minting.
-    /// @param renderer_ The onchain renderer. Replaceable by the admin until locked. An address
-    ///        with no renderer code is refused here and by `setRenderer`.
-    /// @param mintStart_ Unix timestamp at or after which `mintBatch` and `mintBatchTo` accept
-    ///        calls. Zero opens them immediately. Stored immutably; no function can change it.
-    /// @dev Pay exactly `Denominations.amountAt(0)` as backing for Shape #0. The collectible-ownership
-    ///      Shape is fee-exempt and minted atomically to `msg.sender`, so permissionless artwork
-    ///      minting begins at #1. The constructor mints Shape #0 unconditionally; `mintStart_`
-    ///      gates only `mintBatch` and `mintBatchTo`.
-    constructor(
-        uint256 mintFee_,
-        address feeRecipient_,
-        address renderer_,
-        address collection_,
-        uint64 mintStart_
-    ) payable ERC721("Shapes", "SHAPE") {
-        if (feeRecipient_ == address(0)) revert AdminInvalidFeeRecipient(address(0));
-        _requireRendererHasCode(renderer_);
-        _requireCollectionHasCode(collection_);
+    /// @param mintFee_ Flat fee in wei per Shape minted, charged on top of backing. May be zero,
+    ///        up to `AdminOps.MAX_MINT_FEE`. The admin can change it later with `setMintFee`.
+    /// @param feeRecipient_ Initial destination for accrued mint fees, paid by `withdrawFees`.
+    ///        Rejects the zero address and this token's own address, for the same reason as
+    ///        `setFeeRecipient`: a recipient that reverts on receipt blocks `withdrawFees` and
+    ///        leaves minting working.
+    /// @param renderer_ The onchain renderer. Must carry code and support `IShapeRenderer`.
+    ///        Replaceable by the admin until presentation is locked.
+    /// @param mintStart_ Unix timestamp at or after which public minting opens. Zero opens minting
+    ///        immediately. Immutable after deployment.
+    /// @dev Requires exactly `Denominations.amountAt(0)` as backing for Shape #0, minted fee-exempt
+    ///      to `msg.sender` as the initial owner token. Shape #0 is minted here and is not subject
+    ///      to `mintStart_`. Public minting begins at #1.
+    ///
+    ///      The collection is not a constructor parameter, because `ShapeCollection` is constructed
+    ///      with this token's address. `tokenURI` and `contractURI` revert until the admin sets the
+    ///      collection.
+    constructor(uint256 mintFee_, address feeRecipient_, address renderer_, uint64 mintStart_)
+        payable
+        ERC721("Shapes", "SHAPE")
+    {
+        if (feeRecipient_ == address(0) || feeRecipient_ == address(this)) {
+            revert AdminInvalidFeeRecipient(feeRecipient_);
+        }
+        AdminOps.requireRenderer(renderer_);
         _requireFeeWithinCap(mintFee_);
         _feeConfig.mintFee = mintFee_;
         _feeConfig.feeRecipient = feeRecipient_;
         artist = msg.sender;
         mintStart = mintStart_;
-        renderer = renderer_;
-        collection = collection_;
-        _copyConfig.tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
-        _copyConfig.description = DEFAULT_DESCRIPTION;
+        _presentation.renderer = renderer_;
 
         _admin = msg.sender;
         emit AdminTransferred(address(0), msg.sender);
@@ -334,10 +237,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         bytes32 seed = keccak256(abi.encodePacked(batchRoot, uint256(0)));
         uint8 gene = InkGenes.geneAtMint(seed, 0);
 
-        totalMinted = 1;
-        totalSupply = 1;
+        _store.totalMinted = 1;
+        _store.totalSupply = 1;
         redeemableBacking = genesisBacking;
-        _shapes[0] = ShapeData({seed: seed, denomIndex: 0, originCount: 1, isBlack: false, inkGene: gene});
+        _store.shapes[0] =
+            ShapeData({seed: seed, denomIndex: 0, originCount: 1, isBlack: false, inkGene: gene});
 
         emit ShapeMinted(0, msg.sender, genesisBacking, seed, 1);
         emit InkGene(0, gene);
@@ -361,7 +265,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev Body in `AdminOps`, out of this contract's EIP-170-constrained runtime.
     function attestArtist(bytes32 releaseHash, bytes calldata signature_) external {
         AdminOps.attestArtist(_artistAttestation, artist, releaseHash, signature_);
     }
@@ -392,125 +295,64 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IAdminControl
-    /// @dev Body in `AdminOps`, out of this contract's EIP-170-constrained runtime.
     function setFeeRecipient(address newRecipient) external onlyAdmin {
         AdminOps.setFeeRecipient(_feeConfig, newRecipient);
     }
 
-    /// @dev The constructor's copy of the cap check `AdminOps.setMintFee` runs for every later
-    ///      call; construction has no prior fee to hand `AdminOps` as the "current" value.
+    /// @dev The mint fee cap, applied to the constructor's initial fee. `AdminOps.setMintFee`
+    ///      applies the same cap to every later change.
     function _requireFeeWithinCap(uint256 fee) private pure {
         if (fee > AdminOps.MAX_MINT_FEE) revert MintFeeAboveCap(fee);
     }
 
     /// @inheritdoc IAdminControl
-    /// @dev Body in `AdminOps`, out of this contract's EIP-170-constrained runtime.
     function setMintFee(uint256 newFee) external onlyAdmin {
         AdminOps.setMintFee(_feeConfig, newFee);
     }
 
-    /// @dev Shared by every entrypoint that requires the renderer/collection pointers to still be
-    ///      mutable: `setRenderer`, `lockRenderer`, `setCollection`.
-    function _requireRendererUnlocked() private view {
-        if (rendererLocked) revert RendererIsLocked();
-    }
-
     /// @inheritdoc IShapes
-    /// @dev Admin only, and only while unlocked. The new renderer must carry code.
     function setRenderer(address newRenderer) external onlyAdmin {
-        _requireRendererUnlocked();
-        _requireRendererHasCode(newRenderer);
-        renderer = newRenderer;
-        emit RendererUpdated(newRenderer);
-        // A new renderer changes `tokenURI` for every existing token; ERC-4906 signals the refresh.
-        _emitBatchMetadataUpdate();
-    }
-
-    /// @dev ERC-4906 refresh signal for every currently-minted token. Shared by `setRenderer` and
-    ///      `setMetadataCopy`, the two admin actions that change every token's `tokenURI` at once.
-    function _emitBatchMetadataUpdate() private {
-        if (totalMinted != 0) emit BatchMetadataUpdate(0, totalMinted - 1);
+        AdminOps.setRenderer(_presentation, newRenderer, _store.totalMinted);
     }
 
     /// @inheritdoc IShapes
-    /// @dev Admin only, one way. After this the renderer can never change again. The positions and
-    ///      market pointers remain independently configurable until their own locks or renunciation.
-    function lockRenderer() external onlyAdmin {
-        _requireRendererUnlocked();
-        rendererLocked = true;
-        emit RendererLocked();
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev Admin only. All arguments are validated so copy cannot break or restructure metadata
-    ///      JSON. Token and collection descriptions share one value. Body in `AdminOps`, out of
-    ///      this contract's EIP-170-constrained runtime.
-    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_)
-        external
-        onlyAdmin
-    {
-        AdminOps.setMetadataCopy(_copyConfig, tokenNamePrefix_, description_, totalMinted);
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev Admin only, and only while unlocked. The new collection must carry code.
     function setCollection(address newCollection) external onlyAdmin {
-        _requireRendererUnlocked();
-        _requireCollectionHasCode(newCollection);
-        collection = newCollection;
-        emit CollectionUpdated(newCollection);
+        AdminOps.setCollection(_presentation, newCollection, _store.totalMinted);
+    }
+
+    /// @inheritdoc IShapes
+    function lockPresentation() external onlyAdmin {
+        AdminOps.lockPresentation(_presentation);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev `totalMinted` is at least one from construction onward, so the range always covers
+    ///      every id minted so far.
+    function refreshMetadata() external onlyAdmin {
+        emit BatchMetadataUpdate(0, _store.totalMinted - 1);
+        emit ContractURIUpdated();
     }
 
     /// @inheritdoc IShapes
     function setPointer(uint8 pointer, address target) external onlyAdmin {
-        PointerOps.set(_pointers, pointer, target);
+        AdminOps.setPointer(_pointers, pointer, target);
     }
 
     /// @inheritdoc IShapes
     function lockPointer(uint8 pointer) external onlyAdmin {
-        PointerOps.lock(_pointers, pointer);
+        AdminOps.lockPointer(_pointers, pointer);
     }
 
     /// @inheritdoc IShapes
     function positions() external view returns (address target, bool locked) {
-        PointerOps.Pointers storage p = _pointers;
+        AdminOps.Pointers storage p = _pointers;
         return (p.positions, p.positionsLocked);
     }
 
     /// @inheritdoc IShapes
     function market() external view returns (address target, bool locked) {
-        PointerOps.Pointers storage p = _pointers;
+        AdminOps.Pointers storage p = _pointers;
         return (p.market, p.marketLocked);
-    }
-
-    /// @dev `false` on a revert or a `false` return from `target`'s `supportsInterface`, so the
-    ///      caller's revert path is uniform regardless of why `target` failed the check. Shared
-    ///      by `_requireRendererHasCode` and `_requireCollectionHasCode`.
-    function _supportsInterfaceOrFalse(address target, bytes4 interfaceId) private view returns (bool) {
-        try IERC165(target).supportsInterface(interfaceId) returns (bool supported) {
-            return supported;
-        } catch {
-            return false;
-        }
-    }
-
-    /// @dev Applied at construction and on every replacement. Metadata has no fallback path.
-    ///      A zero address has no code, so the length check also rejects `address(0)`.
-    function _requireRendererHasCode(address renderer_) private view {
-        if (
-            renderer_.code.length == 0
-                || !_supportsInterfaceOrFalse(renderer_, type(IShapeRenderer).interfaceId)
-        ) {
-            revert UnsupportedRenderer(renderer_);
-        }
-    }
-
-    /// @dev Applied at construction and on every replacement. `contractURI` has no fallback path.
-    function _requireCollectionHasCode(address collection_) private view {
-        if (collection_.code.length == 0) revert UnsupportedCollection(collection_);
-        if (!_supportsInterfaceOrFalse(collection_, type(IShapeCollection).interfaceId)) {
-            revert UnsupportedCollection(collection_);
-        }
     }
 
     /* ------------------------------ minting ----------------------------- */
@@ -545,9 +387,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _mintBatch(amountWei, quantity, to);
     }
 
-    /// @dev One batch's entropy root, from block-level inputs and the batch's own `firstTokenId`.
-    ///      Shared by the constructor (Shape #0's own one-token batch) and `_mintBatch`. See
-    ///      `_mintBatch`'s seed-selectability comment.
+    /// @dev One batch's seed root, from block-level inputs and the batch's own `firstTokenId`.
+    ///      Shared by the constructor and `_mintBatch`. See the seed note in `_mintBatch`.
     function _batchRoot(uint256 firstTokenId) private view returns (bytes32) {
         return keccak256(
             abi.encodePacked(
@@ -569,20 +410,16 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         if (block.timestamp < mintStart) revert MintNotOpen();
         _requireNonZero(quantity);
 
-        firstTokenId = totalMinted;
+        firstTokenId = _store.totalMinted;
 
-        // The fee is flat per token, so a batch costs exactly the same as `quantity` independent
-        // mints regardless of denomination.
+        // The fee is flat per token, so a batch costs the same as `quantity` separate mints.
         //
-        // One entropy root per batch; each token's seed derives from it and its own id, so every
-        // token in a batch gets a distinct seed.
+        // Each token mixes its id into one batch seed root, so seeds differ within a batch.
+        // The recipient does not affect the seed.
         //
-        // No minter or recipient identity feeds this root, so the seed cannot be enumerated by
-        // varying the recipient. It is still selectable: `firstTokenId` is `totalMinted`, which a
-        // minter can advance within one transaction by minting and redeeming dust (backing returns,
-        // only the fee is spent), so the mint ordinal is a free knob and traits are grindable at
-        // roughly the mint fee per candidate. The seed has no economic effect: redemption value is
-        // fixed by denomination. Trait scarcity is best-effort, not enforced (SPEC.md D3e).
+        // Seeds are grindable: `firstTokenId == totalMinted`, so a minter can advance the
+        // ordinal with more mints and search visual traits at about one mint fee per try.
+        // Never treat a seed as secure randomness. Seeds do not affect redemption value.
         uint256 denomIndex;
         {
             bool ok;
@@ -595,14 +432,16 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         bytes32 batchRoot = _batchRoot(firstTokenId);
 
         // -------- effects --------
-        totalMinted = firstTokenId + quantity;
-        totalSupply += quantity;
+        _store.totalMinted = firstTokenId + quantity;
+        _store.totalSupply += quantity;
         redeemableBacking += backing;
-        // Fees accrue in aggregate and never join the reserve. No external call is made here, so
-        // `address(this).balance` already equals `redeemableBacking + pendingFees` by the time any
-        // ERC721 receiver callback below runs.
+        // Fees accrue to whoever `feeRecipient` names right now, credited to that recipient's own
+        // balance rather than a shared pool, and are held outside the reserve. The receiver
+        // callbacks below are the first external calls, so `address(this).balance` already equals
+        // `redeemableBacking + pendingFees` when any of them runs.
         if (fees != 0) {
-            pendingFees += fees;
+            _feesOwed[_feeConfig.feeRecipient] += fees;
+            _totalFeesOwed += fees;
             emit MintFeeAccrued(fees);
         }
 
@@ -610,7 +449,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             uint256 tokenId = firstTokenId + i;
             bytes32 seed = keccak256(abi.encodePacked(batchRoot, tokenId));
             uint8 gene = InkGenes.geneAtMint(seed, uint8(denomIndex));
-            _shapes[tokenId] = ShapeData({
+            _store.shapes[tokenId] = ShapeData({
                 seed: seed, denomIndex: uint8(denomIndex), originCount: 1, isBlack: false, inkGene: gene
             });
             emit ShapeMinted(tokenId, to, amountWei, seed, 1);
@@ -618,25 +457,22 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         }
 
         // -------- interactions --------
-        // Minting after all storage writes, behind the reentrancy guard.
-        //
-        // During a batch `totalSupply` and `redeemableBacking` already reflect the whole batch
-        // while only some tokens exist, so supply read from inside `onERC721Received` is the
-        // batch's end state, not its progress.
+        // Minting happens after every storage write, behind the reentrancy guard. `totalSupply`
+        // and `redeemableBacking` already hold the whole batch while only some tokens exist, so a
+        // supply read from inside `onERC721Received` sees the batch's end state.
         for (uint256 i = 0; i < quantity; ++i) {
             _safeMint(to, firstTokenId + i);
         }
     }
 
     /// @inheritdoc IShapes
-    /// @dev The destination is snapshotted before the transfer: an admin contract may also be the
-    ///      fee recipient and redirect itself from its own `receive` hook, but the event and the
-    ///      transfer must still name the address that actually received this withdrawal.
-    function withdrawFees() external nonReentrant {
-        uint256 amount = pendingFees;
+    /// @dev Pays `recipient` its accrued fees. Each recipient has a separate balance, so changing
+    ///      or failing recipients do not block withdrawals for others.
+    function withdrawFees(address recipient) external nonReentrant {
+        uint256 amount = _feesOwed[recipient];
         if (amount == 0) revert NoFeesPending();
-        address recipient = _feeConfig.feeRecipient;
-        pendingFees = 0;
+        _feesOwed[recipient] = 0;
+        _totalFeesOwed -= amount;
         emit FeesWithdrawn(recipient, amount);
         _sendEth(recipient, amount);
     }
@@ -645,7 +481,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     /// @dev Owner only, which fixes the payout destination. An approved operator reaches the same
-    ///      outcome by transferring the Shape to itself and redeeming in the same transaction, so
+    ///      outcome by transferring the Shape to itself and redeeming in one transaction, so an
     ///      approval is economically equivalent to granting redemption rights. Redeeming the owner
     ///      token ends collection ownership permanently.
     function redeem(uint256 tokenId) external nonReentrant {
@@ -653,27 +489,24 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IERC721Value
-    /// @dev Draft ERC-8060 entry point. It additionally permits a Black Shape to be destroyed
-    ///      for zero without making an ETH call. Structural burns never route through here.
-    ///      Burning the owner token ends collection ownership permanently.
+    /// @dev The `IERC721Value` burn path. The current owner may burn; an approved operator must
+    ///      first take ownership through an ERC-721 transfer. Destroys a Black Shape for zero with
+    ///      no ETH call. Compose and split burn their inputs through their own paths.
     function burn(uint256 tokenId) external nonReentrant {
         _redeemTo(tokenId, payable(msg.sender), true);
     }
 
     /// @inheritdoc IShapes
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatch(uint256[] calldata tokenIds) external nonReentrant returns (uint256 totalWei) {
         return _redeemBatchTo(tokenIds, payable(msg.sender));
     }
 
     /// @inheritdoc IShapes
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemTo(uint256 tokenId, address payable recipient) external nonReentrant {
         _redeemTo(tokenId, recipient, false);
     }
 
     /// @inheritdoc IShapes
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
         external
         nonReentrant
@@ -682,8 +515,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _redeemBatchTo(tokenIds, recipient);
     }
 
-    /// @dev Shared by `_redeemTo` and `_redeemBatchTo`: the payout destination can never be the
-    ///      zero address, or the redemption would burn the ETH along with the token.
+    /// @dev A zero recipient would burn the payout along with the token.
     function _requireValidRecipient(address recipient) private pure {
         if (recipient == address(0)) revert InvalidRecipient(recipient);
     }
@@ -692,7 +524,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _requireValidRecipient(recipient);
         (uint256 amountWei, uint256 originCount) = _burnForRedemption(tokenId, allowBlack);
 
-        totalSupply -= 1;
+        _store.totalSupply -= 1;
         redeemableBacking -= amountWei;
 
         emit ShapeRedeemed(tokenId, recipient, amountWei, originCount);
@@ -714,28 +546,32 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             emit ShapeRedeemed(tokenId, recipient, amountWei, originCount);
         }
 
-        totalSupply -= n;
+        _store.totalSupply -= n;
         redeemableBacking -= totalWei;
 
         _sendEth(recipient, totalWei);
     }
 
-    /// @dev Checks and effects for a single redemption: ownership, read the backing and origin
-    ///      count, clear the token state, burn. The origin count is returned so redemption events
-    ///      carry it, letting an event-only indexer track global origin conservation without a
-    ///      pre-burn state read. A duplicate id in a batch fails here on its second appearance,
-    ///      because the token no longer exists. Burning the owner token ends collection ownership
-    ///      permanently: no other token inherits it.
+    /// @dev Checks and effects for one redemption: ownership, read the backing and origin count,
+    ///      clear the token state, burn. The origin count is returned so `ShapeRedeemed` carries it
+    ///      and an event-only indexer can track origin conservation without a pre-burn state read.
+    ///      A repeated id in a batch reverts the second time, because the token no longer exists.
+    ///      Burning a Black Shape lowers `blackShapeCount` and leaves `burnedBacking` unchanged:
+    ///      that ETH left at `burnBacking`. Burning the owner token ends collection ownership
+    ///      permanently.
     function _burnForRedemption(uint256 tokenId, bool allowBlack)
         private
         returns (uint256 amountWei, uint256 originCount)
     {
         address tokenOwner = _requireOwned(tokenId);
         if (tokenOwner != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
-        ShapeData storage d = _shapes[tokenId];
-        if (d.isBlack && !allowBlack) revert TokenIsBlack(tokenId);
-
-        amountWei = d.isBlack ? 0 : Denominations.amountAt(d.denomIndex);
+        ShapeData storage d = _store.shapes[tokenId];
+        if (d.isBlack) {
+            if (!allowBlack) revert TokenIsBlack(tokenId);
+            blackShapeCount -= 1;
+        } else {
+            amountWei = Denominations.amountAt(d.denomIndex);
+        }
         originCount = d.originCount;
 
         if (tokenId + 1 == _ownerToken) {
@@ -743,15 +579,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             emit OwnerTokenMoved(tokenId, type(uint256).max);
         }
 
-        delete _shapes[tokenId];
-        delete _sampledModules[tokenId];
+        delete _store.shapes[tokenId];
+        delete _store.modules[tokenId];
         _burn(tokenId);
     }
 
-    /// @dev The three paths that move ETH out of the contract: a redemption payout, reached only
-    ///      after the corresponding tokens are burned and the accounting is updated;
-    ///      `sacrifice`'s fixed 100 ETH transfer, out of the reserve; and `withdrawFees`, out of
-    ///      accrued fees rather than the reserve. A failed transfer reverts the whole call.
+    /// @dev All ETH outflows use this helper. State is updated before each call. A failed
+    ///      transfer reverts the transaction.
     function _sendEth(address to, uint256 amountWei) private {
         (bool sent,) = to.call{value: amountWei}("");
         if (!sent) revert EthTransferFailed(to, amountWei);
@@ -760,20 +594,18 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* --------------------------- recomposition -------------------------- */
 
     /// @inheritdoc IShapes
-    /// @dev Reshapes tokens without moving ETH: the summed backing is unchanged, so `redeemableBacking`
-    ///      stays correct with no adjustment and the reserve invariant holds by construction.
-    ///      `_burn` triggers no receiver callback, so this function makes no external calls; it is
-    ///      guarded regardless. A duplicate id in `burnIds` reverts on its second appearance,
-    ///      because the token no longer exists.
+    /// @dev Reshapes tokens and moves no ETH: the summed backing is unchanged, so
+    ///      `redeemableBacking` needs no adjustment and the reserve invariant holds by
+    ///      construction. `_burn` makes no external call.
     function compose(uint256 survivorId, uint256[] calldata burnIds) external nonReentrant returns (uint256) {
         return _compose(survivorId, burnIds);
     }
 
     /// @inheritdoc IShapes
-    /// @dev Runs each `(survivorId, burnIds)` compose in order, under one reentrancy guard. All ids
-    ///      are pre-existing (compose mints nothing new and keeps each survivor's id), so a later
-    ///      call may name a survivor an earlier call in the same batch produced. Each compose pushes
-    ///      its own reversible record. Bounded by block gas; the caller sizes the batch. Atomic.
+    /// @dev Runs each `(survivorId, burnIds)` compose in order under one reentrancy guard. Compose
+    ///      mints nothing and keeps each survivor's id, so a later call may name a survivor an
+    ///      earlier call in the same batch produced. Each compose pushes its own reversible record.
+    ///      Atomic, and bounded by block gas: the caller sizes the batch.
     function composeMany(ComposeCall[] calldata calls)
         external
         nonReentrant
@@ -787,150 +619,53 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         }
     }
 
-    /// @dev Requires `n` be nonzero, for every batch entrypoint that rejects an empty batch.
     function _requireNonZero(uint256 n) private pure {
         if (n == 0) revert ZeroQuantity();
     }
 
-    /// @dev Ownership and liveness gate shared by every entrypoint that requires the caller to
-    ///      hold a non-Black token: reverts if `tokenId` is not owned by the caller, or if it is
-    ///      Black. Returns the token's storage slot so the caller does not re-derive it.
-    function _requireCallerOwnsLive(uint256 tokenId) private view returns (ShapeData storage d) {
-        if (ownerOf(tokenId) != msg.sender) revert NotShapeOwner(tokenId, msg.sender);
-        d = _shapes[tokenId];
-        if (d.isBlack) revert TokenIsBlack(tokenId);
+    /// @dev The ownership and liveness gate for a token this call consumes. The check itself is
+    ///      `RecompositionOps.requireLiveOwner`. `previewCompose` and `previewSplit` run
+    ///      `RecompositionOps`'s private `_requireLive`, the same liveness check without the
+    ///      ownership check.
+    function _requireCallerOwnsLive(uint256 tokenId) private view {
+        RecompositionOps.requireLiveOwner(_store, tokenId, ownerOf(tokenId), msg.sender);
     }
 
-    /// @dev One burn-side donor's contribution to `acc`, plus its `Donor` snapshot for module
-    ///      sampling. The per-donor step of the compose pool statistics, used by `_compose`.
-    function _accumulateBurnDonor(
-        ShapeData storage b,
-        uint256 burnId,
-        bytes memory burnModules,
-        ShapeMath.BurnPoolAccum memory acc
-    ) private view returns (GeometrySampling.Donor memory donor) {
-        uint256 bUnits = ShapeMath.addDonor(acc, b.seed, b.denomIndex, b.originCount, b.inkGene);
-
-        donor = GeometrySampling.Donor({
-            id: burnId,
-            units: bUnits,
-            seed: b.seed,
-            denomIndex: b.denomIndex,
-            inkGene: b.inkGene,
-            modules: burnModules
-        });
-    }
-
+    /// @dev Everything compose does to ERC-721 state and to the owner token. The state machine
+    ///      that follows is `RecompositionOps.compose`, which reads each input's per-token state,
+    ///      records it for `decompose`, and folds it into the survivor.
     function _compose(uint256 survivorId, uint256[] calldata burnIds) private returns (uint256) {
         uint256 n = burnIds.length;
-        if (n == 0) revert EmptyRecomposition();
+        if (n == 0) revert NoComposeInputs();
 
-        ShapeData storage s = _requireCallerOwnsLive(survivorId);
+        _requireCallerOwnsLive(survivorId);
+        RecompositionOps.requireDistinctComposeInputs(burnIds);
 
-        // `oldIndex` and the survivor's own pool contribution are captured before the loop so
-        // they are unaffected by what gets burned inside it.
-        uint8 oldIndex = s.denomIndex;
-        ShapeMath.BurnPoolAccum memory acc;
-        uint256 survivorUnits = ShapeMath.initPool(acc, oldIndex, s.originCount, s.inkGene);
-
-        // Push the reversible record and capture the survivor's pre-compose state before the
-        // loop mutates anything. `decompose` pops this to restore exactly these values.
-        ComposeRecord storage rec = _composeStack[survivorId].push();
-        rec.survivorDenomIndex = oldIndex;
-        rec.survivorOriginCount = uint32(s.originCount);
-        rec.survivorInkGene = s.inkGene;
-        rec.survivorModules = _sampledModules[survivorId];
-
-        // Donor snapshots for module sampling (SAMPLING_SPEC.md §5), collected in calldata order
-        // and sorted below into canonical (ascending id) order before sampling.
-        GeometrySampling.Donor[] memory burnDonors = new GeometrySampling.Donor[](n);
-
+        uint96 ownerTokenFrom;
         for (uint256 i = 0; i < n; ++i) {
             uint256 burnId = burnIds[i];
-            if (burnId == survivorId) revert CannotComposeWithSelf(burnId);
-            ShapeData storage b = _requireCallerOwnsLive(burnId);
-
-            bytes memory burnModules = _sampledModules[burnId];
-            burnDonors[i] = _accumulateBurnDonor(b, burnId, burnModules, acc);
-
-            // Snapshot the input verbatim, then burn it. Re-minted by `decompose` under this id.
-            rec.inputs
-                .push(
-                    ComposeInput({
-                        seed: b.seed,
-                        id: uint96(burnId),
-                        originCount: b.originCount,
-                        denomIndex: b.denomIndex,
-                        inkGene: b.inkGene,
-                        modules: burnModules
-                    })
-                );
+            RecompositionOps.requireComposeInput(_store, survivorId, burnId, ownerOf(burnId), msg.sender);
 
             if (burnId + 1 == _ownerToken) {
-                rec.ownerTokenFrom = uint96(_ownerToken);
+                // A live token id plus one, so the same width bound as `ComposeInput.id` holds.
+                ownerTokenFrom = uint96(_ownerToken);
                 _ownerToken = survivorId + 1;
                 emit OwnerTokenMoved(burnId, survivorId);
             }
 
-            delete _shapes[burnId];
-            delete _sampledModules[burnId];
             _burn(burnId);
             emit ShapeAbsorbed(survivorId, burnId);
         }
 
-        // The summed backing must land on a denomination, or the composition is rejected.
-        uint256 newIndex = Denominations.requireIndexOf(acc.total);
-
-        uint8 centerGene = InkGenes.center(acc.sumW, acc.unitsTotal);
-        (uint8 newGene, bytes memory sampled) = ComposeCompute.composeSampleAndGene(
-            _survivorDonor(survivorId, survivorUnits, s.seed, oldIndex, s.inkGene, rec.survivorModules),
-            burnDonors,
-            acc.burnSeedFold,
-            uint8(newIndex),
-            acc.best,
-            acc.worst,
-            centerGene
-        );
-
-        totalSupply -= n;
-        s.denomIndex = uint8(newIndex);
-        s.originCount = uint32(acc.origins); // <= total/UNIT <= 10000 by the capacity invariant
-        s.inkGene = newGene;
-        _sampledModules[survivorId] = sampled;
-
-        emit Composed(survivorId, burnIds, uint8(newIndex), uint32(acc.origins));
-        emit InkGene(survivorId, newGene);
-        emit ModulesSampled(survivorId, sampled);
-        emit MetadataUpdate(survivorId);
+        RecompositionOps.compose(_store, survivorId, burnIds, ownerTokenFrom);
         return survivorId;
     }
 
-    /// @dev The survivor's own `Donor` snapshot for compose sampling, placed at index 0 by
-    ///      `GeometrySampling.sampleComposeSorted` regardless of its id. Used by `_compose`;
-    ///      `ShapeLens.previewCompose` assembles the equivalent donor from this contract's getters.
-    function _survivorDonor(
-        uint256 survivorId,
-        uint256 survivorUnits,
-        bytes32 survivorSeed,
-        uint8 survivorDenomIndex,
-        uint8 survivorInkGene,
-        bytes memory survivorModules
-    ) private pure returns (GeometrySampling.Donor memory) {
-        return GeometrySampling.Donor({
-            id: survivorId,
-            units: survivorUnits,
-            seed: survivorSeed,
-            denomIndex: survivorDenomIndex,
-            inkGene: survivorInkGene,
-            modules: survivorModules
-        });
-    }
-
     /// @inheritdoc IShapes
-    /// @dev Burns the input and mints fresh outputs whose backing sums to the input's, so
-    ///      `redeemableBacking` is untouched. Child seeds derive from the parent seed deterministically,
-    ///      fixing the full split tree at mint. All accounting precedes the `_safeMint` loop so
-    ///      a receiver callback observes consistent state.
+    /// @dev Burns the input and mints outputs whose backing sums to the input's, so
+    ///      `redeemableBacking` is untouched. Child seeds derive from the parent seed. All
+    ///      accounting precedes the `_safeMint` loop, so a receiver callback sees consistent
+    ///      state.
     function split(uint256 tokenId, uint8[] calldata outDenoms)
         external
         nonReentrant
@@ -952,146 +687,33 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         private
         returns (uint256[] memory newIds)
     {
-        uint256 k = outDenoms.length;
-        if (k < 2) revert SplitTooFewOutputs();
-
-        ShapeData storage p = _requireCallerOwnsLive(tokenId);
-
-        // The parent's pre-burn state, held as the record it will be pushed as. Bundling these
-        // values into one memory struct rather than separate locals keeps `_splitTo` off the
-        // stack-too-deep limit under the non-optimized codegen `forge coverage` uses.
-        // `parentModules` is the parent's own effective geometry snapshot (its stored bytes if
-        // materialized, otherwise the grammar v1 sequence from its seed at its own denomination),
-        // read before the parent is burned below. Informational only (SAMPLING_SPEC.md §6, D3'):
-        // the sampling pool below is not read from this field in either branch.
-        //
-        // `originDenomIndex` (issue #21C): the root split ancestor's denomination. The parent
-        // carries one already (via its own `_splitOriginRef` entry) when it was itself a split
-        // child; otherwise the parent is the root and its own denomination is the origin.
-        SplitOriginRef storage parentRef = _splitOriginRef[tokenId];
-        uint8 originDenomIndex =
-            parentRef.exists ? _splitRecords[parentRef.recordIndex].originDenomIndex : p.denomIndex;
-
-        SplitRecord memory rec = SplitRecord({
-            parentSeed: p.seed,
-            parentId: uint96(tokenId),
-            parentDenomIndex: p.denomIndex,
-            parentInkGene: p.inkGene,
-            originDenomIndex: originDenomIndex,
-            parentModules: GeometrySampling.effectiveModulesOf(
-                _sampledModules[tokenId], p.seed, p.denomIndex, p.inkGene
-            )
-        });
-
-        // Split's sampling pool (SAMPLING_SPEC.md §6, D3'): the parent's top compose record's
-        // donor pool when it has one (child-denomination-independent, built once here and reused
-        // by every child below), else grammar v1 at each child's own denomination (denomination-
-        // dependent, so read fresh per child in the loop). `_composeStack[tokenId]` is untouched
-        // by split — read here, never deleted — so `ShapeLens`/off-chain reconstruction can redo
-        // this same branch decision later via `parentId` and `Shapes.composeDepth`.
-        uint256 recordDepth = _composeStack[tokenId].length;
-        bool hasRecordPool = recordDepth > 0;
-        bytes memory recordPool = hasRecordPool
-            ? _buildSplitRecordPool(_composeStack[tokenId][recordDepth - 1], rec.parentSeed)
-            : bytes("");
-
-        ShapeMath.requireSplitSumMatches(Denominations.amountAt(rec.parentDenomIndex), outDenoms);
-        uint32[] memory give = ShapeMath.allocateSplitOrigins(p.originCount, outDenoms);
-
-        // -------- effects --------
-        delete _shapes[tokenId];
-        delete _sampledModules[tokenId];
+        if (outDenoms.length < 2) revert SplitTooFewOutputs();
+        _requireCallerOwnsLive(tokenId);
         _burn(tokenId);
 
-        // One shared split-origin record per operation (SAMPLING_SPEC.md "Provenance views"):
-        // the parent's pre-burn state and effective modules, referenced by every child below.
-        uint64 splitRecordIndex = uint64(_splitRecords.length);
-        _splitRecords.push(rec);
-
-        uint256 firstId = totalMinted;
-        totalMinted = firstId + k;
-        totalSupply += k - 1; // burned one, minting k
-
+        // The children take the next `outDenoms.length` ids, so the first is the current counter.
+        // If the parent is the owner token, ownership moves to the first child id.
         if (tokenId + 1 == _ownerToken) {
+            uint256 firstId = _store.totalMinted;
             _ownerToken = firstId + 1;
             emit OwnerTokenMoved(tokenId, firstId);
         }
 
-        newIds = new uint256[](k);
-        bytes[] memory childModules = new bytes[](k);
-        for (uint256 i = 0; i < k; ++i) {
-            uint256 nid = firstId + i;
-            newIds[i] = nid;
-            _shapes[nid] = ShapeData({
-                seed: ShapeMath.childSeed(rec.parentSeed, i),
-                denomIndex: outDenoms[i],
-                originCount: give[i],
-                isBlack: false,
-                inkGene: rec.parentInkGene
-            });
-
-            childModules[i] = GeometrySampling.sampleSplitChildFromPool(
-                hasRecordPool, recordPool, rec.parentSeed, rec.parentInkGene, outDenoms[i], i
-            );
-            _sampledModules[nid] = childModules[i];
-            _splitOriginRef[nid] =
-                SplitOriginRef({exists: true, recordIndex: splitRecordIndex, childIndex: uint32(i)});
-        }
-
-        emit Split(tokenId, rec.parentSeed, newIds, outDenoms, give);
-        for (uint256 i = 0; i < k; ++i) {
-            emit InkGene(newIds[i], rec.parentInkGene);
-            emit ShapeFragmentCreated(tokenId, newIds[i], rec.parentSeed, i);
-            emit ModulesSampled(newIds[i], childModules[i]);
-        }
+        newIds = RecompositionOps.split(_store, tokenId, outDenoms);
 
         // -------- interactions --------
+        uint256 k = newIds.length;
         for (uint256 i = 0; i < k; ++i) {
             _safeMint(recipient, newIds[i]);
         }
     }
 
-    /// @dev Assembles a materialized-parent split's sampling pool from its top compose record
-    ///      (SAMPLING_SPEC.md §6, D3'): the record's pre-compose survivor effective modules
-    ///      first, then its inputs' effective modules ascending by donor id. `rec.inputs` is
-    ///      stored in calldata order (the loop in `_compose` pushed them in that order), so this
-    ///      sorts a memory copy before concatenating — required, or the split result would depend
-    ///      on that earlier compose's burnIds calldata order, breaking burn-order independence.
-    function _buildSplitRecordPool(ComposeRecord storage rec, bytes32 parentSeed)
-        private
-        view
-        returns (bytes memory)
-    {
-        uint256 m = rec.inputs.length;
-        GeometrySampling.Donor[] memory inputDonors = new GeometrySampling.Donor[](m);
-        for (uint256 i = 0; i < m; ++i) {
-            ComposeInput storage inp = rec.inputs[i];
-            inputDonors[i] = GeometrySampling.Donor({
-                id: inp.id,
-                units: 0, // unused: split's pool concatenates every donor's modules, no weighting
-                seed: inp.seed,
-                denomIndex: inp.denomIndex,
-                inkGene: inp.inkGene,
-                modules: inp.modules
-            });
-        }
-        return GeometrySampling.buildSplitRecordPoolSorted(
-            rec.survivorModules, parentSeed, rec.survivorDenomIndex, rec.survivorInkGene, inputDonors
-        );
-    }
-
     /// @inheritdoc IShapes
-    /// @dev The inverse of `compose`. Pops the survivor's top compose record and reverses that one
-    ///      merge: the survivor reverts to its pre-compose denomination, origin count and gene (its
-    ///      id and seed never changed), and every burned input is re-minted verbatim under its
-    ///      original id and seed. `totalMinted` is not bumped — the input ids are reused, not freshly
-    ///      issued, which is collision-free because a fresh mint takes `totalMinted` itself, above
-    ///      every id already issued, and an id
-    ///      belongs to at most one live record (DECOMPOSE_SPEC.md). LIFO: stacked composes on one
-    ///      survivor unwind newest first. Backing is conserved, so `redeemableBacking` is untouched.
-    ///      Non-owner-token accounting precedes the `_safeMint` loop; the owner token move (if this
-    ///      record carried one) happens after every restored id is minted, so a receiver callback
-    ///      never observes `ownerToken()` pointing at an id that does not exist yet.
+    /// @dev The inverse of `compose`. Pops the survivor's top compose record: the survivor returns
+    ///      to its pre-compose state and every burned input is re-minted under its original id and
+    ///      seed. Restored ids are reused and do not increase `totalMinted`. Stacked composes
+    ///      unwind newest first. Backing is conserved. The owner token move, when the record holds
+    ///      one, waits until every restored id exists. See DECOMPOSE_SPEC.md.
     function decompose(uint256 survivorId) external nonReentrant returns (uint256[] memory restoredIds) {
         return _decomposeTo(survivorId, msg.sender);
     }
@@ -1106,10 +728,10 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev Decomposes each survivor in `survivorIds`, in order, under one reentrancy guard. Repeat
-    ///      an id to pop several stacked records; list ids parent-before-child to unwind a nested
-    ///      tree (a re-minted input exists by the time its own id is reached). Bounded by block gas;
-    ///      the caller sizes the batch. Atomic: any item reverting rolls back the whole call.
+    /// @dev Decomposes each survivor in order under one reentrancy guard. Repeat an id to pop
+    ///      several stacked records. List ids parent-before-child to unwind a nested tree, so a
+    ///      re-minted input exists by the time its own id is reached. Atomic, and bounded by block
+    ///      gas: the caller sizes the batch.
     function decomposeMany(uint256[] calldata survivorIds)
         external
         nonReentrant
@@ -1143,58 +765,17 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         private
         returns (uint256[] memory restoredIds)
     {
-        ShapeData storage s = _requireCallerOwnsLive(survivorId);
+        _requireCallerOwnsLive(survivorId);
 
-        ComposeRecord[] storage stack = _composeStack[survivorId];
-        uint256 depth = stack.length;
-        if (depth == 0) revert NoComposeRecord(survivorId);
-        ComposeRecord storage rec = stack[depth - 1];
-        uint256 m = rec.inputs.length;
-        uint96 ownerTokenFrom = rec.ownerTokenFrom;
-
-        // -------- effects --------
-        // Restore the survivor to its pre-compose state. Seed is unchanged — compose never wrote it.
-        s.denomIndex = rec.survivorDenomIndex;
-        s.originCount = rec.survivorOriginCount;
-        s.inkGene = rec.survivorInkGene;
-        _sampledModules[survivorId] = rec.survivorModules;
-
-        restoredIds = new uint256[](m);
-        uint8[] memory genes = new uint8[](m);
-        for (uint256 i = 0; i < m; ++i) {
-            ComposeInput storage inp = rec.inputs[i];
-            uint256 iid = inp.id;
-            _shapes[iid] = ShapeData({
-                seed: inp.seed,
-                denomIndex: inp.denomIndex,
-                originCount: inp.originCount,
-                isBlack: false,
-                inkGene: inp.inkGene
-            });
-            _sampledModules[iid] = inp.modules;
-            restoredIds[i] = iid;
-            genes[i] = inp.inkGene;
-        }
-
-        totalSupply += m; // compose burned m inputs; decompose re-mints them, survivor stays
-        bytes memory survivorModules = _sampledModules[survivorId];
-        stack.pop(); // clears the record and its inputs array
-
-        emit Decomposed(survivorId, restoredIds, s.denomIndex, s.originCount);
-        emit InkGene(survivorId, s.inkGene);
-        emit ModulesSampled(survivorId, survivorModules);
-        for (uint256 i = 0; i < m; ++i) {
-            emit InkGene(restoredIds[i], genes[i]);
-            emit ShapeRevived(survivorId, restoredIds[i]);
-            emit ModulesSampled(restoredIds[i], _sampledModules[restoredIds[i]]);
-        }
-        emit MetadataUpdate(survivorId);
+        uint96 ownerTokenFrom;
+        (restoredIds, ownerTokenFrom) = RecompositionOps.decompose(_store, survivorId);
 
         // -------- interactions --------
-        // The restored owner token id is re-minted at its original position in `rec.inputs`, not
-        // necessarily first, so `_ownerToken` moves only after every mint completes: moving it
-        // before the loop would let an earlier receiver's callback observe `ownerToken()` pointing
-        // at an id not yet minted, with `owner()` reading address(0) for it.
+        // The restored owner token can sit at any position in the record's inputs, so `_ownerToken`
+        // moves only after every mint completes. Moving it before the loop would let an earlier
+        // receiver callback see `ownerToken()` pointing at an id not yet minted, with `owner()`
+        // reading zero.
+        uint256 m = restoredIds.length;
         for (uint256 i = 0; i < m; ++i) {
             _safeMint(recipient, restoredIds[i]);
         }
@@ -1206,26 +787,26 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev The second and final reserve outflow path sends a fixed 100 ETH to a fixed
-    ///      unspendable address, moving the backing out of `redeemableBacking` into
-    ///      `sacrificedBacking`. Unlike `burn`, the token remains alive and becomes Black.
-    ///      CEI: the token is marked Black before the transfer, which is last.
-    function sacrifice(uint256 tokenId) external nonReentrant {
-        ShapeData storage d = _requireCallerOwnsLive(tokenId);
+    /// @dev Requires an apex Complete Shape. It becomes Black, its backing leaves
+    ///      `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH goes to
+    ///      the fixed unspendable address. The token stays alive and can no longer redeem ETH. The
+    ///      token is marked Black before the transfer, which is last.
+    function burnBacking(uint256 tokenId) external nonReentrant {
+        _requireCallerOwnsLive(tokenId);
+        ShapeData storage d = _store.shapes[tokenId];
         if (d.denomIndex != APEX_INDEX || d.originCount != Denominations.unitsAt(APEX_INDEX)) {
             revert NotApexComplete(tokenId);
         }
-        // The apex backing, from the ladder rather than a separate literal, so it cannot drift from
-        // the denomination table (e.g. a scaled testnet build).
+        // Read the apex backing from the ladder so it cannot drift from the denomination table.
         uint256 apexBacking = Denominations.amountAt(APEX_INDEX);
 
         // -------- effects --------
         d.isBlack = true;
         redeemableBacking -= apexBacking;
-        sacrificedBacking += apexBacking;
-        blackCount += 1;
+        burnedBacking += apexBacking;
+        blackShapeCount += 1;
 
-        emit Blackened(tokenId, apexBacking);
+        emit BlackShapeCreated(tokenId, apexBacking);
         emit MetadataUpdate(tokenId);
 
         // -------- interactions --------
@@ -1237,27 +818,27 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     function formationOf(uint256 tokenId) public view returns (ShapeFormation) {
         _requireOwned(tokenId);
-        ShapeData storage d = _shapes[tokenId];
+        ShapeData storage d = _store.shapes[tokenId];
         return ShapeMath.formation(d.denomIndex, d.originCount, d.isBlack);
     }
 
     /// @inheritdoc IShapes
     function backingOf(uint256 tokenId) public view returns (uint256) {
         _requireOwned(tokenId);
-        ShapeData storage d = _shapes[tokenId];
+        ShapeData storage d = _store.shapes[tokenId];
         return d.isBlack ? 0 : Denominations.amountAt(d.denomIndex);
     }
 
     /// @inheritdoc IShapes
     function denomIndexOf(uint256 tokenId) external view returns (uint8) {
         _requireOwned(tokenId);
-        return _shapes[tokenId].denomIndex;
+        return _store.shapes[tokenId].denomIndex;
     }
 
     /// @inheritdoc IShapes
     function modulesOf(uint256 tokenId) external view returns (bytes memory) {
         _requireOwned(tokenId);
-        return _sampledModules[tokenId];
+        return _store.modules[tokenId];
     }
 
     /// @inheritdoc IERC721Value
@@ -1266,27 +847,27 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function isBlack(uint256 tokenId) public view returns (bool) {
+    function isBlackShape(uint256 tokenId) public view returns (bool) {
         _requireOwned(tokenId);
-        return _shapes[tokenId].isBlack;
+        return _store.shapes[tokenId].isBlack;
     }
 
     /// @inheritdoc IShapes
     function seedOf(uint256 tokenId) public view returns (bytes32) {
         _requireOwned(tokenId);
-        return _shapes[tokenId].seed;
+        return _store.shapes[tokenId].seed;
     }
 
     /// @inheritdoc IShapes
     function originCountOf(uint256 tokenId) public view returns (uint256) {
         _requireOwned(tokenId);
-        return _shapes[tokenId].originCount;
+        return _store.shapes[tokenId].originCount;
     }
 
     /// @inheritdoc IShapes
     function inkGeneOf(uint256 tokenId) public view returns (uint8) {
         _requireOwned(tokenId);
-        return _shapes[tokenId].inkGene;
+        return _store.shapes[tokenId].inkGene;
     }
 
     /// @inheritdoc IShapes
@@ -1296,68 +877,20 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function composeDepth(uint256 survivorId) external view returns (uint256) {
-        return _composeStack[survivorId].length;
+        return _store.composeStack[survivorId].length;
     }
 
     /// @inheritdoc IShapes
-    /// @dev Raw accessor: the survivor's pre-compose fields and its input count at `depth`, with
-    ///      no `ComposeInputView[]` assembly and no `depth` bounds check (unlike the removed
-    ///      `composeRecordAt`, which reverted `ComposeRecordOutOfRange`) — an out-of-range `depth`
-    ///      instead panics on the storage array access. `ShapeLens.composeRecordAt` checks `depth`
-    ///      against `composeDepth` itself, reverting the same error, before calling this.
-    function composeRecordHeaderAt(uint256 survivorId, uint256 depth)
+    function composeRecordAt(uint256 survivorId, uint256 depth)
         external
         view
-        returns (
-            uint8 survivorDenomIndex,
-            uint32 survivorOriginCount,
-            uint8 survivorInkGene,
-            uint96 ownerTokenFrom,
-            bytes memory survivorModules,
-            uint256 inputCount
-        )
+        returns (ComposeRecordView memory)
     {
-        ComposeRecord storage rec = _composeStack[survivorId][depth];
-        return (
-            rec.survivorDenomIndex,
-            rec.survivorOriginCount,
-            rec.survivorInkGene,
-            rec.ownerTokenFrom,
-            rec.survivorModules,
-            rec.inputs.length
-        );
+        return RecompositionOps.composeRecordAt(_store, survivorId, depth);
     }
 
     /// @inheritdoc IShapes
-    /// @dev Raw accessor: one burned input's fields at `(survivorId, depth, inputIndex)`. Reverts
-    ///      with the standard out-of-bounds panic for an `inputIndex` beyond the record's input
-    ///      count; `ShapeLens` only ever calls this with indices below the count
-    ///      `composeRecordHeaderAt` just reported.
-    function composeRecordInputAt(uint256 survivorId, uint256 depth, uint256 inputIndex)
-        external
-        view
-        returns (
-            uint256 id,
-            bytes32 seed,
-            uint8 denomIndex,
-            uint32 originCount,
-            uint8 inkGene,
-            bytes memory modules
-        )
-    {
-        ComposeInput storage inp = _composeStack[survivorId][depth].inputs[inputIndex];
-        return (inp.id, inp.seed, inp.denomIndex, inp.originCount, inp.inkGene, inp.modules);
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev Raw accessor: the stored split-origin fields for `childId`, verbatim. Already minimal
-    ///      (a passthrough, no struct assembly); `ShapeLens.splitOriginOf` returns this unchanged.
-    ///      `parentId` is needed to re-derive the split's sampling branch (SAMPLING_SPEC.md §6,
-    ///      D3'): `composeDepth(parentId) > 0` means the record branch, whose donor pool is
-    ///      rebuilt from `composeRecordHeaderAt`/`composeRecordInputAt` at that depth.
-    ///      `originDenomIndex` is the root split ancestor's denomination (issue #21C): the "Split
-    ///      Origin" metadata trait reads it directly, with no reconstruction needed.
-    function splitOriginRaw(uint256 childId)
+    function splitOriginOf(uint256 childId)
         external
         view
         returns (
@@ -1370,9 +903,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
             uint256 childIndex
         )
     {
-        SplitOriginRef storage ref = _splitOriginRef[childId];
+        SplitOriginRef storage ref = _store.splitOriginRef[childId];
         if (!ref.exists) revert NotASplitChild(childId);
-        SplitRecord storage rec = _splitRecords[ref.recordIndex];
+        SplitRecord storage rec = _store.splitRecords[ref.recordIndex];
         return (
             rec.parentSeed,
             rec.parentId,
@@ -1384,8 +917,184 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         );
     }
 
-    /// @dev A fresh local EVM may execute at genesis. Production transactions cannot, but making
-    ///      the entropy input total keeps constructor simulation and local deployment reliable.
+    /// @inheritdoc IShapes
+    function shapeState(uint256 tokenId) external view returns (ShapeState memory) {
+        _requireOwned(tokenId);
+        return RecompositionOps.shapeState(_store, tokenId);
+    }
+
+    /// @inheritdoc IShapes
+    function exists(uint256 tokenId) external view returns (bool) {
+        return _ownerOf(tokenId) != address(0);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it.
+    function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
+        external
+        view
+        returns (ShapeState memory)
+    {
+        return RecompositionOps.previewCompose(_store, survivorId, burnIds);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it.
+    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
+        external
+        view
+        returns (ShapeChildPreview[] memory children)
+    {
+        return RecompositionOps.previewSplit(_store, tokenId, outDenoms);
+    }
+
+    /// @dev Inputs shared by the token rendering views.
+    ///      Non-empty `modules` selects sampled rendering; otherwise rendering uses `seed`.
+    struct RenderInputs {
+        bytes32 seed;
+        bytes modules;
+        uint256 amountWei;
+        uint256 originCount;
+        bool isBlack;
+        uint8 inkGene;
+        uint256 composeDepth;
+        bool ownerToken;
+    }
+
+    function _renderInputs(uint256 tokenId) private view returns (RenderInputs memory r) {
+        _requireOwned(tokenId);
+        ShapeData storage d = _store.shapes[tokenId];
+        r.seed = d.seed;
+        r.modules = _store.modules[tokenId];
+        r.amountWei = Denominations.amountAt(d.denomIndex);
+        r.originCount = d.originCount;
+        r.isBlack = d.isBlack;
+        r.inkGene = d.inkGene;
+        r.composeDepth = _store.composeStack[tokenId].length;
+        r.ownerToken = tokenId + 1 == _ownerToken;
+    }
+
+    /// @inheritdoc IShapes
+    function unicodeCard(uint256 tokenId) external view returns (string memory) {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeRenderer rd = IShapeRenderer(_presentation.renderer);
+        if (r.modules.length != 0) return rd.renderUnicodeSampled(r.modules, r.amountWei, r.inkGene);
+        return rd.renderUnicode(r.seed, r.amountWei, r.inkGene);
+    }
+
+    /// @inheritdoc IShapes
+    function svg(uint256 tokenId) external view returns (string memory) {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeRenderer rd = IShapeRenderer(_presentation.renderer);
+        if (r.modules.length != 0) {
+            return rd.renderSVGSampled(r.modules, r.amountWei, r.isBlack, r.inkGene);
+        }
+        return rd.renderSVG(r.seed, r.amountWei, r.isBlack, r.inkGene);
+    }
+
+    /// @inheritdoc IShapes
+    function metadataJSON(uint256 tokenId) external view returns (string memory) {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeCollection c = _requireCollection();
+        string memory description = r.ownerToken ? c.ownerTokenDescription() : c.description();
+        if (r.modules.length != 0) {
+            return IShapeRenderer(_presentation.renderer)
+                .metadataJSONSampled(
+                    r.modules,
+                    r.amountWei,
+                    tokenId,
+                    r.originCount,
+                    r.isBlack,
+                    r.inkGene,
+                    r.composeDepth,
+                    c.tokenNamePrefix(),
+                    description,
+                    _splitProvenanceOf(tokenId),
+                    r.ownerToken
+                );
+        }
+        return IShapeRenderer(_presentation.renderer)
+            .metadataJSON(
+                r.seed,
+                r.amountWei,
+                tokenId,
+                r.originCount,
+                r.isBlack,
+                r.inkGene,
+                r.composeDepth,
+                c.tokenNamePrefix(),
+                description,
+                r.ownerToken
+            );
+    }
+
+    /// @inheritdoc IShapes
+    function geometryOf(uint256 tokenId)
+        external
+        view
+        returns (uint256 cols, uint256 rows, uint256 moduleCount)
+    {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeGeometry g = IShapeGeometry(_presentation.renderer);
+        if (r.modules.length != 0) {
+            (, cols, rows,,,,, moduleCount) = g.cardGeometrySampled(r.modules, r.amountWei, r.inkGene);
+        } else {
+            (, cols, rows,,,,, moduleCount) = g.cardGeometry(r.seed, r.amountWei, r.inkGene);
+        }
+    }
+
+    /// @inheritdoc IShapes
+    function effectiveModulesOf(uint256 tokenId) external view returns (bytes memory) {
+        _requireOwned(tokenId);
+        ShapeData storage d = _store.shapes[tokenId];
+        return GeometrySampling.effectiveModulesOf(_store.modules[tokenId], d.seed, d.denomIndex, d.inkGene);
+    }
+
+    /// @inheritdoc IShapes
+    function moduleAt(uint256 tokenId, uint256 index)
+        external
+        view
+        returns (
+            uint8 kind,
+            bool solid,
+            uint16 rotation,
+            uint256 cx,
+            uint256 cy,
+            uint256 size,
+            uint256 weight
+        )
+    {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeGeometry g = IShapeGeometry(_presentation.renderer);
+        if (r.modules.length != 0) {
+            return g.moduleAtSampled(r.modules, r.amountWei, r.inkGene, index);
+        }
+        return g.moduleAt(r.seed, r.amountWei, r.inkGene, index);
+    }
+
+    /// @inheritdoc IShapes
+    /// @dev Forwards to the positions target with a 50,000 gas stipend. The target is untrusted: a
+    ///      revert, out-of-gas, or malformed return yields zero.
+    function positionOf(uint256 tokenId) external view returns (address) {
+        address target = _pointers.positions;
+        if (target == address(0)) return address(0);
+
+        (bool success, bytes memory data) = target.staticcall{gas: POSITIONS_GAS}(
+            abi.encodeCall(IShapePositionResolver.positionOf, (tokenId))
+        );
+        if (!success || data.length != 32) return address(0);
+
+        uint256 word;
+        assembly ("memory-safe") {
+            word := mload(add(data, 32))
+        }
+        if (word >> 160 != 0) return address(0);
+        return address(uint160(word));
+    }
+
+    /// @dev `blockhash` has no defined value at block zero, which a local chain can execute at.
     function _previousBlockHash() private view returns (bytes32) {
         return block.number == 0 ? bytes32(0) : blockhash(block.number - 1);
     }
@@ -1410,84 +1119,82 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return Denominations.UNIT;
     }
 
+    /// @inheritdoc IShapes
+    function isSupportedDenomination(uint256 amountWei) external pure returns (bool) {
+        return Denominations.isSupported(amountWei);
+    }
+
     /// @notice EIP-2981 royalty, permanently zero.
-    /// @dev Declared rather than omitted so a marketplace reading the standard is told the rate
-    ///      instead of falling back to its own default.
+    /// @dev Declared so a marketplace reading ERC-2981 gets an explicit zero rate.
     function royaltyInfo(uint256, uint256) external pure returns (address, uint256) {
         return (address(0), 0);
     }
 
     /// @inheritdoc IShapes
     function contractURI() external view returns (string memory) {
-        return IShapeCollection(collection).contractURI(name(), _copyConfig.description);
+        return _requireCollection().contractURI();
     }
 
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.
-    /// @dev Reads the sampled path (grammar v2) when the token carries materialized geometry
-    ///      (`_sampledModules[tokenId]` nonempty: a compose survivor or a split child), otherwise
-    ///      the seed-based path (grammar v1, an original mint). A split child always carries
-    ///      materialized geometry (`_splitTo` writes `_sampledModules` for every child), so its
-    ///      "Split From" / "Split Origin" traits are only ever plumbed through the sampled path;
-    ///      `_splitProvenanceOf` is the all-zero, non-split value for every other token.
+    /// @dev An original mint derives its geometry from `seed` under grammar v1. A compose survivor
+    ///      and a split child carry materialized module bytes and render under grammar v2. A split
+    ///      child always carries materialized bytes, so its split provenance traits reach the
+    ///      renderer through the sampled path.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        _requireOwned(tokenId);
-        ShapeData storage d = _shapes[tokenId];
-        bytes memory modules = _sampledModules[tokenId];
-        uint256 amountWei = Denominations.amountAt(d.denomIndex);
-        uint256 depth = _composeStack[tokenId].length;
-        bool isOwnerToken = tokenId + 1 == _ownerToken;
-        if (modules.length != 0) {
-            return IShapeRenderer(renderer)
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeCollection c = _requireCollection();
+        // The owner token carries its own description; every other token carries the shared one.
+        string memory description = r.ownerToken ? c.ownerTokenDescription() : c.description();
+        if (r.modules.length != 0) {
+            return IShapeRenderer(_presentation.renderer)
                 .tokenURISampled(
-                    modules,
-                    amountWei,
+                    r.modules,
+                    r.amountWei,
                     tokenId,
-                    d.originCount,
-                    d.isBlack,
-                    d.inkGene,
-                    depth,
-                    _copyConfig.tokenNamePrefix,
-                    _copyConfig.description,
+                    r.originCount,
+                    r.isBlack,
+                    r.inkGene,
+                    r.composeDepth,
+                    c.tokenNamePrefix(),
+                    description,
                     _splitProvenanceOf(tokenId),
-                    isOwnerToken
+                    r.ownerToken
                 );
         }
-        return IShapeRenderer(renderer)
+        return IShapeRenderer(_presentation.renderer)
             .tokenURI(
-                d.seed,
-                amountWei,
+                r.seed,
+                r.amountWei,
                 tokenId,
-                d.originCount,
-                d.isBlack,
-                d.inkGene,
-                depth,
-                _copyConfig.tokenNamePrefix,
-                _copyConfig.description,
-                isOwnerToken
+                r.originCount,
+                r.isBlack,
+                r.inkGene,
+                r.composeDepth,
+                c.tokenNamePrefix(),
+                description,
+                r.ownerToken
             );
     }
 
-    /// @dev Split creation-provenance for `tokenId`'s metadata (issue #21C): the all-zero value
-    ///      for a token that was never minted by `split`/`splitTo`, else its immediate parent's
-    ///      and root split ancestor's denomination indexes, read from its `SplitRecord`.
+    /// @dev Split creation provenance for `tokenId`'s metadata: the all-zero value for a token
+    ///      that was never minted by `split`/`splitTo`, else its parent's and root split ancestor's
+    ///      denomination indexes, read from its `SplitRecord`.
     function _splitProvenanceOf(uint256 tokenId) private view returns (SplitProvenance memory) {
-        SplitOriginRef storage ref = _splitOriginRef[tokenId];
+        SplitOriginRef storage ref = _store.splitOriginRef[tokenId];
         if (!ref.exists) {
             return SplitProvenance({isSplitChild: false, parentDenomIndex: 0, originDenomIndex: 0});
         }
-        SplitRecord storage rec = _splitRecords[ref.recordIndex];
+        SplitRecord storage rec = _store.splitRecords[ref.recordIndex];
         return SplitProvenance({
             isSplitChild: true, parentDenomIndex: rec.parentDenomIndex, originDenomIndex: rec.originDenomIndex
         });
     }
 
-    /// @dev Refuses to place a Shape in this contract's own custody.
-    ///      `Shapes` can never be `msg.sender`, so a token held here could never be redeemed:
-    ///      its backing would be stranded while `redeemableBacking` went on counting it. The
-    ///      reserve invariant would survive, but the token's redeemability — the whole point
-    ///      of the object — would not. `safeTransferFrom` already fails here because the
-    ///      receiver check reverts; this closes the plain `transferFrom` path too, and the
-    ///      mint path along with it.
+    /// @dev Refuses to place a Shape in this contract's own custody. Redemption requires
+    ///      `msg.sender` to be the owner, which `Shapes` can never be, so a token held here would
+    ///      be permanently unredeemable while `redeemableBacking` kept counting its backing. This
+    ///      covers `transferFrom` and the mint path; `safeTransferFrom` also fails the receiver
+    ///      check.
     function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
         if (to == address(this)) revert SelfCustodyRejected(tokenId);
         return super._update(to, tokenId, auth);
@@ -1505,8 +1212,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /* ------------------------- no stray deposits ------------------------ */
 
-    /// @dev ETH can only arrive through `mint` / `mintBatch`. Anything else is rejected, so
-    ///      the contract balance never drifts above the reserve through ordinary transfers.
+    /// @dev Direct ETH transfers are rejected. ETH enters through construction and the payable
+    ///      mint entrypoints. `selfdestruct` and block rewards can force ETH in without calling
+    ///      `receive`.
     receive() external payable {
         revert DirectDepositRejected();
     }

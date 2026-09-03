@@ -88,7 +88,7 @@ library InkGenes {
     /// @dev `sumW = Σ gene_i × units_i`, `units = Σ units_i`, both accumulated by the caller
     ///      over the pool. Worked example (impl spec §2.3): survivor Solid(6) dust (1 unit) +
     ///      four burns Murk(3) dust (1 unit each): sumW = 6 + 12 = 18, units = 5,
-    ///      center = (36 + 5) / 10 = 4 (Dense) — the true mean 3.6 rounds up.
+    ///      center = (36 + 5) / 10 = 4 (Dense): the true mean 3.6 rounds up.
     function center(uint256 sumW, uint256 units) internal pure returns (uint8) {
         return uint8((2 * sumW + units) / (2 * units));
     }
@@ -96,7 +96,7 @@ library InkGenes {
     /// @notice The per-tier compose walk: steps the survivor's gene, one tier at a time, toward
     ///         `center`, `best` or `worst` depending on a per-tier roll.
     /// @dev `burnSeedFold` is the XOR of every burned token's `uint256(seed)`, so the order
-    ///      `burnIds` arrive in cannot affect the result — XOR is commutative and associative,
+    ///      `burnIds` arrive in cannot affect the result: XOR is commutative and associative,
     ///      so any permutation folds to the same value. Fresh entropy is forbidden: `R` and
     ///      every per-tier roll are pure functions of the arguments alone. A homogeneous pool
     ///      (`best == worst == center == survivorGene`) is a no-op by construction; the loop

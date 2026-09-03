@@ -2,14 +2,24 @@
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "indexerUrl": "https://shapes-indexer.fly.dev",
   "chainId": 11155111,
-  "shapes": "0xd4e7134cd9fbcb1f48d9e2cc460f2afa40b621b8",
-  "renderer": "0x05f70c867f2e4a26ed98e33b59895db09ed12f2c",
-  "collection": "0xd488531dfd3bcfd15876e4f4c623ba0c81b42368",
-  "lens": "0xdd351b0a1bb2160c4ef48794c27e7c1fe64acdf7",
-  "auctionHouse": "0x65085c760df92925d23149a9d95624177ba6e637",
+  "shapes": "0x6c2f9c00f44fbbf141dd166979903004b80d5f99",
+  "renderer": "0x7025fc7e13ca24505d471e193e2e2a54e960a1b2",
+  "collection": "0x9f08626a5ae483b498ea81800f395222639334e7",
+  "auctionHouse": "0xf3f72672330f827549e57f71520b9de145c86435",
   "mintFeeWei": "10000000000000",
-  "mintStart": "1788403705",
-  "fromBlock": 11623741,
-  "auctionId": null,
-  "artistReleaseHash": null
+  "mintStart": "1788458965",
+  "libraries": {
+    "AdminOps": "0xbe5755dd6be5a4d41d62c28d53e987ae2467044e",
+    "ComposeCompute": "0xfbf7f6e9552f93d2dbd86e30b3b0637be5d520ea",
+    "CopyValidation": "0xede9393cf5bd8037b9d4a15c2d864f97f98a9da7",
+    "EIP712Signature": "0x48208746f35222a751e5fe286a8942bfceaf0906",
+    "GeometrySampling": "0x991e1352b0f6131748f36d8d45f756d55ee930d3",
+    "InkGenes": "0x34a7a97b92288b3f804f416b3b15214fb85e4200",
+    "RecompositionOps": "0x8802c64b7b6ccd660f6a5a69413b6ba7751f1da1"
+  },
+  "fromBlock": 11628203,
+  "auctionId": "0",
+  "artistReleaseHash": "0xc373849ce5192107cd46204fc14f12dff0b85863412bb6dcded3cfb074af294f",
+  "commit": "b3370281e56a61dc7c5e05b59d2aa709b804525c",
+  "branch": "claude/contracts-page"
 }

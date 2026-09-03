@@ -14,7 +14,6 @@ const localDep: Deployment = {
   rpc: "http://127.0.0.1:8545",
   chainId: 31337,
   shapes: "0x0000000000000000000000000000000000000000",
-  lens: "0x0000000000000000000000000000000000000000",
   renderer: "0x0000000000000000000000000000000000000000",
   mintFeeWei: "0",
 };
@@ -23,7 +22,6 @@ const sepoliaDep: Deployment = {
   rpc: "https://ethereum-sepolia-rpc.publicnode.com",
   chainId: sepolia.id,
   shapes: "0x00000000000000000000000000000000000000AA",
-  lens: "0x00000000000000000000000000000000000000BB",
   renderer: "0x00000000000000000000000000000000000000CC",
   mintFeeWei: "10000000000000",
 };

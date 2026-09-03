@@ -197,8 +197,8 @@ contract GasCeilingsTest is ShapesBase {
     }
 
     /// @notice The inverse is also not atomically usable after a 9,999-input compose.
-    /// @dev The follow-on sacrifice measures its public entrypoint with a genuine apex Complete.
-    function test_Direct10000InputDecomposeExceeds30MGas_AndMeasuresSacrifice() public {
+    /// @dev The follow-on burnBacking measures its public entrypoint with a genuine apex Complete.
+    function test_Direct10000InputDecomposeExceeds30MGas_AndMeasuresBurnBacking() public {
         uint256 first = _mintBatch(0, 10_000);
         uint256[] memory burns = new uint256[](9_999);
         for (uint256 i = 0; i < burns.length; ++i) {
@@ -214,8 +214,8 @@ contract GasCeilingsTest is ShapesBase {
 
         vm.prank(alice);
         uint256 before = gasleft();
-        shapes.sacrifice(survivor);
-        emit log_named_uint("sacrifice(apex Complete) gas", before - gasleft());
+        shapes.burnBacking(survivor);
+        emit log_named_uint("burnBacking(apex Complete) gas", before - gasleft());
     }
 
     function test_Measure_SplitTo() public {

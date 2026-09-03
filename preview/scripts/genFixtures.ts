@@ -508,7 +508,7 @@ const out = {
     const materializedParentA = materializedFrom(productionSeed(600n), 2, 2);
     const splitGrammarCases: SplitGrammarCase[] = [
       {
-        why: "split sampling, grammar branch: materialized parent (no compose record) — parent.modules is ignored",
+        why: "split sampling, grammar branch: materialized parent (no compose record), parent.modules is ignored",
         parent: {seed: productionSeed(600n), denomIndex: 2, inkGene: 2, modules: materializedParentA},
         childDenomIndex: 0,
         childIndex: 0,
@@ -594,7 +594,7 @@ const out = {
         childIndex: 0,
       },
       {
-        why: "split sampling, record branch: same donors, inputs in shuffled calldata order — pool (and result) must be identical to the ascending-order case above",
+        why: "split sampling, record branch: same donors, inputs in shuffled calldata order, pool (and result) must be identical to the ascending-order case above",
         parentSeed: productionSeed(700n),
         survivorDenomIndex: 1,
         survivorInkGene: 4,

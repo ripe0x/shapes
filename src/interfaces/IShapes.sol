@@ -3,29 +3,26 @@ pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IAdminControl} from "./IAdminControl.sol";
-import {ShapeFormation} from "./IShapeCapabilities.sol";
+import {ComposeRecordView, ShapeChildPreview, ShapeFormation, ShapeState} from "../ShapeTypes.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
 /// @title IShapes
-/// @notice ETH wrapped into unique ERC721 objects at nine fixed denominations.
+/// @notice ETH wrapped into unique ERC-721 objects at nine fixed denominations.
 /// @dev A Shape holds an exact amount of ETH. Redeeming or burning it destroys the token and
-///      returns exactly that amount to its owner. The other reserve outflow is `sacrifice`, which
-///      sends a fixed 100 ETH to an unspendable address and is callable only by an apex Complete
-///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
-///      One live Shape is the owner token, tracked by `_ownerToken` and exposed by `ownerToken()`.
-///      It starts as #0 and moves through `compose`, `decompose` and `split`; `owner()` follows
-///      its current holder, returning zero once it is redeemed or burned. Ownership grants no
-///      permissions. A separate `admin()` role may administer and independently lock the renderer,
-///      positions pointer and market pointer, may redirect future mint fees and adjust the mint
-///      fee amount within a compile-time cap, and cannot otherwise touch backing. It may be
-///      transferred or renounced without moving Shape #0.
+///      returns exactly that amount to its owner. The other reserve outflow is `burnBacking`,
+///      which sends an apex Complete Shape's backing to an unspendable address and is callable by
+///      that Shape's owner. No pause, upgrade path, recovery function or admin path reaches the
+///      reserve.
 ///
-///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
-///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
-///      read-only periphery, deployed separately as `ShapeLens` (`IShapeLens`) to keep this
-///      contract's runtime bytecode under the EIP-170 size limit. `modulesOf`,
-///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the minimal
-///      raw accessors `ShapeLens` reads to reconstruct them.
+///      One live Shape is the owner token, exposed by `ownerToken()`. It starts as #0 and moves
+///      through `compose`, `decompose` and `split`. `owner()` follows its holder and returns zero
+///      once it is redeemed or burned. Holding it grants no permissions. The separate `admin()`
+///      role administers presentation and pointers, redirects future mint fees and adjusts the
+///      mint fee within a compile-time cap. It reaches no backing, redemption or token ownership,
+///      and it may be transferred or renounced without moving any Shape.
+///
+///      Every protocol fact and every simulation is reachable from this address. There is no
+///      periphery read contract and no function reachable through a library alone.
 interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The two fixed pointers administered by `setPointer` and `lockPointer`.
     enum Pointer {
@@ -45,12 +42,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         origin balance (mint origins − redeemed origins) without a pre-burn state read.
     event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 
-    /// @notice Emitted once per mint call that charges a nonzero fee: the aggregate fee accrued
-    ///         to `pendingFees`, not yet forwarded to anyone. Quantity minted is recoverable from
-    ///         the same transaction's `ShapeMinted` events.
+    /// @notice Emitted once per mint call that charges a nonzero fee: the aggregate fee, credited
+    ///         to `feeRecipient()` at the time of the call, not yet forwarded. Quantity minted is
+    ///         recoverable from the same transaction's `ShapeMinted` events.
     event MintFeeAccrued(uint256 amountWei);
 
-    /// @notice Emitted when `withdrawFees` forwards the accrued fee to the current fee recipient.
+    /// @notice Emitted when `withdrawFees` forwards a recipient's accrued balance to it.
     event FeesWithdrawn(address indexed recipient, uint256 amountWei);
 
     /// @notice Emitted once when the artist cryptographically approves this deployment and release.
@@ -62,10 +59,11 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Emitted when the admin replaces the collection metadata contract.
     event CollectionUpdated(address indexed collection);
 
-    /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
-    event RendererLocked();
+    /// @notice Emitted when presentation is permanently locked. Neither the renderer nor the
+    ///         collection can change afterwards.
+    event PresentationLocked(address indexed renderer, address indexed collection);
 
-    /// @notice Standard contract-level metadata refresh signal, emitted when the collection copy changes.
+    /// @notice Standard contract-level metadata refresh signal, emitted by `refreshMetadata`.
     event ContractURIUpdated();
 
     /// @notice Emitted when the admin sets, replaces or clears the optional positions contract.
@@ -106,10 +104,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         uint32[] originCounts
     );
 
-    /// @notice Emitted when an apex Complete Shape is sacrificed into Black. `sacrificedWei`
-    ///         (100 ETH) is sent
-    ///         to a provably unspendable address and is never redeemable again.
-    event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
+    /// @notice Emitted when an apex Complete Shape's backing is burned and it becomes a Black Shape.
+    ///         `burnedWei` is sent to an unspendable address and is never redeemable again.
+    event BlackShapeCreated(uint256 indexed tokenId, uint256 burnedWei);
 
     /// @notice Emitted whenever a token's ink gene is assigned or changes: once per mint, once
     ///         per compose (the survivor), once per split child.
@@ -130,9 +127,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         id when a survivor's compose is reversed, in addition to the aggregate `Decomposed`.
     event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId);
 
-    /// @notice Emitted whenever a token's materialized module geometry (`ModuleCodec`) is set or
+    /// @notice Emitted whenever a token's sampled module geometry (`ModuleCodec`) is set or
     ///         restored: the survivor after `compose`, each child after `split`, and both the
-    ///         survivor and every re-minted input after `decompose`. Empty `modules` signals the
+    ///         survivor and every re-minted input after `decompose`. Empty `modules` means the
     ///         token's geometry has reverted to seed-derived grammar v1.
     event ModulesSampled(uint256 indexed tokenId, bytes modules);
 
@@ -152,56 +149,61 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error EthTransferFailed(address to, uint256 amountWei);
     /// @notice A recipient-directed redemption named the zero address, which would burn the payout.
     error InvalidRecipient(address recipient);
-    /// @dev `withdrawFees` found nothing accrued.
+    /// @dev `withdrawFees` found nothing owed to the requested recipient.
     error NoFeesPending();
     /// @dev A mint fee, at construction or via `setMintFee`, above the cap, `unit()`.
     error MintFeeAboveCap(uint256 fee);
     error DirectDepositRejected();
-    /// @dev `mintBatch` and `mintBatchTo` revert before `block.timestamp` reaches `mintStart`.
+    /// @dev Every public mint entrypoint reverts before `block.timestamp` reaches `mintStart`.
     error MintNotOpen();
     /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
     ///      minting and transferring to `address(this)` are both refused.
     error SelfCustodyRejected(uint256 tokenId);
-    /// @dev `setRenderer` and `lockRenderer` revert once the renderer has been locked.
-    error RendererIsLocked();
+    /// @dev `setRenderer`, `setCollection` and `lockPresentation` revert once presentation is
+    ///      locked, as does `IShapeCollection.setMetadataCopy`, which reads the lock back from here.
+    error PresentationIsLocked();
     /// @dev A renderer must have code and explicitly support the stable `IShapeRenderer`
     ///      capability; the zero address fails the code check.
     error UnsupportedRenderer(address renderer);
-    /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
+    /// @dev A collection must explicitly support the stable `IShapeCollection` capability and
+    ///      report this token's address from its `shapes()`.
     error UnsupportedCollection(address collection);
-    /// @dev A Black Shape cannot be redeemed, composed, decomposed or sacrificed again.
-    ///      It remains transferable and may be destroyed through the draft ERC-8060 `burn` path.
+    /// @dev A Black Shape cannot be redeemed, composed, decomposed or have its backing burned
+    ///      again. It remains transferable and may be destroyed through the draft ERC-8060 `burn`
+    ///      path.
     error TokenIsBlack(uint256 tokenId);
-    /// @dev `compose` needs at least one token to burn; `split` at least two outputs.
-    error EmptyRecomposition();
+    /// @dev `compose` was called with an empty `burnIds`: there is nothing to burn into the
+    ///      survivor.
+    error NoComposeInputs();
     /// @dev The survivor of a compose cannot also appear in its burn set.
     error CannotComposeWithSelf(uint256 tokenId);
     /// @dev A split's output denominations must sum to exactly the input's backing.
-    error SplitMismatch(uint256 inputBacking, uint256 outputSum);
+    error SplitSumMismatch(uint256 inputBacking, uint256 outputSum);
     /// @dev `split`/`splitTo` named fewer than two outputs.
     error SplitTooFewOutputs();
     /// @dev `decompose` found no compose to reverse: the survivor's compose stack is empty.
     error NoComposeRecord(uint256 survivorId);
-    /// @dev `sacrifice` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
+    /// @dev `burnBacking` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
     error NotApexComplete(uint256 tokenId);
-    /// @dev `previewCompose` only: a burn id repeated in `burnIds`. `compose` reaches the same
-    ///      outcome through `_burn`, which reverts on the second occurrence.
+    /// @dev The same token id appears twice in one `compose` or `previewCompose` `burnIds`. A
+    ///      token can only be burned into the survivor once.
     error DuplicateComposeInput(uint256 tokenId);
-    /// @dev Metadata copy is written verbatim into JSON, so a value is rejected when it carries a
-    ///      `"`, a `\`, or a C0 control byte (which would break or restructure the document), is
-    ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
-    ///      cap. `field` is 0 name/prefix, 1 description.
-    error InvalidCopy(uint8 field);
-    /// @dev A nonzero positions or market pointer must contain deployed code when configured.
+    /// @dev `tokenURI` and `contractURI` read the metadata copy from the collection, so both
+    ///      revert while the collection pointer is zero. Deployment sets it immediately after
+    ///      construction. `lockPresentation` also reverts this while the pointer is zero, since
+    ///      locking with no collection would make both permanently unreachable.
+    error CollectionNotSet();
+    /// @dev A nonzero positions or market pointer must contain code and answer ERC-165 for the
+    ///      interface its reader calls.
     error InvalidPointerTarget();
     /// @dev A pointer cannot be changed or locked again after its permanent lock.
     error PointerIsLocked();
     /// @dev `pointer` must encode `Pointer.Positions` (0) or `Pointer.Market` (1).
     error InvalidPointer();
-    /// @dev Reverted by `IShapeLens.composeRecordAt` when `depth >= composeDepth(survivorId)`,
-    ///      checked against `composeDepth` there rather than inside `composeRecordHeaderAt`.
+    /// @dev `composeRecordAt` was asked for a depth at or past `composeDepth(survivorId)`. Depths
+    ///      run 0 (oldest) to `composeDepth - 1` (newest, next in line for `decompose`).
     error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable);
-    /// @dev `splitOriginRaw` requires `tokenId` to have been minted as a split child. Original
+    /// @dev `splitOriginOf` requires `tokenId` to have been minted as a split child. Original
     ///      mints and re-minted decompose outputs never carry an entry.
     error NotASplitChild(uint256 tokenId);
     /// @dev `ownerToken` found no live owner token: it was redeemed or burned.
@@ -214,15 +216,21 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         `unit()`.
     function mintFee() external view returns (uint256);
 
-    /// @notice Unix timestamp at or after which `mintBatch` and `mintBatchTo` accept calls. Zero
-    ///         means open at deploy. Immutable, set at construction. The constructor mints Shape
-    ///         #0 before this gate applies.
+    /// @notice Unix timestamp at or after which public minting opens. Zero opens minting
+    ///         immediately. Immutable, set at construction.
+    /// @dev Shape #0 is minted in the constructor and is not subject to this gate.
     function mintStart() external view returns (uint64);
 
-    /// @notice Mint fees accrued and not yet withdrawn. Never part of `redeemableBacking`.
+    /// @notice Mint fees accrued and not yet withdrawn, summed across every recipient. Never part
+    ///         of `redeemableBacking`.
     function pendingFees() external view returns (uint256);
 
-    /// @notice Where `withdrawFees` currently forwards accrued fees. Admin-updateable.
+    /// @notice One recipient's own accrued and not yet withdrawn balance. `pendingFees()` is the
+    ///         sum of this over every recipient a mint fee has ever accrued to.
+    function feesOwedTo(address recipient) external view returns (uint256);
+
+    /// @notice Destination new mint fees credit. Admin-updateable; changing it does not move a
+    ///         balance already credited to the previous recipient.
     function feeRecipient() external view returns (address);
 
     /// @notice Permanent creator attribution: the address that deployed Shapes.
@@ -243,31 +251,28 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Anyone may relay the signature. Supports EOAs, EIP-7702 delegated EOAs and ERC-1271 wallets.
     function attestArtist(bytes32 releaseHash, bytes calldata signature) external;
 
-    /// @notice The current holder of the owner token, or zero while there is none.
-    /// @dev Ownership follows the owner token through `compose`, `decompose` and `split`.
-    ///      Redeeming or burning the owner token ends collection ownership permanently: this
-    ///      returns zero and no other token inherits. Carries no administrative authority.
+    /// @notice Holder of the current owner token, or zero if it no longer exists.
+    /// @dev This address has no administrative authority. Ownership follows the owner token through
+    ///      `compose`, `decompose` and `split`. Redeeming or burning it ends collection ownership
+    ///      permanently: this returns zero and no other token inherits.
     function owner() external view returns (address);
 
     /// @notice The id of the current owner token.
     /// @dev Reverts `NoOwnerToken` once the owner token has been redeemed or burned.
     function ownerToken() external view returns (uint256);
 
-    /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until locked.
+    /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until
+    ///         presentation is locked.
     function renderer() external view returns (address);
 
-    /// @notice Whether the renderer has been permanently locked.
-    function rendererLocked() external view returns (bool);
+    /// @notice Whether presentation has been permanently locked. True freezes the renderer, the
+    ///         collection and the metadata copy.
+    function presentationLocked() external view returns (bool);
 
-    /// @notice The collection metadata contract, read only by `contractURI`. Replaceable by the
-    ///         admin via `setCollection` until `lockRenderer` freezes it.
+    /// @notice The collection metadata contract. It stores the metadata copy `tokenURI` and
+    ///         `contractURI` read. Replaceable by the admin via `setCollection` until presentation
+    ///         is locked. Zero from construction until deployment calls `setCollection`.
     function collection() external view returns (address);
-
-    /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
-    function tokenNamePrefix() external view returns (string memory);
-
-    /// @notice The shared description emitted by both token metadata and `contractURI`.
-    function description() external view returns (string memory);
 
     /// @notice The optional canonical positions contract and whether its pointer is permanently locked.
     /// @dev A zero target means none is configured. A true lock is permanent, including at zero.
@@ -279,32 +284,41 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /* ----------------------------- renderer ---------------------------- */
 
-    /// @notice Replace the onchain renderer. Admin only, and only while unlocked. The renderer
-    ///         is read only by `tokenURI`; changing it affects how a Shape looks, never its
-    ///         backing, redeemability or owner. `newRenderer` must carry code.
+    /// @notice Replace the onchain renderer. Admin only, until presentation is locked. `tokenURI`
+    ///         reads the renderer, so a change affects how a Shape looks and leaves its backing,
+    ///         redeemability and owner untouched. `newRenderer` must carry code and support both
+    ///         `IShapeRenderer` and `IShapeGeometry`, since `geometryOf` and `moduleAt` call the
+    ///         renderer as `IShapeGeometry`.
     function setRenderer(address newRenderer) external;
 
-    /// @notice Replace the collection metadata contract. Admin only, and only while unlocked.
-    ///         Read only by `contractURI`; it can never touch ETH, backing or ownership.
-    ///         `newCollection` must carry code and support `IShapeCollection`.
+    /// @notice Replace the collection metadata contract. Admin only, until presentation is
+    ///         locked. `tokenURI` and `contractURI` read it, and it reaches no ETH, backing or
+    ///         ownership. `newCollection` must carry code, support `IShapeCollection`, and report
+    ///         this token's address from its `shapes()`.
+    /// @dev Replacing it replaces the stored metadata copy along with it, since the copy lives on
+    ///      the collection, so this emits ERC-4906 `BatchMetadataUpdate` over every minted id and
+    ///      `ContractURIUpdated` as well as `CollectionUpdated`.
     function setCollection(address newCollection) external;
 
-    /// @notice Permanently lock presentation. Admin only, one way. After this neither the
-    ///         renderer nor the collection can change again. Does not freeze the metadata copy,
-    ///         which the admin keeps editing via `setMetadataCopy`.
-    function lockRenderer() external;
+    /// @notice Permanently lock presentation. Admin only, one way. After this the renderer
+    ///         pointer, the collection pointer and the collection's metadata copy are permanent.
+    /// @dev Requires a collection to already be set; otherwise `tokenURI` and `contractURI` would
+    ///      be permanently unreachable.
+    function lockPresentation() external;
 
-    /// @notice Atomically set the token name prefix and the description shared with `contractURI`.
-    ///         Admin only. Emits both ERC-4906 `BatchMetadataUpdate` and `ContractURIUpdated`.
-    /// @dev Written verbatim into metadata JSON, so all arguments must be well-formed UTF-8,
-    ///      length-capped (64-byte names, 2048-byte description), and free of bytes JSON forbids
-    ///      unescaped (`"`, `\`, C0 controls). Not affected by `lockRenderer`; copy is never frozen.
-    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external;
+    /// @notice Signal that every token's metadata and the contract-level metadata should be
+    ///         re-read. Admin only. Emits events and writes no state.
+    /// @dev Emits ERC-4906 `BatchMetadataUpdate` over every minted id and `ContractURIUpdated`.
+    ///      Editing the copy is two transactions: `IShapeCollection.setMetadataCopy` on the
+    ///      collection, then this.
+    function refreshMetadata() external;
 
     /* --------------------------- pointer admin ------------------------- */
 
     /// @notice Set, replace or clear one explicit pointer. Admin only while that pointer is unlocked.
-    /// @dev Zero clears it; a nonzero target must contain deployed code. No target call occurs.
+    /// @dev Zero clears it. A nonzero target must contain code and answer ERC-165 for the
+    ///      interface its reader calls: `IShapePositionResolver` for positions,
+    ///      `IShapeAuctionHouse` for the market. No other call to the target ever occurs.
     function setPointer(uint8 pointer, address target) external;
 
     /// @notice Permanently freeze one explicit pointer. Admin only; may lock it at zero.
@@ -317,8 +331,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function mint(uint256 amountWei) external payable returns (uint256 tokenId);
 
     /// @notice Mint one Shape backed by `amountWei`, to `to`.
-    /// @dev The recipient does not feed the seed, so naming one cannot be used to search for a
-    ///      particular artwork. `to` must be able to receive an ERC721.
+    /// @dev The recipient does not feed the seed, so naming one cannot search for a particular
+    ///      artwork. `to` must be able to receive an ERC-721.
     function mintTo(uint256 amountWei, address to) external payable returns (uint256 tokenId);
 
     /// @notice Mint `quantity` Shapes, each backed by `amountWei`, to the caller.
@@ -332,30 +346,27 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         payable
         returns (uint256 firstTokenId);
 
-    /// @notice Forward every accrued mint fee to the current `feeRecipient`. Callable by anyone;
-    ///         the destination is always the recipient at the time of the call. Reverts
-    ///         `NoFeesPending` when nothing has accrued. A recipient that reverts on receipt makes
-    ///         only this call revert; minting is never affected, and the admin can redirect
-    ///         `feeRecipient` and retry.
-    function withdrawFees() external;
+    /// @notice Forward `recipient`'s own accrued balance to it. Callable by anyone; the payout
+    ///         always goes to `recipient`, never the caller. Reverts `NoFeesPending` when nothing
+    ///         is owed to `recipient`. A recipient that reverts on receipt makes only this call
+    ///         revert for that recipient; minting and every other recipient's withdrawal are
+    ///         unaffected.
+    function withdrawFees(address recipient) external;
 
     /* --------------------------- redemption --------------------------- */
 
     /// @notice Burn a Shape and receive exactly its backing.
-    /// @dev Callable only by the current owner. All or nothing; there is no partial redemption.
-    ///      Redeeming the owner token ends collection ownership permanently.
+    /// @dev Callable by the current owner. Redeems the token's full backing. Redeeming the owner
+    ///      token ends collection ownership permanently.
     function redeem(uint256 tokenId) external;
 
     /// @notice Burn several Shapes owned by the caller and receive the exact total backing.
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatch(uint256[] calldata tokenIds) external returns (uint256 totalWei);
 
     /// @notice Redeem a caller-owned Shape and send its exact backing directly to `recipient`.
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemTo(uint256 tokenId, address payable recipient) external;
 
     /// @notice Batch redemption with a caller-selected ETH recipient.
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
         external
         returns (uint256 totalWei);
@@ -419,27 +430,30 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         external
         returns (uint256[] memory newIds);
 
-    /// @notice Permanently sacrifice an apex Complete Shape's 100 ETH backing, turning it Black.
-    ///         Owner only, one way. The token keeps its id, seed and geometry; its 100 ETH is sent
-    ///         to an unspendable address and it becomes non-redeemable and non-recomposable. The
-    ///         resulting zero-value Black Shape remains transferable and may be burned for zero.
-    function sacrifice(uint256 tokenId) external;
+    /// @notice Permanently burn an apex Complete Shape's backing, turning it into a Black
+    ///         Shape. Owner only, one way. The token keeps its id, seed and geometry; its backing is
+    ///         sent to an unspendable address and it becomes non-redeemable and non-recomposable.
+    ///         The resulting zero-value Black Shape stays transferable and may be burned for zero.
+    function burnBacking(uint256 tokenId) external;
 
     /* ----------------------------- views ------------------------------ */
 
     /// @notice ETH available to redeem now, across every live non-Black Shape.
     function redeemableBacking() external view returns (uint256);
 
-    /// @notice Cumulative backing sacrificed by Black Shapes. Monotonic; 100 ETH per Black Shape.
-    function sacrificedBacking() external view returns (uint256);
+    /// @notice Cumulative backing already sent to the unspendable address by `burnBacking`. This
+    ///         ETH is no longer held by the contract and can never be redeemed. Monotonic.
+    function burnedBacking() external view returns (uint256);
 
-    /// @notice Number of Shapes ever sacrificed into Black. Monotonic even after a Black burn.
-    function blackCount() external view returns (uint256);
+    /// @notice Number of Black Shapes alive now. `burnBacking` raises it; burning a Black Shape for
+    ///         zero lowers it. `burnedBacking`, which counts ETH that has already left, does not
+    ///         move when one is burned.
+    function blackShapeCount() external view returns (uint256);
 
-    /// @notice Whether a live token is Black.
-    function isBlack(uint256 tokenId) external view returns (bool);
+    /// @notice Whether a live token is a Black Shape.
+    function isBlackShape(uint256 tokenId) external view returns (bool);
 
-    /// @notice ETH backing a live Shape.
+    /// @notice ETH backing a live Shape. Black Shapes have no redeemable backing and return zero.
     function backingOf(uint256 tokenId) external view returns (uint256);
 
     /// @notice The denomination-ladder index (0..8) currently stored by a live Shape.
@@ -455,10 +469,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
 
-    /// @notice A live Shape's raw materialized module array (`ModuleCodec`), empty when its
-    ///         geometry derives from `seed` under grammar v1. The minimal raw accessor
-    ///         `ShapeLens` reads to assemble the rich views moved off this contract; the lens reads
-    ///         the other required state-owned fact directly through `denomIndexOf`.
+    /// @notice A live Shape's materialized module array (`ModuleCodec`), empty when its geometry
+    ///         derives from `seed` under grammar v1.
     function modulesOf(uint256 tokenId) external view returns (bytes memory);
 
     /// @notice Collection-level metadata URI, read from the renderer.
@@ -467,83 +479,46 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Stable numeric formation class; metadata strings are presentation only.
     function formationOf(uint256 tokenId) external view returns (ShapeFormation);
 
-    /// @notice Whether a Shape is Complete: not Black, above the minimum tier, and carrying one
-    ///         origin per 0.01 unit of backing (`originCount == backing / 0.01`).
+    /// @notice Whether a Shape is Complete: not a Black Shape, above the minimum tier, and
+    ///         carrying one origin per 0.01 unit of backing (`originCount == backing / 0.01`).
     function isComplete(uint256 tokenId) external view returns (bool);
 
     /// @notice Number of live Shapes.
     function totalSupply() external view returns (uint256);
 
     /// @notice The id counter: the next id to be issued, and one past the highest id ever issued
-    ///         (ids start at 0). Not a live-supply or mint count — `decompose` re-mints ids
-    ///         without advancing it, and burns do not decrease it. Use `totalSupply` for live count.
+    ///         (ids start at 0). Not a live-supply or mint count: `decompose` re-mints ids without
+    ///         advancing it, and burns do not decrease it. Use `totalSupply` for the live count.
     function totalMinted() external view returns (uint256);
 
     /// @notice The survivor's compose-stack depth: how many stacked composes `decompose` can still
     ///         reverse, newest first. Zero means nothing to decompose.
     function composeDepth(uint256 survivorId) external view returns (uint256);
 
-    /// @notice Raw accessor for one compose record's survivor-side fields on `survivorId`'s stack
-    ///         at `depth` (0 the oldest, `composeDepth(survivorId) - 1` the newest, next in line
-    ///         for `decompose`), plus the record's input count. `ShapeLens.composeRecordAt`
-    ///         combines this with `composeRecordInputAt` to reassemble the full
-    ///         `ComposeRecordView` (IShapeLens); declared here rather than as a rich struct getter
-    ///         to keep this contract's runtime bytecode under the EIP-170 size limit.
-    ///         `ownerTokenFrom` is the raw `ComposeRecord.ownerTokenFrom` value, the owner token's
-    ///         id plus one if this compose moved ownership from one of the record's inputs, else
-    ///         zero; `ShapeLens.composeRecordAt` decodes it to `ComposeRecordView.ownerTokenFrom`.
-    /// @dev No `depth` bounds check: an out-of-range `depth` panics on the storage array access
-    ///      rather than reverting `ComposeRecordOutOfRange`. `ShapeLens.composeRecordAt` checks
-    ///      `depth` against `composeDepth` itself and reverts that error before calling this.
-    function composeRecordHeaderAt(uint256 survivorId, uint256 depth)
+    /// @notice One reversible compose record on `survivorId`'s stack, at `depth` (0 the oldest,
+    ///         `composeDepth(survivorId) - 1` the newest, next in line for `decompose`). Carries
+    ///         the survivor's pre-compose state and every burned input's snapshot: what
+    ///         `decompose` reads to reverse that compose, each donor's materialized module bytes
+    ///         included, so the survivor's post-compose geometry can be reproduced off chain.
+    /// @dev `ownerTokenFrom` on the returned record names the input that held collection
+    ///      ownership before this compose, or `type(uint256).max` when none did. Reverts
+    ///      `ComposeRecordOutOfRange` for a depth at or past `composeDepth(survivorId)`.
+    function composeRecordAt(uint256 survivorId, uint256 depth)
         external
         view
-        returns (
-            uint8 survivorDenomIndex,
-            uint32 survivorOriginCount,
-            uint8 survivorInkGene,
-            uint96 ownerTokenFrom,
-            bytes memory survivorModules,
-            uint256 inputCount
-        );
+        returns (ComposeRecordView memory);
 
-    /// @notice Raw accessor for one burned input's fields within the compose record at
-    ///         `(survivorId, depth)`, indexed 0..`inputCount - 1` as reported by
-    ///         `composeRecordHeaderAt`. See `IShapeLens.composeRecordAt` for the reassembled view.
-    /// @dev Reverts with the standard out-of-bounds panic for an `inputIndex` at or beyond the
-    ///      record's input count.
-    function composeRecordInputAt(uint256 survivorId, uint256 depth, uint256 inputIndex)
-        external
-        view
-        returns (
-            uint256 id,
-            bytes32 seed,
-            uint8 denomIndex,
-            uint32 originCount,
-            uint8 inkGene,
-            bytes memory modules
-        );
-
-    /// @notice The split that minted `childId`: the parent's id and pre-split seed, denomination
-    ///         index, ink gene and own effective module snapshot (SAMPLING_SPEC.md), the root
-    ///         split ancestor's denomination index, plus `childId`'s index among that split's
-    ///         outputs. `parentModules` is informational (D3'): reproducing the child's module
-    ///         bytes as sampled at split time needs the branch decision `parentId` enables, not
-    ///         `parentModules` directly — see SAMPLING_SPEC.md section 12 for the reconstruction
-    ///         recipe (`composeDepth(parentId)` selects between the compose-record pool and the
-    ///         grammar pool). `originDenomIndex` (issue #21C) backs the "Split Origin" metadata
-    ///         trait directly, with no reconstruction: the parent's own `originDenomIndex` when
-    ///         the parent was itself a split child, else `parentDenomIndex`.
-    /// @dev The record is written once per split and shared by every child of that split; only
-    ///      `childIndex` distinguishes them. It survives the child's own later mutation (e.g. the
-    ///      child subsequently used as a compose survivor): this view answers how the token was
-    ///      created, not what it currently looks like, so it keeps answering even though
-    ///      `IShapeLens.shapeState(childId).modules` has since moved on to a later operation's
-    ///      result. Reverts `NotASplitChild` for a token that was never minted by `split`/
-    ///      `splitTo` (an original mint, or an input re-minted verbatim by `decompose`). Already
-    ///      minimal (a passthrough, no struct assembly), so `ShapeLens.splitOriginOf` returns this
-    ///      unchanged rather than reassembling anything.
-    function splitOriginRaw(uint256 childId)
+    /// @notice The split that minted `childId`: the parent's id, pre-split seed, denomination
+    ///         index, ink gene and effective module snapshot, the root split ancestor's
+    ///         denomination index, plus `childId`'s index among that split's outputs.
+    /// @dev `parentModules` is kept for provenance. Reproducing the child's materialized module
+    ///      bytes needs `parentId`: `composeDepth(parentId)` selects between the compose-record
+    ///      pool and the grammar pool. See SAMPLING_SPEC.md. The record is written once per split
+    ///      and shared by every child of that split, distinguished by `childIndex`. It is kept
+    ///      after the child is composed or split again. Reverts `NotASplitChild` for a token that
+    ///      was never minted by `split`/`splitTo`, which covers an original mint and an input
+    ///      re-minted by `decompose`.
+    function splitOriginOf(uint256 childId)
         external
         view
         returns (
@@ -556,6 +531,85 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
             uint256 childIndex
         );
 
+    /// @notice Every protocol fact about one live Shape in a single read.
+    /// @dev Reverts for an id that does not exist.
+    function shapeState(uint256 tokenId) external view returns (ShapeState memory);
+
+    /// @notice Whether `tokenId` is a live Shape right now.
+    /// @dev Never reverts. False for a never-issued or burned id, including one consumed by
+    ///      compose or replaced by split. True for a live Black Shape.
+    function exists(uint256 tokenId) external view returns (bool);
+
+    /// @notice The state `compose(survivorId, burnIds)` would leave on the survivor. Writes
+    ///         nothing.
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it. Every other rule
+    ///      compose applies holds here: every token must exist and not be Black, the survivor
+    ///      cannot be among `burnIds`, no id may repeat, and the summed backing must land on a
+    ///      denomination. Same errors, same order, same sampling code as `compose`.
+    function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
+        external
+        view
+        returns (ShapeState memory);
+
+    /// @notice The children `split(tokenId, outDenoms)` would mint, one entry per `outDenoms`
+    ///         index. Writes nothing.
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it. Every other rule split
+    ///      applies holds here: the token must exist and not be Black, there must be at least two
+    ///      outputs, and they must sum to the token's backing. Child ids are not predicted,
+    ///      because they depend on `totalMinted` at the time the split executes.
+    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
+        external
+        view
+        returns (ShapeChildPreview[] memory children);
+
+    /// @notice Unicode rendering of a live Shape's module grid, cells separated by spaces and rows
+    ///         by newlines.
+    /// @dev For display. Machine-readable geometry is `IShapeGeometry` on `renderer()`.
+    function unicodeCard(uint256 tokenId) external view returns (string memory);
+
+    /// @notice The SVG document for a live Shape, drawn through `renderer()`.
+    function svg(uint256 tokenId) external view returns (string memory);
+
+    /// @notice The metadata JSON for a live Shape, the decoded body of its `tokenURI`.
+    /// @dev Reverts `CollectionNotSet` while the collection pointer is zero, as `tokenURI` does.
+    function metadataJSON(uint256 tokenId) external view returns (string memory);
+
+    /// @notice The grid a live Shape renders on: columns, rows, and the module count they hold.
+    function geometryOf(uint256 tokenId)
+        external
+        view
+        returns (uint256 cols, uint256 rows, uint256 moduleCount);
+
+    /// @notice A live Shape's effective module array, encoded per `ModuleCodec`, one byte per cell
+    ///         in row-major grid order.
+    /// @dev Same encoding as `modulesOf`, which returns only the materialized bytes a token stores
+    ///      and is empty for a token whose geometry derives from `seed`. This returns the stored
+    ///      bytes when there are any, and otherwise the seed's grammar v1 expression at the token's
+    ///      denomination and ink gene.
+    function effectiveModulesOf(uint256 tokenId) external view returns (bytes memory);
+
+    /// @notice One module of a live Shape's grid, by index in the same order `effectiveModulesOf`
+    ///         lists them.
+    function moduleAt(uint256 tokenId, uint256 index)
+        external
+        view
+        returns (
+            uint8 kind,
+            bool solid,
+            uint16 rotation,
+            uint256 cx,
+            uint256 cy,
+            uint256 size,
+            uint256 weight
+        );
+
+    /// @notice The position the configured positions contract reports for `tokenId`, or zero.
+    /// @dev Does not require a live token. Forwards to the positions target with a 50,000 gas
+    ///      stipend. The target is untrusted: a revert, out-of-gas, or malformed return yields zero.
+    function positionOf(uint256 tokenId) external view returns (address);
+
     /// @notice Deterministic seed assigned to a split child at `childIndex`.
     function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
 
@@ -567,4 +621,52 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Smallest denomination and accounting unit, 0.01 ETH.
     function unit() external pure returns (uint256);
+
+    /// @notice Whether `amountWei` is one of the nine supported denominations.
+    function isSupportedDenomination(uint256 amountWei) external pure returns (bool);
+}
+
+/// @title IShapeValue
+/// @notice Backing and redemption, for an integrator that does not need recomposition.
+/// @dev Advertised by `Shapes.supportsInterface`. Every member is implemented on the token.
+interface IShapeValue {
+    function backingOf(uint256 tokenId) external view returns (uint256);
+    function denomIndexOf(uint256 tokenId) external view returns (uint8);
+    function denominationAt(uint8 index) external pure returns (uint256);
+    function denominationCount() external pure returns (uint8);
+    function unit() external pure returns (uint256);
+    function redeem(uint256 tokenId) external;
+    function redeemBatch(uint256[] calldata tokenIds) external returns (uint256 totalWei);
+    function redeemTo(uint256 tokenId, address payable recipient) external;
+    function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
+        external
+        returns (uint256 totalWei);
+}
+
+/// @title IShapeRecomposition
+/// @notice The structural mutators, for a contract that builds recomposition workflows.
+/// @dev Advertised by `Shapes.supportsInterface`. Every member is implemented on the token.
+interface IShapeRecomposition {
+    function compose(uint256 survivorId, uint256[] calldata burnIds) external returns (uint256 outId);
+    function decompose(uint256 survivorId) external returns (uint256[] memory restoredIds);
+    function decomposeTo(uint256 survivorId, address recipient)
+        external
+        returns (uint256[] memory restoredIds);
+    function split(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
+    function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
+        external
+        returns (uint256[] memory newIds);
+    function burnBacking(uint256 tokenId) external;
+}
+
+/// @title IShapeProvenance
+/// @notice Origin and identity reads, separate from metadata presentation.
+/// @dev Advertised by `Shapes.supportsInterface`. Every member is implemented on the token.
+interface IShapeProvenance {
+    function seedOf(uint256 tokenId) external view returns (bytes32);
+    function originCountOf(uint256 tokenId) external view returns (uint256);
+    function inkGeneOf(uint256 tokenId) external view returns (uint8);
+    function isComplete(uint256 tokenId) external view returns (bool);
+    function formationOf(uint256 tokenId) external view returns (ShapeFormation);
+    function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
 }

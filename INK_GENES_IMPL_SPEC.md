@@ -18,7 +18,7 @@ renderer integration (Solidity + TS canonical), simulate views, events, traits, 
 fixtures, parity.
 
 OUT (do not build, do not scaffold): epoch commit-reveal seeding (draft §6), Monte Carlo
-tuning, any change to fees, backing, redemption, sacrifice, or the reserve. The ⚙ constants
+tuning, any change to fees, backing, redemption, burnBacking, or the reserve. The ⚙ constants
 below are implemented as named constants exactly as given; do not tune them.
 
 Assumption: the contracts are not yet deployed; interface-breaking changes are allowed.
@@ -259,7 +259,7 @@ takes precedence exactly as today; the Ink trait is still reported.
 - Do NOT introduce randomness anywhere except `geneAtMint` (which uses only the seed).
 - Do NOT let `burnIds` order, calldata layout, or msg.sender affect any gene.
 - Do NOT special-case tier jumps: the walk always runs `newIndex − oldIndex` steps.
-- Do NOT change fee, backing, redemption, sacrifice, or `Composed`/`Decomposed`/`Split`
+- Do NOT change fee, backing, redemption, burnBacking, or `Composed`/`Decomposed`/`Split`
   event signatures.
 - Do NOT tune the ⚙ tables; implement the values in §1 exactly.
 - Do NOT touch `Denominations.sol` or the PRNG (`Round03Rand`) draw order beyond the

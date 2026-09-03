@@ -52,6 +52,7 @@ function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | nu
   if (parts.length === 1 && parts[0] === "mint") return { view: "mint", tokenId: null };
   if (parts.length === 1 && parts[0] === "auction") return { view: "auction", tokenId: null };
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
+  if (parts.length === 1 && parts[0] === "contracts") return { view: "contracts", tokenId: null };
   if (parts.length === 1 && parts[0] === "my-shapes") return { view: "collection", tokenId: null };
   if (parts.length === 2 && parts[0] === "shape" && /^\d+$/.test(parts[1])) {
     return { view: "token", tokenId: BigInt(parts[1]) };
@@ -127,6 +128,14 @@ export async function generateMetadata({
       title: "Gallery",
       description: "Every live Shape in the collection, newest first.",
       openGraph: { title: "Gallery · Shapes", url: "/gallery" },
+    };
+  }
+  if (r.view === "contracts") {
+    return {
+      title: "Contracts",
+      description:
+        "Every deployed Shapes contract and linked library, with its address and every function, event and error.",
+      openGraph: { title: "Contracts · Shapes", url: "/contracts" },
     };
   }
   if (r.view === "collection") {

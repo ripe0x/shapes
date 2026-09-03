@@ -6,7 +6,6 @@ import {Test, console} from "forge-std/Test.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
-import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
@@ -16,7 +15,7 @@ import {Base64Decode} from "./utils/Base64Decode.sol";
 
 /// @notice Full lifecycle against a real mainnet fork.
 ///
-/// @dev Shapes reads no external contract, so a fork is not needed for correctness — the
+/// @dev Shapes reads no external contract, so a fork is not needed for correctness: the
 ///      default suite already proves that. What the fork adds is a real block environment:
 ///      chain id 1, a post-merge `prevrandao`, a real prior blockhash and timestamp, all of
 ///      which feed the mint seed, plus realistic gas. This suite deploys through the actual
@@ -49,7 +48,7 @@ contract ForkTest is Test {
 
     bool internal live;
     /// @dev A CREATE address on a fork can coincide with a mainnet account that already holds
-    ///      a little ETH. That surplus is outside backing and permanently stranded — exactly
+    ///      a little ETH. That surplus is outside backing and permanently stranded, exactly
     ///      the forced-ETH case in SECURITY.md. Captured post-deploy so the reserve checks
     ///      compare against it instead of assuming a pristine zero balance.
     uint256 internal strayWei;
@@ -79,10 +78,9 @@ contract ForkTest is Test {
 
         live = true;
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         // The constructor balance includes backed Shape #0. Only the excess is stranded ETH.
         strayWei = address(shapes).balance - shapes.redeemableBacking();
     }
@@ -111,7 +109,7 @@ contract ForkTest is Test {
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
         Deploy deployer = new Deploy();
-        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeLens l, ShapeAuctionHouse h) = deployer.run();
+        (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeAuctionHouse h) = deployer.run();
 
         assertEq(s.mintFee(), MINT_FEE, "default flat fee not applied");
         assertEq(s.feeRecipient(), feeRecipient, "fee recipient mismatch");
@@ -123,12 +121,11 @@ contract ForkTest is Test {
         assertEq(s.ownerToken(), 0, "owner token should be Shape #0");
         assertEq(s.artistReleaseHash(), bytes32(0), "attribution should start unsigned");
         assertEq(s.artistSignature(), bytes(""), "signature should start empty");
-        assertEq(address(l.shapes()), address(s), "lens mismatch");
         assertEq(h.shapes(), address(s), "auction house mismatch");
         (address positions, bool positionsLocked) = s.positions();
         (address market, bool marketLocked) = s.market();
         assertEq(positions, address(0), "positions should start empty");
-        assertEq(market, address(0), "market should start empty");
+        assertEq(market, address(h), "market should name the deployed auction house");
         assertFalse(positionsLocked, "positions should start unlocked");
         assertFalse(marketLocked, "market should start unlocked");
         assertTrue(s.supportsInterface(type(IERC721Value).interfaceId), "value interface missing");
@@ -218,6 +215,33 @@ contract ForkTest is Test {
             "reserve not unwound to pending fees plus stray"
         );
         assertEq(shapes.totalSupply(), 0, "supply remains");
+    }
+
+    /// @dev The mainnet fee recipient (D-44, project/DECISIONS.md): a 0xSplits wallet whose
+    ///      bytecode stores callvalue and emits `ReceiveETH` on empty calldata, so it accepts a
+    ///      plain ETH transfer the same way an EOA does.
+    address internal constant SPLITS_WALLET = 0xD4ba7cA95f3983514DDa317C4428CDb8F59c7e72;
+
+    /// @notice `withdrawFees` pays the Splits wallet exactly the accrued fee and a second
+    ///         withdrawal reverts, proving the deploy guard picked a recipient that actually
+    ///         works rather than one that merely lacks code.
+    function test_WithdrawFeesToSplitsWallet() external onlyFork {
+        Shapes splitsShapes =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, SPLITS_WALLET, address(renderer), 0);
+
+        vm.deal(alice, 10 ether);
+        uint256 fee = feeOf(DENOMS[4]);
+        vm.prank(alice);
+        splitsShapes.mintTo{value: DENOMS[4] + fee}(DENOMS[4], alice);
+        assertEq(splitsShapes.feesOwedTo(SPLITS_WALLET), fee, "fee not accrued to the Splits wallet");
+
+        uint256 before = SPLITS_WALLET.balance;
+        splitsShapes.withdrawFees(SPLITS_WALLET);
+        assertEq(SPLITS_WALLET.balance - before, fee, "Splits wallet did not receive exactly the fee");
+        assertEq(splitsShapes.feesOwedTo(SPLITS_WALLET), 0, "fee balance not cleared");
+
+        vm.expectRevert(IShapes.NoFeesPending.selector);
+        splitsShapes.withdrawFees(SPLITS_WALLET);
     }
 
     /// @notice Real-conditions gas for the two hot paths, for the record.

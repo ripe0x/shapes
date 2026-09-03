@@ -1,6 +1,13 @@
 # Invariant Map
 
 > Shapes | D-36 flat-fee update applied; guard counts require regeneration before external audit
+>
+> Snapshot of the pre-D-40 tree. `ShapeLens` is deleted, the compose/split/decompose state machine
+> and every configuration write now live in the `RecompositionOps` and `AdminOps` delegatecall
+> libraries, and `lockRenderer`/`rendererLocked`/`RendererIsLocked` are `lockPresentation`/
+> `presentationLocked`/`PresentationIsLocked`, which now freeze the metadata copy too. Line numbers,
+> guard counts and contract names below are as of that snapshot. Current design:
+> project/ARCHITECTURE.md.
 
 ---
 
@@ -419,7 +426,7 @@ On-chain: **Yes** (stated as `>=`, not `==`)
 
 > `address(this).balance >= redeemableBacking()`, the protocol's stated reserve invariant (`Shapes.sol:55-57`; SECURITY.md).
 
-**Follows from** — I-1 (`redeemableBacking == Σ backingOf(live tokens)`) + G-9 (exact mint payment: `msg.value == backing + fees`, with `fees` forwarded out in the same call at `Shapes.sol:481-489`, before any `_safeMint` receiver callback runs) + the checks-effects-interactions ordering on every ETH-out path (`redeemableBacking`/`sacrificedBacking` decremented at `Shapes.sol:542`/`564`/`1049` strictly before the paired `_sendEth` call at `Shapes.sol:545`/`566`/`1057`).
+**Follows from** — I-1 (`redeemableBacking == Σ backingOf(live tokens)`) + G-9 (exact mint payment: `msg.value == backing + fees`, with `fees` forwarded out in the same call at `Shapes.sol:481-489`, before any `_safeMint` receiver callback runs) + the checks-effects-interactions ordering on every ETH-out path (`redeemableBacking`/`burnedBacking` decremented at `Shapes.sol:542`/`564`/`1049` strictly before the paired `_sendEth` call at `Shapes.sol:545`/`566`/`1057`).
 
 **If violated** — a redemption could pay out more ETH than the contract holds, or a shortfall could go undetected; SECURITY.md reports this held under 25,600 fuzzed hostile-actor calls including reentrant, ETH-rejecting and token-rejecting counterparties. Because the stated relation is `>=`, forced ETH (`selfdestruct`, coinbase, pre-deploy funding) can only ever create untouchable surplus, never a shortfall — no code path reads raw `address(this).balance` for accounting.
 

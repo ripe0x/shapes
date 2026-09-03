@@ -1,8 +1,8 @@
 /**
  * Simulate collection activity on a local dev chain, so the site can be browsed in a
  * lived-in state: mints across every denomination and several actors, compositions up to
- * both a fully and a partially composed 100 ETH apex, a genuine apex Complete that is then
- * blackened (the Black Shape), a pure direct 100 ETH left untouched, one-tier and
+ * both a fully and a partially composed 100 ETH apex, a genuine apex Complete whose backing is
+ * then burned (the Black Shape), a pure direct 100 ETH left untouched, one-tier and
  * mixed-multiset splits, transfers, and redemptions.
  *
  *   ./script/fork-dev.sh          # chain up first, from the repo root
@@ -28,7 +28,7 @@ const dep: Deployment = JSON.parse(readFileSync(join(here, "../public/deployment
 const KEYS = ANVIL_KEYS.slice(0, 8);
 
 const sim = await createSim(dep, KEYS);
-const {mint, compose, split, redeem, sacrifice, transfer, composeUp, actors} = sim;
+const {mint, compose, split, redeem, burnBacking, transfer, composeUp, actors} = sim;
 
 async function main() {
   console.log(`simulating against ${dep.shapes} on ${dep.rpc}\n`);
@@ -43,8 +43,8 @@ async function main() {
   const fives5 = await mint(5, 5, 4);
   const tens3 = await mint(3, 6, 3);
   await mint(4, 7, 1); // a lone direct 50
-  // A pure direct 100 ETH: one mint, originCount 1. Never sacrificed (sacrifice needs an apex
-  // Complete, 10,000 origins), so this is the "untouched 100" that stays fully redeemable.
+  // A pure direct 100 ETH: one mint, originCount 1. Backing never burned (burnBacking needs an
+  // apex Complete, 10,000 origins), so this is the "untouched 100" that stays fully redeemable.
   const [pureApex] = await mint(5, 8, 1);
 
   console.log("2. the fully composed apex: 100 x 1 ETH walked up the whole ladder");
@@ -63,9 +63,9 @@ async function main() {
   const partialApex = await compose(7, direct50!, [built50!]);
   console.log(`   partial apex: #${partialApex} (one branch deep, one branch a mint)`);
 
-  console.log("4. the Black Shape: a genuine apex Complete, sacrificed (slow: 10k mints across 10 batches)");
+  console.log("4. the Black Shape: a genuine apex Complete, backing burned (slow: 10k mints across 10 batches)");
   // 10,000 x 0.01 composed into one 100 ETH token carrying 10,000 origins (an apex Complete,
-  // originCount == units). Only that state can be sacrificed: it sends the 100 ETH to the
+  // originCount == units). Only that state can have its backing burned: it sends the 100 ETH to the
   // burn address and inverts the art (black form on white). Terminal thereafter.
   //
   // Built in 1,000-token batches: a single 10,000-mint tx mines fine on the dev chain, but its
@@ -77,8 +77,8 @@ async function main() {
     blackTens.push(await compose(0, batch[0]!, batch.slice(1))); // -> 10 ETH, originCount 1,000
   }
   const apexComplete = await compose(0, blackTens[0]!, blackTens.slice(1)); // 10 x 10 ETH -> 100 ETH, originCount 10,000
-  await sacrifice(0, apexComplete);
-  console.log(`   black shape: #${apexComplete} (10,000 origins sacrificed; 100 ETH burned)`);
+  await burnBacking(0, apexComplete);
+  console.log(`   black shape: #${apexComplete} (10,000 origins, backing burned; 100 ETH burned)`);
 
   console.log("5. mid-tier compositions");
   const [nickel] = await composeUp(2, dust2.slice(0, 5), 5); // 5 x 0.01 -> 0.05
@@ -96,7 +96,7 @@ async function main() {
   await transfer(6, PRESENTS_TO, deepApex!);
   await transfer(7, PRESENTS_TO, partialApex);
   await transfer(0, PRESENTS_TO, apexComplete); // the Black Shape
-  await transfer(5, PRESENTS_TO, pureApex!); // the pure, un-blackened direct 100
+  await transfer(5, PRESENTS_TO, pureApex!); // the pure direct 100, backing never burned
   await transfer(4, PRESENTS_TO, ten);
   await transfer(4, PRESENTS_TO, mixedKids[0]!); // the 0.5 piece of the mixed split
   await transfer(1, actors[3]!.account!.address, halves[3]!);

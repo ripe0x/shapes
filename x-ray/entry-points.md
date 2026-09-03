@@ -2,6 +2,13 @@
 
 > Shapes entry points: permissionless token operations, holder-gated lifecycle operations, and a
 > separate bounded admin surface.
+>
+> Snapshot of the pre-D-40 tree. `ShapeLens` is deleted, the compose/split/decompose state machine
+> and every configuration write now live in the `RecompositionOps` and `AdminOps` delegatecall
+> libraries, and `lockRenderer`/`rendererLocked`/`RendererIsLocked` are `lockPresentation`/
+> `presentationLocked`/`PresentationIsLocked`, which now freeze the metadata copy too. Line numbers,
+> guard counts and contract names below are as of that snapshot. Current design:
+> project/ARCHITECTURE.md.
 
 ---
 
@@ -237,7 +244,7 @@ These five are grouped: each is *effectively* permissionless (any caller may inv
 | Caller | Owner of an apex (100 ETH) Complete Shape |
 | Parameters | `tokenId` (user-controlled) |
 | Call chain | `→ Shapes._requireCallerOwnsLive() → Shapes._sendEth(UNSPENDABLE, 100 ether)` |
-| State modified | `_shapes[tokenId].isBlack`, `redeemableBacking`, `sacrificedBacking`, `blackCount` |
+| State modified | `_shapes[tokenId].isBlack`, `redeemableBacking`, `burnedBacking`, `blackShapeCount` |
 | Value flow | out — fixed 100 ETH to `0x…dEaD` |
 | Reentrancy guard | yes |
 

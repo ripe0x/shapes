@@ -3,6 +3,8 @@ import {
   shapesAbi,
   DENOMINATIONS,
   denomIndexOf,
+  mintFeeOf,
+  mintStartOf,
   type Deployment,
 } from "../chain/abi";
 import {geneIndexOfName} from "../previewGene";
@@ -43,6 +45,24 @@ function originsOfMeta(meta: TokenMeta): number {
 
 export interface SiteData {
   tokens: SiteToken[]; // live, including Black Shapes, newest first
+  /** `totalMinted()` as of this load. The chain-fallback path uses it as the boundary for an
+   *  incremental rescan: ids below it were already scanned, so only `[scannedMinted, totalMinted)`
+   *  needs a fresh `ownerOf`. 0 from an indexer-sourced load, forcing a full rescan the first time
+   *  a later refresh falls back to the chain (the indexer never walks this id range itself). */
+  scannedMinted: bigint;
+  /** `dep.chainId` as of this load. The chain-fallback path treats a mismatch against the current
+   *  deployment as proof `previous` came from a different chain and discards it; see the reset
+   *  check in `loadSiteFromChain`. */
+  chainId: number;
+  /** `dep.shapes` as of this load, checked the same way as `chainId`. */
+  shapes: `0x${string}`;
+  /** Hash of block `dep.fromBlock` (or block 0 when `fromBlock` is unset, e.g. a local dev chain)
+   *  as of this load. A dev chain restarted from block 0 typically keeps its chainId and, via a
+   *  deterministic deployer, often the same `shapes` address too, so `chainId`/`shapes` alone
+   *  don't catch it; this block's hash changes on any such restart because it belongs to a fresh
+   *  genesis. `"0x0"` from an indexer-sourced load (that path never reads a block), forcing a full
+   *  rescan the first time a later refresh falls back to the chain, mirroring `scannedMinted`. */
+  genesisHash: `0x${string}`;
   reserve: bigint; // redeemableBacking()
   supply: bigint; // totalSupply()
   fees: bigint[]; // flat mintFee(), repeated per denomination for the selector UI
@@ -56,6 +76,29 @@ export interface SiteData {
   /** Unix seconds from the contract's immutable `mintStart()`; 0 means open at deploy. Read once
    *  per site load, not per render; see `mintOpensIn` for the open/countdown computation. */
   mintStart: bigint;
+}
+
+/** Fee for denomination `sel`: `SiteData.fees` once `loadSite` completes (chain is authoritative),
+ *  seeded from the deployment record's flat fee before that so the mint button need not wait on
+ *  the full site load. Null only when neither source has a value yet. */
+export function seedFee(
+  dep: Pick<Deployment, "mintFeeWei"> | undefined,
+  data: Pick<SiteData, "fees"> | null,
+  sel: number,
+): bigint | null {
+  if (data) return data.fees[sel] ?? null;
+  return dep ? mintFeeOf(dep) : null;
+}
+
+/** Mint-gate start time: `SiteData.mintStart` once loaded, seeded from the deployment record's
+ *  readback before that. Matches `seedFee`'s precedence so the gate and the fee flip to chain
+ *  truth together. */
+export function seedMintStart(
+  dep: Pick<Deployment, "mintStart"> | undefined,
+  data: Pick<SiteData, "mintStart"> | null,
+): bigint {
+  if (data) return data.mintStart;
+  return dep ? mintStartOf(dep) : 0n;
 }
 
 /** The indexer is advisory: a source this far behind the connected chain is rejected. */
@@ -77,6 +120,12 @@ export interface LoadSiteOptions {
   /** Primarily for deterministic tests; production uses INDEXER_TIMEOUT_MS. */
   indexerTimeoutMs?: number;
   onMetrics?: (metrics: SiteLoadMetrics) => void;
+  /** Prior snapshot to scan incrementally against on the chain fallback (ignored by the indexer
+   *  path). Omit for a full scan, e.g. the first load. */
+  previous?: SiteData | null;
+  /** Ids the caller knows changed (e.g. just acted on) even if `ownerOf` still reports the same
+   *  owner, so the chain fallback rereads their fields instead of reusing the cached ones. */
+  dirtyIds?: readonly bigint[];
 }
 
 interface IndexedTokenId {
@@ -238,7 +287,7 @@ async function batchRead(
 }
 
 // Per-token reads, in call order within each token's chunk slice.
-const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as const;
+const FIELDS = ["backingOf", "seedOf", "isBlackShape", "tokenURI", "composeDepth"] as const;
 
 async function readJsonBounded(response: Response): Promise<IndexerResponse> {
   const declaredLength = Number(response.headers.get("content-length"));
@@ -384,6 +433,13 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
   const artistAttested =
     artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
   return {
+    // The indexer supplies live ids directly; it never walks the id range, so there is no
+    // scanned boundary to record. See the SiteData.scannedMinted doc comment.
+    scannedMinted: 0n,
+    chainId: dep.chainId,
+    shapes: dep.shapes,
+    // No block read on this path; see the SiteData.genesisHash doc comment.
+    genesisHash: "0x0",
     reserve,
     supply,
     fees,
@@ -444,19 +500,35 @@ async function tokensFromIndexer(
 }
 
 /**
- * Full chain state the site renders from. Scans token ids 0..totalMinted-1 with batched reads:
- * ownerOf across all ids to find live tokens, then the per-token fields for live ids only.
- * Fine on a dev chain even at SeedDemo scale (10k+ minted ids); a mainnet deployment needs an
- * indexer (or at minimum a deploy-block floor on the log scan in chain/history.ts) before this
- * ships publicly.
+ * Chain state the site renders from. Fine on a dev chain even at SeedDemo scale (10k+ minted
+ * ids); a mainnet deployment needs an indexer (or at minimum a deploy-block floor on the log
+ * scan in chain/history.ts) before this ships publicly.
+ *
+ * With no `previous` snapshot (first load), scans every id 0..totalMinted-1: ownerOf across all
+ * ids to find live tokens, then the per-token fields for live ids only. With a `previous`
+ * snapshot, scans incrementally instead: ownerOf only for ids new since `previous.scannedMinted`
+ * plus every id `previous` had live (an owner may have transferred it, or it may have burned),
+ * and per-token fields only for ids that are newly live, whose owner changed, or that `dirtyIds`
+ * names explicitly (a same-owner state change `ownerOf` alone can't reveal, e.g. compose onto
+ * one's own token). Every other previously-live id reuses its cached fields untouched.
+ *
+ * `previous` is discarded in favor of a full scan when it looks like it came from a different
+ * chain (or a reset one wearing the same address) rather than a later state of the same one; see
+ * the reset check below and the `SiteData.chainId`/`shapes`/`genesisHash` doc comments.
  *
  * Black Shapes remain in the gallery. They have zero backing and denomination index -1, but their
  * on-chain tokenURI is still the canonical artwork and should not disappear from public history.
  */
-async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
+async function loadSiteFromChain(
+  publicClient: PublicClient,
+  dep: Deployment,
+  previous: SiteData | null,
+  dirtyIds: readonly bigint[],
+): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
+  const genesisBlockNumber = dep.fromBlock !== undefined ? BigInt(dep.fromBlock) : 0n;
 
-  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees, ownerToken, mintStart] =
+  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees, ownerToken, mintStart, genesisBlock] =
     await Promise.all([
       publicClient.readContract({...shapes, functionName: "totalMinted"}),
       publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
@@ -473,36 +545,69 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
       loadMintFees(publicClient, dep),
       loadOwnerToken(publicClient, shapes),
       publicClient.readContract({...shapes, functionName: "mintStart"}),
+      publicClient.getBlock({blockNumber: genesisBlockNumber}),
     ]);
+  const genesisHash = genesisBlock.hash as `0x${string}`;
 
   const artistAttested =
     artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
 
-  const ids = Array.from({length: Number(minted)}, (_, i) => BigInt(i));
+  // A reset chain (e.g. a dev chain restarted from block 0) can keep the same chainId and, via a
+  // deterministic deployer, the same `shapes` address, while `totalMinted` and every token's
+  // state are unrelated to what `previous` recorded. Any of these mismatches means `previous`
+  // does not describe this chain, so it's discarded in favor of a full scan; see the SiteData
+  // field doc comments for what each one catches.
+  const resetDetected =
+    previous !== null &&
+    (minted < previous.scannedMinted ||
+      previous.chainId !== dep.chainId ||
+      previous.shapes !== dep.shapes ||
+      previous.genesisHash !== genesisHash);
+  const effectivePrevious = resetDetected ? null : previous;
+
+  const previouslyLive = new Map(effectivePrevious?.tokens.map((t) => [t.id, t] as const) ?? []);
+  const scannedMinted = effectivePrevious?.scannedMinted ?? 0n;
+  const dirty = new Set(dirtyIds);
+
+  // New ids since the last scan, plus every id previously live: unchanged ids in between never
+  // need another ownerOf, since nothing could have made them live or burned them.
+  const newIds = Array.from(
+    {length: Math.max(0, Number(minted) - Number(scannedMinted))},
+    (_, i) => scannedMinted + BigInt(i),
+  );
+  const checkIds = [...newIds, ...previouslyLive.keys()];
+
   const owners = await batchRead(
     publicClient,
-    ids.map((id) => ({...shapes, functionName: "ownerOf", args: [id]})),
+    checkIds.map((id) => ({...shapes, functionName: "ownerOf", args: [id]})),
     viaMulticall,
     ID_CHUNK,
   );
 
   // ownerOf reverts for burned ids; those drop out of the live set.
-  const live: {id: bigint; owner: `0x${string}`}[] = [];
-  ids.forEach((id, i) => {
+  const live: {id: bigint; owner: `0x${string}`; isNew: boolean}[] = [];
+  checkIds.forEach((id, i) => {
     const r = owners[i];
-    if (r.status === "success") live.push({id, owner: r.result as `0x${string}`});
+    if (r.status === "success") {
+      live.push({id, owner: r.result as `0x${string}`, isNew: !previouslyLive.has(id)});
+    }
+  });
+
+  const needsFields = live.filter(({id, owner, isNew}) => {
+    if (isNew || dirty.has(id)) return true;
+    return previouslyLive.get(id)!.owner !== owner;
   });
 
   const reads = await batchRead(
     publicClient,
-    live.flatMap(({id}) => FIELDS.map((functionName) => ({...shapes, functionName, args: [id]}))),
+    needsFields.flatMap(({id}) => FIELDS.map((functionName) => ({...shapes, functionName, args: [id]}))),
     viaMulticall,
     TOKEN_CHUNK * FIELDS.length,
   );
 
-  const tokens: SiteToken[] = [];
-  for (let i = 0; i < live.length; i++) {
-    const {id, owner} = live[i];
+  const freshById = new Map<bigint, SiteToken>();
+  for (let i = 0; i < needsFields.length; i++) {
+    const {id, owner} = needsFields[i]!;
     const row = reads.slice(i * FIELDS.length, (i + 1) * FIELDS.length);
     const failed = row.find((r) => r.status === "failure");
     if (failed && failed.status === "failure") throw failed.error;
@@ -510,7 +615,7 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
       (r) => (r as {result: unknown}).result,
     );
     const {image, meta} = parseUri(uri as string);
-    tokens.push({
+    freshById.set(id, {
       id,
       backing: backing as bigint,
       di: black ? -1 : denomIndexOf(backing as bigint),
@@ -524,9 +629,21 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
     });
   }
 
+  // A previously-live id with an unchanged owner and no reread keeps its cached fields; only the
+  // owner is refreshed unconditionally since it just came back from this load's ownerOf batch.
+  const tokens: SiteToken[] = live.map(({id, owner}) => {
+    const fresh = freshById.get(id);
+    if (fresh) return fresh;
+    return {...previouslyLive.get(id)!, owner};
+  });
+
   tokens.sort((a, b) => (a.id > b.id ? -1 : 1));
   return {
     tokens,
+    scannedMinted: minted,
+    chainId: dep.chainId,
+    shapes: dep.shapes,
+    genesisHash,
     reserve,
     supply,
     fees,
@@ -584,7 +701,7 @@ export async function loadSite(
     }
   }
 
-  const site = await loadSiteFromChain(publicClient, dep);
+  const site = await loadSiteFromChain(publicClient, dep, options.previous ?? null, options.dirtyIds ?? []);
   options.onMetrics?.({source: "chain", indexerRequests: 0});
   return site;
 }

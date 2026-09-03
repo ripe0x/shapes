@@ -324,7 +324,7 @@ is the retired specification, kept because it records where the values came from
 
 #### Retired: the typographic variant
 
-Values taken from the source, which matches the specification: `SHAPE` at
+Values taken from the source, which matches the specification: `SHAPES` at
 (22, 32) size 8 letter-spacing 3.4; the ETH label at (22, 322) size 11
 letter-spacing 1.2; the token number at (228, 322) size 8, monospace, anchored
 end. Two details the specification omits, taken from the source: the token
@@ -382,9 +382,9 @@ builds. The renderer stays byte-parity with the canonical TypeScript renderer. S
 
 Every string in the SVG, and every string in the JSON other than the token `name` prefix and shared
 `description`, comes from a fixed table or from `fmt`. Those two are admin-set copy, stored on
-`Shapes` and passed into `metadataJSON`. `Shapes.setMetadataCopy` rejects any value containing `"`,
-`\`, or a C0 control byte and caps its length, so admin copy cannot break or restructure the
-document. `contractURI` uses the immutable ERC-721 collection name and the same description as
+`ShapeCollection` and read back by `Shapes` into `metadataJSON`.
+`ShapeCollection.setMetadataCopy` rejects any value containing `"`, `\`, or a C0 control byte and
+caps its length, so admin copy cannot break or restructure the document. `contractURI` uses the immutable ERC-721 collection name and the same description as
 tokens. No other caller-controlled text reaches either document.
 
 ### D13. Sizing: the painted extent is the controlled quantity
@@ -604,13 +604,15 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including
   locking either forever at zero, and can edit the token name prefix and description shared by token
-  and collection metadata via `setMetadataCopy`. The
-  renderer and collection are read only by `tokenURI`/`contractURI`; the positions target only by
-  `ShapeLens.positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
+  and collection metadata via `ShapeCollection.setMetadataCopy`, followed by
+  `Shapes.refreshMetadata` to signal the change. The
+  renderer is read only by `tokenURI`; the collection by `tokenURI` and `contractURI`; the positions
+  target only by `positionOf`; the market is discovery only; the copy only by metadata views, and it
+  is validated on set so it cannot
   break the JSON. Admin may also redirect future mint fee withdrawals and adjust the mint fee
   amount within the cap of one denomination unit, but cannot reach backing, redemption, already-accrued fees or
-  token ownership. The copy is
-  deliberately not covered by the renderer lock; it stays editable until admin is renounced.
+  token ownership. The copy is frozen by `lockPresentation` along with the renderer and collection
+  pointers: `ShapeCollection.setMetadataCopy` reads that lock back from `Shapes`.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
   or renounced without moving the owner token.
 - **Permanent artist attribution, separate from ownership and admin.** `artist()` records the
@@ -624,16 +626,20 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   immutable ladder, so an out-of-range backing value is not representable.
 - `mintFee` is set at construction, bounded by a compile-time cap of one denomination unit (`unit()`)
   (`Denominations.UNIT`), and admin-adjustable afterward via `setMintFee` within that same cap.
-  The initial `feeRecipient` is set at construction; admin may redirect subsequent withdrawals.
+  The initial `feeRecipient` is set at construction; admin may redirect where future fees accrue,
+  which never moves a balance already credited to the outgoing recipient.
   `renderer` is
-  mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
+  mutable until `lockPresentation`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
 - The committed mainnet initial mint fee is a flat 0.001 ETH for every Shape created, regardless of
-  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees accrue to `pendingFees` in
-  the same transaction as the mint, never enter the reserve, and leave only through `withdrawFees`,
-  a separate permissionless call that forwards the accrued total to `feeRecipient`. A batch accrues
-  `quantity * mintFee` once. Auction ETH bids pay one fee for every minimal-denomination card the
-  escrow creates, exposed exactly by `ShapeAuctionHouse.mintCostFor(backingWei)`.
+  denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees accrue per recipient, to
+  whoever `feeRecipient()` names at the time of the mint, in the same transaction as the mint;
+  they never enter the reserve and leave only through `withdrawFees(recipient)`, a separate
+  permissionless call that forwards that recipient's own accrued balance to it. `pendingFees()` is
+  the sum across every recipient; `feesOwedTo(recipient)` is one recipient's share. A batch accrues
+  `quantity * mintFee` once, to the recipient current at that call. Auction ETH bids pay one fee
+  for every minimal-denomination card the escrow creates, exposed exactly by
+  `ShapeAuctionHouse.mintCostFor(backingWei)`.
 - `mintStart` is a `uint64` set once at construction and stored immutable; no admin path can read
   or change it. `mint`, `mintTo`, `mintBatch` and `mintBatchTo` revert `MintNotOpen()` while
   `block.timestamp < mintStart`, which also gates the ETH-backed auction bids that mint cards
@@ -644,7 +650,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   invariant asserted is `address(this).balance >= redeemableBacking + pendingFees`.
 - Checks-effects-interactions, plus a reentrancy guard on functions that mint, restructure
   or move ETH: `mint`, `mintBatch`, `redeem`, `burn`, `redeemBatch`, `compose`,
-  `decompose`, `split`, `sacrifice`, `withdrawFees`. The inherited
+  `decompose`, `split`, `burnBacking`, `withdrawFees`. The inherited
   ERC721 transfer and approval functions are **not** guarded, deliberately —
   they move no ETH. One consequence is worth knowing: a receiver can redeem a
   Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
@@ -655,7 +661,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   redeemed, and its backing would be stranded while `redeemableBacking` went on
   counting it.
 - The renderer address is checked for code at construction and on replacement. Metadata has
-  no fallback path; the renderer becomes permanent only after `lockRenderer`.
+  no fallback path; the renderer becomes permanent only after `lockPresentation`.
 
 ### D17. Ink Genes
 
@@ -690,9 +696,10 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   reverts to its snapshot gene, each revived input regains its own), so an `InkGene` event fires for
   the survivor and every revived id but no roll occurs. A compose then a decompose leave the gene
   exactly where it started (DECOMPOSE_SPEC.md).
-- **`simulateCompose`/`simulateSplit`** preview the exact gene a real `compose`/`split`
-  would produce, `view`, touching no storage — mirrors `compose`'s validation with an explicit
-  duplicate-burn-id check in place of relying on `_burn` reverting.
+- **`previewCompose`/`previewSplit`** report the exact gene a real `compose`/`split` would
+  produce. Both are `view`, write nothing, and take no account: ownership is not checked, and
+  every structural gate is shared with the mutators, so a repeated burn id is rejected on both
+  sides with `DuplicateComposeInput`.
 - **One-tx apexes are not reachable.** `compose` burns its inputs in an O(n) loop, so a single
   transaction composing 10,000 dust straight into a 100 costs about 70.8M gas
   (`test_ComposeMegaGasProfile_10000Dust`), well over the block gas limit. This is fine for the
@@ -701,7 +708,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 ### D18. Final value and position discovery interfaces
 
-- **Direct liveness.** `ShapeLens.exists(tokenId)` is a non-reverting view of ERC-721 liveness: true for every
+- **Direct liveness.** `exists(tokenId)` is a non-reverting view of ERC-721 liveness: true for every
   live token including Black, and false for never-issued, redeemed/burned, split-parent and
   compose-consumed IDs. Decompose makes a revived input live again.
 - **Stored denomination fact.** `denomIndexOf(tokenId)` returns the live token's stored 0..8 ladder
@@ -714,7 +721,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 - **Draft ERC-8060.** `Shapes` implements the current draft `IERC721Value` pair (`valueOf` and
   owner-only `burn`) and advertises its interface ID through ERC-165. A normal `burn` destroys the
   token and pays its exact value. A Black Shape has value zero and can be destroyed without an
-  ETH call. `sacrifice` only creates the Black state; it never burns the NFT. The standard is still
+  ETH call. `burnBacking` only creates the Black state; it never burns the NFT. The standard is still
   a draft, so this deployment pins one revision rather than promising compatibility with later
   edits to the proposal.
 - **Structural burns stay structural.** Tokens consumed by `compose` and `split` never
@@ -723,7 +730,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   increasing IDs. The only identity revival is the exact set of compose inputs restored by its
   LIFO decompose record; redemption, public burn and split never recycle retired IDs.
 - **Explicit positions and market pointers.** `positions()` and `market()` each return the target
-  plus its independent lock state. Both launch empty and unlocked. `ShapeLens.positionOf(tokenId)`
+  plus its independent lock state. `positionOf(tokenId)`
   returns zero without a positions target; otherwise it queries the target without a token-existence
   or backing check. Reverts and malformed address returns become zero.
 - **Future position semantics.** The external protocol may escrow a fully funded claim against a
@@ -758,4 +765,4 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 | Solidity SVG byte-identical to TypeScript fixtures | `forge test --mc Parity` |
 | Reserve solvency under fuzzed mint/transfer/redeem sequences | `forge test --mc Invariant` |
 | Value alias, burn settlement, Black zero-burn and ID lifecycle | `forge test --mc ValueDiscoveryTest` |
-| Pointer configuration, lens delegation and administrative isolation | `forge test --mc PointersTest` |
+| Pointer configuration and administrative isolation | `forge test --mc PointersTest` |

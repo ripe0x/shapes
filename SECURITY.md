@@ -5,7 +5,7 @@ mandate to construct working exploits rather than to read sympathetically. Every
 that is marked *confirmed* was demonstrated with an executable Foundry test.
 
 **Headline: no path was found that removes redeemable ETH without either burning the corresponding
-token for its exact current value or performing the explicit 100 ETH sacrifice that first changes
+token for its exact current value or performing the explicit 100 ETH burnBacking that first changes
 an apex Complete to zero value.** The reserve invariant held under every attack attempted, including
 25,600 hostile-actor fuzz calls with reentrant, ETH-rejecting and token-rejecting
 counterparties.
@@ -40,7 +40,7 @@ administrative authority. Neither configuration domain is read
 by a reserve path. The immutable `artist()` and one-time signature stored directly in Shapes are
 attribution only and are never read for authorization, fees, ownership or reserve accounting.
 The linked `EIP712Signature` library is stateless verification code, not an attribution contract.
-`ShapeLens` is separate periphery: stateless, ownerless, read-only, holding no
+`RecompositionOps` and `AdminOps` are linked libraries: stateless at their own address, ownerless, holding no
 ETH and no admin surface. `ShapeAuctionHouse` and the `ShapeCardEscrow` base it inherits hold
 escrowed cards and lots, not the reserve; `Shapes` has no knowledge of either. There is one
 thing that must never happen: a holder unable to redeem a live Shape for exactly the ETH it
@@ -138,16 +138,20 @@ with no external call in the mint path, so
 `mint` revert while it remained the target. Redemption was unaffected and no funds were at risk,
 but minting itself could stall.
 
-**Fix chosen:** mint fees no longer call out to the recipient at all. They accrue to `pendingFees`
-during the mint's own effects block, and only `withdrawFees` — a separate, permissionless,
-`nonReentrant` call — forwards the accrued total to `feeRecipient`. A reverting recipient now
-blocks only `withdrawFees`; minting is unaffected regardless of the recipient's behavior. If
-`withdrawFees` fails, `pendingFees` is untouched (the whole call reverts), and the admin can
-redirect `feeRecipient` via `setFeeRecipient` and retry. The deploy script still refuses an
-initial contract recipient unless `SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true` is set explicitly;
-prefer an EOA. Renouncing admin freezes the final recipient, so its ability to accept ETH should
-be confirmed first, though a reverting recipient at that point only strands the withdrawal, never
-the fee itself, which stays in the contract as `pendingFees`.
+**Fix chosen:** mint fees no longer call out to the recipient at all. They accrue to whichever
+recipient `feeRecipient()` names at the time, tracked per recipient (`feesOwedTo`) and summed in
+`pendingFees()`, in the mint's own effects block, and only `withdrawFees(recipient)` — a separate,
+permissionless, `nonReentrant` call — forwards that recipient's own balance to it. A reverting
+recipient now blocks only its own `withdrawFees` call; minting and every other recipient's
+withdrawal are unaffected. If `withdrawFees` fails, the balance it targeted is untouched (the
+whole call reverts), and `setFeeRecipient` only points future accrual elsewhere — it does not move
+what is already owed to the reverting recipient, which stays stuck until that recipient can accept
+ETH. The deploy script proves the initial recipient accepts a plain ETH transfer by simulating one
+before deploying, rather than requiring an EOA; a contract that accepts plain ETH (a 0xSplits
+wallet, for example) passes the same guard an EOA does. Renouncing admin
+freezes the final recipient, so its ability to accept ETH should be confirmed first, though a
+reverting recipient at that point only strands its own balance, never anyone else's, and never the
+reserve.
 
 ### 7. No batch size cap — accepted, documented
 
@@ -178,7 +182,7 @@ An independent AI auditor ran the refreshed `AUDIT_PROMPT_v2.md` against `main`.
 was found; no path removes ETH without the corresponding burn, forges origins, forges Complete, or
 bypasses Black terminality. Three low findings were fixed and pinned with regression tests:
 
-- **The split preview reported success for a Black Shape** while the split itself reverts `TokenIsBlack`. The preview is now `previewSplit` (moved to `ShapeLens` since this finding), which carries the same guard.
+- **The split preview reported success for a Black Shape** while the split itself reverts `TokenIsBlack`. The preview is now `previewSplit` on `Shapes`, which shares the gate with `split` itself.
   The preview now rejects Black tokens too (`test_SimulateDecomposeRejectsBlackToMatchDecompose`).
 - **`setRenderer` changed every token's metadata without an ERC-4906 signal.** It now emits
   `BatchMetadataUpdate(0, totalMinted - 1)` (ids start at 0) so marketplaces refresh
@@ -190,7 +194,7 @@ bypasses Black terminality. Three low findings were fixed and pinned with regres
 Accepted from the same audit: `setRenderer` validates the renderer by ERC165 claim and code
 presence but does not smoke-call it (owner-controlled; the deploy script already smoke-tests the
 renderer, and a hostile renderer is cosmetic only — see the Renderer replaceability row); the
-`grammarHash` geometry version is therefore only frozen once `lockRenderer` is called; and batch
+`grammarHash` geometry version is therefore only frozen once `lockPresentation` is called; and batch
 sizes stay uncapped (self-inflicted, per finding #7).
 
 ### 11. A fee-recipient-seller could steal a bidder's escrowed cards — corrected from low to theft, fixed
@@ -224,38 +228,63 @@ callback never fires during `bid`, and the same attempt from `withdrawFees` fail
 exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defense in depth
 (`test/AuctionSecurity.t.sol`).
 
+### 12. `setFeeRecipient` could redirect already-accrued fees — fixed
+
+*Confirmed against the single shared `pendingFees` counter.* `withdrawFees` read `feeRecipient` at
+withdrawal time rather than at accrual time, so an admin could call `setFeeRecipient(attacker)`
+then `withdrawFees()` and take every fee that accrued while a different recipient was configured.
+`IAdminControl` documented the opposite in two places: the admin "cannot reach ... accrued fees",
+and `setFeeRecipient`'s own doc said already-accrued fees are unaffected. Real ETH only, never
+backing; bounded by the pending balance at the time of the redirect; requires the admin key.
+
+**Fix.** Fee accrual is now per recipient: `feesOwed[recipient]` credits whoever `feeRecipient()`
+names at the moment a batch mint charges its fee, and `pendingFees()` is the running sum across
+every recipient. `withdrawFees(recipient)` pays only `recipient`'s own balance and zeroes only
+that entry. `setFeeRecipient` still writes one pointer for future accrual and moves nothing:
+fees already credited to the outgoing recipient stay owed to it, withdrawable by anyone via
+`withdrawFees`, whether or not it is still the configured `feeRecipient`. This also closes the
+stranding case from finding #6's caveat: a later recipient's balance is no longer held hostage by
+an earlier reverting one. `test/audit/FeeAccounting.t.sol` pins the closure directly
+(`test_SetFeeRecipientCannotRedirectAlreadyAccruedFees`,
+`test_EachRecipientWithdrawsExactlyItsOwnShare`,
+`test_RevertingRecipientBlocksOnlyItsOwnWithdrawal`), and `test/Invariants.t.sol`'s stateful suite
+drives `setFeeRecipient` and `withdrawFees` against two known recipients, asserting
+`sum(feesOwedTo(r)) == pendingFees()` on every run. See DECISIONS.md D-43.
+
 ---
 
 ## Verified safe
 
 | Axis | Result |
 |---|---|
-| Reentrancy | `mint`, `mintBatch`, `redeem`, `burn`, `redeemBatch`, `redeemTo`, `redeemBatchTo`, `compose`, `decompose`, `decomposeTo`, `split`, `splitTo`, `sacrifice`, and `withdrawFees` are guarded; `_payRedemption`, `withdrawFees`'s fee transfer and the sacrifice all execute inside the guard, after all effects. The recipient-directed `*To` variants delegate to the same private implementations as their owner-directed forms, so the destination is parameterised but checks-effects-interactions and the guard are identical. The mint path makes no external call beyond `_safeMint`, so reentry attempts from ERC721 callbacks and the redemption payout callback revert; a reentrant attempt from `withdrawFees`'s fee callback likewise reverts. The invariant suite drives the `*To` paths against reverting-ETH, non-receiver and reentrant recipients. |
+| Reentrancy | `mint`, `mintBatch`, `redeem`, `burn`, `redeemBatch`, `redeemTo`, `redeemBatchTo`, `compose`, `decompose`, `decomposeTo`, `split`, `splitTo`, `burnBacking`, and `withdrawFees` are guarded; `_payRedemption`, `withdrawFees`'s fee transfer and the backing burn all execute inside the guard, after all effects. The recipient-directed `*To` variants delegate to the same private implementations as their owner-directed forms, so the destination is parameterised but checks-effects-interactions and the guard are identical. The mint path makes no external call beyond `_safeMint`, so reentry attempts from ERC721 callbacks and the redemption payout callback revert; a reentrant attempt from `withdrawFees`'s fee callback likewise reverts. The invariant suite drives the `*To` paths against reverting-ETH, non-receiver and reentrant recipients. |
 | Batch mint accounting | `firstTokenId` and `totalMinted` are set before any `_safeMint`, so ids cannot collide even under hypothetical reentry. Seeds distinct within and across same-block batches. |
 | Mint-start gate | `mintStart` is set once in the constructor and stored `immutable`; no admin path can read or change it. `_mintBatch` reverts `MintNotOpen()` while `block.timestamp < mintStart`, which covers `mint`, `mintTo`, `mintBatch`, `mintBatchTo`, and the ETH-backed auction bids that mint cards through `ShapeCardEscrow._mintCards` calling `mintBatchTo`. The constructor mint of Shape #0 is unconditional and unaffected, so its transfer, auction listing and redemption all work before `mintStart`. |
 | Batch redeem accounting | Duplicate ids revert on the second `_requireOwned`; mixed owners revert; no partial settlement exists — one atomic transaction. |
-| Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), `withdrawFees`'s transfer (out of `pendingFees`, decremented before the call, never counted as backing), and `sacrifice` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking + pendingFees`, backing conservation net of sacrifice, `valueOf == backingOf`, `sacrificedBacking == 100 ether * blackCount`, and a full drain of every live Shape. |
+| Reserve solvency | Three value-bearing `CALL`s exist: `_payRedemption` (reached only after a redemption or draft ERC-8060 burn), `withdrawFees(recipient)`'s transfer (out of that recipient's own `feesOwedTo` balance, decremented before the call, never counted as backing), and `burnBacking` (fixed 100 ETH to an unspendable address, after `redeemableBacking` is decremented). The `*To` variants direct `_payRedemption` and `_safeMint` to an arbitrary recipient but decrement backing before the call, so the same accounting holds. Proven by stateful invariants: `balance >= redeemableBacking + pendingFees`, `sum(feesOwedTo(r)) == pendingFees()` across every recipient a fee has accrued to, backing conservation net of burnBacking, `valueOf == backingOf`, `burnedBacking == 100 ether * blackShapeCount`, and a full drain of every live Shape. |
 | ETH out without a burn | Full external surface enumerated, including every inherited OpenZeppelin member. Admin can select the recipient of fees entering in future mint calls, but cannot withdraw ETH already held by Shapes or alter the reserve. Shape #0 ownership grants no permissions. External-library delegate targets are fixed in bytecode and cannot be selected by users or admin; there is no `selfdestruct` or inline assembly in `Shapes.sol`. |
-| Administrative isolation | The renderer and collection are called only by metadata reads. Core state-changing operations never call the positions or market target; only `ShapeLens.positionOf` queries positions, with bounded gas and failure-to-zero behavior. Reverting targets are regression-tested against the full token lifecycle. `setFeeRecipient` changes one address used for future fee withdrawals; `setMintFee` changes the fee amount within the compile-time cap of one denomination unit. Neither can move already-accrued fees or touch backing, redemption or token ownership. |
+| Administrative isolation | The renderer and collection are called only by metadata reads. Core state-changing operations never call the positions or market target; only `positionOf` queries positions, with bounded gas and failure-to-zero behavior. Reverting targets are regression-tested against the full token lifecycle. `setFeeRecipient` changes one address used for future fee withdrawals; `setMintFee` changes the fee amount within the compile-time cap of one denomination unit. Neither can move already-accrued fees or touch backing, redemption or token ownership. |
 | Draft ERC-8060 | `valueOf` exactly aliases `backingOf`; owner-only `burn` destroys a normal Shape for its exact value or a Black Shape for zero. Structural burns never settle ETH. The current draft interface ID is advertised through ERC-165; the proposal is not final and may change. |
-| Core state views | `ShapeLens.exists` is a non-reverting read of ERC-721 liveness and writes no state. `denomIndexOf` returns the already-stored 0..8 index for a live token and reverts for a nonexistent id; Black remains index 8 even though `backingOf == valueOf == 0`. Neither view calls the renderer, collection, positions or market target. |
+| Core state views | `exists` is a non-reverting read of ERC-721 liveness and writes no state. `denomIndexOf` returns the already-stored 0..8 index for a live token and reverts for a nonexistent id; Black remains index 8 even though `backingOf == valueOf == 0`. Neither view calls the renderer, collection, positions or market target. |
 | Overflow / truncation | No `unchecked` in `Shapes.sol`. `uint8(denomIndex)` is safe by construction — the index originates only from `Denominations.indexOf`, whose range is 0–8. Decrements are each paired with a successful burn. |
 | Denomination validation | Exact `==` comparisons, no ranges, no rounding, no fallthrough. Because the *index* is stored rather than a wei amount, an off-ladder backing value is unrepresentable in storage. |
 | Forced ETH | Surplus from `selfdestruct`, coinbase or pre-deploy funding leaves `redeemableBacking` untouched, cannot be extracted, and cannot corrupt accounting — no function reads `address(this).balance`. |
 | DoS against the reserve | An owner that rejects ETH causes `_payRedemption` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
-| Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is admin-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only, never backing, redemption or ownership, and after locking it is fixed forever. |
-| Positions and market pointers | Both start empty and unlocked, may be replaced or cleared by admin, and may be locked independently at any value including zero. Targets must contain code when set. Only `ShapeLens.positionOf` queries positions; it forwards a fixed gas cap and converts reverts, out-of-gas and malformed results to zero. A hostile target can mislead discovery but cannot affect Shapes state or reserve behavior. The market target is never called by Shapes or ShapeLens. |
+| Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is admin-replaceable until `lockPresentation`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only, never backing, redemption or ownership, and after locking it is fixed forever. |
+| Positions and market pointers | Both start empty and unlocked, may be replaced or cleared by admin, and may be locked independently at any value including zero. A nonzero target must contain code and answer ERC-165 for the interface its reader calls. Only `positionOf` queries positions; it forwards a fixed gas cap and converts reverts, out-of-gas and malformed results to zero. A hostile target can mislead discovery but cannot affect Shapes state or reserve behavior. The market target is never called by Shapes. |
 | Contract ownership | One live Shape is the owner token, tracked by `_ownerToken` and starting as #0, atomically backed and minted to the deployer. `owner()` follows its current holder, returning zero once it is redeemed or burned. Compose moves it from a burned donor to the survivor; decompose restores it to that input; split gives it to the first output; `decomposeTo`/`splitTo` make the recipient the collection owner. No authorization check reads `owner()` or `ownerToken()`. |
 | Artist attribution | `artist()` is constructor-set and immutable. Shapes directly stores one nonzero `artistReleaseHash` and the raw `artistSignature`; zero release hash is the unsigned sentinel. The EIP-712 digest binds chain id, exact Shapes address, artist and release hash. The stateless linked `EIP712Signature` library checks canonical ECDSA first so an EIP-7702 delegated EOA can still sign, then ERC-1271 for contract wallets. Anyone may relay, but nobody can replace or clear a successful attestation. For ERC-1271, the permanent proof is validity at execution time because wallet policy may later change. Attribution grants no artist-authorized call. |
-| Linked libraries | `GeometrySampling`, `ComposeCompute`, `InkGenes`, `CopyValidation`, `EIP712Signature` and `PointerOps` are external libraries; forge resolves and deploys each at build/deploy time and bakes its address into the linking contract's bytecode. There is no setter for a library address, so their logic cannot be redirected after deployment. `PointerOps` mutates only Shapes' two pointer slots through admin-gated wrappers and has no authority at its own address. |
+| Linked libraries | `RecompositionOps`, `AdminOps`, `GeometrySampling`, `ComposeCompute`, `InkGenes`, `CopyValidation` and `EIP712Signature` are external libraries; forge resolves and deploys each at build/deploy time and bakes its address into the linking contract's bytecode. `CopyValidation` links into `ShapeCollection`; the rest link into `Shapes`. There is no setter for a library address, so their logic cannot be redirected after deployment. Neither `RecompositionOps` nor `AdminOps` holds authority at its own address: every access check runs in Shapes before it delegates, and neither writes ERC-721 state, moves ETH, or touches the owner token or the admin address. Each receives a pointer to one storage struct and can reach nothing else. |
 
 ---
 
 ## Standing caveats for anyone deploying this
 
-1. **`feeRecipient` should be an EOA.** A reverting recipient blocks only `withdrawFees`; minting
-   is never affected. Admin can redirect the recipient and retry the withdrawal; `pendingFees` is
-   never lost while blocked. Renouncing admin freezes the current recipient permanently.
+1. **`feeRecipient` should be an EOA.** A reverting recipient blocks only its own `withdrawFees`
+   call; minting and every other recipient's withdrawal are never affected. Redirecting
+   `feeRecipient` only starts a new accrual for the new recipient — it does not move the blocked
+   recipient's own balance, which stays owed to it, unlost, until it can accept ETH. Renouncing
+   admin freezes the current recipient permanently.
 2. **The mint fee is bounded, not immutable.** The mainnet initial value is 0.001 ETH per Shape and
    the 1/100 testnet build uses 0.00001 ETH per Shape. Admin may change it afterward via
    `setMintFee`, up to the compile-time cap of one compiled denomination unit (`unit()`). The
@@ -268,18 +297,19 @@ exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defe
    collectible-economics choice before mainnet. Admin can raise or lower the fee later via
    `setMintFee`, within the cap; that changes the reroll-cost ratio going forward but never
    backing already minted.
-4. **The admin can replace the renderer until it is locked, and can edit the metadata copy at any
-   time.** Both are cosmetic powers. The renderer is `view`-only and the copy is read only by
-   metadata views; neither can touch ETH, backing, redemption or ownership. A compromised admin
-   could point `tokenURI` at a renderer producing misleading or offensive metadata until
-   `lockRenderer` is called, and could set an offensive or misleading prefix/description via
-   `setMetadataCopy`. Copy is validated on set — a `"`, `\`, C0 control byte, or
-   over-length value reverts — so it cannot break or restructure the metadata JSON, but it is not
-   HTML-escaped: a marketplace that renders `description` as HTML will display admin-supplied
-   markup. The description is shared by token and collection metadata; the immutable ERC-721 name
-   supplies the collection name. Copy is deliberately never frozen: `lockRenderer` freezes the renderer and collection
-   pointers, not the copy, which stays editable while an admin remains. Hold admin in a multisig;
-   renounce it to freeze copy permanently at its last value.
+4. **The admin can replace the renderer and edit the metadata copy until presentation is locked.**
+   Both are cosmetic powers. The renderer is `view`-only and the copy is read only by metadata
+   views; neither can touch ETH, backing, redemption or ownership. A compromised admin could point
+   `tokenURI` at a renderer producing misleading or offensive metadata, and could set an offensive
+   or misleading prefix/description via `ShapeCollection.setMetadataCopy`, whose authority and lock
+   are read live from `Shapes`. Copy is validated on set — a `"`, `\`,
+   C0 control byte, or over-length value reverts — so it cannot break or restructure the metadata
+   JSON, but it is not HTML-escaped: a marketplace that renders `description` as HTML will display
+   admin-supplied markup. The description is shared by token and collection metadata; the immutable
+   ERC-721 name supplies the collection name. `lockPresentation` freezes the renderer, the
+   collection and the copy together and is one way, so after it none of the three can be changed by
+   any admin. Until then, hold admin in a multisig; renouncing admin also freezes all three
+   permanently at their last values.
 5. **The admin can designate canonical positions and market targets until each is locked.** Either
    pointer can be replaced, cleared or permanently locked at zero independently. A configured
    target may be upgradeable or malicious, but has no authority over Shapes. Canonical does not

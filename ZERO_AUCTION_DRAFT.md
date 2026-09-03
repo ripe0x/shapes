@@ -7,9 +7,12 @@ Baseline: `origin/main` at `c9eb8a2`. This worktree branches from `0c17835` and 
 thirty commits behind; the gap renamed the old `decompose` to `split` and added a new
 `decompose` as compose's exact inverse. Read §6 before trusting any recomposition vocabulary.
 
-This draft also predates the `ShapeLens` split (PR #29): every `shapeState`/`previewCompose`/
-`previewSplit`/`unicodeCard` reference below that reads as a call on `Shapes` is now a call on
-`ShapeLens`, a separate stateless periphery contract, instead.
+This draft also predates the `ShapeLens` split (PR #29) and the D-40 architecture pass that
+reversed it. `ShapeLens` and `IShapeCapabilities.sol` no longer exist: every `shapeState`/
+`previewCompose`/`previewSplit`/`unicodeCard` reference below is a call on `Shapes` again, and the
+capability interfaces live on `IShapes.sol`. D-40 also renamed `lockRenderer` to
+`lockPresentation`, `SplitMismatch` to `SplitSumMismatch` and `EmptyRecomposition` to
+`NoComposeInputs`. See project/ARCHITECTURE.md for the current design.
 
 Scope: a release mechanism for token 0 of the collection, in which bids arrive as Shape
 cards and the artist is paid in Shapes. Plus a general auction contract others can reuse,
@@ -326,8 +329,8 @@ reversible. This is permanent: there is no way to give up the option, so every c
 ever receives can be unwound by whoever owns it at the time.
 
 **What would destroy id 0:** `redeem` (burns it, pays out the backing) and `split` (burns it
-into fresh fragment ids). `sacrifice` keeps the id and inverts the artwork, but only applies at
-100 ETH apex Complete and permanently sacrifices the backing.
+into fresh fragment ids). `burnBacking` keeps the id and inverts the artwork, but only applies at
+100 ETH apex Complete and permanently burns the backing.
 
 So the piece is a ratchet the owner controls in both directions, and the one thing that ends
 it is a deliberate burn.
@@ -377,7 +380,7 @@ code change suggested, and it is a deletion.
   `msg.value`-reuse hazard against payable `mint`/`mintBatch`.
 - **Recipient-directed everything.** `decomposeTo`, `splitTo`, `redeemTo`,
   `redeemBatchTo`.
-- **A Black Shape's denomination is readable.** `ShapeState.faceValueWei` survives sacrifice;
+- **A Black Shape's denomination is readable.** `ShapeState.faceValueWei` survives a burnBacking call;
   `redeemableValueWei` is zero for a Black Shape and otherwise equals face value. Reached via
   `shapeState(tokenId)`.
 - **Previews and introspection.** `previewCompose`, `previewSplit`,
@@ -477,7 +480,7 @@ property of the ladder rather than of the code.
 
 ## 7. Issues, honestly
 
-**R1. The Black Shape trap.** A Black Shape has had its 100 ETH sacrificed and is
+**R1. The Black Shape trap.** A Black Shape has had its 100 ETH backing burned and is
 non-redeemable, but still carries `denomIndex == 8` internally. Any valuation reading the
 denomination instead of `backingOf` accepts a worthless token as a 100 ETH bid. `backingOf`
 returns 0 for Black, so a correct implementation is safe. Sharpest edge in the design. Named
@@ -507,7 +510,7 @@ but the locked thing here is unusually liquid, which makes the lock more visible
 the original token and artwork identity ended when it was split.
 
 **R8. Equal bids are not equal objects (L7).** Two 1 ETH bids redeem identically and are
-different objects: origins are what make a Shape `Complete` and what gate `sacrifice`, so a bid
+different objects: origins are what make a Shape `Complete` and what gate `burnBacking`, so a bid
 paid in Complete-density cards is materially better to receive than one paid in origin-1
 cards at the same price.
 

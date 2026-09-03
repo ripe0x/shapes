@@ -4,8 +4,8 @@ ETH in, Shape out. Shape burned, the same ETH out.
 
 A Shape is an ERC721 token that wraps an exact amount of ETH. Whoever owns a normal Shape owns
 the right to unwrap it. Redeem or burn the token and you receive exactly its current value — not
-a share of a pool, not a proportion, not an appraisal. The same wei. A deliberately sacrificed
-Black Shape has zero remaining value and may be burned for zero.
+a share of a pool, not a proportion, not an appraisal. The same wei. A Black Shape, whose backing
+was deliberately burned, has zero remaining value and may be burned for zero.
 
 Between minting and burning, a Shape is an ordinary NFT. Transfer it, sell it, deposit it in
 another contract, hold it. The artwork and the token's history make it a distinct object; the
@@ -119,16 +119,18 @@ its own seed.
 
 The mainnet deployment's initial value is a flat **0.001 ETH per Shape created**, independent of
 backing. `admin()` may adjust `mintFee` afterward via `setMintFee`, up to the compile-time cap
-one denomination unit (`unit()`), and may redirect `feeRecipient` for future withdrawals. A
-100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee. The isolated testnet build scales
-the initial fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
+one denomination unit (`unit()`), and may redirect `feeRecipient` so future fees accrue to a new
+address. A 100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee. The isolated testnet
+build scales the initial fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
 
-`mintFee()` returns the current per-Shape fee, read live by every mint. Fees accrue to
-`pendingFees()` in the same transaction as the mint and never join the reserve; a batch accrues
-`quantity * mintFee` once. Anyone may call `withdrawFees()` to forward the accrued total to the
-current `feeRecipient` — minting never calls the recipient directly, so a reverting recipient
-blocks only the withdrawal, never minting. Redemption is unaffected: a 1 ETH Shape always redeems
-for exactly 1 ETH, fee already paid at mint.
+`mintFee()` returns the current per-Shape fee, read live by every mint. Fees accrue per recipient,
+credited to whoever `feeRecipient()` names at the time of the mint, and never join the reserve;
+`pendingFees()` is the sum owed across every recipient, and `feesOwedTo(recipient)` is one
+recipient's own share. A batch accrues `quantity * mintFee` once, to the recipient current at that
+call. Anyone may call `withdrawFees(recipient)` to forward that recipient's own balance to it —
+minting never calls the recipient directly, so a reverting recipient blocks only its own
+withdrawal, never minting or any other recipient's withdrawal. Redemption is unaffected: a 1 ETH
+Shape always redeems for exactly 1 ETH, fee already paid at mint.
 
 There is no burn fee, no transfer fee, no royalty requirement, and no recurring protocol fee.
 
@@ -150,7 +152,7 @@ redeemBatch(uint256[] calldata tokenIds) returns (uint256 totalWei)
 
 The current owner burns the token and receives its exact backing, paid directly to them. All or
 nothing — there is no partial redemption and no direct way to add ETH to an existing Shape.
-Recomposition may move backing between identities, and sacrifice may change an apex's value to zero.
+Recomposition may move backing between identities, and burnBacking may change an apex's value to zero.
 
 `redeemBatch` burns each token, then makes a single transfer of the exact total.
 
@@ -185,26 +187,28 @@ reversible compose: `decompose` revives the exact inputs recorded by that compos
 new IDs. Positions attach to Shape identity, not automatically to ETH material that later moves
 into another ID.
 
-## Sacrifice and Black Shapes
+## Burning backing and Black Shapes
 
-`sacrifice(tokenId)` is an owner-only transformation available only to a Complete 100 ETH apex.
+`burnBacking(tokenId)` is an owner-only transformation available only to a Complete 100 ETH apex.
 It sends exactly 100 ETH to `0x…dEaD`, changes the token's current value to zero and marks it Black
 without burning it. The same ID, owner, seed, provenance and artwork geometry remain; metadata is
 updated to the inverted Black rendering. A Black Shape stays transferable and may be burned for
-zero, but it cannot be redeemed, composed, decomposed or sacrificed again.
+zero, but it cannot be redeemed, composed, decomposed or have its backing burned again.
 
-`sacrificedBacking` and `blackCount` are cumulative historical counters. Burning a Black Shape does
+`burnedBacking` and `blackShapeCount` are cumulative historical counters. Burning a Black Shape does
 not reduce either one.
 
 ## Optional external positions and market
 
 `positions()` and `market()` expose two explicit canonical ecosystem pointers, each paired with its
-independent permanent lock state. Both launch at `(address(0), false)`. Canonical means the contract
-surfaced by Shapes, not exclusive: anyone may build alternatives.
+independent permanent lock state. `market` names the auction house the deploy registered; `positions`
+launches empty. A nonzero target must answer ERC-165 for the interface its reader calls,
+`IShapePositionResolver` for positions and `IShapeAuctionHouse` for the market. Canonical means the
+contract surfaced by Shapes, not exclusive: anyone may build alternatives.
 
-`ShapeLens.positionOf(tokenId)` queries the configured positions contract. With no positions target
-it returns zero immediately. The target defines aggregation and position lifecycle; the lens does
-not check token existence, backing, claim validity or authorization. Reverts, excessive gas use and
+`positionOf(tokenId)` queries the configured positions contract. With no positions target it
+returns zero immediately. The target defines aggregation and position lifecycle; this view does not
+check token existence, backing, claim validity or authorization. Reverts, excessive gas use and
 malformed results return zero. A malicious target can mislead this view but cannot affect ownership,
 backing, redemption, burn, recomposition, rendering or reserve solvency. Core state-changing Shape
 operations never call either pointer.
@@ -237,7 +241,7 @@ Shape #0 and through later mints once `mintStart` has passed.
 
 Every wei counted by `redeemableBacking()` corresponds to a live non-Black Shape. Stateful
 invariants cover minting, transfer, redemption, burn, composition, decomposition, splitting,
-restoration, sacrifice, forced ETH and `valueOf == backingOf`; unit tests pin high-water issuance
+restoration, burnBacking, forced ETH and `valueOf == backingOf`; unit tests pin high-water issuance
 and the narrow compose/decompose identity-revival exception.
 
 ## Immutability
@@ -268,16 +272,21 @@ destination of future mint fees. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
 of the owner token:
 
-- Presentation: the renderer and collection metadata contracts may be replaced until
-  `lockRenderer` permanently freezes both pointers. The metadata copy, the token name prefix and
-  description shared by token and collection metadata, is edited via `setMetadataCopy` and is not covered by `lockRenderer`; it stays editable
-  for as long as an admin remains. Copy is validated so it cannot break the metadata
-  JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
+- Presentation: the renderer and collection metadata contracts may be replaced via `setRenderer`
+  and `setCollection`. The metadata copy, the token name prefix and description shared by token and
+  collection metadata, lives on `ShapeCollection` and is edited there via `setMetadataCopy`, which
+  reads both the admin and the lock live from `Shapes`. A copy edit is two transactions:
+  `collection.setMetadataCopy`, then `shapes.refreshMetadata`, which emits the ERC-4906 and
+  ERC-7572 signals that make marketplaces re-read. `lockPresentation` permanently freezes all
+  three: afterwards each of those three calls reverts `PresentationIsLocked`. Copy is validated so
+  it cannot break the metadata JSON. All of it is read only by metadata views and cannot affect
+  backing, redemption or ownership.
 - The positions and market pointers may each be set, replaced or cleared through `setPointer` until
   `lockPointer` permanently freezes that entry. Pointer id 0 is Positions and 1 is Market; other
   ids revert. Either entry may be locked while zero.
-- `setFeeRecipient` redirects only future `withdrawFees` calls. It cannot recover fees already
-  withdrawn, withdraw ETH itself, or reach backing or redemption.
+- `setFeeRecipient` redirects only future accrual. Fees already credited to the outgoing recipient
+  stay owed to it, withdrawable by anyone via `withdrawFees`; the setter cannot move that balance,
+  withdraw ETH itself, or reach backing or redemption.
 - `setMintFee` changes the per-Shape fee, up to the compile-time cap of one denomination unit (`unit()`). It takes
   effect for every later mint and for the auction house's ETH-bid card minting, which reads the
   fee live. It cannot touch backing, redemption or already-accrued fees.
@@ -290,9 +299,9 @@ The reserve, denominations and redemption path have no admin access at all. Deli
 emergency withdrawal, treasury withdrawal, redemption pause, asset recovery, backing modification,
 token seizure, upgradeability, proxies, allowlists, supply caps, royalties.
 
-There are three value-bearing external calls: `withdrawFees`'s transfer of accrued mint fees,
-settlement after redemption or burn, and the fixed 100 ETH sacrifice to `0x…dEaD`. No
-administrative function reaches any of them.
+There are three value-bearing external calls: `withdrawFees`'s transfer of a recipient's own
+accrued mint fees, settlement after redemption or burn, and the fixed 100 ETH burnBacking to
+`0x…dEaD`. No administrative function reaches any of them.
 
 See [`SECURITY.md`](SECURITY.md) for the adversarial review, including the findings that were
 fixed and the residual risks that were accepted deliberately.
@@ -313,7 +322,7 @@ function of seed and denomination, so `renderSVG` does not take a token id at al
 
 A token's artwork is a pure function of its seed and denomination for a given renderer, and both
 are fixed at mint. The admin can replace the renderer to correct a rendering bug — which would
-re-derive every token's artwork through the new code — until `lockRenderer` makes the renderer,
+re-derive every token's artwork through the new code — until `lockPresentation` makes the renderer,
 and so the artwork, permanent.
 
 ---
@@ -322,9 +331,9 @@ and so the artwork, permanent.
 
 ```
 src/
-  Shapes.sol             ERC721 + the reserve
+  Shapes.sol             ERC721 + the reserve, every protocol action, view and preview
+  ShapeTypes.sol         the types Shapes, its libraries and its interfaces share
   ShapeRenderer.sol      fully onchain SVG and metadata
-  ShapeLens.sol          read-only periphery, split out to stay under the EIP-170 limit
   ShapeCollection.sol    collection-level presentation, seeded previews of unminted cards
   ShapeAuctionHouse.sol  English auction for any ERC721, bids denominated in Shape cards
   ShapeCardEscrow.sol    custody and valuation for bids made of Shape cards
@@ -333,22 +342,20 @@ src/
     IERC721Value.sol
     IShapeRenderer.sol
     IShapePositionResolver.sol
-    IShapeLens.sol
     IShapeCollection.sol
     IShapeAuctionHouse.sol
     IShapeCardEscrow.sol
     IShapeGeometry.sol
-    IShapeCapabilities.sol
     IAdminControl.sol
   lib/
     Denominations.sol         the nine amounts and their grids
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
-    AdminOps.sol              artist attestation, metadata copy, and fee-config mutators
-    CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
+    RecompositionOps.sol      the compose, decompose and split state machine, and the previews
+    AdminOps.sol              every configuration write on Shapes: fee, presentation, pointers, artist
+    CopyValidation.sol        UTF-8 and JSON-safety validation for the collection's copy fields
     EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
-    PointerOps.sol            positions/market pointer configuration and one-way locks
     GeometrySampling.sol      the compose and split module-sampling procedures
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
@@ -357,10 +364,8 @@ script/
   Deploy.s.sol                the one deploy script, run for anvil, Sepolia, and mainnet alike
   deploy.sh                   the one wrapper: script/deploy.sh <anvil|sepolia|mainnet>
   env/                        anvil.env, sepolia.env, mainnet.env, values only, no secrets
-  DeployLens.s.sol            replacement lens for an already-deployed Shapes
-  LensEquivalence.s.sol       deploy-time proof that a lens previews what the token executes
   SeedShapes.s.sol            seeds an already-deployed Shapes; no seeding inside Deploy.s.sol
-  e2e-anvil.sh                live end-to-end check against a local chain, via deploy.sh anvil
+  lifecycle.sh                every entrypoint walked against a deployed system, plus an indexer diff
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
@@ -402,6 +407,29 @@ FOUNDRY_PROFILE=ci forge test # heavier fuzzing
 # assertions, which measure the optimized build and trip under coverage's unoptimized one.
 forge coverage --ir-minimum --skip script \
   --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --no-match-test Gas --report summary
+```
+
+### Against a live chain
+
+`script/lifecycle.sh <anvil|sepolia>` walks every protocol entrypoint against a system
+`script/deploy.sh` has just deployed, reading the addresses back from
+`deployments/<chainId>.json` and asserting on-chain state around each call: the genesis owner
+token and its pointers, all four mint entrypoints, compose and decompose with the owner token as
+a donor, split and `splitTo`, the two previews against what the transactions then wrote, an apex
+Complete folded from 10000 origins and its `burnBacking`, every redemption path, the admin
+surface up to `lockPresentation` and `renounceAdmin`, the artist attestation, a full auction, and
+the owner token redeemed last. The reserve invariant, `balance == redeemableBacking +
+pendingFees`, is rechecked after every state change. It closes by running the Ponder indexer
+against the same chain in a throwaway database and diffing every live token's owner and
+denomination, the collection-owner row, and the lineage-edge counts against what the run caused.
+It takes the same environment name as `deploy.sh`, so one code path covers a local chain and a
+public testnet; `LIFECYCLE_APEX=0` skips the apex section, which costs 10000 mints, and
+`LIFECYCLE_INDEXER=0` skips the diff.
+
+```bash
+anvil --port 8545 --gas-limit 5000000000   # the apex section folds 10000 origins per transaction
+./script/deploy.sh anvil
+./script/lifecycle.sh anvil
 ```
 
 ### Against a mainnet fork
@@ -463,7 +491,7 @@ the two commands above. One command from the repo root:
 
 This boots (or reuses) the dev chain, deploys the contracts, then runs
 `preview/scripts/simulateHistory.ts` against it: roughly six weeks of dated activity across 30
-wallets, exercising every external function of `Shapes`, `ShapeLens` and `ShapeAuctionHouse`
+wallets, exercising every external function of `Shapes` and `ShapeAuctionHouse`
 several times each from different wallets, including full auction lifecycles, and ending with a
 curated set of presents sent to the browsing wallet. It then copies the deployment to
 `web/public/deployment.local.json` (gitignored, never the tracked `deployment.json`), which the
@@ -637,8 +665,8 @@ id selects the required denomination ladder — mainnet requires the mainnet lad
 testnet ladder, anvil accepts either — and any other chain id reverts. It sends the minimum
 denomination to `Shapes`, which mints backed Shape #0 to the deployer, then asserts every
 deployment value landed as intended, smoke-tests the renderer, verifies `artist()` is the
-deployer and that Shapes begins with an empty artist release hash and signature, and proves the
-lens previews what the token executes (see below) before reporting success.
+deployer and that Shapes begins with an empty artist release hash and signature, registers the
+auction house as the `market` pointer, and reads both pointers back before reporting success.
 
 One wrapper, `script/deploy.sh <anvil|sepolia|mainnet>`, runs it for every target through the
 same code path, sourcing `script/env/<name>.env` for the values that differ: chain id, Foundry
@@ -650,12 +678,21 @@ simulation with no wallet, broadcast, or verification.
 anvil                       # in one shell
 ./script/deploy.sh anvil    # in another
 
-./script/e2e-anvil.sh       # mint all nine, transfer, redeem, verify
+./script/lifecycle.sh anvil # walk every entrypoint against what was just deployed
 ```
 
 Sepolia and mainnet sign with the ripe0x Foundry keystore (interactive prompt, or
 `KEYSTORE_PASSWORD_FILE` to read the password from a file instead of a prompt). Both require a
 fetched, clean, exact `main` to deploy from; the wrapper checks and refuses otherwise.
+
+Setting `ALLOW_BRANCH_DEPLOY=1` opts into deploying from a feature branch instead of main, for a
+target whose env file sets `BRANCH_DEPLOY_ALLOWED=true` (anvil and Sepolia; never mainnet, so a
+rehearsal can run from a branch without ever touching mainnet's guard). Without the env file's
+opt-in the wrapper refuses outright, `DRY_RUN` included. With it, the "must run from main" and
+"local main is not the fetched origin/main commit" guards are replaced with the same check against
+the current branch: `HEAD` must equal the fetched `origin/<branch>` commit. The dirty-tree and
+untracked-file guards apply either way. Every deploy, branch or main, records the deployed commit
+and branch as `commit` and `branch` in `deployments/<chainId>.json`.
 
 ```bash
 DRY_RUN=1 script/deploy.sh sepolia   # guards + simulation, nothing broadcast or written
@@ -674,9 +711,11 @@ script/deploy.sh mainnet
 After a real broadcast, the wrapper reads the broadcast artifact, reads back every deployed
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
-`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
-`mintFeeWei`, `mintStart`, `fromBlock`, `auctionId`, `artistReleaseHash`). Cutover to the site is a file copy. `deployments/31337.json` is
-gitignored; Sepolia and mainnet records are committed.
+`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `auctionHouse`, `mintFeeWei`,
+`mintStart`, `libraries`, `fromBlock`, `auctionId`, `artistReleaseHash`, `commit`, `branch`).
+`libraries` maps each linked library's contract name to its address, taken from the broadcast's
+`libraries` array; the site's `/contracts` page reads it. Cutover to the site is a file copy.
+`deployments/31337.json` is gitignored; Sepolia and mainnet records are committed.
 
 Setting `LIST_OWNER_TOKEN=1` (as a shell export, which wins over the env file, or set directly in
 the env file) opts into listing the owner token (#0) in the auction house right after the
@@ -705,24 +744,12 @@ already-attested chain. `DRY_RUN=1` prints what would be signed and submits noth
 multiple valid signatures for competing hashes because any relayer holding one can submit it
 first.
 
-`Deploy.s.sol` also proves the lens previews what the token executes. `ShapeLens.previewCompose`
-matches `Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the
-same deployment, so the script mints a probe token, splits it, composes it back, and requires the
-preview to equal the resulting core state byte for byte. The probe runs in the `forge script`
-simulation and is never broadcast: no probe token, no ETH, no token ids consumed.
-
-Redeploying the lens on its own runs the same check against the live token:
-
-```bash
-SHAPES_ADDRESS=0x... forge script script/DeployLens.s.sol --rpc-url $RPC   # dry run first
-```
-
 ## Deployed addresses
 
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
 | Mainnet | not deployed | not deployed |
-| Sepolia | `0xd4e7134cd9fbcb1f48d9e2cc460f2afa40b621b8` | `0x05f70c867f2e4a26ed98e33b59895db09ed12f2c` |
+| Sepolia | `0x5e742dc6c91b7090de9642ca54d68a1422d1fb24` | `0xbc80c7027d8dfdfc22b2af35b0d220cb259088aa` |
 
 The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
 mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in

@@ -9,17 +9,9 @@ import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Recei
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
-import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
-import {IShapes} from "../src/interfaces/IShapes.sol";
-import {
-    IShapeProvenance,
-    IShapeRecomposition,
-    IShapeValue,
-    ShapeChildPreview,
-    ShapeFormation,
-    ShapeState
-} from "../src/interfaces/IShapeCapabilities.sol";
+import {IShapes, IShapeProvenance, IShapeRecomposition, IShapeValue} from "../src/interfaces/IShapes.sol";
+import {ShapeChildPreview, ShapeFormation, ShapeState} from "../src/ShapeTypes.sol";
 import {IShapeGeometry} from "../src/interfaces/IShapeGeometry.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
@@ -44,16 +36,10 @@ contract ComposabilityTest is Test {
         Denominations.amountAt(7),
         Denominations.amountAt(8)
     ];
-    /// @dev Default collection copy Shapes seeds at construction, for direct collection calls.
-    string internal constant COLLECTION_NAME = "Shapes";
-    string internal constant COLLECTION_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
-        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
-        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
 
     Shapes internal shapes;
     ShapeRenderer internal renderer;
     ShapeCollection internal collection;
-    ShapeLens internal lens;
     ComposableReceiver internal receiver;
 
     address internal alice = makeAddr("alice");
@@ -62,11 +48,11 @@ contract ComposabilityTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection), 0
+            Denominations.UNIT / 10, feeRecipient, address(renderer), 0
         );
-        lens = new ShapeLens(address(shapes));
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         receiver = new ComposableReceiver();
         vm.deal(alice, 1_000 ether);
     }
@@ -85,8 +71,8 @@ contract ComposabilityTest is Test {
         first = shapes.mintBatch{value: count * (DENOMS[0] + _fee(DENOMS[0]))}(DENOMS[0], count);
     }
 
-    /// @notice The deterministic-preview capability (previewCompose/previewSplit) moved off
-    ///         `Shapes` onto `ShapeLens`; `Shapes` no longer advertises it.
+    /// @notice The three capability ids `Shapes` advertises, pinned so a member added to or
+    ///         removed from one of them cannot change an id unnoticed.
     function test_AdvertisesGranularCapabilities() public view {
         assertEq(type(IShapeValue).interfaceId, bytes4(0xd07d718a), "IShapeValue id changed");
         assertTrue(shapes.supportsInterface(type(IShapeValue).interfaceId));
@@ -101,7 +87,7 @@ contract ComposabilityTest is Test {
 
     /// @notice Regression for a review finding: relocating view/pure functions off `Shapes` (issue
     ///         #21, size recovery) left `supportsInterface` advertising `IShapeValue` and
-    ///         `IShapeProvenance` while some of their members existed only on `ShapeLens`, so a
+    ///         `IShapeProvenance` while some of their members lived on a separate contract, so a
     ///         caller that gates on ERC-165 and then calls the missing selector would revert. An
     ///         advertised capability must never contain an unimplemented selector: this exercises
     ///         every view/pure member of each capability interface through a handle typed to that
@@ -119,7 +105,7 @@ contract ComposabilityTest is Test {
 
         assertTrue(shapes.supportsInterface(type(IShapeRecomposition).interfaceId));
         // IShapeRecomposition declares only state-changing members (compose/decompose/split/
-        // sacrifice); nothing view/pure to exercise beyond the interface id itself.
+        // burnBacking); nothing view/pure to exercise beyond the interface id itself.
 
         assertTrue(shapes.supportsInterface(type(IShapeProvenance).interfaceId));
         IShapeProvenance provenance = IShapeProvenance(address(shapes));
@@ -138,7 +124,7 @@ contract ComposabilityTest is Test {
 
     function test_CanonicalStateAndDenominationReads() public {
         uint256 id = _mint(alice, DENOMS[4]);
-        ShapeState memory state = lens.shapeState(id);
+        ShapeState memory state = shapes.shapeState(id);
 
         assertEq(state.seed, shapes.seedOf(id));
         assertEq(state.denominationIndex, 4);
@@ -158,8 +144,10 @@ contract ComposabilityTest is Test {
 
     function test_TokenUnicodeCardMatchesCanonicalRenderer() public {
         uint256 id = _mint(alice, DENOMS[4]);
-        ShapeState memory state = lens.shapeState(id);
-        assertEq(lens.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene));
+        ShapeState memory state = shapes.shapeState(id);
+        assertEq(
+            shapes.unicodeCard(id), renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene)
+        );
     }
 
     function test_PreviewComposeReturnsCompleteResultAndMatchesExecution() public {
@@ -169,7 +157,7 @@ contract ComposabilityTest is Test {
             burnIds[i] = first + i + 1;
         }
 
-        ShapeState memory preview = lens.previewCompose(first, burnIds);
+        ShapeState memory preview = shapes.previewCompose(first, burnIds);
         assertEq(preview.seed, shapes.seedOf(first));
         assertEq(preview.denominationIndex, 1);
         assertEq(preview.originCount, 5);
@@ -179,7 +167,7 @@ contract ComposabilityTest is Test {
 
         vm.prank(alice);
         shapes.compose(first, burnIds);
-        ShapeState memory actual = lens.shapeState(first);
+        ShapeState memory actual = shapes.shapeState(first);
         assertEq(keccak256(abi.encode(actual)), keccak256(abi.encode(preview)));
     }
 
@@ -190,7 +178,7 @@ contract ComposabilityTest is Test {
         outs[0] = 1;
         outs[1] = 1;
 
-        ShapeChildPreview[] memory preview = lens.previewSplit(parent, outs);
+        ShapeChildPreview[] memory preview = shapes.previewSplit(parent, outs);
         assertEq(preview.length, 2);
         assertEq(preview[0].seed, shapes.childSeed(parentSeed, 0));
         assertEq(preview[1].seed, shapes.childSeed(parentSeed, 1));
@@ -201,7 +189,7 @@ contract ComposabilityTest is Test {
         vm.prank(alice);
         uint256[] memory children = shapes.split(parent, outs);
         for (uint256 i = 0; i < children.length; ++i) {
-            ShapeState memory actual = lens.shapeState(children[i]);
+            ShapeState memory actual = shapes.shapeState(children[i]);
             assertEq(actual.seed, preview[i].seed);
             assertEq(actual.denominationIndex, preview[i].denominationIndex);
             assertEq(actual.originCount, preview[i].originCount);
@@ -216,11 +204,55 @@ contract ComposabilityTest is Test {
 
     /* ------------------------- preview validation ------------------------- */
 
-    /// @notice The lens holds no state, so a zero `shapes` would make every view a silent
-    ///         nothing rather than a revert. It is refused at construction.
-    function test_LensConstructorRejectsAZeroShapes() public {
-        vm.expectRevert(bytes("shapes is zero"));
-        new ShapeLens(address(0));
+    /// @notice The previews do not apply the ownership gate. Alice holds the inputs, bob's
+    ///         execution is refused `NotShapeOwner`, and both previews answer regardless of who
+    ///         asks or who holds them.
+    function test_PreviewsAnswerWithoutTheOwnershipGate() public {
+        uint256 first = _mintDust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, first, bob));
+        shapes.compose(first, burn);
+        vm.prank(bob);
+        ShapeState memory composed = shapes.previewCompose(first, burn);
+        assertEq(composed.denominationIndex, 1, "compose preview refused a non-holder");
+
+        uint256 parent = _mint(alice, DENOMS[2]);
+        uint8[] memory outs = new uint8[](2);
+        outs[0] = 1;
+        outs[1] = 1;
+
+        vm.prank(bob);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, parent, bob));
+        shapes.split(parent, outs);
+        vm.prank(bob);
+        ShapeChildPreview[] memory children = shapes.previewSplit(parent, outs);
+        assertEq(children.length, 2, "split preview refused a non-holder");
+
+        // The holder's own preview answers the same way.
+        assertEq(shapes.previewSplit(parent, outs).length, 2, "the holder's preview disagreed");
+    }
+
+    /// @notice A token can only be burned into the survivor once. Compose and its preview report
+    ///         that with the same error and the same id.
+    function test_ComposeAndPreviewRejectARepeatedInputAlike() public {
+        uint256 first = _mintDust(3);
+        uint256[] memory burn = new uint256[](2);
+        burn[0] = first + 1;
+        burn[1] = first + 1;
+
+        vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
+        shapes.previewCompose(first, burn);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
+        shapes.compose(first, burn);
+
+        assertEq(shapes.ownerOf(first + 1), alice, "the rejected compose moved nothing");
+        assertEq(shapes.composeDepth(first), 0, "the rejected compose recorded nothing");
     }
 
     /// @notice `previewCompose` applies `Shapes`'s own validation before computing anything, so
@@ -228,16 +260,16 @@ contract ComposabilityTest is Test {
     function test_PreviewComposeRejectsWhatComposeRejects() public {
         uint256 first = _mintDust(6);
 
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
-        lens.previewCompose(first, new uint256[](0));
+        vm.expectRevert(IShapes.NoComposeInputs.selector);
+        shapes.previewCompose(first, new uint256[](0));
         vm.prank(alice);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(IShapes.NoComposeInputs.selector);
         shapes.compose(first, new uint256[](0));
 
         uint256[] memory self = new uint256[](1);
         self[0] = first;
         vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
-        lens.previewCompose(first, self);
+        shapes.previewCompose(first, self);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
         shapes.compose(first, self);
@@ -251,7 +283,7 @@ contract ComposabilityTest is Test {
         uint8[] memory single = new uint8[](1);
         single[0] = 2; // the parent's own denomination
         vm.expectRevert(abi.encodeWithSelector(IShapes.SplitTooFewOutputs.selector));
-        lens.previewSplit(parent, single);
+        shapes.previewSplit(parent, single);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SplitTooFewOutputs.selector));
         shapes.split(parent, single);
@@ -260,12 +292,12 @@ contract ComposabilityTest is Test {
         shortfall[0] = 1; // 0.05
         shortfall[1] = 0; // 0.01, so 0.06 against a 0.1 parent
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
+            abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
         );
-        lens.previewSplit(parent, shortfall);
+        shapes.previewSplit(parent, shortfall);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
+            abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
         );
         shapes.split(parent, shortfall);
     }
@@ -294,11 +326,11 @@ contract ComposabilityTest is Test {
             if (id != hi && id != lo) burnIds[filled++] = id;
         }
 
-        ShapeState memory preview = lens.previewCompose(hi, burnIds);
+        ShapeState memory preview = shapes.previewCompose(hi, burnIds);
         vm.prank(alice);
         shapes.compose(hi, burnIds);
         assertEq(
-            keccak256(abi.encode(lens.shapeState(hi))),
+            keccak256(abi.encode(shapes.shapeState(hi))),
             keccak256(abi.encode(preview)),
             "preview diverged from execution"
         );
@@ -315,15 +347,15 @@ contract ComposabilityTest is Test {
         vm.prank(alice);
         shapes.compose(first, burnIds);
 
-        ShapeState memory state = lens.shapeState(first);
+        ShapeState memory state = shapes.shapeState(first);
         assertGt(state.modules.length, 0, "a compose survivor is materialized");
         assertEq(
-            lens.unicodeCard(first),
+            shapes.unicodeCard(first),
             renderer.renderUnicodeSampled(state.modules, state.faceValueWei, state.inkGene),
             "card must come from the stored modules"
         );
         assertTrue(
-            keccak256(bytes(lens.unicodeCard(first)))
+            keccak256(bytes(shapes.unicodeCard(first)))
                 != keccak256(bytes(renderer.renderUnicode(state.seed, state.faceValueWei, state.inkGene))),
             "the seed path would have rendered a different card"
         );
@@ -511,16 +543,12 @@ contract ComposabilityTest is Test {
     /// @notice `contractURI` is the collection contract's metadata, served unchanged by the token.
     function test_ContractUriIsTheCollectionsMetadata() public view {
         string memory uri = shapes.contractURI();
-        assertEq(
-            uri,
-            collection.contractURI(COLLECTION_NAME, COLLECTION_DESCRIPTION),
-            "token diverged from collection"
-        );
+        assertEq(uri, collection.contractURI(), "token diverged from collection");
 
         string memory prefix = "data:application/json;base64,";
         assertEq(_head(uri, bytes(prefix).length), prefix, "not a json data uri");
 
-        string memory json = collection.json(COLLECTION_NAME, COLLECTION_DESCRIPTION);
+        string memory json = collection.json();
         assertTrue(_contains(json, '"name":"Shapes"'), "no collection name");
         assertTrue(_contains(json, '"description":"'), "no collection description");
         assertTrue(_contains(json, '"image":"data:image/svg+xml;base64,'), "no inline image");
@@ -550,19 +578,15 @@ contract ComposabilityTest is Test {
     }
 
     function test_ContractUriFollowsTheCollection() public {
-        ShapeCollection next = new ShapeCollection(address(renderer));
+        ShapeCollection next = new ShapeCollection(renderer, shapes);
         shapes.setCollection(address(next));
-        assertEq(
-            shapes.contractURI(),
-            next.contractURI(COLLECTION_NAME, COLLECTION_DESCRIPTION),
-            "did not follow the new collection"
-        );
+        assertEq(shapes.contractURI(), next.contractURI(), "did not follow the new collection");
     }
 
     function test_PresentationLockFreezesTheCollectionToo() public {
-        shapes.lockRenderer();
-        ShapeCollection next = new ShapeCollection(address(renderer));
-        vm.expectRevert(IShapes.RendererIsLocked.selector);
+        shapes.lockPresentation();
+        ShapeCollection next = new ShapeCollection(renderer, shapes);
+        vm.expectRevert(IShapes.PresentationIsLocked.selector);
         shapes.setCollection(address(next));
     }
 

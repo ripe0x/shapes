@@ -21,7 +21,9 @@ import {GENE_PROBABILITY} from "./ink";
 import {
   CANONICAL,
   DESCRIPTION,
+  OWNER_TOKEN_DESCRIPTION,
   composeShape,
+  descriptionFor,
   geometryAt,
   metadataJsonFromComposition,
   seedHex,
@@ -99,7 +101,7 @@ function packedKeccakUint(types: readonly string[], values: readonly unknown[]):
  */
 export function effectiveModuleBytes(donor: SampleDonor, p: Params = CANONICAL): Uint8Array {
   requireDenomIndex(donor.denomIndex, "donor.denomIndex");
-  if (donor.modules) {
+  if (donor.modules && donor.modules.length > 0) {
     if (!isValidModuleArray(donor.modules)) {
       throw new Error("donor.modules contains an invalid module byte");
     }
@@ -524,6 +526,7 @@ export function sampledTokenMetadataJson(
   description: string = DESCRIPTION,
   p: Params = CANONICAL,
   splitFrom?: SplitFrom,
+  ownerTokenDescription: string = OWNER_TOKEN_DESCRIPTION,
 ): string {
   const c = composeSampledShape(modules, denomIndex, inkGene, p);
   const svg = svgFromComposition(c, tokenId, p, inverted);
@@ -536,7 +539,7 @@ export function sampledTokenMetadataJson(
     inkGene,
     composeDepth,
     namePrefix,
-    description,
+    descriptionFor(tokenId, description, ownerTokenDescription),
     splitFrom,
   );
 }

@@ -286,4 +286,11 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         a = _auctions[auctionId];
         if (a.seller == address(0)) revert AuctionNotFound(auctionId);
     }
+
+    /// @notice ERC-165. Answers for `IShapeAuctionHouse` and `IERC165`.
+    /// @dev `Shapes.setPointer` requires the market pointer's target to answer for
+    ///      `IShapeAuctionHouse` before it will store the address.
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IShapeAuctionHouse).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
 }

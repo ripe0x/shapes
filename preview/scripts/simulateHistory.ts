@@ -1,6 +1,6 @@
 /**
  * Simulate roughly six weeks of lived-in Shapes activity on a local dev chain: 30 wallets,
- * every external function of `Shapes`, `ShapeLens` and `ShapeAuctionHouse` exercised several
+ * every external function of `Shapes` and `ShapeAuctionHouse` exercised several
  * times each, dated across `DAYS` simulated days so the site's gallery, token history, lineage
  * and auction views all have real content to render.
  *
@@ -108,7 +108,7 @@ const REQUIRED_FUNCTIONS = [
   "redeemBatch",
   "redeemBatchTo",
   "burn",
-  "sacrifice",
+  "burnBacking",
   "transferFrom",
   "safeTransferFrom",
   "setApprovalForAll",
@@ -451,7 +451,7 @@ async function main() {
   }
 
   /** A genuine apex Complete: 10,000 x 0.01 composed to ten 10 ETH tokens, then to one 100 ETH
-   *  apex, in a single composeMany transaction, then sacrificed. */
+   *  apex, in a single composeMany transaction, then its backing burned. */
   async function apexScene(): Promise<{apex: bigint; actor: number}> {
     // Ten separate compose transactions, not one composeMany: a single tx bundling all 10,000
     // burns emits far more log data than an RPC response can carry (the receipt alone exceeds
@@ -464,12 +464,12 @@ async function main() {
       tens.push(await sim.compose(actor, batch[0]!, batch.slice(1))); // -> 10 ETH
     }
     const apex = await sim.compose(actor, tens[0]!, tens.slice(1)); // 10 x 10 ETH -> 100 ETH
-    await sim.sacrifice(actor, apex);
+    await sim.burnBacking(actor, apex);
     return {apex, actor};
   }
 
-  /** A live 100 ETH token walked up the whole ladder (never sacrificed): a genuinely "deep
-   *  composed apex", distinct from the sacrificed apexes above. */
+  /** A live 100 ETH token walked up the whole ladder (backing never burned): a genuinely "deep
+   *  composed apex", distinct from the burned apexes above. */
   async function deepApexScene() {
     const actor = pick(richWallets);
     const leaves: bigint[] = [];
@@ -565,7 +565,7 @@ async function main() {
       const di = pick([0, 0, 0, 1, 1, 2, 2, 3, 4]); // weighted toward small denominations
       const useBatch = rng() < 0.2;
       const toks = useBatch ? await sim.mint(a, di, randInt(2, 5)) : await sim.mint(a, di, 1);
-      await sim.shapeState(toks[0]!); // daily lens sample, against a token known to be live
+      await sim.shapeState(toks[0]!); // daily state sample, against a token known to be live
       const roll = rng();
       if (roll < 0.4) {
         const b = pickExcept(wallets, [a]);
@@ -656,7 +656,7 @@ async function main() {
   console.log("\npresents for the browsing wallet:");
   await sim.transfer(ctx.deepApexOwner!, PRESENTS_TO, ctx.deepApex!);
   console.log(`  #${ctx.deepApex} - deep composed apex (100 ETH, walked the full ladder)`);
-  console.log(`  #${ctx.black1} - the Black Shape (a sacrificed apex, 100 ETH burned)`);
+  console.log(`  #${ctx.black1} - the Black Shape (an apex with backing burned, 100 ETH burned)`);
   await sim.transfer(ctx.pureApexOwner!, PRESENTS_TO, ctx.pureApex!);
   console.log(`  #${ctx.pureApex} - a pure direct 100 ETH, one mint, untouched`);
   await sim.transfer(ctx.stackedOwner!, PRESENTS_TO, ctx.stackedSurvivor!);
@@ -672,11 +672,11 @@ async function main() {
 
   /* -------------------------------- totals -------------------------------- */
 
-  const [supply, reserve, pendingFees, blackCount, auctionCount] = await Promise.all([
+  const [supply, reserve, pendingFees, blackShapeCount, auctionCount] = await Promise.all([
     sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "totalSupply"}),
     sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "redeemableBacking"}),
     sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "pendingFees"}),
-    sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "blackCount"}),
+    sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "blackShapeCount"}),
     sim.pub.readContract({address: dep.auctionHouse!, abi: auctionHouseAbi, functionName: "auctionCount"}),
   ]);
 
@@ -685,7 +685,7 @@ async function main() {
   console.log(`  live supply: ${supply}`);
   console.log(`  reserve: ${reserve} wei`);
   console.log(`  pendingFees: ${pendingFees} wei`);
-  console.log(`  black count: ${blackCount}`);
+  console.log(`  Black Shape count: ${blackShapeCount}`);
   console.log(`  auctions created: ${auctionCount}`);
   console.log(`  auctions settled: ${ctx.auctionsSettled}`);
   console.log(`  auctions cancelled: ${ctx.auctionsCancelled}`);

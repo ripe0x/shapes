@@ -1,10 +1,9 @@
 import {parseAbi} from "viem";
 import {DENOMINATIONS as CANONICAL_AMOUNTS, LABELS as CANONICAL_LABELS} from "../canonical/denominations";
 
-// The subset of the Shapes ERC721 the chain tester calls. Human-readable form; viem parses it
-// to the full ABI at import. `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`,
-// `composeRecordAt`, `splitOriginOf`, `exists`, `positionOf` and the raw denomination-grid/
-// support lookups moved to `ShapeLens` (see `shapeLensAbi` below) and are not declared here.
+// The subset of the Shapes ERC721 the chain tester and the site call. Human-readable form; viem
+// parses it to the full ABI at import. Every protocol action, view and preview is on this one
+// contract, so there is no second address to configure.
 export const shapesAbi = parseAbi([
   "struct ComposeCall { uint256 survivorId; uint256[] burnIds; }",
   "function mint(uint256 amountWei) payable returns (uint256 tokenId)",
@@ -31,7 +30,7 @@ export const shapesAbi = parseAbi([
   "function split(uint256 tokenId, uint8[] outDenoms) returns (uint256[] newIds)",
   "function splitTo(uint256 tokenId, uint8[] outDenoms, address recipient) returns (uint256[] newIds)",
   "function composeDepth(uint256 survivorId) view returns (uint256)",
-  "function sacrifice(uint256 tokenId)",
+  "function burnBacking(uint256 tokenId)",
   "function burn(uint256 tokenId)",
   "function valueOf(uint256 tokenId) view returns (uint256)",
   "function denomIndexOf(uint256 tokenId) view returns (uint8)",
@@ -54,8 +53,10 @@ export const shapesAbi = parseAbi([
   "function setFeeRecipient(address newRecipient)",
   "function setMintFee(uint256 newFee)",
   "function pendingFees() view returns (uint256)",
-  "function withdrawFees()",
-  "function setMetadataCopy(string tokenNamePrefix_, string description_)",
+  "function feesOwedTo(address recipient) view returns (uint256)",
+  "function withdrawFees(address recipient)",
+  "function refreshMetadata()",
+  "function collection() view returns (address)",
   "function positions() view returns (address target, bool locked)",
   "function market() view returns (address target, bool locked)",
   "function setPointer(uint8 pointer, address target)",
@@ -65,11 +66,11 @@ export const shapesAbi = parseAbi([
   "function seedOf(uint256 tokenId) view returns (bytes32)",
   "function originCountOf(uint256 tokenId) view returns (uint256)",
   "function inkGeneOf(uint256 tokenId) view returns (uint8)",
-  "function isBlack(uint256 tokenId) view returns (bool)",
+  "function isBlackShape(uint256 tokenId) view returns (bool)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function redeemableBacking() view returns (uint256)",
-  "function sacrificedBacking() view returns (uint256)",
-  "function blackCount() view returns (uint256)",
+  "function burnedBacking() view returns (uint256)",
+  "function blackShapeCount() view returns (uint256)",
   "function totalSupply() view returns (uint256)",
   "function totalMinted() view returns (uint256)",
   "function mintFee() view returns (uint256)",
@@ -84,7 +85,7 @@ export const shapesAbi = parseAbi([
   "event Decomposed(uint256 indexed survivorId, uint256[] restoredIds, uint8 survivorDenomIndex, uint32 survivorOriginCount)",
   "event Split(uint256 indexed tokenId, bytes32 indexed parentSeed, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts)",
   "event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId)",
-  "event Blackened(uint256 indexed tokenId, uint256 sacrificedWei)",
+  "event BlackShapeCreated(uint256 indexed tokenId, uint256 burnedWei)",
   "event PositionsSet(address indexed positions)",
   "event PositionsLocked(address indexed positions)",
   "event MarketSet(address indexed market)",
@@ -95,39 +96,6 @@ export const shapesAbi = parseAbi([
   "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
-  "error UnsupportedDenomination(uint256 amountWei)",
-  "error IncorrectPayment(uint256 expected, uint256 provided)",
-  "error ZeroQuantity()",
-  "error ArtistAlreadyAttested()",
-  "error InvalidArtistReleaseHash()",
-  "error InvalidArtistSignature()",
-  "error NotShapeOwner(uint256 tokenId, address caller)",
-  "error EthTransferFailed(address to, uint256 amountWei)",
-  "error MintFeeTransferFailed(address recipient, uint256 amountWei)",
-  "error DirectDepositRejected()",
-  "error SelfCustodyRejected(uint256 tokenId)",
-  "error RendererIsLocked()",
-  "error TokenIsBlack(uint256 tokenId)",
-  "error InvalidPointerTarget()",
-  "error PointerIsLocked()",
-  "error InvalidPointer()",
-  "error AdminInvalidFeeRecipient(address recipient)",
-  "error EmptyRecomposition()",
-  "error CannotComposeWithSelf(uint256 tokenId)",
-  "error SplitMismatch(uint256 inputBacking, uint256 outputSum)",
-  "error NoComposeRecord(uint256 survivorId)",
-  "error NotApexComplete(uint256 tokenId)",
-  "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
-  "error NotASplitChild(uint256 tokenId)",
-  "error DuplicateComposeInput(uint256 tokenId)",
-  "error NoOwnerToken()",
-  "error MintNotOpen()",
-]);
-
-// ShapeLens: the read-only periphery holding `shapeState`, `previewCompose`, `previewSplit`,
-// `unicodeCard`, `composeRecordAt` and `splitOriginOf`, moved off `Shapes` to keep the token's
-// runtime bytecode under the EIP-170 size limit. Deployed separately; see `Deployment.lens`.
-export const shapeLensAbi = parseAbi([
   "struct ShapeChildPreview { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; bytes modules; }",
   "struct ShapeState { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bool isBlack; uint8 formation; uint256 faceValueWei; uint256 redeemableValueWei; bytes modules; }",
   "struct ComposeInputView { uint256 id; bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bytes modules; }",
@@ -141,19 +109,76 @@ export const shapeLensAbi = parseAbi([
   "function exists(uint256 tokenId) view returns (bool)",
   "function positionOf(uint256 tokenId) view returns (address)",
   "function isSupportedDenomination(uint256 amountWei) pure returns (bool)",
-  "function gridForAmount(uint256 amountWei) pure returns (uint256 cols, uint256 rows)",
-  "function modulesForAmount(uint256 amountWei) pure returns (uint256)",
-  // Custom errors, from IShapes.sol, that previewCompose/previewSplit/composeRecordAt apply the
-  // same validation as the mutating calls and revert with, so a revert decodes to a named error.
-  "error CannotComposeWithSelf(uint256 tokenId)",
-  "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
-  "error DenominationIndexOutOfRange(uint256 index)",
-  "error DuplicateComposeInput(uint256 tokenId)",
-  "error EmptyRecomposition()",
-  "error SplitMismatch(uint256 inputBacking, uint256 outputSum)",
-  "error TokenIsBlack(uint256 tokenId)",
+  // Every error IShapes declares, plus the three from IAdminControl and the one Denominations
+  // throws through `split`, so a revert from the token always decodes to a name.
   "error UnsupportedDenomination(uint256 amountWei)",
+  "error IncorrectPayment(uint256 expected, uint256 provided)",
+  "error ZeroQuantity()",
+  "error ArtistAlreadyAttested()",
+  "error InvalidArtistReleaseHash()",
+  "error InvalidArtistSignature()",
+  "error NotShapeOwner(uint256 tokenId, address caller)",
+  "error EthTransferFailed(address to, uint256 amountWei)",
+  "error InvalidRecipient(address recipient)",
+  "error NoFeesPending()",
+  "error MintFeeAboveCap(uint256 fee)",
+  "error DirectDepositRejected()",
+  "error MintNotOpen()",
+  "error SelfCustodyRejected(uint256 tokenId)",
+  "error PresentationIsLocked()",
+  "error UnsupportedRenderer(address renderer)",
+  "error UnsupportedCollection(address collection)",
+  "error CollectionNotSet()",
+  "error TokenIsBlack(uint256 tokenId)",
+  "error NoComposeInputs()",
+  "error CannotComposeWithSelf(uint256 tokenId)",
+  "error SplitSumMismatch(uint256 inputBacking, uint256 outputSum)",
+  "error SplitTooFewOutputs()",
+  "error NoComposeRecord(uint256 survivorId)",
+  "error NotApexComplete(uint256 tokenId)",
+  "error DuplicateComposeInput(uint256 tokenId)",
+  "error InvalidPointerTarget()",
+  "error PointerIsLocked()",
+  "error InvalidPointer()",
+  "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
+  "error NotASplitChild(uint256 tokenId)",
+  "error NoOwnerToken()",
+  "error AdminUnauthorizedAccount(address account)",
+  "error AdminInvalidAdmin(address admin)",
+  "error AdminInvalidFeeRecipient(address recipient)",
+  "error DenominationIndexOutOfRange(uint256 index)",
 ]);
+
+
+// The collection metadata contract. It stores the token name prefix, the shared description and
+// the owner token's own description, all read back by `Shapes.tokenURI` and `Shapes.contractURI`
+// and editable by the Shapes admin until `Shapes.lockPresentation` freezes them.
+export const shapeCollectionAbi = parseAbi([
+  "function renderer() view returns (address)",
+  "function shapes() view returns (address)",
+  "function tokenNamePrefix() view returns (string)",
+  "function description() view returns (string)",
+  "function ownerTokenDescription() view returns (string)",
+  "function setMetadataCopy(string tokenNamePrefix_, string description_, string ownerTokenDescription_)",
+  "function contractURI() view returns (string)",
+  "function image() view returns (string)",
+  "function imageFor(bytes32 root) view returns (string)",
+  "function card(uint8 denomIndex) view returns (string)",
+  "function cardFor(bytes32 cardSeed, uint8 denomIndex) view returns (string)",
+  "event MetadataCopySet(string tokenNamePrefix, string description, string ownerTokenDescription)",
+  "error InvalidCopy(uint8 field)",
+  "error DenominationIndexOutOfRange(uint256 index)",
+  "error PresentationIsLocked()",
+  "error AdminUnauthorizedAccount(address account)",
+]);
+
+/** The public libraries whose addresses are linked into `Shapes` at deploy time. */
+export type LibraryName =
+  | "RecompositionOps"
+  | "AdminOps"
+  | "ComposeCompute"
+  | "GeometrySampling"
+  | "InkGenes";
 
 export interface Deployment {
   rpc: string;
@@ -165,11 +190,6 @@ export interface Deployment {
   /** Permanent deployer attribution. Optional while deployment metadata still targets a
    *  pre-attribution contract; the site also attempts to read it directly from Shapes. */
   artist?: `0x${string}`;
-  /** ShapeLens: the read-only periphery contract. The DNA/provenance section and other
-   *  lens-backed reads have nothing to call without it; see the per-call fallbacks in
-   *  `site/dna.ts` and `site/TokenView.tsx` for what happens when it is absent from
-   *  `deployment.json` (a stale file from before the lens split). */
-  lens: `0x${string}`;
   renderer: `0x${string}`;
   collection?: `0x${string}`;
   auctionHouse?: `0x${string}`;
@@ -181,9 +201,17 @@ export interface Deployment {
    *  `mintStartOf` for parsing this field on its own, e.g. before that load completes). Absent or
    *  "0" means open at deploy. */
   mintStart?: string;
+  /** Linked library addresses, from the deploy broadcast's `libraries` array. A value is null,
+   *  or the key absent, on a record written before this key existed; the contracts page shows
+   *  such a library as not recorded. */
+  libraries?: Partial<Record<LibraryName, `0x${string}` | null>>;
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
   fromBlock?: number;
+  /** Git commit and branch `script/deploy.sh` was run from. Absent on a record written before
+   *  these keys existed. */
+  commit?: string;
+  branch?: string;
 }
 
 /** Parses `Deployment.mintStart` (a JSON string) to the unix-seconds bigint the site computes
@@ -193,6 +221,16 @@ export function mintStartOf(dep: Pick<Deployment, "mintStart">): bigint {
     return dep.mintStart ? BigInt(dep.mintStart) : 0n;
   } catch {
     return 0n;
+  }
+}
+
+/** Parses `Deployment.mintFeeWei` (a JSON string) to the wei bigint it records. Null when
+ *  missing, empty, or non-numeric, distinct from a recorded zero fee. */
+export function mintFeeOf(dep: Pick<Deployment, "mintFeeWei">): bigint | null {
+  try {
+    return dep.mintFeeWei ? BigInt(dep.mintFeeWei) : null;
+  } catch {
+    return null;
   }
 }
 

@@ -8,6 +8,8 @@ import {txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
+import {awaitSuccessfulReceipt, bufferGas} from "./tx";
+import {clearStoredActionNotice, storeActionNotice, takeStoredActionNotice, type ActionNotice} from "./actionNotice";
 import {MintView} from "./MintView";
 import {MintPanel} from "./MintPanel";
 import {GalleryView} from "./GalleryView";
@@ -16,12 +18,24 @@ import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AuctionView} from "./AuctionView";
-import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
+import {breakdown, isAuctionActive, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
 
-export type View = "home" | "mint" | "auction" | "gallery" | "collection" | "token" | "manage";
+// The generated contract documentation is large and only this view reads it, so it loads on
+// demand rather than riding in the main bundle.
+const ContractsView = React.lazy(() => import("./ContractsView"));
+
+export type View =
+  | "home"
+  | "mint"
+  | "auction"
+  | "gallery"
+  | "collection"
+  | "token"
+  | "manage"
+  | "contracts";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -74,6 +88,7 @@ export function SiteApp({
   const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
+  const [ownerOnly, setOwnerOnly] = React.useState(false);
   const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection">("gallery");
   const [composeMode, setComposeMode] = React.useState(false);
   const [composeDraft, setComposeDraft] = React.useState<ComposeDraft>({
@@ -91,12 +106,17 @@ export function SiteApp({
   const [auction, setAuction] = React.useState<AuctionSlot>("loading");
   const [lotImage, setLotImage] = React.useState<string | null>(null);
   const [txHash, setTxHash] = React.useState<string | null>(null);
-  const [actionNotice, setActionNotice] = React.useState<{
-    title: string;
-    detail: string;
-    hash: string;
-    tokenIds: bigint[];
-  } | null>(null);
+  // A route change right after a write remounts SiteApp (the Next host's catch-all segment), so
+  // the notice a previous mount just set would otherwise vanish before it could be read. The
+  // lazy initializer picks up whatever the mount before this one stored.
+  const [actionNotice, setActionNoticeState] = React.useState<ActionNotice | null>(() =>
+    takeStoredActionNotice(),
+  );
+  const setActionNotice = (notice: ActionNotice | null) => {
+    setActionNoticeState(notice);
+    if (notice) storeActionNotice(notice);
+    else clearStoredActionNotice();
+  };
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
   const accountMenuRef = React.useRef<HTMLDivElement>(null);
   const accountLabel = useEnsDisplay(publicClient, address);
@@ -145,14 +165,35 @@ export function SiteApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, tokenId]);
 
-  const refresh = React.useCallback(async () => {
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshFailed, setRefreshFailed] = React.useState(false);
+  // Latest `data`/dirty-ids for `refresh`'s async body, kept outside React state so `refresh`
+  // itself never needs `data` as a dependency (which would recreate it, and the mount effect
+  // below, on every successful load).
+  const dataRef = React.useRef<SiteData | null>(null);
+  dataRef.current = data;
+  const lastDirtyIds = React.useRef<readonly bigint[]>([]);
+
+  const refresh = React.useCallback(async (dirtyIds?: readonly bigint[]) => {
     if (!publicClient) return;
-    // A failed load (dead RPC, contract not yet deployed on a dev chain) keeps the current
-    // data and the loading state instead of surfacing an unhandled rejection.
+    if (dirtyIds) lastDirtyIds.current = dirtyIds;
+    setRefreshing(true);
     try {
-      setData(await loadSite(publicClient, dep));
+      // Incremental against the previous snapshot on the chain fallback: only ids new since the
+      // last scan, or a live id whose owner changed, or one the caller just acted on
+      // (`lastDirtyIds`) get reread. See loadSiteFromChain in data.ts.
+      const site = await loadSite(publicClient, dep, {
+        previous: dataRef.current,
+        dirtyIds: lastDirtyIds.current,
+      });
+      setData(site);
+      setRefreshFailed(false);
+      lastDirtyIds.current = [];
     } catch {
-      /* leave data as-is; the user can reload once the chain answers */
+      // Leave data as-is; the header surfaces the failure with a retry action.
+      setRefreshFailed(true);
+    } finally {
+      setRefreshing(false);
     }
   }, [publicClient, dep]);
 
@@ -163,28 +204,48 @@ export function SiteApp({
   // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
   // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
   // (no hash yet) apart from "pending" (hash in hand, waiting for the receipt).
+  // Every write is sent with an explicit gas limit: the reentrancy guard re-executes under the
+  // 63/64 rule, so leaving gas to the wallet's own estimate under-funds that re-execution often
+  // enough to matter (most visibly on mintBatch). Estimated with the connected account, then
+  // buffered by `bufferGas`, the same margin auction bids already used.
+  const estimateGas = async (
+    contractAddress: `0x${string}`,
+    abi: typeof shapesAbi | typeof auctionHouseAbi,
+    functionName: string,
+    args: readonly unknown[],
+    value?: bigint,
+  ) => {
+    if (!publicClient || !address) return undefined;
+    const estimate = await publicClient.estimateContractGas({
+      address: contractAddress,
+      abi,
+      functionName,
+      args,
+      value,
+      account: address,
+    } as Parameters<typeof publicClient.estimateContractGas>[0]);
+    return bufferGas(estimate);
+  };
+
   const write = async (op: string, functionName: string, args: readonly unknown[], value?: bigint) => {
     await ensureChain();
+    const gas = await estimateGas(dep.shapes, shapesAbi, functionName, args, value);
     const hash = await writeContractAsync({
       address: dep.shapes,
       abi: shapesAbi,
       functionName,
       args,
       value,
+      gas,
       chainId: dep.chainId,
     } as Parameters<typeof writeContractAsync>[0]);
     setPendingTx({op, hash});
     return hash;
   };
 
-  const writeHouse = async (
-    op: string,
-    functionName: string,
-    args: readonly unknown[],
-    value?: bigint,
-    gas?: bigint,
-  ) => {
+  const writeHouse = async (op: string, functionName: string, args: readonly unknown[], value?: bigint) => {
     await ensureChain();
+    const gas = await estimateGas(dep.auctionHouse!, auctionHouseAbi, functionName, args, value);
     const hash = await writeContractAsync({
       address: dep.auctionHouse!,
       abi: auctionHouseAbi,
@@ -204,10 +265,11 @@ export function SiteApp({
     try {
       const wei = DENOMINATIONS[sel].wei;
       const req = mintRequest(dep, {amountWei: wei, quantity: qty, fee: data.fees[sel]});
-      const hash = await writeContractAsync(req as unknown as Parameters<typeof writeContractAsync>[0]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const gas = await estimateGas(req.address, req.abi, req.functionName, req.args, req.value);
+      const hash = await writeContractAsync({...req, gas} as unknown as Parameters<typeof writeContractAsync>[0]);
+      const receipt = await awaitSuccessfulReceipt(publicClient, hash, req);
       const logs = parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs});
-      await refresh();
+      await refresh(logs.map((l) => l.args.tokenId));
       setMint({
         status: "done",
         minted: {
@@ -229,8 +291,8 @@ export function SiteApp({
     setRedeem({status: "pending"});
     try {
       const hash = await write("redeem", "redeem", [t.id]);
-      await publicClient.waitForTransactionReceipt({hash});
-      await refresh();
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "redeem", args: [t.id]});
+      await refresh([t.id]);
       setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
       setActionNotice({
         title: `Shape #${t.id.toString()} redeemed`,
@@ -258,11 +320,12 @@ export function SiteApp({
     try {
       const downWei = DENOMINATIONS[t.di - 1].wei;
       const ratio = Number(t.backing / downWei);
-      const hash = await write("split", "split", [t.id, Array<number>(ratio).fill(t.di - 1)]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const args = [t.id, Array<number>(ratio).fill(t.di - 1)];
+      const hash = await write("split", "split", args);
+      const receipt = await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "split", args});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs});
       const newIds = logs[0]?.args.newIds ?? [];
-      await refresh();
+      await refresh([t.id, ...newIds]);
       setView("gallery"); // the input is burned; its children are newest in the gallery
       setActionNotice({
         title: `Shape #${t.id.toString()} split`,
@@ -288,10 +351,12 @@ export function SiteApp({
     setActionNotice(null);
     try {
       const hash = await write("decompose", "decompose", [t.id]);
-      const receipt = await publicClient.waitForTransactionReceipt({hash});
+      const receipt = await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "decompose", args: [t.id]});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs});
       const restoredIds = logs[0]?.args.restoredIds ?? [];
-      await refresh(); // the survivor keeps its id; its detail shows the reverted state
+      // dirty: the survivor keeps its id but its state reverted, which a same-owner ownerOf
+      // read alone can't reveal.
+      await refresh([t.id, ...restoredIds]);
       setActionNotice({
         title: `Shape #${t.id.toString()} restored`,
         detail: `${restoredIds.length} absorbed Shape${restoredIds.length === 1 ? "" : "s"} returned with original IDs.`,
@@ -316,8 +381,10 @@ export function SiteApp({
     try {
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
       const hash = await write("compose", "compose", [t.id, sorted]);
-      await publicClient.waitForTransactionReceipt({hash});
-      await refresh(); // the survivor keeps its id; the open detail shows the new denomination
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "compose", args: [t.id, sorted]});
+      // dirty: the survivor keeps its id but grew, which a same-owner ownerOf read alone can't
+      // reveal.
+      await refresh([t.id, ...sorted]);
       setActionNotice({
         title: `Shape #${t.id.toString()} grew`,
         detail: `${burnIds.length} Shape${burnIds.length === 1 ? " was" : "s were"} absorbed.`,
@@ -337,15 +404,16 @@ export function SiteApp({
     }
   };
 
-  const doSacrifice = async (t: SiteToken) => {
+  const doBurnBacking = async (t: SiteToken) => {
     if (!publicClient) return;
-    setBusy("sacrifice");
+    setBusy("burnBacking");
     setTxErr(null);
     setActionNotice(null);
     try {
-      const hash = await write("sacrifice", "sacrifice", [t.id]);
-      await publicClient.waitForTransactionReceipt({hash});
-      await refresh();
+      const hash = await write("burnBacking", "burnBacking", [t.id]);
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.shapes, abi: shapesAbi, functionName: "burnBacking", args: [t.id]});
+      // dirty: backing goes to zero under the same owner, which ownerOf alone can't reveal.
+      await refresh([t.id]);
       setActionNotice({
         title: `Shape #${t.id.toString()} is now Black`,
         detail: "Its ETH backing is permanently unspendable.",
@@ -355,7 +423,7 @@ export function SiteApp({
       setView("token");
       window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
-      setTxErr({op: "sacrifice", text: describeTxError(e)});
+      setTxErr({op: "burnBacking", text: describeTxError(e)});
     } finally {
       setBusy(null);
       setPendingTx(null);
@@ -401,17 +469,9 @@ export function SiteApp({
     try {
       // A bid that mints its own cards lands exactly on the edge where the estimate is too tight
       // and the mint's reentrancy guard runs out of gas re-executing (ReentrancySentryOOG).
-      // Estimate, then buffer; the block gas limit still caps it.
-      const estimate = await publicClient.estimateContractGas({
-        address: dep.auctionHouse,
-        abi: auctionHouseAbi,
-        functionName: fn,
-        args,
-        value,
-        account: address!,
-      } as Parameters<typeof publicClient.estimateContractGas>[0]);
-      const hash = await writeHouse(op, fn, args, value, (estimate * 3n) / 2n);
-      await publicClient.waitForTransactionReceipt({hash});
+      // `writeHouse` estimates and buffers gas itself; the block gas limit still caps it.
+      const hash = await writeHouse(op, fn, args, value);
+      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.auctionHouse, abi: auctionHouseAbi, functionName: fn, args, value});
       setTxHash(hash);
       await Promise.all([refresh(), refreshAuction()]);
     } catch (e) {
@@ -473,7 +533,7 @@ export function SiteApp({
       active={active}
       go={go}
       routed={onNavigate !== undefined}
-      hasAuction={Boolean(dep.auctionHouse)}
+      auctionActive={Boolean(dep.auctionHouse) && isAuctionActive(auction)}
       isConnected={isConnected}
       wrongChain={wrongChain}
       accountLabel={accountLabel}
@@ -483,6 +543,9 @@ export function SiteApp({
       onConnect={() => openConnectModal?.()}
       onSwitchChain={() => void ensureChain()}
       onDisconnect={disconnect}
+      refreshing={refreshing}
+      refreshFailed={refreshFailed}
+      onRetryRefresh={() => void refresh()}
     />
   );
 
@@ -497,6 +560,7 @@ export function SiteApp({
     return renderHome(
       <MintPanel
         data={data}
+        dep={dep}
         chainId={dep.chainId}
         connected={isConnected}
         sel={sel}
@@ -511,7 +575,7 @@ export function SiteApp({
         onOpenToken={openToken}
         onConnect={() => openConnectModal?.()}
       />,
-      <SiteFooter reserve={reserveLine} />,
+      <SiteFooter reserve={reserveLine} onContracts={() => go("contracts")} />,
       header(null),
     );
   }
@@ -561,7 +625,20 @@ export function SiteApp({
       )}
 
       {view === "gallery" && (
-        <GalleryView data={data} filter={filter} setFilter={setFilter} onOpenToken={openToken} />
+        <GalleryView
+          data={data}
+          filter={filter}
+          setFilter={setFilter}
+          address={address}
+          ownerOnly={ownerOnly}
+          setOwnerOnly={setOwnerOnly}
+          onOpenToken={openToken}
+        />
+      )}
+      {view === "contracts" && (
+        <React.Suspense fallback={<div style={{padding: 48, fontSize: 13, color: C.muted}}>Loading contracts…</div>}>
+          <ContractsView dep={dep} />
+        </React.Suspense>
       )}
       {view === "collection" && !composeMode && (
         <MyShapesView
@@ -619,7 +696,7 @@ export function SiteApp({
           onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
           onRedeem={(t) => void confirmRedeem(t)}
-          onSacrifice={(t) => void doSacrifice(t)}
+          onBurnBacking={(t) => void doBurnBacking(t)}
         />
       )}
 
@@ -684,7 +761,7 @@ export function SiteApp({
         </div>
       )}
 
-      <SiteFooter dep={dep} topRule reserve={reserveLine} />
+      <SiteFooter topRule reserve={reserveLine} onContracts={() => go("contracts")} />
     </div>
   );
 }

@@ -198,7 +198,7 @@ the gene rule works either way.
 
 - D3d/D3e: unchanged; gene derivation uses the token seed, never batch-correlated inputs.
 - D5: renderer consumes the legacy fill draw and discards it — streams stay aligned.
-- `sacrifice`: gate unchanged (apex + originCount = 10,000). Open flavor question: should
+- `burnBacking`: gate unchanged (apex + originCount = 10,000). Open flavor question: should
   the Black record the gene it died with (a Solid-gened Black vs a Void-gened Black), even
   though `isBlack` overrides rendering? Zero protocol cost, pure lore. — open
 - Parity: gene logic is small pure integer functions; port to TS canonical + fixtures

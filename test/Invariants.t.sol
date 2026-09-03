@@ -11,6 +11,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
+import {ShapeState} from "../src/ShapeTypes.sol";
 
 /* ==================================================================== *
  *  Hostile recipients for the `*To` value-flow paths (PR #1).
@@ -72,6 +73,10 @@ contract Handler is Test, IERC721Receiver {
     /// @dev Hostile recipients for the recipient-directed `*To` paths: [rejectETH, rejectNFT, reentrant].
     address[3] public hostiles;
 
+    /// @dev The two addresses `setFeeRecipient` ever points at during a run: the constructor's
+    ///      initial recipient and one alternate, so fees can accrue under one and then the other.
+    address[2] public feeRecipients;
+
     /// @dev Ghost accounting, maintained independently of the contract's own counters.
     uint256 public ghostBackingIn;
     uint256 public ghostBackingOut;
@@ -79,10 +84,31 @@ contract Handler is Test, IERC721Receiver {
     uint256 public ghostMints;
     uint256 public ghostRedeems;
     uint256 public ghostOriginsRedeemed;
-    uint256 public ghostSacrificed;
+    uint256 public ghostBurnedBacking;
+    /// @dev Cumulative count of `burnBacking` calls. `Shapes.blackShapeCount` counts the Black Shapes
+    ///      alive now, so it falls behind this once one is burned for zero.
+    uint256 public ghostBurnBackingCount;
+    /// @dev Cumulative count of Black Shapes burned for zero, the only way a Black leaves the
+    ///      supply. `ghostBurnBackingCount - ghostBlackBurned` is the live Black count.
+    uint256 public ghostBlackBurned;
 
     uint256[] public liveTokens;
     mapping(uint256 => uint256) private _indexOfToken;
+
+    /// @dev Per-survivor LIFO stack of pre-compose survivor-state hashes, pushed by `compose`/
+    ///      `composeMixed` right before the mutating call and popped by `decompose`/
+    ///      `decomposeMany` when reversing that record, mirroring the on-chain compose-record
+    ///      stack so the two never drift out of sync.
+    mapping(uint256 => bytes32[]) private _composePreHash;
+    /// @dev State hash of a token captured immediately before it was burned as a compose input,
+    ///      keyed by its id. Checked against the token's hash once `decompose`/`decomposeMany`
+    ///      re-mints it.
+    mapping(uint256 => bytes32) private _burnedInputHash;
+    /// @dev Set when a restored survivor or input's post-decompose hash does not match what was
+    ///      recorded before the compose that burned it. `invariant_DecomposeRestoredEveryRecordedState`
+    ///      asserts this stays false; a real mismatch is a `decompose` correctness bug, not a
+    ///      handler bug, so this never reverts inline (that would just hide the failing sequence).
+    bool public restoreMismatch;
 
     uint256[9] internal DENOMS = [
         Denominations.amountAt(0),
@@ -109,6 +135,7 @@ contract Handler is Test, IERC721Receiver {
             address(new HostileRejectNFT()),
             address(new HostileReentrant(shapes_))
         ];
+        feeRecipients = [shapes_.feeRecipient(), address(0xFEE2)];
     }
 
     function onERC721Received(address, address, uint256, bytes calldata) external pure returns (bytes4) {
@@ -138,6 +165,51 @@ contract Handler is Test, IERC721Receiver {
         }
         liveTokens.pop();
         delete _indexOfToken[tokenId];
+    }
+
+    /// @dev Hash of every protocol-observable fact `shapeState` does not itself cover the render
+    ///      of: `shapeState` (seed, denomination, origins, ink gene, black flag, formation, face
+    ///      and redeemable value, materialized modules) plus `svg`. `tokenURI` re-derives from the
+    ///      same facts through JSON/base64 encoding and is redundant to hash on top of `shapeState`
+    ///      plus `svg`, and meaningfully more gas per call inside a stateful fuzz run; the dedicated
+    ///      `DecomposeRoundTrip.t.sol` fuzz test hashes/compares `tokenURI` directly instead.
+    function _hashState(uint256 tokenId) private view returns (bytes32) {
+        ShapeState memory st = shapes.shapeState(tokenId);
+        return keccak256(abi.encode(st, shapes.svg(tokenId)));
+    }
+
+    /// @dev Pops `survivor`'s newest recorded pre-compose hash, mirroring the on-chain LIFO record
+    ///      stack, and returns it. Sets `restoreMismatch` when the harness stack is already empty,
+    ///      which means the tracked stack drifted from the on-chain one.
+    function _popPreHash(uint256 survivor) private returns (bytes32 expected) {
+        bytes32[] storage stack = _composePreHash[survivor];
+        if (stack.length == 0) {
+            restoreMismatch = true;
+            return bytes32(0);
+        }
+        expected = stack[stack.length - 1];
+        stack.pop();
+    }
+
+    /// @dev Each re-minted input's hash must match the hash taken right before the compose burned
+    ///      it. Callable after the whole decompose transaction has returned: an input's restored
+    ///      state is final once its record is popped, and no later record in the same call touches
+    ///      an id restored by an earlier one.
+    function _checkRestoredInputs(uint256[] memory restored) private {
+        for (uint256 i = 0; i < restored.length; ++i) {
+            if (_hashState(restored[i]) != _burnedInputHash[restored[i]]) restoreMismatch = true;
+        }
+    }
+
+    /// @dev Verifies one `decompose` reversal against what `compose`/`composeMixed` recorded for
+    ///      `survivor`'s most recent still-open record: the survivor's post-decompose hash must
+    ///      match its pre-compose hash, and every re-minted input's hash must match its pre-burn
+    ///      hash. Sets `restoreMismatch` rather than asserting inline, so a real mismatch surfaces
+    ///      as an invariant failure with a shrinkable call sequence.
+    function _checkRestore(uint256 survivor, uint256[] memory restored) private {
+        bytes32 expected = _popPreHash(survivor);
+        if (_hashState(survivor) != expected) restoreMismatch = true;
+        _checkRestoredInputs(restored);
     }
 
     /* ----------------------------- actions ----------------------------- */
@@ -278,11 +350,19 @@ contract Handler is Test, IERC721Receiver {
         }
         if (got < ratio - 1) return;
 
+        bytes32 preHash = _hashState(survivor);
+        bytes32[] memory burnHashes = new bytes32[](burn.length);
+        for (uint256 i = 0; i < burn.length; ++i) {
+            burnHashes[i] = _hashState(burn[i]);
+        }
+
         vm.prank(owner);
         try shapes.compose(survivor, burn) {
             for (uint256 i = 0; i < burn.length; ++i) {
                 _untrack(burn[i]);
+                _burnedInputHash[burn[i]] = burnHashes[i];
             }
+            _composePreHash[survivor].push(preHash);
         } catch {}
     }
 
@@ -310,28 +390,45 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-    /// @dev Sacrifice a live apex Complete if one exists. Apex Completes essentially never arise
-    ///      from random fuzzing (10,000 conserved origins on one token), so this rarely fires;
-    ///      the sacrifice path is exercised directly by the unit suite. It is kept here so the
-    ///      invariant model stays exact should one ever be reached.
-    function sacrifice(uint256 seed) public {
+    /// @dev Burn the backing of a live apex Complete if one exists. Apex Completes essentially
+    ///      never arise from random fuzzing (10,000 conserved origins on one token), so this rarely
+    ///      fires; the burnBacking path is exercised directly by the unit suite. It is kept here so
+    ///      the invariant model stays exact should one ever be reached.
+    function burnBacking(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
-        if (shapes.isBlack(id)) return;
+        if (shapes.isBlackShape(id)) return;
         if (shapes.backingOf(id) != DENOMS[8] || shapes.originCountOf(id) != 10_000) return;
 
         address owner = shapes.ownerOf(id);
         vm.prank(owner);
-        try shapes.sacrifice(id) {
-            ghostSacrificed += DENOMS[8];
+        try shapes.burnBacking(id) {
+            ghostBurnedBacking += DENOMS[8];
+            ghostBurnBackingCount += 1;
+        } catch {}
+    }
+
+    /// @dev Burn a live Black Shape for zero, the only exit a Black has: it cannot be redeemed,
+    ///      composed, decomposed or have its backing burned again. Its backing is already zero, so no reserve
+    ///      ghost moves; only the live Black count does.
+    function burnBlack(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 id = liveTokens[seed % liveTokens.length];
+        if (!shapes.isBlackShape(id)) return;
+
+        address owner = shapes.ownerOf(id);
+        vm.prank(owner);
+        try shapes.burn(id) {
+            ghostBlackBurned += 1;
+            _untrack(id);
         } catch {}
     }
 
     /* -------------------- recipient-directed value flows (PR #1) -------------------- */
 
     /// @dev Redeem to a hostile recipient. The owner still authorises it; the payout lands on a
-    ///      third party that may revert or reenter. Reserve accounting is identical to `redeem` —
-    ///      only the destination differs — so the ghosts move only if the call actually settles.
+    ///      third party that may revert or reenter. Reserve accounting is identical to `redeem`:
+    ///      only the destination differs, so the ghosts move only if the call actually settles.
     function redeemToHostile(uint256 tokenSeed, uint256 recipSeed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[tokenSeed % liveTokens.length];
@@ -425,14 +522,16 @@ contract Handler is Test, IERC721Receiver {
         address owner = shapes.ownerOf(survivor);
         vm.prank(owner);
         try shapes.decompose(survivor) returns (uint256[] memory restored) {
+            _checkRestore(survivor, restored);
             for (uint256 i = 0; i < restored.length; ++i) {
                 _track(restored[i]);
             }
         } catch {}
     }
 
-    /// @dev Reverse a compose, reviving the inputs to a hostile recipient. Moves no ETH; if the
-    ///      recipient rejects the mint the whole call reverts and the record stays intact.
+    /// @dev Reverse a compose, reviving the inputs to a hostile recipient. Moves no ETH. A
+    ///      recipient that rejects the mint reverts the whole call, leaving the on-chain record
+    ///      intact; the tracked stack is popped only on success, so the two stay in sync.
     function decomposeToHostile(uint256 seed, uint256 recipSeed) public {
         if (liveTokens.length == 0) return;
         uint256 survivor = liveTokens[seed % liveTokens.length];
@@ -441,6 +540,7 @@ contract Handler is Test, IERC721Receiver {
         address recip = hostiles[recipSeed % 3];
         vm.prank(owner);
         try shapes.decomposeTo(survivor, recip) returns (uint256[] memory restored) {
+            _checkRestore(survivor, restored);
             for (uint256 i = 0; i < restored.length; ++i) {
                 _track(restored[i]);
             }
@@ -476,7 +576,7 @@ contract Handler is Test, IERC721Receiver {
             uint256 id = liveTokens[i];
             if (id == survivor) continue;
             if (shapes.ownerOf(id) != owner) continue;
-            if (shapes.isBlack(id)) continue;
+            if (shapes.isBlackShape(id)) continue;
             candidates[nCand++] = id;
         }
 
@@ -506,11 +606,19 @@ contract Handler is Test, IERC721Receiver {
             finalBurn[i] = burn[i];
         }
 
+        bytes32 preHash = _hashState(survivor);
+        bytes32[] memory burnHashes = new bytes32[](got);
+        for (uint256 i = 0; i < got; ++i) {
+            burnHashes[i] = _hashState(finalBurn[i]);
+        }
+
         vm.prank(owner);
         try shapes.compose(survivor, finalBurn) {
             for (uint256 i = 0; i < got; ++i) {
                 _untrack(finalBurn[i]);
+                _burnedInputHash[finalBurn[i]] = burnHashes[i];
             }
+            _composePreHash[survivor].push(preHash);
         } catch {}
     }
 
@@ -545,6 +653,12 @@ contract Handler is Test, IERC721Receiver {
     /// @dev Reverses up to two stacked compose records on one survivor through the batch
     ///      `decomposeMany` entrypoint, instead of `decompose`'s single-record call, by repeating
     ///      the survivor's id `min(depth, 2)` times.
+    ///
+    ///      The survivor is compared against the oldest record popped, not against each one in
+    ///      turn. Unwinding N stacked records in a single call leaves the survivor in its state
+    ///      before the oldest of those composes; the N-1 intermediate states exist only inside the
+    ///      transaction and cannot be read afterwards. Every re-minted input is still checked
+    ///      against its own pre-burn hash, per record.
     function decomposeMany(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 survivor = liveTokens[seed % liveTokens.length];
@@ -560,18 +674,32 @@ contract Handler is Test, IERC721Receiver {
 
         vm.prank(owner);
         try shapes.decomposeMany(ids) returns (uint256[][] memory restored) {
+            bytes32 oldest;
             for (uint256 i = 0; i < restored.length; ++i) {
+                oldest = _popPreHash(survivor);
+                _checkRestoredInputs(restored[i]);
                 for (uint256 j = 0; j < restored[i].length; ++j) {
                     _track(restored[i][j]);
                 }
             }
+            if (_hashState(survivor) != oldest) restoreMismatch = true;
         } catch {}
     }
 
-    /// @dev Forwards whatever is currently pending to the fee recipient. No ghost accounting
-    ///      changes: `pendingFees` and `feeRecipient.balance` are read directly by the invariant.
-    function withdrawFees() public {
-        try shapes.withdrawFees() {} catch {}
+    /// @dev Forwards whatever is owed to one of the two known fee recipients. No ghost accounting
+    ///      changes: `feesOwedTo` and each recipient's balance are read directly by the invariant.
+    function withdrawFees(uint256 seed) public {
+        address recipient = feeRecipients[seed % feeRecipients.length];
+        try shapes.withdrawFees(recipient) {} catch {}
+    }
+
+    /// @dev Pranks the admin to redirect future fee accrual between the two known recipients.
+    ///      Registered so `invariant_FeesAreSeparateFromBacking` exercises a recipient change
+    ///      against real accrual, proving the outgoing recipient's balance survives it.
+    function setFeeRecipient(uint256 seed) public {
+        address newRecipient = feeRecipients[seed % feeRecipients.length];
+        vm.prank(admin);
+        try shapes.setFeeRecipient(newRecipient) {} catch {}
     }
 
     /// @dev Pranks the admin to change the mint fee within the cap. Every mint action reads
@@ -600,10 +728,9 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         // The handler must own and account for every live Shape. Genesis ownership is covered by
         // ContractOwnership.t.sol, so retire it before handing this collection to the handler.
         shapes.redeemTo(0, payable(address(0xD15CA4D)));
@@ -611,7 +738,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](20);
+        bytes4[] memory selectors = new bytes4[](22);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -621,7 +748,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[6] = Handler.pokeUnknownSelector.selector;
         selectors[7] = Handler.compose.selector;
         selectors[8] = Handler.split.selector;
-        selectors[9] = Handler.sacrifice.selector;
+        selectors[9] = Handler.burnBacking.selector;
         selectors[10] = Handler.redeemToHostile.selector;
         selectors[11] = Handler.redeemBatchToHostile.selector;
         selectors[12] = Handler.splitToHostile.selector;
@@ -632,6 +759,8 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[17] = Handler.decomposeMany.selector;
         selectors[18] = Handler.withdrawFees.selector;
         selectors[19] = Handler.setMintFee.selector;
+        selectors[20] = Handler.burnBlack.selector;
+        selectors[21] = Handler.setFeeRecipient.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -645,23 +774,40 @@ contract ShapesInvariantTest is StdInvariant, Test {
     }
 
     /// @notice redeemableBacking is exactly what came in, minus what was redeemed out, minus what
-    ///         was sacrificed to Black Shapes.
+    ///         was burned to Black Shapes.
     function invariant_BackingIsConservedExactly() public view {
         assertEq(
             shapes.redeemableBacking(),
-            handler.ghostBackingIn() - handler.ghostBackingOut() - handler.ghostSacrificed(),
+            handler.ghostBackingIn() - handler.ghostBackingOut() - handler.ghostBurnedBacking(),
             "backing accounting drifted"
         );
     }
 
-    /// @notice Sacrificed backing is monotonic and always exactly 100 ETH per Black Shape.
-    function invariant_SacrificeAccounting() public view {
+    /// @notice Every `decompose`/`decomposeMany` call the handler made restored the survivor and
+    ///         every re-minted input to exactly the state hash recorded right before the compose
+    ///         that burned it (`shapeState` plus `svg`). For a `decomposeMany` unwinding several
+    ///         stacked records on one survivor, the survivor is compared against the oldest record
+    ///         popped, the only one of those states observable once the call returns. A shrunk
+    ///         failing sequence here is a `decompose` correctness bug, not a handler bug.
+    function invariant_DecomposeRestoredEveryRecordedState() public view {
+        assertFalse(handler.restoreMismatch(), "decompose did not restore a recorded pre-compose state");
+    }
+
+    /// @notice Burned backing is monotonic and always exactly one apex denomination per
+    ///         burnBacking call, and the live Black Shape count is exactly the Blacks created minus
+    ///         the Blacks burned for zero.
+    function invariant_BurnBackingAccounting() public view {
         assertEq(
-            shapes.sacrificedBacking(),
-            Denominations.amountAt(8) * shapes.blackCount(),
-            "sacrifice per Black drifted"
+            shapes.burnedBacking(),
+            Denominations.amountAt(8) * handler.ghostBurnBackingCount(),
+            "burn per Black drifted"
         );
-        assertEq(shapes.sacrificedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
+        assertEq(shapes.burnedBacking(), handler.ghostBurnedBacking(), "burn accounting drifted");
+        assertEq(
+            shapes.blackShapeCount(),
+            handler.ghostBurnBackingCount() - handler.ghostBlackBurned(),
+            "live Black count is not burnBacking calls minus Black burns"
+        );
     }
 
     /// @notice Every wei counted by redeemableBacking corresponds to a live Shape.
@@ -686,7 +832,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
     }
 
     /// @notice Origins are created only by mint and destroyed only by redeem. The sum of live
-    ///         origin counts equals mints minus origins redeemed — no operation manufactures them.
+    ///         origin counts equals mints minus origins redeemed: no operation manufactures them.
     function invariant_OriginsAreConserved() public view {
         uint256 sum;
         uint256 n = handler.liveTokenCount();
@@ -712,17 +858,31 @@ contract ShapesInvariantTest is StdInvariant, Test {
     }
 
     /// @notice Fees never enter the reserve. Every fee ever charged is accounted for either as
-    ///         still pending or as already paid to whichever recipient was current at withdrawal
-    ///         time; `setMintFee` makes the fee itself variable, so this no longer checks a fixed
-    ///         per-mint amount, only that nothing was created or destroyed.
+    ///         still owed to whichever recipient it accrued to, or as already paid to that same
+    ///         recipient; `setFeeRecipient` never moves a balance between the handler's two known
+    ///         recipients, and `setMintFee` makes the fee itself variable, so this no longer checks
+    ///         a fixed per-mint amount, only that nothing was created, destroyed or reassigned.
     function invariant_FeesAreSeparateFromBacking() public view {
         assertEq(
-            feeRecipient.balance + shapes.pendingFees(), handler.ghostFeesPaid(), "fee accounting drifted"
+            handler.feeRecipients(0).balance + handler.feeRecipients(1).balance + shapes.pendingFees(),
+            handler.ghostFeesPaid(),
+            "fee accounting drifted"
         );
         assertGe(
             address(shapes).balance,
             shapes.redeemableBacking() + shapes.pendingFees(),
             "fees leaked into or out of the reserve"
+        );
+    }
+
+    /// @notice `pendingFees()` is exactly the sum of every recipient's own owed balance. The
+    ///         handler only ever names one of its two known recipients, so summing `feesOwedTo`
+    ///         over both is the whole ledger.
+    function invariant_PerRecipientFeesSumToPendingFees() public view {
+        assertEq(
+            shapes.feesOwedTo(handler.feeRecipients(0)) + shapes.feesOwedTo(handler.feeRecipients(1)),
+            shapes.pendingFees(),
+            "sum(feesOwed) != pendingFees()"
         );
     }
 
@@ -754,7 +914,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         uint256 n = handler.liveTokenCount();
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
-            if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
+            if (shapes.isBlackShape(id)) continue; // Black tokens hold no redeemable backing
             assertTrue(Denominations.isSupported(shapes.backingOf(id)), "token holds an off-ladder amount");
         }
     }
@@ -791,7 +951,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         uint256 before = sink.balance;
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
-            if (shapes.isBlack(id)) continue; // Black Shapes are intentionally non-redeemable
+            if (shapes.isBlackShape(id)) continue; // Black Shapes are intentionally non-redeemable
             expected += shapes.backingOf(id);
 
             vm.prank(shapes.ownerOf(id));
@@ -1051,7 +1211,7 @@ contract AuctionHandler is Test, IERC721Receiver {
     ///      from its `receive` during fuzzing, now that the callback lives here instead of inside
     ///      a bid's escrow mint.
     function withdrawFees() public {
-        try shapes.withdrawFees() {} catch {}
+        try shapes.withdrawFees(shapes.feeRecipient()) {} catch {}
     }
 }
 
@@ -1064,10 +1224,11 @@ contract AuctionInvariantTest is StdInvariant, Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
         handler = new AuctionHandler(shapes, house);
         _wire();
@@ -1208,11 +1369,12 @@ contract AuctionInvariantHostileFeeTest is AuctionInvariantTest {
 
     function setUp() public override {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         hostile = new HostileAuctionFeeRecipient();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(hostile), address(renderer), address(collection), 0
+            Denominations.UNIT / 10, address(hostile), address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
         hostile.setTargets(shapes, address(house));
 

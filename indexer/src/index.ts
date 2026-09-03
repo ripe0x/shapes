@@ -179,9 +179,9 @@ ponder.on("Shapes:Decomposed", async ({ event, context }) => {
   }
 });
 
-// An apex Complete Shape sacrifices its 100 ETH backing. Terminal: it keeps its id and seed but
+// An apex Complete Shape has its 100 ETH backing burned. Terminal: it keeps its id and seed but
 // stops being redeemable or recomposable.
-ponder.on("Shapes:Blackened", async ({ event, context }) => {
+ponder.on("Shapes:BlackShapeCreated", async ({ event, context }) => {
   const { tokenId } = event.args;
 
   await context.db.update(token, { id: tokenId }).set({

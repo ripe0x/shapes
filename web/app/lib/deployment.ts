@@ -1,5 +1,6 @@
 import {existsSync, readFileSync} from "node:fs";
 import {join} from "node:path";
+import type {Deployment} from "@shared/chain/abi";
 import bundledFallback from "../../public/deployment.json";
 
 // Server-side deployment target for the OG image route. Env vars win so a production deploy can
@@ -19,17 +20,35 @@ interface DeploymentFile {
   mintStart?: string;
 }
 
-/** `web/public/deployment.local.json` (gitignored, written by `script/lived-in.sh`) if present.
- *  Read at call time rather than imported: it is dev-only and does not exist in a production
- *  bundle, so a static import would fail the build. */
-function localDeployment(): DeploymentFile | null {
+/** Parses a deployment record off disk. Read at call time rather than imported: the file is a dev
+ *  and test target that does not exist in a production bundle, so a static import would fail the
+ *  build. */
+function readDeploymentFile(path: string): DeploymentFile | null {
   try {
-    const path = join(process.cwd(), "public", "deployment.local.json");
     if (!existsSync(path)) return null;
     return JSON.parse(readFileSync(path, "utf8")) as DeploymentFile;
   } catch {
     return null;
   }
+}
+
+/** The record the whole site targets when `SHAPES_DEPLOYMENT_FILE` names one, ahead of the bundled
+ *  `public/deployment.json` and of `public/deployment.local.json`. The browser receives it as a
+ *  prop from the root layout (see `ShapesProviders`), so one variable points the server routes and
+ *  the client at the same chain. `web/e2e/run.sh` sets it to a copy of `deployments/<chainId>.json`
+ *  it owns, which keeps a run off both tracked files and `public/deployment.local.json`, the target
+ *  `script/lived-in.sh` writes for a developer. */
+export function overrideDeployment(): Deployment | null {
+  const path = process.env.SHAPES_DEPLOYMENT_FILE;
+  return path ? (readDeploymentFile(path) as Deployment | null) : null;
+}
+
+/** `SHAPES_DEPLOYMENT_FILE`, else `web/public/deployment.local.json` (gitignored, written by
+ *  `script/lived-in.sh`) if present. */
+function localDeployment(): DeploymentFile | null {
+  return readDeploymentFile(
+    process.env.SHAPES_DEPLOYMENT_FILE || join(process.cwd(), "public", "deployment.local.json"),
+  );
 }
 
 export function serverDeployment(): ServerDeployment {

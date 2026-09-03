@@ -2,13 +2,14 @@
 pragma solidity 0.8.28;
 
 import {IShapes} from "../interfaces/IShapes.sol";
-import {ShapeFormation} from "../interfaces/IShapeCapabilities.sol";
+import {ShapeFormation} from "../ShapeTypes.sol";
 import {Denominations} from "./Denominations.sol";
 
 /// @title ShapeMath
-/// @notice Pure computation shared between `Shapes` (execution) and `ShapeLens` (preview), so the
-///         two cannot drift: `Shapes` calls these functions to act, `ShapeLens` calls the same
-///         functions to predict the result of acting, without touching state.
+/// @notice Pure computation shared between the recomposition mutators and their previews, so the
+///         two cannot drift: `compose`, `decompose` and `split` call these functions to write the
+///         result, `previewCompose` and `previewSplit` call the same functions to return it
+///         without writing.
 /// @dev Internal-only library: every function inlines into its caller's bytecode at compile time,
 ///      so no address gets linked and no `DELEGATECALL`/`CALL` is added at any call site.
 library ShapeMath {
@@ -46,13 +47,13 @@ library ShapeMath {
     }
 
     /// @notice Requires the summed backing of `outDenoms` equal `parentBacking`, or reverts
-    ///         `IShapes.SplitMismatch`.
+    ///         `IShapes.SplitSumMismatch`.
     function requireSplitSumMatches(uint256 parentBacking, uint8[] calldata outDenoms) internal pure {
         uint256 sum;
         for (uint256 i = 0; i < outDenoms.length; ++i) {
             sum += Denominations.amountAt(outDenoms[i]);
         }
-        if (sum != parentBacking) revert IShapes.SplitMismatch(parentBacking, sum);
+        if (sum != parentBacking) revert IShapes.SplitSumMismatch(parentBacking, sum);
     }
 
     /// @notice Per-child origin-count allocation for a split: fills each output's capacity from

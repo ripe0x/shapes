@@ -2,28 +2,41 @@
 pragma solidity 0.8.28;
 
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
+import {IERC721Metadata} from "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
+import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
+import {IShapes} from "./interfaces/IShapes.sol";
+import {AdminOps} from "./lib/AdminOps.sol";
+import {CopyValidation} from "./lib/CopyValidation.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {FixedPoint} from "./lib/FixedPoint.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 
 /// @title ShapeCollection
-/// @notice Collection-level presentation for Shapes.
+/// @notice Collection-level metadata for Shapes: the editorial copy and the contract-level
+///         metadata built from it, plus seeded card previews.
 ///
-/// @dev Holds no state beyond the renderer address, has no owner and no initialiser. It reads
-///      the chain only for `seed()`, which is `block.prevrandao` folded with the block number,
-///      so an output that takes no seed advances once per block and every caller in the same
-///      block sees the same one. Passing a seed explicitly pins an output forever.
+/// @dev Stores the token name prefix, the shared description and the owner token's own
+///      description. `Shapes.tokenURI` and `Shapes.contractURI` read them back from here.
+///      `setMetadataCopy` writes all three, restricted to the admin of the bound `Shapes` and
+///      frozen by that token's `lockPresentation`. Both the admin address and the lock are read
+///      live from `shapes`.
 ///
-///      Nothing here touches a token. The cards it renders are compositions the ladder allows,
-///      drawn through the same renderer and the same ink-gene derivation a mint uses, which is
-///      why they are indistinguishable from a real token's artwork.
+///      `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes
+///      no seed advances once per block and every caller in that block gets the same value.
+///      Passing a seed returns deterministic output for that seed.
+///
+///      Preview cards use the Shapes denomination ladder and ink-gene derivation. They render
+///      through this collection's immutable renderer. No token is read or written.
 contract ShapeCollection is IShapeCollection, IERC165 {
     /// @inheritdoc IShapeCollection
     address public immutable renderer;
+
+    /// @inheritdoc IShapeCollection
+    address public immutable shapes;
 
     /// @dev Frames per denomination in the filmstrip, and how long each is held. Nine
     ///      denominations at two variants is eighteen frames, a 4.5 second loop.
@@ -34,11 +47,87 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     ///      units. The canvas is square with the card inset, rounded and shadowed.
     uint256 private constant FRAME_W = 2000;
 
-    error RendererHasNoCode(address renderer);
+    /// @dev Longest a name prefix may be, in bytes.
+    uint256 private constant MAX_NAME_BYTES = 64;
+    /// @dev Longest either description may be, in bytes.
+    uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
 
-    constructor(address renderer_) {
-        if (renderer_.code.length == 0) revert RendererHasNoCode(renderer_);
-        renderer = renderer_;
+    /// @dev Default metadata copy set at construction.
+    string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
+    string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+    string private constant DEFAULT_OWNER_TOKEN_DESCRIPTION = "The contract owner token of Shapes. Its current holder is returned by owner() and has no "
+        "administrative authority. Ownership moves with this Shape through compose, decompose and "
+        "split. Redeeming or burning it ends contract ownership.";
+
+    string private _tokenNamePrefix;
+    string private _description;
+    string private _ownerTokenDescription;
+
+    error ShapesHasNoCode(address shapes);
+    error ShapesUnsupported(address shapes);
+
+    /// @param renderer_ Renderer every card and the collection image are drawn through. Fixed at
+    ///        construction and immutable after, so it is validated the same way `Shapes` validates
+    ///        its own renderer pointer: must have code and answer ERC-165 for `IShapeRenderer`.
+    ///        `Shapes` holds its own renderer pointer, which the admin can replace until
+    ///        presentation is locked.
+    /// @param shapes_ The `Shapes` token this collection describes. Its `admin()` may edit the
+    ///        metadata copy and its `presentationLocked()` freezes it. Fixed at construction and
+    ///        validated the same way `renderer_` is: must have code and answer ERC-165 for
+    ///        `IAdminControl`, `IShapes` and `IERC721Metadata`, the interfaces this collection
+    ///        calls on it.
+    constructor(IShapeRenderer renderer_, IShapes shapes_) {
+        AdminOps.requireRenderer(address(renderer_));
+        if (address(shapes_).code.length == 0) revert ShapesHasNoCode(address(shapes_));
+        if (
+            !_supportsShapes(address(shapes_), type(IAdminControl).interfaceId)
+                || !_supportsShapes(address(shapes_), type(IShapes).interfaceId)
+                || !_supportsShapes(address(shapes_), type(IERC721Metadata).interfaceId)
+        ) {
+            revert ShapesUnsupported(address(shapes_));
+        }
+        renderer = address(renderer_);
+        shapes = address(shapes_);
+        _tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
+        _description = DEFAULT_DESCRIPTION;
+        _ownerTokenDescription = DEFAULT_OWNER_TOKEN_DESCRIPTION;
+    }
+
+    /* -------------------------------- copy ------------------------------ */
+
+    /// @inheritdoc IShapeCollection
+    function tokenNamePrefix() external view returns (string memory) {
+        return _tokenNamePrefix;
+    }
+
+    /// @inheritdoc IShapeCollection
+    function description() external view returns (string memory) {
+        return _description;
+    }
+
+    /// @inheritdoc IShapeCollection
+    function ownerTokenDescription() external view returns (string memory) {
+        return _ownerTokenDescription;
+    }
+
+    /// @inheritdoc IShapeCollection
+    function setMetadataCopy(
+        string calldata tokenNamePrefix_,
+        string calldata description_,
+        string calldata ownerTokenDescription_
+    ) external {
+        IShapes token = IShapes(shapes);
+        if (msg.sender != token.admin()) revert AdminUnauthorizedAccount(msg.sender);
+        if (token.presentationLocked()) revert PresentationIsLocked();
+        CopyValidation.requireJsonSafe(tokenNamePrefix_, MAX_NAME_BYTES, 0);
+        CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
+        CopyValidation.requireJsonSafe(ownerTokenDescription_, MAX_DESCRIPTION_BYTES, 2);
+        _tokenNamePrefix = tokenNamePrefix_;
+        _description = description_;
+        _ownerTokenDescription = ownerTokenDescription_;
+        emit MetadataCopySet(tokenNamePrefix_, description_, ownerTokenDescription_);
     }
 
     /* ------------------------------ seeding ----------------------------- */
@@ -51,24 +140,18 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /* ---------------------------- collection ---------------------------- */
 
     /// @inheritdoc IShapeCollection
-    function contractURI(string calldata name, string calldata description)
-        external
-        view
-        returns (string memory)
-    {
-        return string(
-            abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json(name, description))))
-        );
+    function contractURI() external view returns (string memory) {
+        return string(abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json()))));
     }
 
     /// @inheritdoc IShapeCollection
-    function json(string calldata name, string calldata description) public view returns (string memory) {
+    function json() public view returns (string memory) {
         return string(
             abi.encodePacked(
                 '{"name":"',
-                name,
+                IERC721Metadata(shapes).name(),
                 '","description":"',
-                description,
+                _description,
                 '","image":"data:image/svg+xml;base64,',
                 Base64.encode(bytes(image())),
                 '"}'
@@ -141,5 +224,15 @@ contract ShapeCollection is IShapeCollection, IERC165 {
 
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
         return interfaceId == type(IERC165).interfaceId || interfaceId == type(IShapeCollection).interfaceId;
+    }
+
+    /// @dev Returns false when the call reverts and when it returns false, so the constructor's
+    ///      revert path is the same however `target` failed the check.
+    function _supportsShapes(address target, bytes4 interfaceId) private view returns (bool) {
+        try IERC165(target).supportsInterface(interfaceId) returns (bool supported) {
+            return supported;
+        } catch {
+            return false;
+        }
     }
 }

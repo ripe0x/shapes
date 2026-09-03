@@ -52,6 +52,41 @@ export function Art({src, alt = "", width}: {src: string; alt?: string; width?: 
 }
 
 /**
+ * Catches a render error in `children` and shows an inline message instead of taking down the
+ * whole route. For a preview built from onchain record bytes, where a bug in the reconstruction
+ * throws synchronously during render: the rest of the page (navigation, other actions) stays
+ * usable. Resets when `resetKey` changes, so switching to a different token or action clears a
+ * stale error instead of pinning the boundary closed.
+ */
+export class PreviewBoundary extends React.Component<
+  {resetKey: unknown; children: React.ReactNode},
+  {error: Error | null}
+> {
+  state: {error: Error | null} = {error: null};
+
+  static getDerivedStateFromError(error: Error) {
+    return {error};
+  }
+
+  componentDidUpdate(prevProps: {resetKey: unknown}) {
+    if (this.state.error !== null && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({error: null});
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{padding: "28px 30px", border: `1px solid ${C.rule}`, color: C.muted, fontSize: 12, lineHeight: 1.7}}>
+          This preview could not be rendered. {this.state.error.message}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
  * A confirmation dialog. Escape and an overlay click both cancel, so a destructive action always
  * has a way out that is not the confirm button. `title` takes the section label's type.
  * `maxWidth` overrides the panel's default 480px cap (`.modal-panel` in site.html) for content
@@ -121,6 +156,43 @@ export function OwnerTokenBanner({notices}: {notices: OwnerTokenNotice[]}) {
       ))}
     </div>
   );
+}
+
+/** Header indicator for the chain-fallback load: "Refreshing…" while one is in flight, or a
+ *  one-line notice with a retry action once one fails. Views keep rendering the previous data
+ *  underneath either way. */
+export function SyncStatus({
+  refreshing,
+  failed,
+  onRetry,
+  style,
+}: {
+  refreshing: boolean;
+  failed: boolean;
+  onRetry: () => void;
+  style?: React.CSSProperties;
+}) {
+  if (failed) {
+    return (
+      <span style={{fontSize: 11, color: C.muted, whiteSpace: "nowrap", ...style}}>
+        Chain read failed; showing the last known state.{" "}
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onRetry}
+          style={{color: C.ink, textDecoration: "underline"}}
+        >
+          Retry
+        </button>
+      </span>
+    );
+  }
+  if (refreshing) {
+    return (
+      <span style={{fontSize: 11, color: C.muted, whiteSpace: "nowrap", ...style}}>Refreshing…</span>
+    );
+  }
+  return null;
 }
 
 export const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;

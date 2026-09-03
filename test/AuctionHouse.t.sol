@@ -65,10 +65,11 @@ abstract contract AuctionBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection), 0
+            Denominations.UNIT / 10, feeRecipient, address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
 
         vm.deal(alice, 1_000 ether);
@@ -193,7 +194,7 @@ contract AuctionHouseTest is AuctionBase {
     function test_BlackShapeIsRejectedAsWorthless() public {
         uint256 id = _open();
 
-        // Build an apex Complete and sacrifice it: 10,000 dust composed to 100 ETH.
+        // Build an apex Complete and burn its backing: 10,000 dust composed to 100 ETH.
         vm.prank(alice);
         uint256 first =
             shapes.mintBatchTo{value: 10_000 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 10_000, alice);
@@ -204,7 +205,7 @@ contract AuctionHouseTest is AuctionBase {
         vm.prank(alice);
         shapes.compose(first, burn);
         vm.prank(alice);
-        shapes.sacrifice(first);
+        shapes.burnBacking(first);
 
         assertEq(shapes.backingOf(first), 0, "a Black Shape backs nothing");
 

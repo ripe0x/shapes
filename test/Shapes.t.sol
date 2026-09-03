@@ -12,10 +12,10 @@ import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
-import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
-import {ShapeFormation, ShapeState} from "../src/interfaces/IShapeCapabilities.sol";
+import {IShapeGeometry} from "../src/interfaces/IShapeGeometry.sol";
+import {ShapeFormation, ShapeState} from "../src/ShapeTypes.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {InkGenes} from "../src/lib/InkGenes.sol";
@@ -45,7 +45,6 @@ abstract contract ShapesBase is Test {
 
     ShapeCollection internal collection;
     Shapes internal shapes;
-    ShapeLens internal lens;
 
     address internal feeRecipient = address(0xFEE);
     address internal alice = address(0xA11CE);
@@ -69,16 +68,24 @@ abstract contract ShapesBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         // Most legacy subsystem tests need an otherwise-empty collection. ContractOwnership.t.sol
         // exercises the live genesis token itself; burn it here while preserving issued id 0.
         if (!_keepGenesisShape()) shapes.redeemTo(0, payable(address(0xD15CA4D)));
-        lens = new ShapeLens(address(shapes));
         vm.deal(alice, 10_000 ether);
         vm.deal(bob, 10_000 ether);
+    }
+
+    /// @dev The grid and module count a denomination maps to. Geometry is the renderer's fact,
+    ///      read through `IShapeGeometry.cardGeometry`; the token carries the value ladder only.
+    function _gridForAmount(uint256 amountWei) internal view returns (uint256 cols, uint256 rows) {
+        (, cols, rows,,,,,) = IShapeGeometry(shapes.renderer()).cardGeometry(bytes32(0), amountWei, 0);
+    }
+
+    function _modulesForAmount(uint256 amountWei) internal view returns (uint256 moduleCount) {
+        (,,,,,,, moduleCount) = IShapeGeometry(shapes.renderer()).cardGeometry(bytes32(0), amountWei, 0);
     }
 
     function _mint(address who, uint256 amount) internal returns (uint256 id) {
@@ -126,7 +133,7 @@ contract MintTest is ShapesBase {
             assertEq(id, i + 1, "permissionless token ids are sequential from 1");
             assertEq(shapes.ownerOf(id), alice);
             assertEq(shapes.backingOf(id), DENOMS[i]);
-            assertTrue(lens.exists(id), "freshly minted Shape exists");
+            assertTrue(shapes.exists(id), "freshly minted Shape exists");
             assertEq(shapes.denomIndexOf(id), i, "stored denomination index");
             assertEq(shapes.redeemableBacking(), expectedBacking);
             assertEq(shapes.totalSupply(), i + 1);
@@ -177,7 +184,7 @@ contract MintTest is ShapesBase {
 
     function testFuzz_OnlyLadderAmountsAreAccepted(uint256 amount) public {
         amount = bound(amount, 0, 200 ether);
-        bool supported = lens.isSupportedDenomination(amount);
+        bool supported = shapes.isSupportedDenomination(amount);
 
         vm.deal(alice, amount + feeOf(amount));
         vm.prank(alice);
@@ -318,7 +325,7 @@ contract FeeTest is ShapesBase {
         assertEq(shapes.redeemableBacking(), DENOMS[8] + DENOMS[0]);
         assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0] + 2 * MINT_FEE);
 
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
         assertEq(feeRecipient.balance, 2 * MINT_FEE, "the recipient received exactly the accrued amount");
         assertEq(shapes.pendingFees(), 0, "nothing left pending");
         assertEq(address(shapes).balance, DENOMS[8] + DENOMS[0], "only backing remains");
@@ -333,9 +340,7 @@ contract FeeTest is ShapesBase {
     }
 
     function test_ZeroFeeIsSupported() public {
-        Shapes free = new Shapes{value: Denominations.amountAt(0)}(
-            0, feeRecipient, address(renderer), address(collection), 0
-        );
+        Shapes free = new Shapes{value: Denominations.amountAt(0)}(0, feeRecipient, address(renderer), 0);
         vm.prank(alice);
         uint256 id = free.mintTo{value: DENOMS[4]}(DENOMS[4], alice);
         assertEq(free.backingOf(id), DENOMS[4]);
@@ -344,21 +349,21 @@ contract FeeTest is ShapesBase {
     }
 
     /// @notice A reverting fee recipient makes no difference to minting: the mint path never
-    ///         calls it. Only `withdrawFees` can reach it, and only that call reverts.
-    function test_RevertingFeeRecipientBlocksWithdrawalButNotMintingOrRedemption() public {
+    ///         calls it. Only `withdrawFees` can reach it, and only that call reverts, and only
+    ///         for that recipient: redirecting future fees to a working recipient does not move
+    ///         what is already owed to the reverting one, which stays stuck.
+    function test_RevertingFeeRecipientBlocksOnlyItsOwnWithdrawal() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
-        Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(bad), address(renderer), address(collection), 0
-        );
+        Shapes s = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(bad), address(renderer), 0);
 
         vm.prank(alice);
         uint256 id = s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
         assertEq(s.ownerOf(id), alice, "minting to a reverting fee recipient still succeeds");
-        assertEq(s.pendingFees(), MINT_FEE, "the fee accrued regardless");
+        assertEq(s.feesOwedTo(address(bad)), MINT_FEE, "the fee accrued regardless");
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(bad), MINT_FEE));
-        s.withdrawFees();
-        assertEq(s.pendingFees(), MINT_FEE, "the failed withdrawal left the fee pending, not lost");
+        s.withdrawFees(address(bad));
+        assertEq(s.feesOwedTo(address(bad)), MINT_FEE, "the failed withdrawal left the fee pending, not lost");
 
         // Redemption is unaffected by the fee recipient's behavior.
         uint256 before = alice.balance;
@@ -366,41 +371,36 @@ contract FeeTest is ShapesBase {
         s.redeem(id);
         assertEq(alice.balance - before, DENOMS[4]);
 
-        // The admin recovers by redirecting the recipient; the pending fee then withdraws cleanly.
-        uint256 bobBefore = bob.balance;
+        // Redirecting future fees does not recover the stuck balance: it stays owed to `bad`
+        // forever, while a fee accrued after the redirect withdraws cleanly to the new recipient.
         s.setFeeRecipient(bob);
-        s.withdrawFees();
-        assertEq(
-            bob.balance - bobBefore, MINT_FEE, "the redirected recipient received the previously stuck fee"
-        );
-        assertEq(s.pendingFees(), 0);
+        vm.prank(alice);
+        s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
+        uint256 bobBefore = bob.balance;
+        s.withdrawFees(bob);
+        assertEq(bob.balance - bobBefore, MINT_FEE, "bob withdrew only the fee that accrued to bob");
+        assertEq(s.feesOwedTo(address(bad)), MINT_FEE, "the reverting recipient's balance is still stuck");
+        assertEq(s.pendingFees(), MINT_FEE, "the stuck balance still counts toward the total");
     }
 
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0)));
-        new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0), address(renderer), address(collection), 0
-        );
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(0), address(renderer), 0);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0)));
-        new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(0), address(collection), 0
-        );
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(0), 0);
     }
 
     function test_ConstructorRejectsFeeAboveCap() public {
         uint256 cap = shapes.unit();
         vm.expectRevert(abi.encodeWithSelector(IShapes.MintFeeAboveCap.selector, cap + 1));
-        new Shapes{value: Denominations.amountAt(0)}(
-            cap + 1, feeRecipient, address(renderer), address(collection), 0
-        );
+        new Shapes{value: Denominations.amountAt(0)}(cap + 1, feeRecipient, address(renderer), 0);
     }
 
     function test_ConstructorStoresAndChargesTheFlatFee() public {
         uint256 customFee = Denominations.UNIT / 2;
-        Shapes custom = new Shapes{value: Denominations.amountAt(0)}(
-            customFee, feeRecipient, address(renderer), address(collection), 0
-        );
+        Shapes custom =
+            new Shapes{value: Denominations.amountAt(0)}(customFee, feeRecipient, address(renderer), 0);
         assertEq(custom.mintFee(), customFee);
 
         vm.prank(alice);
@@ -469,7 +469,7 @@ contract FeeTest is ShapesBase {
 
     function test_WithdrawFeesWithNothingPendingReverts() public {
         vm.expectRevert(IShapes.NoFeesPending.selector);
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
     }
 
     function test_AnyoneCanTriggerWithdrawFeesToTheRecipient() public {
@@ -477,20 +477,25 @@ contract FeeTest is ShapesBase {
         assertEq(shapes.pendingFees(), MINT_FEE);
 
         vm.prank(bob);
-        shapes.withdrawFees();
+        shapes.withdrawFees(feeRecipient);
         assertEq(feeRecipient.balance, MINT_FEE, "the recipient received it regardless of the caller");
         assertEq(shapes.pendingFees(), 0);
     }
 
-    function test_WithdrawFeesPaysTheRecipientCurrentAtWithdrawTime() public {
-        uint256 bobBefore = bob.balance;
+    /// @notice Fees accrue per recipient: redirecting `feeRecipient` points only future accrual
+    ///         at the new address and leaves what is already owed to the old one untouched and
+    ///         still withdrawable by it. Closes audit finding S-1.
+    function test_SetFeeRecipientDoesNotMoveAlreadyAccruedFees() public {
         _mint(alice, DENOMS[4]);
         shapes.setFeeRecipient(bob);
         assertEq(feeRecipient.balance, 0, "the old recipient never receives a fee accrued before redirect");
 
-        shapes.withdrawFees();
-        assertEq(bob.balance - bobBefore, MINT_FEE, "the new recipient received the withdrawal");
-        assertEq(feeRecipient.balance, 0);
+        vm.expectRevert(IShapes.NoFeesPending.selector);
+        shapes.withdrawFees(bob);
+
+        shapes.withdrawFees(feeRecipient);
+        assertEq(feeRecipient.balance, MINT_FEE, "the original recipient withdraws what it was already owed");
+        assertEq(shapes.pendingFees(), 0);
     }
 
     function test_PendingFeesNeverCountAsBacking() public {
@@ -835,9 +840,7 @@ contract ReserveTest is ShapesBase {
 
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
-        Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(fr), address(renderer), address(collection), 0
-        );
+        Shapes s = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(fr), address(renderer), 0);
         s.redeemTo(0, payable(address(0xD15CA4D)));
         fr.configure(IShapes(address(s)), DENOMS[4]);
         vm.deal(address(fr), 10 ether);
@@ -855,7 +858,7 @@ contract ReserveTest is ShapesBase {
         // Withdrawing hands `fr` control from its `receive`. The reentrant mint attempt is blocked
         // by the shared reentrancy guard, but the withdrawal itself still completes.
         uint256 frBefore = address(fr).balance;
-        s.withdrawFees();
+        s.withdrawFees(address(fr));
 
         assertTrue(fr.attempted(), "the fee callback ran on withdrawal");
         assertTrue(fr.reentryReverted(), "re-entry into mint from the fee callback must revert");
@@ -875,10 +878,10 @@ contract ViewTest is ShapesBase {
         uint256[9] memory expectedCols = [uint256(5), 4, 4, 3, 3, 2, 2, 1, 1];
         uint256[9] memory expectedRows = [uint256(5), 5, 4, 4, 3, 3, 2, 2, 1];
         for (uint256 i = 0; i < 9; ++i) {
-            (uint256 c, uint256 r) = lens.gridForAmount(DENOMS[i]);
+            (uint256 c, uint256 r) = _gridForAmount(DENOMS[i]);
             assertEq(c, expectedCols[i]);
             assertEq(r, expectedRows[i]);
-            assertEq(lens.modulesForAmount(DENOMS[i]), c * r);
+            assertEq(_modulesForAmount(DENOMS[i]), c * r);
         }
     }
 
@@ -886,27 +889,28 @@ contract ViewTest is ShapesBase {
     function test_ModuleCountStrictlyDecreasesWithValue() public view {
         uint256 previous = type(uint256).max;
         for (uint256 i = 0; i < 9; ++i) {
-            uint256 m = lens.modulesForAmount(DENOMS[i]);
+            uint256 m = _modulesForAmount(DENOMS[i]);
             assertLt(m, previous, "modules must fall as value rises");
             previous = m;
         }
-        assertEq(lens.modulesForAmount(DENOMS[0]), 25);
-        assertEq(lens.modulesForAmount(DENOMS[8]), 1);
+        assertEq(_modulesForAmount(DENOMS[0]), 25);
+        assertEq(_modulesForAmount(DENOMS[8]), 1);
     }
 
     function test_GridForUnsupportedAmountReverts() public {
+        IShapeGeometry geometry = IShapeGeometry(shapes.renderer());
         vm.expectRevert(abi.encodeWithSelector(Denominations.UnsupportedDenomination.selector, DENOMS[4] * 2));
-        lens.gridForAmount(DENOMS[4] * 2);
+        geometry.cardGeometry(bytes32(0), DENOMS[4] * 2, 0);
     }
 
     function test_IsSupportedDenomination() public view {
         for (uint256 i = 0; i < 9; ++i) {
-            assertTrue(lens.isSupportedDenomination(DENOMS[i]));
+            assertTrue(shapes.isSupportedDenomination(DENOMS[i]));
         }
-        assertFalse(lens.isSupportedDenomination(0));
-        assertFalse(lens.isSupportedDenomination(DENOMS[4] * 2));
-        assertFalse(lens.isSupportedDenomination(DENOMS[4] + 1));
-        assertFalse(lens.isSupportedDenomination(type(uint256).max));
+        assertFalse(shapes.isSupportedDenomination(0));
+        assertFalse(shapes.isSupportedDenomination(DENOMS[4] * 2));
+        assertFalse(shapes.isSupportedDenomination(DENOMS[4] + 1));
+        assertFalse(shapes.isSupportedDenomination(type(uint256).max));
     }
 
     function test_NameSymbolAndInterfaces() public view {
@@ -930,15 +934,15 @@ contract ViewTest is ShapesBase {
 
 contract CoreStateDiscoveryTest is ShapesBase {
     function test_ExistsTracksEveryTokenLifecycle() public {
-        assertFalse(lens.exists(999), "never-issued id is not live");
+        assertFalse(shapes.exists(999), "never-issued id is not live");
 
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 5);
-        assertTrue(lens.exists(first), "minted id is live");
+        assertTrue(shapes.exists(first), "minted id is live");
 
         vm.prank(alice);
         shapes.transferFrom(alice, bob, first);
-        assertTrue(lens.exists(first), "transfer does not change liveness");
+        assertTrue(shapes.exists(first), "transfer does not change liveness");
         vm.prank(bob);
         shapes.transferFrom(bob, alice, first);
 
@@ -948,10 +952,10 @@ contract CoreStateDiscoveryTest is ShapesBase {
         }
         vm.prank(alice);
         shapes.compose(first, burnIds);
-        assertTrue(lens.exists(first), "compose survivor remains live");
+        assertTrue(shapes.exists(first), "compose survivor remains live");
         assertEq(shapes.denomIndexOf(first), 1, "compose updates stored denomination");
         for (uint256 i = 0; i < burnIds.length; ++i) {
-            assertFalse(lens.exists(burnIds[i]), "compose input is consumed");
+            assertFalse(shapes.exists(burnIds[i]), "compose input is consumed");
         }
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, burnIds[0]));
         shapes.denomIndexOf(burnIds[0]);
@@ -960,7 +964,7 @@ contract CoreStateDiscoveryTest is ShapesBase {
         shapes.decompose(first);
         assertEq(shapes.denomIndexOf(first), 0, "decompose restores survivor denomination");
         for (uint256 i = 0; i < burnIds.length; ++i) {
-            assertTrue(lens.exists(burnIds[i]), "decompose revives input identity");
+            assertTrue(shapes.exists(burnIds[i]), "decompose revives input identity");
             assertEq(shapes.denomIndexOf(burnIds[i]), 0, "decompose restores input denomination");
         }
 
@@ -969,26 +973,26 @@ contract CoreStateDiscoveryTest is ShapesBase {
         uint8[] memory outDenoms = new uint8[](5);
         vm.prank(alice);
         uint256[] memory children = shapes.split(first, outDenoms);
-        assertFalse(lens.exists(first), "split retires parent");
+        assertFalse(shapes.exists(first), "split retires parent");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, first));
         shapes.denomIndexOf(first);
         for (uint256 i = 0; i < children.length; ++i) {
-            assertTrue(lens.exists(children[i]), "split child is live");
+            assertTrue(shapes.exists(children[i]), "split child is live");
             assertEq(shapes.denomIndexOf(children[i]), 0, "split child exposes output denomination");
         }
 
         vm.prank(alice);
         shapes.redeem(children[0]);
-        assertFalse(lens.exists(children[0]), "redeem retires id");
+        assertFalse(shapes.exists(children[0]), "redeem retires id");
 
         vm.prank(alice);
         shapes.burn(children[1]);
-        assertFalse(lens.exists(children[1]), "burn retires id");
+        assertFalse(shapes.exists(children[1]), "burn retires id");
     }
 
     function test_DenomIndexOfNonexistentRevertsWhileExistsDoesNot() public {
         uint256 tokenId = 777;
-        assertFalse(lens.exists(tokenId));
+        assertFalse(shapes.exists(tokenId));
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, tokenId));
         shapes.denomIndexOf(tokenId);
     }
@@ -1043,13 +1047,13 @@ contract FormationTest is ShapesBase {
         assertEq(uint8(shapes.formationOf(kids[0])), uint8(ShapeFormation.Direct), "kept the origin");
         assertEq(uint8(shapes.formationOf(kids[1])), uint8(ShapeFormation.Fragment), "no origin");
 
-        // `ShapeLens` recomputes the same classification from the core's getters.
+        // `shapeState` reports the same classification as the per-field getter.
         uint256[5] memory all = [direct, first, a, kids[0], kids[1]];
         for (uint256 i = 0; i < all.length; ++i) {
             assertEq(
-                uint8(lens.shapeState(all[i]).formation),
+                uint8(shapes.shapeState(all[i]).formation),
                 uint8(shapes.formationOf(all[i])),
-                "lens disagreed with the core"
+                "shapeState disagreed with the core"
             );
         }
     }
@@ -1233,8 +1237,8 @@ contract PointersTest is ShapesBase {
         assertFalse(_positionsIsLocked());
         assertEq(_marketAddress(), address(0));
         assertFalse(_marketIsLocked());
-        assertEq(lens.positionOf(1), address(0));
-        assertEq(lens.positionOf(type(uint256).max), address(0));
+        assertEq(shapes.positionOf(1), address(0));
+        assertEq(shapes.positionOf(type(uint256).max), address(0));
     }
 
     function test_AdminSetsExactPositionsResultsAndEvent() public {
@@ -1247,9 +1251,9 @@ contract PointersTest is ShapesBase {
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
 
         assertEq(_positionsAddress(), address(resolver));
-        assertEq(lens.positionOf(1), alice);
-        assertEq(lens.positionOf(2), address(0));
-        assertEq(lens.positionOf(99), address(renderer));
+        assertEq(shapes.positionOf(1), alice);
+        assertEq(shapes.positionOf(2), address(0));
+        assertEq(shapes.positionOf(99), address(renderer));
     }
 
     function test_PositionsCanBeReplacedAndClearedUntilLocked() public {
@@ -1259,12 +1263,12 @@ contract PointersTest is ShapesBase {
         second.setPosition(1, bob);
 
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(first));
-        assertEq(lens.positionOf(1), alice);
+        assertEq(shapes.positionOf(1), alice);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(second));
-        assertEq(lens.positionOf(1), bob);
+        assertEq(shapes.positionOf(1), bob);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(0));
         assertEq(_positionsAddress(), address(0));
-        assertEq(lens.positionOf(1), address(0));
+        assertEq(shapes.positionOf(1), address(0));
     }
 
     function test_PositionsRejectsCodelessNonzeroAddress() public {
@@ -1273,8 +1277,8 @@ contract PointersTest is ShapesBase {
     }
 
     function test_MarketCanBeSetReplacedAndClearedWithEvents() public {
-        MockPositionResolver first = new MockPositionResolver();
-        MockPositionResolver second = new MockPositionResolver();
+        ShapeAuctionHouse first = new ShapeAuctionHouse(address(shapes));
+        ShapeAuctionHouse second = new ShapeAuctionHouse(address(shapes));
 
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.MarketSet(address(first));
@@ -1285,6 +1289,32 @@ contract PointersTest is ShapesBase {
         assertEq(_marketAddress(), address(second));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(0));
         assertEq(_marketAddress(), address(0));
+    }
+
+    /// @notice Each pointer demands the interface its reader calls, so a live contract of the
+    ///         wrong kind is refused rather than stored and silently useless.
+    function test_PointersRefuseATargetThatAnswersTheWrongInterface() public {
+        ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
+        MockPositionResolver resolver = new MockPositionResolver();
+        address neither = address(new ShapeCollection(renderer, shapes));
+
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(house));
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), neither);
+
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(resolver));
+        vm.expectRevert(IShapes.InvalidPointerTarget.selector);
+        shapes.setPointer(uint8(IShapes.Pointer.Market), neither);
+
+        assertEq(_positionsAddress(), address(0), "a refused target must not be stored");
+        assertEq(_marketAddress(), address(0), "a refused target must not be stored");
+
+        shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(house));
+        assertEq(_positionsAddress(), address(resolver));
+        assertEq(_marketAddress(), address(house));
     }
 
     function test_MarketRejectsCodelessNonzeroAddress() public {
@@ -1327,7 +1357,7 @@ contract PointersTest is ShapesBase {
         emit IShapes.PositionsLocked(address(0));
         shapes.lockPointer(uint8(IShapes.Pointer.Positions));
         assertTrue(_positionsIsLocked());
-        assertEq(lens.positionOf(123), address(0));
+        assertEq(shapes.positionOf(123), address(0));
 
         MockPositionResolver resolver = new MockPositionResolver();
         vm.expectRevert(IShapes.PointerIsLocked.selector);
@@ -1352,7 +1382,7 @@ contract PointersTest is ShapesBase {
     }
 
     function test_ConfiguredMarketBecomesPermanentWhenLocked() public {
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.MarketLocked(address(market_));
@@ -1385,14 +1415,14 @@ contract PointersTest is ShapesBase {
     }
 
     function test_RendererPositionsAndMarketLocksAreIndependent() public {
-        shapes.lockRenderer();
+        shapes.lockPresentation();
         MockPositionResolver resolver = new MockPositionResolver();
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         shapes.lockPointer(uint8(IShapes.Pointer.Positions));
 
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
-        assertTrue(shapes.rendererLocked());
+        assertTrue(shapes.presentationLocked());
         assertTrue(_positionsIsLocked());
         assertEq(_marketAddress(), address(market_));
         assertFalse(_marketIsLocked());
@@ -1403,7 +1433,7 @@ contract PointersTest is ShapesBase {
 
     function test_AdminTransferMovesAllRemainingAdminAuthority() public {
         MockPositionResolver resolver = new MockPositionResolver();
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         shapes.transferAdmin(alice);
         assertEq(shapes.admin(), alice);
 
@@ -1445,14 +1475,14 @@ contract PointersTest is ShapesBase {
 
     function test_RenouncingAfterInstallLeavesPointersUsableAndUnchanged() public {
         MockPositionResolver resolver = new MockPositionResolver();
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         resolver.setPosition(7, alice);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
         shapes.renounceAdmin();
         assertEq(_positionsAddress(), address(resolver));
         assertEq(_marketAddress(), address(market_));
-        assertEq(lens.positionOf(7), alice);
+        assertEq(shapes.positionOf(7), alice);
     }
 
     /// @notice A reverting positions target does not make `positionOf` revert; the failure is
@@ -1463,8 +1493,8 @@ contract PointersTest is ShapesBase {
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         uint256 id = _mint(alice, DENOMS[4]);
 
-        assertEq(lens.positionOf(id), address(0), "existing id");
-        assertEq(lens.positionOf(999), address(0), "nonexistent id");
+        assertEq(shapes.positionOf(id), address(0), "existing id");
+        assertEq(shapes.positionOf(999), address(0), "nonexistent id");
     }
 
     /// @notice A positions target that burns unbounded gas cannot drain the caller: `positionOf`
@@ -1474,7 +1504,7 @@ contract PointersTest is ShapesBase {
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
 
         uint256 gasBefore = gasleft();
-        address position = lens.positionOf(1);
+        address position = shapes.positionOf(1);
         uint256 used = gasBefore - gasleft();
 
         assertEq(position, address(0), "hostile positions result swallowed to zero");
@@ -1485,11 +1515,11 @@ contract PointersTest is ShapesBase {
     function test_MalformedPositionResultsAreSwallowedToZero() public {
         ShortReturnResolver shortResult = new ShortReturnResolver();
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(shortResult));
-        assertEq(lens.positionOf(1), address(0), "short result");
+        assertEq(shapes.positionOf(1), address(0), "short result");
 
         DirtyAddressResolver dirtyResult = new DirtyAddressResolver();
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(dirtyResult));
-        assertEq(lens.positionOf(1), address(0), "dirty address result");
+        assertEq(shapes.positionOf(1), address(0), "dirty address result");
     }
 
     function test_SettingAndQueryingPositionsCannotChangeTokenOrReserveState() public {
@@ -1504,7 +1534,7 @@ contract PointersTest is ShapesBase {
         resolver.setPosition(id, bob);
 
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
-        assertEq(lens.positionOf(id), bob);
+        assertEq(shapes.positionOf(id), bob);
 
         assertEq(address(shapes).balance, balanceBefore);
         assertEq(shapes.redeemableBacking(), backingBefore);
@@ -1518,7 +1548,7 @@ contract PointersTest is ShapesBase {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
-        shapes.setPointer(uint8(IShapes.Pointer.Market), address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(new ShapeAuctionHouse(address(shapes))));
 
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 5);
@@ -1556,7 +1586,7 @@ contract RendererAdminTest is ShapesBase {
     function test_DeployerIsAdminAndRendererStartsUnlocked() public view {
         assertEq(shapes.admin(), address(this));
         assertEq(shapes.renderer(), address(renderer));
-        assertFalse(shapes.rendererLocked());
+        assertFalse(shapes.presentationLocked());
     }
 
     function test_AdminCanReplaceTheRenderer() public {
@@ -1602,25 +1632,25 @@ contract RendererAdminTest is ShapesBase {
         shapes.setRenderer(address(0));
     }
 
-    function test_LockFreezesTheRendererForever() public {
+    function test_LockFreezesPresentationForever() public {
         ShapeRenderer next = new ShapeRenderer();
 
-        vm.expectEmit(false, false, false, false, address(shapes));
-        emit IShapes.RendererLocked();
-        shapes.lockRenderer();
-        assertTrue(shapes.rendererLocked());
+        vm.expectEmit(true, true, false, false, address(shapes));
+        emit IShapes.PresentationLocked(address(renderer), address(collection));
+        shapes.lockPresentation();
+        assertTrue(shapes.presentationLocked());
 
-        vm.expectRevert(IShapes.RendererIsLocked.selector);
+        vm.expectRevert(IShapes.PresentationIsLocked.selector);
         shapes.setRenderer(address(next));
 
-        vm.expectRevert(IShapes.RendererIsLocked.selector);
-        shapes.lockRenderer();
+        vm.expectRevert(IShapes.PresentationIsLocked.selector);
+        shapes.lockPresentation();
     }
 
     function test_LockIsAdminOnly() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.lockRenderer();
+        shapes.lockPresentation();
     }
 
     /// @notice The renderer is cosmetic: replacing it never touches backing or redemption.
@@ -1743,9 +1773,9 @@ contract RecompositionTest is ShapesBase {
         uint256 first = _mintMany(DENOMS[0], 5);
         uint256[] memory burn = new uint256[](2);
         burn[0] = first + 1;
-        burn[1] = first + 1; // duplicate: second _burn hits a nonexistent token
+        burn[1] = first + 1;
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
         shapes.compose(first, burn);
     }
 
@@ -1753,7 +1783,7 @@ contract RecompositionTest is ShapesBase {
         uint256 a = _mint(alice, DENOMS[0]);
         uint256[] memory burn = new uint256[](0);
         vm.prank(alice);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(IShapes.NoComposeInputs.selector);
         shapes.compose(a, burn);
     }
 
@@ -1799,7 +1829,7 @@ contract RecompositionTest is ShapesBase {
         outs[0] = 0;
         outs[1] = 0; // 0.02 != 0.1
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] * 2));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2));
         shapes.split(id, outs);
     }
 
@@ -1882,7 +1912,7 @@ contract RecompositionTest is ShapesBase {
         shapes.redeem(id);
     }
 
-    /// @notice The child seeds derive from the parent seed and index alone — no block data. Mutating
+    /// @notice The child seeds derive from the parent seed and index alone, no block data. Mutating
     ///         the block environment before the split cannot change them, so a split cannot be
     ///         re-rolled by waiting for a friendlier block.
     function test_SplitChildSeedsIgnoreBlockEnv() public {
@@ -1910,14 +1940,14 @@ contract RecompositionTest is ShapesBase {
 }
 
 /* ==================================================================== *
- *  Black Shape sacrifice and zero-value burn
+ *  Black Shape backing burn and zero-value burn
  * ==================================================================== */
 
 contract BlackShapeTest is ShapesBase {
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     /// @dev A genuine apex Complete: 10,000 direct 0.01 mints composed into one 100 ETH token
-    ///      carrying 10,000 origins. The only sacrificable state; nothing cheaper reaches it,
+    ///      carrying 10,000 origins. The only state whose backing can be burned; nothing cheaper reaches it,
     ///      because origins are conserved and only a direct mint creates one.
     function _buildApexComplete() internal returns (uint256 id) {
         vm.prank(alice);
@@ -1946,7 +1976,7 @@ contract BlackShapeTest is ShapesBase {
         survivor = shapes.compose(first, burn);
     }
 
-    function test_SacrificeCreatesBlackWithoutBurningAndIgnoresPositionsTarget() public {
+    function test_BurnBackingCreatesBlackWithoutBurningAndIgnoresPositionsTarget() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
@@ -1956,17 +1986,17 @@ contract BlackShapeTest is ShapesBase {
         assertEq(shapes.redeemableBacking(), DENOMS[8], "reserve is the apex backing");
 
         vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.Blackened(id, DENOMS[8]);
+        emit IShapes.BlackShapeCreated(id, DENOMS[8]);
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
-        assertTrue(shapes.isBlack(id), "now Black");
-        assertTrue(lens.exists(id), "Black remains a live ERC721");
+        assertTrue(shapes.isBlackShape(id), "now Black");
+        assertTrue(shapes.exists(id), "Black remains a live ERC721");
         assertEq(shapes.denomIndexOf(id), 8, "Black retains its apex denomination index");
-        assertEq(shapes.blackCount(), 1);
-        assertEq(shapes.sacrificedBacking(), DENOMS[8]);
+        assertEq(shapes.blackShapeCount(), 1);
+        assertEq(shapes.burnedBacking(), DENOMS[8]);
         assertEq(shapes.redeemableBacking(), 0, "backing left the reserve");
-        assertEq(DEAD.balance, deadBefore + DENOMS[8], "sacrificed to the burn address");
+        assertEq(DEAD.balance, deadBefore + DENOMS[8], "backing sent to the burn address");
         assertEq(address(shapes).balance, balBefore - DENOMS[8], "contract paid it out");
         assertEq(shapes.backingOf(id), 0, "black backing reads zero");
         assertEq(shapes.valueOf(id), 0, "black draft ERC-8060 value reads zero");
@@ -1982,7 +2012,7 @@ contract BlackShapeTest is ShapesBase {
     function test_BlackRejectsRedeemAndRecompositionButCanBurnForZero() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         // Non-redeemable.
         vm.prank(alice);
@@ -2003,10 +2033,10 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.split(id, outs);
 
-        // One way: cannot sacrifice twice.
+        // One way: cannot burn backing twice.
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         uint256 balanceBefore = alice.balance;
         uint256 mintedBefore = shapes.totalMinted();
@@ -2016,9 +2046,9 @@ contract BlackShapeTest is ShapesBase {
         shapes.burn(id);
 
         assertEq(alice.balance, balanceBefore, "zero-value burn transfers no ETH");
-        assertEq(shapes.sacrificedBacking(), DENOMS[8], "historical sacrifice remains counted");
-        assertEq(shapes.blackCount(), 1, "blackCount is cumulative");
-        assertFalse(lens.exists(id), "burn retires the Black id");
+        assertEq(shapes.burnedBacking(), DENOMS[8], "historical burn remains counted");
+        assertEq(shapes.blackShapeCount(), 0, "blackShapeCount counts the Black Shapes alive now");
+        assertFalse(shapes.exists(id), "burn retires the Black id");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
         shapes.ownerOf(id);
 
@@ -2026,26 +2056,26 @@ contract BlackShapeTest is ShapesBase {
         assertEq(next, mintedBefore, "burned Black id is never reused");
     }
 
-    function test_SacrificeRejectsDirectApex() public {
+    function test_BurnBackingRejectsDirectApex() public {
         uint256 id = _mint(alice, DENOMS[8]); // 100 ETH, originCount 1, not Complete
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
     }
 
-    function test_SacrificeRejectsCompleteBelowApex() public {
+    function test_BurnBackingRejectsCompleteBelowApex() public {
         uint256 id = _buildComplete005();
         assertTrue(shapes.isComplete(id));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
     }
 
-    function test_SacrificeRejectsNonOwner() public {
+    function test_BurnBackingRejectsNonOwner() public {
         uint256 id = _mint(alice, DENOMS[4]);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
     }
 
     /// @notice `split` and `compose` reject a Black Shape, and the previews report the same
@@ -2053,7 +2083,7 @@ contract BlackShapeTest is ShapesBase {
     function test_PreviewsRejectBlackToMatchExecution() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         uint8[] memory outs = new uint8[](2);
         outs[0] = 7; // 50 ETH
@@ -2063,7 +2093,7 @@ contract BlackShapeTest is ShapesBase {
         shapes.split(id, outs);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        lens.previewSplit(id, outs);
+        shapes.previewSplit(id, outs);
 
         // As a compose survivor.
         uint256 live = _mint(alice, DENOMS[0]);
@@ -2073,7 +2103,7 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.compose(id, one);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        lens.previewCompose(id, one);
+        shapes.previewCompose(id, one);
 
         // As a compose input.
         one[0] = id;
@@ -2081,35 +2111,35 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.compose(live, one);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        lens.previewCompose(live, one);
+        shapes.previewCompose(live, one);
     }
 
-    /// @notice A Black Shape backs nothing, so `ShapeLens` cannot recover its denomination from
-    ///         `backingOf` and falls back on the apex invariant `sacrifice` enforces. The face
-    ///         value and the artwork survive the sacrifice; only the redeemable value goes.
+    /// @notice A Black Shape backs nothing, so its denomination cannot be recovered from
+    ///         `backingOf`. `shapeState` reports it from the stored index. The face value and the
+    ///         artwork survive the burn; only the redeemable value goes.
     function test_BlackShapeReadsAsApexWithNothingRedeemable() public {
         uint256 id = _buildApexComplete();
-        string memory cardBefore = lens.unicodeCard(id);
+        string memory cardBefore = shapes.unicodeCard(id);
         uint8 geneBefore = shapes.inkGeneOf(id);
 
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         assertEq(shapes.backingOf(id), 0, "a Black Shape backs nothing");
-        assertEq(uint8(shapes.formationOf(id)), uint8(ShapeFormation.Black), "sacrifice sets Black");
+        assertEq(uint8(shapes.formationOf(id)), uint8(ShapeFormation.Black), "burnBacking sets Black");
         assertFalse(shapes.isComplete(id), "Black is terminal, not Complete");
 
-        ShapeState memory st = lens.shapeState(id);
+        ShapeState memory st = shapes.shapeState(id);
         assertTrue(st.isBlack);
         assertEq(uint8(st.formation), uint8(ShapeFormation.Black), "lens agrees with the core");
-        assertEq(st.denominationIndex, 8, "the apex index survives the sacrifice");
+        assertEq(st.denominationIndex, 8, "the apex index survives the burn");
         assertEq(st.faceValueWei, DENOMS[8], "face value is the apex amount");
         assertEq(st.redeemableValueWei, 0, "nothing is redeemable");
         assertEq(st.originCount, 10_000, "origins are unchanged");
         assertEq(st.inkGene, geneBefore, "the gene is unchanged");
 
         // The card is a function of geometry, denomination and gene, none of which moved.
-        assertEq(lens.unicodeCard(id), cardBefore, "sacrifice must not change the artwork");
+        assertEq(shapes.unicodeCard(id), cardBefore, "burnBacking must not change the artwork");
     }
 }
 
@@ -2201,7 +2231,7 @@ contract InkGeneComposeTest is ShapesBase {
     ///         `burnIds` orders replayed against the identical starting state via
     ///         `vm.snapshotState`/`vm.revertToState`, yield the identical gene. `burnSeedFold` is
     ///         an XOR fold (commutative, associative), so calldata order cannot leak into
-    ///         `geneAtCompose`'s output — this is that guarantee proven against real storage and
+    ///         `geneAtCompose`'s output. This is that guarantee proven against real storage and
     ///         real `_burn`s, not just the pure library function.
     function test_ComposeIsOrderInvariantOnChain() public {
         uint256 first = _mintDust(5);
@@ -2244,7 +2274,7 @@ contract InkGeneComposeTest is ShapesBase {
 
     /// @notice A genuinely homogeneous pool at a single-tier compose (T=1) is a fixed point:
     ///         built by decomposing one dust-gened Shape into children (which `split` copies
-    ///         the parent's gene to verbatim) and recomposing four of them — `best == worst ==
+    ///         the parent's gene to verbatim) and recomposing four of them: `best == worst ==
     ///         center == survivorGene` by construction, so the walk cannot move the gene.
     function test_ComposeHomogeneousPoolIsFixedPointAtOneTier() public {
         uint256 parent = _mint(alice, DENOMS[1]); // denomIndex 1, 5 units
@@ -2305,8 +2335,8 @@ contract InkGeneComposeTest is ShapesBase {
     /// @notice Gas for the 10,000-dust mega-compose, under the same construction the coordinator
     ///         asked about: 10,000 independent direct mints (each drawing its own gene, not a
     ///         forced-homogeneous pool) composed into one apex Complete. Not an assertion on the
-    ///         resulting gene — with 10,000 independently-drawn genes the pool is essentially
-    ///         never homogeneous — only that the ink-gene bookkeeping added to `compose` does not
+    ///         resulting gene (with 10,000 independently-drawn genes the pool is essentially
+    ///         never homogeneous), only that the ink-gene bookkeeping added to `compose` does not
     ///         blow past a sane gas ceiling, and a `console.log` of the true number for the
     ///         record.
     function test_ComposeMegaGasProfile_10000Dust() public {
@@ -2392,7 +2422,7 @@ contract InkGenePreviewTest is ShapesBase {
         }
 
         uint256 snapshot = vm.snapshotState();
-        lens.previewCompose(first, burn);
+        shapes.previewCompose(first, burn);
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(burn[i]), alice, "previewCompose burned an input");
         }
@@ -2407,6 +2437,6 @@ contract InkGenePreviewTest is ShapesBase {
         burn[0] = first + 1;
         burn[1] = first + 1;
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
-        lens.previewCompose(first, burn);
+        shapes.previewCompose(first, burn);
     }
 }

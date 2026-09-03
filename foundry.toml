@@ -10,11 +10,9 @@ script = "script"
 solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
-# `AdminOps`, a public library called via delegatecall on the `PointerOps` pattern, hosts
-# `attestArtist`, `setMetadataCopy`, `setFeeRecipient` and `setMintFee`; moving their bodies off
-# `Shapes` recovered 803 bytes (issue #56 byte budget). At `optimizer_runs` 20, with the owner-token
-# feature, `Shapes`'s current runtime size is 23,606 bytes on the default profile and 23,586 bytes
-# on the testnet profile: 970 and 990 bytes of margin under the EIP-170 24,576 limit.
+# `Shapes` runtime sits a few KB under the EIP-170 24,576 limit; measure both profiles with
+# `forge build --sizes`. The recomposition state machine and every configuration write path live
+# in the linked `RecompositionOps` and `AdminOps` libraries; see project/ARCHITECTURE.md.
 # `optimizer_runs` 1 measured larger on `Shapes` than 20; runtime size does not move monotonically
 # with `optimizer_runs`. Re-measure both the default and testnet profiles with
 # `forge build --sizes` before changing this value in either direction.

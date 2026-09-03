@@ -153,10 +153,9 @@ contract AuctionSecurityTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, makeAddr("fee"), address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, makeAddr("fee"), address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         vm.deal(seller, 10 ether);
         house = new ShapeAuctionHouse(address(shapes));
         vm.deal(alice, 100 ether);
@@ -273,9 +272,9 @@ contract AuctionSecurityTest is Test {
     }
 
     /// @notice L-02. A contract fee recipient tries to push a Shape it owns into the house from
-    ///         its `receive` callback. That callback no longer fires from inside a bid at all —
+    ///         its `receive` callback. That callback no longer fires from inside a bid at all:
     ///         `_takeBid`'s escrow mint accrues the Shapes fee to `pendingFees` with no external
-    ///         call — so an armed recipient never even gets the chance during an honest bid.
+    ///         call, so an armed recipient never even gets the chance during an honest bid.
     ///         Separately, the same push attempt made from inside `withdrawFees` (the only call
     ///         that still hands it control) is refused exactly as before: `onERC721Received`
     ///         rejects any inbound `safeTransferFrom` whose `from` is not the zero address, so the
@@ -283,9 +282,8 @@ contract AuctionSecurityTest is Test {
     function test_L02_FeeRecipientCannotStrandAShapeInTheHouse() public {
         MaliciousFeeRecipient mal = new MaliciousFeeRecipient();
         // A separate Shapes whose fee recipient is the malicious contract.
-        Shapes shapes2 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection), 0
-        );
+        Shapes shapes2 =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(mal), address(renderer), 0);
         ShapeAuctionHouse house2 = new ShapeAuctionHouse(address(shapes2));
         mal.setTargets(shapes2, address(house2));
 
@@ -318,7 +316,7 @@ contract AuctionSecurityTest is Test {
 
         // The same push attempt, now made from inside `withdrawFees`: `onERC721Received` still
         // refuses it, so the Shape stays put.
-        shapes2.withdrawFees();
+        shapes2.withdrawFees(address(mal));
         assertFalse(mal.armed(), "the callback ran and consumed the one-shot attempt");
         assertEq(shapes2.ownerOf(pushed), address(mal), "the pushed Shape was refused, not stranded");
     }
@@ -327,16 +325,15 @@ contract AuctionSecurityTest is Test {
     ///         `pendingFees` rather than calling the fee recipient, so a fee-recipient-seller
     ///         armed to reenter `cancelAuction` never gets the chance during `bid`: the bid is
     ///         recorded normally, uninterrupted. Separately, on a fresh auction with no bid yet,
-    ///         the same seller's callback can still reach `cancelAuction` from `withdrawFees` —
+    ///         the same seller's callback can still reach `cancelAuction` from `withdrawFees`:
     ///         that call originates on `Shapes`, a different contract, so it is a fresh entry into
     ///         the house rather than reentrancy, and `cancelAuction`'s own guards allow it exactly
     ///         as they would a direct call. With nothing bid yet, that cancel simply succeeds: the
     ///         same outcome the seller gets calling `cancelAuction` directly. Not an exploit.
     function test_L1_ABidCannotBeRecordedOnAnAuctionCancelledMidCall() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
-        Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection), 0
-        );
+        Shapes shapes3 =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(mal), address(renderer), 0);
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
 
@@ -359,18 +356,17 @@ contract AuctionSecurityTest is Test {
         assertEq(house3.bidUnits(a, carol), 100, "carol's 1 ETH bid stands at 100 units");
 
         // A second, bid-less auction: the seller's callback can still reach cancelAuction from
-        // withdrawFees, and does — harmlessly, since there is nothing bid to steal.
+        // withdrawFees, and does, harmlessly, since there is nothing bid to steal.
         ReentrantCancelSeller mal2 = new ReentrantCancelSeller();
-        Shapes shapes4 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal2), address(renderer), address(collection), 0
-        );
+        Shapes shapes4 =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(mal2), address(renderer), 0);
         ShapeAuctionHouse house4 = new ShapeAuctionHouse(address(shapes4));
         mal2.setTargets(shapes4, house4);
         vm.deal(address(mal2), 10 ether);
         uint256 b = mal2.list(DENOMS[2], 1 days);
         mal2.arm();
 
-        shapes4.withdrawFees();
+        shapes4.withdrawFees(address(mal2));
 
         assertTrue(mal2.cancelled(), "the callback reached cancelAuction, unobstructed by reentrancy");
         assertEq(
@@ -384,15 +380,14 @@ contract AuctionSecurityTest is Test {
     ///         is structurally gone: `_takeBid`'s mint forwards no fee, so `mal`'s reentrant
     ///         attempt never fires and the bid settles honestly with carol as the escrowed
     ///         bidder. The only remaining path into `cancelAuction` is through `withdrawFees`,
-    ///         called after the bid, by which point `highestBidder` is set — the same guard
+    ///         called after the bid, by which point `highestBidder` is set: the same guard
     ///         `cancelAuction` always enforced (`InvalidAuction` once a bid exists) rejects the
     ///         attempt, and since `ReentrantCancelSeller` does not catch it, the whole
     ///         `withdrawFees` call reverts along with it. Carol's escrow is never released to `mal`.
     function test_L1_AFeeRecipientSellerCannotStealAnEscrowedBid() public {
         ReentrantCancelSeller mal = new ReentrantCancelSeller();
-        Shapes shapes3 = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(mal), address(renderer), address(collection), 0
-        );
+        Shapes shapes3 =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(mal), address(renderer), 0);
         ShapeAuctionHouse house3 = new ShapeAuctionHouse(address(shapes3));
         mal.setTargets(shapes3, house3);
 
@@ -418,7 +413,7 @@ contract AuctionSecurityTest is Test {
         // exists) rejects it, and the whole withdrawal reverts along with the reentrant attempt.
         uint256 pending = shapes3.pendingFees();
         vm.expectRevert(abi.encodeWithSelector(IShapes.EthTransferFailed.selector, address(mal), pending));
-        shapes3.withdrawFees();
+        shapes3.withdrawFees(address(mal));
 
         assertTrue(mal.armed(), "the reverted withdrawal undid even the one-shot arm consumption");
         assertFalse(mal.cancelled(), "the cancel attempt did not go through");

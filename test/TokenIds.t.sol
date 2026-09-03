@@ -14,8 +14,8 @@ import {ShapesBase} from "./Shapes.t.sol";
 ///
 ///      The property everything rests on: a fresh mint can never reproduce a revived id. A
 ///      revived id was issued in the past, so it is at most `totalMinted - 1`, while a fresh mint
-///      takes `totalMinted`. A collision would not silently corrupt state — OpenZeppelin's
-///      `_mint` reverts on an existing token — it would brick `decompose` or minting outright,
+///      takes `totalMinted`. A collision would not silently corrupt state: OpenZeppelin's
+///      `_mint` reverts on an existing token, it would brick `decompose` or minting outright,
 ///      which is why every path that touches the counter is pinned here.
 contract TokenIdAllocationTest is ShapesBase {
     function _keepGenesisShape() internal pure override returns (bool) {

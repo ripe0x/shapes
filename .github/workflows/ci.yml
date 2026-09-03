@@ -89,7 +89,7 @@ jobs:
         run: FOUNDRY_PROFILE=ci forge test -vv
 
   deploy-anvil:
-    name: deploy (anvil) + e2e
+    name: deploy (anvil) + lifecycle
     needs: changes
     if: needs.changes.outputs.contracts == 'true'
     runs-on: ubuntu-latest
@@ -110,23 +110,83 @@ jobs:
           restore-keys: |
             forge-build-${{ runner.os }}-
 
-      # script/deploy.sh and script/e2e-anvil.sh both expect a chain already answering on
-      # 127.0.0.1:8545; this job owns starting and stopping it.
+      # The lifecycle walkthrough runs the indexer against the same chain.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: indexer/package-lock.json
+
+      - name: install indexer
+        run: npm ci --prefix indexer --no-audit --no-fund
+
+      # script/deploy.sh and script/lifecycle.sh both expect a chain already answering on
+      # 127.0.0.1:8545; this job owns starting and stopping it. The gas limit is raised because
+      # the lifecycle's apex Complete is folded from 10000 origins in a handful of transactions.
       - name: start anvil
         run: |
-          anvil --port 8545 >/tmp/anvil.log 2>&1 &
+          anvil --port 8545 --gas-limit 5000000000 >/tmp/anvil.log 2>&1 &
           for _ in $(seq 1 50); do
             cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && exit 0
             sleep 0.2
           done
           echo "anvil never came up"; cat /tmp/anvil.log; exit 1
 
-      - name: end-to-end (script/e2e-anvil.sh)
-        run: script/e2e-anvil.sh
+      - name: deploy (script/deploy.sh anvil)
+        run: script/deploy.sh anvil
+
+      - name: lifecycle (script/lifecycle.sh anvil)
+        run: script/lifecycle.sh anvil
 
       - name: stop anvil
         if: always()
         run: pkill -f 'anvil --port 8545' || true
+
+  browser-e2e:
+    name: browser end-to-end
+    needs: changes
+    if: needs.changes.outputs.site == 'true' || needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out
+            cache
+          key: forge-build-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'lib/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'remappings.txt') }}
+          restore-keys: |
+            forge-build-${{ runner.os }}-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: install
+        run: npm ci
+
+      # Playwright is already a devDependency of preview/; only the browser needs fetching.
+      - name: install chromium
+        run: npx playwright install --with-deps chromium
+
+      # Owns its own chain (8590) and site (3190), deploys, and drives the real app in Chromium.
+      - name: browser walkthrough
+        run: npm run e2e:browser
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-e2e-screenshots
+          path: web/e2e/out
+          if-no-files-found: ignore
 
   renderer:
     name: renderer parity
@@ -183,6 +243,12 @@ jobs:
           npm run fixtures
           SHAPES_LADDER=testnet npm run fixtures
           git diff --exit-code -- ../test/fixtures/fixtures.mainnet.json ../test/fixtures/fixtures.testnet.json
+
+      # The /contracts page is generated from the artifacts. Regenerating must be a no-op; a
+      # non-empty diff means an ABI or NatSpec change landed without the committed docs.
+      - name: contract docs are current
+        working-directory: preview
+        run: npm run contracts:docs:check
 
       # and the Solidity port must still match them byte for byte
       - name: byte parity
@@ -276,10 +342,6 @@ jobs:
           tar -xzf "$RUNNER_TEMP/medusa-linux-x64.tar.gz" -C "$RUNNER_TEMP/medusa-bin"
           echo "$RUNNER_TEMP/medusa-bin" >> "$GITHUB_PATH"
 
-      # Medusa's crytic-compile adapter treats the config directory as its project root. Keep the
-      # reviewed configuration under project/experiments, but link it at root for this invocation.
+      # script/medusa.sh writes a root-level config with an absolute target; see its header.
       - name: fuzz reserve and lifecycle invariants
-        run: |
-          ln -s project/experiments/medusa-reserve.json medusa.json
-          trap 'rm -f medusa.json' EXIT
-          medusa fuzz --config medusa.json
+        run: ./script/medusa.sh

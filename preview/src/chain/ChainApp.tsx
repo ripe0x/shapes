@@ -28,8 +28,8 @@ type Formation = "Black" | "Complete" | "Fragment" | "Direct" | "Composed";
 
 interface Reserve {
   redeemableBacking: bigint;
-  sacrificedBacking: bigint;
-  blackCount: bigint;
+  burnedBacking: bigint;
+  blackShapeCount: bigint;
   balance: bigint;
   supply: bigint;
   minted: bigint;
@@ -192,18 +192,18 @@ export function ChainApp({dep}: {dep: Deployment}) {
     if (!publicClient || !address) return;
     const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-    const [redeemableBacking, sacrificedBacking, blackCount, supply, minted, fee, balance, acct] =
+    const [redeemableBacking, burnedBacking, blackShapeCount, supply, minted, fee, balance, acct] =
       await Promise.all([
         publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
-        publicClient.readContract({...shapes, functionName: "sacrificedBacking"}),
-        publicClient.readContract({...shapes, functionName: "blackCount"}),
+        publicClient.readContract({...shapes, functionName: "burnedBacking"}),
+        publicClient.readContract({...shapes, functionName: "blackShapeCount"}),
         publicClient.readContract({...shapes, functionName: "totalSupply"}),
         publicClient.readContract({...shapes, functionName: "totalMinted"}),
         publicClient.readContract({...shapes, functionName: "mintFee"}),
         publicClient.getBalance({address: dep.shapes}),
         publicClient.getBalance({address}),
       ]);
-    setReserve({redeemableBacking, sacrificedBacking, blackCount, balance, supply, minted});
+    setReserve({redeemableBacking, burnedBacking, blackShapeCount, balance, supply, minted});
     setMintFee(fee);
     setAcctBalance(acct);
 
@@ -223,7 +223,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
         publicClient.readContract({...shapes, functionName: "seedOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "originCountOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "isComplete", args: [id]}),
-        publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
+        publicClient.readContract({...shapes, functionName: "isBlackShape", args: [id]}),
         publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
         publicClient.readContract({...shapes, functionName: "composeDepth", args: [id]}),
       ]);
@@ -316,7 +316,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
       if (ok) setView(null);
     });
 
-  const sacrifice = (id: bigint) => run(`sacrifice ${id}`, () => write("sacrifice", [id]));
+  const burnBacking = (id: bigint) => run(`burnBacking ${id}`, () => write("burnBacking", [id]));
 
   const toggleSelect = (id: bigint) =>
     setSelected((prev) => {
@@ -415,7 +415,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
             splitKids={splitKids}
             onBack={() => setView(null)}
             onRedeem={redeem}
-            onSacrifice={sacrifice}
+            onBurnBacking={burnBacking}
             onToggleSelect={toggleSelect}
             onToggleSplit={() => setSplitPreview((v) => !v)}
             onConfirmSplit={confirmSplit}
@@ -489,7 +489,7 @@ function Detail({
   splitKids,
   onBack,
   onRedeem,
-  onSacrifice,
+  onBurnBacking,
   onToggleSelect,
   onToggleSplit,
   onConfirmSplit,
@@ -504,7 +504,7 @@ function Detail({
   splitKids: PreviewChild[];
   onBack: () => void;
   onRedeem: (id: bigint) => void;
-  onSacrifice: (id: bigint) => void;
+  onBurnBacking: (id: bigint) => void;
   onToggleSelect: (id: bigint) => void;
   onToggleSplit: () => void;
   onConfirmSplit: (t: OwnedToken) => void;
@@ -530,7 +530,7 @@ function Detail({
 
   const di = denomIndexOf(token.backing);
   const canSplit = !token.isBlack && di > 0;
-  const canSacrifice = !token.isBlack && token.complete && token.backing === DENOMINATIONS[8].wei;
+  const canBurnBacking = !token.isBlack && token.complete && token.backing === DENOMINATIONS[8].wei;
   const formation = formationOf(token.backing, token.originCount, token.isBlack);
 
   return (
@@ -545,7 +545,7 @@ function Detail({
         <div style={{flex: 1, minWidth: 260}}>
           <div style={S.meta}>SHAPE #{token.id.toString()}</div>
           <div style={S.detailValue}>
-            {token.isBlack ? "sacrificed" : `${formatEther(token.backing)} ETH`}
+            {token.isBlack ? "backing burned" : `${formatEther(token.backing)} ETH`}
           </div>
           <div style={{marginTop: 10}}>
             <FormationBadge label={formation} large />
@@ -586,9 +586,9 @@ function Detail({
                 {selected ? "selected to compose ✓" : "select to compose"}
               </button>
             )}
-            {canSacrifice && (
-              <button onClick={() => onSacrifice(token.id)} disabled={!!busy} style={S.btnSacrifice}>
-                {busy === `sacrifice ${token.id}` ? "sacrificing…" : "sacrifice 100 ETH"}
+            {canBurnBacking && (
+              <button onClick={() => onBurnBacking(token.id)} disabled={!!busy} style={S.btnBurnBacking}>
+                {busy === `burnBacking ${token.id}` ? "burning backing…" : "burn backing (100 ETH)"}
               </button>
             )}
           </div>
@@ -636,7 +636,7 @@ const HIST_MARK: Record<HistEvent["kind"], string> = {
   mergedAway: "⊞",
   decomposed: "⊟",
   revived: "⊟",
-  blackened: "◆",
+  backingBurned: "◆",
   redeemed: "↩",
   transfer: "→",
 };
@@ -686,7 +686,7 @@ function TokenCard({
       <div onClick={onOpen} style={{cursor: "pointer"}}>
         <img src={t.image} alt={`shape ${t.id}`} style={S.cardArt} />
         <div style={{...S.mono, fontSize: 12, marginTop: 8}}>
-          #{t.id.toString()} · {t.isBlack ? "sacrificed" : `${formatEther(t.backing)} ETH`}
+          #{t.id.toString()} · {t.isBlack ? "backing burned" : `${formatEther(t.backing)} ETH`}
         </div>
         <div style={{marginTop: 5}}>
           <FormationBadge label={formationOf(t.backing, t.originCount, t.isBlack)} />
@@ -845,8 +845,11 @@ function ReserveCard({
       <Row k="contract balance" v={`${formatEther(reserve.balance)} ETH`} />
       <Row k="redeemableBacking()" v={`${formatEther(reserve.redeemableBacking)} ETH`} />
       <Row k="invariant  balance ≥ redeemable" v={solvent ? "OK" : "INSOLVENT"} danger={!solvent} />
-      {reserve.blackCount > 0n && (
-        <Row k="sacrificed (Black)" v={`${formatEther(reserve.sacrificedBacking)} ETH · ${reserve.blackCount} black`} />
+      {reserve.blackShapeCount > 0n && (
+        <Row
+          k="backing burned (Black Shapes)"
+          v={`${formatEther(reserve.burnedBacking)} ETH · ${reserve.blackShapeCount} Black Shapes`}
+        />
       )}
       <Row k="live / minted" v={`${reserve.supply} / ${reserve.minted}`} />
       <Row k="mint fee" v={`${formatEther(feePerNft)} ETH per Shape`} />
@@ -913,7 +916,7 @@ const S: Record<string, React.CSSProperties> = {
   btn: {background: "#111", color: "#ccc", border: "1px solid #333", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13},
   btnOn: {background: "#3a2a12", color: "#fb8", borderColor: "#963"},
   btnSel: {background: "#0f2418", color: "#8e8", borderColor: "#4a7"},
-  btnSacrifice: {background: "#181818", color: "#fff", border: "1px solid #666", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600},
+  btnBurnBacking: {background: "#181818", color: "#fff", border: "1px solid #666", borderRadius: 8, padding: "9px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600},
 
   error: {fontFamily: MONO, color: "#f66", marginTop: 12, fontSize: 13},
 };

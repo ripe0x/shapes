@@ -2,31 +2,91 @@
 pragma solidity 0.8.28;
 
 /// @title IShapeCollection
-/// @notice Collection-level presentation for Shapes: the contract-level metadata a marketplace
-///         reads, and seeded previews of cards that no token needs to exist for.
-/// @dev Every output is a function of a seed and the denomination ladder, rendered through the
-///      renderer this contract was constructed with. Functions that take a seed are
-///      reproducible forever; the ones that do not use `seed()`, which advances once per block.
+/// @notice The collection's metadata: the editorial copy both token and contract metadata are
+///         built from, the contract-level metadata a marketplace reads, and seeded previews of
+///         cards that no token needs to exist for.
+/// @dev The copy is stored here and edited by the admin of the `Shapes` this contract is bound
+///      to, until that token's presentation is locked. `Shapes.tokenURI` and `Shapes.contractURI`
+///      read it back from this address. Two descriptions are stored: the shared one and the
+///      owner token's, which `Shapes.tokenURI` substitutes for whichever Shape currently carries
+///      collection ownership.
+///
+///      Every rendered output is a function of a seed and the denomination ladder, drawn through
+///      the renderer this contract was constructed with. A function that takes a seed returns
+///      deterministic output for that seed. The ones that take none use `seed()`, which advances
+///      once per block.
 interface IShapeCollection {
+    /// @notice Emitted when the admin rewrites the metadata copy.
+    event MetadataCopySet(string tokenNamePrefix, string description, string ownerTokenDescription);
+
     error DenominationIndexOutOfRange(uint256 index);
+
+    /// @dev Metadata copy is written verbatim into JSON, so a value is rejected when it carries a
+    ///      `"`, a `\`, or a C0 control byte (which would break or restructure the document), is
+    ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
+    ///      cap. `field` is 0 name/prefix, 1 description, 2 owner-token description.
+    error InvalidCopy(uint8 field);
+
+    /// @dev `setMetadataCopy` reverts this when the caller is not `IShapes(shapes()).admin()`.
+    ///      Same error `IAdminControl` declares, so either ABI decodes it identically.
+    error AdminUnauthorizedAccount(address account);
+
+    /// @dev `setMetadataCopy` reverts this once `IShapes(shapes()).presentationLocked()` is true.
+    ///      Same error `IShapes` declares, so either ABI decodes it identically.
+    error PresentationIsLocked();
 
     /// @notice The renderer every output is drawn through.
     function renderer() external view returns (address);
 
-    /// @notice The current block's seed. Advances once per block, so any two calls in the same
-    ///         block agree. Pass it to `imageFor` or `cardFor` to pin an output permanently.
+    /// @notice The `Shapes` token this collection describes. Its `admin()` may edit the copy and
+    ///         its `presentationLocked()` freezes it. Immutable, set at construction.
+    function shapes() external view returns (address);
+
+    /// @notice The current block's seed, `block.prevrandao` hashed with the block number. Any two
+    ///         calls in the same block agree. Pass it to `imageFor` or `cardFor` to reproduce an
+    ///         output later.
     function seed() external view returns (bytes32);
 
-    /// @notice Contract-level metadata URI, as a base64 `data:application/json`.
-    /// @dev `name` and `description` are the editorial copy the caller supplies, emitted verbatim;
-    ///      the `image` is generated here. `Shapes` stores that copy and passes it through.
-    function contractURI(string calldata name, string calldata description)
-        external
-        view
-        returns (string memory);
+    /* -------------------------------- copy -------------------------------- */
 
-    /// @notice The contract-level metadata JSON: `name` and `description` from the caller, `image` inline.
-    function json(string calldata name, string calldata description) external view returns (string memory);
+    /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
+    /// @dev Read by `Shapes.tokenURI` and written verbatim into every token's metadata.
+    function tokenNamePrefix() external view returns (string memory);
+
+    /// @notice The description emitted by every ordinary token's metadata and by
+    ///         `Shapes.contractURI`, so the collection and its tokens carry one description.
+    function description() external view returns (string memory);
+
+    /// @notice The description emitted by the owner token's metadata in place of `description()`.
+    /// @dev `Shapes.tokenURI` selects it for whichever live Shape currently carries collection
+    ///      ownership. `Shapes.contractURI` always uses `description()`.
+    function ownerTokenDescription() external view returns (string memory);
+
+    /// @notice Set the token name prefix, the shared description and the owner token's
+    ///         description together.
+    /// @dev Callable only by `IShapes(shapes()).admin()`, and only while that token's
+    ///      `presentationLocked()` is false; otherwise reverts `IShapes.PresentationIsLocked`.
+    ///      Every argument must be well-formed UTF-8, length-capped (64-byte prefix, 2048 bytes
+    ///      for each description), and free of bytes JSON forbids unescaped (`"`, `\`, C0
+    ///      controls). Marketplaces re-read after a copy change when the admin then calls
+    ///      `Shapes.refreshMetadata`.
+    function setMetadataCopy(
+        string calldata tokenNamePrefix_,
+        string calldata description_,
+        string calldata ownerTokenDescription_
+    ) external;
+
+    /* ---------------------------- collection ------------------------------ */
+
+    /// @notice Contract-level metadata URI, as a base64 `data:application/json`.
+    /// @dev `name` is the ERC-721 `name()` of `shapes()`, `description` is `description()` stored
+    ///      here; both are emitted verbatim. The `image` is generated here. `Shapes.contractURI`
+    ///      forwards to this function.
+    function contractURI() external view returns (string memory);
+
+    /// @notice The contract-level metadata JSON: `name` from `shapes()`, `description` from
+    ///         `description()`, `image` inline.
+    function json() external view returns (string memory);
 
     /// @notice The collection image at the current block's seed.
     function image() external view returns (string memory);
@@ -39,7 +99,7 @@ interface IShapeCollection {
     /// @notice A card at `denomIndex`, seeded by the current block.
     function card(uint8 denomIndex) external view returns (string memory);
 
-    /// @notice The card `seed` and `denomIndex` produce, with the ink gene derived exactly as a
-    ///         mint would derive it. No token is involved.
+    /// @notice The card `seed` and `denomIndex` produce, with the ink gene derived the way a mint
+    ///         derives it. No token is involved.
     function cardFor(bytes32 cardSeed, uint8 denomIndex) external view returns (string memory);
 }

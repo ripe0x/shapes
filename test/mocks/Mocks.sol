@@ -3,6 +3,8 @@ pragma solidity 0.8.28;
 
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {IShapes} from "../../src/interfaces/IShapes.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IShapeCollection} from "../../src/interfaces/IShapeCollection.sol";
 import {IShapePositionResolver} from "../../src/interfaces/IShapePositionResolver.sol";
 
 /// @notice Configurable position resolver used to exercise exact and zero position results.
@@ -24,11 +26,23 @@ contract MockPositionResolver is IShapePositionResolver {
         if (shouldRevert) revert ResolverQueryFailed(tokenId);
         return positions[tokenId];
     }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IShapePositionResolver).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
+    }
 }
 
 /// @notice A resolver that burns far more gas than `positionOf` forwards, to prove the call is
 ///         capped and its failure swallowed rather than draining the caller.
 contract HostileGasResolver is IShapePositionResolver {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IShapePositionResolver).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
+    }
+
     function positionOf(uint256) external pure returns (address) {
         uint256 x;
         for (uint256 i = 0; i < 1_000_000; ++i) {
@@ -38,8 +52,15 @@ contract HostileGasResolver is IShapePositionResolver {
     }
 }
 
-/// @notice Returns a short ABI word for every call. `ShapeLens.positionOf` must reject it to zero.
+/// @notice Answers ERC-165 so it can be installed, then returns a short ABI word for every other
+///         call. `Shapes.positionOf` must reject it to zero.
 contract ShortReturnResolver {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IShapePositionResolver).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
+    }
+
     fallback() external {
         assembly ("memory-safe") {
             mstore(0, 1)
@@ -48,13 +69,35 @@ contract ShortReturnResolver {
     }
 }
 
-/// @notice Returns a 32-byte word with dirty bits above the low 160-bit address.
+/// @notice Answers ERC-165 so it can be installed, then returns a 32-byte word with dirty bits
+///         above the low 160-bit address.
 contract DirtyAddressResolver {
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return
+            interfaceId == type(IShapePositionResolver).interfaceId
+                || interfaceId == type(IERC165).interfaceId;
+    }
+
     fallback() external {
         assembly ("memory-safe") {
             mstore(0, shl(160, 1))
             return(0, 32)
         }
+    }
+}
+
+/// @notice Answers ERC-165 for `IShapeCollection` with a configurable `shapes()`, isolating
+///         `AdminOps.requireCollection`'s binding check from a genuine `ShapeCollection`'s
+///         behavior.
+contract MockCollection {
+    address public shapes;
+
+    constructor(address shapes_) {
+        shapes = shapes_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IShapeCollection).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 
@@ -106,7 +149,7 @@ contract EthRejectingReceiver is IERC721Receiver {
     }
 }
 
-/// @notice A fee recipient that reverts on receipt. Minting is never affected — the mint path
+/// @notice A fee recipient that reverts on receipt. Minting is never affected: the mint path
 ///         never calls it. Only `withdrawFees` reverts while it remains selected; admin may
 ///         redirect future withdrawals via `setFeeRecipient`, and redemption is unaffected.
 contract RevertingFeeRecipient {

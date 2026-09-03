@@ -38,7 +38,7 @@ import {
   emptySession,
   keepCard,
   liveNodes,
-  sacrificeNode,
+  burnBackingNode,
   splitNode,
   textSeed,
   type PlayNode,
@@ -66,11 +66,11 @@ interface SplitOpJson {
 interface DecomposeOpJson {
   u: number;
 }
-/** Sacrifice op: `k: id`, the replay id of the card being sacrificed. */
-interface SacrificeOpJson {
+/** Burn-backing op: `k: id`, the replay id of the card whose backing is burned. */
+interface BurnBackingOpJson {
   k: number;
 }
-type OpJson = CardOpJson | ComposeOpJson | SplitOpJson | DecomposeOpJson | SacrificeOpJson;
+type OpJson = CardOpJson | ComposeOpJson | SplitOpJson | DecomposeOpJson | BurnBackingOpJson;
 
 interface WireJson {
   v: 1;
@@ -291,7 +291,7 @@ export function decodeSession(text: string): PlaySession {
         const live = liveNodes(session);
         const key = live.find((n) => n.demoId === op.k)?.key;
         if (key === undefined) return emptySession();
-        session = sacrificeNode(session, key);
+        session = burnBackingNode(session, key);
       }
       // A single `p` op can add many nodes at once (a split's whole child set); re-check the
       // same node cap `sessionShareable` enforces so a hostile URL can't force a huge replay.

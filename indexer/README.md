@@ -53,7 +53,7 @@ GraphiQL in the browser) and the `@ponder/client` SQL endpoint at
 Verified end to end against a running dev chain seeded by `npm run simulate`
 (see the repo root): all nine event handlers below fired with zero indexing
 errors. A representative run indexed 10k+ mints and their `InkGene`
-assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 sacrifice, and
+assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 backing burn, and
 20k+ transfers — every `token` row carried its assigned `inkGene` and every
 `lineage_edge` its derived `childSeed`, queryable over GraphQL.
 
@@ -117,7 +117,7 @@ history stays queryable.
 | `composeDepth` | `integer` | active reversible compose records; incremented/decremented by compose/decompose |
 | `inkGene` | `integer` | ink gene 0..6; set by `InkGene`, reassigned on every recomposition |
 | `modules` | `hex?` | materialized geometry; null for seed-derived grammar v1 |
-| `isBlack` | `boolean` | transformed via `sacrifice` |
+| `isBlack` | `boolean` | transformed via `burnBacking` |
 | `live` | `boolean` | `false` once redeemed/composed-away/split-away |
 | `owner` | `hex` | current owner address |
 | `mintedAtBlock` | `bigint` | block this row's token id was created at |
@@ -245,7 +245,7 @@ The ten events and what each does to the three tables (`src/index.ts`):
   `childId = newId`) — the edge direction is reversed from `Composed`
   because a split token becomes multiple children rather than several
   tokens becoming one.
-- **`Blackened(tokenId, sacrificedWei)`** — sets `isBlack: true`,
+- **`BlackShapeCreated(tokenId, burnedWei)`** — sets `isBlack: true`,
   `backingWei: 0`. Does not itself change `live`: a Black token remains transferable and
   may later be destroyed through `burn` for zero, but
   still exists and still has an owner.
@@ -271,7 +271,7 @@ The ten events and what each does to the three tables (`src/index.ts`):
 read calls, not a mirror of the larger browser ABI in `preview/src/chain/abi.ts`.
 New core views such as `exists` and `denomIndexOf` belong here only if the
 indexer starts calling them. When a consumed event or read changes, rebuild the
-contracts and copy that exact entry from the relevant compiled Shapes or lens
+contracts and copy that exact entry from the compiled Shapes
 artifact so field names, types, and `indexed` flags match deployed bytecode.
 
 ## Production deployment: Fly + persistent PGlite
@@ -282,18 +282,37 @@ a 1 GB persistent Fly volume. There is no separate Postgres service. The index i
 reconstructable from Ethereum, and the site rejects unavailable or stale indexer responses in
 favor of its raw-RPC path, so the single-machine availability tradeoff is bounded and explicit.
 
-`fly.toml` pins the public Sepolia deployment and its `testnet` ladder, two archive-capable public
-RPCs, a 12-second poll, one indexing thread, a 1 GB shared-CPU Machine, and `/data/pglite` on the
-`shapes_indexer_data` volume. Provision and deploy from this directory:
+One Fly app per chain, each pinned to a `fly.<env>.toml` with a 12-second poll, one indexing
+thread, a 1 GB shared-CPU Machine, and `/data/pglite` on its own volume:
+`fly.sepolia.toml` (app `shapes-indexer`, `testnet` ladder) and `fly.mainnet.toml` (app
+`shapes-indexer-mainnet`, `mainnet` ladder). Both leave the primary RPC public and archive-capable
+with two more public RPCs as `PONDER_RPC_FALLBACKS`; neither toml is deployed directly.
+
+### Environments
+
+`deploy.sh` and `bootstrap.sh` are the one deploy path across chains: the toml holds every
+chain-specific value except the Shapes contract address and start block, which come from
+`deployments/<chainId>.json` at the repo root (written by `script/deploy.sh`) so the indexer is
+never pointed at a stale or wrong contract by hand.
 
 ```bash
-fly apps create shapes-indexer
-fly volumes create shapes_indexer_data --app shapes-indexer --region iad --size 1
-fly deploy
+# once per environment, before its first deploy
+indexer/bootstrap.sh sepolia   # or mainnet — prints the fly apps/volumes create commands
+# <run the printed commands yourself>
+
+# every time the contracts redeploy to that chain
+indexer/deploy.sh sepolia      # or mainnet — reads deployments/<chainId>.json, deploys, records
 ```
 
-Then read back `/health`, `/ready`, `/status`, and the gallery GraphQL query before adding
-`https://shapes-indexer.fly.dev` as `indexerUrl` in deployment metadata. Do not scale beyond one
+`DRY_RUN=1 indexer/deploy.sh <env>` resolves the contract address/start block, validates the toml,
+and prints the `fly deploy` command without calling Fly. A real run reads back `/health` and
+`/graphql` after deploying and records `{DATABASE_SCHEMA: shapesAddress}` in
+`indexer/deployments.json`, refusing a schema reused for a different address on a later run — bump
+`DATABASE_SCHEMA` in the toml for a new deployment on the same chain rather than mixing two
+contracts' history into one schema. Then read back `/health`, `/ready`, `/status`, and the gallery
+GraphQL query before adding the app's URL as `indexerUrl` in deployment metadata (mainnet:
+`INDEXER_URL` in `script/env/mainnet.env`, already set to `https://shapes-indexer-mainnet.fly.dev`
+and written into `deployments/1.json` by `script/deploy.sh`). Do not scale either app beyond one
 Machine while using PGlite; a future multi-Machine or sustained-load requirement is the trigger to
 migrate to Postgres.
 

@@ -20,6 +20,15 @@ contract ParityTest is Test {
     string internal constant DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
         "Burning it returns exactly that amount to its owner. Higher denominations resolve "
         "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+    string internal constant OWNER_TOKEN_DESCRIPTION = "The contract owner token of Shapes. Its current holder is returned by owner() and has no "
+        "administrative authority. Ownership moves with this Shape through compose, decompose and "
+        "split. Redeeming or burning it ends contract ownership.";
+
+    /// @dev The copy `Shapes.tokenURI` passes the renderer for a token id: the owner token's own
+    ///      description, or the shared one. The fixtures treat id 0 as the owner token.
+    function _descriptionFor(uint256 tokenId) internal pure returns (string memory) {
+        return tokenId == 0 ? OWNER_TOKEN_DESCRIPTION : DESCRIPTION;
+    }
 
     ShapeRenderer internal renderer;
 
@@ -336,7 +345,7 @@ contract ParityTest is Test {
                 genes[i],
                 composeDepths[i],
                 NAME_PREFIX,
-                DESCRIPTION,
+                _descriptionFor(tokenIds[i]),
                 tokenIds[i] == 0
             );
             assertEq(got, expectedMetadata[i], why[i]);
@@ -396,7 +405,7 @@ contract ParityTest is Test {
 
     /// @notice `GeometrySampling.sampleCompose` against the TS canonical `sampleCompose`
     ///         (SAMPLING_SPEC.md section 5), over fixed donor sets: seed-derived donors only, a
-    ///         mix of materialized and seed-derived donors, and — in one case — the burn
+    ///         mix of materialized and seed-derived donors, and (in one case) the burn
     ///         calldata order shuffled relative to ascending token id, so the Solidity sort must
     ///         independently reach the same canonical order the TS side sorts to.
     function test_ComposeSamplingMatchesTypeScript() public view {
@@ -442,7 +451,7 @@ contract ParityTest is Test {
 
     /// @notice `GeometrySampling.sampleSplitChild` against the TS canonical `sampleSplitChild`
     ///         (SAMPLING_SPEC.md section 6, D3'), grammar branch: no compose record, so the pool
-    ///         is `grammarSplitPool(parentSeed, childDenom, parentInkGene)` — the parent's own
+    ///         is `grammarSplitPool(parentSeed, childDenom, parentInkGene)`: the parent's own
     ///         denomination and stored modules play no part, including `childIndex` values that
     ///         wrap past `uint8` the same way the Solidity cast does.
     function test_SplitSamplingGrammarBranchMatchesTypeScript() public view {
@@ -468,8 +477,8 @@ contract ParityTest is Test {
     ///         (SAMPLING_SPEC.md section 6, D3'), record branch: the pool is the parent's top
     ///         compose record's donor modules, survivor first then inputs sorted ascending by id.
     ///         `sampleSplitRecordInput*` stores inputs in calldata order (not necessarily
-    ///         ascending), covering `preview/scripts/genFixtures.ts`'s deliberately shuffled case
-    ///         — the sort here must land on the same pool the unsorted TS fixture data produced.
+    ///         ascending), covering `preview/scripts/genFixtures.ts`'s deliberately shuffled case:
+    ///         the sort here must land on the same pool the unsorted TS fixture data produced.
     function test_SplitSamplingRecordBranchMatchesTypeScript() public view {
         uint256 n = sampleSplitRecordWhy.length;
         assertGt(n, 0, "no split-sampling record-branch fixtures");
@@ -531,7 +540,7 @@ contract ParityTest is Test {
                 gene,
                 sampledRenderComposeDepth[i],
                 NAME_PREFIX,
-                DESCRIPTION,
+                _descriptionFor(sampledRenderTokenId[i]),
                 SplitProvenance({
                     isSplitChild: sampledRenderIsSplitChild[i],
                     parentDenomIndex: sampledRenderParentDenomIndex[i],

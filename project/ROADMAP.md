@@ -66,7 +66,7 @@ Objective: everything irreversible is decided, reviewed, and rehearsed.
 Deliverables:
 - DEPLOYED ON SEPOLIA, PENDING AUDIT: D-35 gives token #0 the fixed title `Shapes Collection Owner` and exclusive trait `Collection Owner: true`, with matching site identity and no authority change.
 - DEPLOYED ON SEPOLIA, PENDING AUDIT/SIGNOFF: D-36 replaces the immutable 1% rate with 0.001 ETH per mainnet Shape and 0.00001 ETH per testnet Shape. Auction ETH bids pay per card created. Dual-profile reserve/lifecycle tests and size gates pass. R25's cheap direct high-tier rerolls require explicit audit and product signoff.
-- COMPLETE: D-34 replaces the specialized resolver with explicit positions and market pointers. Both launch empty/unlocked, lock independently, remain powerless over core state, and preserve the optional lens position read through positions only. Exact current Sepolia source `eb9e8834553f199a4c94e7ba307686c8bd0d64e8` has both pointers zero/unlocked and all independent postflights passing.
+- COMPLETE: D-34 replaces the specialized resolver with explicit positions and market pointers. Both lock independently and remain powerless over core state; D-40 moves `positionOf` onto Shapes, registers the auction house as `market` at deploy, and requires each nonzero target to answer ERC-165 for the interface its reader calls. Exact current Sepolia source `eb9e8834553f199a4c94e7ba307686c8bd0d64e8` has both pointers zero/unlocked and all independent postflights passing.
 - COMPLETE: D-04 adopts standalone Shapes and rejects the Surface-hosted alternative.
 - COMPLETE FOR CURRENT RELEASE: default mainnet ladder, mainnet fixtures, full parity chain and deploy-profile assertions revalidated (D-01). Exact code-bearing candidate `1054db2455f7d6d3542a422130262bc872c34464` passes both full Foundry profiles and all 4 release tests against a live mainnet fork.
 - COMPLETE: renderer audit hardening precedes any module/vocabulary/grammar expansion. PR #36 (`1d6e4b0`) closed issue #7 with a behavior-only `_moduleSvg` extraction that is byte-identical against current TypeScript fixtures and the frozen Solidity oracle, lowers normalized complexity from 16 to 10 with helpers at 3 or lower, reduces runtime by 47 bytes to 23,138/23,137 default/testnet, and keeps worst pinned gas growth to 0.0104% (D-32; EXP-004).
@@ -85,7 +85,7 @@ Stop conditions: audit finds high-severity issue (fix, re-audit delta); legal re
 
 Objective: deploy once, correctly.
 
-Deliverables: mainnet deploy (each broadcast individually user-confirmed per standing mainnet protocol), contract verification, deployment.json + indexer mainnet config, site cutover, post-deploy invariant spot-checks, lens behavioral probe against live addresses.
+Deliverables: mainnet deploy (each broadcast individually user-confirmed per standing mainnet protocol), contract verification, deployment.json + indexer mainnet config, site cutover, post-deploy invariant spot-checks, pointer readback against live addresses.
 
 Acceptance: post-flight reads match intended config (ladder, mintFee, feeRecipient, admin, owner, artist and verified artist attestation); site serves mainnet; indexer synced.
 

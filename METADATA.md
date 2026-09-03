@@ -6,16 +6,18 @@ by `ShapeRenderer.sol`. The TypeScript canonical (`preview/src/canonical/render.
 default copy; `test/Parity.t.sol` asserts the two agree exactly at that default copy. No off-chain
 metadata service exists, so nothing here can rot or be withheld.
 
-The token `name` prefix and shared `description` are admin-set copy, stored on Shapes and passed
-into the renderer. `setMetadataCopy` edits both atomically. The one name exception is the owner
-token, the one live Shape that currently carries collection ownership (starts as #0, moves through
-`compose`, `decompose` and `split`): its name is the ordinary `namePrefix` plus token id, suffixed
-with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), so the name tracks whichever token
-currently holds the role. `contractURI`
-uses the immutable ERC-721 name `Shapes` and the shared description, so collection and token
-descriptions cannot diverge. Copy defaults to the TypeScript canonical and is validated on set so
-it cannot break the JSON (`"`, `\`, C0 control bytes and over-length values revert). Everything
-else is fixed on chain.
+The token `name` prefix, the shared `description` and the owner token's own `description` are
+admin-set copy, stored on `ShapeCollection` and read back by `Shapes.tokenURI` and
+`Shapes.contractURI`. `ShapeCollection.setMetadataCopy` sets all three together;
+`Shapes.refreshMetadata` then emits the ERC-4906 and ERC-7572 refresh signals. Two fields track the
+owner token, the one live Shape that currently carries collection ownership (starts as #0, moves
+through `compose`, `decompose` and `split`). Its name is the ordinary `namePrefix` plus token id,
+suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), and its description is the
+collection's owner-token description in place of the shared one; both track whichever token
+currently holds the role. `contractURI` uses the immutable ERC-721 name `Shapes` and the shared
+description. Copy defaults to the TypeScript canonical and is validated on set so it cannot break
+the JSON (`"`, `\`, C0 control bytes and over-length values revert; the two descriptions share a
+2048-byte cap). Everything else is fixed on chain.
 
 The document has `name`, `description`, `image` (an inline SVG `data:image/svg+xml` URI), and a
 fixed `attributes` array. Every attribute `value` is a **string**. There are no numeric traits:
@@ -40,8 +42,8 @@ a labeled trait.
 | 9 | `Formation` | `"Composed"` | Provenance class. See below. |
 | 10 | `Independent Origins` | `"1"` | Count of direct-mint events baked into the token (`originCount`). |
 | 11 | `Origin Density` | `"11%"` | `originCount / units`, as a percent. 100% means every unit of backing traces to its own mint. |
-| 12 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `sacrifice` gate at the apex. |
-| 13 | `Black` | `"false"` | `true` when the token has been transformed via `sacrifice`. |
+| 12 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `burnBacking` gate at the apex. |
+| 13 | `Black` | `"false"` | `true` when the token has had its backing burned via `burnBacking`. |
 | 14 | `Compose Depth` | `"2"` | Number of stacked composes the current holder can reverse, newest first. |
 | n/a | *(none)* | `"Contract Owner"` | Value-only attribute (no `trait_type`), present only on the owner token, the one live Shape that currently carries collection ownership. It grants no administrative authority. |
 | n/a | `Split From` | `"10 ETH"` | Only on a split child (issue #21C): the immediate parent's denomination. See below. |
@@ -88,9 +90,9 @@ redeems for exactly that.
 |---|---|---|
 | `Direct` | `originCount == 1` | Minted straight at this denomination, never composed. |
 | `Composed` | `2 <= originCount < units` | Built by merging pieces, not entirely from dust. |
-| `Complete` | `originCount == units` (units > 1) | Every 0.01 of backing traces to its own dust mint. Only a Complete apex can be sacrificed. |
+| `Complete` | `originCount == units` (units > 1) | Every 0.01 of backing traces to its own dust mint. Only a Complete apex can have its backing burned. |
 | `Fragment` | `originCount == 0` | A decompose remainder: full backing, no origin credit. Origins partition survivor-first across a split, so children past the origin supply get zero. |
-| `Black` | sacrificed | The 100 ETH was burned via `sacrifice`; renders as a black card. |
+| `Black` | backing burned | The 100 ETH was burned via `burnBacking`; renders as a black card. |
 
 Split allocates a parent's origin count across its children greedily, filling each child's
 capacity in order until the count runs out: the first child(ren) can read `Direct` or `Composed`

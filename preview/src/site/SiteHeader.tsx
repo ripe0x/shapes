@@ -1,5 +1,6 @@
 import React from "react";
 import {C, FONT} from "./theme";
+import {SyncStatus} from "./ui";
 import type {View} from "./SiteApp";
 
 /** The site-wide header: wordmark, view nav, and the connect / account control. Rendered by
@@ -8,7 +9,7 @@ export function SiteHeader({
   active,
   go,
   routed,
-  hasAuction,
+  auctionActive,
   isConnected,
   wrongChain,
   accountLabel,
@@ -18,13 +19,18 @@ export function SiteHeader({
   onConnect,
   onSwitchChain,
   onDisconnect,
+  refreshing,
+  refreshFailed,
+  onRetryRefresh,
 }: {
   /** View to mark as current, or null when no nav item corresponds to the page. */
   active: View | null;
   go: (view: View) => void;
   /** True when the host serves real routes, which makes the wordmark and /play plain anchors. */
   routed: boolean;
-  hasAuction: boolean;
+  /** Shows the AUCTION nav link; true only while the house has an auction open for bids or
+   *  awaiting settlement. */
+  auctionActive: boolean;
   isConnected: boolean;
   wrongChain: boolean;
   accountLabel: string;
@@ -34,6 +40,9 @@ export function SiteHeader({
   onConnect: () => void;
   onSwitchChain: () => void;
   onDisconnect: () => void;
+  refreshing: boolean;
+  refreshFailed: boolean;
+  onRetryRefresh: () => void;
 }) {
   const navColor = (v: View) => (active === v ? C.ink : C.muted);
 
@@ -52,7 +61,7 @@ export function SiteHeader({
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
             MINT
           </button>
-          {hasAuction && (
+          {auctionActive && (
             <button type="button" className="btn-ghost site-nav-link" onClick={() => go("auction")} style={{color: navColor("auction")}}>
               AUCTION
             </button>
@@ -60,9 +69,6 @@ export function SiteHeader({
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
             GALLERY
           </button>
-          <a href="/#lineage" className="site-nav-link" style={{color: C.muted}}>
-            HOW IT WORKS
-          </a>
           {/* /play is a Next.js route outside SiteApp's view state, so it links as a plain
               anchor. Only the Next host serves it; the Vite preview (no onNavigate) omits it. */}
           {routed && (
@@ -71,7 +77,8 @@ export function SiteHeader({
             </a>
           )}
         </nav>
-        <div className="site-account" ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
+        <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={onRetryRefresh} style={{marginLeft: "auto"}} />
+        <div className="site-account" ref={accountMenuRef} style={{position: "relative"}}>
           <button
             type="button"
             className="site-connect-btn"

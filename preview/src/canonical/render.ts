@@ -778,6 +778,16 @@ export const DESCRIPTION =
   "Burning it returns exactly that amount to its owner. Higher denominations resolve " +
   "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
 
+/**
+ * The description the owner token carries in place of `DESCRIPTION`. `Shapes.tokenURI` reads it
+ * from `ShapeCollection.ownerTokenDescription()` and passes it to the renderer as the plain
+ * description string; the renderer itself knows nothing of the two fields.
+ */
+export const OWNER_TOKEN_DESCRIPTION =
+  "The contract owner token of Shapes. Its current holder is returned by owner() and has no " +
+  "administrative authority. Ownership moves with this Shape through compose, decompose and " +
+  "split. Redeeming or burning it ends contract ownership.";
+
 function b64(bytes: Uint8Array): string {
   let bin = "";
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -900,6 +910,19 @@ export function metadataJsonFromComposition(
   );
 }
 
+/**
+ * The description a token carries: the owner token's own, or the shared one. Token #0 is the owner
+ * token in the parity corpus, which mints no others; on chain `Shapes.tokenURI` reads the live
+ * `ownerToken()` instead.
+ */
+export function descriptionFor(
+  tokenId: bigint,
+  description: string,
+  ownerTokenDescription: string,
+): string {
+  return tokenId === 0n ? ownerTokenDescription : description;
+}
+
 export function tokenMetadataJson(
   seed: bigint,
   amountWei: bigint,
@@ -912,6 +935,7 @@ export function tokenMetadataJson(
   description: string = DESCRIPTION,
   p: Params = CANONICAL,
   splitFrom?: SplitFrom,
+  ownerTokenDescription: string = OWNER_TOKEN_DESCRIPTION,
 ): string {
   const c = composeShape(seed, amountWei, inkGene, p);
   const svg = svgFromComposition(c, tokenId, p, inverted);
@@ -924,7 +948,7 @@ export function tokenMetadataJson(
     inkGene,
     composeDepth,
     namePrefix,
-    description,
+    descriptionFor(tokenId, description, ownerTokenDescription),
     splitFrom,
   );
 }
@@ -955,6 +979,7 @@ export function tokenURI(
         DESCRIPTION,
         p,
         splitFrom,
+        OWNER_TOKEN_DESCRIPTION,
       ),
     )
   );

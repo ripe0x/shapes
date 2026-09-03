@@ -31,10 +31,9 @@ contract Token0Test is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, makeAddr("fee"), address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, makeAddr("fee"), address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
         vm.deal(artist, 10 ether);
         vm.deal(stranger, 10 ether);
