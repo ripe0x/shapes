@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import {IERC721} from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import {IAdminControl} from "./IAdminControl.sol";
-import {ShapeFormation} from "./IShapeCapabilities.sol";
+import {ShapeFormation} from "../ShapeTypes.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
 /// @title IShapes
@@ -21,9 +21,8 @@ import {IERC721Value} from "./IERC721Value.sol";
 ///      fee within a compile-time cap. It reaches nothing else, and it may be transferred or
 ///      renounced without moving any Shape.
 ///
-///      Rich read-only views live on `ShapeLens` (`IShapeLens`) rather than here. `modulesOf`,
-///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the raw
-///      accessors it reads to assemble them.
+///      Every protocol fact and every simulation is reachable from this address alone. There is no
+///      periphery read contract and no function reachable only through a library.
 interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The two fixed pointers administered by `setPointer` and `lockPointer`.
     enum Pointer {
@@ -60,8 +59,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Emitted when the admin replaces the collection metadata contract.
     event CollectionUpdated(address indexed collection);
 
-    /// @notice Emitted when the renderer is permanently locked. It cannot change afterwards.
-    event RendererLocked();
+    /// @notice Emitted when presentation is permanently locked. Neither the renderer nor the
+    ///         collection can change afterwards.
+    event PresentationLocked(address indexed renderer, address indexed collection);
 
     /// @notice Standard contract-level metadata refresh signal, emitted when the collection copy changes.
     event ContractURIUpdated();
@@ -159,8 +159,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
     ///      minting and transferring to `address(this)` are both refused.
     error SelfCustodyRejected(uint256 tokenId);
-    /// @dev `setRenderer` and `lockRenderer` revert once the renderer has been locked.
-    error RendererIsLocked();
+    /// @dev `setRenderer`, `setCollection` and `lockPresentation` revert once presentation is
+    ///      locked.
+    error PresentationIsLocked();
     /// @dev A renderer must have code and explicitly support the stable `IShapeRenderer`
     ///      capability; the zero address fails the code check.
     error UnsupportedRenderer(address renderer);
@@ -169,27 +170,29 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev A Black Shape cannot be redeemed, composed, decomposed or sacrificed again.
     ///      It remains transferable and may be destroyed through the draft ERC-8060 `burn` path.
     error TokenIsBlack(uint256 tokenId);
-    /// @dev `compose` needs at least one token to burn; `split` at least two outputs.
-    error EmptyRecomposition();
+    /// @dev `compose` was called with an empty `burnIds`: there is nothing to burn into the
+    ///      survivor.
+    error NoComposeInputs();
     /// @dev The survivor of a compose cannot also appear in its burn set.
     error CannotComposeWithSelf(uint256 tokenId);
     /// @dev A split's output denominations must sum to exactly the input's backing.
-    error SplitMismatch(uint256 inputBacking, uint256 outputSum);
+    error SplitSumMismatch(uint256 inputBacking, uint256 outputSum);
     /// @dev `split`/`splitTo` named fewer than two outputs.
     error SplitTooFewOutputs();
     /// @dev `decompose` found no compose to reverse: the survivor's compose stack is empty.
     error NoComposeRecord(uint256 survivorId);
     /// @dev `sacrifice` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
     error NotApexComplete(uint256 tokenId);
-    /// @dev `previewCompose` only: a burn id repeated in `burnIds`. `compose` reaches the same
-    ///      outcome through `_burn`, which reverts on the second occurrence.
+    /// @dev The same token id appears twice in one `compose` or `previewCompose` `burnIds`. A
+    ///      token can only be burned into the survivor once.
     error DuplicateComposeInput(uint256 tokenId);
     /// @dev Metadata copy is written verbatim into JSON, so a value is rejected when it carries a
     ///      `"`, a `\`, or a C0 control byte (which would break or restructure the document), is
     ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
     ///      cap. `field` is 0 name/prefix, 1 description.
     error InvalidCopy(uint8 field);
-    /// @dev A nonzero positions or market pointer must contain deployed code when configured.
+    /// @dev A nonzero positions or market pointer must contain code and answer ERC-165 for the
+    ///      interface its reader calls.
     error InvalidPointerTarget();
     /// @dev A pointer cannot be changed or locked again after its permanent lock.
     error PointerIsLocked();
@@ -253,11 +256,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until locked.
     function renderer() external view returns (address);
 
-    /// @notice Whether the renderer has been permanently locked.
-    function rendererLocked() external view returns (bool);
+    /// @notice Whether presentation has been permanently locked. True freezes both the renderer
+    ///         and the collection.
+    function presentationLocked() external view returns (bool);
 
     /// @notice The collection metadata contract, read only by `contractURI`. Replaceable by the
-    ///         admin via `setCollection` until `lockRenderer` freezes it.
+    ///         admin via `setCollection` until `lockPresentation` freezes it.
     function collection() external view returns (address);
 
     /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
@@ -289,7 +293,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Permanently lock presentation. Admin only, one way. After this neither the
     ///         renderer nor the collection can change again. Does not freeze the metadata copy,
     ///         which the admin keeps editing via `setMetadataCopy`.
-    function lockRenderer() external;
+    function lockPresentation() external;
 
     /// @notice Atomically set the token name prefix and the description shared with `contractURI`.
     ///         Admin only. Emits both ERC-4906 `BatchMetadataUpdate` and `ContractURIUpdated`.
@@ -301,7 +305,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /* --------------------------- pointer admin ------------------------- */
 
     /// @notice Set, replace or clear one explicit pointer. Admin only while that pointer is unlocked.
-    /// @dev Zero clears it; a nonzero target must contain deployed code. No target call occurs.
+    /// @dev Zero clears it. A nonzero target must contain code and answer ERC-165 for the
+    ///      interface its reader calls: `IShapePositionResolver` for positions,
+    ///      `IShapeAuctionHouse` for the market. No other call to the target ever occurs.
     function setPointer(uint8 pointer, address target) external;
 
     /// @notice Permanently freeze one explicit pointer. Admin only; may lock it at zero.
@@ -549,4 +555,49 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Smallest denomination and accounting unit, 0.01 ETH.
     function unit() external pure returns (uint256);
+}
+
+/// @title IShapeValue
+/// @notice Backing and redemption, for an integrator that does not need recomposition.
+/// @dev Advertised by `Shapes.supportsInterface`. Every member is implemented on the token.
+interface IShapeValue {
+    function backingOf(uint256 tokenId) external view returns (uint256);
+    function denomIndexOf(uint256 tokenId) external view returns (uint8);
+    function denominationAt(uint8 index) external pure returns (uint256);
+    function denominationCount() external pure returns (uint8);
+    function unit() external pure returns (uint256);
+    function redeem(uint256 tokenId) external;
+    function redeemBatch(uint256[] calldata tokenIds) external returns (uint256 totalWei);
+    function redeemTo(uint256 tokenId, address payable recipient) external;
+    function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
+        external
+        returns (uint256 totalWei);
+}
+
+/// @title IShapeRecomposition
+/// @notice The structural mutators, for a contract that builds recomposition workflows.
+/// @dev Advertised by `Shapes.supportsInterface`. Every member is implemented on the token.
+interface IShapeRecomposition {
+    function compose(uint256 survivorId, uint256[] calldata burnIds) external returns (uint256 outId);
+    function decompose(uint256 survivorId) external returns (uint256[] memory restoredIds);
+    function decomposeTo(uint256 survivorId, address recipient)
+        external
+        returns (uint256[] memory restoredIds);
+    function split(uint256 tokenId, uint8[] calldata outDenoms) external returns (uint256[] memory newIds);
+    function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
+        external
+        returns (uint256[] memory newIds);
+    function sacrifice(uint256 tokenId) external;
+}
+
+/// @title IShapeProvenance
+/// @notice Origin and identity reads, separate from metadata presentation.
+/// @dev Advertised by `Shapes.supportsInterface`. Every member is implemented on the token.
+interface IShapeProvenance {
+    function seedOf(uint256 tokenId) external view returns (bytes32);
+    function originCountOf(uint256 tokenId) external view returns (uint256);
+    function inkGeneOf(uint256 tokenId) external view returns (uint8);
+    function isComplete(uint256 tokenId) external view returns (bool);
+    function formationOf(uint256 tokenId) external view returns (ShapeFormation);
+    function childSeed(bytes32 parentSeed, uint256 childIndex) external pure returns (bytes32);
 }

@@ -80,6 +80,9 @@ contract Handler is Test, IERC721Receiver {
     uint256 public ghostRedeems;
     uint256 public ghostOriginsRedeemed;
     uint256 public ghostSacrificed;
+    /// @dev Cumulative count of `sacrifice` calls. `Shapes.blackShapeCount` counts the Black Shapes
+    ///      alive now, so it falls behind this once one is burned for zero.
+    uint256 public ghostSacrificeCount;
 
     uint256[] public liveTokens;
     mapping(uint256 => uint256) private _indexOfToken;
@@ -324,6 +327,7 @@ contract Handler is Test, IERC721Receiver {
         vm.prank(owner);
         try shapes.sacrifice(id) {
             ghostSacrificed += DENOMS[8];
+            ghostSacrificeCount += 1;
         } catch {}
     }
 
@@ -654,14 +658,18 @@ contract ShapesInvariantTest is StdInvariant, Test {
         );
     }
 
-    /// @notice Sacrificed backing is monotonic and always exactly 100 ETH per Black Shape.
+    /// @notice Sacrificed backing is monotonic and always exactly 100 ETH per sacrifice, and the
+    ///         live Black Shape count never exceeds the number of sacrifices.
     function invariant_SacrificeAccounting() public view {
         assertEq(
             shapes.burnedBacking(),
-            Denominations.amountAt(8) * shapes.blackShapeCount(),
+            Denominations.amountAt(8) * handler.ghostSacrificeCount(),
             "sacrifice per Black drifted"
         );
         assertEq(shapes.burnedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
+        assertLe(
+            shapes.blackShapeCount(), handler.ghostSacrificeCount(), "live Black count exceeds sacrifices"
+        );
     }
 
     /// @notice Every wei counted by redeemableBacking corresponds to a live Shape.

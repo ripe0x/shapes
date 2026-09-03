@@ -11,7 +11,7 @@ import {
     ShapeChildPreview,
     ShapeFormation,
     ShapeState
-} from "../src/interfaces/IShapeCapabilities.sol";
+} from "../src/ShapeTypes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {InkGenes} from "../src/lib/InkGenes.sol";
 import {GeometrySampling} from "../src/lib/GeometrySampling.sol";
@@ -655,7 +655,9 @@ contract BlackPathsTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, black));
         shapes.decompose(black);
 
-        assertEq(shapes.blackShapeCount(), blackShapeCountBefore, "blackShapeCount unaffected by the burn");
+        assertEq(
+            shapes.blackShapeCount(), blackShapeCountBefore - 1, "burning a Black Shape lowers the live count"
+        );
         assertEq(shapes.burnedBacking(), sacrificedBefore, "burnedBacking unaffected by the burn");
         _assertSolvent();
     }

@@ -8,7 +8,7 @@ import {ShapesBase} from "./Shapes.t.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
-import {ComposeRecordView} from "../src/interfaces/IShapeCapabilities.sol";
+import {ComposeRecordView} from "../src/ShapeTypes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {BadReceiver, OwnerTokenConsistencyRecorder} from "./mocks/Mocks.sol";
 import {Base64Decode} from "./utils/Base64Decode.sol";
@@ -452,7 +452,7 @@ contract OwnerTokenTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setMetadataCopy("x", "y");
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.lockRenderer();
+        shapes.lockPresentation();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setFeeRecipient(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));

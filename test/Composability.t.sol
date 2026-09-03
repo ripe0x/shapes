@@ -11,15 +11,8 @@ import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
-import {IShapes} from "../src/interfaces/IShapes.sol";
-import {
-    IShapeProvenance,
-    IShapeRecomposition,
-    IShapeValue,
-    ShapeChildPreview,
-    ShapeFormation,
-    ShapeState
-} from "../src/interfaces/IShapeCapabilities.sol";
+import {IShapes, IShapeProvenance, IShapeRecomposition, IShapeValue} from "../src/interfaces/IShapes.sol";
+import {ShapeChildPreview, ShapeFormation, ShapeState} from "../src/ShapeTypes.sol";
 import {IShapeGeometry} from "../src/interfaces/IShapeGeometry.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
@@ -228,10 +221,10 @@ contract ComposabilityTest is Test {
     function test_PreviewComposeRejectsWhatComposeRejects() public {
         uint256 first = _mintDust(6);
 
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(IShapes.NoComposeInputs.selector);
         lens.previewCompose(first, new uint256[](0));
         vm.prank(alice);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(IShapes.NoComposeInputs.selector);
         shapes.compose(first, new uint256[](0));
 
         uint256[] memory self = new uint256[](1);
@@ -260,12 +253,12 @@ contract ComposabilityTest is Test {
         shortfall[0] = 1; // 0.05
         shortfall[1] = 0; // 0.01, so 0.06 against a 0.1 parent
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
+            abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
         );
         lens.previewSplit(parent, shortfall);
         vm.prank(alice);
         vm.expectRevert(
-            abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
+            abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
         );
         shapes.split(parent, shortfall);
     }
@@ -560,9 +553,9 @@ contract ComposabilityTest is Test {
     }
 
     function test_PresentationLockFreezesTheCollectionToo() public {
-        shapes.lockRenderer();
+        shapes.lockPresentation();
         ShapeCollection next = new ShapeCollection(address(renderer));
-        vm.expectRevert(IShapes.RendererIsLocked.selector);
+        vm.expectRevert(IShapes.PresentationIsLocked.selector);
         shapes.setCollection(address(next));
     }
 

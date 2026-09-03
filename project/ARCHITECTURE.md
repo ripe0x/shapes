@@ -311,5 +311,4 @@ See the table kept current here after each size-affecting change.
 | Contract | Default | Testnet | Margin (default) |
 | --- | --- | --- | --- |
 | `Shapes` | (recorded at P5) | | |
-</content>
 </invoke>

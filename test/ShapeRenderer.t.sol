@@ -1022,16 +1022,16 @@ contract TokenMetadataTest is RendererTestBase {
         vm.stopPrank();
     }
 
-    /// @notice `lockRenderer` freezes the rendering contracts, not the editorial copy: the owner
+    /// @notice `lockPresentation` freezes the rendering contracts, not the editorial copy: the owner
     ///         keeps editing copy afterwards.
     function test_CopyStaysEditableAfterRendererLock() public {
-        shapes.lockRenderer();
+        shapes.lockPresentation();
         shapes.setMetadataCopy("Locked ", "Still editable copy after the presentation lock.");
         assertEq(shapes.tokenNamePrefix(), "Locked ");
     }
 
     /// @notice Copy that would break or restructure the metadata JSON is rejected on set, so no
-    ///         edit — even after `lockRenderer` — can produce a malformed or forged document.
+    ///         edit — even after `lockPresentation` — can produce a malformed or forged document.
     function test_CopyRejectsJsonBreakingBytes() public {
         // A double quote closes the string early and lets the rest forge structure.
         vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));

@@ -110,7 +110,7 @@ contract ContractOwnershipTest is Test {
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setMetadataCopy("x", "y");
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.lockRenderer();
+        shapes.lockPresentation();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.setFeeRecipient(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
@@ -255,7 +255,7 @@ contract ContractOwnershipTest is Test {
         // `blackCount` became `blackShapeCount` and `sacrificedBacking` became `burnedBacking`,
         // which changed both selectors.
         // Update these constants only when the function set changes on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0x374d44fd), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x902fc02c), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

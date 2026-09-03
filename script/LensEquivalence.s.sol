@@ -5,7 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
-import {ShapeChildPreview, ShapeState} from "../src/interfaces/IShapeCapabilities.sol";
+import {ShapeChildPreview, ShapeState} from "../src/ShapeTypes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @title LensEquivalence

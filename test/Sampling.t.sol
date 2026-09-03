@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 import {ShapesBase} from "./Shapes.t.sol";
-import {ComposeInputView, ComposeRecordView, ShapeState} from "../src/interfaces/IShapeCapabilities.sol";
+import {ComposeInputView, ComposeRecordView, ShapeState} from "../src/ShapeTypes.sol";
 import {ModuleCodec} from "../src/lib/ModuleCodec.sol";
 import {GeometrySampling} from "../src/lib/GeometrySampling.sol";
 import {GrammarV1Modules} from "../src/lib/GrammarV1Modules.sol";

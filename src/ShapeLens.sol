@@ -5,12 +5,7 @@ import {IShapes} from "./interfaces/IShapes.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {IShapeLens} from "./interfaces/IShapeLens.sol";
 import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
-import {
-    ComposeInputView,
-    ComposeRecordView,
-    ShapeChildPreview,
-    ShapeState
-} from "./interfaces/IShapeCapabilities.sol";
+import {ComposeInputView, ComposeRecordView, ShapeChildPreview, ShapeState} from "./ShapeTypes.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 import {GeometrySampling} from "./lib/GeometrySampling.sol";
@@ -83,7 +78,7 @@ contract ShapeLens is IShapeLens {
         returns (ShapeState memory result)
     {
         uint256 n = burnIds.length;
-        if (n == 0) revert IShapes.EmptyRecomposition();
+        if (n == 0) revert IShapes.NoComposeInputs();
 
         if (shapes.isBlack(survivorId)) revert IShapes.TokenIsBlack(survivorId); // also existence
 

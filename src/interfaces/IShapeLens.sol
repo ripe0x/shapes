@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.28;
 
-import {ComposeRecordView, ShapeChildPreview, ShapeState} from "./IShapeCapabilities.sol";
+import {ComposeRecordView, ShapeChildPreview, ShapeState} from "../ShapeTypes.sol";
 
 /// @title IShapeLens
 /// @notice Read-only periphery for `Shapes`: deterministic previews and the rich per-token state

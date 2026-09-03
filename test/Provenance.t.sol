@@ -4,7 +4,7 @@ pragma solidity 0.8.28;
 import {console2} from "forge-std/Test.sol";
 
 import {ShapesBase} from "./Shapes.t.sol";
-import {ComposeInputView, ComposeRecordView} from "../src/interfaces/IShapeCapabilities.sol";
+import {ComposeInputView, ComposeRecordView} from "../src/ShapeTypes.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {GeometrySampling} from "../src/lib/GeometrySampling.sol";

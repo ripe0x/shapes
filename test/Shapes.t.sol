@@ -15,7 +15,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
-import {ShapeFormation, ShapeState} from "../src/interfaces/IShapeCapabilities.sol";
+import {ShapeFormation, ShapeState} from "../src/ShapeTypes.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {InkGenes} from "../src/lib/InkGenes.sol";
@@ -1273,8 +1273,8 @@ contract PointersTest is ShapesBase {
     }
 
     function test_MarketCanBeSetReplacedAndClearedWithEvents() public {
-        MockPositionResolver first = new MockPositionResolver();
-        MockPositionResolver second = new MockPositionResolver();
+        ShapeAuctionHouse first = new ShapeAuctionHouse(address(shapes));
+        ShapeAuctionHouse second = new ShapeAuctionHouse(address(shapes));
 
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.MarketSet(address(first));
@@ -1352,7 +1352,7 @@ contract PointersTest is ShapesBase {
     }
 
     function test_ConfiguredMarketBecomesPermanentWhenLocked() public {
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
         vm.expectEmit(true, false, false, true, address(shapes));
         emit IShapes.MarketLocked(address(market_));
@@ -1385,14 +1385,14 @@ contract PointersTest is ShapesBase {
     }
 
     function test_RendererPositionsAndMarketLocksAreIndependent() public {
-        shapes.lockRenderer();
+        shapes.lockPresentation();
         MockPositionResolver resolver = new MockPositionResolver();
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         shapes.lockPointer(uint8(IShapes.Pointer.Positions));
 
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
-        assertTrue(shapes.rendererLocked());
+        assertTrue(shapes.presentationLocked());
         assertTrue(_positionsIsLocked());
         assertEq(_marketAddress(), address(market_));
         assertFalse(_marketIsLocked());
@@ -1403,7 +1403,7 @@ contract PointersTest is ShapesBase {
 
     function test_AdminTransferMovesAllRemainingAdminAuthority() public {
         MockPositionResolver resolver = new MockPositionResolver();
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         shapes.transferAdmin(alice);
         assertEq(shapes.admin(), alice);
 
@@ -1445,7 +1445,7 @@ contract PointersTest is ShapesBase {
 
     function test_RenouncingAfterInstallLeavesPointersUsableAndUnchanged() public {
         MockPositionResolver resolver = new MockPositionResolver();
-        MockPositionResolver market_ = new MockPositionResolver();
+        ShapeAuctionHouse market_ = new ShapeAuctionHouse(address(shapes));
         resolver.setPosition(7, alice);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
         shapes.setPointer(uint8(IShapes.Pointer.Market), address(market_));
@@ -1518,7 +1518,7 @@ contract PointersTest is ShapesBase {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
-        shapes.setPointer(uint8(IShapes.Pointer.Market), address(resolver));
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(new ShapeAuctionHouse(address(shapes))));
 
         vm.prank(alice);
         uint256 first = shapes.mintBatch{value: 5 * (DENOMS[0] + feeOf(DENOMS[0]))}(DENOMS[0], 5);
@@ -1556,7 +1556,7 @@ contract RendererAdminTest is ShapesBase {
     function test_DeployerIsAdminAndRendererStartsUnlocked() public view {
         assertEq(shapes.admin(), address(this));
         assertEq(shapes.renderer(), address(renderer));
-        assertFalse(shapes.rendererLocked());
+        assertFalse(shapes.presentationLocked());
     }
 
     function test_AdminCanReplaceTheRenderer() public {
@@ -1602,25 +1602,25 @@ contract RendererAdminTest is ShapesBase {
         shapes.setRenderer(address(0));
     }
 
-    function test_LockFreezesTheRendererForever() public {
+    function test_LockFreezesPresentationForever() public {
         ShapeRenderer next = new ShapeRenderer();
 
-        vm.expectEmit(false, false, false, false, address(shapes));
-        emit IShapes.RendererLocked();
-        shapes.lockRenderer();
-        assertTrue(shapes.rendererLocked());
+        vm.expectEmit(true, true, false, false, address(shapes));
+        emit IShapes.PresentationLocked(address(renderer), address(collection));
+        shapes.lockPresentation();
+        assertTrue(shapes.presentationLocked());
 
-        vm.expectRevert(IShapes.RendererIsLocked.selector);
+        vm.expectRevert(IShapes.PresentationIsLocked.selector);
         shapes.setRenderer(address(next));
 
-        vm.expectRevert(IShapes.RendererIsLocked.selector);
-        shapes.lockRenderer();
+        vm.expectRevert(IShapes.PresentationIsLocked.selector);
+        shapes.lockPresentation();
     }
 
     function test_LockIsAdminOnly() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.lockRenderer();
+        shapes.lockPresentation();
     }
 
     /// @notice The renderer is cosmetic: replacing it never touches backing or redemption.
@@ -1753,7 +1753,7 @@ contract RecompositionTest is ShapesBase {
         uint256 a = _mint(alice, DENOMS[0]);
         uint256[] memory burn = new uint256[](0);
         vm.prank(alice);
-        vm.expectRevert(IShapes.EmptyRecomposition.selector);
+        vm.expectRevert(IShapes.NoComposeInputs.selector);
         shapes.compose(a, burn);
     }
 
@@ -1799,7 +1799,7 @@ contract RecompositionTest is ShapesBase {
         outs[0] = 0;
         outs[1] = 0; // 0.02 != 0.1
         vm.prank(alice);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitMismatch.selector, DENOMS[2], DENOMS[0] * 2));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2));
         shapes.split(id, outs);
     }
 
@@ -2017,7 +2017,7 @@ contract BlackShapeTest is ShapesBase {
 
         assertEq(alice.balance, balanceBefore, "zero-value burn transfers no ETH");
         assertEq(shapes.burnedBacking(), DENOMS[8], "historical sacrifice remains counted");
-        assertEq(shapes.blackShapeCount(), 1, "blackShapeCount is cumulative");
+        assertEq(shapes.blackShapeCount(), 0, "blackShapeCount counts the Black Shapes alive now");
         assertFalse(lens.exists(id), "burn retires the Black id");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
         shapes.ownerOf(id);
