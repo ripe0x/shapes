@@ -628,6 +628,7 @@ export function SiteApp({
           onRetry={() => { setAuction("loading"); void refreshAuction(); }}
           onSettle={() => { if (auctionId !== null) void runHouse("settle", "settle", [auctionId]); }}
           onClaim={() => { if (auctionId !== null) void runHouse("claim", "claimProceeds", [auctionId]); }}
+          onClaimLot={() => { if (auctionId !== null) void runHouse("claimLot", "claimLot", [auctionId]); }}
           onOpenToken={openToken}
         />
       )}

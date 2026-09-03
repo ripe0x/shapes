@@ -87,6 +87,7 @@ export function AuctionView({
   onRetry,
   onSettle,
   onClaim,
+  onClaimLot,
   onOpenToken,
 }: {
   /** "loading" before the first chain read resolves, null once resolved with no live auction. */
@@ -106,6 +107,8 @@ export function AuctionView({
   onRetry: () => void;
   onSettle: () => void;
   onClaim: () => void;
+  /** Winner: claimLot, which delivers the token. */
+  onClaimLot: () => void;
   onOpenToken: (id: bigint) => void;
 }) {
   const now = useNow(auction);
@@ -200,6 +203,7 @@ export function AuctionView({
   const left = secondsLeft(auction, now);
   const yours = address && auction.highestBidder.toLowerCase() === address.toLowerCase();
   const isSeller = address && auction.seller.toLowerCase() === address.toLowerCase();
+  const isWinner = address && auction.highestBidder.toLowerCase() === address.toLowerCase();
   const nearExtension = phase === "live" && left !== null && left <= auction.extensionWindow;
 
   // The lot's own name and denomination, looked up by the lot's tokenId (auction.tokenId), not
@@ -693,6 +697,37 @@ export function AuctionView({
               </button>
               {errLine("withdraw")}
             </>
+          )}
+        </Section>
+      )}
+
+      {auction.settled && (
+        <Section title="LOT" pad="26px 48px 36px 32px">
+          {auction.lotClaimed ? (
+            <p style={{margin: 0, fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+              {tokenName} was delivered to {bidderIdentity}.
+            </p>
+          ) : isWinner ? (
+            <>
+              <p style={{margin: "0 0 22px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+                {tokenName} is yours. Claim it to take delivery.
+              </p>
+              <button
+                type="button"
+                className="btn-filled"
+                onClick={onClaimLot}
+                disabled={!!busy}
+                style={{padding: "11px 26px"}}
+              >
+                {txStageLabel("claimLot", `Claim ${tokenName}`, busy, pendingTx)}
+              </button>
+              <TxStage op="claimLot" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
+              {errLine("claimLot")}
+            </>
+          ) : (
+            <p style={{margin: 0, fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
+              Awaiting delivery to {bidderIdentity}.
+            </p>
           )}
         </Section>
       )}

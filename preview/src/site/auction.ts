@@ -19,6 +19,8 @@ export interface AuctionState {
   highestUnits: bigint;
   highestBidder: `0x${string}`;
   settled: boolean;
+  /** True once claimLot delivered the token to the winner. */
+  lotClaimed: boolean;
   /** Smallest bid that would take the lead right now, in units. */
   minimumUnits: bigint;
   /** The connected wallet's own escrowed total and cards, if any. */
@@ -155,8 +157,22 @@ export async function loadAuctionFor(
     functionName: "getAuctionFor",
     args: [dep.shapes, tokenId],
   });
-  if (!exists) return null;
-  return loadAuction(publicClient, dep, auctionId, viewer);
+  if (exists) return loadAuction(publicClient, dep, auctionId, viewer);
+
+  // claimLot deletes the token's index entry, so a finished auction is not listed there any
+  // more. The page still shows the record and its history: scan the newest auctions for the
+  // latest one on this token. Bounded to the last 32 ids; the collection runs one auction.
+  const count = await publicClient.readContract({...house, functionName: "auctionCount"});
+  const from = count > 32n ? count - 32n : 0n;
+  const ids: bigint[] = [];
+  for (let id = count - 1n; id >= from; id--) ids.push(id);
+  const records = await Promise.all(
+    ids.map((id) => publicClient.readContract({...house, functionName: "auctions", args: [id]})),
+  );
+  const i = records.findIndex(
+    (r) => r.nft.toLowerCase() === dep.shapes.toLowerCase() && r.tokenId === tokenId,
+  );
+  return i < 0 ? null : loadAuction(publicClient, dep, ids[i]!, viewer);
 }
 
 export async function loadAuction(
@@ -200,6 +216,7 @@ export async function loadAuction(
     highestUnits: raw.highestUnits,
     highestBidder: raw.highestBidder,
     settled: raw.settled,
+    lotClaimed: raw.lotClaimed,
     minimumUnits: BigInt(minimumUnits),
     yourUnits: BigInt(yourUnits),
     yourCards: [...yourCards],
