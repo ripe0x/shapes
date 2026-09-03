@@ -956,9 +956,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev The positions contract is untrusted. A revert, an out-of-gas, a return that is not one
-    ///      word, and a word with bits set above the address all resolve to zero. A hostile target
-    ///      can mislead callers of this view and nothing further.
+    /// @dev Forwards to the positions target with a 50,000 gas stipend. The target is untrusted: a
+    ///      revert, out-of-gas, or malformed return yields zero.
     function positionOf(uint256 tokenId) external view returns (address) {
         address target = _pointers.positions;
         if (target == address(0)) return address(0);

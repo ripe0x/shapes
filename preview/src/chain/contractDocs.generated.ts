@@ -1966,7 +1966,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "The position the configured positions contract reports for `tokenId`, or zero.",
-        "dev": "The positions contract is untrusted. A revert, an out-of-gas, a return that is not one word, and a word with bits set above the address all resolve to zero. A hostile target can mislead callers of this view and nothing further.",
+        "dev": "Forwards to the positions target with a 50,000 gas stipend. The target is untrusted: a revert, out-of-gas, or malformed return yields zero.",
         "params": {},
         "returns": {},
         "abi": {

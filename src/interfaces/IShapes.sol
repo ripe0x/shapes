@@ -567,8 +567,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function unicodeCard(uint256 tokenId) external view returns (string memory);
 
     /// @notice The position the configured positions contract reports for `tokenId`, or zero.
-    /// @dev Does not require a live token. The positions contract is untrusted and is called with a
-    ///      50,000-gas cap; a revert, an out-of-gas, or a malformed return all resolve to zero.
+    /// @dev Does not require a live token. Forwards to the positions target with a 50,000 gas
+    ///      stipend. The target is untrusted: a revert, out-of-gas, or malformed return yields zero.
     function positionOf(uint256 tokenId) external view returns (address);
 
     /// @notice Deterministic seed assigned to a split child at `childIndex`.
