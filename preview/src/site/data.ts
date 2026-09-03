@@ -1,4 +1,4 @@
-import {BaseError, ContractFunctionRevertedError, type PublicClient} from "viem";
+import {BaseError, ContractFunctionRevertedError, hexToBytes, type PublicClient} from "viem";
 import {
   shapesAbi,
   DENOMINATIONS,
@@ -7,7 +7,28 @@ import {
   mintStartOf,
   type Deployment,
 } from "../chain/abi";
+import {
+  CANONICAL,
+  DESCRIPTION,
+  OWNER_TOKEN_DESCRIPTION,
+  composeShape,
+  metadataJsonFromComposition,
+  svgFromComposition,
+  type Composition,
+} from "../canonical/render";
+import {composeSampledShape} from "../canonical/sampling";
 import {geneIndexOfName} from "../previewGene";
+import {
+  INDEXER_TIMEOUT_MS,
+  MAX_INDEXER_LAG_BLOCKS,
+  checkpointOf,
+  indexerQuery,
+  requireFreshCheckpoint,
+  type IndexerEnvelope,
+  type IndexerMeta,
+} from "./indexerClient";
+
+export {INDEXER_TIMEOUT_MS, MAX_INDEXER_LAG_BLOCKS} from "./indexerClient";
 
 export interface TokenMeta {
   name: string;
@@ -101,10 +122,6 @@ export function seedMintStart(
   return dep ? mintStartOf(dep) : 0n;
 }
 
-/** The indexer is advisory: a source this far behind the connected chain is rejected. */
-export const MAX_INDEXER_LAG_BLOCKS = 2n;
-export const INDEXER_TIMEOUT_MS = 8_000;
-export const MAX_INDEXER_RESPONSE_BYTES = 256 * 1024;
 
 export interface SiteLoadMetrics {
   source: "chain" | "indexer";
@@ -124,16 +141,33 @@ export interface LoadSiteOptions {
    *  path). Omit for a full scan, e.g. the first load. */
   previous?: SiteData | null;
   /** Ids the caller knows changed (e.g. just acted on) even if `ownerOf` still reports the same
-   *  owner, so the chain fallback rereads their fields instead of reusing the cached ones. */
+   *  owner. Both paths read these from the chain: the indexer path so the wallet's own transaction
+   *  shows while the indexer is a block behind, the chain fallback so their fields are reread
+   *  instead of reusing the cached ones. */
   dirtyIds?: readonly bigint[];
+  /** Pause between chunks on the chain scan. Defaults to `CHUNK_DELAY_MS`; tests set 0. */
+  chunkDelayMs?: number;
 }
 
-interface IndexedTokenId {
+/** One `token` row as the indexer's GraphQL serializes it: bigint columns as decimal strings, hex
+ *  columns as `0x` strings, integer and boolean columns as themselves. */
+interface IndexedToken {
   id: string;
+  seed: `0x${string}`;
+  denomIndex: number;
+  backingWei: string;
+  originCount: number;
+  composeDepth: number;
+  inkGene: number;
+  modules: `0x${string}` | null;
+  isBlack: boolean;
+  owner: `0x${string}`;
+  splitFromDenom: number | null;
+  splitOriginDenom: number | null;
 }
 
 interface IndexerPage {
-  items: IndexedTokenId[];
+  items: IndexedToken[];
   pageInfo: {hasNextPage: boolean; endCursor: string | null};
 }
 
@@ -178,12 +212,9 @@ async function loadOwnerToken(
   }
 }
 
-interface IndexerResponse {
-  data?: {
-    _meta?: {status?: Record<string, {id: number; block: {number: number}}>};
-    tokens?: IndexerPage;
-  };
-  errors?: {message?: string}[];
+interface IndexerTokensData {
+  _meta?: IndexerMeta;
+  tokens?: IndexerPage;
 }
 
 const INDEXER_PAGE_SIZE = 500;
@@ -196,7 +227,20 @@ const INDEXER_QUERY = `query SiteTokens($limit: Int!, $after: String) {
     limit: $limit
     after: $after
   ) {
-    items { id }
+    items {
+      id
+      seed
+      denomIndex
+      backingWei
+      originCount
+      composeDepth
+      inkGene
+      modules
+      isBlack
+      owner
+      splitFromDenom
+      splitOriginDenom
+    }
     pageInfo { hasNextPage endCursor }
   }
 }`;
@@ -217,6 +261,65 @@ function parseUri(uri: string): {image: string; meta: TokenMeta} {
         (a) => ({trait_type: a.trait_type, value: String(a.value)}),
       ),
     },
+  };
+}
+
+/**
+ * A `SiteToken` built from one indexer row, with no chain read. The artwork and metadata are
+ * produced by the canonical renderer this repository ports the contract from, taking the same
+ * branch `Shapes.tokenURI` takes: materialized module bytes render under grammar v2 and carry the
+ * split provenance traits, an empty `modules` renders from the seed and carries none.
+ *
+ * Throws on a row the renderer rejects (a denomination index off the ladder, an invalid module
+ * byte, a gene out of range). `loadSite` treats that as an unusable indexer response and falls
+ * back to the chain.
+ */
+export function siteTokenFromIndexedRow(row: IndexedToken, ownerTokenId: bigint | null): SiteToken {
+  const id = BigInt(row.id);
+  const seed = BigInt(row.seed);
+  const originCount = BigInt(row.originCount);
+  const composeDepth = BigInt(row.composeDepth);
+  const modules = row.modules && row.modules !== "0x" ? hexToBytes(row.modules) : null;
+  const isOwnerToken = ownerTokenId !== null && ownerTokenId === id;
+  const description = isOwnerToken ? OWNER_TOKEN_DESCRIPTION : DESCRIPTION;
+  // `splitFromDenom`/`splitOriginDenom` reach the renderer only on the sampled branch, matching
+  // `Shapes.tokenURI`: a split child always carries materialized bytes.
+  const splitFrom =
+    modules && row.splitFromDenom !== null && row.splitOriginDenom !== null
+      ? {parentDenomIndex: row.splitFromDenom, originDenomIndex: row.splitOriginDenom}
+      : undefined;
+
+  const composition: Composition = modules
+    ? composeSampledShape(modules, row.denomIndex, row.inkGene)
+    : composeShape(seed, DENOMINATIONS[row.denomIndex]!.wei, row.inkGene);
+  const svg = svgFromComposition(composition, id, CANONICAL, row.isBlack);
+  const json = JSON.parse(
+    metadataJsonFromComposition(
+      composition,
+      svg,
+      id,
+      originCount,
+      row.isBlack,
+      row.inkGene,
+      composeDepth,
+      "Shape ",
+      description,
+      splitFrom,
+      isOwnerToken,
+    ),
+  ) as {image: string; name: string; description: string; attributes: {trait_type?: string; value: string}[]};
+
+  return {
+    id,
+    backing: BigInt(row.backingWei),
+    di: row.isBlack ? -1 : row.denomIndex,
+    seed,
+    owner: row.owner,
+    image: json.image,
+    meta: {name: json.name, description: json.description, attributes: json.attributes},
+    inkGene: row.inkGene,
+    originCount: row.originCount,
+    composeDepth: row.composeDepth,
   };
 }
 
@@ -251,111 +354,56 @@ async function hasMulticall3(publicClient: PublicClient): Promise<boolean> {
   return code !== undefined && code !== "0x";
 }
 
+/** Pause between chunks on the chain-scan fallback. Public gateways answer a burst with HTTP 429,
+ *  and the whole point of the fallback is that it still completes when the indexer is gone. */
+export const CHUNK_DELAY_MS = 60;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Runs every call and returns per-call results in order. Chunks go through Multicall3 (one
- * eth_call per chunk) when the chain has it, or as concurrent single reads otherwise; all
- * chunks are in flight at once. A reverted call becomes a "failure" result, not a throw.
+ * eth_call per chunk) when the chain has it, or as single reads otherwise. One chunk is in flight
+ * at a time, with `delayMs` between chunks, so a full scan is a paced sequence of requests rather
+ * than a burst. A reverted call becomes a "failure" result, not a throw.
  */
 async function batchRead(
   publicClient: PublicClient,
   calls: ReadCall[],
   viaMulticall: boolean,
   chunkSize: number,
+  delayMs: number,
 ): Promise<ReadResult[]> {
-  const parts = await Promise.all(
-    chunk(calls, chunkSize).map((part): Promise<ReadResult[]> => {
-      if (viaMulticall) {
-        // Keep Viem's recursive ABI inference out of this deliberately dynamic batch. The
-        // runtime result is normalized to ReadResult immediately below either way.
-        const multicall = publicClient.multicall as unknown as (args: {
-          contracts: ReadCall[];
-          allowFailure: true;
-        }) => Promise<ReadResult[]>;
-        return multicall({contracts: part, allowFailure: true});
-      }
-      return Promise.all(
-        part.map((call) =>
-          publicClient.readContract(call as Parameters<PublicClient["readContract"]>[0]).then(
-            (result): ReadResult => ({status: "success", result}),
-            (error: Error): ReadResult => ({status: "failure", error}),
-          ),
+  const parts = chunk(calls, chunkSize);
+  const out: ReadResult[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0 && delayMs > 0) await delay(delayMs);
+    const part = parts[i]!;
+    if (viaMulticall) {
+      // Keep Viem's recursive ABI inference out of this deliberately dynamic batch. The
+      // runtime result is normalized to ReadResult immediately below either way.
+      const multicall = publicClient.multicall as unknown as (args: {
+        contracts: ReadCall[];
+        allowFailure: true;
+      }) => Promise<ReadResult[]>;
+      out.push(...(await multicall({contracts: part, allowFailure: true})));
+      continue;
+    }
+    for (const call of part) {
+      out.push(
+        await publicClient.readContract(call as Parameters<PublicClient["readContract"]>[0]).then(
+          (result): ReadResult => ({status: "success", result}),
+          (error: Error): ReadResult => ({status: "failure", error}),
         ),
       );
-    }),
-  );
-  return parts.flat();
+    }
+  }
+  return out;
 }
 
 // Per-token reads, in call order within each token's chunk slice.
 const FIELDS = ["backingOf", "seedOf", "isBlackShape", "tokenURI", "composeDepth"] as const;
-
-async function readJsonBounded<T>(response: Response): Promise<T> {
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_INDEXER_RESPONSE_BYTES) {
-    throw new Error("Shapes indexer response is too large");
-  }
-
-  if (!response.body) {
-    const text = await response.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_INDEXER_RESPONSE_BYTES) {
-      throw new Error("Shapes indexer response is too large");
-    }
-    return JSON.parse(text) as T;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let bytes = 0;
-  let text = "";
-  for (;;) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    bytes += value.byteLength;
-    if (bytes > MAX_INDEXER_RESPONSE_BYTES) {
-      await reader.cancel();
-      throw new Error("Shapes indexer response is too large");
-    }
-    text += decoder.decode(value, {stream: true});
-  }
-  text += decoder.decode();
-  return JSON.parse(text) as T;
-}
-
-/** GraphQL endpoint for an indexer origin, with any trailing slash removed. */
-export function indexerEndpoint(url: string): string {
-  return `${url.replace(/\/$/, "")}/graphql`;
-}
-
-/**
- * POSTs one GraphQL query to an indexer endpoint under the site's timeout and response-size
- * bounds, and returns the parsed body. Shared by every indexer read so no call site can skip
- * those bounds; interpreting `data`/`errors` is the caller's job.
- */
-export async function queryIndexer<T>(
-  endpoint: string,
-  fetcher: typeof fetch,
-  query: string,
-  variables: Record<string, unknown>,
-  timeoutMs: number,
-): Promise<T> {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    throw new Error("Shapes indexer timeout must be positive");
-  }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetcher(endpoint, {
-      method: "POST",
-      headers: {"content-type": "application/json"},
-      body: JSON.stringify({query, variables}),
-      signal: controller.signal,
-    });
-    if (!response.ok) throw new Error(`Shapes indexer returned HTTP ${response.status}`);
-    return await readJsonBounded<T>(response);
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 async function fetchIndexedTokens(
   url: string,
@@ -363,9 +411,8 @@ async function fetchIndexedTokens(
   chainId: number,
   expectedSupply: bigint,
   timeoutMs: number,
-): Promise<{tokens: IndexedTokenId[]; indexedBlock: bigint; requests: number}> {
-  const endpoint = indexerEndpoint(url);
-  const tokens: IndexedTokenId[] = [];
+): Promise<{tokens: IndexedToken[]; indexedBlock: bigint; requests: number}> {
+  const tokens: IndexedToken[] = [];
   let after: string | null = null;
   let indexedBlock: bigint | undefined;
   let requests = 0;
@@ -380,23 +427,18 @@ async function fetchIndexedTokens(
       throw new Error("Shapes indexer returned too many pages");
     }
 
-    const payload: IndexerResponse = await queryIndexer<IndexerResponse>(
-      endpoint,
+    const payload: IndexerEnvelope<IndexerTokensData> = await indexerQuery<IndexerTokensData>(
+      url,
       fetcher,
       INDEXER_QUERY,
       {limit: INDEXER_PAGE_SIZE, after},
       timeoutMs,
     );
-    if (payload.errors?.length || !payload.data?.tokens || !payload.data._meta?.status) {
-      throw new Error(payload.errors?.[0]?.message ?? "Shapes indexer returned an invalid response");
+    if (!payload.data?.tokens) {
+      throw new Error("Shapes indexer returned an invalid response");
     }
 
-    const statuses = Object.values(payload.data._meta.status);
-    const status = statuses.find((candidate) => candidate.id === chainId);
-    if (!status || !Number.isSafeInteger(status.block.number) || status.block.number < 0) {
-      throw new Error("Shapes indexer does not report a checkpoint for the connected chain");
-    }
-    const pageBlock = BigInt(status.block.number);
+    const pageBlock = checkpointOf(payload.data._meta, chainId);
     if (indexedBlock !== undefined && indexedBlock !== pageBlock) {
       throw new Error("Shapes indexer advanced during a paginated gallery read");
     }
@@ -469,14 +511,18 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
 }
 
 /**
- * The indexer supplies only candidate live IDs. Every displayed or actionable field stays a
- * current chain read, so an indexing bug cannot invent ownership, backing, art, or token state.
+ * Current chain state for a named set of ids: one `ownerOf` plus the per-token fields per id,
+ * batched through Multicall3 when the chain has it. An id whose `ownerOf` reverts is burned and is
+ * left out of the result. Used for the ids a caller names in `dirtyIds`, which is the set the
+ * connected wallet just acted on.
  */
-async function tokensFromIndexer(
+async function readTokensFromChain(
   publicClient: PublicClient,
   dep: Deployment,
   ids: bigint[],
+  delayMs: number,
 ): Promise<SiteToken[]> {
+  if (ids.length === 0) return [];
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
   const viaMulticall = await hasMulticall3(publicClient);
   const rows = await batchRead(
@@ -487,13 +533,14 @@ async function tokensFromIndexer(
     ]),
     viaMulticall,
     TOKEN_CHUNK,
+    delayMs,
   );
 
+  const width = FIELDS.length + 1;
   const tokens: SiteToken[] = [];
   for (let i = 0; i < ids.length; i++) {
-    const row = rows.slice(i * 6, i * 6 + 6);
-    const failure = row.find((result) => result.status === "failure");
-    if (failure?.status === "failure") throw failure.error;
+    const row = rows.slice(i * width, i * width + width);
+    if (row.some((result) => result.status === "failure")) continue; // burned since
     const [owner, backing, seed, black, uri, composeDepth] = row.map(
       (result) => (result as {result: unknown}).result,
     );
@@ -503,7 +550,7 @@ async function tokensFromIndexer(
       backing: backing as bigint,
       di: black ? -1 : denomIndexOf(backing as bigint),
       // Viem decodes bytes32 as a hex string. Normalize it at the chain-data boundary so every
-      // renderer receives the bigint promised by SiteToken, regardless of which ID source won.
+      // renderer receives the bigint promised by SiteToken, regardless of which source won.
       seed: BigInt(seed as `0x${string}`),
       owner: owner as `0x${string}`,
       image,
@@ -513,13 +560,13 @@ async function tokensFromIndexer(
       composeDepth: Number(composeDepth),
     });
   }
-  return tokens.sort((a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0));
+  return tokens;
 }
 
 /**
- * Chain state the site renders from. Fine on a dev chain even at SeedDemo scale (10k+ minted
- * ids); a mainnet deployment needs an indexer (or at minimum a deploy-block floor on the log
- * scan in chain/history.ts) before this ships publicly.
+ * Chain state the site renders from when no indexer answers. One request per chunk, paced, so it
+ * completes against a rate-limiting public gateway; at 20k minted ids that is minutes rather than
+ * seconds, which is the cost of the indexer being down.
  *
  * With no `previous` snapshot (first load), scans every id 0..totalMinted-1: ownerOf across all
  * ids to find live tokens, then the per-token fields for live ids only. With a `previous`
@@ -541,6 +588,7 @@ async function loadSiteFromChain(
   dep: Deployment,
   previous: SiteData | null,
   dirtyIds: readonly bigint[],
+  delayMs: number,
 ): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
   const genesisBlockNumber = dep.fromBlock !== undefined ? BigInt(dep.fromBlock) : 0n;
@@ -599,6 +647,7 @@ async function loadSiteFromChain(
     checkIds.map((id) => ({...shapes, functionName: "ownerOf", args: [id]})),
     viaMulticall,
     ID_CHUNK,
+    delayMs,
   );
 
   // ownerOf reverts for burned ids; those drop out of the live set.
@@ -620,6 +669,7 @@ async function loadSiteFromChain(
     needsFields.flatMap(({id}) => FIELDS.map((functionName) => ({...shapes, functionName, args: [id]}))),
     viaMulticall,
     TOKEN_CHUNK * FIELDS.length,
+    delayMs,
   );
 
   const freshById = new Map<bigint, SiteToken>();
@@ -676,6 +726,12 @@ async function loadSiteFromChain(
  * Loads the gallery through an optional Ponder boundary. Any unavailable, malformed, wrong-chain,
  * or stale indexer response falls through to the established raw-RPC path, so this optimisation
  * never becomes the source of truth for user-visible state.
+ *
+ * On the indexer path every per-token field comes from the indexer row, and the artwork and
+ * metadata are produced locally by the canonical renderer. The chain is read for the header totals
+ * and for the ids in `dirtyIds`: the checkpoint guard rejects an indexer more than
+ * `maxIndexerLagBlocks` behind the head, but within that window a row for a token the connected
+ * wallet just acted on can still be one block behind, and that is the token the user is watching.
  */
 export async function loadSite(
   publicClient: PublicClient,
@@ -684,6 +740,7 @@ export async function loadSite(
 ): Promise<SiteData> {
   const url = options.indexerUrl ?? dep.indexerUrl;
   const fetcher = options.fetch ?? globalThis.fetch;
+  const delayMs = options.chunkDelayMs ?? CHUNK_DELAY_MS;
 
   if (url && fetcher) {
     try {
@@ -698,18 +755,30 @@ export async function loadSite(
         header.supply,
         options.indexerTimeoutMs ?? INDEXER_TIMEOUT_MS,
       );
-      const maximumLag = options.maxIndexerLagBlocks ?? MAX_INDEXER_LAG_BLOCKS;
-      if (maximumLag < 0n || indexed.indexedBlock > head || head - indexed.indexedBlock > maximumLag) {
-        throw new Error(
-          `Shapes indexer is stale: indexed ${indexed.indexedBlock}, chain head ${head}, maximum lag ${maximumLag}`,
-        );
-      }
+      requireFreshCheckpoint(indexed.indexedBlock, head, options.maxIndexerLagBlocks ?? MAX_INDEXER_LAG_BLOCKS);
 
       const ids = indexed.tokens.map((row) => BigInt(row.id));
       if (new Set(ids.map(String)).size !== ids.length) {
         throw new Error("Shapes indexer returned duplicate token ids");
       }
-      const tokens = await tokensFromIndexer(publicClient, dep, ids);
+      const byId = new Map(
+        indexed.tokens.map((row) => {
+          const token = siteTokenFromIndexedRow(row, header.ownerToken);
+          return [token.id, token] as const;
+        }),
+      );
+
+      // The ids the wallet just acted on, read fresh so the user's own transaction shows even
+      // while the indexer is a block behind. An id the chain no longer owns has burned and leaves
+      // the live set; an id the indexer has not seen yet joins it.
+      const dirtyIds = [...new Set(options.dirtyIds ?? [])];
+      if (dirtyIds.length > 0) {
+        const fresh = await readTokensFromChain(publicClient, dep, dirtyIds, delayMs);
+        for (const id of dirtyIds) byId.delete(id);
+        for (const token of fresh) byId.set(token.id, token);
+      }
+
+      const tokens = [...byId.values()].sort((a, b) => (a.id > b.id ? -1 : a.id < b.id ? 1 : 0));
       options.onMetrics?.({source: "indexer", indexerRequests: indexed.requests});
       return {tokens, ...header};
     } catch {
@@ -718,7 +787,13 @@ export async function loadSite(
     }
   }
 
-  const site = await loadSiteFromChain(publicClient, dep, options.previous ?? null, options.dirtyIds ?? []);
+  const site = await loadSiteFromChain(
+    publicClient,
+    dep,
+    options.previous ?? null,
+    options.dirtyIds ?? [],
+    delayMs,
+  );
   options.onMetrics?.({source: "chain", indexerRequests: 0});
   return site;
 }

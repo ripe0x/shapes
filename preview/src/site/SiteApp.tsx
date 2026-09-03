@@ -7,6 +7,8 @@ import {C, FONT} from "./theme";
 import {txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
+import {logRequestCounts} from "./indexerClient";
+import {rpcRequestCounter} from "../chain/rpc";
 import {mintRequest} from "./mint";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import {clearStoredActionNotice, storeActionNotice, takeStoredActionNotice, type ActionNotice} from "./actionNotice";
@@ -191,6 +193,7 @@ export function SiteApp({
       const site = await loadSite(publicClient, dep, {
         previous: dataRef.current,
         dirtyIds: lastDirtyIds.current,
+        onMetrics: (metrics) => logRequestCounts(metrics.source, rpcRequestCounter()),
       });
       setData(site);
       setRefreshFailed(false);
@@ -461,7 +464,10 @@ export function SiteApp({
       return;
     }
     setAuction(a);
-    setLotImage(a ? await loadLotImage(publicClient, dep, a) : null);
+    // The lot is held in escrow and so is still live: its artwork is already in the loaded site
+    // data. Only a lot the gallery has not supplied costs a tokenURI read.
+    const loaded = a ? dataRef.current?.tokens.find((t) => t.id === a.tokenId) : undefined;
+    setLotImage(a ? (loaded?.image ?? (await loadLotImage(publicClient, dep, a))) : null);
   }, [publicClient, dep, address]);
 
   React.useEffect(() => {

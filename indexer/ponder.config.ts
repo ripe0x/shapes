@@ -44,6 +44,9 @@ if (!AUCTION_HOUSE_ADDRESS) {
   );
 }
 
+/** The auction house's custody marks a Shape as a bid card; see the Transfer handler. */
+export const AUCTION_HOUSE = AUCTION_HOUSE_ADDRESS.toLowerCase();
+
 export default createConfig({
   database,
   chains: {

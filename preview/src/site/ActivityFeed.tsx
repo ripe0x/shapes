@@ -3,7 +3,7 @@ import {formatEther} from "viem";
 import {DENOMINATIONS} from "../chain/abi";
 import {tokenArt, type ArtToken} from "./art";
 import {AddressName} from "./AddressName";
-import {INDEXER_TIMEOUT_MS, indexerEndpoint, queryIndexer} from "./data";
+import {INDEXER_TIMEOUT_MS, indexerQuery} from "./indexerClient";
 import {C} from "./theme";
 import {short, txUrl} from "./ui";
 
@@ -258,9 +258,8 @@ export async function fetchActivityPage(
   limit = ACTIVITY_PAGE_SIZE,
   timeoutMs = INDEXER_TIMEOUT_MS,
 ): Promise<ActivityPage> {
-  const endpoint = indexerEndpoint(url);
-  const page = await queryIndexer<ActivityResponse>(
-    endpoint,
+  const page = await indexerQuery<ActivityResponse["data"]>(
+    url,
     fetcher,
     ACTIVITY_QUERY,
     {limit, after},
@@ -287,8 +286,8 @@ export async function fetchActivityPage(
   const ids = [...new Set(events.flatMap((event) => event.tokenIds.map((id) => id.toString())))];
   let tokens: ActivityToken[] = [];
   if (ids.length > 0) {
-    const rows = await queryIndexer<ActivityTokensResponse>(
-      endpoint,
+    const rows = await indexerQuery<ActivityTokensResponse["data"]>(
+      url,
       fetcher,
       ACTIVITY_TOKENS_QUERY,
       {ids},
@@ -327,8 +326,7 @@ export async function fetchActivityStats(
   fetcher: typeof fetch,
   timeoutMs = INDEXER_TIMEOUT_MS,
 ): Promise<ActivityStats> {
-  const endpoint = indexerEndpoint(url);
-  const res = await queryIndexer<ActivityStatsResponse>(endpoint, fetcher, ACTIVITY_STATS_QUERY, {}, timeoutMs);
+  const res = await indexerQuery<ActivityStatsResponse["data"]>(url, fetcher, ACTIVITY_STATS_QUERY, {}, timeoutMs);
   if (res.errors?.length || !res.data?.tokens || !res.data?.activitys) {
     throw new Error(res.errors?.[0]?.message ?? "Shapes indexer returned an invalid stats response");
   }

@@ -47,12 +47,27 @@ export function fallbackTransport<const transports extends readonly Transport[]>
   return fallback(transports, {rank: false, retryCount: 0});
 }
 
+/** JSON-RPC requests this page has issued through `shapesTransport`, for the dev request counter
+ *  (see `logRequestCounts`). Counts every attempt, so a failover to the next endpoint counts
+ *  twice, which is what a rate-limited gateway actually costs. */
+let rpcRequestCount = 0;
+
+export function rpcRequestCounter(): number {
+  return rpcRequestCount;
+}
+
 export function shapesTransport(chainId: number, deploymentRpc: string, primaryRpc?: string) {
   return fallbackTransport(
     rpcUrlsForChain(chainId, deploymentRpc, primaryRpc).map((url) =>
       // Keep requests unbatched. Site-level Multicall3 already coalesces reads, and an RPC batch
       // can exceed anvil's request-size limit during local seed demos.
-      http(url, {batch: false, retryCount: 0}),
+      http(url, {
+        batch: false,
+        retryCount: 0,
+        onFetchRequest: () => {
+          rpcRequestCount++;
+        },
+      }),
     ),
   );
 }

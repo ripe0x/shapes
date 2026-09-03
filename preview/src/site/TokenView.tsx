@@ -2,12 +2,8 @@ import React from "react";
 import {type PublicClient} from "viem";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {geometryAt, svgFromComposition, CANONICAL} from "../canonical/render";
-import {
-  loadHistory,
-  loadProvenance,
-  type HistEvent,
-  type ProvNode,
-} from "../chain/history";
+import {loadProvenance, type ProvNode} from "./provenance";
+import {loadTokenHistory, type HistEvent} from "./tokenHistory";
 import {C, FONT, SANS, label} from "./theme";
 import {Section, Art, Modal, txUrl} from "./ui";
 import {AddressName} from "./AddressName";
@@ -54,6 +50,14 @@ interface DatedEvent extends HistEvent {
   dateTime: string;
 }
 
+const DATE_TIME = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
 export function TokenView({
   data,
   dep,
@@ -86,7 +90,7 @@ export function TokenView({
   // cached in place, so navigating back up never refetches.
   const [drillStack, setDrillStack] = React.useState<DnaDrillLevel[]>([]);
 
-  // Ancestry tree from the event log; shown only when the token has one beyond its own mint.
+  // Ancestry tree from the indexer; shown only when the token has one beyond its own mint.
   React.useEffect(() => {
     if (!publicClient) return;
     let cancelled = false;
@@ -104,8 +108,8 @@ export function TokenView({
   }, [publicClient, dep, tokenId, data]);
 
   // The provenance tree, plus a lookup from tree key to the live token id it represents (only
-  // live nodes navigate; everything else focuses in place). Rebuilt whenever the chain-derived
-  // ancestry or the set of live tokens changes.
+  // live nodes navigate; everything else focuses in place). Rebuilt whenever the ancestry or the
+  // set of live tokens changes.
   const provTree = React.useMemo(() => {
     if (!prov) return null;
     const liveIds = new Map<string, bigint>();
@@ -134,35 +138,26 @@ export function TokenView({
       return next;
     });
 
-  // Token history from the event log, with block timestamps resolved to dates.
+  // Token history from the indexer. Null means no indexer answered within its freshness guard, and
+  // the section is not rendered at all.
   React.useEffect(() => {
     if (!publicClient) return;
     let cancelled = false;
     setHistory(null);
-    void (async () => {
-      const events = await loadHistory(publicClient, dep, tokenId);
-      const blocks = [...new Set(events.map((e) => e.block))];
-      const stamps = new Map(
-        await Promise.all(
-          blocks.map(async (b) => {
-            const blk = await publicClient.getBlock({blockNumber: b});
-            const dateTime = new Intl.DateTimeFormat(undefined, {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            }).format(new Date(Number(blk.timestamp) * 1000));
-            return [b, dateTime] as const;
-          }),
-        ),
-      );
-      if (!cancelled) {
-        setHistory(events.map((e) => ({...e, dateTime: stamps.get(e.block) ?? ""})).reverse());
-      }
-    })().catch(() => {
-      if (!cancelled) setHistory([]);
-    });
+    void loadTokenHistory(publicClient, dep, tokenId)
+      .then((events) => {
+        if (cancelled) return;
+        setHistory(
+          events === null
+            ? null
+            : events
+                .map((e) => ({...e, dateTime: DATE_TIME.format(new Date(e.timestamp * 1000))}))
+                .reverse(),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setHistory(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -474,7 +469,7 @@ function isProvenanceRollup(node: ProvNode): node is ProvNode & {more: number} {
 }
 
 /**
- * `ProvNode` (chain/history.ts) to `TreeNode` (ProvenanceTree.tsx): each contributor becomes a
+ * `ProvNode` (provenance.ts) to `TreeNode` (ProvenanceTree.tsx): each contributor becomes a
  * child one step further back in ancestry. `path` gives every node a key unique within the tree
  * even though a `self` chain repeats the same token id across levels. Live token ids are
  * collected into `liveIds` as they are found, keyed by the same path, so the caller can tell a
@@ -500,14 +495,13 @@ function provNodeToTree(node: ProvNode, live: SiteToken[], path: string, liveIds
   };
 }
 
+/** The token's history, or nothing at all when the indexer has not supplied one: history comes
+ *  from the indexer only, and an empty section says less than no section. */
 function History({history, chainId}: {history: DatedEvent[] | null; chainId: number}) {
+  if (history === null || history.length === 0) return null;
   return (
     <Section title="HISTORY" pad="16px 48px 24px 32px">
-      {history === null ? (
-        <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>Reading the event log…</div>
-      ) : history.length === 0 ? (
-        <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>No events.</div>
-      ) : (
+      {(
         history.map((h) => (
           <div
             key={h.key}

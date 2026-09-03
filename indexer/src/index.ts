@@ -2,7 +2,8 @@ import { zeroAddress } from "viem";
 
 import { ponder } from "ponder:registry";
 
-import { activity, auctionLot, collectionOwner, lineageEdge, token } from "../ponder.schema";
+import { AUCTION_HOUSE } from "../ponder.config";
+import { activity, auctionLot, collectionOwner, escrowedCard, lineageEdge, token } from "../ponder.schema";
 import { activityRow, mintActivityId, type ActivityAt } from "./lib/activity";
 import { backingForDenomIndex, denomIndexOfWei } from "./lib/denominations";
 import { childSeedOf } from "./lib/seed";
@@ -53,7 +54,9 @@ ponder.on("Shapes:ShapeMinted", async ({ event, context }) => {
     isBlack: false,
     live: true,
     owner: to,
+    mintDenomIndex: denomIndex,
     mintedAtBlock: event.block.number,
+    mintedAt: event.block.timestamp,
     mintTxHash: event.transaction.hash,
   });
 
@@ -120,7 +123,11 @@ ponder.on("Shapes:Composed", async ({ event, context }) => {
       parentId: survivorId,
       kind: "continuation",
       childSeed: burned.seed,
+      parentDenomIndex: denomIndex,
+      childMintDenomIndex: burned.mintDenomIndex,
       block: event.block.number,
+      logIndex: event.log.logIndex,
+      timestamp: event.block.timestamp,
       txHash: event.transaction.hash,
     });
   }
@@ -142,6 +149,16 @@ ponder.on("Shapes:Split", async ({ event, context }) => {
   // for any other case.
   const owner = event.transaction.from;
 
+  const parent = await context.db.find(token, { id: tokenId });
+  if (!parent) {
+    throw new Error(`Shapes indexer: Split of unknown token ${tokenId}`);
+  }
+  // The root split ancestor's denomination carries across later splits, matching
+  // `RecompositionOps._split`: a parent that is itself a split child already holds one, otherwise
+  // the parent is the root and its own denomination is the origin.
+  const splitFromDenom = parent.denomIndex;
+  const splitOriginDenom = parent.splitOriginDenom ?? parent.denomIndex;
+
   await context.db.update(token, { id: tokenId }).set({ live: false });
 
   for (let i = 0; i < newIds.length; i++) {
@@ -157,8 +174,12 @@ ponder.on("Shapes:Split", async ({ event, context }) => {
       originCount: Number(originCounts[i]!),
       isBlack: false,
       live: true,
+      splitFromDenom,
+      splitOriginDenom,
       owner,
+      mintDenomIndex: denomIndex,
       mintedAtBlock: event.block.number,
+      mintedAt: event.block.timestamp,
       mintTxHash: event.transaction.hash,
     });
 
@@ -168,7 +189,11 @@ ponder.on("Shapes:Split", async ({ event, context }) => {
       parentId: tokenId,
       kind: "split",
       childSeed: seed,
+      parentDenomIndex: splitFromDenom,
+      childMintDenomIndex: denomIndex,
       block: event.block.number,
+      logIndex: event.log.logIndex,
+      timestamp: event.block.timestamp,
       txHash: event.transaction.hash,
     });
   }
@@ -212,7 +237,11 @@ ponder.on("Shapes:Decomposed", async ({ event, context }) => {
       parentId: survivorId,
       kind: "revival",
       childSeed: prior.seed,
+      parentDenomIndex: denomIndex,
+      childMintDenomIndex: prior.mintDenomIndex,
       block: event.block.number,
+      logIndex: event.log.logIndex,
+      timestamp: event.block.timestamp,
       txHash: event.transaction.hash,
     });
   }
@@ -288,7 +317,22 @@ ponder.on("Shapes:Transfer", async ({ event, context }) => {
     return;
   }
 
-  await context.db.update(token, { id: tokenId }).set({ owner: to });
+  const row = await context.db.update(token, { id: tokenId }).set({ owner: to });
+
+  // A Shape entering the auction house's custody is a bid card. Recording it per transaction lets
+  // a bid list the cards its own transaction escrowed, with the denomination they carried then,
+  // which stays readable after the card is composed, split, or redeemed.
+  if (to.toLowerCase() === AUCTION_HOUSE) {
+    await context.db
+      .insert(escrowedCard)
+      .values({
+        id: `${event.transaction.hash}-${tokenId}`,
+        txHash: event.transaction.hash,
+        tokenId,
+        denomIndex: row.denomIndex,
+      })
+      .onConflictDoNothing();
+  }
 
   // If this transfer moves the current owner token, keep the singleton's address in sync. This
   // covers OwnerTokenMoved firing before the row exists or before its owner is final.

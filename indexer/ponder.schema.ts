@@ -26,8 +26,20 @@ export const token = onchainTable(
     modules: t.hex(),
     isBlack: t.boolean().notNull().default(false),
     live: t.boolean().notNull().default(true),
+    // Split creation provenance, mirroring the contract's `splitOriginRef`/`SplitRecord`:
+    // `splitFromDenom` is the immediate parent's denomination index at the split,
+    // `splitOriginDenom` the root split ancestor's. Both null for a token not minted by a split.
+    // Written once at the split and never cleared, so a later compose or revival keeps them, the
+    // same way `splitOriginRef` survives `delete _store.shapes[tokenId]`.
+    splitFromDenom: t.integer(),
+    splitOriginDenom: t.integer(),
     owner: t.hex().notNull(),
+    // Denomination index at mint, and the mint block's timestamp. Both are fixed at creation
+    // while `denomIndex` and `backingWei` track the token's current state, so a history view can
+    // name the denomination a token was born at without a chain read.
+    mintDenomIndex: t.integer().notNull(),
     mintedAtBlock: t.bigint().notNull(),
+    mintedAt: t.bigint().notNull(),
     mintTxHash: t.hex().notNull(),
   }),
   (table) => ({
@@ -63,7 +75,17 @@ export const lineageEdge = onchainTable(
     parentId: t.bigint().notNull(),
     kind: t.text().notNull(), // "continuation" | "split" | "revival"
     childSeed: t.hex().notNull(),
+    // The parent's denomination index after the event: the compose survivor's summed
+    // denomination, the decompose survivor's restored one, the split parent's pre-split one.
+    parentDenomIndex: t.integer().notNull(),
+    // The child's denomination index at its own birth, so an ancestry walk can draw a burned
+    // child from the edge alone.
+    childMintDenomIndex: t.integer().notNull(),
     block: t.bigint().notNull(),
+    // Log index of the event the edge came from, and the block's timestamp. Edges sharing both a
+    // transaction hash and a log index came from one compose, split, or decompose.
+    logIndex: t.integer().notNull(),
+    timestamp: t.bigint().notNull(),
     txHash: t.hex().notNull(),
   }),
   (table) => ({
@@ -134,3 +156,20 @@ export const auctionLot = onchainTable("auction_lot", (t) => ({
   id: t.bigint().primaryKey(),
   tokenId: t.bigint(),
 }));
+
+// One row per Shape moved into the auction house's custody, keyed by transaction so a bid can
+// list the cards its own transaction escrowed. `denomIndex` is the card's denomination at the
+// time it entered, which stays readable after the card is later composed, split, or redeemed.
+export const escrowedCard = onchainTable(
+  "escrowed_card",
+  (t) => ({
+    // tx hash + token id: a transaction escrows each card at most once.
+    id: t.text().primaryKey(),
+    txHash: t.hex().notNull(),
+    tokenId: t.bigint().notNull(),
+    denomIndex: t.integer().notNull(),
+  }),
+  (table) => ({
+    txIdx: index("escrowed_card_tx_idx").on(table.txHash),
+  }),
+);

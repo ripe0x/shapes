@@ -8,7 +8,7 @@ import {UNIT} from "../canonical/denominations";
 import {geneAtCompose, centerGene} from "../canonical/ink";
 import {geneIndexOfName} from "../previewGene";
 import {splitChildSeed} from "../splitSeed";
-import {loadHistory, type HistEvent} from "./history";
+import {loadTokenHistory, type HistEvent} from "../site/tokenHistory";
 
 
 interface OwnedToken {
@@ -258,7 +258,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
     }
   }, [isConnected, address, refresh]);
 
-  // Load the open token's history from the event log. Re-runs after any transaction (tokens change).
+  // Load the open token's history from the indexer. Re-runs after any transaction (tokens change).
   React.useEffect(() => {
     if (view === null || !publicClient) {
       setHistory(null);
@@ -266,7 +266,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
     }
     let cancelled = false;
     setHistory(null);
-    void loadHistory(publicClient, dep, view).then((h) => {
+    void loadTokenHistory(publicClient, dep, view).then((h) => {
       if (!cancelled) setHistory(h);
     });
     return () => {
@@ -641,15 +641,13 @@ const HIST_MARK: Record<HistEvent["kind"], string> = {
   transfer: "→",
 };
 
+/** History comes from the indexer only; with no indexer answering there is nothing to show. */
 function HistorySection({history}: {history: HistEvent[] | null}) {
+  if (history === null || history.length === 0) return null;
   return (
     <section style={S.card}>
       <div style={{...S.sectionLabel, margin: "0 0 12px"}}>HISTORY</div>
-      {history === null ? (
-        <div style={S.meta}>reading the event log…</div>
-      ) : history.length === 0 ? (
-        <div style={S.meta}>no events</div>
-      ) : (
+      {(
         <div>
           {history.map((h) => (
             <div key={h.key} style={S.histRow}>
