@@ -4,26 +4,37 @@ pragma solidity 0.8.28;
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
+import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
+import {IShapes} from "./interfaces/IShapes.sol";
+import {CopyValidation} from "./lib/CopyValidation.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {FixedPoint} from "./lib/FixedPoint.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 
 /// @title ShapeCollection
-/// @notice Collection-level presentation for Shapes.
+/// @notice Collection-level metadata for Shapes: the editorial copy and the contract-level
+///         metadata built from it, plus seeded card previews.
 ///
-/// @dev Holds no state beyond the renderer address, has no owner and no initialiser. It reads
-///      the chain only for `seed()`, which is `block.prevrandao` folded with the block number,
-///      so an output that takes no seed advances once per block and every caller in the same
-///      block sees the same one. Passing a seed explicitly pins an output forever.
+/// @dev Stores the token name prefix and the shared description. `Shapes.tokenURI` and
+///      `Shapes.contractURI` read both back from here. The only write path is `setMetadataCopy`,
+///      restricted to the admin of the bound `Shapes` and frozen by that token's
+///      `lockPresentation`. Neither role is held here: both are read live from `shapes`.
 ///
-///      Nothing here touches a token. The cards it renders are compositions the ladder allows,
-///      drawn through the same renderer and the same ink-gene derivation a mint uses, which is
-///      why they are indistinguishable from a real token's artwork.
+///      Rendering reads the chain only for `seed()`, which is `block.prevrandao` folded with the
+///      block number, so an output that takes no seed advances once per block and every caller in
+///      the same block sees the same one. Passing a seed explicitly pins an output forever.
+///
+///      The cards rendered here are compositions the ladder allows, drawn through the same
+///      renderer and the same ink-gene derivation a mint uses, and are indistinguishable from a
+///      real token's artwork. No token is read or written.
 contract ShapeCollection is IShapeCollection, IERC165 {
     /// @inheritdoc IShapeCollection
     address public immutable renderer;
+
+    /// @inheritdoc IShapeCollection
+    address public immutable shapes;
 
     /// @dev Frames per denomination in the filmstrip, and how long each is held. Nine
     ///      denominations at two variants is eighteen frames, a 4.5 second loop.
@@ -34,11 +45,55 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     ///      units. The canvas is square with the card inset, rounded and shadowed.
     uint256 private constant FRAME_W = 2000;
 
-    error RendererHasNoCode(address renderer);
+    /// @dev Longest a name prefix may be, in bytes.
+    uint256 private constant MAX_NAME_BYTES = 64;
+    /// @dev Longest a description may be, in bytes.
+    uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
 
-    constructor(address renderer_) {
-        if (renderer_.code.length == 0) revert RendererHasNoCode(renderer_);
-        renderer = renderer_;
+    /// @dev Copy seeded at construction. Mirrors the canonical spec in
+    ///      `preview/src/canonical/render.ts`; the parity suite asserts byte identity against it.
+    string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
+    string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
+        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
+        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+
+    string private _tokenNamePrefix;
+    string private _description;
+
+    error RendererHasNoCode(address renderer);
+    error ShapesHasNoCode(address shapes);
+
+    constructor(IShapeRenderer renderer_, IShapes shapes_) {
+        if (address(renderer_).code.length == 0) revert RendererHasNoCode(address(renderer_));
+        if (address(shapes_).code.length == 0) revert ShapesHasNoCode(address(shapes_));
+        renderer = address(renderer_);
+        shapes = address(shapes_);
+        _tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
+        _description = DEFAULT_DESCRIPTION;
+    }
+
+    /* -------------------------------- copy ------------------------------ */
+
+    /// @inheritdoc IShapeCollection
+    function tokenNamePrefix() external view returns (string memory) {
+        return _tokenNamePrefix;
+    }
+
+    /// @inheritdoc IShapeCollection
+    function description() external view returns (string memory) {
+        return _description;
+    }
+
+    /// @inheritdoc IShapeCollection
+    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external {
+        IShapes token = IShapes(shapes);
+        if (msg.sender != token.admin()) revert IAdminControl.AdminUnauthorizedAccount(msg.sender);
+        if (token.presentationLocked()) revert IShapes.PresentationIsLocked();
+        CopyValidation.requireJsonSafe(tokenNamePrefix_, MAX_NAME_BYTES, 0);
+        CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
+        _tokenNamePrefix = tokenNamePrefix_;
+        _description = description_;
+        emit MetadataCopySet(tokenNamePrefix_, description_);
     }
 
     /* ------------------------------ seeding ----------------------------- */
@@ -51,24 +106,24 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /* ---------------------------- collection ---------------------------- */
 
     /// @inheritdoc IShapeCollection
-    function contractURI(string calldata name, string calldata description)
+    function contractURI(string calldata name_, string calldata description_)
         external
         view
         returns (string memory)
     {
         return string(
-            abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json(name, description))))
+            abi.encodePacked("data:application/json;base64,", Base64.encode(bytes(json(name_, description_))))
         );
     }
 
     /// @inheritdoc IShapeCollection
-    function json(string calldata name, string calldata description) public view returns (string memory) {
+    function json(string calldata name_, string calldata description_) public view returns (string memory) {
         return string(
             abi.encodePacked(
                 '{"name":"',
-                name,
+                name_,
                 '","description":"',
-                description,
+                description_,
                 '","image":"data:image/svg+xml;base64,',
                 Base64.encode(bytes(image())),
                 '"}'

@@ -63,7 +63,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         collection can change afterwards.
     event PresentationLocked(address indexed renderer, address indexed collection);
 
-    /// @notice Standard contract-level metadata refresh signal, emitted when the collection copy changes.
+    /// @notice Standard contract-level metadata refresh signal, emitted by `refreshMetadata`.
     event ContractURIUpdated();
 
     /// @notice Emitted when the admin sets, replaces or clears the optional positions contract.
@@ -159,8 +159,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
     ///      minting and transferring to `address(this)` are both refused.
     error SelfCustodyRejected(uint256 tokenId);
-    /// @dev `setRenderer`, `setCollection`, `setMetadataCopy` and `lockPresentation` revert once
-    ///      presentation is locked.
+    /// @dev `setRenderer`, `setCollection` and `lockPresentation` revert once presentation is
+    ///      locked, as does `IShapeCollection.setMetadataCopy`, which reads the lock back from here.
     error PresentationIsLocked();
     /// @dev A renderer must have code and explicitly support the stable `IShapeRenderer`
     ///      capability; the zero address fails the code check.
@@ -186,11 +186,10 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev The same token id appears twice in one `compose` or `previewCompose` `burnIds`. A
     ///      token can only be burned into the survivor once.
     error DuplicateComposeInput(uint256 tokenId);
-    /// @dev Metadata copy is written verbatim into JSON, so a value is rejected when it carries a
-    ///      `"`, a `\`, or a C0 control byte (which would break or restructure the document), is
-    ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
-    ///      cap. `field` is 0 name/prefix, 1 description.
-    error InvalidCopy(uint8 field);
+    /// @dev `tokenURI` and `contractURI` read the metadata copy from the collection, so both
+    ///      revert while the collection pointer is zero. Deployment sets it immediately after
+    ///      construction.
+    error CollectionNotSet();
     /// @dev A nonzero positions or market pointer must contain code and answer ERC-165 for the
     ///      interface its reader calls.
     error InvalidPointerTarget();
@@ -260,16 +259,10 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         collection and the metadata copy.
     function presentationLocked() external view returns (bool);
 
-    /// @notice The collection metadata contract, read only by `contractURI`. Replaceable by the
-    ///         admin via `setCollection` until `lockPresentation` freezes it.
+    /// @notice The collection metadata contract. It stores the metadata copy `tokenURI` and
+    ///         `contractURI` read. Replaceable by the admin via `setCollection` until
+    ///         `lockPresentation` freezes it; zero until deployment sets it.
     function collection() external view returns (address);
-
-    /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
-    ///         Admin-editable via `setMetadataCopy` until `lockPresentation` freezes it.
-    function tokenNamePrefix() external view returns (string memory);
-
-    /// @notice The shared description emitted by both token metadata and `contractURI`.
-    function description() external view returns (string memory);
 
     /// @notice The optional canonical positions contract and whether its pointer is permanently locked.
     /// @dev A zero target means none is configured. A true lock is permanent, including at zero.
@@ -287,22 +280,24 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function setRenderer(address newRenderer) external;
 
     /// @notice Replace the collection metadata contract. Admin only, and only while unlocked.
-    ///         Read only by `contractURI`; it can never touch ETH, backing or ownership.
+    ///         Read by `tokenURI` and `contractURI`; it can never touch ETH, backing or ownership.
     ///         `newCollection` must carry code and support `IShapeCollection`.
+    /// @dev Replacing it replaces the stored metadata copy along with it, since the copy lives on
+    ///      the collection, so this emits ERC-4906 `BatchMetadataUpdate` over every minted id and
+    ///      `ContractURIUpdated` as well as `CollectionUpdated`.
     function setCollection(address newCollection) external;
 
     /// @notice Permanently lock presentation. Admin only, one way. After this the renderer, the
-    ///         collection and the metadata copy are all fixed: `setRenderer`, `setCollection` and
-    ///         `setMetadataCopy` revert `PresentationIsLocked`.
+    ///         collection and the collection's metadata copy are all fixed: `setRenderer`,
+    ///         `setCollection` and `IShapeCollection.setMetadataCopy` revert `PresentationIsLocked`.
     function lockPresentation() external;
 
-    /// @notice Atomically set the token name prefix and the description shared with `contractURI`.
-    ///         Admin only. Emits both ERC-4906 `BatchMetadataUpdate` and `ContractURIUpdated`.
-    /// @dev Written verbatim into metadata JSON, so all arguments must be well-formed UTF-8,
-    ///      length-capped (64-byte names, 2048-byte description), and free of bytes JSON forbids
-    ///      unescaped (`"`, `\`, C0 controls). Reverts `PresentationIsLocked` once
-    ///      `lockPresentation` has been called.
-    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external;
+    /// @notice Signal that every token's metadata and the contract-level metadata should be
+    ///         re-read. Admin only, state-changing in no other way.
+    /// @dev Emits ERC-4906 `BatchMetadataUpdate` over every minted id and `ContractURIUpdated`.
+    ///      Editing the copy is two transactions: `IShapeCollection.setMetadataCopy` on the
+    ///      collection, then this.
+    function refreshMetadata() external;
 
     /* --------------------------- pointer admin ------------------------- */
 

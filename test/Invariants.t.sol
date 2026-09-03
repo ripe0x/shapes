@@ -623,10 +623,9 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         // The handler must own and account for every live Shape. Genesis ownership is covered by
         // ContractOwnership.t.sol, so retire it before handing this collection to the handler.
         shapes.redeemTo(0, payable(address(0xD15CA4D)));
@@ -1095,10 +1094,11 @@ contract AuctionInvariantTest is StdInvariant, Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
         handler = new AuctionHandler(shapes, house);
         _wire();
@@ -1239,11 +1239,12 @@ contract AuctionInvariantHostileFeeTest is AuctionInvariantTest {
 
     function setUp() public override {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         hostile = new HostileAuctionFeeRecipient();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(hostile), address(renderer), address(collection), 0
+            Denominations.UNIT / 10, address(hostile), address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
         hostile.setTargets(shapes, address(house));
 

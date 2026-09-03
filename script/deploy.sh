@@ -382,6 +382,18 @@ require_address_read renderer "$(cast call "$SHAPES" 'renderer()(address)' --rpc
 require_address_read collection "$(cast call "$SHAPES" 'collection()(address)' --rpc-url "$RPC")" "$COLLECTION"
 require_address_read 'collection renderer' \
   "$(cast call "$COLLECTION" 'renderer()(address)' --rpc-url "$RPC")" "$RENDERER"
+require_address_read 'collection token' \
+  "$(cast call "$COLLECTION" 'shapes()(address)' --rpc-url "$RPC")" "$SHAPES"
+
+# The metadata copy lives on the collection; the token reads it back for tokenURI/contractURI.
+TOKEN_NAME_PREFIX=$(cast call "$COLLECTION" 'tokenNamePrefix()(string)' --rpc-url "$RPC")
+COLLECTION_DESCRIPTION=$(cast call "$COLLECTION" 'description()(string)' --rpc-url "$RPC")
+echo "  name prefix  $TOKEN_NAME_PREFIX"
+echo "  description  ${COLLECTION_DESCRIPTION:0:72}..."
+[ "$TOKEN_NAME_PREFIX" = '"Shape "' ] \
+  || { echo "unexpected token name prefix $TOKEN_NAME_PREFIX" >&2; exit 1; }
+[ "${#COLLECTION_DESCRIPTION}" -gt 100 ] \
+  || { echo "collection description is empty" >&2; exit 1; }
 require_address_read 'auction-house target' "$(cast call "$HOUSE" 'shapes()(address)' --rpc-url "$RPC")" "$SHAPES"
 
 MINT_FEE_ONCHAIN=$(cast call "$SHAPES" 'mintFee()(uint256)' --rpc-url "$RPC" | awk '{print $1}')

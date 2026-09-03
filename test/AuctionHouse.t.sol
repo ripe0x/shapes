@@ -65,10 +65,11 @@ abstract contract AuctionBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection), 0
+            Denominations.UNIT / 10, feeRecipient, address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         house = new ShapeAuctionHouse(address(shapes));
 
         vm.deal(alice, 1_000 ether);

@@ -13,8 +13,8 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {Script} from "forge-std/Script.sol";
 
-/// @notice Deploys the renderer, collection metadata, token and auction house, and registers the
-///         auction house as the token's `market` pointer.
+/// @notice Deploys the renderer, token, collection metadata and auction house, points the token at
+///         the collection, and registers the auction house as the token's `market` pointer.
 ///
 /// @dev One script for every chain. Chain id selects the required ladder and the fee-recipient
 ///      default; every other input is a value passed in by the caller (see script/deploy.sh and
@@ -47,6 +47,10 @@ import {Script} from "forge-std/Script.sol";
 ///      at #1. The deployer is also the initial `admin()` and may transfer or renounce that
 ///      separate role. Admin can redirect only future mint fees; it cannot change the amount,
 ///      touch backing, or alter redemption.
+///
+///      The collection is constructed with the token's address and therefore cannot be a
+///      constructor argument to the token. The token's collection pointer starts zero and
+///      `setCollection` fills it in the same broadcast, before any other call.
 ///
 ///      No seeding here. Seeding an already-deployed Shapes is script/SeedShapes.s.sol.
 ///
@@ -140,11 +144,15 @@ contract Deploy is Script {
 
         renderer = existingRenderer == address(0) ? new ShapeRenderer() : ShapeRenderer(existingRenderer);
 
-        collection = new ShapeCollection(address(renderer));
+        shapes =
+            new Shapes{value: Denominations.amountAt(0)}(mintFee, feeRecipient, address(renderer), mintStart);
 
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            mintFee, feeRecipient, address(renderer), address(collection), mintStart
-        );
+        // The collection is constructed with the token's address, so it cannot be a constructor
+        // argument to the token. `tokenURI` and `contractURI` revert `CollectionNotSet` until this
+        // pointer is set, which is why it is set before anything else runs.
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
+
         house = new ShapeAuctionHouse(address(shapes));
 
         // Discovery only. `setPointer` requires the target to answer ERC-165 for
@@ -171,6 +179,12 @@ contract Deploy is Script {
         require(address(renderer).code.length != 0, "renderer missing code");
         require(shapes.collection() == address(collection), "collection mismatch");
         require(collection.renderer() == address(renderer), "collection points at another renderer");
+        require(collection.shapes() == address(shapes), "collection points at another token");
+        require(
+            keccak256(bytes(collection.tokenNamePrefix())) == keccak256(bytes("Shape ")),
+            "default token name prefix mismatch"
+        );
+        require(bytes(collection.description()).length > 100, "default description missing");
 
         // `vm.startBroadcast()` changes the sender of the CREATEs. In a test that calls this
         // script, that sender is intentionally not the test contract (`msg.sender` here).
@@ -237,5 +251,7 @@ contract Deploy is Script {
         console.log("mintStart=%s", mintStart);
         console.log("feeRecipient=%s", feeRecipient);
         console.log("admin=%s", shapes.admin());
+        console.log("tokenNamePrefix=%s", collection.tokenNamePrefix());
+        console.log("description=%s", collection.description());
     }
 }

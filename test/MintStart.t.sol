@@ -25,15 +25,16 @@ contract MintStartTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
     }
 
     function _deploy(uint64 mintStart_) internal returns (Shapes shapes) {
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), mintStart_
+            MINT_FEE, feeRecipient, address(renderer), mintStart_
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
     }
 
     /* --------------------------- genesis, unaffected --------------------------- */

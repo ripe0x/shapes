@@ -9,6 +9,7 @@ import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
+import {IShapeCollection} from "../src/interfaces/IShapeCollection.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {FixedPoint} from "../src/lib/FixedPoint.sol";
@@ -40,7 +41,6 @@ contract RendererTestBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
     }
 
     /// @dev A pseudo-varied gene (0..6) tied to a seed, for tests that need *some* ink gene but
@@ -718,9 +718,9 @@ contract TokenMetadataTest is RendererTestBase {
 
     function setUp() public override {
         super.setUp();
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0xFEE), address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(0xFEE), address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         vm.deal(alice, 1_000 ether);
     }
 
@@ -758,7 +758,7 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(vm.parseJsonString(initial, ".attributes[15].value"), "Contract Owner");
         assertTrue(_contains(initial, ',{"value":"Contract Owner"}'));
 
-        shapes.setMetadataCopy("Form ", "A reshaped description of the object.");
+        collection.setMetadataCopy("Form ", "A reshaped description of the object.");
         assertEq(vm.parseJsonString(_decodeJson(0), ".name"), "Form 0, Contract Owner");
     }
 
@@ -972,7 +972,7 @@ contract TokenMetadataTest is RendererTestBase {
         string memory idStr = vm.toString(id);
         assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat("Shape ", idStr), "default name");
 
-        shapes.setMetadataCopy("Form ", "A reshaped description of the object.");
+        collection.setMetadataCopy("Form ", "A reshaped description of the object.");
 
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".name"), string.concat("Form ", idStr), "name prefix updated");
@@ -981,15 +981,15 @@ contract TokenMetadataTest is RendererTestBase {
             "A reshaped description of the object.",
             "description updated"
         );
-        assertEq(shapes.tokenNamePrefix(), "Form ");
-        assertEq(shapes.description(), "A reshaped description of the object.");
+        assertEq(collection.tokenNamePrefix(), "Form ");
+        assertEq(collection.description(), "A reshaped description of the object.");
     }
 
     /// @notice The same description is emitted by token and collection metadata.
     function test_DescriptionIsSharedWithCollectionMetadata() public {
         assertTrue(_contains(_decodeContract(), '"name":"Shapes"'), "default collection name");
 
-        shapes.setMetadataCopy(shapes.tokenNamePrefix(), "A rewritten shared description.");
+        collection.setMetadataCopy(collection.tokenNamePrefix(), "A rewritten shared description.");
 
         string memory j = _decodeContract();
         assertEq(vm.parseJsonString(j, ".name"), "Shapes", "collection name follows ERC-721 name");
@@ -998,55 +998,67 @@ contract TokenMetadataTest is RendererTestBase {
             "A rewritten shared description.",
             "collection desc updated"
         );
-        assertEq(shapes.description(), "A rewritten shared description.");
+        assertEq(collection.description(), "A rewritten shared description.");
     }
 
-    /// @notice Setting the token copy emits the editorial event and an ERC-4906 refresh over the
-    ///         whole supply so marketplaces re-read every token.
-    function test_TokenCopyUpdateEmitsRefresh() public {
+    /// @notice A copy edit is two transactions: the collection records the new copy, then
+    ///         `refreshMetadata` on the token tells marketplaces to re-read every token and the
+    ///         contract-level metadata.
+    function test_CopyEditThenRefreshEmitsBothSignals() public {
         vm.prank(alice);
         shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]); // genesis #0 plus public #1
+
+        vm.expectEmit(true, true, true, true, address(collection));
+        emit IShapeCollection.MetadataCopySet("P ", "D");
+        collection.setMetadataCopy("P ", "D");
 
         vm.expectEmit(true, true, true, true, address(shapes));
         emit BatchMetadataUpdate(0, 1);
         vm.expectEmit(true, true, true, true, address(shapes));
         emit IShapes.ContractURIUpdated();
-        shapes.setMetadataCopy("P ", "D");
+        shapes.refreshMetadata();
     }
 
-    /// @notice Copy is admin-gated. A non-admin cannot touch either token or collection copy.
+    function test_NonAdminCannotRefreshMetadata() public {
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
+        shapes.refreshMetadata();
+    }
+
+    /// @notice Copy is gated on the token's admin, read live from the token the collection is
+    ///         bound to. A non-admin cannot edit it.
     function test_NonAdminCannotUpdateCopy() public {
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.setMetadataCopy("x ", "y");
+        collection.setMetadataCopy("x ", "y");
         vm.stopPrank();
     }
 
     /// @notice `lockPresentation` freezes the metadata copy along with the renderer and the
     ///         collection: editable before the lock, `PresentationIsLocked` after it.
     function test_CopyFreezesWithPresentation() public {
-        shapes.setMetadataCopy("Before ", "Copy is editable while presentation is unlocked.");
-        assertEq(shapes.tokenNamePrefix(), "Before ");
+        collection.setMetadataCopy("Before ", "Copy is editable while presentation is unlocked.");
+        assertEq(collection.tokenNamePrefix(), "Before ");
 
         shapes.lockPresentation();
 
         vm.expectRevert(IShapes.PresentationIsLocked.selector);
-        shapes.setMetadataCopy("After ", "Copy is frozen once presentation is locked.");
-        assertEq(shapes.tokenNamePrefix(), "Before ", "copy changed after the lock");
+        collection.setMetadataCopy("After ", "Copy is frozen once presentation is locked.");
+        assertEq(collection.tokenNamePrefix(), "Before ", "copy changed after the lock");
     }
 
     /// @notice Copy that would break or restructure the metadata JSON is rejected on set, so no
     ///         edit can produce a malformed or forged document.
     function test_CopyRejectsJsonBreakingBytes() public {
         // A double quote closes the string early and lets the rest forge structure.
-        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
-        shapes.setMetadataCopy("Shape ", 'x","image":"https://evil.example/a.png","attributes":[]}');
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
+        collection.setMetadataCopy("Shape ", 'x","image":"https://evil.example/a.png","attributes":[]}');
 
         // Backslash (would start a JSON escape) and a C0 control byte are refused too.
-        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
-        shapes.setMetadataCopy("Sh\\ape ", "ok");
-        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
-        shapes.setMetadataCopy("Shape ", "line\nbreak");
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(0)));
+        collection.setMetadataCopy("Sh\\ape ", "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
+        collection.setMetadataCopy("Shape ", "line\nbreak");
     }
 
     /// @notice The length caps bound indexer cost and revert with the right field.
@@ -1060,10 +1072,10 @@ contract TokenMetadataTest is RendererTestBase {
             longDesc[i] = "a";
         }
 
-        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
-        shapes.setMetadataCopy(string(longName), "ok");
-        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
-        shapes.setMetadataCopy("Shape ", string(longDesc));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(0)));
+        collection.setMetadataCopy(string(longName), "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
+        collection.setMetadataCopy("Shape ", string(longDesc));
 
         // At the caps exactly, it passes.
         bytes memory maxName = new bytes(64);
@@ -1074,8 +1086,8 @@ contract TokenMetadataTest is RendererTestBase {
         for (uint256 i = 0; i < maxDesc.length; ++i) {
             maxDesc[i] = "a";
         }
-        shapes.setMetadataCopy(string(maxName), string(maxDesc));
-        assertEq(bytes(shapes.description()).length, 2048);
+        collection.setMetadataCopy(string(maxName), string(maxDesc));
+        assertEq(bytes(collection.description()).length, 2048);
     }
 
     /// @notice Malformed UTF-8 is refused, so copy can never emit a byte sequence a strict
@@ -1090,13 +1102,13 @@ contract TokenMetadataTest is RendererTestBase {
         _expectBadDesc(hex"f4908080"); // U+110000, one past the U+10FFFF ceiling
 
         // Same rule on the name argument (field 0).
-        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(0)));
-        shapes.setMetadataCopy(string(bytes(hex"f5808080")), "ok"); // 0xF5 lead: above U+10FFFF
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(0)));
+        collection.setMetadataCopy(string(bytes(hex"f5808080")), "ok"); // 0xF5 lead: above U+10FFFF
     }
 
     function _expectBadDesc(bytes memory bad) internal {
-        vm.expectRevert(abi.encodeWithSelector(IShapes.InvalidCopy.selector, uint8(1)));
-        shapes.setMetadataCopy("Shape ", string(bad));
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
+        collection.setMetadataCopy("Shape ", string(bad));
     }
 
     /// @notice Well-formed multi-byte UTF-8 is accepted and round-trips byte-exact through storage
@@ -1107,9 +1119,9 @@ contract TokenMetadataTest is RendererTestBase {
 
         string memory prefix = unicode"Formeß ";
         string memory desc = unicode"Formes — «carrés» 形 🜂";
-        shapes.setMetadataCopy(prefix, desc);
+        collection.setMetadataCopy(prefix, desc);
 
-        assertEq(shapes.description(), desc, "description not stored byte-exact");
+        assertEq(collection.description(), desc, "description not stored byte-exact");
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".description"), desc, "description not preserved through JSON");
         assertEq(vm.parseJsonString(j, ".name"), string.concat(prefix, vm.toString(id)), "name not preserved");
@@ -1119,27 +1131,27 @@ contract TokenMetadataTest is RendererTestBase {
     ///         contract never ships in a state its own API could not reproduce.
     function test_DefaultCopyPassesTheValidator() public {
         // Re-setting the getters through the validated setters must succeed.
-        shapes.setMetadataCopy(shapes.tokenNamePrefix(), shapes.description());
+        collection.setMetadataCopy(collection.tokenNamePrefix(), collection.description());
     }
 
     /// @notice Empty copy is allowed: the name is the bare token id, the description empty.
     function test_EmptyCopyIsValidJson() public {
         vm.prank(alice);
         uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
-        shapes.setMetadataCopy("", "");
+        collection.setMetadataCopy("", "");
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".name"), vm.toString(id), "name is the bare id");
         assertEq(vm.parseJsonString(j, ".description"), "", "empty description");
     }
 
-    /// @notice Genesis means an issued range always exists; even after #0 is redeemed, copy edits
-    ///         refresh the historical range without underflowing.
-    function test_TokenCopyAfterGenesisBurnRefreshesIssuedRange() public {
+    /// @notice Genesis means an issued range always exists; even after #0 is redeemed,
+    ///         `refreshMetadata` covers the historical range without underflowing.
+    function test_RefreshAfterGenesisBurnCoversIssuedRange() public {
         shapes.redeemTo(0, payable(address(0xD15CA4D)));
         assertEq(shapes.totalSupply(), 0, "precondition: no live tokens");
         assertEq(shapes.totalMinted(), 1, "genesis id remains issued");
         vm.recordLogs();
-        shapes.setMetadataCopy("P ", "D");
+        shapes.refreshMetadata();
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 batchSig = keccak256("BatchMetadataUpdate(uint256,uint256)");
         bool found;
@@ -1159,7 +1171,7 @@ contract TokenMetadataTest is RendererTestBase {
         bytes32 seed = shapes.seedOf(id);
         string memory svg = renderer.renderSVG(seed, DENOMS[4], false, shapes.inkGeneOf(id));
 
-        shapes.setMetadataCopy("Renamed ", "A different description entirely.");
+        collection.setMetadataCopy("Renamed ", "A different description entirely.");
 
         assertEq(shapes.backingOf(id), backing, "backing moved");
         assertEq(shapes.redeemableBacking(), reserve, "reserve moved");

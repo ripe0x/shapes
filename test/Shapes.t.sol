@@ -68,10 +68,9 @@ abstract contract ShapesBase is Test {
 
     function setUp() public virtual {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         // Most legacy subsystem tests need an otherwise-empty collection. ContractOwnership.t.sol
         // exercises the live genesis token itself; burn it here while preserving issued id 0.
         if (!_keepGenesisShape()) shapes.redeemTo(0, payable(address(0xD15CA4D)));
@@ -341,9 +340,7 @@ contract FeeTest is ShapesBase {
     }
 
     function test_ZeroFeeIsSupported() public {
-        Shapes free = new Shapes{value: Denominations.amountAt(0)}(
-            0, feeRecipient, address(renderer), address(collection), 0
-        );
+        Shapes free = new Shapes{value: Denominations.amountAt(0)}(0, feeRecipient, address(renderer), 0);
         vm.prank(alice);
         uint256 id = free.mintTo{value: DENOMS[4]}(DENOMS[4], alice);
         assertEq(free.backingOf(id), DENOMS[4]);
@@ -355,9 +352,7 @@ contract FeeTest is ShapesBase {
     ///         calls it. Only `withdrawFees` can reach it, and only that call reverts.
     function test_RevertingFeeRecipientBlocksWithdrawalButNotMintingOrRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
-        Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(bad), address(renderer), address(collection), 0
-        );
+        Shapes s = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(bad), address(renderer), 0);
 
         vm.prank(alice);
         uint256 id = s.mintTo{value: DENOMS[4] + feeOf(DENOMS[4])}(DENOMS[4], alice);
@@ -386,29 +381,22 @@ contract FeeTest is ShapesBase {
 
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0)));
-        new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0), address(renderer), address(collection), 0
-        );
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(0), address(renderer), 0);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0)));
-        new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(0), address(collection), 0
-        );
+        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(0), 0);
     }
 
     function test_ConstructorRejectsFeeAboveCap() public {
         uint256 cap = shapes.unit();
         vm.expectRevert(abi.encodeWithSelector(IShapes.MintFeeAboveCap.selector, cap + 1));
-        new Shapes{value: Denominations.amountAt(0)}(
-            cap + 1, feeRecipient, address(renderer), address(collection), 0
-        );
+        new Shapes{value: Denominations.amountAt(0)}(cap + 1, feeRecipient, address(renderer), 0);
     }
 
     function test_ConstructorStoresAndChargesTheFlatFee() public {
         uint256 customFee = Denominations.UNIT / 2;
-        Shapes custom = new Shapes{value: Denominations.amountAt(0)}(
-            customFee, feeRecipient, address(renderer), address(collection), 0
-        );
+        Shapes custom =
+            new Shapes{value: Denominations.amountAt(0)}(customFee, feeRecipient, address(renderer), 0);
         assertEq(custom.mintFee(), customFee);
 
         vm.prank(alice);
@@ -843,9 +831,7 @@ contract ReserveTest is ShapesBase {
 
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
-        Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(fr), address(renderer), address(collection), 0
-        );
+        Shapes s = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, address(fr), address(renderer), 0);
         s.redeemTo(0, payable(address(0xD15CA4D)));
         fr.configure(IShapes(address(s)), DENOMS[4]);
         vm.deal(address(fr), 10 ether);
@@ -1301,7 +1287,7 @@ contract PointersTest is ShapesBase {
     function test_PointersRefuseATargetThatAnswersTheWrongInterface() public {
         ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
         MockPositionResolver resolver = new MockPositionResolver();
-        address neither = address(new ShapeCollection(address(renderer)));
+        address neither = address(new ShapeCollection(renderer, shapes));
 
         vm.expectRevert(IShapes.InvalidPointerTarget.selector);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(house));

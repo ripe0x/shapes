@@ -27,10 +27,9 @@ contract ContractOwnershipTest is Test {
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
-        shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        shapes = new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
     }
 
     function _mintDust(address to, uint256 quantity) private returns (uint256 firstTokenId) {
@@ -60,23 +59,20 @@ contract ContractOwnershipTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.IncorrectPayment.selector, Denominations.amountAt(0), 0)
         );
-        new Shapes(MINT_FEE, feeRecipient, address(renderer), address(collection), 0);
+        new Shapes(MINT_FEE, feeRecipient, address(renderer), 0);
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 IShapes.IncorrectPayment.selector, Denominations.amountAt(0), Denominations.amountAt(0) + 1
             )
         );
-        new Shapes{value: Denominations.amountAt(0) + 1}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        new Shapes{value: Denominations.amountAt(0) + 1}(MINT_FEE, feeRecipient, address(renderer), 0);
     }
 
     function test_ConstructorCanSimulateAtGenesisBlock() public {
         vm.roll(0);
-        Shapes genesisShapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        Shapes genesisShapes =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
 
         assertEq(genesisShapes.ownerOf(0), address(this));
         assertEq(genesisShapes.backingOf(0), Denominations.amountAt(0));
@@ -108,7 +104,9 @@ contract ContractOwnershipTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.setMetadataCopy("x", "y");
+        collection.setMetadataCopy("x", "y");
+        vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
+        shapes.refreshMetadata();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.lockPresentation();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
@@ -131,7 +129,7 @@ contract ContractOwnershipTest is Test {
         shapes.setFeeRecipient(bob);
 
         vm.prank(alice);
-        shapes.setMetadataCopy("x", "y");
+        collection.setMetadataCopy("x", "y");
         vm.prank(alice);
         shapes.setFeeRecipient(bob);
         assertEq(shapes.feeRecipient(), bob);
@@ -180,7 +178,7 @@ contract ContractOwnershipTest is Test {
     function test_AdminCanRecoverWithdrawalFromRevertingFeeRecipient() public {
         RevertingFeeRecipient revertingRecipient = new RevertingFeeRecipient();
         Shapes recoverable = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(revertingRecipient), address(renderer), address(collection), 0
+            MINT_FEE, address(revertingRecipient), address(renderer), 0
         );
         uint256 backing = Denominations.amountAt(0);
         uint256 fee = recoverable.mintFee();
@@ -245,7 +243,7 @@ contract ContractOwnershipTest is Test {
         // `supportsInterface` must never advertise an interface whose members are not all
         // implemented here, so the narrower capability interfaces are pinned alongside it in
         // Composability.t.sol.
-        assertEq(type(IShapes).interfaceId, bytes4(0xaaf9b098), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x2ba22587), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

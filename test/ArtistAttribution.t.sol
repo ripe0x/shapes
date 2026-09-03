@@ -43,12 +43,13 @@ contract ArtistAttributionTest is Test {
         artist = vm.addr(ARTIST_KEY);
         vm.deal(artist, 1 ether);
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
 
         vm.startPrank(artist);
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         vm.stopPrank();
     }
 
@@ -109,9 +110,8 @@ contract ArtistAttributionTest is Test {
     function test_SignatureCannotBeReplayedAcrossDeployments() public {
         uint256 genesisAmount = Denominations.amountAt(0);
         vm.startPrank(artist);
-        Shapes other = new Shapes{value: genesisAmount}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
-        );
+        Shapes other =
+            new Shapes{value: genesisAmount}(Denominations.UNIT / 10, address(0xFEE), address(renderer), 0);
         vm.stopPrank();
         assertEq(other.artist(), artist);
         bytes memory signature = _signature(ARTIST_KEY, shapes.artistAttestationDigest(RELEASE_HASH));
@@ -179,7 +179,7 @@ contract ArtistAttributionTest is Test {
         vm.deal(deployer, Denominations.amountAt(0));
         vm.startPrank(deployer);
         deployed = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), 0
         );
         vm.stopPrank();
     }

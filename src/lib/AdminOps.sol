@@ -10,13 +10,12 @@ import {IShapeCollection} from "../interfaces/IShapeCollection.sol";
 import {IShapePositionResolver} from "../interfaces/IShapePositionResolver.sol";
 import {IShapeRenderer} from "../interfaces/IShapeRenderer.sol";
 import {IShapes} from "../interfaces/IShapes.sol";
-import {CopyValidation} from "./CopyValidation.sol";
 import {Denominations} from "./Denominations.sol";
 import {EIP712Signature} from "./EIP712Signature.sol";
 
 /// @title AdminOps
-/// @notice Every configuration write path on `Shapes`: fee, metadata copy, presentation pointers,
-///         the two discovery pointers, and the artist attestation.
+/// @notice Every configuration write path on `Shapes`: fee, presentation pointers, the two
+///         discovery pointers, and the artist attestation.
 /// @dev Public library called through `DELEGATECALL`, so storage stays in `Shapes` and events are
 ///      emitted from `Shapes`'s address. Each function is named after the `Shapes` entrypoint
 ///      whose body it holds.
@@ -46,17 +45,10 @@ library AdminOps {
         bytes signature;
     }
 
-    /// @dev The token name prefix and shared description, grouped so `setMetadataCopy` mutates
-    ///      both through one storage pointer.
-    struct CopyConfig {
-        string tokenNamePrefix;
-        string description;
-    }
-
-    /// @dev The two metadata contracts and the lock that freezes them and the metadata copy.
-    ///      `renderer` is read only by `tokenURI`, `collection` only by `contractURI`, so nothing
-    ///      here can affect ETH, backing, redemption or ownership. One lock, because presentation
-    ///      is one decision.
+    /// @dev The two metadata contracts and the lock that freezes them. `renderer` is read by
+    ///      `tokenURI`, `collection` by `tokenURI` and `contractURI`, so nothing here can affect
+    ///      ETH, backing, redemption or ownership. One lock, because presentation is one decision:
+    ///      the collection reads it back to freeze its own metadata copy.
     struct Presentation {
         address renderer;
         address collection;
@@ -72,10 +64,6 @@ library AdminOps {
         bool marketLocked;
     }
 
-    /// @dev Longest a name or name prefix may be, in bytes.
-    uint256 internal constant MAX_NAME_BYTES = 64;
-    /// @dev Longest a description may be, in bytes.
-    uint256 internal constant MAX_DESCRIPTION_BYTES = 2048;
     /// @dev Cap on the mint fee, equal to `unit()`. Enforced here and by `Shapes`'s constructor.
     uint256 internal constant MAX_MINT_FEE = Denominations.UNIT;
 
@@ -107,16 +95,20 @@ library AdminOps {
         if (totalMinted != 0) emit IERC4906.BatchMetadataUpdate(0, totalMinted - 1);
     }
 
-    /// @dev Body of `Shapes.setCollection`.
-    function setCollection(Presentation storage p, address newCollection) public {
+    /// @dev Body of `Shapes.setCollection`. The collection stores the metadata copy, so a new one
+    ///      changes `tokenURI` for every existing token as well as `contractURI`; ERC-4906 and
+    ///      ERC-7572 both signal the refresh.
+    function setCollection(Presentation storage p, address newCollection, uint256 totalMinted) public {
         _requireUnlocked(p);
         requireCollection(newCollection);
         p.collection = newCollection;
         emit IShapes.CollectionUpdated(newCollection);
+        if (totalMinted != 0) emit IERC4906.BatchMetadataUpdate(0, totalMinted - 1);
+        emit IShapes.ContractURIUpdated();
     }
 
     /// @dev Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection
-    ///      and the metadata copy are all fixed.
+    ///      and the collection's metadata copy are all fixed.
     function lockPresentation(Presentation storage p) public {
         _requireUnlocked(p);
         p.locked = true;
@@ -125,26 +117,6 @@ library AdminOps {
 
     function _requireUnlocked(Presentation storage p) private view {
         if (p.locked) revert IShapes.PresentationIsLocked();
-    }
-
-    /* -------------------------------- copy -------------------------------- */
-
-    /// @dev Body of `Shapes.setMetadataCopy`. Takes the presentation pointer for its lock: the
-    ///      copy is part of presentation and freezes with it.
-    function setMetadataCopy(
-        Presentation storage p,
-        CopyConfig storage copy,
-        string calldata newTokenNamePrefix,
-        string calldata newDescription,
-        uint256 totalMinted
-    ) public {
-        _requireUnlocked(p);
-        CopyValidation.requireJsonSafe(newTokenNamePrefix, MAX_NAME_BYTES, 0);
-        CopyValidation.requireJsonSafe(newDescription, MAX_DESCRIPTION_BYTES, 1);
-        copy.tokenNamePrefix = newTokenNamePrefix;
-        copy.description = newDescription;
-        if (totalMinted != 0) emit IERC4906.BatchMetadataUpdate(0, totalMinted - 1);
-        emit IShapes.ContractURIUpdated();
     }
 
     /* -------------------------------- fees -------------------------------- */

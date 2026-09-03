@@ -69,9 +69,8 @@ contract OwnerTokenTest is ShapesBase {
 
     function test_ConstructorEmitsOwnerTokenMoved() public {
         vm.recordLogs();
-        Shapes fresh = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
-        );
+        Shapes fresh =
+            new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(renderer), 0);
         Vm.Log[] memory logs = vm.getRecordedLogs();
         bytes32 sig = keccak256("OwnerTokenMoved(uint256,uint256)");
         bool found;
@@ -450,7 +449,7 @@ contract OwnerTokenTest is ShapesBase {
 
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        shapes.setMetadataCopy("x", "y");
+        collection.setMetadataCopy("x", "y");
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.lockPresentation();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));

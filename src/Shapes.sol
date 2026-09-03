@@ -134,7 +134,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @dev The renderer, the collection and the one lock that freezes both. Read only by
     ///      `tokenURI` and `contractURI`, so metadata logic can never affect ETH, backing,
-    ///      redemption or ownership.
+    ///      redemption or ownership. The lock also freezes the collection's metadata copy, which
+    ///      the collection enforces by reading `presentationLocked()` back from here.
     AdminOps.Presentation private _presentation;
 
     /// @inheritdoc IShapes
@@ -152,27 +153,13 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _presentation.locked;
     }
 
-    /// @dev Default metadata copy, seeded at construction. Mirrors the canonical spec in
-    ///      `preview/src/canonical/render.ts`; the parity suite asserts byte identity against it.
-    string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
-    string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
-        "Burning it returns exactly that amount to its owner. Higher denominations resolve "
-        "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
-    /// @dev Token name prefix and shared description, grouped so one storage pointer reaches both.
-    AdminOps.CopyConfig private _copyConfig;
-
-    /// @inheritdoc IShapes
-    /// @dev Admin-editable via `setMetadataCopy`, written verbatim into every token's metadata.
-    ///      Frozen by `lockPresentation`.
-    function tokenNamePrefix() public view returns (string memory) {
-        return _copyConfig.tokenNamePrefix;
-    }
-
-    /// @inheritdoc IShapes
-    /// @dev Shared by token and collection metadata so the collection cannot describe itself
-    ///      differently from its tokens.
-    function description() public view returns (string memory) {
-        return _copyConfig.description;
+    /// @dev The collection address, reverting `CollectionNotSet` while it is zero. Deployment
+    ///      leaves it zero until `setCollection` runs, because the collection is constructed with
+    ///      this token's address.
+    function _requireCollection() private view returns (IShapeCollection) {
+        address c = _presentation.collection;
+        if (c == address(0)) revert CollectionNotSet();
+        return IShapeCollection(c);
     }
 
     /// @dev Optional positions and market pointers, each with its own permanent lock. No token or
@@ -202,25 +189,22 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev Requires exactly `Denominations.amountAt(0)` as backing for Shape #0, minted fee-exempt
     ///      to `msg.sender` as the initial owner token. Shape #0 is minted in the constructor and is
     ///      not subject to `mintStart_`. Public minting begins at #1.
-    constructor(
-        uint256 mintFee_,
-        address feeRecipient_,
-        address renderer_,
-        address collection_,
-        uint64 mintStart_
-    ) payable ERC721("Shapes", "SHAPES") {
+    ///
+    ///      There is no collection parameter: `ShapeCollection` is constructed with this token's
+    ///      address, so it cannot exist yet. `tokenURI` and `contractURI` revert `CollectionNotSet`
+    ///      until the admin calls `setCollection`, which deployment does immediately.
+    constructor(uint256 mintFee_, address feeRecipient_, address renderer_, uint64 mintStart_)
+        payable
+        ERC721("Shapes", "SHAPES")
+    {
         if (feeRecipient_ == address(0)) revert AdminInvalidFeeRecipient(address(0));
         AdminOps.requireRenderer(renderer_);
-        AdminOps.requireCollection(collection_);
         _requireFeeWithinCap(mintFee_);
         _feeConfig.mintFee = mintFee_;
         _feeConfig.feeRecipient = feeRecipient_;
         artist = msg.sender;
         mintStart = mintStart_;
         _presentation.renderer = renderer_;
-        _presentation.collection = collection_;
-        _copyConfig.tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
-        _copyConfig.description = DEFAULT_DESCRIPTION;
 
         _admin = msg.sender;
         emit AdminTransferred(address(0), msg.sender);
@@ -315,7 +299,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function setCollection(address newCollection) external onlyAdmin {
-        AdminOps.setCollection(_presentation, newCollection);
+        AdminOps.setCollection(_presentation, newCollection, _store.totalMinted);
     }
 
     /// @inheritdoc IShapes
@@ -324,13 +308,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_)
-        external
-        onlyAdmin
-    {
-        AdminOps.setMetadataCopy(
-            _presentation, _copyConfig, tokenNamePrefix_, description_, _store.totalMinted
-        );
+    /// @dev `totalMinted` is at least one from construction onward, so the range always covers
+    ///      every id minted so far.
+    function refreshMetadata() external onlyAdmin {
+        emit BatchMetadataUpdate(0, _store.totalMinted - 1);
+        emit ContractURIUpdated();
     }
 
     /// @inheritdoc IShapes
@@ -1023,7 +1005,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function contractURI() external view returns (string memory) {
-        return IShapeCollection(_presentation.collection).contractURI(name(), _copyConfig.description);
+        IShapeCollection c = _requireCollection();
+        return c.contractURI(name(), c.description());
     }
 
     /// @notice Fully onchain metadata. Base64 JSON containing a base64 SVG.
@@ -1033,6 +1016,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      the renderer through the sampled path.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
         _requireOwned(tokenId);
+        IShapeCollection c = _requireCollection();
         ShapeData storage d = _store.shapes[tokenId];
         bytes memory modules = _store.modules[tokenId];
         uint256 amountWei = Denominations.amountAt(d.denomIndex);
@@ -1048,8 +1032,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                     d.isBlack,
                     d.inkGene,
                     depth,
-                    _copyConfig.tokenNamePrefix,
-                    _copyConfig.description,
+                    c.tokenNamePrefix(),
+                    c.description(),
                     _splitProvenanceOf(tokenId),
                     isOwnerToken
                 );
@@ -1063,8 +1047,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 d.isBlack,
                 d.inkGene,
                 depth,
-                _copyConfig.tokenNamePrefix,
-                _copyConfig.description,
+                c.tokenNamePrefix(),
+                c.description(),
                 isOwnerToken
             );
     }

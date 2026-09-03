@@ -53,10 +53,11 @@ contract ComposabilityTest is Test {
 
     function setUp() public {
         renderer = new ShapeRenderer();
-        collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, feeRecipient, address(renderer), address(collection), 0
+            Denominations.UNIT / 10, feeRecipient, address(renderer), 0
         );
+        collection = new ShapeCollection(renderer, shapes);
+        shapes.setCollection(address(collection));
         receiver = new ComposableReceiver();
         vm.deal(alice, 1_000 ether);
     }
@@ -582,7 +583,7 @@ contract ComposabilityTest is Test {
     }
 
     function test_ContractUriFollowsTheCollection() public {
-        ShapeCollection next = new ShapeCollection(address(renderer));
+        ShapeCollection next = new ShapeCollection(renderer, shapes);
         shapes.setCollection(address(next));
         assertEq(
             shapes.contractURI(),
@@ -593,7 +594,7 @@ contract ComposabilityTest is Test {
 
     function test_PresentationLockFreezesTheCollectionToo() public {
         shapes.lockPresentation();
-        ShapeCollection next = new ShapeCollection(address(renderer));
+        ShapeCollection next = new ShapeCollection(renderer, shapes);
         vm.expectRevert(IShapes.PresentationIsLocked.selector);
         shapes.setCollection(address(next));
     }
