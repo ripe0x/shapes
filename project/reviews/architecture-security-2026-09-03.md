@@ -70,7 +70,51 @@ attempts retained and passing; every property in the brief verified with test an
 Codex did not raise S-1 to S-3 or the two copy-move Mediums that the in-house reviews found; those
 are fixed on the branch regardless.
 
-## 6. Status
+## 6. Diff-focused security review (opus, read-only) of `7f6ccb5...2bc389a`
 
-Open before the next Sepolia deploy: the per-recipient fee accrual commit (in progress). Both
-audits are complete.
+Full report: `diff-review-7f6ccb5-2bc389a.md`. Scope: per-recipient fee accrual, collection binding and
+lock guard, `isBlackShape`, previews without an account, `ownerTokenDescription`, symbol `SHAPE`,
+the five token-id render views, `contractURI()` without parameters, `effectiveModulesOf` as
+`ModuleCodec` bytes through the linked pure library `GeometrySampling`.
+
+| id | severity | title | status |
+| --- | --- | --- | --- |
+| D-1 | Low | `setRenderer` checked ERC-165 for `IShapeRenderer` only; `geometryOf` and `moduleAt` call `IShapeGeometry`, so a renderer answering one interface bricked two views behind a permanent lock | Fixed `45476b2`: `requireRenderer` requires both interfaces; test `test_SetRendererRejectsARendererThatCannotAnswerIShapeGeometry` |
+| D-2 | Low | `setFeeRecipient` accepted the token itself, whose `receive` reverts, stranding fees accrued to it | Fixed `45476b2`: rejects `address(this)`; test `test_SetFeeRecipientRejectsTheTokenItself` |
+| D-3 | Informational | Storage layout: `pendingFees` became `_feesOwed` plus `_totalFeesOwed`; slots from `_artistAttestation` on moved by one | Nothing is deployed on the old layout |
+| D-4 | Informational | Library isolation tests carried pre-shift slot constants | Re-pinned from `forge inspect Shapes storage-layout` |
+| D-5 | Informational | Direct-call sweep used the removed preview selectors | Updated to `previewCompose(uint256,uint256[])` and `previewSplit(uint256,uint8[])` |
+| D-6 | Informational | `MintFeeAccrued(uint256)` names no recipient | By design; `FeeRecipientSet` gives the attribution |
+
+Verified clean: the reserve invariant under per-recipient accrual (two write sites move the
+recipient balance and the total by the same amount, so the sum equals `pendingFees()` by
+construction), every new view enters `_requireOwned` and is `view`, `GeometrySampling` is a pure
+public library with no storage or ETH surface, preview gates are a strict subset of the mutator
+gates through shared helpers, `ownerTokenDescription` shares the JSON-safe validation and the lock,
+`contractURI()` reads only its own storage, and `deploy.sh` records every linked library from the
+broadcast file.
+
+## 7. Decompose round trip
+
+`test/DecomposeRoundTrip.t.sol` fuzzes compose stacks of depth 1 to 3 over plain, split-materialized
+and pre-composed inputs and asserts that decompose restores every observable fact of the survivor
+and of every input: `shapeState` including `modules` bytes, `ownerOf`, `tokenURI`, `svg`,
+`metadataJSON`, `geometryOf`, `effectiveModulesOf`, `splitOriginOf`, `isBlackShape`, `composeDepth`,
+with `ownerToken()`, `owner()` and `totalMinted()` unchanged. The invariant handler hashes
+`shapeState` plus `svg` before every compose and checks it after every decompose
+(`invariant_DecomposeRestoredEveryRecordedState`). No mismatch in 512 fuzz runs and the invariant
+campaign.
+
+## 8. End-to-end lifecycle
+
+`script/lifecycle.sh anvil` on `2bc389a`: 12 of 12 steps pass, the render views section executes
+and asserts `effectiveModulesOf` length equals the grid cell count, the deployment record lists
+`GeometrySampling`. Step 12 first reported 361 live tokens against 17 on chain; the cause was the
+script trusting a foreign indexer already bound to port 42069. The script now refuses an occupied
+port and requires its own indexer process to be alive (`#85`). Indexer handlers are correct.
+
+## 9. Status
+
+Contracts at `c5f25c5`: 618 tests pass with 4 RPC-only skips, `Shapes` runtime 22,460 bytes
+(2,116 under EIP-170). Every finding in this file is fixed or accepted. Ready for the Sepolia
+rehearsal from `claude/contracts-page`.
