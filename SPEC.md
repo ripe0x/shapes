@@ -697,9 +697,9 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   the survivor and every revived id but no roll occurs. A compose then a decompose leave the gene
   exactly where it started (DECOMPOSE_SPEC.md).
 - **`previewCompose`/`previewSplit`** report the exact gene a real `compose`/`split` would
-  produce. Both are `view`, write nothing, and take the account whose ownership is assumed. They
-  share their gates with the mutators, so a repeated burn id is rejected on both sides with
-  `DuplicateComposeInput`.
+  produce. Both are `view`, write nothing, and take no account: ownership is not checked, and
+  every structural gate is shared with the mutators, so a repeated burn id is rejected on both
+  sides with `DuplicateComposeInput`.
 - **One-tx apexes are not reachable.** `compose` burns its inputs in an O(n) loop, so a single
   transaction composing 10,000 dust straight into a 100 costs about 70.8M gas
   (`test_ComposeMegaGasProfile_10000Dust`), well over the block gas limit. This is fine for the

@@ -44,9 +44,8 @@ library RecompositionOps {
 
     /// @notice Reverts unless `account` holds `tokenId` and the token is not Black.
     /// @dev The gate every recomposition applies to a token it consumes. `tokenOwner` is the
-    ///      token's ERC-721 owner, read by the caller: `Shapes` reads it directly, a preview reads
-    ///      it back through `ownerOf`. The mutators reach this through
-    ///      `Shapes._requireCallerOwnsLive`; `previewCompose` and `previewSplit` call it here.
+    ///      token's ERC-721 owner, read by `Shapes` and passed in. The mutators reach this through
+    ///      `Shapes._requireCallerOwnsLive`.
     function requireLiveOwner(ShapeStore storage st, uint256 tokenId, address tokenOwner, address account)
         internal
         view
@@ -444,19 +443,18 @@ library RecompositionOps {
     /* ------------------------------- previews ------------------------------- */
 
     /// @notice Body of `Shapes.previewCompose`: the state that compose would leave on the survivor.
-    /// @dev Runs the same gates in the same order as `Shapes.compose` and this library's `compose`,
-    ///      against `account` instead of `msg.sender`, then the same `ComposeCompute` call over the
-    ///      same donor state. Writes nothing.
-    function previewCompose(
-        ShapeStore storage st,
-        address account,
-        uint256 survivorId,
-        uint256[] calldata burnIds
-    ) public view returns (ShapeState memory) {
+    /// @dev Runs every structural gate `Shapes.compose` and this library's `compose` run, in the
+    ///      same order, then the same `ComposeCompute` call over the same donor state. The
+    ///      ownership gate is the one check it omits. Writes nothing.
+    function previewCompose(ShapeStore storage st, uint256 survivorId, uint256[] calldata burnIds)
+        public
+        view
+        returns (ShapeState memory)
+    {
         uint256 n = burnIds.length;
         if (n == 0) revert IShapes.NoComposeInputs();
 
-        requireLiveOwner(st, survivorId, _tokenOwner(survivorId), account);
+        _requireLive(st, survivorId);
         requireDistinctComposeInputs(burnIds);
 
         ShapeData storage s = st.shapes[survivorId];
@@ -467,7 +465,8 @@ library RecompositionOps {
         GeometrySampling.Donor[] memory burnDonors = new GeometrySampling.Donor[](n);
         for (uint256 i = 0; i < n; ++i) {
             uint256 burnId = burnIds[i];
-            requireComposeInput(st, survivorId, burnId, _tokenOwner(burnId), account);
+            if (burnId == survivorId) revert IShapes.CannotComposeWithSelf(burnId);
+            _requireLive(st, burnId);
 
             ShapeData storage b = st.shapes[burnId];
             uint256 bUnits = ShapeMath.addDonor(acc, b.seed, b.denomIndex, b.originCount, b.inkGene);
@@ -504,17 +503,18 @@ library RecompositionOps {
     }
 
     /// @notice Body of `Shapes.previewSplit`: the children split would mint, in `outDenoms` order.
-    /// @dev Runs the same gates in the same order as `Shapes.split` and this library's `split`,
-    ///      against `account` instead of `msg.sender`, and samples each child from the same pool.
-    ///      Writes nothing. Child ids are not predicted: they depend on `totalMinted` at execution.
-    function previewSplit(ShapeStore storage st, address account, uint256 tokenId, uint8[] calldata outDenoms)
+    /// @dev Runs every structural gate `Shapes.split` and this library's `split` run, in the same
+    ///      order, and samples each child from the same pool. The ownership gate is the one check
+    ///      it omits. Writes nothing. Child ids are not predicted: they depend on `totalMinted` at
+    ///      execution.
+    function previewSplit(ShapeStore storage st, uint256 tokenId, uint8[] calldata outDenoms)
         public
         view
         returns (ShapeChildPreview[] memory children)
     {
         uint256 k = outDenoms.length;
         if (k < 2) revert IShapes.SplitTooFewOutputs();
-        requireLiveOwner(st, tokenId, _tokenOwner(tokenId), account);
+        _requireLive(st, tokenId);
 
         ShapeData storage p = st.shapes[tokenId];
         bytes32 parentSeed = p.seed;
@@ -566,6 +566,14 @@ library RecompositionOps {
             redeemableValueWei: black ? 0 : faceValue,
             modules: modules
         });
+    }
+
+    /// @dev The liveness gate the previews apply to a token a recomposition would consume:
+    ///      `ERC721NonexistentToken` for an id that does not exist, `TokenIsBlack` for a Black
+    ///      Shape. The mutators' `requireLiveOwner` is this plus the ownership check.
+    function _requireLive(ShapeStore storage st, uint256 tokenId) private view {
+        _tokenOwner(tokenId);
+        if (st.shapes[tokenId].isBlack) revert IShapes.TokenIsBlack(tokenId);
     }
 
     /// @dev The token's ERC-721 owner, read back from `Shapes`. This library runs under

@@ -79,7 +79,7 @@ contract HeterogeneousTest is ShapesBase {
         outs[5] = 2;
         // sum: 0.5 + 5 x 0.1 = 1 ETH
 
-        ShapeChildPreview[] memory preview = shapes.previewSplit(alice, parent, outs);
+        ShapeChildPreview[] memory preview = shapes.previewSplit(parent, outs);
 
         uint256 reserveBefore = shapes.redeemableBacking();
         vm.prank(alice);
@@ -158,7 +158,7 @@ contract HeterogeneousTest is ShapesBase {
         outs[10] = 3; // 0.5
         // sum: 0.05 + 0.05 + 0.4 + 0.5 = 1.0 ETH
 
-        ShapeChildPreview[] memory preview = shapes.previewSplit(alice, parent, outs);
+        ShapeChildPreview[] memory preview = shapes.previewSplit(parent, outs);
 
         vm.prank(alice);
         uint256[] memory kids = shapes.split(parent, outs);
@@ -233,7 +233,7 @@ contract HeterogeneousTest is ShapesBase {
         assertEq(shapes.composeDepth(recordlessParent), 0, "split child never composed");
 
         uint8[] memory outsA = new uint8[](5); // 5 x 0.01 ETH
-        ShapeChildPreview[] memory previewA = shapes.previewSplit(alice, recordlessParent, outsA);
+        ShapeChildPreview[] memory previewA = shapes.previewSplit(recordlessParent, outsA);
 
         vm.prank(alice);
         uint256[] memory kidsA = shapes.split(recordlessParent, outsA);
@@ -265,7 +265,7 @@ contract HeterogeneousTest is ShapesBase {
         outsB[0] = 1; // 0.05
         outsB[1] = 1;
 
-        ShapeChildPreview[] memory previewB = shapes.previewSplit(alice, survivor, outsB);
+        ShapeChildPreview[] memory previewB = shapes.previewSplit(survivor, outsB);
 
         vm.prank(alice);
         uint256[] memory kidsB = shapes.split(survivor, outsB);
@@ -319,7 +319,7 @@ contract HeterogeneousTest is ShapesBase {
             if (g < worst) worst = g;
         }
 
-        ShapeState memory preview = shapes.previewCompose(alice, survivor, burns);
+        ShapeState memory preview = shapes.previewCompose(survivor, burns);
 
         vm.prank(alice);
         shapes.compose(survivor, burns);
@@ -439,7 +439,7 @@ contract HeterogeneousTest is ShapesBase {
             if (g < worst) worst = g;
         }
 
-        ShapeState memory preview = shapes.previewCompose(alice, survivor, burns);
+        ShapeState memory preview = shapes.previewCompose(survivor, burns);
 
         vm.prank(alice);
         shapes.compose(survivor, burns);
@@ -576,7 +576,7 @@ contract BlackPathsTest is ShapesBase {
         shapes.compose(survivor, burn);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, black));
-        shapes.previewCompose(alice, survivor, burn);
+        shapes.previewCompose(survivor, burn);
 
         assertEq(shapes.redeemableBacking(), reserveBefore, "rejected compose moves no backing");
         assertEq(shapes.totalSupply(), supplyBefore, "rejected compose changes no supply");

@@ -162,7 +162,7 @@ contract ComposabilityTest is Test {
             burnIds[i] = first + i + 1;
         }
 
-        ShapeState memory preview = shapes.previewCompose(alice, first, burnIds);
+        ShapeState memory preview = shapes.previewCompose(first, burnIds);
         assertEq(preview.seed, shapes.seedOf(first));
         assertEq(preview.denominationIndex, 1);
         assertEq(preview.originCount, 5);
@@ -183,7 +183,7 @@ contract ComposabilityTest is Test {
         outs[0] = 1;
         outs[1] = 1;
 
-        ShapeChildPreview[] memory preview = shapes.previewSplit(alice, parent, outs);
+        ShapeChildPreview[] memory preview = shapes.previewSplit(parent, outs);
         assertEq(preview.length, 2);
         assertEq(preview[0].seed, shapes.childSeed(parentSeed, 0));
         assertEq(preview[1].seed, shapes.childSeed(parentSeed, 1));
@@ -209,19 +209,22 @@ contract ComposabilityTest is Test {
 
     /* ------------------------- preview validation ------------------------- */
 
-    /// @notice A preview answers for a named account, and applies the ownership gate that account
-    ///         would meet. A caller who holds nothing is refused by the preview exactly as the
-    ///         mutator refuses them.
-    function test_PreviewsApplyTheOwnershipGateExecutionApplies() public {
-        uint256 first = _mintDust(3);
-        uint256[] memory burn = new uint256[](1);
-        burn[0] = first + 1;
+    /// @notice The previews do not apply the ownership gate. Alice holds the inputs, bob's
+    ///         execution is refused `NotShapeOwner`, and both previews answer regardless of who
+    ///         asks or who holds them.
+    function test_PreviewsAnswerWithoutTheOwnershipGate() public {
+        uint256 first = _mintDust(5);
+        uint256[] memory burn = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burn[i] = first + 1 + i;
+        }
 
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, first, bob));
         shapes.compose(first, burn);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, first, bob));
-        shapes.previewCompose(bob, first, burn);
+        vm.prank(bob);
+        ShapeState memory composed = shapes.previewCompose(first, burn);
+        assertEq(composed.denominationIndex, 1, "compose preview refused a non-holder");
 
         uint256 parent = _mint(alice, DENOMS[2]);
         uint8[] memory outs = new uint8[](2);
@@ -231,11 +234,12 @@ contract ComposabilityTest is Test {
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, parent, bob));
         shapes.split(parent, outs);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, parent, bob));
-        shapes.previewSplit(bob, parent, outs);
+        vm.prank(bob);
+        ShapeChildPreview[] memory children = shapes.previewSplit(parent, outs);
+        assertEq(children.length, 2, "split preview refused a non-holder");
 
-        // The holder's own preview still answers.
-        shapes.previewSplit(alice, parent, outs);
+        // The holder's own preview answers the same way.
+        assertEq(shapes.previewSplit(parent, outs).length, 2, "the holder's preview disagreed");
     }
 
     /// @notice A token can only be burned into the survivor once. Compose and its preview report
@@ -247,7 +251,7 @@ contract ComposabilityTest is Test {
         burn[1] = first + 1;
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
-        shapes.previewCompose(alice, first, burn);
+        shapes.previewCompose(first, burn);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
         shapes.compose(first, burn);
@@ -262,7 +266,7 @@ contract ComposabilityTest is Test {
         uint256 first = _mintDust(6);
 
         vm.expectRevert(IShapes.NoComposeInputs.selector);
-        shapes.previewCompose(alice, first, new uint256[](0));
+        shapes.previewCompose(first, new uint256[](0));
         vm.prank(alice);
         vm.expectRevert(IShapes.NoComposeInputs.selector);
         shapes.compose(first, new uint256[](0));
@@ -270,7 +274,7 @@ contract ComposabilityTest is Test {
         uint256[] memory self = new uint256[](1);
         self[0] = first;
         vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
-        shapes.previewCompose(alice, first, self);
+        shapes.previewCompose(first, self);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
         shapes.compose(first, self);
@@ -284,7 +288,7 @@ contract ComposabilityTest is Test {
         uint8[] memory single = new uint8[](1);
         single[0] = 2; // the parent's own denomination
         vm.expectRevert(abi.encodeWithSelector(IShapes.SplitTooFewOutputs.selector));
-        shapes.previewSplit(alice, parent, single);
+        shapes.previewSplit(parent, single);
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SplitTooFewOutputs.selector));
         shapes.split(parent, single);
@@ -295,7 +299,7 @@ contract ComposabilityTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
         );
-        shapes.previewSplit(alice, parent, shortfall);
+        shapes.previewSplit(parent, shortfall);
         vm.prank(alice);
         vm.expectRevert(
             abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] + DENOMS[1])
@@ -327,7 +331,7 @@ contract ComposabilityTest is Test {
             if (id != hi && id != lo) burnIds[filled++] = id;
         }
 
-        ShapeState memory preview = shapes.previewCompose(alice, hi, burnIds);
+        ShapeState memory preview = shapes.previewCompose(hi, burnIds);
         vm.prank(alice);
         shapes.compose(hi, burnIds);
         assertEq(

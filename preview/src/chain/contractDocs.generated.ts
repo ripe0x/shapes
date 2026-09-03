@@ -2053,13 +2053,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "previewCompose",
-        "signature": "previewCompose(address,uint256,uint256[])",
+        "signature": "previewCompose(uint256,uint256[])",
         "stateMutability": "view",
         "inputs": [
-          {
-            "name": "account",
-            "type": "address"
-          },
           {
             "name": "survivorId",
             "type": "uint256"
@@ -2075,18 +2071,14 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "(bytes32,uint8,uint32,uint8,bool,uint8,uint256,uint256,bytes)"
           }
         ],
-        "notice": "The state `compose(survivorId, burnIds)` would leave on the survivor if `account` called it now. Writes nothing.",
-        "dev": "Applies compose's own rules against `account`: every token must exist, be held by `account` and not be Black, the survivor cannot be among `burnIds`, no id may repeat, and the summed backing must land on a denomination. Same errors, same order, same sampling code as `compose`.",
+        "notice": "The state `compose(survivorId, burnIds)` would leave on the survivor. Writes nothing.",
+        "dev": "Previews the result for any live inputs. Ownership is not checked; simulate the mutating call to learn whether a given account may execute it.",
         "params": {},
         "returns": {},
         "abi": {
           "type": "function",
           "name": "previewCompose",
           "inputs": [
-            {
-              "name": "account",
-              "type": "address"
-            },
             {
               "name": "survivorId",
               "type": "uint256"
@@ -2145,13 +2137,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "previewSplit",
-        "signature": "previewSplit(address,uint256,uint8[])",
+        "signature": "previewSplit(uint256,uint8[])",
         "stateMutability": "view",
         "inputs": [
-          {
-            "name": "account",
-            "type": "address"
-          },
           {
             "name": "tokenId",
             "type": "uint256"
@@ -2167,18 +2155,14 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "(bytes32,uint8,uint32,uint8,uint256,bytes)[]"
           }
         ],
-        "notice": "The children `split(tokenId, outDenoms)` would mint if `account` called it now, one entry per `outDenoms` index. Writes nothing.",
-        "dev": "Applies split's own rules against `account`: the token must exist, be held by `account` and not be Black, there must be at least two outputs, and they must sum to the token's backing. Child ids are not predicted, because they depend on `totalMinted` at the time the split executes.",
+        "notice": "The children `split(tokenId, outDenoms)` would mint, one entry per `outDenoms` index. Writes nothing.",
+        "dev": "Previews the result for any live inputs. Ownership is not checked; simulate the mutating call to learn whether a given account may execute it.",
         "params": {},
         "returns": {},
         "abi": {
           "type": "function",
           "name": "previewSplit",
           "inputs": [
-            {
-              "name": "account",
-              "type": "address"
-            },
             {
               "name": "tokenId",
               "type": "uint256"
@@ -8235,23 +8219,23 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "previewCompose",
-        "signature": "previewCompose(ShapeStore storage,address,uint256,uint256[])",
+        "signature": "previewCompose(ShapeStore storage,uint256,uint256[])",
         "stateMutability": "",
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.previewCompose`: the state that compose would leave on the survivor.",
-        "dev": "Runs the same gates in the same order as `Shapes.compose` and this library's `compose`, against `account` instead of `msg.sender`, then the same `ComposeCompute` call over the same donor state. Writes nothing.",
+        "dev": "Runs every structural gate `Shapes.compose` and this library's `compose` run, in the same order, then the same `ComposeCompute` call over the same donor state. The ownership gate is the one check it omits. Writes nothing.",
         "params": {},
         "returns": {}
       },
       {
         "name": "previewSplit",
-        "signature": "previewSplit(ShapeStore storage,address,uint256,uint8[])",
+        "signature": "previewSplit(ShapeStore storage,uint256,uint8[])",
         "stateMutability": "",
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.previewSplit`: the children split would mint, in `outDenoms` order.",
-        "dev": "Runs the same gates in the same order as `Shapes.split` and this library's `split`, against `account` instead of `msg.sender`, and samples each child from the same pool. Writes nothing. Child ids are not predicted: they depend on `totalMinted` at execution.",
+        "dev": "Runs every structural gate `Shapes.split` and this library's `split` run, in the same order, and samples each child from the same pool. The ownership gate is the one check it omits. Writes nothing. Child ids are not predicted: they depend on `totalMinted` at execution.",
         "params": {},
         "returns": {}
       },
@@ -8567,22 +8551,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "`decompose` found no compose to reverse: the survivor's compose stack is empty."
-      },
-      {
-        "name": "NotShapeOwner",
-        "signature": "NotShapeOwner(uint256,address)",
-        "inputs": [
-          {
-            "name": "tokenId",
-            "type": "uint256"
-          },
-          {
-            "name": "caller",
-            "type": "address"
-          }
-        ],
-        "notice": "",
-        "dev": ""
       },
       {
         "name": "SplitSumMismatch",

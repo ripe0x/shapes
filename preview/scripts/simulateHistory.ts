@@ -197,7 +197,7 @@ async function main() {
     const a = pick(wallets);
     const [half] = await sim.mint(a, 3, 1);
     const dimes = await sim.mint(a, 2, 5);
-    const preview = await sim.previewCompose(a, half!, dimes);
+    const preview = await sim.previewCompose(half!, dimes);
     const survivor = await sim.compose(a, half!, dimes);
     await assertComposeMatches(sim, "mixedCompose1", preview, survivor);
     registry.composeRecordTokens.push(survivor);
@@ -212,7 +212,7 @@ async function main() {
     const [nickel] = await sim.mint(a, 1, 1);
     const cents = await sim.mint(a, 0, 4);
     const burns = [nickel!, ...cents];
-    const preview = await sim.previewCompose(a, cent!, burns);
+    const preview = await sim.previewCompose(cent!, burns);
     const survivor = await sim.compose(a, cent!, burns);
     await assertComposeMatches(sim, "mixedCompose2", preview, survivor);
     registry.composeRecordTokens.push(survivor);
@@ -223,7 +223,7 @@ async function main() {
     const a = pick(wallets);
     const [cent] = await sim.mint(a, 0, 1);
     const rest = await sim.mint(a, 0, 99);
-    const preview = await sim.previewCompose(a, cent!, rest);
+    const preview = await sim.previewCompose(cent!, rest);
     const survivor = await sim.compose(a, cent!, rest);
     await assertComposeMatches(sim, "multiRungJump", preview, survivor);
     registry.composeRecordTokens.push(survivor);
@@ -236,17 +236,17 @@ async function main() {
     let s = start!;
 
     const burns1 = await sim.mint(a, 4, RUNG_RATIO[4] - 1); // 4 x 1 ETH -> 5 ETH
-    const p1 = await sim.previewCompose(a, s, burns1);
+    const p1 = await sim.previewCompose(s, burns1);
     s = await sim.compose(a, s, burns1);
     await assertComposeMatches(sim, "stacked-depth1", p1, s);
 
     const burns2 = await sim.mint(a, 5, RUNG_RATIO[5] - 1); // 1 x 5 ETH -> 10 ETH
-    const p2 = await sim.previewCompose(a, s, burns2);
+    const p2 = await sim.previewCompose(s, burns2);
     s = await sim.compose(a, s, burns2);
     await assertComposeMatches(sim, "stacked-depth2", p2, s);
 
     const burns3 = await sim.mint(a, 6, RUNG_RATIO[6] - 1); // 4 x 10 ETH -> 50 ETH
-    const p3 = await sim.previewCompose(a, s, burns3);
+    const p3 = await sim.previewCompose(s, burns3);
     s = await sim.compose(a, s, burns3);
     await assertComposeMatches(sim, "stacked-depth3", p3, s);
 
@@ -286,7 +286,7 @@ async function main() {
     const leaves = await sim.mint(a, 4, 5); // 5 x 1 ETH
     const [b] = await sim.composeUp(a, leaves, 5); // B: 5 ETH, composeDepth 1
     const [f] = await sim.mint(a, 5, 1); // F: direct 5 ETH
-    const previewF = await sim.previewCompose(a, f!, [b!]);
+    const previewF = await sim.previewCompose(f!, [b!]);
     await sim.compose(a, f!, [b!]); // F absorbs B -> 10 ETH
     await assertComposeMatches(sim, "nestedTree-F", previewF, f!);
 
@@ -321,7 +321,7 @@ async function main() {
   async function splitDemo() {
     const a = pick(wallets);
     const [halfA] = await sim.mint(a, 3, 1);
-    const previewEqual = await sim.previewSplit(a, halfA!, [2, 2, 2, 2, 2]);
+    const previewEqual = await sim.previewSplit(halfA!, [2, 2, 2, 2, 2]);
     const equalKids = await sim.split(a, halfA!, [2, 2, 2, 2, 2]); // 0.5 -> 5 x 0.1
     await assertSplitMatches(sim, "split-equal", previewEqual, equalKids);
     registry.splitChildren.push(...equalKids);
@@ -330,7 +330,7 @@ async function main() {
 
     const b = pick(wallets);
     const [halfB] = await sim.mint(b, 3, 1);
-    const previewUneven = await sim.previewSplit(b, halfB!, [2, 2, 2, 2, 1, 1]);
+    const previewUneven = await sim.previewSplit(halfB!, [2, 2, 2, 2, 1, 1]);
     const unevenKids = await sim.split(b, halfB!, [2, 2, 2, 2, 1, 1]); // 0.5 -> 4x0.1 + 2x0.05
     await assertSplitMatches(sim, "split-uneven", previewUneven, unevenKids);
     registry.splitChildren.push(...unevenKids);
@@ -338,7 +338,7 @@ async function main() {
     const c = pick(wallets);
     const recipient = pickExcept(wallets, [c]);
     const [one] = await sim.mint(c, 4, 1);
-    const previewTo = await sim.previewSplit(c, one!, [3, 2, 2, 2, 2, 2]);
+    const previewTo = await sim.previewSplit(one!, [3, 2, 2, 2, 2, 2]);
     const toKids = await sim.splitTo(c, one!, [3, 2, 2, 2, 2, 2], sim.addr(recipient)); // 1 -> 0.5 + 5x0.1
     await assertSplitMatches(sim, "split-to", previewTo, toKids);
     registry.splitChildren.push(...toKids);

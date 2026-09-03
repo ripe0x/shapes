@@ -2093,7 +2093,7 @@ contract BlackShapeTest is ShapesBase {
         shapes.split(id, outs);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.previewSplit(alice, id, outs);
+        shapes.previewSplit(id, outs);
 
         // As a compose survivor.
         uint256 live = _mint(alice, DENOMS[0]);
@@ -2103,7 +2103,7 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.compose(id, one);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.previewCompose(alice, id, one);
+        shapes.previewCompose(id, one);
 
         // As a compose input.
         one[0] = id;
@@ -2111,7 +2111,7 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.compose(live, one);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.previewCompose(alice, live, one);
+        shapes.previewCompose(live, one);
     }
 
     /// @notice A Black Shape backs nothing, so its denomination cannot be recovered from
@@ -2422,7 +2422,7 @@ contract InkGenePreviewTest is ShapesBase {
         }
 
         uint256 snapshot = vm.snapshotState();
-        shapes.previewCompose(alice, first, burn);
+        shapes.previewCompose(first, burn);
         for (uint256 i = 0; i < 4; ++i) {
             assertEq(shapes.ownerOf(burn[i]), alice, "previewCompose burned an input");
         }
@@ -2437,6 +2437,6 @@ contract InkGenePreviewTest is ShapesBase {
         burn[0] = first + 1;
         burn[1] = first + 1;
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
-        shapes.previewCompose(alice, first, burn);
+        shapes.previewCompose(first, burn);
     }
 }

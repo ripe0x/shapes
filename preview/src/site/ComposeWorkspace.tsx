@@ -340,7 +340,7 @@ function ComposeReview({
         address: dep.shapes,
         abi: shapesAbi,
         functionName: "previewCompose",
-        args: [survivor.owner, survivor.id, burnIds],
+        args: [survivor.id, burnIds],
       })
       .then((result) => {
         if (!cancelled) setPreview(buildComposeResultPreview(result, survivor.id));

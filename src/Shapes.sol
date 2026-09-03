@@ -927,21 +927,25 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function previewCompose(address account, uint256 survivorId, uint256[] calldata burnIds)
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it.
+    function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
         external
         view
         returns (ShapeState memory)
     {
-        return RecompositionOps.previewCompose(_store, account, survivorId, burnIds);
+        return RecompositionOps.previewCompose(_store, survivorId, burnIds);
     }
 
     /// @inheritdoc IShapes
-    function previewSplit(address account, uint256 tokenId, uint8[] calldata outDenoms)
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it.
+    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
         external
         view
         returns (ShapeChildPreview[] memory children)
     {
-        return RecompositionOps.previewSplit(_store, account, tokenId, outDenoms);
+        return RecompositionOps.previewSplit(_store, tokenId, outDenoms);
     }
 
     /// @inheritdoc IShapes

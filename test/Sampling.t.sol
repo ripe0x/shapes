@@ -214,7 +214,7 @@ contract SamplingTest is ShapesBase {
             burn[i] = first + 1 + i;
         }
 
-        ShapeState memory preview = shapes.previewCompose(alice, first, burn);
+        ShapeState memory preview = shapes.previewCompose(first, burn);
         vm.prank(alice);
         shapes.compose(first, burn);
         bytes memory actual = shapes.shapeState(first).modules;

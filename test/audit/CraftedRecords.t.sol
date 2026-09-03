@@ -25,7 +25,7 @@ contract CraftedRecordsTest is AuditBase {
         shapes.compose(first, burn);
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
-        shapes.previewCompose(alice, first, burn);
+        shapes.previewCompose(first, burn);
 
         // A repeat far apart in a long list is caught the same way: the check sorts.
         uint256 wide = _mintBatchTo(alice, DENOMS[0], 40);
@@ -39,7 +39,9 @@ contract CraftedRecordsTest is AuditBase {
         shapes.compose(wide, many);
     }
 
-    /// @notice Zero-length input, self-burn, and a burn of a token the caller does not own.
+    /// @notice Zero-length input and self-burn are rejected on both sides. A burn of a token the
+    ///         caller does not own is rejected by `compose` alone: the preview checks structure,
+    ///         not ownership, so it answers for the same input set.
     function test_DegenerateComposeInputsRejectedOnBothSides() public {
         uint256 first = _mintBatchTo(alice, DENOMS[0], 2);
         uint256[] memory empty = new uint256[](0);
@@ -48,7 +50,7 @@ contract CraftedRecordsTest is AuditBase {
         vm.expectRevert(IShapes.NoComposeInputs.selector);
         shapes.compose(first, empty);
         vm.expectRevert(IShapes.NoComposeInputs.selector);
-        shapes.previewCompose(alice, first, empty);
+        shapes.previewCompose(first, empty);
 
         uint256[] memory selfBurn = new uint256[](1);
         selfBurn[0] = first;
@@ -56,16 +58,21 @@ contract CraftedRecordsTest is AuditBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
         shapes.compose(first, selfBurn);
         vm.expectRevert(abi.encodeWithSelector(IShapes.CannotComposeWithSelf.selector, first));
-        shapes.previewCompose(alice, first, selfBurn);
+        shapes.previewCompose(first, selfBurn);
 
+        uint256 mine = _mintBatchTo(alice, DENOMS[0], 4);
         uint256 bobs = _mint(bob, DENOMS[0]);
-        uint256[] memory notMine = new uint256[](1);
-        notMine[0] = bobs;
+        uint256[] memory notMine = new uint256[](4);
+        for (uint256 i = 0; i < 3; ++i) {
+            notMine[i] = mine + 1 + i;
+        }
+        notMine[3] = bobs;
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, bobs, alice));
-        shapes.compose(first, notMine);
-        vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, bobs, alice));
-        shapes.previewCompose(alice, first, notMine);
+        shapes.compose(mine, notMine);
+        assertEq(
+            shapes.previewCompose(mine, notMine).denominationIndex, 1, "the preview applied an ownership gate"
+        );
     }
 
     /* ---------------------------- maximal batches ---------------------------- */
@@ -274,7 +281,7 @@ contract CraftedRecordsTest is AuditBase {
         vm.expectRevert(IShapes.SplitTooFewOutputs.selector);
         shapes.split(parent, one);
         vm.expectRevert(IShapes.SplitTooFewOutputs.selector);
-        shapes.previewSplit(alice, parent, one);
+        shapes.previewSplit(parent, one);
 
         uint8[] memory wrongSum = new uint8[](2);
         wrongSum[0] = 0;
@@ -283,7 +290,7 @@ contract CraftedRecordsTest is AuditBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2));
         shapes.split(parent, wrongSum);
         vm.expectRevert(abi.encodeWithSelector(IShapes.SplitSumMismatch.selector, DENOMS[2], DENOMS[0] * 2));
-        shapes.previewSplit(alice, parent, wrongSum);
+        shapes.previewSplit(parent, wrongSum);
 
         uint8[] memory offLadder = new uint8[](2);
         offLadder[0] = 9;
@@ -292,7 +299,7 @@ contract CraftedRecordsTest is AuditBase {
         vm.expectRevert();
         shapes.split(parent, offLadder);
         vm.expectRevert();
-        shapes.previewSplit(alice, parent, offLadder);
+        shapes.previewSplit(parent, offLadder);
 
         assertEq(shapes.backingOf(parent), DENOMS[2], "a rejected split still touched the parent");
         _assertReserveInvariant();
@@ -314,7 +321,7 @@ contract CraftedRecordsTest is AuditBase {
             nextFive[i] = s + 5 + i;
         }
 
-        ShapeState memory predicted = shapes.previewCompose(alice, s, nextFive);
+        ShapeState memory predicted = shapes.previewCompose(s, nextFive);
         vm.prank(alice);
         shapes.compose(s, nextFive);
         ShapeState memory actual = shapes.shapeState(s);
@@ -340,7 +347,7 @@ contract CraftedRecordsTest is AuditBase {
         outs[0] = 1;
         outs[1] = 1;
 
-        ShapeChildPreview[] memory predicted = shapes.previewSplit(alice, s, outs);
+        ShapeChildPreview[] memory predicted = shapes.previewSplit(s, outs);
         vm.prank(alice);
         uint256[] memory kids = shapes.split(s, outs);
 

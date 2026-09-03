@@ -248,20 +248,20 @@ export async function createSim(dep: Deployment, keys: readonly Hex[]) {
   /* ------------------------------- reads --------------------------------- */
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const previewCompose = (actor: number, survivorId: bigint, burnIds: bigint[]): Promise<any> =>
+  const previewCompose = (survivorId: bigint, burnIds: bigint[]): Promise<any> =>
     pub.readContract({
       address: dep.shapes,
       abi: shapesAbi,
       functionName: "previewCompose",
-      args: [addr(actor), survivorId, burnIds],
+      args: [survivorId, burnIds],
     });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const previewSplit = (actor: number, tokenId: bigint, outDenoms: number[]): Promise<any> =>
+  const previewSplit = (tokenId: bigint, outDenoms: number[]): Promise<any> =>
     pub.readContract({
       address: dep.shapes,
       abi: shapesAbi,
       functionName: "previewSplit",
-      args: [addr(actor), tokenId, outDenoms],
+      args: [tokenId, outDenoms],
     });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shapeState = (tokenId: bigint): Promise<any> =>

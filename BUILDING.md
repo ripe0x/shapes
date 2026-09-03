@@ -136,13 +136,13 @@ a contract can show or verify a result before committing. Both previews are on `
 mutators they predict:
 
 ```solidity
-shapes.previewCompose(account, survivorId, burnIds); // the ShapeState the compose would yield
-shapes.previewSplit(account, tokenId, outDenoms);    // a ShapeChildPreview[] for the children
+shapes.previewCompose(survivorId, burnIds); // the ShapeState the compose would yield
+shapes.previewSplit(tokenId, outDenoms);    // a ShapeChildPreview[] for the children
 ```
 
-Both are `view` and write nothing. `account` is the address whose compose or split is being
-simulated: a preview applies the same ownership and liveness gate that account would meet, so a
-preview that reverts tells you the call would revert for that caller, with the same error.
+Both are `view` and write nothing. They preview the result for any live inputs. Ownership is not
+checked; simulate the mutating call to learn whether a given account may execute it. Every other
+gate the mutator applies runs here, with the same error and in the same order.
 
 ## What to know before you rely on it
 

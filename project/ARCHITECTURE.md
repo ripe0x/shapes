@@ -70,8 +70,8 @@ Per-token views: `exists`, `backingOf`, `valueOf`, `isBlackShape`, `denomIndexOf
 `originCountOf`, `inkGeneOf`, `modulesOf`, `formationOf`, `isComplete`, `shapeState`,
 `composeDepth`, `composeRecordAt`, `splitOriginOf`, `positionOf`, `tokenURI`, `unicodeCard`.
 
-Simulation: `previewCompose`, `previewSplit`. Both take the account whose ownership is being
-assumed, and run the same validation and the same sampling code the mutators run.
+Simulation: `previewCompose`, `previewSplit`. Both run the same structural validation and the
+same sampling code the mutators run, over any live inputs, and check no ownership.
 
 Collection views: `redeemableBacking`, `burnedBacking`, `blackShapeCount`, `totalSupply`,
 `totalMinted`, `owner`, `ownerToken`, `admin`, `artist`, `mintFee`, `mintStart`, `pendingFees`,
@@ -205,9 +205,11 @@ validation helpers with `compose` and `split`. There is no second contract, no s
 duplicated validation, so the class of bug where a preview contract is deployed against different
 library code cannot occur.
 
-`account` is an explicit argument. A preview applies the same ownership and liveness gate the
-mutator applies to `msg.sender`, so a preview that would revert for a caller reverts for that
-caller in the preview too.
+Neither preview takes an account and neither checks ownership. Each still applies every
+structural gate its mutator applies, in the same order and with the same errors: both inputs live
+and not Black, no repeated compose input, a non-empty compose burn set, at least two split outputs,
+the split sum matching the parent's backing, and the composed or split total landing on the
+denomination ladder. Simulate the mutating call to learn whether a given account may execute it.
 
 A repeated id in `burnIds` is rejected by `requireDistinctComposeInputs` in both paths, with the same
 `DuplicateComposeInput` error. It sorts a memory copy of the ids and rejects adjacent equals, so it
@@ -269,8 +271,8 @@ the draft ERC-8060 `valueOf`/`burn` pair.
   minting opens.
 - **Restructure.** `compose(survivorId, burnIds)`, `split(tokenId, outDenoms)`,
   `decompose(survivorId)`. All require the caller to own every token involved and none to be Black.
-  No ETH moves. Simulate first with `previewCompose(account, survivorId, burnIds)` and
-  `previewSplit(account, tokenId, outDenoms)`, which apply the same rules without writing.
+  No ETH moves. Simulate first with `previewCompose(survivorId, burnIds)` and
+  `previewSplit(tokenId, outDenoms)`, which apply the same structural rules without writing.
 - **Read everything about one token in one call.** `shapeState(tokenId)`.
 - **Provenance.** `composeDepth(survivorId)` then `composeRecordAt(survivorId, depth)` for what a
   `decompose` would restore; `splitOriginOf(childId)` for the split that created a token.
@@ -355,9 +357,10 @@ on `_burn` reverting on the second occurrence and reported `ERC721NonexistentTok
 preview reported `DuplicateComposeInput`. Now both report `DuplicateComposeInput`, and the check is
 one function.
 
-**Previews name their account.** `previewCompose(account, ...)` and `previewSplit(account, ...)`
-apply the ownership gate that account would meet. A preview with no account cannot answer the
-question the caller is actually asking, which is whether their call would go through.
+**Previews answer for the tokens, not for a caller.** `previewCompose` and `previewSplit` take
+no account and check no ownership, so a marketplace or an aggregator can render the outcome of a
+recomposition over tokens it does not hold. Whether a given account may execute it is a separate
+question, answered by simulating the mutating call.
 
 **Grid geometry is not on the token.** `gridForAmount` and `modulesForAmount` are gone;
 `IShapeGeometry.cardGeometry` on `renderer()` already returned columns, rows and module count. The

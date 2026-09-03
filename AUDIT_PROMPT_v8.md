@@ -102,9 +102,10 @@ Recomposition
   `ownerOf(ownerToken())` whenever an owner token exists. Find any interleaving of
   `onERC721Received` callbacks that observes `ownerToken()` pointing at a token that does not
   exist.
-- Previews: `previewCompose(account, ...)` and `previewSplit(account, ...)` run the same validation
-  as the mutators through shared helpers. Find any input where the preview succeeds and the
-  mutation reverts, or the reverse.
+- Previews: `previewCompose(survivorId, burnIds)` and `previewSplit(tokenId, outDenoms)` take no
+  account and check no ownership; every other gate is the mutator's, through shared helpers. Find
+  any input where the preview succeeds and the mutation reverts for the token's own holder, or the
+  reverse.
 - Narrowing casts (`uint96` ids, `uint32` origin counts and child indexes, `uint64` split record
   index): confirm each is proven by an invariant in code or reachable only past an economic bound,
   and say which.

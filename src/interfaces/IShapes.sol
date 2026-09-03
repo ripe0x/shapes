@@ -539,24 +539,26 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///      compose or replaced by split. True for a live Black Shape.
     function exists(uint256 tokenId) external view returns (bool);
 
-    /// @notice The state `compose(survivorId, burnIds)` would leave on the survivor if `account`
-    ///         called it now. Writes nothing.
-    /// @dev Applies compose's own rules against `account`: every token must exist, be held by
-    ///      `account` and not be Black, the survivor cannot be among `burnIds`, no id may repeat,
-    ///      and the summed backing must land on a denomination. Same errors, same order, same
-    ///      sampling code as `compose`.
-    function previewCompose(address account, uint256 survivorId, uint256[] calldata burnIds)
+    /// @notice The state `compose(survivorId, burnIds)` would leave on the survivor. Writes
+    ///         nothing.
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it. Every other rule
+    ///      compose applies holds here: every token must exist and not be Black, the survivor
+    ///      cannot be among `burnIds`, no id may repeat, and the summed backing must land on a
+    ///      denomination. Same errors, same order, same sampling code as `compose`.
+    function previewCompose(uint256 survivorId, uint256[] calldata burnIds)
         external
         view
         returns (ShapeState memory);
 
-    /// @notice The children `split(tokenId, outDenoms)` would mint if `account` called it now, one
-    ///         entry per `outDenoms` index. Writes nothing.
-    /// @dev Applies split's own rules against `account`: the token must exist, be held by `account`
-    ///      and not be Black, there must be at least two outputs, and they must sum to the token's
-    ///      backing. Child ids are not predicted, because they depend on `totalMinted` at the time
-    ///      the split executes.
-    function previewSplit(address account, uint256 tokenId, uint8[] calldata outDenoms)
+    /// @notice The children `split(tokenId, outDenoms)` would mint, one entry per `outDenoms`
+    ///         index. Writes nothing.
+    /// @dev Previews the result for any live inputs. Ownership is not checked; simulate the
+    ///      mutating call to learn whether a given account may execute it. Every other rule split
+    ///      applies holds here: the token must exist and not be Black, there must be at least two
+    ///      outputs, and they must sum to the token's backing. Child ids are not predicted,
+    ///      because they depend on `totalMinted` at the time the split executes.
+    function previewSplit(uint256 tokenId, uint8[] calldata outDenoms)
         external
         view
         returns (ShapeChildPreview[] memory children);
