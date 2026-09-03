@@ -1,0 +1,55 @@
+app = "shapes-indexer-mainnet"
+primary_region = "iad"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "42069"
+  PONDER_LOG_LEVEL = "info"
+  PONDER_MAX_THREADS = "1"
+  PONDER_CHAIN_ID = "1"
+  PONDER_RPC_URL = "https://gateway.tenderly.co/public/mainnet"
+  PONDER_RPC_FALLBACKS = "https://ethereum-rpc.publicnode.com,https://eth.llamarpc.com"
+  PONDER_POLL_INTERVAL_MS = "12000"
+  PONDER_DATABASE_DIR = "/data/pglite"
+  DATABASE_SCHEMA = "shapes_mainnet_v1"
+  SHAPES_LADDER = "mainnet"
+  # Left empty on purpose: indexer/deploy.sh fills these in at deploy time from
+  # deployments/1.json (`.shapes` and `.fromBlock`), via `fly deploy -e`. A bare
+  # `fly deploy --config fly.mainnet.toml` without going through deploy.sh starts
+  # the container with no contract address, which ponder.config.ts refuses to run.
+  SHAPES_ADDRESS = ""
+  SHAPES_START_BLOCK = ""
+
+[[mounts]]
+  source = "shapes_indexer_mainnet_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 42069
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 30
+    soft_limit = 15
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "60s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
