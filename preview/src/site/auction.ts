@@ -284,6 +284,9 @@ export interface BidHistoryEntry {
 /** Bids per auction in one read. An auction's bid count is bounded by its duration in practice;
  *  this cap keeps a hostile or broken response from growing without limit. */
 const BID_LIMIT = 500;
+// Escrowed cards read alongside those bids. Ponder rejects a limit above 1000, so a bid whose
+// transaction escrowed enough cards to pass this shows the cards that fit.
+const CARD_LIMIT = 1000;
 
 const BID_QUERY = `query AuctionBids($auctionId: BigInt!, $limit: Int!) {
   _meta { status }
@@ -371,7 +374,7 @@ export async function loadBidHistory(
       url,
       fetcher,
       ESCROWED_CARDS_QUERY,
-      {txHashes, limit: BID_LIMIT * DENOMINATIONS.length},
+      {txHashes, limit: CARD_LIMIT},
       timeoutMs,
     );
     const cardRows = cardsPayload.data?.escrowedCards?.items;
