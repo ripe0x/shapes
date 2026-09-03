@@ -68,6 +68,16 @@ a:hover {
     grid-template-columns: 1fr;
   }
 }
+/* Horizontal padding only: the vertical padding on both columns tracks TOP_MARGIN, a JS constant
+   also used to size the artwork, so it stays inline in AuctionView.tsx. */
+.auction-hero-art {
+  padding-left: 48px;
+}
+.auction-hero-panel {
+  padding-right: 48px;
+  padding-bottom: 36px;
+  padding-left: 26px;
+}
 .status-dot-live {
   animation: dotpulse 1.6s ease-in-out infinite;
 }
@@ -213,6 +223,12 @@ button {
   gap: 36px 28px;
   padding: 48px;
 }
+/* Empty state for a token grid: no Shapes owned, or no Shapes eligible to compose. */
+.shape-grid-empty {
+  padding: 48px;
+  color: var(--muted);
+  font-size: 13px;
+}
 .compose-select-card {
   display: block;
   width: 100%;
@@ -337,6 +353,33 @@ button {
   font-size: 14px;
   line-height: 1.4;
 }
+/* The page grammar: a two-column section, 190px label column with a right border, content
+   column, 1px rule below. `.is-last` drops the rule. Stacks to one column under 700px (below). */
+.site-section {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  border-bottom: 1px solid var(--rule);
+}
+.site-section.is-last {
+  border-bottom: none;
+}
+.site-section-label {
+  padding: 26px 24px 26px 48px;
+  border-right: 1px solid var(--rule);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+.site-section-content {
+  padding: var(--section-pad, 24px 48px 26px 32px);
+}
+/* The back-to-token link row above a Shape detail or manage page. */
+.token-detail-back {
+  padding: 20px 48px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
 @media (max-width: 700px) {
   .site-header-inner {
     height: auto !important;
@@ -366,21 +409,36 @@ button {
   .site-account {
     margin-left: auto !important;
   }
-  .token-detail-page .site-section {
-    display: block !important;
+  .site-section {
+    display: block;
   }
-  .token-detail-page .site-section-label {
-    border-right: 0 !important;
-    padding: 18px 20px 0 !important;
+  .site-section-label {
+    border-right: 0;
+    padding: 18px 20px 0;
   }
-  .token-detail-page .site-section-content {
-    padding: 14px 20px 28px !important;
+  .site-section-content {
+    --section-pad: 14px 20px 28px !important;
   }
-  .token-detail-page .token-detail-back {
-    padding: 16px 20px !important;
+  .token-detail-back {
+    padding: 16px 20px;
   }
   .token-detail-page .token-detail-hero {
     gap: 28px !important;
+  }
+  .shape-token-grid {
+    padding: 20px;
+    gap: 20px 14px;
+  }
+  .shape-grid-empty {
+    padding: 28px 20px;
+  }
+  .auction-hero-art {
+    padding-left: 20px;
+  }
+  .auction-hero-panel {
+    padding-right: 20px;
+    padding-bottom: 28px;
+    padding-left: 20px;
   }
   .manage-action-grid {
     grid-template-columns: 1fr;
