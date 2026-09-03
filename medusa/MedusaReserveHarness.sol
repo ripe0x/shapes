@@ -75,6 +75,56 @@ contract MedusaReserveHarness {
         shapes.redeem(lastId);
     }
 
+    /// @dev The `IERC721Value` burn path, distinct from `redeem` only in that it also accepts a
+    ///      Black Shape. Exercised here on whatever `lastId` is (Black or not), so both branches
+    ///      of `_burnForRedemption`'s `allowBlack` gate run when a Black Shape reaches this chain
+    ///      through `burnBackingIfApex`.
+    function burnLast() external {
+        if (!_isLive(lastId)) return;
+        shapes.burn(lastId);
+    }
+
+    /// @dev Opportunistic, mirroring `Invariants.t.sol`'s `Handler.burnBacking`: an apex Complete
+    ///      (10,000 conserved origins on one token) essentially never arises from randomized
+    ///      mint/compose/split/decompose, so this rarely fires. Kept so the reserve properties
+    ///      stay exact should one ever be reached; the deterministic build-and-burn path is the
+    ///      unit suite's job (`Shapes.t.sol#_buildApexComplete`), not a bounded-gas fuzz call.
+    function burnBackingIfApex() external {
+        if (!_isLive(lastId) || shapes.isBlack(lastId)) return;
+        if (shapes.denomIndexOf(lastId) != 8 || shapes.originCountOf(lastId) != Denominations.unitsAt(8)) {
+            return;
+        }
+        shapes.burnBacking(lastId);
+    }
+
+    /// @dev Folds the live owner token into a fresh dust batch's survivor, which moves
+    ///      `_ownerToken` mid-`compose` (the `burnId + 1 == _ownerToken` arm in `Shapes._compose`).
+    ///      Requires the owner token to be dust-denominated, matching every other input, so the
+    ///      batch sums to a nickel exactly as `composeDust` does. Once moved, the owner token rides
+    ///      `lastId` through `splitLastNickel` and `decomposeLast`, exercising the same arm in
+    ///      `_splitTo` and `_decomposeTo`.
+    function moveOwnerTokenViaCompose() external {
+        if (address(shapes) == address(0)) return;
+        uint256 ot;
+        try shapes.ownerToken() returns (uint256 id) {
+            ot = id;
+        } catch {
+            return;
+        }
+        if (!_isLive(ot) || shapes.denomIndexOf(ot) != 0) return;
+
+        uint256 amount = Denominations.amountAt(0);
+        uint256 cost = 4 * (amount + MINT_FEE);
+        if (address(this).balance < cost) return;
+        uint256 first = shapes.mintBatch{value: cost}(amount, 4);
+        uint256[] memory burns = new uint256[](4);
+        burns[0] = ot;
+        burns[1] = first + 1;
+        burns[2] = first + 2;
+        burns[3] = first + 3;
+        lastId = shapes.compose(first, burns);
+    }
+
     function _isLive(uint256 tokenId) private view returns (bool) {
         if (address(shapes) == address(0)) return false;
         try shapes.ownerOf(tokenId) returns (address) {
