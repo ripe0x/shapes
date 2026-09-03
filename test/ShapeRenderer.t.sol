@@ -15,6 +15,7 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 import {SplitProvenance} from "../src/interfaces/IShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {FixedPoint} from "../src/lib/FixedPoint.sol";
+import {ModuleCodec} from "../src/lib/ModuleCodec.sol";
 import {Round03Rand} from "../src/lib/Round03Rand.sol";
 import {InkGenes} from "../src/lib/InkGenes.sol";
 import {Base64Decode} from "./utils/Base64Decode.sol";
@@ -1244,11 +1245,7 @@ contract TokenMetadataTest is RendererTestBase {
                 ),
                 "metadataJSON"
             );
-            assertEq(
-                shapes.effectiveModulesOf(id),
-                bytes(renderer.moduleSequenceSampled(modules, amount, gene)),
-                "effectiveModulesOf"
-            );
+            assertEq(shapes.effectiveModulesOf(id), modules, "effectiveModulesOf");
             (, uint256 c, uint256 r,,,,, uint256 n) = renderer.cardGeometrySampled(modules, amount, gene);
             assertEq(cols, c, "cols");
             assertEq(rows, r, "rows");
@@ -1271,21 +1268,20 @@ contract TokenMetadataTest is RendererTestBase {
                 ),
                 "metadataJSON"
             );
-            assertEq(
-                shapes.effectiveModulesOf(id),
-                bytes(renderer.moduleSequence(seed, amount, gene)),
-                "effectiveModulesOf"
-            );
+            assertEq(shapes.effectiveModulesOf(id).length, count, "effectiveModulesOf length");
             (, uint256 c, uint256 r,,,,, uint256 n) = renderer.cardGeometry(seed, amount, gene);
             assertEq(cols, c, "cols");
             assertEq(rows, r, "rows");
             assertEq(count, n, "moduleCount");
         }
 
+        bytes memory effective = shapes.effectiveModulesOf(id);
         for (uint256 i = 0; i < count; ++i) {
             assertEq(
                 _tokenModule(id, i), _rendererModule(i, modules, seed, amount, gene, sampled), "moduleAt"
             );
+            (uint8 kind, bool solid, uint16 rotation,,,,) = shapes.moduleAt(id, i);
+            assertEq(effective[i], ModuleCodec.encode(kind, solid, rotation / 90), "effective module byte");
         }
     }
 

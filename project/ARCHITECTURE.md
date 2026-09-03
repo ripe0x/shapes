@@ -70,12 +70,15 @@ Per-token views: `exists`, `backingOf`, `valueOf`, `isBlackShape`, `denomIndexOf
 `originCountOf`, `inkGeneOf`, `modulesOf`, `formationOf`, `isComplete`, `shapeState`,
 `composeDepth`, `composeRecordAt`, `splitOriginOf`, `positionOf`, `tokenURI`, `unicodeCard`.
 
-Token-id render views: `svg`, `metadataJSON`, `geometryOf`, `effectiveModulesOf`, `moduleAt`.
-Each assembles the token's state the way `tokenURI` does, through one shared helper, and forwards
-to `renderer()`. They save an integrator the two-step of reading the token's fields and calling the
-renderer with them, and they select the sampled or the seed-based renderer path for the caller.
-`modulesOf` returns only the materialized bytes a token stores; `effectiveModulesOf` returns the
-module glyph sequence for every token.
+Token-id render views: `svg`, `metadataJSON`, `geometryOf`, `moduleAt`. Each assembles the token's
+state the way `tokenURI` does, through one shared helper, and forwards to `renderer()`. They save
+an integrator the two-step of reading the token's fields and calling the renderer with them, and
+they select the sampled or the seed-based renderer path for the caller.
+
+`modulesOf` returns only the materialized `ModuleCodec` bytes a token stores, empty for a token
+whose geometry derives from `seed`. `effectiveModulesOf` returns the same encoding for every token:
+the stored bytes when there are any, and otherwise the seed's grammar v1 expression at the token's
+denomination and ink gene, through the linked `GeometrySampling`. It does not read `renderer()`.
 
 Simulation: `previewCompose`, `previewSplit`. Both run the same structural validation and the
 same sampling code the mutators run, over any live inputs, and check no ownership.

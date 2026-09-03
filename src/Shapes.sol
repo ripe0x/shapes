@@ -26,6 +26,7 @@ import {
 } from "./ShapeTypes.sol";
 import {AdminOps} from "./lib/AdminOps.sol";
 import {Denominations} from "./lib/Denominations.sol";
+import {GeometrySampling} from "./lib/GeometrySampling.sol";
 import {InkGenes} from "./lib/InkGenes.sol";
 import {EIP712Signature} from "./lib/EIP712Signature.sol";
 import {RecompositionOps} from "./lib/RecompositionOps.sol";
@@ -1049,12 +1050,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     function effectiveModulesOf(uint256 tokenId) external view returns (bytes memory) {
-        RenderInputs memory r = _renderInputs(tokenId);
-        IShapeRenderer rd = IShapeRenderer(_presentation.renderer);
-        if (r.modules.length != 0) {
-            return bytes(rd.moduleSequenceSampled(r.modules, r.amountWei, r.inkGene));
-        }
-        return bytes(rd.moduleSequence(r.seed, r.amountWei, r.inkGene));
+        _requireOwned(tokenId);
+        ShapeData storage d = _store.shapes[tokenId];
+        return GeometrySampling.effectiveModulesOf(_store.modules[tokenId], d.seed, d.denomIndex, d.inkGene);
     }
 
     /// @inheritdoc IShapes

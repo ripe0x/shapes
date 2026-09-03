@@ -581,10 +581,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         view
         returns (uint256 cols, uint256 rows, uint256 moduleCount);
 
-    /// @notice A live Shape's effective module glyph sequence, the `Modules` trait as raw bytes.
-    /// @dev `modulesOf` returns only the materialized `ModuleCodec` bytes a token stores, empty for
-    ///      a token whose geometry derives from `seed`. This returns the effective list for every
-    ///      token, read from stored modules when it has them and from the seed otherwise.
+    /// @notice A live Shape's effective module array, encoded per `ModuleCodec`, one byte per cell
+    ///         in row-major grid order.
+    /// @dev Same encoding as `modulesOf`, which returns only the materialized bytes a token stores
+    ///      and is empty for a token whose geometry derives from `seed`. This returns the stored
+    ///      bytes when there are any, and otherwise the seed's grammar v1 expression at the token's
+    ///      denomination and ink gene.
     function effectiveModulesOf(uint256 tokenId) external view returns (bytes memory);
 
     /// @notice One module of a live Shape's grid, by index in the same order `effectiveModulesOf`
