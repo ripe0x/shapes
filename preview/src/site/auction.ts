@@ -160,19 +160,21 @@ export async function loadAuctionFor(
   if (exists) return loadAuction(publicClient, dep, auctionId, viewer);
 
   // claimLot deletes the token's index entry, so a finished auction is not listed there any
-  // more. The page still shows the record and its history: scan the newest auctions for the
-  // latest one on this token. Bounded to the last 32 ids; the collection runs one auction.
-  const count = await publicClient.readContract({...house, functionName: "auctionCount"});
-  const from = count > 32n ? count - 32n : 0n;
-  const ids: bigint[] = [];
-  for (let id = count - 1n; id >= from; id--) ids.push(id);
-  const records = await Promise.all(
-    ids.map((id) => publicClient.readContract({...house, functionName: "auctions", args: [id]})),
+  // more. The record and its history still exist; the latest AuctionCreated for this token,
+  // read from the house's logs, gives its id.
+  const latest = await publicClient.getBlockNumber();
+  const created = await paginate(dep, latest, (fromBlock, toBlock) =>
+    publicClient.getContractEvents({
+      ...house,
+      eventName: "AuctionCreated",
+      args: {nft: dep.shapes},
+      fromBlock,
+      toBlock,
+    }),
   );
-  const i = records.findIndex(
-    (r) => r.nft.toLowerCase() === dep.shapes.toLowerCase() && r.tokenId === tokenId,
-  );
-  return i < 0 ? null : loadAuction(publicClient, dep, ids[i]!, viewer);
+  const last = created.filter((log) => log.args.tokenId === tokenId).at(-1);
+  const id = last?.args.auctionId;
+  return id === undefined ? null : loadAuction(publicClient, dep, id, viewer);
 }
 
 export async function loadAuction(
