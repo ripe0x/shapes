@@ -9,7 +9,6 @@ export function SiteHeader({
   active,
   go,
   routed,
-  auctionActive,
   isConnected,
   wrongChain,
   accountLabel,
@@ -28,9 +27,6 @@ export function SiteHeader({
   go: (view: View) => void;
   /** True when the host serves real routes, which makes the wordmark and /play plain anchors. */
   routed: boolean;
-  /** Shows the AUCTION nav link; true only while the house has an auction open for bids or
-   *  awaiting settlement. */
-  auctionActive: boolean;
   isConnected: boolean;
   wrongChain: boolean;
   accountLabel: string;
@@ -61,11 +57,6 @@ export function SiteHeader({
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
             MINT
           </button>
-          {auctionActive && (
-            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("auction")} style={{color: navColor("auction")}}>
-              AUCTION
-            </button>
-          )}
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
             GALLERY
           </button>
