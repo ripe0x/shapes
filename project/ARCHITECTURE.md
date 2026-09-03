@@ -70,6 +70,13 @@ Per-token views: `exists`, `backingOf`, `valueOf`, `isBlackShape`, `denomIndexOf
 `originCountOf`, `inkGeneOf`, `modulesOf`, `formationOf`, `isComplete`, `shapeState`,
 `composeDepth`, `composeRecordAt`, `splitOriginOf`, `positionOf`, `tokenURI`, `unicodeCard`.
 
+Token-id render views: `svg`, `metadataJSON`, `geometryOf`, `effectiveModulesOf`, `moduleAt`.
+Each assembles the token's state the way `tokenURI` does, through one shared helper, and forwards
+to `renderer()`. They save an integrator the two-step of reading the token's fields and calling the
+renderer with them, and they select the sampled or the seed-based renderer path for the caller.
+`modulesOf` returns only the materialized bytes a token stores; `effectiveModulesOf` returns the
+module glyph sequence for every token.
+
 Simulation: `previewCompose`, `previewSplit`. Both run the same structural validation and the
 same sampling code the mutators run, over any live inputs, and check no ownership.
 
@@ -87,9 +94,10 @@ shared one.
 
 Ladder views: `unit`, `denominationCount`, `denominationAt`, `isSupportedDenomination`.
 
-Grid geometry is not on the token. `IShapeGeometry.cardGeometry` on `renderer()` returns columns,
-rows and module count for an amount. The rule is: the value ladder is a property of the token, the
-grid is a property of the renderer.
+The grid is still the renderer's fact, not the token's: `geometryOf` reads
+`IShapeGeometry.cardGeometry` on `renderer()` for the token's own state rather than storing or
+recomputing a grid. `IShapeGeometry` remains the entrypoint for a grid at an arbitrary amount, with
+no token involved.
 
 ## 4. The delegatecall library pattern
 

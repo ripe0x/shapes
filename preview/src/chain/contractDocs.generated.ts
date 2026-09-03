@@ -1024,6 +1024,44 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "effectiveModulesOf",
+        "signature": "effectiveModulesOf(uint256)",
+        "stateMutability": "view",
+        "inputs": [
+          {
+            "name": "tokenId",
+            "type": "uint256"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "",
+            "type": "bytes"
+          }
+        ],
+        "notice": "A live Shape's effective module glyph sequence, the `Modules` trait as raw bytes.",
+        "dev": "`modulesOf` returns only the materialized `ModuleCodec` bytes a token stores, empty for a token whose geometry derives from `seed`. This returns the effective list for every token, read from stored modules when it has them and from the seed otherwise.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "effectiveModulesOf",
+          "inputs": [
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "bytes"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
         "name": "exists",
         "signature": "exists(uint256)",
         "stateMutability": "view",
@@ -1160,6 +1198,60 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             {
               "name": "",
               "type": "uint8"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
+        "name": "geometryOf",
+        "signature": "geometryOf(uint256)",
+        "stateMutability": "view",
+        "inputs": [
+          {
+            "name": "tokenId",
+            "type": "uint256"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "cols",
+            "type": "uint256"
+          },
+          {
+            "name": "rows",
+            "type": "uint256"
+          },
+          {
+            "name": "moduleCount",
+            "type": "uint256"
+          }
+        ],
+        "notice": "The grid a live Shape renders on: columns, rows, and the module count they hold.",
+        "dev": "",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "geometryOf",
+          "inputs": [
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "cols",
+              "type": "uint256"
+            },
+            {
+              "name": "rows",
+              "type": "uint256"
+            },
+            {
+              "name": "moduleCount",
+              "type": "uint256"
             }
           ],
           "stateMutability": "view"
@@ -1484,6 +1576,44 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "metadataJSON",
+        "signature": "metadataJSON(uint256)",
+        "stateMutability": "view",
+        "inputs": [
+          {
+            "name": "tokenId",
+            "type": "uint256"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "notice": "The metadata JSON for a live Shape, the decoded body of its `tokenURI`.",
+        "dev": "Reverts `CollectionNotSet` while the collection pointer is zero, as `tokenURI` does.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "metadataJSON",
+          "inputs": [
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "string"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
         "name": "mint",
         "signature": "mint(uint256)",
         "stateMutability": "payable",
@@ -1721,6 +1851,100 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             }
           ],
           "stateMutability": "payable"
+        }
+      },
+      {
+        "name": "moduleAt",
+        "signature": "moduleAt(uint256,uint256)",
+        "stateMutability": "view",
+        "inputs": [
+          {
+            "name": "tokenId",
+            "type": "uint256"
+          },
+          {
+            "name": "index",
+            "type": "uint256"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "kind",
+            "type": "uint8"
+          },
+          {
+            "name": "solid",
+            "type": "bool"
+          },
+          {
+            "name": "rotation",
+            "type": "uint16"
+          },
+          {
+            "name": "cx",
+            "type": "uint256"
+          },
+          {
+            "name": "cy",
+            "type": "uint256"
+          },
+          {
+            "name": "size",
+            "type": "uint256"
+          },
+          {
+            "name": "weight",
+            "type": "uint256"
+          }
+        ],
+        "notice": "One module of a live Shape's grid, by index in the same order `effectiveModulesOf` lists them.",
+        "dev": "",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "moduleAt",
+          "inputs": [
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            },
+            {
+              "name": "index",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "kind",
+              "type": "uint8"
+            },
+            {
+              "name": "solid",
+              "type": "bool"
+            },
+            {
+              "name": "rotation",
+              "type": "uint16"
+            },
+            {
+              "name": "cx",
+              "type": "uint256"
+            },
+            {
+              "name": "cy",
+              "type": "uint256"
+            },
+            {
+              "name": "size",
+              "type": "uint256"
+            },
+            {
+              "name": "weight",
+              "type": "uint256"
+            }
+          ],
+          "stateMutability": "view"
         }
       },
       {
@@ -3114,6 +3338,44 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             {
               "name": "",
               "type": "bool"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
+        "name": "svg",
+        "signature": "svg(uint256)",
+        "stateMutability": "view",
+        "inputs": [
+          {
+            "name": "tokenId",
+            "type": "uint256"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "notice": "The SVG document for a live Shape, drawn through `renderer()`.",
+        "dev": "",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "svg",
+          "inputs": [
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "string"
             }
           ],
           "stateMutability": "view"

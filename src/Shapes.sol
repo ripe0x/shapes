@@ -12,6 +12,7 @@ import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapes, IShapeProvenance, IShapeRecomposition, IShapeValue} from "./interfaces/IShapes.sol";
 import {IERC721Value} from "./interfaces/IERC721Value.sol";
 import {IShapePositionResolver} from "./interfaces/IShapePositionResolver.sol";
+import {IShapeGeometry} from "./interfaces/IShapeGeometry.sol";
 import {IShapeRenderer, SplitProvenance} from "./interfaces/IShapeRenderer.sol";
 import {
     ComposeRecordView,
@@ -948,15 +949,134 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return RecompositionOps.previewSplit(_store, tokenId, outDenoms);
     }
 
-    /// @inheritdoc IShapes
-    function unicodeCard(uint256 tokenId) external view returns (string memory) {
+    /// @dev The renderer arguments a live token resolves to: `modules` non-empty selects the
+    ///      sampled path and `seed` the grammar v1 path, plus the denomination amount, the
+    ///      provenance fields, the compose-stack depth and the owner-token flag. Assembled once
+    ///      and shared by `tokenURI`, `unicodeCard` and the token-id render views. Reverts
+    ///      `ERC721NonexistentToken` for an id that does not exist.
+    struct RenderInputs {
+        bytes32 seed;
+        bytes modules;
+        uint256 amountWei;
+        uint256 originCount;
+        bool isBlack;
+        uint8 inkGene;
+        uint256 composeDepth;
+        bool ownerToken;
+    }
+
+    function _renderInputs(uint256 tokenId) private view returns (RenderInputs memory r) {
         _requireOwned(tokenId);
         ShapeData storage d = _store.shapes[tokenId];
-        bytes memory modules = _store.modules[tokenId];
-        uint256 amountWei = Denominations.amountAt(d.denomIndex);
-        IShapeRenderer r = IShapeRenderer(_presentation.renderer);
-        if (modules.length != 0) return r.renderUnicodeSampled(modules, amountWei, d.inkGene);
-        return r.renderUnicode(d.seed, amountWei, d.inkGene);
+        r.seed = d.seed;
+        r.modules = _store.modules[tokenId];
+        r.amountWei = Denominations.amountAt(d.denomIndex);
+        r.originCount = d.originCount;
+        r.isBlack = d.isBlack;
+        r.inkGene = d.inkGene;
+        r.composeDepth = _store.composeStack[tokenId].length;
+        r.ownerToken = tokenId + 1 == _ownerToken;
+    }
+
+    /// @inheritdoc IShapes
+    function unicodeCard(uint256 tokenId) external view returns (string memory) {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeRenderer rd = IShapeRenderer(_presentation.renderer);
+        if (r.modules.length != 0) return rd.renderUnicodeSampled(r.modules, r.amountWei, r.inkGene);
+        return rd.renderUnicode(r.seed, r.amountWei, r.inkGene);
+    }
+
+    /// @inheritdoc IShapes
+    function svg(uint256 tokenId) external view returns (string memory) {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeRenderer rd = IShapeRenderer(_presentation.renderer);
+        if (r.modules.length != 0) {
+            return rd.renderSVGSampled(r.modules, r.amountWei, r.isBlack, r.inkGene);
+        }
+        return rd.renderSVG(r.seed, r.amountWei, r.isBlack, r.inkGene);
+    }
+
+    /// @inheritdoc IShapes
+    function metadataJSON(uint256 tokenId) external view returns (string memory) {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeCollection c = _requireCollection();
+        string memory description = r.ownerToken ? c.ownerTokenDescription() : c.description();
+        if (r.modules.length != 0) {
+            return IShapeRenderer(_presentation.renderer)
+                .metadataJSONSampled(
+                    r.modules,
+                    r.amountWei,
+                    tokenId,
+                    r.originCount,
+                    r.isBlack,
+                    r.inkGene,
+                    r.composeDepth,
+                    c.tokenNamePrefix(),
+                    description,
+                    _splitProvenanceOf(tokenId),
+                    r.ownerToken
+                );
+        }
+        return IShapeRenderer(_presentation.renderer)
+            .metadataJSON(
+                r.seed,
+                r.amountWei,
+                tokenId,
+                r.originCount,
+                r.isBlack,
+                r.inkGene,
+                r.composeDepth,
+                c.tokenNamePrefix(),
+                description,
+                r.ownerToken
+            );
+    }
+
+    /// @inheritdoc IShapes
+    function geometryOf(uint256 tokenId)
+        external
+        view
+        returns (uint256 cols, uint256 rows, uint256 moduleCount)
+    {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeGeometry g = IShapeGeometry(_presentation.renderer);
+        if (r.modules.length != 0) {
+            (, cols, rows,,,,, moduleCount) = g.cardGeometrySampled(r.modules, r.amountWei, r.inkGene);
+        } else {
+            (, cols, rows,,,,, moduleCount) = g.cardGeometry(r.seed, r.amountWei, r.inkGene);
+        }
+    }
+
+    /// @inheritdoc IShapes
+    function effectiveModulesOf(uint256 tokenId) external view returns (bytes memory) {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeRenderer rd = IShapeRenderer(_presentation.renderer);
+        if (r.modules.length != 0) {
+            return bytes(rd.moduleSequenceSampled(r.modules, r.amountWei, r.inkGene));
+        }
+        return bytes(rd.moduleSequence(r.seed, r.amountWei, r.inkGene));
+    }
+
+    /// @inheritdoc IShapes
+    function moduleAt(uint256 tokenId, uint256 index)
+        external
+        view
+        returns (
+            uint8 kind,
+            bool solid,
+            uint16 rotation,
+            uint256 cx,
+            uint256 cy,
+            uint256 size,
+            uint256 weight
+        )
+    {
+        RenderInputs memory r = _renderInputs(tokenId);
+        IShapeGeometry g = IShapeGeometry(_presentation.renderer);
+        if (r.modules.length != 0) {
+            return g.moduleAtSampled(r.modules, r.amountWei, r.inkGene, index);
+        }
+        return g.moduleAt(r.seed, r.amountWei, r.inkGene, index);
     }
 
     /// @inheritdoc IShapes
@@ -1027,43 +1147,38 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      child always carries materialized bytes, so its split provenance traits reach the
     ///      renderer through the sampled path.
     function tokenURI(uint256 tokenId) public view override returns (string memory) {
-        _requireOwned(tokenId);
+        RenderInputs memory r = _renderInputs(tokenId);
         IShapeCollection c = _requireCollection();
-        ShapeData storage d = _store.shapes[tokenId];
-        bytes memory modules = _store.modules[tokenId];
-        uint256 amountWei = Denominations.amountAt(d.denomIndex);
-        uint256 depth = _store.composeStack[tokenId].length;
-        bool isOwnerToken = tokenId + 1 == _ownerToken;
         // The owner token carries its own description; every other token carries the shared one.
-        string memory description = isOwnerToken ? c.ownerTokenDescription() : c.description();
-        if (modules.length != 0) {
+        string memory description = r.ownerToken ? c.ownerTokenDescription() : c.description();
+        if (r.modules.length != 0) {
             return IShapeRenderer(_presentation.renderer)
                 .tokenURISampled(
-                    modules,
-                    amountWei,
+                    r.modules,
+                    r.amountWei,
                     tokenId,
-                    d.originCount,
-                    d.isBlack,
-                    d.inkGene,
-                    depth,
+                    r.originCount,
+                    r.isBlack,
+                    r.inkGene,
+                    r.composeDepth,
                     c.tokenNamePrefix(),
                     description,
                     _splitProvenanceOf(tokenId),
-                    isOwnerToken
+                    r.ownerToken
                 );
         }
         return IShapeRenderer(_presentation.renderer)
             .tokenURI(
-                d.seed,
-                amountWei,
+                r.seed,
+                r.amountWei,
                 tokenId,
-                d.originCount,
-                d.isBlack,
-                d.inkGene,
-                depth,
+                r.originCount,
+                r.isBlack,
+                r.inkGene,
+                r.composeDepth,
                 c.tokenNamePrefix(),
                 description,
-                isOwnerToken
+                r.ownerToken
             );
     }
 

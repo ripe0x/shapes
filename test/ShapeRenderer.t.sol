@@ -10,7 +10,9 @@ import {Shapes} from "../src/Shapes.sol";
 import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IShapeCollection} from "../src/interfaces/IShapeCollection.sol";
+import {IERC721Errors} from "@openzeppelin/contracts/interfaces/draft-IERC6093.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
+import {SplitProvenance} from "../src/interfaces/IShapeRenderer.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {FixedPoint} from "../src/lib/FixedPoint.sol";
 import {Round03Rand} from "../src/lib/Round03Rand.sol";
@@ -1186,6 +1188,170 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(shapes.redeemableBacking(), reserve, "reserve moved");
         assertEq(shapes.seedOf(id), seed, "seed moved");
         assertEq(renderer.renderSVG(seed, DENOMS[4], false, shapes.inkGeneOf(id)), svg, "artwork moved");
+    }
+
+    /* ------------------------ token-id render views ------------------------ */
+
+    /// @dev The two geometry sources every render view selects between: a seed-based mint, and a
+    ///      compose survivor carrying materialized module bytes.
+    function _seedTokenAndSurvivor() internal returns (uint256 seedToken, uint256 survivor) {
+        vm.prank(alice);
+        seedToken = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
+        vm.prank(alice);
+        survivor = shapes.mintBatch{value: 5 * (DENOMS[0] + MINT_FEE)}(DENOMS[0], 5);
+        uint256[] memory burnIds = new uint256[](4);
+        for (uint256 i = 0; i < 4; ++i) {
+            burnIds[i] = survivor + 1 + i;
+        }
+        vm.prank(alice);
+        shapes.compose(survivor, burnIds);
+    }
+
+    /// @dev Every token-id render view against the renderer call it is supposed to be. `id` must
+    ///      be live, not Black, not the owner token and not a split child.
+    function _assertRenderViewsMatch(uint256 id) internal view {
+        bytes memory modules = shapes.modulesOf(id);
+        bool sampled = modules.length != 0;
+        bytes32 seed = shapes.seedOf(id);
+        uint256 amount = shapes.denominationAt(shapes.denomIndexOf(id));
+        uint8 gene = shapes.inkGeneOf(id);
+        uint256 origins = shapes.originCountOf(id);
+        uint256 depth = shapes.composeDepth(id);
+        SplitProvenance memory noSplit =
+            SplitProvenance({isSplitChild: false, parentDenomIndex: 0, originDenomIndex: 0});
+
+        uint256 cols;
+        uint256 rows;
+        uint256 count;
+        (cols, rows, count) = shapes.geometryOf(id);
+
+        if (sampled) {
+            assertEq(shapes.svg(id), renderer.renderSVGSampled(modules, amount, false, gene), "svg");
+            assertEq(
+                shapes.metadataJSON(id),
+                renderer.metadataJSONSampled(
+                    modules,
+                    amount,
+                    id,
+                    origins,
+                    false,
+                    gene,
+                    depth,
+                    collection.tokenNamePrefix(),
+                    collection.description(),
+                    noSplit,
+                    false
+                ),
+                "metadataJSON"
+            );
+            assertEq(
+                shapes.effectiveModulesOf(id),
+                bytes(renderer.moduleSequenceSampled(modules, amount, gene)),
+                "effectiveModulesOf"
+            );
+            (, uint256 c, uint256 r,,,,, uint256 n) = renderer.cardGeometrySampled(modules, amount, gene);
+            assertEq(cols, c, "cols");
+            assertEq(rows, r, "rows");
+            assertEq(count, n, "moduleCount");
+        } else {
+            assertEq(shapes.svg(id), renderer.renderSVG(seed, amount, false, gene), "svg");
+            assertEq(
+                shapes.metadataJSON(id),
+                renderer.metadataJSON(
+                    seed,
+                    amount,
+                    id,
+                    origins,
+                    false,
+                    gene,
+                    depth,
+                    collection.tokenNamePrefix(),
+                    collection.description(),
+                    false
+                ),
+                "metadataJSON"
+            );
+            assertEq(
+                shapes.effectiveModulesOf(id),
+                bytes(renderer.moduleSequence(seed, amount, gene)),
+                "effectiveModulesOf"
+            );
+            (, uint256 c, uint256 r,,,,, uint256 n) = renderer.cardGeometry(seed, amount, gene);
+            assertEq(cols, c, "cols");
+            assertEq(rows, r, "rows");
+            assertEq(count, n, "moduleCount");
+        }
+
+        for (uint256 i = 0; i < count; ++i) {
+            assertEq(
+                _tokenModule(id, i), _rendererModule(i, modules, seed, amount, gene, sampled), "moduleAt"
+            );
+        }
+    }
+
+    /// @dev One module of `id`, encoded so the whole tuple compares in one assertion.
+    function _tokenModule(uint256 id, uint256 index) internal view returns (bytes memory) {
+        (uint8 kind, bool solid, uint16 rotation, uint256 cx, uint256 cy, uint256 size, uint256 weight) =
+            shapes.moduleAt(id, index);
+        return abi.encode(kind, solid, rotation, cx, cy, size, weight);
+    }
+
+    /// @dev The same module read straight from the renderer, encoded the same way.
+    function _rendererModule(
+        uint256 index,
+        bytes memory modules,
+        bytes32 seed,
+        uint256 amount,
+        uint8 gene,
+        bool sampled
+    ) internal view returns (bytes memory) {
+        if (sampled) {
+            (uint8 kind, bool solid, uint16 rotation, uint256 cx, uint256 cy, uint256 size, uint256 weight) =
+                renderer.moduleAtSampled(modules, amount, gene, index);
+            return abi.encode(kind, solid, rotation, cx, cy, size, weight);
+        }
+        (uint8 kind, bool solid, uint16 rotation, uint256 cx, uint256 cy, uint256 size, uint256 weight) =
+            renderer.moduleAt(seed, amount, gene, index);
+        return abi.encode(kind, solid, rotation, cx, cy, size, weight);
+    }
+
+    /// @notice Each token-id render view equals the renderer called with the token's own state,
+    ///         on both geometry sources.
+    function test_RenderViewsEqualTheRendererOnBothGeometrySources() public {
+        (uint256 seedToken, uint256 survivor) = _seedTokenAndSurvivor();
+        assertEq(shapes.modulesOf(seedToken).length, 0, "a seed-based mint stores no modules");
+        assertGt(shapes.modulesOf(survivor).length, 0, "a compose survivor stores modules");
+        _assertRenderViewsMatch(seedToken);
+        _assertRenderViewsMatch(survivor);
+    }
+
+    /// @notice `effectiveModulesOf` answers for a seed-based token, where `modulesOf` is empty.
+    function test_EffectiveModulesAnswerWhereStoredModulesAreEmpty() public {
+        (uint256 seedToken,) = _seedTokenAndSurvivor();
+        assertEq(shapes.modulesOf(seedToken).length, 0, "stored modules should be empty");
+        assertGt(shapes.effectiveModulesOf(seedToken).length, 0, "effective modules should not be");
+    }
+
+    /// @notice Every render view reverts for a burned id, exactly as `tokenURI` does.
+    function test_RenderViewsRevertForABurnedId() public {
+        vm.prank(alice);
+        uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
+        vm.prank(alice);
+        shapes.redeem(id);
+
+        bytes memory expected = abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id);
+        vm.expectRevert(expected);
+        shapes.svg(id);
+        vm.expectRevert(expected);
+        shapes.metadataJSON(id);
+        vm.expectRevert(expected);
+        shapes.geometryOf(id);
+        vm.expectRevert(expected);
+        shapes.effectiveModulesOf(id);
+        vm.expectRevert(expected);
+        shapes.moduleAt(id, 0);
+        vm.expectRevert(expected);
+        shapes.tokenURI(id);
     }
 
     /// @dev ERC-4906 batch refresh, declared locally so the test can assert it.

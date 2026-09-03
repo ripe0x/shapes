@@ -568,6 +568,40 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev For display. Machine-readable geometry is `IShapeGeometry` on `renderer()`.
     function unicodeCard(uint256 tokenId) external view returns (string memory);
 
+    /// @notice The SVG document for a live Shape, drawn through `renderer()`.
+    function svg(uint256 tokenId) external view returns (string memory);
+
+    /// @notice The metadata JSON for a live Shape, the decoded body of its `tokenURI`.
+    /// @dev Reverts `CollectionNotSet` while the collection pointer is zero, as `tokenURI` does.
+    function metadataJSON(uint256 tokenId) external view returns (string memory);
+
+    /// @notice The grid a live Shape renders on: columns, rows, and the module count they hold.
+    function geometryOf(uint256 tokenId)
+        external
+        view
+        returns (uint256 cols, uint256 rows, uint256 moduleCount);
+
+    /// @notice A live Shape's effective module glyph sequence, the `Modules` trait as raw bytes.
+    /// @dev `modulesOf` returns only the materialized `ModuleCodec` bytes a token stores, empty for
+    ///      a token whose geometry derives from `seed`. This returns the effective list for every
+    ///      token, read from stored modules when it has them and from the seed otherwise.
+    function effectiveModulesOf(uint256 tokenId) external view returns (bytes memory);
+
+    /// @notice One module of a live Shape's grid, by index in the same order `effectiveModulesOf`
+    ///         lists them.
+    function moduleAt(uint256 tokenId, uint256 index)
+        external
+        view
+        returns (
+            uint8 kind,
+            bool solid,
+            uint16 rotation,
+            uint256 cx,
+            uint256 cy,
+            uint256 size,
+            uint256 weight
+        );
+
     /// @notice The position the configured positions contract reports for `tokenId`, or zero.
     /// @dev Does not require a live token. Forwards to the positions target with a 50,000 gas
     ///      stipend. The target is untrusted: a revert, out-of-gas, or malformed return yields zero.
