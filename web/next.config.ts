@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import bundledDeployment from "./public/deployment.json";
 
@@ -11,10 +12,20 @@ const shared = resolve(__dirname, "../preview/src");
 // Selects the denomination ladder at build time, pairing with the foundry profile of the same
 // name (see preview/src/canonical/denominations.ts). An explicit SHAPES_LADDER always wins;
 // production builds must set it (scripts/verify-netlify-mode.mjs). Unset, the default follows the
-// bundled deployment.json: a Sepolia target takes the testnet ladder, anything else mainnet, so a
-// plain `next dev` cannot show mainnet amounts against the Sepolia contract.
+// deployment the dev server will serve: public/deployment.local.json when present (written by
+// script/lived-in.sh for a local anvil chain, which deploys with the default mainnet profile),
+// else the bundled deployment.json. A Sepolia target takes the testnet ladder, anything else
+// mainnet, so a plain `next dev` cannot show one ladder against a contract using the other.
 function defaultLadder(): string {
-  const dep = bundledDeployment as { chainId?: number };
+  let dep = bundledDeployment as { chainId?: number };
+  const local = resolve(__dirname, "public/deployment.local.json");
+  if (existsSync(local)) {
+    try {
+      dep = JSON.parse(readFileSync(local, "utf8")) as { chainId?: number };
+    } catch {
+      // Unreadable local file: fall through to the bundled deployment.
+    }
+  }
   return dep.chainId === 11155111 ? "testnet" : "";
 }
 
