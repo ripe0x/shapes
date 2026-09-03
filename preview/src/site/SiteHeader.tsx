@@ -60,13 +60,6 @@ export function SiteHeader({
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
             GALLERY
           </button>
-          {/* /play is a Next.js route outside SiteApp's view state, so it links as a plain
-              anchor. Only the Next host serves it; the Vite preview (no onNavigate) omits it. */}
-          {routed && (
-            <a href="/play" className="site-nav-link" style={{color: C.muted}}>
-              PLAY
-            </a>
-          )}
         </nav>
         <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={onRetryRefresh} />
         <div className="site-account" ref={accountMenuRef} style={{position: "relative"}}>

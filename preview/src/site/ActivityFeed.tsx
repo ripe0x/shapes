@@ -488,10 +488,6 @@ export function ActivityFeed({
           <p className="launch-kicker">Onchain</p>
           <h2 id="activity-title">Proof of work</h2>
         </div>
-        <p>
-          Every mint, composition, split, redemption and auction, newest first. Shapes that no
-          longer exist are drawn from the record they left behind.
-        </p>
       </div>
 
       <div className="activity-stats">
