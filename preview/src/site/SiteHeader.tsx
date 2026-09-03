@@ -68,7 +68,7 @@ export function SiteHeader({
             </a>
           )}
         </nav>
-        <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={onRetryRefresh} style={{marginLeft: "auto"}} />
+        <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={onRetryRefresh} />
         <div className="site-account" ref={accountMenuRef} style={{position: "relative"}}>
           <button
             type="button"

@@ -541,6 +541,9 @@ button {
   margin-inline: auto;
   height: 84px;
 }
+.site-account {
+  margin-left: auto;
+}
 .site-nav-link {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11px;
