@@ -350,10 +350,13 @@ src/
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
     ModuleCodec.sol           one-byte encoding for a module's kind, solid, and rotation
 script/
-  DeployShapes.s.sol
+  Deploy.s.sol                the one deploy script, run for anvil, Sepolia, and mainnet alike
+  deploy.sh                   the one wrapper: script/deploy.sh <anvil|sepolia|mainnet>
+  env/                        anvil.env, sepolia.env, mainnet.env, values only, no secrets
   DeployLens.s.sol            replacement lens for an already-deployed Shapes
   LensEquivalence.s.sol       deploy-time proof that a lens previews what the token executes
-  e2e-anvil.sh                live end-to-end check against a local chain
+  SeedShapes.s.sol            seeds an already-deployed Shapes; no seeding inside Deploy.s.sol
+  e2e-anvil.sh                live end-to-end check against a local chain, via deploy.sh anvil
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
@@ -593,11 +596,11 @@ You sign every mint and redeem in the wallet, against the deployed contract.
    it to add and switch to the local chain. To add it by hand instead, use the RPC URL and chain
    id the script printed, currency symbol `ETH`.
 
-   The chain uses Anvil's standard id (`31337` by default, `CHAIN_ID` to change), which browser
-   wallets already have configured for `localhost:8545`. One caveat: a wallet keys networks by
-   chain id, so a second local node also on `31337` silently receives transactions meant for
-   this one. When running several local chains at once, give this one a free `CHAIN_ID` (check
-   chainlist.org) and add the network the script prints.
+   The chain uses Anvil's standard id, `31337`, which browser wallets already have configured
+   for `localhost:8545`. One caveat: a wallet keys networks by chain id, so a second local node
+   also on `31337` silently receives transactions meant for this one. Run only one at a time, or
+   give the others a different `PORT` and point the wallet's `localhost:8545` entry at whichever
+   one you're using.
 
 4. **Mint.** Pick a denomination and mint; the wallet prompts you to sign a transaction sending
    backing plus the fee. Once it confirms, the Shape appears with its artwork fetched from the
@@ -615,53 +618,73 @@ browser wallet is required; there is no keyless path.
 
 - **Wallet shows the network as unsupported, or a mint never confirms.** Almost always a chain
   id clash: another local node shares this chain's id, so the wallet holds a different RPC for
-  it and routes there. Restart with a `CHAIN_ID` nothing else uses, remove the stale network
-  from the wallet, and re-add the one the script prints.
+  it and routes there. Stop the other node (or point it at a different `PORT`), remove the stale
+  network from the wallet, and re-add the one the script prints.
 - **Nonce or balance looks wrong after restarting the chain.** The wallet cached state from a
   previous run. Clear the account's activity/nonce data (MetaMask: Settings → Advanced → Clear
   activity tab data) and reload.
 - **Port already in use.** `fork-dev.sh` takes `PORT` for Anvil; the page reads whichever RPC
   the script wrote. Vite picks its own free port for the page.
 
-## Deploying locally
+## Deploying
+
+One script, `script/Deploy.s.sol`, deploys every environment: anvil, Sepolia, and mainnet. Chain
+id selects the required denomination ladder — mainnet requires the mainnet ladder, Sepolia the
+testnet ladder, anvil accepts either — and any other chain id reverts. It sends the minimum
+denomination to `Shapes`, which mints backed Shape #0 to the deployer, then asserts every
+deployment value landed as intended, smoke-tests the renderer, verifies `artist()` is the
+deployer and that Shapes begins with an empty artist release hash and signature, and proves the
+lens previews what the token executes (see below) before reporting success.
+
+One wrapper, `script/deploy.sh <anvil|sepolia|mainnet>`, runs it for every target through the
+same code path, sourcing `script/env/<name>.env` for the values that differ: chain id, Foundry
+profile, default RPC, verify flag, main-branch guard, wallet mode, deployer, fee recipient, mint
+fee, EOA-recipient guard, indexer URL. `DRY_RUN=1` runs the guards and the forge simulation with
+no wallet, broadcast, or verification.
 
 ```bash
-anvil                                        # in one shell
+anvil                       # in one shell
+./script/deploy.sh anvil    # in another
 
-forge script script/DeployShapes.s.sol \
-  --rpc-url http://127.0.0.1:8545 --broadcast
-
-./script/e2e-anvil.sh                        # mint all nine, transfer, redeem, verify
+./script/e2e-anvil.sh       # mint all nine, transfer, redeem, verify
 ```
 
-For a live deployment, set both parameters explicitly. The flat fee is permanent; admin may later
-redirect only future fees:
+Sepolia and mainnet sign with the ripe0x Foundry keystore (interactive prompt, or
+`KEYSTORE_PASSWORD_FILE` to read the password from a file instead of a prompt). Both require a
+fetched, clean, exact `main` to deploy from; the wrapper checks and refuses otherwise.
 
 ```bash
-SHAPES_MINT_FEE_WEI=1000000000000000 \
-SHAPES_FEE_RECIPIENT=0x... \
-forge script script/DeployShapes.s.sol --rpc-url $RPC          # dry run first
+DRY_RUN=1 script/deploy.sh sepolia   # guards + simulation, nothing broadcast or written
+script/deploy.sh sepolia             # broadcasts, verifies on Etherscan, records the deployment
 ```
 
-The script refuses to proceed off a local chain without an explicit fee recipient, rejects a
-contract fee recipient unless you confirm it, smoke-tests the renderer, and asserts every
-deployment value landed as intended before reporting success. It also verifies that `artist()` is the
-deployer and that Shapes begins with an empty artist release hash and signature. The signature is
-submitted only after deployment because its EIP-712 domain includes Shapes' final address.
+`script/env/mainnet.env` ships with `DEPLOYER`, `FEE_RECIPIENT`, and `MINT_FEE_WEI` empty; the
+wrapper refuses to run, `DRY_RUN` included, until D-05 (`project/DECISIONS.md`) is resolved and
+those values are filled in. Once they are, mainnet deploys the same way:
 
-The Sepolia wrapper forces the `testnet` Foundry profile, verifies every deployment, then repeats
-the artist, unsigned-attestation, admin and payout readbacks directly against Shapes.
-Its reported Shapes deployment transaction hash is the `releaseHash` used by the signing ceremony.
+```bash
+DRY_RUN=1 script/deploy.sh mainnet
+script/deploy.sh mainnet
+```
+
+After a real broadcast, the wrapper reads the broadcast artifact, reads back every deployed
+contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
+`deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
+`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
+`mintFeeWei`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
+gitignored; Sepolia and mainnet records are committed.
 
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
 digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
 Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the already-decided
-32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. Never issue
-multiple valid signatures for competing hashes because any relayer holding one can submit it first.
+32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. The deploy
+wrapper's reported Shapes deployment transaction hash is the `releaseHash` used in this signing
+ceremony. Never issue multiple valid signatures for competing hashes because any relayer holding
+one can submit it first.
 
-It also proves the lens previews what the token executes. `ShapeLens.previewCompose` matches
-`Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the same
-deployment, so the script mints a probe token, splits it, composes it back, and requires the
+`Deploy.s.sol` also proves the lens previews what the token executes. `ShapeLens.previewCompose`
+matches `Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the
+same deployment, so the script mints a probe token, splits it, composes it back, and requires the
 preview to equal the resulting core state byte for byte. The probe runs in the `forge script`
 simulation and is never broadcast: no probe token, no ETH, no token ids consumed.
 

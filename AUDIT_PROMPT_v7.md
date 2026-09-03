@@ -13,7 +13,10 @@ phase       P2 pre-mainnet
 ```
 
 Audit this exact commit, not a branch tip. Record the full hash and clean status in the report.
-`AUDIT_PROMPT_v2.md` through `AUDIT_PROMPT_v6.md` are historical and not authoritative.
+`AUDIT_PROMPT_v2.md` through `AUDIT_PROMPT_v6.md` are historical and not authoritative. Deploy
+tooling changes (the unified `script/Deploy.s.sol` and `script/deploy.sh`) land in a follow-up
+merge from branch `claude/post-deploy-56`, after this pinned commit; the contracts under audit are
+unaffected.
 
 ```bash
 git fetch origin
@@ -96,9 +99,9 @@ economic asymmetry itself as a vulnerability unless it violates a documented sec
   `setMetadataCopy`, `setFeeRecipient` and `setMintFee` behind admin-gated delegatecall wrappers in
   `Shapes.sol`; review its storage-slot selection and delegatecall boundary alongside `PointerOps`.
 - All interfaces under `src/interfaces/`, including ERC-165 capability claims.
-- `script/DeployShapes.s.sol`, `script/DeploySepolia.s.sol`, shell guards, seed/evidence scripts and
-  release fork tests: immutable configuration, exact value construction, wiring, ladder/profile
-  selection and fail-closed checks.
+- `script/Deploy.s.sol`, `script/deploy.sh`, shell guards, seed/evidence scripts and release fork
+  tests: immutable configuration, exact value construction, wiring, ladder/profile selection and
+  fail-closed checks.
 
 Tests, specifications, prior findings, the TypeScript renderer and fixtures are evidence, not
 trusted implementations. The site and indexer are outside value-custody scope except where their
