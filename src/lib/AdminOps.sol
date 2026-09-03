@@ -17,46 +17,45 @@ import {EIP712Signature} from "./EIP712Signature.sol";
 /// @notice Every configuration write path on `Shapes`: fee, presentation pointers, the two
 ///         discovery pointers, and the artist attestation.
 /// @dev Public library called through `DELEGATECALL`, so storage stays in `Shapes` and events are
-///      emitted from `Shapes`'s address. Each function is named after the `Shapes` entrypoint
-///      whose body it holds.
+///      emitted from `Shapes`'s address. Part of the trusted implementation: its address is linked
+///      into `Shapes`'s bytecode at deploy time with no setter. Each function is named after the
+///      `Shapes` entrypoint whose body it holds.
 ///
-///      No authorization happens here. Each caller in `Shapes` runs its own check first
-///      (`onlyAdmin`, or none for `attestArtist`, which is permissionless by design). Nothing here
-///      reaches token state, backing, redemption or the admin address itself: the admin address is
-///      written only by `Shapes`, so no library can hand the role to anyone.
+///      Authorization runs in `Shapes` before it delegates here: `onlyAdmin` on every setter, and
+///      no gate on `attestArtist`, which is permissionless by design. The admin address is written
+///      by `Shapes`. Each mutator here receives a pointer to the struct holding the fields it
+///      writes.
 ///
-///      Every mutator takes a struct storage pointer and writes through it, so each reaches only
-///      the fields its own function moves. A bare `string`/`bytes` storage-pointer parameter
-///      cannot be reassigned from calldata or memory, since solc's copy codegen does not support
-///      that for a standalone reference-type parameter; assigning through a struct member reached
-///      via the pointer works, which is why these fields are grouped into structs.
+///      Each such struct groups fields that one function writes together. A bare `string` or
+///      `bytes` storage-pointer parameter cannot be assigned from calldata or memory, because
+///      solc emits no copy for a standalone reference-type parameter. Assigning through a struct
+///      member reached via the pointer works, which is why these fields live in structs.
 library AdminOps {
     /// @dev Mint fee and fee recipient, grouped so `setFeeRecipient` and `setMintFee` take one
-    ///      storage pointer. `pendingFees` and every other accounting field stay on `Shapes`.
+    ///      storage pointer. `pendingFees` stays on `Shapes`.
     struct FeeConfig {
         uint256 mintFee;
         address feeRecipient;
     }
 
-    /// @dev The artist's release hash and EIP-712 signature, grouped so `attestArtist` mutates
+    /// @dev The artist's release hash and EIP-712 signature, grouped so `attestArtist` writes
     ///      both through one storage pointer.
     struct ArtistAttestation {
         bytes32 releaseHash;
         bytes signature;
     }
 
-    /// @dev The two metadata contracts and the lock that freezes them. `renderer` is read by
-    ///      `tokenURI`, `collection` by `tokenURI` and `contractURI`, so nothing here can affect
-    ///      ETH, backing, redemption or ownership. One lock, because presentation is one decision:
-    ///      the collection reads it back to freeze its own metadata copy.
+    /// @dev The two metadata contracts and the lock that freezes them. `tokenURI` reads
+    ///      `renderer`, and `tokenURI` and `contractURI` read `collection`. One lock covers both,
+    ///      and the collection reads it back to freeze its own metadata copy.
     struct Presentation {
         address renderer;
         address collection;
         bool locked;
     }
 
-    /// @dev The two discovery pointers, each with its own permanent lock. No token or reserve
-    ///      operation reads them.
+    /// @dev The two discovery pointers, each with its own permanent lock. Discovery only: no
+    ///      token or reserve operation reads them.
     struct Pointers {
         address positions;
         bool positionsLocked;
@@ -70,8 +69,8 @@ library AdminOps {
     /* ---------------------------- presentation ---------------------------- */
 
     /// @notice Reverts unless `renderer` has code and answers ERC-165 for `IShapeRenderer`.
-    /// @dev A zero address has no code, so the length check also rejects it. Shared with
-    ///      `Shapes`'s constructor, which validates the same way before any storage is written.
+    /// @dev A zero address has no code, so the length check rejects it. `Shapes`'s constructor
+    ///      calls this before it writes the initial renderer.
     function requireRenderer(address renderer) internal view {
         if (renderer.code.length == 0 || !_supports(renderer, type(IShapeRenderer).interfaceId)) {
             revert IShapes.UnsupportedRenderer(renderer);
@@ -107,8 +106,8 @@ library AdminOps {
         emit IShapes.ContractURIUpdated();
     }
 
-    /// @dev Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection
-    ///      and the collection's metadata copy are all fixed.
+    /// @dev Body of `Shapes.lockPresentation`. One way. After this the renderer pointer, the
+    ///      collection pointer and the collection's metadata copy are permanent.
     function lockPresentation(Presentation storage p) public {
         _requireUnlocked(p);
         p.locked = true;
@@ -142,7 +141,7 @@ library AdminOps {
     /// @dev Body of `Shapes.setPointer`. A nonzero target must answer ERC-165 for the interface
     ///      its reader calls: `IShapePositionResolver` for positions, which `Shapes.positionOf`
     ///      staticcalls, and `IShapeAuctionHouse` for the market, which clients call directly.
-    ///      Zero clears the pointer and is always accepted.
+    ///      Zero clears the pointer.
     function setPointer(Pointers storage p, uint8 pointer, address target) public {
         if (pointer == uint8(IShapes.Pointer.Positions)) {
             if (p.positionsLocked) revert IShapes.PointerIsLocked();
@@ -159,7 +158,7 @@ library AdminOps {
         }
     }
 
-    /// @dev Body of `Shapes.lockPointer`. May lock a pointer at zero, which is permanent.
+    /// @dev Body of `Shapes.lockPointer`. A pointer may be locked at zero, which is permanent.
     function lockPointer(Pointers storage p, uint8 pointer) public {
         if (pointer == uint8(IShapes.Pointer.Positions)) {
             if (p.positionsLocked) revert IShapes.PointerIsLocked();
@@ -205,8 +204,8 @@ library AdminOps {
         emit IShapes.ArtistAttested(artist, releaseHash, signature);
     }
 
-    /// @dev Returns false on a revert as well as on a false return, so the caller's revert path is
-    ///      the same however `target` failed the check.
+    /// @dev Returns false when the call reverts and when it returns false, so the caller's revert
+    ///      path is the same however `target` failed the check.
     function _supports(address target, bytes4 interfaceId) private view returns (bool) {
         try IERC165(target).supportsInterface(interfaceId) returns (bool supported) {
             return supported;

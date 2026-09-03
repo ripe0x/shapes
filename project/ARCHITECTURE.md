@@ -96,19 +96,22 @@ library function is reached with `DELEGATECALL`, so it executes in the token's s
 its events from the token's address. The token passes a storage pointer to the struct the library
 is allowed to write.
 
-Rules that make this safe, all enforced by construction:
+A linked library runs through `DELEGATECALL` in the token's storage context, so the pointer it
+receives is a source-structure convention, not an EVM-enforced boundary. `RecompositionOps` and
+`AdminOps` are part of the trusted implementation. The structure below is what the reserve
+invariant and the access control rely on:
 
-1. **A library holds no authority.** Every access check runs in `Shapes` before it delegates.
-   `AdminOps` has no `onlyAdmin`; the caller applied it. The one exception is `attestArtist`, which
-   is deliberately ungated on both sides: the gate is the EIP-712 signature check inside
-   `AdminOps.attestArtist` against the immutable `artist` address `Shapes` passes in, so anyone may
-   relay the artist's signature and no one can forge one.
-2. **A library never writes ERC-721 state.** Minting, burning and every ownership check execute in
-   the token's own runtime. A library cannot move a token.
-3. **A library never moves ETH.** Only `Shapes` has a payable entrypoint and only `Shapes` calls
-   `_sendEth`.
-4. **A library reaches only the storage it is handed.** Each takes a pointer to one struct;
-   `AdminOps` takes narrower structs still, one per field group it writes.
+1. **Authorization runs in `Shapes`.** Every access check runs before it delegates. `AdminOps` has
+   no `onlyAdmin`, because the caller applied it. `attestArtist` is ungated on both sides: its gate
+   is the EIP-712 signature check inside `AdminOps.attestArtist` against the immutable `artist`
+   address `Shapes` passes in, so anyone may relay the artist's signature and no one can forge one.
+2. **ERC-721 writes stay in the token.** Minting, burning and every ownership check execute in the
+   token's own runtime.
+3. **ETH movement stays in the token.** `Shapes` holds every payable entrypoint and is the only
+   caller of `_sendEth`.
+4. **Each library receives the storage it writes.** `RecompositionOps` receives `_store`, which
+   holds token and recomposition state. `AdminOps` receives one narrow struct per field group it
+   writes.
 5. **The link is fixed at deploy.** `forge` writes each library's address into `Shapes`'s bytecode.
    There is no setter, so a call cannot be redirected after deployment.
 6. **The ABI does not mention libraries.** Every action and view is an external function on the
@@ -148,12 +151,12 @@ totalSupply      live token count
 totalMinted      the id counter
 ```
 
-Held by `Shapes` alone, outside any library's reach: `redeemableBacking`, `burnedBacking`,
-`blackShapeCount`, `pendingFees`, the owner token id and the admin address. `AdminOps` receives
-narrow pointers to the four groups it writes and nothing else: the fee config, the presentation
-config (`renderer`, `collection`, the lock), the artist attestation and the pointer group.
+Declared and written by `Shapes`: `redeemableBacking`, `burnedBacking`, `blackShapeCount`,
+`pendingFees`, the owner token id and the admin address. `AdminOps` receives narrow pointers to the
+four groups it writes: the fee config, the presentation config (`renderer`, `collection`, the
+lock), the artist attestation and the pointer group.
 
-The owner token id is written only by `Shapes`. No library can move collection ownership.
+The owner token id is written by `Shapes`, which moves collection ownership.
 
 ## 6. Recomposition: where each step runs
 

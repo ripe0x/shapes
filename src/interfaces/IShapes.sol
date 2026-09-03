@@ -9,20 +9,20 @@ import {IERC721Value} from "./IERC721Value.sol";
 /// @title IShapes
 /// @notice ETH wrapped into unique ERC-721 objects at nine fixed denominations.
 /// @dev A Shape holds an exact amount of ETH. Redeeming or burning it destroys the token and
-///      returns exactly that amount to its owner. The other reserve outflow is `burnBacking`, which
-///      sends an apex Complete Shape's backing to an unspendable address and is callable only by
+///      returns exactly that amount to its owner. The other reserve outflow is `burnBacking`,
+///      which sends an apex Complete Shape's backing to an unspendable address and is callable by
 ///      that Shape's owner. No pause, upgrade path, recovery function or admin path reaches the
 ///      reserve.
 ///
 ///      One live Shape is the owner token, exposed by `ownerToken()`. It starts as #0 and moves
 ///      through `compose`, `decompose` and `split`. `owner()` follows its holder and returns zero
 ///      once it is redeemed or burned. Holding it grants no permissions. The separate `admin()`
-///      role administers presentation and pointers, redirects future mint fees and adjusts the mint
-///      fee within a compile-time cap. It reaches nothing else, and it may be transferred or
-///      renounced without moving any Shape.
+///      role administers presentation and pointers, redirects future mint fees and adjusts the
+///      mint fee within a compile-time cap. It reaches no backing, redemption or token ownership,
+///      and it may be transferred or renounced without moving any Shape.
 ///
-///      Every protocol fact and every simulation is reachable from this address alone. There is no
-///      periphery read contract and no function reachable only through a library.
+///      Every protocol fact and every simulation is reachable from this address. There is no
+///      periphery read contract and no function reachable through a library alone.
 interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The two fixed pointers administered by `setPointer` and `lockPointer`.
     enum Pointer {
@@ -167,8 +167,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error UnsupportedRenderer(address renderer);
     /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
     error UnsupportedCollection(address collection);
-    /// @dev A Black Shape cannot be redeemed, composed, decomposed or have its backing burned again.
-    ///      It remains transferable and may be destroyed through the draft ERC-8060 `burn` path.
+    /// @dev A Black Shape cannot be redeemed, composed, decomposed or have its backing burned
+    ///      again. It remains transferable and may be destroyed through the draft ERC-8060 `burn`
+    ///      path.
     error TokenIsBlack(uint256 tokenId);
     /// @dev `compose` was called with an empty `burnIds`: there is nothing to burn into the
     ///      survivor.
@@ -252,7 +253,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Reverts `NoOwnerToken` once the owner token has been redeemed or burned.
     function ownerToken() external view returns (uint256);
 
-    /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until locked.
+    /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until
+    ///         presentation is locked.
     function renderer() external view returns (address);
 
     /// @notice Whether presentation has been permanently locked. True freezes the renderer, the
@@ -260,8 +262,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function presentationLocked() external view returns (bool);
 
     /// @notice The collection metadata contract. It stores the metadata copy `tokenURI` and
-    ///         `contractURI` read. Replaceable by the admin via `setCollection` until
-    ///         `lockPresentation` freezes it; zero until deployment sets it.
+    ///         `contractURI` read. Replaceable by the admin via `setCollection` until presentation
+    ///         is locked. Zero from construction until deployment calls `setCollection`.
     function collection() external view returns (address);
 
     /// @notice The optional canonical positions contract and whether its pointer is permanently locked.
@@ -274,26 +276,26 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /* ----------------------------- renderer ---------------------------- */
 
-    /// @notice Replace the onchain renderer. Admin only, and only while unlocked. The renderer
-    ///         is read only by `tokenURI`; changing it affects how a Shape looks, never its
-    ///         backing, redeemability or owner. `newRenderer` must carry code.
+    /// @notice Replace the onchain renderer. Admin only, until presentation is locked. `tokenURI`
+    ///         reads the renderer, so a change affects how a Shape looks and leaves its backing,
+    ///         redeemability and owner untouched. `newRenderer` must carry code and support
+    ///         `IShapeRenderer`.
     function setRenderer(address newRenderer) external;
 
-    /// @notice Replace the collection metadata contract. Admin only, and only while unlocked.
-    ///         Read by `tokenURI` and `contractURI`; it can never touch ETH, backing or ownership.
-    ///         `newCollection` must carry code and support `IShapeCollection`.
+    /// @notice Replace the collection metadata contract. Admin only, until presentation is
+    ///         locked. `tokenURI` and `contractURI` read it, and it reaches no ETH, backing or
+    ///         ownership. `newCollection` must carry code and support `IShapeCollection`.
     /// @dev Replacing it replaces the stored metadata copy along with it, since the copy lives on
     ///      the collection, so this emits ERC-4906 `BatchMetadataUpdate` over every minted id and
     ///      `ContractURIUpdated` as well as `CollectionUpdated`.
     function setCollection(address newCollection) external;
 
-    /// @notice Permanently lock presentation. Admin only, one way. After this the renderer, the
-    ///         collection and the collection's metadata copy are all fixed: `setRenderer`,
-    ///         `setCollection` and `IShapeCollection.setMetadataCopy` revert `PresentationIsLocked`.
+    /// @notice Permanently lock presentation. Admin only, one way. After this the renderer
+    ///         pointer, the collection pointer and the collection's metadata copy are permanent.
     function lockPresentation() external;
 
     /// @notice Signal that every token's metadata and the contract-level metadata should be
-    ///         re-read. Admin only, state-changing in no other way.
+    ///         re-read. Admin only. Emits events and writes no state.
     /// @dev Emits ERC-4906 `BatchMetadataUpdate` over every minted id and `ContractURIUpdated`.
     ///      Editing the copy is two transactions: `IShapeCollection.setMetadataCopy` on the
     ///      collection, then this.
@@ -317,8 +319,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function mint(uint256 amountWei) external payable returns (uint256 tokenId);
 
     /// @notice Mint one Shape backed by `amountWei`, to `to`.
-    /// @dev The recipient does not feed the seed, so naming one cannot be used to search for a
-    ///      particular artwork. `to` must be able to receive an ERC721.
+    /// @dev The recipient does not feed the seed, so naming one cannot search for a particular
+    ///      artwork. `to` must be able to receive an ERC-721.
     function mintTo(uint256 amountWei, address to) external payable returns (uint256 tokenId);
 
     /// @notice Mint `quantity` Shapes, each backed by `amountWei`, to the caller.
@@ -342,8 +344,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /* --------------------------- redemption --------------------------- */
 
     /// @notice Burn a Shape and receive exactly its backing.
-    /// @dev Callable only by the current owner. All or nothing; there is no partial redemption.
-    ///      Redeeming the owner token ends collection ownership permanently.
+    /// @dev Callable by the current owner. Redeems the token's full backing. Redeeming the owner
+    ///      token ends collection ownership permanently.
     function redeem(uint256 tokenId) external;
 
     /// @notice Burn several Shapes owned by the caller and receive the exact total backing.
@@ -455,8 +457,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
 
-    /// @notice A live Shape's stored module array (`ModuleCodec`), empty when its geometry derives
-    ///         from `seed` under grammar v1.
+    /// @notice A live Shape's materialized module array (`ModuleCodec`), empty when its geometry
+    ///         derives from `seed` under grammar v1.
     function modulesOf(uint256 tokenId) external view returns (bytes memory);
 
     /// @notice Collection-level metadata URI, read from the renderer.
@@ -483,7 +485,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice One reversible compose record on `survivorId`'s stack, at `depth` (0 the oldest,
     ///         `composeDepth(survivorId) - 1` the newest, next in line for `decompose`). Carries
-    ///         the survivor's pre-compose state and every burned input's snapshot: exactly what
+    ///         the survivor's pre-compose state and every burned input's snapshot: what
     ///         `decompose` reads to reverse that compose, each donor's materialized module bytes
     ///         included, so the survivor's post-compose geometry can be reproduced off chain.
     /// @dev `ownerTokenFrom` on the returned record names the input that held collection
@@ -497,14 +499,13 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The split that minted `childId`: the parent's id, pre-split seed, denomination
     ///         index, ink gene and effective module snapshot, the root split ancestor's
     ///         denomination index, plus `childId`'s index among that split's outputs.
-    /// @dev `parentModules` is kept for provenance. Reproducing the child's sampled module bytes
-    ///      needs the branch decision `parentId` enables, not `parentModules`:
-    ///      `composeDepth(parentId)` selects between the compose-record pool and the grammar pool.
-    ///      See SAMPLING_SPEC.md. The record is written once per split and shared by every child of
-    ///      that split; only `childIndex` distinguishes them. It is never deleted, so it keeps
-    ///      answering how the token was created even after the child is composed or split again.
-    ///      Reverts `NotASplitChild` for a token that was never minted by `split`/`splitTo`, which
-    ///      covers an original mint and an input re-minted by `decompose`.
+    /// @dev `parentModules` is kept for provenance. Reproducing the child's materialized module
+    ///      bytes needs `parentId`: `composeDepth(parentId)` selects between the compose-record
+    ///      pool and the grammar pool. See SAMPLING_SPEC.md. The record is written once per split
+    ///      and shared by every child of that split, distinguished by `childIndex`. It is kept
+    ///      after the child is composed or split again. Reverts `NotASplitChild` for a token that
+    ///      was never minted by `split`/`splitTo`, which covers an original mint and an input
+    ///      re-minted by `decompose`.
     function splitOriginOf(uint256 childId)
         external
         view
@@ -523,8 +524,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function shapeState(uint256 tokenId) external view returns (ShapeState memory);
 
     /// @notice Whether `tokenId` is a live Shape right now.
-    /// @dev Never reverts. False for never-issued and burned ids, including ids consumed by compose
-    ///      or replaced by split; true for live Black Shapes.
+    /// @dev Never reverts. False for a never-issued or burned id, including one consumed by
+    ///      compose or replaced by split. True for a live Black Shape.
     function exists(uint256 tokenId) external view returns (bool);
 
     /// @notice The state `compose(survivorId, burnIds)` would leave on the survivor if `account`

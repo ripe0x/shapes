@@ -6,12 +6,13 @@ pragma solidity 0.8.28;
 ///         built from, the contract-level metadata a marketplace reads, and seeded previews of
 ///         cards that no token needs to exist for.
 /// @dev The copy is stored here and edited by the admin of the `Shapes` this contract is bound
-///      to, until that token's `lockPresentation` freezes it. `Shapes.tokenURI` and
-///      `Shapes.contractURI` read it back from this address.
+///      to, until that token's presentation is locked. `Shapes.tokenURI` and `Shapes.contractURI`
+///      read it back from this address.
 ///
 ///      Every rendered output is a function of a seed and the denomination ladder, drawn through
-///      the renderer this contract was constructed with. Functions that take a seed are
-///      reproducible forever; the ones that do not use `seed()`, which advances once per block.
+///      the renderer this contract was constructed with. A function that takes a seed returns
+///      deterministic output for that seed. The ones that take none use `seed()`, which advances
+///      once per block.
 interface IShapeCollection {
     /// @notice Emitted when the admin rewrites the metadata copy.
     event MetadataCopySet(string tokenNamePrefix, string description);
@@ -31,8 +32,9 @@ interface IShapeCollection {
     ///         its `presentationLocked()` freezes it. Immutable, set at construction.
     function shapes() external view returns (address);
 
-    /// @notice The current block's seed. Advances once per block, so any two calls in the same
-    ///         block agree. Pass it to `imageFor` or `cardFor` to pin an output permanently.
+    /// @notice The current block's seed, `block.prevrandao` hashed with the block number. Any two
+    ///         calls in the same block agree. Pass it to `imageFor` or `cardFor` to reproduce an
+    ///         output later.
     function seed() external view returns (bytes32);
 
     /* -------------------------------- copy -------------------------------- */
@@ -42,7 +44,7 @@ interface IShapeCollection {
     function tokenNamePrefix() external view returns (string memory);
 
     /// @notice The description emitted by both token metadata and `Shapes.contractURI`, so the
-    ///         collection cannot describe itself differently from its tokens.
+    ///         collection and its tokens carry one description.
     function description() external view returns (string memory);
 
     /// @notice Set the token name prefix and the shared description together.
@@ -79,7 +81,7 @@ interface IShapeCollection {
     /// @notice A card at `denomIndex`, seeded by the current block.
     function card(uint8 denomIndex) external view returns (string memory);
 
-    /// @notice The card `seed` and `denomIndex` produce, with the ink gene derived exactly as a
-    ///         mint would derive it. No token is involved.
+    /// @notice The card `seed` and `denomIndex` produce, with the ink gene derived the way a mint
+    ///         derives it. No token is involved.
     function cardFor(bytes32 cardSeed, uint8 denomIndex) external view returns (string memory);
 }

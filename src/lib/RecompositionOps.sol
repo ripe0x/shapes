@@ -27,29 +27,26 @@ import {ShapeMath} from "./ShapeMath.sol";
 /// @notice The compose, decompose and split state machine, the previews of compose and split, and
 ///         the decoded reads over the state they write.
 /// @dev Public library called through `DELEGATECALL` from `Shapes`, so it reads and writes
-///      `Shapes`'s storage and emits `Shapes`'s events from `Shapes`'s address. Each function is
-///      named after the `Shapes` entrypoint whose body it holds.
+///      `Shapes`'s storage and emits `Shapes`'s events from `Shapes`'s address. Part of the
+///      trusted implementation: its address is linked into `Shapes`'s bytecode at deploy time with
+///      no setter, so a call into it cannot be redirected afterwards. Each function is named after
+///      the `Shapes` entrypoint whose body it holds.
 ///
-///      Boundaries, all relied on by the reserve invariant and by `Shapes`'s access control:
+///      Structure the reserve invariant and `Shapes`'s access control rely on:
 ///
-///      - No authority. `Shapes` applies the ownership gate before delegating here.
-///      - No ERC-721 writes. Minting and burning execute in `Shapes`'s own runtime, so nothing
-///        here can move a token.
-///      - No ETH. Recomposition never changes total backing, so `redeemableBacking` is not in
-///        `ShapeStore` and cannot be reached from here.
-///      - No collection ownership. The owner token id is not in `ShapeStore`; `Shapes` moves it.
-///      - One storage pointer. `ShapeStore` is the whole of what this library can write.
-///
-///      `Shapes`'s address is linked into its bytecode at deploy time with no setter, so a call
-///      into this library cannot be redirected afterwards.
+///      - This library receives `_store`, which holds token and recomposition state.
+///      - `Shapes` applies the ownership gate before delegating here.
+///      - Minting and burning execute in `Shapes`'s own runtime.
+///      - Recomposition keeps total backing unchanged, so `redeemableBacking` stays on `Shapes`.
+///      - The owner token id stays on `Shapes`, which moves it.
 library RecompositionOps {
     /* ------------------------------ validation ------------------------------ */
 
     /// @notice Reverts unless `account` holds `tokenId` and the token is not Black.
-    /// @dev The gate every recomposition applies to a token it is about to consume. `tokenOwner`
-    ///      is the token's ERC-721 owner, read by the caller: `Shapes` reads it directly, a
-    ///      preview reads it back through `ownerOf`. Shared so an execution path and its preview
-    ///      cannot apply different rules.
+    /// @dev The gate every recomposition applies to a token it consumes. `tokenOwner` is the
+    ///      token's ERC-721 owner, read by the caller: `Shapes` reads it directly, a preview reads
+    ///      it back through `ownerOf`. The mutators reach this through
+    ///      `Shapes._requireCallerOwnsLive`; `previewCompose` and `previewSplit` call it here.
     function requireLiveOwner(ShapeStore storage st, uint256 tokenId, address tokenOwner, address account)
         internal
         view
@@ -74,10 +71,10 @@ library RecompositionOps {
 
     /// @notice Reverts `DuplicateComposeInput` if any token id appears twice in `ids`.
     /// @dev Sorts a memory copy with a bottom-up merge sort and rejects adjacent equals, so the
-    ///      cost is O(n log n) and the answer does not depend on where the repeat sits. `compose`
-    ///      would already fail on the repeat, because `_burn` reverts on the second occurrence of
-    ///      an id it has already burned. This runs first for the named error, and so that
-    ///      `previewCompose`, which burns nothing, rejects the same input with the same error.
+    ///      cost is O(n log n) and the answer does not depend on where the repeat sits. It runs
+    ///      before the burns so `compose` reports `DuplicateComposeInput` instead of `_burn`'s
+    ///      nonexistent-token revert, and so `previewCompose`, which burns nothing, rejects the
+    ///      same input with the same error.
     function requireDistinctComposeInputs(uint256[] calldata ids) public pure {
         uint256 n = ids.length;
         if (n < 2) return;
@@ -146,7 +143,7 @@ library RecompositionOps {
         rec.ownerTokenFrom = ownerTokenFrom;
 
         // Donor snapshots for module sampling, collected in calldata order. Sorted by id below so
-        // compose output does not depend on the caller's burnIds order. See SAMPLING_SPEC.md.
+        // compose output does not depend on the caller's `burnIds` order. See SAMPLING_SPEC.md.
         GeometrySampling.Donor[] memory burnDonors = new GeometrySampling.Donor[](n);
 
         for (uint256 i = 0; i < n; ++i) {
@@ -289,12 +286,12 @@ library RecompositionOps {
         ShapeData storage p = st.shapes[tokenId];
 
         // The parent's pre-burn state, grouped into one memory struct to reduce stack pressure.
-        // `parentModules` is the parent's effective geometry, kept for provenance only: neither
+        // `parentModules` is the parent's effective geometry, kept for provenance. Neither
         // sampling branch reads it.
         //
-        // Keep the root split ancestor's denomination across later splits. The parent already
-        // carries one when it was itself a split child; otherwise the parent is the root and its
-        // own denomination is the origin.
+        // The root split ancestor's denomination carries across later splits. A parent that was
+        // itself a split child already holds one. Otherwise the parent is the root and its own
+        // denomination is the origin.
         SplitOriginRef storage parentRef = st.splitOriginRef[tokenId];
         uint8 originDenomIndex =
             parentRef.exists ? st.splitRecords[parentRef.recordIndex].originDenomIndex : p.denomIndex;
@@ -369,9 +366,9 @@ library RecompositionOps {
     }
 
     /// @dev Builds a split's sampling pool from the parent's top compose record: the pre-compose
-    ///      survivor's effective modules first, then the record's inputs' effective modules. Sort
-    ///      donors by id so split output does not depend on the earlier compose's burnIds order,
-    ///      which is the order `rec.inputs` is stored in. See SAMPLING_SPEC.md.
+    ///      survivor's effective modules first, then the record's inputs' effective modules. Donors
+    ///      are sorted by id so split output does not depend on the earlier compose's `burnIds`
+    ///      order, which is the order `rec.inputs` is stored in. See SAMPLING_SPEC.md.
     function _splitRecordPool(ComposeRecord storage rec, bytes32 parentSeed)
         private
         view
@@ -406,7 +403,8 @@ library RecompositionOps {
 
     /// @notice Body of `Shapes.composeRecordAt`: one reversible compose record, decoded.
     /// @dev `ownerTokenFrom` is returned as a token id, or `type(uint256).max` when that compose
-    ///      moved no collection ownership. The id-plus-one form the record stores is never returned.
+    ///      moved no collection ownership. The id-plus-one form the record stores is never
+    ///      returned.
     function composeRecordAt(ShapeStore storage st, uint256 survivorId, uint256 depth)
         public
         view
@@ -571,8 +569,8 @@ library RecompositionOps {
     }
 
     /// @dev The token's ERC-721 owner, read back from `Shapes`. This library runs under
-    ///      `DELEGATECALL`, so `address(this)` is the token. Reverts `ERC721NonexistentToken` for an
-    ///      id that does not exist, which is what the mutators' own `ownerOf` call does.
+    ///      `DELEGATECALL`, so `address(this)` is the token. Reverts `ERC721NonexistentToken` for
+    ///      an id that does not exist, matching the mutators' own `ownerOf` call.
     function _tokenOwner(uint256 tokenId) private view returns (address) {
         return IERC721(address(this)).ownerOf(tokenId);
     }

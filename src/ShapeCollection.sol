@@ -18,17 +18,16 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///         metadata built from it, plus seeded card previews.
 ///
 /// @dev Stores the token name prefix and the shared description. `Shapes.tokenURI` and
-///      `Shapes.contractURI` read both back from here. The only write path is `setMetadataCopy`,
-///      restricted to the admin of the bound `Shapes` and frozen by that token's
-///      `lockPresentation`. Neither role is held here: both are read live from `shapes`.
+///      `Shapes.contractURI` read both back from here. `setMetadataCopy` writes them, restricted
+///      to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Both the
+///      admin address and the lock are read live from `shapes`.
 ///
-///      Rendering reads the chain only for `seed()`, which is `block.prevrandao` folded with the
-///      block number, so an output that takes no seed advances once per block and every caller in
-///      the same block sees the same one. Passing a seed explicitly pins an output forever.
+///      `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes
+///      no seed advances once per block and every caller in that block gets the same value.
+///      Passing a seed returns deterministic output for that seed.
 ///
-///      The cards rendered here are compositions the ladder allows, drawn through the same
-///      renderer and the same ink-gene derivation a mint uses, and are indistinguishable from a
-///      real token's artwork. No token is read or written.
+///      Preview cards use the same denomination ladder, ink-gene derivation and renderer as
+///      minted Shapes. No token is read or written.
 contract ShapeCollection is IShapeCollection, IERC165 {
     /// @inheritdoc IShapeCollection
     address public immutable renderer;
@@ -50,8 +49,8 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /// @dev Longest a description may be, in bytes.
     uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
 
-    /// @dev Copy seeded at construction. Mirrors the canonical spec in
-    ///      `preview/src/canonical/render.ts`; the parity suite asserts byte identity against it.
+    /// @dev Copy written at construction. The parity suite asserts byte identity against
+    ///      `preview/src/canonical/render.ts`.
     string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
     string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
         "Burning it returns exactly that amount to its owner. Higher denominations resolve "
@@ -63,6 +62,11 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     error RendererHasNoCode(address renderer);
     error ShapesHasNoCode(address shapes);
 
+    /// @param renderer_ Renderer every card and the collection image are drawn through. Fixed at
+    ///        construction. `Shapes` holds its own renderer pointer, which the admin can replace
+    ///        until presentation is locked.
+    /// @param shapes_ The `Shapes` token this collection describes. Its `admin()` may edit the
+    ///        metadata copy and its `presentationLocked()` freezes it. Fixed at construction.
     constructor(IShapeRenderer renderer_, IShapes shapes_) {
         if (address(renderer_).code.length == 0) revert RendererHasNoCode(address(renderer_));
         if (address(shapes_).code.length == 0) revert ShapesHasNoCode(address(shapes_));
