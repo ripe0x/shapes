@@ -103,6 +103,25 @@ export function AuctionView({
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [ethAmount, setEthAmount] = React.useState("");
   const [asking, setAsking] = React.useState(false);
+  // The confirm modal stays open while the bid is in flight so its stage line and the wallet
+  // prompt are seen together. It closes when the op settles; the picks are cleared only on
+  // success so a failed bid can be retried as it was.
+  const bidding = React.useRef(false);
+  React.useEffect(() => {
+    if (busy === "bid") {
+      bidding.current = true;
+      return;
+    }
+    if (busy === null && bidding.current) {
+      bidding.current = false;
+      setAsking(false);
+      if (!(txErr && txErr.op === "bid")) {
+        setPicked(new Set());
+        setEthAmount("");
+      }
+    }
+  }, [busy, txErr]);
+
   // Which input is live: the ETH field mints its own cards, the card picker spends cards the
   // wallet already holds. Mutually exclusive — a bid is whichever mode is active, plus whatever
   // is already escrowed from earlier bids.
@@ -205,25 +224,6 @@ export function AuctionView({
       return next;
     });
   };
-
-  // The confirm modal stays open while the bid is in flight so its stage line and the wallet
-  // prompt are seen together. It closes when the op settles; the picks are cleared only on
-  // success so a failed bid can be retried as it was.
-  const bidding = React.useRef(false);
-  React.useEffect(() => {
-    if (busy === "bid") {
-      bidding.current = true;
-      return;
-    }
-    if (busy === null && bidding.current) {
-      bidding.current = false;
-      setAsking(false);
-      if (!(txErr && txErr.op === "bid")) {
-        setPicked(new Set());
-        setEthAmount("");
-      }
-    }
-  }, [busy, txErr]);
 
   const submit = () => {
     const cardIds = mode === "cards" ? pickedTokens.map((t) => t.id) : [];
