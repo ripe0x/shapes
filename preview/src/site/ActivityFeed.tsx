@@ -57,6 +57,13 @@ export function activityLabel(kind: string): string {
   return LABELS[kind] ?? kind;
 }
 
+/** How an address reads in the feed.
+ *  TODO: swap for `AddressName` (preview/src/site/AddressName.tsx) once the ENS/GNS/WNS resolver
+ *  lands, so a named actor shows its name instead of the shortened address. */
+function addressLabel(address: `0x${string}`): string {
+  return short(address);
+}
+
 /** Trailing "0.10" becomes "0.1", "1.0" becomes "1". */
 function eth(wei: bigint): string {
   return `${formatEther(wei)} ETH`;
@@ -84,7 +91,7 @@ export function activityDetail(event: ActivityEvent): string {
     case "burnBacking":
       return event.amountWei === null ? "" : `${eth(event.amountWei)} burned`;
     case "transfer":
-      return event.counterparty === null ? "" : `to ${short(event.counterparty)}`;
+      return event.counterparty === null ? "" : `to ${addressLabel(event.counterparty)}`;
     case "bid":
     case "auctionSettled":
       return event.units === null
@@ -338,7 +345,7 @@ function ActivityRow({
       </div>
 
       <div className="activity-row-foot">
-        <span>{short(event.actor)}</span>
+        <span>{addressLabel(event.actor)}</span>
         <span>{relativeTime(event.timestamp, nowSeconds)}</span>
         <a href={txUrl(event.txHash, chainId)} target="_blank" rel="noreferrer">
           {event.txHash.slice(0, 10)}… on evm.now
