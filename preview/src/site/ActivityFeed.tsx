@@ -488,25 +488,25 @@ export function ActivityFeed({
           <p className="launch-kicker">Onchain</p>
           <h2 id="activity-title">Proof of work</h2>
         </div>
+        <div className="activity-stats">
+          <div className="activity-stat">
+            <p className="launch-kicker">Minted</p>
+            <p className="activity-stat-value">{formatStatCount(stats?.minted ?? null)}</p>
+          </div>
+          <div className="activity-stat">
+            <p className="launch-kicker">Live</p>
+            <p className="activity-stat-value">{formatStatCount(totalSupply)}</p>
+          </div>
+          <div className="activity-stat">
+            <p className="launch-kicker">ETH held</p>
+            <p className="activity-stat-value">{redeemableBacking === null ? "" : eth(redeemableBacking)}</p>
+          </div>
+          <div className="activity-stat">
+            <p className="launch-kicker">Composed</p>
+            <p className="activity-stat-value">{formatStatCount(stats?.composed ?? null)}</p>
+          </div>
       </div>
 
-      <div className="activity-stats">
-        <div className="activity-stat">
-          <p className="launch-kicker">Minted</p>
-          <p className="activity-stat-value">{formatStatCount(stats?.minted ?? null)}</p>
-        </div>
-        <div className="activity-stat">
-          <p className="launch-kicker">Live</p>
-          <p className="activity-stat-value">{formatStatCount(totalSupply)}</p>
-        </div>
-        <div className="activity-stat">
-          <p className="launch-kicker">ETH held</p>
-          <p className="activity-stat-value">{redeemableBacking === null ? "" : eth(redeemableBacking)}</p>
-        </div>
-        <div className="activity-stat">
-          <p className="launch-kicker">Composed</p>
-          <p className="activity-stat-value">{formatStatCount(stats?.composed ?? null)}</p>
-        </div>
       </div>
 
       {status === "loading" && rows.length === 0 && <p className="activity-note">Reading the index…</p>}
