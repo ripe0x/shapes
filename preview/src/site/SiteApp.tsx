@@ -19,7 +19,7 @@ import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AuctionView} from "./AuctionView";
 import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
-import {useEnsDisplay} from "./ens";
+import {useDisplayName} from "./useDisplayName";
 import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
 
@@ -119,7 +119,7 @@ export function SiteApp({
   };
   const [accountMenuOpen, setAccountMenuOpen] = React.useState(false);
   const accountMenuRef = React.useRef<HTMLDivElement>(null);
-  const accountLabel = useEnsDisplay(publicClient, address);
+  const accountLabel = useDisplayName(address);
 
   React.useEffect(() => {
     if (!accountMenuOpen) return;

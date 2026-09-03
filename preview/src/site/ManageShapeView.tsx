@@ -9,7 +9,9 @@ import {
   type SampleDonor,
 } from "../canonical/sampling";
 import {C, SANS, label} from "./theme";
-import {Art, Modal, OwnerTokenBanner, PreviewBoundary, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
+import {Art, Modal, OwnerTokenBanner, PreviewBoundary, Section, TxStage, txStageLabel, type PendingTx} from "./ui";
+import {AddressName} from "./AddressName";
+import {useDisplayName} from "./useDisplayName";
 import type {SiteData, SiteToken} from "./data";
 import {buildComposeResultPreview, effectiveRecordModules} from "./composePreview";
 import {shapeTitle} from "./shapeTitle";
@@ -74,6 +76,7 @@ export function ManageShapeView({
   onBurnBacking: (token: SiteToken) => void;
 }) {
   const token = data?.tokens.find((candidate) => candidate.id === tokenId) ?? null;
+  const ownerName = useDisplayName(token?.owner);
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
   const ownerTokenId = data?.ownerToken ?? null;
   const [action, setAction] = React.useState<ManageAction | null>(null);
@@ -264,7 +267,7 @@ export function ManageShapeView({
   const ownerBlock = !address
     ? "Connect the owning wallet to use this action."
     : !owned
-      ? `Only ${short(token.owner)} can manage this Shape.`
+      ? `Only ${ownerName} can manage this Shape.`
       : null;
 
   const splitNotices = ownerTokenNotices({action: "split", actingTokenId: token.id, ownerTokenId});
@@ -461,7 +464,7 @@ export function ManageShapeView({
         <Modal title="REDEEM IS PERMANENT" onCancel={() => setConfirming(null)}>
           <p style={{margin: "0 0 12px", fontFamily: SANS, color: C.ink, fontSize: 15, lineHeight: 1.6}}>
             Shape #{token.id.toString()} will be burned. Exactly {DENOMINATIONS[token.di].label} ETH
-            will be sent to {short(token.owner)}.
+            will be sent to <AddressName address={token.owner} />.
           </p>
           <p style={{margin: "0 0 24px", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
             The token, its artwork, and its remaining compose history will no longer be live.
@@ -531,7 +534,7 @@ function ManageIdentity({
           {token.di >= 0 ? `${DENOMINATIONS[token.di].label} ETH` : "Black Shape"}
         </div>
         <div style={{marginTop: 8, color: C.muted, fontSize: 11}}>
-          {owned ? "Owned by you" : `Owned by ${short(token.owner)}`}
+          {owned ? "Owned by you" : <>Owned by <AddressName address={token.owner} /></>}
         </div>
       </div>
     </div>
