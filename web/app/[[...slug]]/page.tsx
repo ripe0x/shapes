@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BaseError, ContractFunctionRevertedError } from "viem";
 import type { View } from "@shared/site/SiteApp";
-import { mintStartOf, shapesAbi } from "@shared/chain/abi";
+import { shapesAbi } from "@shared/chain/abi";
 import { createShapesPublicClient } from "@shared/chain/rpc";
 import { SiteRoot } from "../SiteRoot";
 import { LaunchLanding } from "../LaunchLanding";
@@ -179,11 +179,8 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   }
 
   if (slug.length === 0) {
-    return appOnly() ? (
-      <SiteRoot initialView="home" initialTokenId={null} />
-    ) : (
-      <LaunchLanding mintStartSeconds={mintStartOf(serverDeployment())} />
-    );
+    // Outside landing-only mode the root is the app home: the landing with the live mint panel.
+    return <SiteRoot initialView="home" initialTokenId={null} />;
   }
 
   if (slug.length === 1 && slug[0] === "play") {
