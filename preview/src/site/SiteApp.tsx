@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useSwitchChain, useWriteCont
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {txUrl, type PendingTx} from "./ui";
+import {txUrl, SyncStatus, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
@@ -156,14 +156,35 @@ export function SiteApp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, tokenId]);
 
-  const refresh = React.useCallback(async () => {
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [refreshFailed, setRefreshFailed] = React.useState(false);
+  // Latest `data`/dirty-ids for `refresh`'s async body, kept outside React state so `refresh`
+  // itself never needs `data` as a dependency (which would recreate it, and the mount effect
+  // below, on every successful load).
+  const dataRef = React.useRef<SiteData | null>(null);
+  dataRef.current = data;
+  const lastDirtyIds = React.useRef<readonly bigint[]>([]);
+
+  const refresh = React.useCallback(async (dirtyIds?: readonly bigint[]) => {
     if (!publicClient) return;
-    // A failed load (dead RPC, contract not yet deployed on a dev chain) keeps the current
-    // data and the loading state instead of surfacing an unhandled rejection.
+    if (dirtyIds) lastDirtyIds.current = dirtyIds;
+    setRefreshing(true);
     try {
-      setData(await loadSite(publicClient, dep));
+      // Incremental against the previous snapshot on the chain fallback: only ids new since the
+      // last scan, or a live id whose owner changed, or one the caller just acted on
+      // (`lastDirtyIds`) get reread. See loadSiteFromChain in data.ts.
+      const site = await loadSite(publicClient, dep, {
+        previous: dataRef.current,
+        dirtyIds: lastDirtyIds.current,
+      });
+      setData(site);
+      setRefreshFailed(false);
+      lastDirtyIds.current = [];
     } catch {
-      /* leave data as-is; the user can reload once the chain answers */
+      // Leave data as-is; the header surfaces the failure with a retry action.
+      setRefreshFailed(true);
+    } finally {
+      setRefreshing(false);
     }
   }, [publicClient, dep]);
 
@@ -218,7 +239,7 @@ export function SiteApp({
       const hash = await writeContractAsync(req as unknown as Parameters<typeof writeContractAsync>[0]);
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "ShapeMinted", logs: receipt.logs});
-      await refresh();
+      await refresh(logs.map((l) => l.args.tokenId));
       setMint({
         status: "done",
         minted: {
@@ -241,7 +262,7 @@ export function SiteApp({
     try {
       const hash = await write("redeem", "redeem", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
-      await refresh();
+      await refresh([t.id]);
       setRedeem({status: "done", tx: hash, snap: {id: t.id, seed: t.seed, di: t.di, inkGene: t.inkGene}});
       setActionNotice({
         title: `Shape #${t.id.toString()} redeemed`,
@@ -273,7 +294,7 @@ export function SiteApp({
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Split", logs: receipt.logs});
       const newIds = logs[0]?.args.newIds ?? [];
-      await refresh();
+      await refresh([t.id, ...newIds]);
       setView("gallery"); // the input is burned; its children are newest in the gallery
       setActionNotice({
         title: `Shape #${t.id.toString()} split`,
@@ -302,7 +323,9 @@ export function SiteApp({
       const receipt = await publicClient.waitForTransactionReceipt({hash});
       const logs = parseEventLogs({abi: shapesAbi, eventName: "Decomposed", logs: receipt.logs});
       const restoredIds = logs[0]?.args.restoredIds ?? [];
-      await refresh(); // the survivor keeps its id; its detail shows the reverted state
+      // dirty: the survivor keeps its id but its state reverted, which a same-owner ownerOf
+      // read alone can't reveal.
+      await refresh([t.id, ...restoredIds]);
       setActionNotice({
         title: `Shape #${t.id.toString()} restored`,
         detail: `${restoredIds.length} absorbed Shape${restoredIds.length === 1 ? "" : "s"} returned with original IDs.`,
@@ -328,7 +351,9 @@ export function SiteApp({
       const sorted = [...burnIds].sort((a, b) => (a < b ? -1 : 1));
       const hash = await write("compose", "compose", [t.id, sorted]);
       await publicClient.waitForTransactionReceipt({hash});
-      await refresh(); // the survivor keeps its id; the open detail shows the new denomination
+      // dirty: the survivor keeps its id but grew, which a same-owner ownerOf read alone can't
+      // reveal.
+      await refresh([t.id, ...sorted]);
       setActionNotice({
         title: `Shape #${t.id.toString()} grew`,
         detail: `${burnIds.length} Shape${burnIds.length === 1 ? " was" : "s were"} absorbed.`,
@@ -356,7 +381,8 @@ export function SiteApp({
     try {
       const hash = await write("burnBacking", "burnBacking", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
-      await refresh();
+      // dirty: backing goes to zero under the same owner, which ownerOf alone can't reveal.
+      await refresh([t.id]);
       setActionNotice({
         title: `Shape #${t.id.toString()} is now Black`,
         detail: "Its ETH backing is permanently unspendable.",
@@ -547,7 +573,8 @@ export function SiteApp({
               </a>
             )}
           </nav>
-          <div className="site-account" ref={accountMenuRef} style={{marginLeft: "auto", position: "relative"}}>
+          <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={() => void refresh()} style={{marginLeft: "auto"}} />
+          <div className="site-account" ref={accountMenuRef} style={{position: "relative"}}>
             <button
               type="button"
               className="site-connect-btn"
