@@ -29,6 +29,10 @@
 #                                                  the wallet and --broadcast are skipped, and the
 #                                                  run stops after the simulation. Nothing is
 #                                                  written.
+#   RESUME_BROADCAST=1                            continue a broadcast that stopped part way: forge
+#                                                  re-sends the unsent transactions from the saved
+#                                                  broadcast file with their recorded nonces, then
+#                                                  the post-broadcast phase runs as usual.
 #   RESUME=1                                      skip `forge script --broadcast` entirely and run
 #                                                  only the post-broadcast phase (verification when
 #                                                  VERIFY=true, on-chain readback, deployments/
@@ -358,7 +362,12 @@ if [ "$RESUME" = "1" ]; then
 else
   FORGE_ARGS=(script script/Deploy.s.sol --tc Deploy --rpc-url "$RPC" "${WALLET_ARGS[@]}")
   [ -n "${DEPLOYER:-}" ] && FORGE_ARGS+=(--sender "$DEPLOYER")
-  FORGE_ARGS+=(--broadcast)
+  # --slow sends one transaction at a time and waits for its receipt. A node accepts a single
+  # pending transaction from an EIP-7702 delegated account and rejects the rest as gapped nonces.
+  FORGE_ARGS+=(--broadcast --slow)
+  # RESUME_BROADCAST=1 re-sends the unsent transactions of the saved broadcast file with their
+  # recorded nonces, so a run that stopped part way continues at the same predicted addresses.
+  [ "${RESUME_BROADCAST:-0}" = "1" ] && FORGE_ARGS+=(--resume)
   forge "${FORGE_ARGS[@]}"
 fi
 
