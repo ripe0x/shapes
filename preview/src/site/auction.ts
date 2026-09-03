@@ -24,6 +24,19 @@ export interface AuctionState {
   /** The connected wallet's own escrowed total and cards, if any. */
   yourUnits: bigint;
   yourCards: bigint[];
+  /** Chain block timestamp (unix seconds) read alongside this auction, paired with the
+   *  wall-clock instant (`Date.now()`) it was read at. Anchors the countdown to the chain's
+   *  clock instead of the browser's: on a dev chain whose clock has been advanced far past real
+   *  time, comparing `endTime` to `Date.now()` directly would show a wildly wrong remainder. */
+  chainNow: number;
+  readAt: number;
+}
+
+/** Estimated current chain time: the block timestamp read alongside `a` plus the wall-clock time
+ *  elapsed since that read. Lets a UI tick a countdown every second without re-fetching the
+ *  chain, while staying anchored to the chain's own clock rather than `Date.now()`. */
+export function chainNowFor(a: AuctionState): number {
+  return a.chainNow + (Date.now() - a.readAt) / 1000;
 }
 
 /**
@@ -73,7 +86,9 @@ export function parseBidEth(input: string): bigint {
 /** Seconds remaining, or null while the auction has not started. */
 export function secondsLeft(a: AuctionState, now: number): number | null {
   if (a.endTime === 0n) return null;
-  return Math.max(0, Number(a.endTime) - now);
+  // `now` (chainNowFor) is fractional, extrapolated between block reads; floored to whole
+  // seconds so the countdown display doesn't render a fractional second.
+  return Math.max(0, Math.floor(Number(a.endTime) - now));
 }
 
 /** Formats seconds as "Hh MMm SSs", dropping units that are always zero at this magnitude
@@ -159,7 +174,7 @@ export async function loadAuction(
   const raw = await publicClient.readContract({...house, functionName: "auctions", args: [auctionId]});
   if (raw.seller === ZERO) return null;
 
-  const [minimumUnits, yourUnits, yourCards] = await Promise.all([
+  const [minimumUnits, yourUnits, yourCards, block] = await Promise.all([
     publicClient.readContract({...house, functionName: "minimumBid", args: [auctionId]}),
     viewer
       ? publicClient.readContract({...house, functionName: "bidUnits", args: [auctionId, viewer]})
@@ -167,7 +182,9 @@ export async function loadAuction(
     viewer
       ? publicClient.readContract({...house, functionName: "escrowedCards", args: [auctionId, viewer]})
       : Promise.resolve([] as readonly bigint[]),
+    publicClient.getBlock({blockTag: "latest"}),
   ]);
+  const readAt = Date.now();
 
   return {
     id: auctionId,
@@ -184,6 +201,8 @@ export async function loadAuction(
     minimumUnits: BigInt(minimumUnits),
     yourUnits: BigInt(yourUnits),
     yourCards: [...yourCards],
+    chainNow: Number(block.timestamp),
+    readAt,
   };
 }
 

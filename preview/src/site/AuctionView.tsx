@@ -8,6 +8,7 @@ import {localArt} from "./art";
 import {useEnsDisplay} from "./ens";
 import {
   breakdown,
+  chainNowFor,
   formatCountdown,
   formatRelativeTime,
   getPhase,
@@ -32,14 +33,17 @@ const PRICE_SIZE = 22;
  *  the image sits with matching space above and below within the viewport. */
 const TOP_MARGIN = 32;
 
-/** Ticks once a second so the countdown moves without the caller re-fetching the chain. */
-function useNow(): number {
-  const [now, setNow] = React.useState(() => Math.floor(Date.now() / 1000));
+/** Ticks once a second so the countdown moves without the caller re-fetching the chain. Anchored
+ *  to the chain's own clock (via `chainNowFor`) rather than `Date.now()`, which can be far from
+ *  the chain's block timestamp on a dev chain whose clock has been advanced. Falls back to
+ *  wall-clock time while no auction has loaded yet; that value goes unused until it has. */
+function useNow(auction: AuctionSlot): number {
+  const [, tick] = React.useState(0);
   React.useEffect(() => {
-    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
+    const t = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
-  return now;
+  return auction && auction !== "loading" ? chainNowFor(auction) : Math.floor(Date.now() / 1000);
 }
 
 /** Max height available for the hero artwork so it renders fully within the viewport: the window
@@ -94,7 +98,7 @@ export function AuctionView({
   onClaim: () => void;
   onOpenToken: (id: bigint) => void;
 }) {
-  const now = useNow();
+  const now = useNow(auction);
   const artMaxHeight = useArtMaxHeight();
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [ethAmount, setEthAmount] = React.useState("");
