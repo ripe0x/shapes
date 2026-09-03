@@ -10,10 +10,9 @@ script = "script"
 solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
-# `Shapes` runtime size is 20,370 bytes on the default profile and 20,353 on the testnet profile:
-# 4,206 and 4,223 bytes of margin under the EIP-170 24,576 limit. The recomposition state machine
-# and every configuration write path live in the linked `RecompositionOps` and `AdminOps`
-# libraries; see project/ARCHITECTURE.md.
+# `Shapes` runtime sits a few KB under the EIP-170 24,576 limit; measure both profiles with
+# `forge build --sizes`. The recomposition state machine and every configuration write path live
+# in the linked `RecompositionOps` and `AdminOps` libraries; see project/ARCHITECTURE.md.
 # `optimizer_runs` 1 measured larger on `Shapes` than 20; runtime size does not move monotonically
 # with `optimizer_runs`. Re-measure both the default and testnet profiles with
 # `forge build --sizes` before changing this value in either direction.
