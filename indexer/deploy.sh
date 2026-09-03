@@ -62,9 +62,14 @@ DEPLOYMENT_RECORD="deployments/${CHAIN_ID}.json"
 }
 
 SHAPES_ADDRESS=$(jq -r '.shapes // empty' "$DEPLOYMENT_RECORD")
+AUCTION_HOUSE_ADDRESS=$(jq -r '.auctionHouse // empty' "$DEPLOYMENT_RECORD")
 FROM_BLOCK=$(jq -r '.fromBlock // empty' "$DEPLOYMENT_RECORD")
 [[ -n "$SHAPES_ADDRESS" ]] || {
   echo "refusing: $DEPLOYMENT_RECORD has no .shapes address" >&2
+  exit 1
+}
+[[ -n "$AUCTION_HOUSE_ADDRESS" ]] || {
+  echo "refusing: $DEPLOYMENT_RECORD has no .auctionHouse address" >&2
   exit 1
 }
 [[ -n "$FROM_BLOCK" ]] || {
@@ -91,6 +96,7 @@ echo "config:          $TOML"
 echo "chain id:        $CHAIN_ID"
 echo "schema:          $SCHEMA"
 echo "shapes address:  $SHAPES_ADDRESS"
+echo "auction house:   $AUCTION_HOUSE_ADDRESS"
 echo "from block:      $FROM_BLOCK"
 
 if command -v fly >/dev/null 2>&1; then
@@ -103,6 +109,7 @@ fi
 # indexer/: the Dockerfile copies this package's package.json, not the workspace root's.
 DEPLOY_CMD=(fly deploy --config "$(basename "$TOML")" -a "$APP"
   -e "SHAPES_ADDRESS=$SHAPES_ADDRESS"
+  -e "AUCTION_HOUSE_ADDRESS=$AUCTION_HOUSE_ADDRESS"
   -e "SHAPES_START_BLOCK=$FROM_BLOCK")
 
 if [[ "${DRY_RUN:-}" == "1" ]]; then

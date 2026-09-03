@@ -28,12 +28,15 @@ cp .env.example .env.local   # then fill in the values below
 | `PONDER_CHAIN_ID` | `31347` (from `preview/public/deployment.json`, currently) | `1` |
 | `SHAPES_LADDER` | `mainnet` locally unless running the testnet profile | `mainnet` |
 | `SHAPES_ADDRESS` | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` (from `preview/public/deployment.json`, currently) | not deployed yet — placeholder in `.env.example` |
+| `AUCTION_HOUSE_ADDRESS` | the dev chain record's `.auctionHouse` | the deployment record's `.auctionHouse` |
 | `SHAPES_START_BLOCK` | `0` is fine for a fresh local anvil chain | the Shapes deployment block |
 
 The dev chain's address/chainId/rpc drift as the local chain is redeployed —
 re-check `preview/public/deployment.json` if indexing comes up empty.
-`ponder.config.ts` throws immediately at startup if `SHAPES_ADDRESS` is
-unset, rather than silently indexing nothing.
+`ponder.config.ts` throws immediately at startup if `SHAPES_ADDRESS` or
+`AUCTION_HOUSE_ADDRESS` is unset, rather than silently indexing nothing. The
+site reads token history and auction bid history from this indexer alone, so an
+indexer missing either address leaves those sections empty.
 
 ## Run
 
