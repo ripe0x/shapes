@@ -8,8 +8,11 @@ import {
   fetchActivityPage,
   fetchActivityStats,
   formatStatCount,
+  mergeLivePage,
   relativeTime,
+  scheduleLivePoll,
   type ActivityEvent,
+  type ActivityPage,
   type ActivityToken,
 } from "./ActivityFeed";
 
@@ -284,4 +287,112 @@ test("stat counts get thousands separators, and a not-yet-loaded value renders e
   assert.equal(formatStatCount(1_000n), "1,000");
   assert.equal(formatStatCount(1_234_567n), "1,234,567");
   assert.equal(formatStatCount(null), "");
+});
+
+function livePage(ids: string[]): ActivityPage {
+  return {
+    events: ids.map((id) => event({id})),
+    tokens: [],
+    endCursor: null,
+    hasNextPage: false,
+  };
+}
+
+test("a live merge prepends only the ids not already loaded, newest first", () => {
+  const existing = [event({id: "b"}), event({id: "a"})];
+  const merged = mergeLivePage(existing, livePage(["d", "c", "b"]));
+
+  assert.deepEqual(merged.addedIds, ["d", "c"]);
+  assert.deepEqual(merged.events.map((e) => e.id), ["d", "c", "b", "a"]);
+});
+
+test("a live merge with nothing new returns the same events, no duplicates", () => {
+  const existing = [event({id: "b"}), event({id: "a"})];
+  const merged = mergeLivePage(existing, livePage(["b", "a"]));
+
+  assert.deepEqual(merged.addedIds, []);
+  assert.equal(merged.events, existing);
+});
+
+test("a live merge leaves already-loaded older pages untouched", () => {
+  const existing = [event({id: "c"}), event({id: "b"}), event({id: "a"})];
+  const merged = mergeLivePage(existing, livePage(["d", "c"]));
+
+  assert.deepEqual(merged.events.map((e) => e.id), ["d", "c", "b", "a"]);
+});
+
+test("the poll schedule uses the normal interval, backs off after repeated failures, and recovers on the next success", async (t) => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  const flush = () => Promise.resolve().then(() => Promise.resolve());
+
+  let outcome = true;
+  let calls = 0;
+  const {stop} = scheduleLivePoll(
+    () => {
+      calls++;
+      return Promise.resolve(outcome);
+    },
+    () => false,
+    {intervalMs: 1_000, backoffMs: 4_000, backoffThreshold: 3},
+  );
+
+  // First attempt fires on the normal interval and succeeds.
+  await t.mock.timers.tick(1_000);
+  await flush();
+  assert.equal(calls, 1);
+
+  // Three consecutive failures cross the backoff threshold.
+  outcome = false;
+  await t.mock.timers.tick(1_000);
+  await flush();
+  await t.mock.timers.tick(1_000);
+  await flush();
+  await t.mock.timers.tick(1_000);
+  await flush();
+  assert.equal(calls, 4);
+
+  // Backed off: another normal-interval tick alone does not fire the next attempt.
+  await t.mock.timers.tick(1_000);
+  await flush();
+  assert.equal(calls, 4);
+  // The rest of the backoff interval does, and this attempt succeeds.
+  outcome = true;
+  await t.mock.timers.tick(3_000);
+  await flush();
+  assert.equal(calls, 5);
+
+  // Recovered: back to the normal interval for the next attempt.
+  await t.mock.timers.tick(1_000);
+  await flush();
+  assert.equal(calls, 6);
+
+  stop();
+});
+
+test("a hidden document skips a due poll without rescheduling; wake resumes it immediately", async (t) => {
+  t.mock.timers.enable({apis: ["setTimeout"]});
+  const flush = () => Promise.resolve().then(() => Promise.resolve());
+
+  let hidden = false;
+  let calls = 0;
+  const {stop, wake} = scheduleLivePoll(
+    () => {
+      calls++;
+      return Promise.resolve(true);
+    },
+    () => hidden,
+    {intervalMs: 1_000, backoffMs: 4_000, backoffThreshold: 3},
+  );
+
+  hidden = true;
+  await t.mock.timers.tick(1_000);
+  await flush();
+  assert.equal(calls, 0);
+
+  hidden = false;
+  wake();
+  await flush();
+  assert.equal(calls, 1);
+
+  stop();
 });

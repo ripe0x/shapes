@@ -709,11 +709,14 @@ button {
 }
 
 /* Reveal cascade (site/ActivityFeed.tsx): rows are hidden only once the list is armed by script,
-   then rise in sequence when it scrolls into view. Delay per row is set inline. */
+   then rise in sequence when it scrolls into view. Delay per row is set inline. A row a live poll
+   prepends after that gets `.is-new` instead, playing the same rise on its own, once, with no
+   delay and no effect on the rows around it. */
 .activity-list.is-armed .activity-row {
   opacity: 0;
 }
-.activity-list.is-revealed .activity-row {
+.activity-list.is-revealed .activity-row,
+.activity-row.is-new {
   animation: activity-rise 460ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 @keyframes activity-rise {
@@ -728,7 +731,8 @@ button {
 }
 @media (prefers-reduced-motion: reduce) {
   .activity-list.is-armed .activity-row,
-  .activity-list.is-revealed .activity-row {
+  .activity-list.is-revealed .activity-row,
+  .activity-row.is-new {
     opacity: 1;
     animation: none;
   }
