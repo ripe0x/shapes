@@ -2,7 +2,7 @@ import React from "react";
 import {type PublicClient} from "viem";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {geometryAt, svgFromComposition, CANONICAL} from "../canonical/render";
-import {loadProvenance, type ProvNode} from "../chain/history";
+import {loadProvenance, type ProvNode} from "./provenance";
 import {loadTokenHistory, type HistEvent} from "./tokenHistory";
 import {C, FONT, SANS, label} from "./theme";
 import {Section, Art, Modal, short, txUrl} from "./ui";
@@ -89,7 +89,7 @@ export function TokenView({
   // cached in place, so navigating back up never refetches.
   const [drillStack, setDrillStack] = React.useState<DnaDrillLevel[]>([]);
 
-  // Ancestry tree from the event log; shown only when the token has one beyond its own mint.
+  // Ancestry tree from the indexer; shown only when the token has one beyond its own mint.
   React.useEffect(() => {
     if (!publicClient) return;
     let cancelled = false;
@@ -107,8 +107,8 @@ export function TokenView({
   }, [publicClient, dep, tokenId, data]);
 
   // The provenance tree, plus a lookup from tree key to the live token id it represents (only
-  // live nodes navigate; everything else focuses in place). Rebuilt whenever the chain-derived
-  // ancestry or the set of live tokens changes.
+  // live nodes navigate; everything else focuses in place). Rebuilt whenever the ancestry or the
+  // set of live tokens changes.
   const provTree = React.useMemo(() => {
     if (!prov) return null;
     const liveIds = new Map<string, bigint>();
@@ -457,7 +457,7 @@ function isProvenanceRollup(node: ProvNode): node is ProvNode & {more: number} {
 }
 
 /**
- * `ProvNode` (chain/history.ts) to `TreeNode` (ProvenanceTree.tsx): each contributor becomes a
+ * `ProvNode` (provenance.ts) to `TreeNode` (ProvenanceTree.tsx): each contributor becomes a
  * child one step further back in ancestry. `path` gives every node a key unique within the tree
  * even though a `self` chain repeats the same token id across levels. Live token ids are
  * collected into `liveIds` as they are found, keyed by the same path, so the caller can tell a

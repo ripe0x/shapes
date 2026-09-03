@@ -78,6 +78,9 @@ export const lineageEdge = onchainTable(
     // The parent's denomination index after the event: the compose survivor's summed
     // denomination, the decompose survivor's restored one, the split parent's pre-split one.
     parentDenomIndex: t.integer().notNull(),
+    // The child's denomination index at its own birth, so an ancestry walk can draw a burned
+    // child from the edge alone.
+    childMintDenomIndex: t.integer().notNull(),
     block: t.bigint().notNull(),
     // Log index of the event the edge came from, and the block's timestamp. Edges sharing both a
     // transaction hash and a log index came from one compose, split, or decompose.
