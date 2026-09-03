@@ -1,7 +1,34 @@
 import {strict as assert} from "node:assert";
 import {test} from "node:test";
-import {parseBidEth, unitsToEth} from "./auction";
+import {isAuctionActive, parseBidEth, unitsToEth, type AuctionState} from "./auction";
 import {DENOMINATIONS, UNIT} from "../canonical/denominations";
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
+
+/** A loaded auction record with every field defaulted to its "pre-bid, untouched" value; pass
+ *  overrides for the fields a test cares about. */
+function mockAuction(overrides: Partial<AuctionState> = {}): AuctionState {
+  return {
+    id: 0n,
+    seller: ZERO_ADDR,
+    tokenId: 0n,
+    endTime: 0n,
+    duration: 86_400n,
+    extensionWindow: 300,
+    minIncrementBps: 500,
+    reserveUnits: 1n,
+    highestUnits: 0n,
+    highestBidder: ZERO_ADDR,
+    settled: false,
+    lotClaimed: false,
+    minimumUnits: 1n,
+    yourUnits: 0n,
+    yourCards: [],
+    chainNow: 1_000,
+    readAt: Date.now(),
+    ...overrides,
+  };
+}
 
 test("unitsToEth renders every denomination on the ladder", () => {
   for (const wei of DENOMINATIONS) {
@@ -24,4 +51,23 @@ test("parseBidEth accepts whole units and rejects finer amounts", () => {
   // Half a unit is not expressible as cards.
   const halfUnit = unitsToEth(1n) + "5";
   assert.equal(parseBidEth(halfUnit), -1n);
+});
+
+test("isAuctionActive: false while the slot has not resolved to a real auction", () => {
+  assert.equal(isAuctionActive("loading"), false);
+  assert.equal(isAuctionActive("error"), false);
+  assert.equal(isAuctionActive(null), false);
+});
+
+test("isAuctionActive: true pre-bid, live, and ended-but-unsettled; false once settled", () => {
+  assert.equal(isAuctionActive(mockAuction({endTime: 0n})), true); // pre-bid: open for bids
+  assert.equal(
+    isAuctionActive(mockAuction({endTime: 1_500n, chainNow: 1_000})),
+    true, // live: endTime is ahead of the chain-time anchor read alongside it
+  );
+  assert.equal(
+    isAuctionActive(mockAuction({endTime: 500n, chainNow: 1_000})),
+    true, // endTime already behind chainNow: ended, awaiting settlement
+  );
+  assert.equal(isAuctionActive(mockAuction({endTime: 500n, chainNow: 1_000, settled: true})), false);
 });

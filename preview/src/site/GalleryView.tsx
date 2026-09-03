@@ -3,6 +3,7 @@ import {C} from "./theme";
 import {Section, Art} from "./ui";
 import type {SiteData, SiteToken} from "./data";
 import {compactShapeTitle} from "./shapeTitle";
+import {filterOwnedTokens} from "./MyShapesView";
 
 export const BLACK_FILTER = -2;
 
@@ -10,6 +11,18 @@ export const BLACK_FILTER = -2;
 export function filterGalleryTokens<T extends {di: number}>(tokens: T[], filter: number): T[] {
   if (filter === BLACK_FILTER) return tokens.filter((token) => token.di < 0);
   return filter < 0 ? tokens : tokens.filter((token) => token.di === filter);
+}
+
+/** Composes the denomination filter with the "My Shapes" owner filter, applied after it. Pure so
+ *  the composition is regression-testable without a DOM. */
+export function filterGallery<T extends {di: number; owner: string}>(
+  tokens: T[],
+  filter: number,
+  ownerOnly: boolean,
+  address: string | undefined,
+): T[] {
+  const byDenom = filterGalleryTokens(tokens, filter);
+  return ownerOnly && address ? filterOwnedTokens(byDenom, address) : byDenom;
 }
 
 /** Gallery caption for a token's mint-origin count: "1 origin", "6 origins", or "10,000 origins,
@@ -25,15 +38,22 @@ export function GalleryView({
   data,
   filter,
   setFilter,
+  address,
+  ownerOnly,
+  setOwnerOnly,
   onOpenToken,
 }: {
   data: SiteData | null;
   filter: number; // -1 = all, -2 = Black, else denomination index
   setFilter: (i: number) => void;
+  /** Connected wallet address, if any; gates the "My Shapes" chip. */
+  address: `0x${string}` | undefined;
+  ownerOnly: boolean;
+  setOwnerOnly: (v: boolean) => void;
   onOpenToken: (id: bigint) => void;
 }) {
   const tokens = data?.tokens ?? [];
-  const filtered = filterGalleryTokens(tokens, filter);
+  const filtered = filterGallery(tokens, filter, ownerOnly, address);
   const chips = [
     {label: "All", i: -1},
     ...DENOMINATIONS.map((d, i) => ({label: d.label, i})),
@@ -67,6 +87,23 @@ export function GalleryView({
               </button>
             );
           })}
+          {address && (
+            <button
+              type="button"
+              aria-pressed={ownerOnly}
+              onClick={() => setOwnerOnly(!ownerOnly)}
+              style={{
+                border: `1px solid ${ownerOnly ? C.ink : C.border}`,
+                background: ownerOnly ? C.ink : "transparent",
+                color: ownerOnly ? C.page : C.bodyDim,
+                padding: "5px 12px",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              My Shapes
+            </button>
+          )}
         </div>
       </Section>
 
