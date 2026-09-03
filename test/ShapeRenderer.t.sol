@@ -261,7 +261,7 @@ contract GeometryTest is RendererTestBase {
     ///
     ///      Triangle, right triangle, diamond, half circle and quarter circle are drawn as an
     ///      even-odd ring whose outer boundary is the solid geometry itself, so their extent is
-    ///      the same whether the mark is solid or outlined — the stroke weight plays no part.
+    ///      the same whether the mark is solid or outlined: the stroke weight plays no part.
     ///      Circle, square and half square are still stroked paths, where the stroke straddles
     ///      the edge and adds w/2 all round. Arc and line are open strokes, always drawn, so the
     ///      stroke applies whatever the ignored solid bit says.
@@ -316,7 +316,7 @@ contract GeometryTest is RendererTestBase {
     /// @notice Every mark on a card paints to exactly the same extent.
     /// @dev This is the property the whole sizing model exists to deliver. Each footprint is
     ///      solved backwards from `card.target`, so re-deriving the extent forwards must land
-    ///      back on it — for every primitive, solid or outlined. If it does not, the solver
+    ///      back on it, for every primitive, solid or outlined. If it does not, the solver
     ///      and the drawing code have drifted apart.
     function testFuzz_EveryMarkPaintsToTheCardTarget(bytes32 seed, uint8 which) public view {
         ShapeRenderer.Card memory c = renderer.compose(seed, DENOMS[which % 9], _gene(seed));

@@ -339,7 +339,7 @@ contract ProvenanceTest is ShapesBase {
 
     /// @notice Reconstruction round-trip, recordless (grammar) branch (SAMPLING_SPEC.md section 6,
     ///         D3'): the parent here is a direct mint with no compose record, so each child's pool
-    ///         is `GeometrySampling.grammarSplitPool(parentSeed, childDenom, parentGene)` — the
+    ///         is `GeometrySampling.grammarSplitPool(parentSeed, childDenom, parentGene)`: the
     ///         parent's own `parentModules` snapshot from `splitOriginOf` plays no part.
     ///         `childDenom` is the child's own live denomination index, valid here because none of
     ///         the children have been mutated since the split.
@@ -367,7 +367,7 @@ contract ProvenanceTest is ShapesBase {
 
     /// @notice Reconstruction round-trip, compose-record branch (SAMPLING_SPEC.md section 6, D3'):
     ///         the parent was itself a compose survivor, so `composeDepth(parentId) > 0` and each
-    ///         child's pool is the concatenated effective modules of that record's donors —
+    ///         child's pool is the concatenated effective modules of that record's donors:
     ///         pre-compose survivor first, then inputs ascending by id. The compose that created
     ///         the parent burns its inputs in deliberately shuffled calldata order, locking that
     ///         the split pool sorts by id rather than reusing calldata order.

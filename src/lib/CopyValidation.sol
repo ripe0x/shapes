@@ -12,7 +12,7 @@ library CopyValidation {
 
     /// @notice Requires `s` fit within `maxBytes` and consist only of JSON-safe, well-formed
     ///         UTF-8 bytes: no unescaped `"`, `\`, or C0 control character in the ASCII range,
-    ///         and a full RFC 3629 walk above it — no lone continuation bytes, overlong
+    ///         and a full RFC 3629 walk above it: no lone continuation bytes, overlong
     ///         encodings, UTF-16 surrogates, code points above U+10FFFF, or truncated sequences.
     /// @param field Distinguishes the caller's two copy arguments in the revert (0 name/prefix,
     ///        1 description).

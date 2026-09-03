@@ -73,7 +73,7 @@ library GeometrySampling {
     }
 
     /// @notice A materialized-parent split's sampling pool (SAMPLING_SPEC.md section 6, D3'):
-    ///         the parent's top compose record's donor modules, concatenated in canonical order —
+    ///         the parent's top compose record's donor modules, concatenated in canonical order:
     ///         the record's pre-compose survivor first, then its inputs. Child-denomination-
     ///         independent: built once per split call, shared by every child regardless of
     ///         `outDenoms`.

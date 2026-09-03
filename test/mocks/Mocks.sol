@@ -133,7 +133,7 @@ contract EthRejectingReceiver is IERC721Receiver {
     }
 }
 
-/// @notice A fee recipient that reverts on receipt. Minting is never affected — the mint path
+/// @notice A fee recipient that reverts on receipt. Minting is never affected: the mint path
 ///         never calls it. Only `withdrawFees` reverts while it remains selected; admin may
 ///         redirect future withdrawals via `setFeeRecipient`, and redemption is unaffected.
 contract RevertingFeeRecipient {

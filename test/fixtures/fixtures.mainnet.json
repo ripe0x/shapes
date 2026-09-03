@@ -2137,7 +2137,7 @@
   "0x"
  ],
  "sampleSplitGrammarWhy": [
-  "split sampling, grammar branch: materialized parent (no compose record) — parent.modules is ignored",
+  "split sampling, grammar branch: materialized parent (no compose record), parent.modules is ignored",
   "split sampling, grammar branch: same materialized parent, second child index",
   "split sampling, grammar branch: childIndex 0 at the aliasing denomination",
   "split sampling, grammar branch: childIndex 256, must not alias childIndex 0",
@@ -2192,7 +2192,7 @@
  ],
  "sampleSplitRecordWhy": [
   "split sampling, record branch: survivor + inputs ascending by id already",
-  "split sampling, record branch: same donors, inputs in shuffled calldata order — pool (and result) must be identical to the ascending-order case above",
+  "split sampling, record branch: same donors, inputs in shuffled calldata order, pool (and result) must be identical to the ascending-order case above",
   "split sampling, record branch: materialized survivor snapshot, mixed-materialization inputs"
  ],
  "sampleSplitRecordParentSeed": [
