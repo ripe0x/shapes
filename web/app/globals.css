@@ -866,6 +866,12 @@ button {
   padding-block: 70px;
 }
 
+/* With the app header above it (the index route in app mode), the hero's viewport floor drops by
+   the header's 84px so the first screen still ends where it did without one. */
+.launch-page--header .launch-hero {
+  min-height: min(760px, calc(100vh - 84px));
+}
+
 .launch-intro h1 {
   margin: 0;
   max-width: 7ch;
@@ -1303,7 +1309,8 @@ button {
     height: 70px;
   }
 
-  .launch-hero {
+  .launch-hero,
+  .launch-page--header .launch-hero {
     min-height: 0;
     padding-block: 66px 44px;
   }
