@@ -110,7 +110,7 @@ contract ComposabilityTest is Test {
 
         assertTrue(shapes.supportsInterface(type(IShapeRecomposition).interfaceId));
         // IShapeRecomposition declares only state-changing members (compose/decompose/split/
-        // sacrifice); nothing view/pure to exercise beyond the interface id itself.
+        // burnBacking); nothing view/pure to exercise beyond the interface id itself.
 
         assertTrue(shapes.supportsInterface(type(IShapeProvenance).interfaceId));
         IShapeProvenance provenance = IShapeProvenance(address(shapes));

@@ -19,7 +19,7 @@ const ERROR_TEXT: Record<string, (args: readonly unknown[]) => string> = {
   SplitSumMismatch: () => "The outputs must sum to exactly the input's backing.",
   SplitTooFewOutputs: () => "A split must produce at least two Shapes.",
   NoComposeRecord: () => "This Shape has no compose left to undo.",
-  NotApexComplete: () => "Only a complete apex Shape can be sacrificed into Black.",
+  NotApexComplete: () => "Only a complete apex Shape can have its backing burned into Black.",
   NotASplitChild: () => "This Shape was not created by a split.",
   ComposeRecordOutOfRange: () => "This Shape has no compose at that depth.",
   NoOwnerToken: () => "The collection has no owner token: it was redeemed or burned.",

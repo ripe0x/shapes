@@ -37,7 +37,7 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 ///      and split change token structure without changing total redeemable backing.
 ///
 ///      Three operations move ETH out. Redemption sends a burned token's redeemable backing to the
-///      caller or a chosen recipient. Sacrifice sends an apex Shape's backing to a fixed
+///      caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed
 ///      unspendable address. Fee withdrawal sends only `pendingFees`, which is never part of the
 ///      reserve. Compose, decompose and split move no ETH.
 ///
@@ -88,7 +88,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _store.totalMinted;
     }
 
-    /// @dev The apex denomination index. Only an apex Complete Shape may be sacrificed.
+    /// @dev The apex denomination index. Only an apex Complete Shape may have its backing burned.
     uint256 private constant APEX_INDEX = 8;
     /// @dev Destination for burned backing. No known key, so the ETH is unspendable.
     address private constant UNSPENDABLE = 0x000000000000000000000000000000000000dEaD;
@@ -540,7 +540,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      carries it and an event-only indexer can track origin conservation without a pre-burn
     ///      state read. A duplicate id in a batch fails here the second time, because the token no
     ///      longer exists. Burning a Black Shape decreases `blackShapeCount`, which counts the ones
-    ///      alive now; `burnedBacking` does not move, because that ETH left at `sacrifice`. Burning
+    ///      alive now; `burnedBacking` does not move, because that ETH left at `burnBacking`. Burning
     ///      the owner token ends collection ownership permanently: no other token inherits it.
     function _burnForRedemption(uint256 tokenId, bool allowBlack)
         private
@@ -568,7 +568,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @dev The only path that moves ETH out. Redemption pays after the tokens are burned and the
-    ///      accounting is updated; `sacrifice` pays the unspendable address out of the reserve;
+    ///      accounting is updated; `burnBacking` pays the unspendable address out of the reserve;
     ///      `withdrawFees` pays out of `pendingFees`. A failed transfer reverts the whole call.
     function _sendEth(address to, uint256 amountWei) private {
         (bool sent,) = to.call{value: amountWei}("");
@@ -774,11 +774,11 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev Only a complete apex Shape may be sacrificed. It becomes Black, its backing leaves
-    ///      `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH is
+    /// @dev Only a complete apex Shape may have its backing burned. It becomes Black, its backing
+    ///      leaves `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH is
     ///      sent to the fixed unspendable address. The token stays alive but can no longer redeem
     ///      ETH. CEI: the token is marked Black before the transfer, which is last.
-    function sacrifice(uint256 tokenId) external nonReentrant {
+    function burnBacking(uint256 tokenId) external nonReentrant {
         _requireCallerOwnsLive(tokenId);
         ShapeData storage d = _store.shapes[tokenId];
         if (d.denomIndex != APEX_INDEX || d.originCount != Denominations.unitsAt(APEX_INDEX)) {
@@ -793,7 +793,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         burnedBacking += apexBacking;
         blackShapeCount += 1;
 
-        emit Blackened(tokenId, apexBacking);
+        emit BlackShapeCreated(tokenId, apexBacking);
         emit MetadataUpdate(tokenId);
 
         // -------- interactions --------

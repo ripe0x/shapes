@@ -12,7 +12,7 @@ export type HistKind =
   | "mergedAway"
   | "decomposed"
   | "revived"
-  | "blackened"
+  | "backingBurned"
   | "redeemed"
   | "transfer";
 
@@ -49,7 +49,7 @@ export async function paginate<T>(
 /// Reconstruct a single token's on-chain history from the contract's event log. Each Shapes
 /// operation is a distinct event, and recomposition events name every token they touch, so a
 /// token's full lineage — its birth (a mint, or a split of some parent), the merges and splits it
-/// took part in, transfers, and any sacrifice — is recoverable without an indexer. On a local dev
+/// took part in, transfers, and any backing burn — is recoverable without an indexer. On a local dev
 /// chain the block range is tiny, so a full scan from block 0 is cheap.
 export async function loadHistory(
   publicClient: PublicClient,
@@ -58,18 +58,18 @@ export async function loadHistory(
 ): Promise<HistEvent[]> {
   const base = {address: dep.shapes, abi: shapesAbi} as const;
   const latest = await publicClient.getBlockNumber();
-  // Events keyed on this token by an indexed arg are fetched targeted (mint, sacrifice, redeem,
+  // Events keyed on this token by an indexed arg are fetched targeted (mint, burnBacking, redeem,
   // and transfers of this id); a token composed from thousands of ancestors would otherwise pull
   // every ShapeMinted log and overflow the RPC response. The recomposition events name touched
   // ids in unindexed array args, so they are still fetched whole — but there is one per
   // compose/split/decompose, far fewer than mints, so that stays cheap.
-  const [minted, composed, split, decomposed, blackened, redeemed, transfers] =
+  const [minted, composed, split, decomposed, backingBurned, redeemed, transfers] =
     await Promise.all([
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Blackened", args: {tokenId: id}, fromBlock, toBlock})),
+      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "BlackShapeCreated", args: {tokenId: id}, fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}, fromBlock, toBlock})),
       paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}, fromBlock, toBlock})),
     ]);
@@ -123,9 +123,9 @@ export async function loadHistory(
       push(l, "revived", `Revived under this original id by #${l.args.survivorId?.toString()}'s decompose`);
     }
   }
-  for (const l of blackened) {
+  for (const l of backingBurned) {
     if (l.args.tokenId === id) {
-      push(l, "blackened", `${formatEther(l.args.sacrificedWei ?? 0n)} ETH sacrificed`);
+      push(l, "backingBurned", `${formatEther(l.args.burnedWei ?? 0n)} ETH backing burned`);
     }
   }
   for (const l of redeemed) {

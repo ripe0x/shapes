@@ -167,7 +167,7 @@ export function App() {
             <Button
               active={inverted}
               onClick={() => setInverted((v) => !v)}
-              title="Render every card inverted: white field, black marks — the sacrificed-token variant."
+              title="Render every card inverted: white field, black marks — the Black-token variant."
             >
               black shapes
             </Button>

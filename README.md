@@ -4,8 +4,8 @@ ETH in, Shape out. Shape burned, the same ETH out.
 
 A Shape is an ERC721 token that wraps an exact amount of ETH. Whoever owns a normal Shape owns
 the right to unwrap it. Redeem or burn the token and you receive exactly its current value — not
-a share of a pool, not a proportion, not an appraisal. The same wei. A deliberately sacrificed
-Black Shape has zero remaining value and may be burned for zero.
+a share of a pool, not a proportion, not an appraisal. The same wei. A Black Shape, whose backing
+was deliberately burned, has zero remaining value and may be burned for zero.
 
 Between minting and burning, a Shape is an ordinary NFT. Transfer it, sell it, deposit it in
 another contract, hold it. The artwork and the token's history make it a distinct object; the
@@ -150,7 +150,7 @@ redeemBatch(uint256[] calldata tokenIds) returns (uint256 totalWei)
 
 The current owner burns the token and receives its exact backing, paid directly to them. All or
 nothing — there is no partial redemption and no direct way to add ETH to an existing Shape.
-Recomposition may move backing between identities, and sacrifice may change an apex's value to zero.
+Recomposition may move backing between identities, and burnBacking may change an apex's value to zero.
 
 `redeemBatch` burns each token, then makes a single transfer of the exact total.
 
@@ -185,13 +185,13 @@ reversible compose: `decompose` revives the exact inputs recorded by that compos
 new IDs. Positions attach to Shape identity, not automatically to ETH material that later moves
 into another ID.
 
-## Sacrifice and Black Shapes
+## Burning backing and Black Shapes
 
-`sacrifice(tokenId)` is an owner-only transformation available only to a Complete 100 ETH apex.
+`burnBacking(tokenId)` is an owner-only transformation available only to a Complete 100 ETH apex.
 It sends exactly 100 ETH to `0x…dEaD`, changes the token's current value to zero and marks it Black
 without burning it. The same ID, owner, seed, provenance and artwork geometry remain; metadata is
 updated to the inverted Black rendering. A Black Shape stays transferable and may be burned for
-zero, but it cannot be redeemed, composed, decomposed or sacrificed again.
+zero, but it cannot be redeemed, composed, decomposed or have its backing burned again.
 
 `burnedBacking` and `blackShapeCount` are cumulative historical counters. Burning a Black Shape does
 not reduce either one.
@@ -239,7 +239,7 @@ Shape #0 and through later mints once `mintStart` has passed.
 
 Every wei counted by `redeemableBacking()` corresponds to a live non-Black Shape. Stateful
 invariants cover minting, transfer, redemption, burn, composition, decomposition, splitting,
-restoration, sacrifice, forced ETH and `valueOf == backingOf`; unit tests pin high-water issuance
+restoration, burnBacking, forced ETH and `valueOf == backingOf`; unit tests pin high-water issuance
 and the narrow compose/decompose identity-revival exception.
 
 ## Immutability
@@ -297,7 +297,7 @@ emergency withdrawal, treasury withdrawal, redemption pause, asset recovery, bac
 token seizure, upgradeability, proxies, allowlists, supply caps, royalties.
 
 There are three value-bearing external calls: `withdrawFees`'s transfer of accrued mint fees,
-settlement after redemption or burn, and the fixed 100 ETH sacrifice to `0x…dEaD`. No
+settlement after redemption or burn, and the fixed 100 ETH burnBacking to `0x…dEaD`. No
 administrative function reaches any of them.
 
 See [`SECURITY.md`](SECURITY.md) for the adversarial review, including the findings that were

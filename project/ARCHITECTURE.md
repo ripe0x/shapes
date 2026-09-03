@@ -8,7 +8,7 @@ invariant, and the measured runtime sizes.
 
 Shapes wraps ETH into unique ERC-721 tokens at nine fixed denominations. A token holds an exact
 amount of ETH; burning it returns exactly that amount. Compose, decompose and split restructure
-tokens without moving ETH. Sacrifice sends an apex token's backing to an unspendable address.
+tokens without moving ETH. `burnBacking` sends an apex token's backing to an unspendable address.
 
 One contract is the protocol: `Shapes`. It owns the reserve, the token, the state machine and
 every protocol fact. Everything else is presentation or an independent application.
@@ -63,7 +63,7 @@ reachable only through a library.
 
 Protocol actions: `mint`, `mintTo`, `mintBatch`, `mintBatchTo`, `redeem`, `redeemTo`,
 `redeemBatch`, `redeemBatchTo`, `burn`, `compose`, `composeMany`, `decompose`, `decomposeTo`,
-`decomposeMany`, `decomposeManyTo`, `split`, `splitTo`, `sacrifice`, `withdrawFees`,
+`decomposeMany`, `decomposeManyTo`, `split`, `splitTo`, `burnBacking`, `withdrawFees`,
 `attestArtist`.
 
 Per-token views: `exists`, `backingOf`, `valueOf`, `isBlack`, `denomIndexOf`, `seedOf`,
@@ -218,7 +218,7 @@ is O(n log n) and identical on both sides.
 | `IShapes` | The whole token surface. |
 | `IAdminControl` | The admin role and its bounded authority. |
 | `IShapeValue` | Backing, denominations and redemption. |
-| `IShapeRecomposition` | Compose, decompose, split, sacrifice. |
+| `IShapeRecomposition` | Compose, decompose, split, burnBacking. |
 | `IShapeProvenance` | Seed, origins, ink gene, formation, child seeds. |
 | `IERC721Value` | Draft ERC-8060 value-bearing ERC-721. |
 | `IERC2981` | Royalty, permanently zero. |
@@ -297,7 +297,7 @@ withdrawable by anyone.
 - Redeeming and burning subtract exactly the token's backing and pay it out.
 - Compose, decompose and split move no ETH and leave `redeemableBacking` untouched by construction:
   the summed backing of the tokens involved is unchanged.
-- `sacrifice` moves an apex token's backing out of `redeemableBacking`, adds it to `burnedBacking`,
+- `burnBacking` moves an apex token's backing out of `redeemableBacking`, adds it to `burnedBacking`,
   and sends that ETH to `0x...dEaD`.
 - `withdrawFees` pays only `pendingFees`, which is never part of the reserve.
 

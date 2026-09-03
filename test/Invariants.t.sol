@@ -79,12 +79,12 @@ contract Handler is Test, IERC721Receiver {
     uint256 public ghostMints;
     uint256 public ghostRedeems;
     uint256 public ghostOriginsRedeemed;
-    uint256 public ghostSacrificed;
-    /// @dev Cumulative count of `sacrifice` calls. `Shapes.blackShapeCount` counts the Black Shapes
+    uint256 public ghostBurnedBacking;
+    /// @dev Cumulative count of `burnBacking` calls. `Shapes.blackShapeCount` counts the Black Shapes
     ///      alive now, so it falls behind this once one is burned for zero.
-    uint256 public ghostSacrificeCount;
+    uint256 public ghostBurnBackingCount;
     /// @dev Cumulative count of Black Shapes burned for zero, the only way a Black leaves the
-    ///      supply. `ghostSacrificeCount - ghostBlackBurned` is the live Black count.
+    ///      supply. `ghostBurnBackingCount - ghostBlackBurned` is the live Black count.
     uint256 public ghostBlackBurned;
 
     uint256[] public liveTokens;
@@ -316,11 +316,11 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-    /// @dev Sacrifice a live apex Complete if one exists. Apex Completes essentially never arise
-    ///      from random fuzzing (10,000 conserved origins on one token), so this rarely fires;
-    ///      the sacrifice path is exercised directly by the unit suite. It is kept here so the
-    ///      invariant model stays exact should one ever be reached.
-    function sacrifice(uint256 seed) public {
+    /// @dev Burn the backing of a live apex Complete if one exists. Apex Completes essentially
+    ///      never arise from random fuzzing (10,000 conserved origins on one token), so this rarely
+    ///      fires; the burnBacking path is exercised directly by the unit suite. It is kept here so
+    ///      the invariant model stays exact should one ever be reached.
+    function burnBacking(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
         if (shapes.isBlack(id)) return;
@@ -328,14 +328,14 @@ contract Handler is Test, IERC721Receiver {
 
         address owner = shapes.ownerOf(id);
         vm.prank(owner);
-        try shapes.sacrifice(id) {
-            ghostSacrificed += DENOMS[8];
-            ghostSacrificeCount += 1;
+        try shapes.burnBacking(id) {
+            ghostBurnedBacking += DENOMS[8];
+            ghostBurnBackingCount += 1;
         } catch {}
     }
 
     /// @dev Burn a live Black Shape for zero, the only exit a Black has: it cannot be redeemed,
-    ///      composed, decomposed or sacrificed again. Its backing is already zero, so no reserve
+    ///      composed, decomposed or have its backing burned again. Its backing is already zero, so no reserve
     ///      ghost moves; only the live Black count does.
     function burnBlack(uint256 seed) public {
         if (liveTokens.length == 0) return;
@@ -643,7 +643,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[6] = Handler.pokeUnknownSelector.selector;
         selectors[7] = Handler.compose.selector;
         selectors[8] = Handler.split.selector;
-        selectors[9] = Handler.sacrifice.selector;
+        selectors[9] = Handler.burnBacking.selector;
         selectors[10] = Handler.redeemToHostile.selector;
         selectors[11] = Handler.redeemBatchToHostile.selector;
         selectors[12] = Handler.splitToHostile.selector;
@@ -668,29 +668,29 @@ contract ShapesInvariantTest is StdInvariant, Test {
     }
 
     /// @notice redeemableBacking is exactly what came in, minus what was redeemed out, minus what
-    ///         was sacrificed to Black Shapes.
+    ///         was burned to Black Shapes.
     function invariant_BackingIsConservedExactly() public view {
         assertEq(
             shapes.redeemableBacking(),
-            handler.ghostBackingIn() - handler.ghostBackingOut() - handler.ghostSacrificed(),
+            handler.ghostBackingIn() - handler.ghostBackingOut() - handler.ghostBurnedBacking(),
             "backing accounting drifted"
         );
     }
 
-    /// @notice Sacrificed backing is monotonic and always exactly one apex denomination per
-    ///         sacrifice, and the live Black Shape count is exactly the Blacks created minus the
-    ///         Blacks burned for zero.
-    function invariant_SacrificeAccounting() public view {
+    /// @notice Burned backing is monotonic and always exactly one apex denomination per
+    ///         burnBacking call, and the live Black Shape count is exactly the Blacks created minus
+    ///         the Blacks burned for zero.
+    function invariant_BurnBackingAccounting() public view {
         assertEq(
             shapes.burnedBacking(),
-            Denominations.amountAt(8) * handler.ghostSacrificeCount(),
-            "sacrifice per Black drifted"
+            Denominations.amountAt(8) * handler.ghostBurnBackingCount(),
+            "burn per Black drifted"
         );
-        assertEq(shapes.burnedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
+        assertEq(shapes.burnedBacking(), handler.ghostBurnedBacking(), "burn accounting drifted");
         assertEq(
             shapes.blackShapeCount(),
-            handler.ghostSacrificeCount() - handler.ghostBlackBurned(),
-            "live Black count is not sacrifices minus Black burns"
+            handler.ghostBurnBackingCount() - handler.ghostBlackBurned(),
+            "live Black count is not burnBacking calls minus Black burns"
         );
     }
 

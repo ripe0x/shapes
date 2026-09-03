@@ -41,8 +41,8 @@ a labeled trait.
 | 9 | `Formation` | `"Composed"` | Provenance class. See below. |
 | 10 | `Independent Origins` | `"1"` | Count of direct-mint events baked into the token (`originCount`). |
 | 11 | `Origin Density` | `"11%"` | `originCount / units`, as a percent. 100% means every unit of backing traces to its own mint. |
-| 12 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `sacrifice` gate at the apex. |
-| 13 | `Black` | `"false"` | `true` when the token has been transformed via `sacrifice`. |
+| 12 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `burnBacking` gate at the apex. |
+| 13 | `Black` | `"false"` | `true` when the token has had its backing burned via `burnBacking`. |
 | 14 | `Compose Depth` | `"2"` | Number of stacked composes the current holder can reverse, newest first. |
 | n/a | *(none)* | `"Contract Owner"` | Value-only attribute (no `trait_type`), present only on the owner token, the one live Shape that currently carries collection ownership. It grants no administrative authority. |
 | n/a | `Split From` | `"10 ETH"` | Only on a split child (issue #21C): the immediate parent's denomination. See below. |
@@ -89,9 +89,9 @@ redeems for exactly that.
 |---|---|---|
 | `Direct` | `originCount == 1` | Minted straight at this denomination, never composed. |
 | `Composed` | `2 <= originCount < units` | Built by merging pieces, not entirely from dust. |
-| `Complete` | `originCount == units` (units > 1) | Every 0.01 of backing traces to its own dust mint. Only a Complete apex can be sacrificed. |
+| `Complete` | `originCount == units` (units > 1) | Every 0.01 of backing traces to its own dust mint. Only a Complete apex can have its backing burned. |
 | `Fragment` | `originCount == 0` | A decompose remainder: full backing, no origin credit. Origins partition survivor-first across a split, so children past the origin supply get zero. |
-| `Black` | sacrificed | The 100 ETH was burned via `sacrifice`; renders as a black card. |
+| `Black` | backing burned | The 100 ETH was burned via `burnBacking`; renders as a black card. |
 
 Split allocates a parent's origin count across its children greedily, filling each child's
 capacity in order until the count runs out: the first child(ren) can read `Direct` or `Composed`

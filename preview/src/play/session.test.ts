@@ -15,7 +15,7 @@ import {
   keepCard,
   liveNodes,
   removeNode,
-  sacrificeNode,
+  burnBackingNode,
   splitNode,
   textSeed,
   type PlaySession,
@@ -295,8 +295,8 @@ test("splitNode: rejects a black node and a childDenomIndex not below the parent
   assert.throws(() => splitNode(s, node.key, DENOMINATIONS.length - 1)); // not below parent's
   assert.throws(() => splitNode(s, node.key, DENOMINATIONS.length)); // out of range
 
-  const sacrificed = sacrificeNode(s, node.key);
-  assert.throws(() => splitNode(sacrificed, node.key, 0)); // black
+  const burned = burnBackingNode(s, node.key);
+  assert.throws(() => splitNode(burned, node.key, 0)); // black
 });
 
 /* ------------------------------------------------------------------ *
@@ -335,31 +335,31 @@ test("decomposeNode: rejects a node that isn't a compose result, and a black com
 });
 
 /* ------------------------------------------------------------------ *
- * sacrifice
+ * burnBacking
  * ------------------------------------------------------------------ */
 
-test("sacrificeNode: only a live 100 ETH (top-rung) card qualifies, and it can't be sacrificed twice", () => {
+test("burnBackingNode: only a live 100 ETH (top-rung) card qualifies, and its backing can't be burned twice", () => {
   let s = emptySession();
   s = keepCard(s, DENOMINATIONS.length - 2, seedA); // one rung below the top
   const notTop = liveNodes(s)[0];
-  assert.throws(() => sacrificeNode(s, notTop.key));
+  assert.throws(() => burnBackingNode(s, notTop.key));
 
   s = keepCard(s, DENOMINATIONS.length - 1, seedB); // 100 ETH
   const top = liveNodes(s).find((n) => n.denomIndex === DENOMINATIONS.length - 1)!;
-  const sacrificed = sacrificeNode(s, top.key);
-  const node = sacrificed.nodes.find((n) => n.key === top.key)!;
+  const burned = burnBackingNode(s, top.key);
+  const node = burned.nodes.find((n) => n.key === top.key)!;
   assert.equal(node.black, true);
-  // still live: sacrifice doesn't consume the token.
-  assert.equal(liveNodes(sacrificed).some((n) => n.key === top.key), true);
+  // still live: burning backing doesn't consume the token.
+  assert.equal(liveNodes(burned).some((n) => n.key === top.key), true);
 
-  assert.throws(() => sacrificeNode(sacrificed, top.key)); // already black
+  assert.throws(() => burnBackingNode(burned, top.key)); // already black
 });
 
 test("black nodes are rejected as compose/split participants", () => {
   let s = emptySession();
   s = keepCard(s, DENOMINATIONS.length - 1, seedA);
   const top = liveNodes(s)[0];
-  s = sacrificeNode(s, top.key);
+  s = burnBackingNode(s, top.key);
 
   s = keepCard(s, DENOMINATIONS.length - 1, seedB);
   const other = liveNodes(s).find((n) => n.key !== top.key)!;

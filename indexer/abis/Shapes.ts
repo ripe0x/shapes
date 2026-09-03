@@ -444,7 +444,7 @@ export const shapesAbi = [
   },
   {
     "type": "event",
-    "name": "Blackened",
+    "name": "BlackShapeCreated",
     "inputs": [
       {
         "name": "tokenId",
@@ -453,7 +453,7 @@ export const shapesAbi = [
         "internalType": "uint256"
       },
       {
-        "name": "sacrificedWei",
+        "name": "burnedWei",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

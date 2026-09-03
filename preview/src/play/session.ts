@@ -44,7 +44,7 @@ export interface PlayNode {
   /** Per-cell provenance from the split that produced this node. Set iff this node is a split
    *  child. Distinct from `trace`, which stays compose-only. */
   splitTrace?: SplitTraceCell[];
-  /** Set iff this node has been sacrificed: renders inverted, and can no longer be composed,
+  /** Set iff this node's backing has been burned: renders inverted, and can no longer be composed,
    *  split, decomposed, or selected. */
   black?: true;
   /** Set on the root produced by the playground's full rung-by-rung Complete simulation. */
@@ -332,21 +332,21 @@ export function decomposeNode(s: PlaySession, key: number): PlaySession {
 }
 
 /**
- * Sacrifice a live node (contract semantics: `sacrifice`). On chain this requires a complete
- * apex (100 ETH backing, 10,000 independent origins) and sends its ETH to an unspendable
- * address; the token stays alive and renders inverted (Black). The demo has no origin count to
- * check (mint/compose sampling doesn't track it), so it gates only on denomination: any live
- * top-rung (100 ETH) card qualifies here, and the UI states the real on-chain gate in its
- * confirmation copy. Throws when the node is not live, is not at the top denomination, or is
- * already black.
+ * Burn a live node's backing (contract semantics: `burnBacking`). On chain this requires a
+ * complete apex (100 ETH backing, 10,000 independent origins) and sends its ETH to an
+ * unspendable address; the token stays alive and renders inverted (Black). The demo has no
+ * origin count to check (mint/compose sampling doesn't track it), so it gates only on
+ * denomination: any live top-rung (100 ETH) card qualifies here, and the UI states the real
+ * on-chain gate in its confirmation copy. Throws when the node is not live, is not at the top
+ * denomination, or already has its backing burned.
  */
-export function sacrificeNode(s: PlaySession, key: number): PlaySession {
+export function burnBackingNode(s: PlaySession, key: number): PlaySession {
   const live = liveNodes(s);
   const node = live.find((n) => n.key === key);
   if (!node) throw new Error(`node ${key} is not a live card`);
   if (node.denomIndex !== DENOMINATIONS.length - 1) {
-    throw new Error("only a complete 100 ETH Shape can be sacrificed");
+    throw new Error("only a complete 100 ETH Shape can have its backing burned");
   }
-  if (node.black) throw new Error("already sacrificed");
+  if (node.black) throw new Error("backing already burned");
   return { ...s, nodes: s.nodes.map((n) => (n.key === key ? { ...n, black: true } : n)) };
 }

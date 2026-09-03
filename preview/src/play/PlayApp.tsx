@@ -18,7 +18,7 @@ import {
   nodeComposition,
   randomSeed,
   removeNode,
-  sacrificeNode,
+  burnBackingNode,
   splitNode,
   type PlayNode,
   type PlaySession,
@@ -219,8 +219,8 @@ function DrawBeat({
  * ------------------------------------------------------------------ */
 
 /** Which card's inline tray menu is open, and which kind (the split tier picker or the
- *  sacrifice confirmation). Only one card's menu is open at a time. */
-type TrayMenu = { key: number; kind: "split" | "sacrifice" } | null;
+ *  burn-backing confirmation). Only one card's menu is open at a time. */
+type TrayMenu = { key: number; kind: "split" | "burnBacking" } | null;
 
 /** The one-row split tier picker: one button per denomination below the card, labeled with its
  *  child count. */
@@ -267,16 +267,16 @@ function SplitPicker({
   );
 }
 
-function SacrificeConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+function BurnBackingConfirm({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6, width: 200 }}>
       <Prose>
-        Sacrifice sends the Shape&apos;s 100 ETH to an address no one can spend from. The card stays,
-        black. On chain this requires a complete 100 ETH Shape: 10,000 independent origins.
+        Burning backing sends the Shape&apos;s 100 ETH to an address no one can spend from. The card
+        stays, black. On chain this requires a complete 100 ETH Shape: 10,000 independent origins.
       </Prose>
       <div style={{ display: "flex", gap: 6 }}>
         <PlayButton small onClick={onConfirm}>
-          Sacrifice
+          Burn backing
         </PlayButton>
         <PlayButton small onClick={onCancel}>
           Cancel
@@ -294,7 +294,7 @@ function TrayCard({
   onOpenMenu,
   onSplit,
   onDecompose,
-  onSacrifice,
+  onBurnBacking,
 }: {
   node: PlayNode;
   session: PlaySession;
@@ -305,7 +305,7 @@ function TrayCard({
   onOpenMenu: (menu: TrayMenu) => void;
   onSplit: (key: number, childDenomIndex: number) => void;
   onDecompose: (key: number) => void;
-  onSacrifice: (key: number) => void;
+  onBurnBacking: (key: number) => void;
 }) {
   const svg = svgFromComposition(nodeComposition(node), 0n, CANONICAL, node.black === true);
   const isTop = node.denomIndex === DENOMINATIONS.length - 1;
@@ -339,9 +339,9 @@ function TrayCard({
           {isTop && (
             <PlayButton
               small
-              onClick={() => onOpenMenu(menuOpen === "sacrifice" ? null : { key: node.key, kind: "sacrifice" })}
+              onClick={() => onOpenMenu(menuOpen === "burnBacking" ? null : { key: node.key, kind: "burnBacking" })}
             >
-              Sacrifice
+              Burn backing
             </PlayButton>
           )}
         </div>
@@ -354,8 +354,8 @@ function TrayCard({
           onCancel={() => onOpenMenu(null)}
         />
       )}
-      {menuOpen === "sacrifice" && (
-        <SacrificeConfirm onConfirm={() => onSacrifice(node.key)} onCancel={() => onOpenMenu(null)} />
+      {menuOpen === "burnBacking" && (
+        <BurnBackingConfirm onConfirm={() => onBurnBacking(node.key)} onCancel={() => onOpenMenu(null)} />
       )}
     </div>
   );
@@ -371,7 +371,7 @@ function TrayBeat({
   onOpenMenu,
   onSplit,
   onDecompose,
-  onSacrifice,
+  onBurnBacking,
 }: {
   nodes: PlayNode[];
   session: PlaySession;
@@ -382,7 +382,7 @@ function TrayBeat({
   onOpenMenu: (menu: TrayMenu) => void;
   onSplit: (key: number, childDenomIndex: number) => void;
   onDecompose: (key: number) => void;
-  onSacrifice: (key: number) => void;
+  onBurnBacking: (key: number) => void;
 }) {
   return (
     <section className="play-section">
@@ -403,7 +403,7 @@ function TrayBeat({
               onOpenMenu={onOpenMenu}
               onSplit={onSplit}
               onDecompose={onDecompose}
-              onSacrifice={onSacrifice}
+              onBurnBacking={onBurnBacking}
             />
           ))}
         </div>
@@ -909,7 +909,7 @@ export function PlayApp() {
   const [seed, setSeed] = React.useState<bigint>(0n);
   const [completeBusy, setCompleteBusy] = React.useState(false);
   const [hydrated, setHydrated] = React.useState(false);
-  // Which tray card's split picker or sacrifice confirmation is open, if any.
+  // Which tray card's split picker or burn-backing confirmation is open, if any.
   const [menu, setMenu] = React.useState<TrayMenu>(null);
 
   // Client-only setup on mount: roll the real starting seed (see the placeholder note above),
@@ -985,12 +985,12 @@ export function PlayApp() {
     }
   };
 
-  const handleSacrifice = (key: number) => {
+  const handleBurnBacking = (key: number) => {
     try {
-      setSession(sacrificeNode(session, key));
+      setSession(burnBackingNode(session, key));
       setMenu(null);
     } catch (e) {
-      console.error("sacrifice failed", e);
+      console.error("burnBacking failed", e);
     }
   };
 
@@ -1365,7 +1365,7 @@ export function PlayApp() {
               onOpenMenu={setMenu}
               onSplit={handleSplit}
               onDecompose={handleDecompose}
-              onSacrifice={handleSacrifice}
+              onBurnBacking={handleBurnBacking}
             />
           )}
 

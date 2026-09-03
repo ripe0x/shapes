@@ -348,13 +348,13 @@ export function SiteApp({
     }
   };
 
-  const doSacrifice = async (t: SiteToken) => {
+  const doBurnBacking = async (t: SiteToken) => {
     if (!publicClient) return;
-    setBusy("sacrifice");
+    setBusy("burnBacking");
     setTxErr(null);
     setActionNotice(null);
     try {
-      const hash = await write("sacrifice", "sacrifice", [t.id]);
+      const hash = await write("burnBacking", "burnBacking", [t.id]);
       await publicClient.waitForTransactionReceipt({hash});
       await refresh();
       setActionNotice({
@@ -366,7 +366,7 @@ export function SiteApp({
       setView("token");
       window.scrollTo({top: 0, behavior: "smooth"});
     } catch (e) {
-      setTxErr({op: "sacrifice", text: describeTxError(e)});
+      setTxErr({op: "burnBacking", text: describeTxError(e)});
     } finally {
       setBusy(null);
       setPendingTx(null);
@@ -712,7 +712,7 @@ export function SiteApp({
           onSplit={(t) => void doSplit(t)}
           onDecompose={(t) => void doDecompose(t)}
           onRedeem={(t) => void confirmRedeem(t)}
-          onSacrifice={(t) => void doSacrifice(t)}
+          onBurnBacking={(t) => void doBurnBacking(t)}
         />
       )}
 

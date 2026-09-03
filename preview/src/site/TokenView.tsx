@@ -44,7 +44,7 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
   mergedAway: "Composed",
   decomposed: "Decomposed",
   revived: "Revived",
-  blackened: "Blackened",
+  backingBurned: "Backing burned",
   redeemed: "Redeemed",
   transfer: "Transferred",
 };
@@ -309,7 +309,7 @@ export function TokenView({
             <div style={{flex: "1 1 320px", minWidth: 0}}>
               <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id, isOwnerToken)}</div>
               <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
-                #{token.id.toString()} has been sacrificed. It remains part of the collection, but
+                #{token.id.toString()} has had its backing burned. It remains part of the collection, but
                 has no redeemable ETH backing and cannot be split, composed, or redeemed.
               </div>
               <div style={{marginTop: 14, color: C.muted, fontSize: 11}}>owner · {short(token.owner)}</div>

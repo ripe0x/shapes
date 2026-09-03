@@ -8,7 +8,7 @@ eyes: nothing below is trusted until you verify it yourself.
 You are reviewing the Shapes repo (`~/CascadeProjects/shapes`), an ERC721 that wraps exact
 ETH denominations (0.01–100, nine steps) with fully on-chain generative art. Core protocol:
 `mint`/`redeem` (ETH in/out), `compose`/`decompose`/`split` (reshape without moving ETH),
-`sacrifice` (turn a complete 100-ETH apex Black without burning its NFT). Economic admin is
+`burnBacking` (turn a complete 100-ETH apex Black without burning its NFT). Economic admin is
 absent; the transferable admin controls independently lockable renderer, positions and market
 pointers. Read `SPEC.md` and `SECURITY.md` first — they carry the project's
 decision records (D1–D17) and threat model.
@@ -103,7 +103,7 @@ regenerate, parity green.
 3. **Mega-compose gas note.** A single-tx 10,000-dust → 100 compose costs ~70.8M gas —
    over any block limit. Pre-existing O(n) burn loop, fine for the game (ladder through
    intermediate composes), but record it in SPEC.md so nobody designs around one-tx apexes.
-4. **Sacrifice lore (open, cosmetic).** Should `sacrifice` record the gene the apex died with
+4. **Burn-backing lore (open, cosmetic).** Should `burnBacking` record the gene the apex died with
    (a Solid Black vs a Void Black), even though isBlack overrides rendering? Zero protocol
    cost. Ask the maintainer; one-line change + trait if yes.
 5. **Stale numbers/docs.** INK_GENES_IMPL_SPEC.md §5 says "66 fixtures"; the harness has

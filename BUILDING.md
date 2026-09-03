@@ -74,14 +74,14 @@ struct ShapeState {
     uint8 inkGene;
     bool isBlack;
     ShapeFormation formation;   // Fragment | Direct | Composed | Complete | Black (stable enum)
-    uint256 faceValueWei;       // the denomination; survives sacrifice
+    uint256 faceValueWei;       // the denomination; survives a burnBacking call
     uint256 redeemableValueWei; // 0 for a Black Shape, otherwise equals faceValueWei
     bytes modules;              // materialized module array, empty if geometry derives from seed
 }
 ```
 
 For a payment check, `redeemableValueWei` is the number to trust: it is the ETH you will actually
-receive on redemption, and it is 0 for a Black (sacrificed) Shape.
+receive on redemption, and it is 0 for a Black (backing-burned) Shape.
 
 `shapeState` reads the stored denomination index rather than reconstructing it from backing, so a
 Black Shape still reports its denomination.

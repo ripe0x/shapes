@@ -21,7 +21,7 @@ enum ShapeFormation {
 /// @notice Per-token state. Storing the denomination index rather than a wei amount makes an
 ///         off-ladder backing value unrepresentable.
 /// @dev `originCount` is the number of direct mints credited to this token, conserved across
-///      compose, decompose and split. `isBlack` marks a sacrificed token. `inkGene` is assigned at
+///      compose, decompose and split. `isBlack` marks a token whose backing was burned. `inkGene` is assigned at
 ///      mint and afterwards changes only through `compose`; `decompose` restores the pre-compose
 ///      value and `split` copies it to every child. See INK_GENES_IMPL_SPEC.md.
 struct ShapeData {
@@ -114,7 +114,7 @@ struct ShapeStore {
 
 /// @notice The complete protocol state of one live Shape in a single read.
 /// @dev Returned by `IShapes.shapeState` and `IShapes.previewCompose`. `faceValueWei` is the
-///      Shape's denomination and survives sacrifice; `redeemableValueWei` is zero for a Black
+///      Shape's denomination and survives a burnBacking call; `redeemableValueWei` is zero for a Black
 ///      Shape and otherwise equals face value. `modules` is the token's materialized module array
 ///      (`ModuleCodec`), empty when its geometry derives from `seed` under grammar v1.
 struct ShapeState {

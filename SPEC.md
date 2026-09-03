@@ -646,7 +646,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   invariant asserted is `address(this).balance >= redeemableBacking + pendingFees`.
 - Checks-effects-interactions, plus a reentrancy guard on functions that mint, restructure
   or move ETH: `mint`, `mintBatch`, `redeem`, `burn`, `redeemBatch`, `compose`,
-  `decompose`, `split`, `sacrifice`, `withdrawFees`. The inherited
+  `decompose`, `split`, `burnBacking`, `withdrawFees`. The inherited
   ERC721 transfer and approval functions are **not** guarded, deliberately —
   they move no ETH. One consequence is worth knowing: a receiver can redeem a
   Shape from inside its own `onERC721Received` during a `safeTransferFrom`.
@@ -717,7 +717,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 - **Draft ERC-8060.** `Shapes` implements the current draft `IERC721Value` pair (`valueOf` and
   owner-only `burn`) and advertises its interface ID through ERC-165. A normal `burn` destroys the
   token and pays its exact value. A Black Shape has value zero and can be destroyed without an
-  ETH call. `sacrifice` only creates the Black state; it never burns the NFT. The standard is still
+  ETH call. `burnBacking` only creates the Black state; it never burns the NFT. The standard is still
   a draft, so this deployment pins one revision rather than promising compatibility with later
   edits to the proposal.
 - **Structural burns stay structural.** Tokens consumed by `compose` and `split` never

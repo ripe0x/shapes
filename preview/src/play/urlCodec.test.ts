@@ -8,7 +8,7 @@ import {
   decomposeNode,
   liveNodes,
   removeNode,
-  sacrificeNode,
+  burnBackingNode,
   splitNode,
   textSeed,
   type PlaySession,
@@ -140,11 +140,11 @@ test("round trip: split", () => {
   assert.equal(liveNodes(decoded).every((n) => n.denomIndex === 0), true);
 });
 
-test("round trip: sacrifice", () => {
+test("round trip: burnBacking", () => {
   let s = emptySession();
   s = keepCard(s, 8, 0x1111n); // 100 ETH (top rung)
   const top = liveNodes(s)[0];
-  s = sacrificeNode(s, top.key);
+  s = burnBackingNode(s, top.key);
 
   const decoded = decodeSession(encodeSession(s));
   assertSessionsEqual(s, decoded);
@@ -199,7 +199,7 @@ test("decode: split op with an out-of-range child denomination, or a missing par
   );
 });
 
-test("decode: decompose/sacrifice ops referencing a missing or ineligible id fail closed", () => {
+test("decode: decompose/burnBacking ops referencing a missing or ineligible id fail closed", () => {
   const card = { c: { d: 0, s: "1".repeat(64) } };
   assert.deepEqual(decodeSession(encodeRawWire({ v: 1, ops: [card, { u: 1 }] })), emptySession()); // not composed
   assert.deepEqual(decodeSession(encodeRawWire({ v: 1, ops: [card, { u: 99 }] })), emptySession()); // missing

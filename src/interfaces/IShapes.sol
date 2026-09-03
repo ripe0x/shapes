@@ -9,7 +9,7 @@ import {IERC721Value} from "./IERC721Value.sol";
 /// @title IShapes
 /// @notice ETH wrapped into unique ERC-721 objects at nine fixed denominations.
 /// @dev A Shape holds an exact amount of ETH. Redeeming or burning it destroys the token and
-///      returns exactly that amount to its owner. The other reserve outflow is `sacrifice`, which
+///      returns exactly that amount to its owner. The other reserve outflow is `burnBacking`, which
 ///      sends an apex Complete Shape's backing to an unspendable address and is callable only by
 ///      that Shape's owner. No pause, upgrade path, recovery function or admin path reaches the
 ///      reserve.
@@ -104,9 +104,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         uint32[] originCounts
     );
 
-    /// @notice Emitted when an apex Complete Shape is sacrificed and becomes a Black Shape.
-    ///         `sacrificedWei` is sent to an unspendable address and is never redeemable again.
-    event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
+    /// @notice Emitted when an apex Complete Shape's backing is burned and it becomes a Black Shape.
+    ///         `burnedWei` is sent to an unspendable address and is never redeemable again.
+    event BlackShapeCreated(uint256 indexed tokenId, uint256 burnedWei);
 
     /// @notice Emitted whenever a token's ink gene is assigned or changes: once per mint, once
     ///         per compose (the survivor), once per split child.
@@ -167,7 +167,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error UnsupportedRenderer(address renderer);
     /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
     error UnsupportedCollection(address collection);
-    /// @dev A Black Shape cannot be redeemed, composed, decomposed or sacrificed again.
+    /// @dev A Black Shape cannot be redeemed, composed, decomposed or have its backing burned again.
     ///      It remains transferable and may be destroyed through the draft ERC-8060 `burn` path.
     error TokenIsBlack(uint256 tokenId);
     /// @dev `compose` was called with an empty `burnIds`: there is nothing to burn into the
@@ -181,7 +181,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error SplitTooFewOutputs();
     /// @dev `decompose` found no compose to reverse: the survivor's compose stack is empty.
     error NoComposeRecord(uint256 survivorId);
-    /// @dev `sacrifice` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
+    /// @dev `burnBacking` requires an apex Complete: 100 ETH with an origin per 0.01 unit.
     error NotApexComplete(uint256 tokenId);
     /// @dev The same token id appears twice in one `compose` or `previewCompose` `burnIds`. A
     ///      token can only be burned into the survivor once.
@@ -416,22 +416,22 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         external
         returns (uint256[] memory newIds);
 
-    /// @notice Permanently sacrifice an apex Complete Shape's backing, turning it into a Black
+    /// @notice Permanently burn an apex Complete Shape's backing, turning it into a Black
     ///         Shape. Owner only, one way. The token keeps its id, seed and geometry; its backing is
     ///         sent to an unspendable address and it becomes non-redeemable and non-recomposable.
     ///         The resulting zero-value Black Shape stays transferable and may be burned for zero.
-    function sacrifice(uint256 tokenId) external;
+    function burnBacking(uint256 tokenId) external;
 
     /* ----------------------------- views ------------------------------ */
 
     /// @notice ETH available to redeem now, across every live non-Black Shape.
     function redeemableBacking() external view returns (uint256);
 
-    /// @notice Cumulative backing already sent to the unspendable address by `sacrifice`. This ETH
-    ///         is no longer held by the contract and can never be redeemed. Monotonic.
+    /// @notice Cumulative backing already sent to the unspendable address by `burnBacking`. This
+    ///         ETH is no longer held by the contract and can never be redeemed. Monotonic.
     function burnedBacking() external view returns (uint256);
 
-    /// @notice Number of Black Shapes alive now. `sacrifice` raises it; burning a Black Shape for
+    /// @notice Number of Black Shapes alive now. `burnBacking` raises it; burning a Black Shape for
     ///         zero lowers it. `burnedBacking`, which counts ETH that has already left, does not
     ///         move when one is burned.
     function blackShapeCount() external view returns (uint256);
@@ -605,7 +605,7 @@ interface IShapeRecomposition {
     function splitTo(uint256 tokenId, uint8[] calldata outDenoms, address recipient)
         external
         returns (uint256[] memory newIds);
-    function sacrifice(uint256 tokenId) external;
+    function burnBacking(uint256 tokenId) external;
 }
 
 /// @title IShapeProvenance

@@ -53,7 +53,7 @@ GraphiQL in the browser) and the `@ponder/client` SQL endpoint at
 Verified end to end against a running dev chain seeded by `npm run simulate`
 (see the repo root): all nine event handlers below fired with zero indexing
 errors. A representative run indexed 10k+ mints and their `InkGene`
-assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 sacrifice, and
+assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 backing burn, and
 20k+ transfers — every `token` row carried its assigned `inkGene` and every
 `lineage_edge` its derived `childSeed`, queryable over GraphQL.
 
@@ -117,7 +117,7 @@ history stays queryable.
 | `composeDepth` | `integer` | active reversible compose records; incremented/decremented by compose/decompose |
 | `inkGene` | `integer` | ink gene 0..6; set by `InkGene`, reassigned on every recomposition |
 | `modules` | `hex?` | materialized geometry; null for seed-derived grammar v1 |
-| `isBlack` | `boolean` | transformed via `sacrifice` |
+| `isBlack` | `boolean` | transformed via `burnBacking` |
 | `live` | `boolean` | `false` once redeemed/composed-away/split-away |
 | `owner` | `hex` | current owner address |
 | `mintedAtBlock` | `bigint` | block this row's token id was created at |
@@ -245,7 +245,7 @@ The ten events and what each does to the three tables (`src/index.ts`):
   `childId = newId`) — the edge direction is reversed from `Composed`
   because a split token becomes multiple children rather than several
   tokens becoming one.
-- **`Blackened(tokenId, sacrificedWei)`** — sets `isBlack: true`,
+- **`BlackShapeCreated(tokenId, burnedWei)`** — sets `isBlack: true`,
   `backingWei: 0`. Does not itself change `live`: a Black token remains transferable and
   may later be destroyed through `burn` for zero, but
   still exists and still has an owner.

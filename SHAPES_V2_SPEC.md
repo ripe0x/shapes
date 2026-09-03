@@ -25,7 +25,7 @@ Priority order (from the product owner):
 **Top invariant, always true:** `address(this).balance >= redeemableBacking`.
 
 Recomposition moves **no ETH** and conserves backing by an explicit equality check, so it cannot
-affect solvency. The only new path that moves ETH out of the contract is `sacrifice`, which sends a
+affect solvency. The only new path that moves ETH out of the contract is `burnBacking`, which sends a
 fixed 100 ETH to `0x…dEaD`.
 
 ---
@@ -122,7 +122,7 @@ is correctly **not** Complete.
 
 **Complete is a live computed property, not a stored flag** — split a Complete and it is no
 longer Complete; recompose the pieces (without redeeming any) and it is Complete again. Only the
-**100 ETH Complete** (`originCount == 10,000`) can be sacrificed into Black.
+**100 ETH Complete** (`originCount == 10,000`) can have its backing burned into Black.
 
 Because redemption deletes a token and its origins permanently, the lifetime supply of tokens that
 can ever be Complete — and therefore Black — is bounded by cumulative mint history: origins spent on
@@ -166,11 +166,11 @@ survives. Adapted asymmetrically:
   sequential ID with a seed derived deterministically from the parent's (§9.4). Identity **ends**,
   and so does the artwork: no fragment inherits either, and nothing reassembles them. Composing
   the pieces back yields a token carrying the survivor's own seed, not the split input's.
-- **Sacrifice:** in-place transform, same ID/seed/geometry inverted. The Black state is terminal,
+- **Burn backing:** in-place transform, same ID/seed/geometry inverted. The Black state is terminal,
   but its zero-value NFT may subsequently be destroyed through `burn`.
 
 So `compose` is the one reversible direction: `decompose` undoes it and returns every original ID.
-`split` and `sacrifice` are the only paths that end an identity, and both are final.
+`split` and `burnBacking` are the only paths that end an identity, and both are final.
 
 Do **not** copy Checks' on-chain composite-history storage: Checks is bounded (tiers only halve, so
 ≤ ~7 deep), but a Shapes Complete swallows up to 10,000 tokens. Lineage goes in **events**, not
@@ -178,41 +178,41 @@ storage.
 
 **Marketplace consequence:** under a live listing, compose only moves backing **up** (seller's
 risk, never a buyer rug), and split **burns** the input (stale listing auto-voids). Two in-place
-mutation-rug vectors remain, both keeping the token's ID under a standing listing or bid. **Sacrifice**
-(100 ETH → 0, in place) on an apex Complete. And **decompose**, which shrinks the survivor's backing
+mutation-rug vectors remain, both keeping the token's ID under a standing listing or bid. **Burning
+backing** (100 ETH → 0, in place) on an apex Complete. And **decompose**, which shrinks the survivor's backing
 **down** to its pre-compose denomination in place while keeping the same ID and seed: an owner can
 reverse a compose and hand a bidder a smaller token than the listing advertised. Decompose is
-therefore a buyer-beware vector of the same shape as sacrifice, not the always-up-or-burn safety that
+therefore a buyer-beware vector of the same shape as burning backing, not the always-up-or-burn safety that
 compose and split provide. ERC-4906 `MetadataUpdate` speeds refresh of the token's own listing, but
 it does **not** invalidate standing collection- or trait-level WETH offers and bids: a bidder on an
-apex Complete can receive a Black Shape if the owner sacrifices and then accepts the bid, and a bidder
+apex Complete can receive a Black Shape if the owner burns its backing and then accepts the bid, and a bidder
 on a composed token can receive a decomposed one. Any integrator that values a token by `backingOf`
 must treat an owner-held apex Complete as mutable to zero, and any composed token as mutable down to
 its pre-compose backing.
 
 ---
 
-## 6. Black Shape & ETH sacrifice
+## 6. Black Shape & ETH burn
 
 A 100 ETH Complete can be permanently transformed into a Black Shape by its owner. The token keeps
 its ID, seed, geometry, and lineage; only the colors invert (`#000↔#fff`). After: not redeemable,
 not recomposable, `backingOf` = `valueOf` = 0, `burnedBacking` permanently reports 100 ETH.
-Black Shapes remain transferable and may be destroyed through `burn` for zero; `sacrifice` itself
-does not burn the token. Black burns do not reduce the cumulative sacrifice counters. Black Shapes
+Black Shapes remain transferable and may be destroyed through `burn` for zero; `burnBacking` itself
+does not burn the token. Black burns do not reduce the cumulative burnBacking counters. Black Shapes
 remain transferable ERC721s (not soulbound).
 
-**Sacrifice mechanism (decided): send 100 ETH to `0x…dEaD`.** A real, visible burn (contract
+**Burn mechanism (decided): send 100 ETH to `0x…dEaD`.** A real, visible burn (contract
 balance drops). `0xdEaD` has no code, so no reentrancy; the call is behind
 checks-effects-interactions and `nonReentrant`. This is an *economic* burn (the ETH becomes
 permanently unspendable) — Ethereum has no way to truly destroy arbitrary ETH, so an unspendable
-address is the standard. The sacrifice is independently verifiable on-chain (`burnedBacking`
-and the `Blackened` event, plus the balance decrease).
+address is the standard. The burn is independently verifiable on-chain (`burnedBacking`
+and the `BlackShapeCreated` event, plus the balance decrease).
 
-This adds a **third** ETH-out path to the contract (fee forward, redeem/burn payout, sacrifice). It
+This adds a **third** ETH-out path to the contract (fee forward, redeem/burn payout, burnBacking). It
 is tightly bounded: a **fixed 100 ETH** to a **fixed unspendable address**, callable only by the
 owner of a **Complete apex, not-yet-Black** Shape.
 
-*(An alternative was an internal accounting sacrifice — keep the ETH in the contract as inert
+*(An alternative was an internal accounting burn — keep the ETH in the contract as inert
 surplus, no external call. It is arguably safer, but the owner chose the visible 0xdEaD burn for
 optics/verifiability.)*
 
@@ -391,20 +391,20 @@ entropy, and the frontend can preview split results exactly before executing. Si
 distinct (index-salted) yet derived from the parent, consistent with the "split ends identity"
 decision. Mint seed derivation is unchanged.
 
-### 9.6 sacrifice — apex Complete → Black, in place
+### 9.6 burnBacking — apex Complete → Black, in place
 ```solidity
-function sacrifice(uint256 tokenId) external nonReentrant;
+function burnBacking(uint256 tokenId) external nonReentrant;
 ```
 - **Checks:** caller owns `tokenId`; `!isBlack`; `originCount == COMPLETE_ORIGINS && denomIndex == 8`.
 - **Effects (CEI):** `isBlack = true`; `redeemableBacking -= 100 ether`;
   `burnedBacking += 100 ether`; `blackShapeCount += 1`. **Interaction:**
   `UNSPENDABLE.call{value: 100 ether}("")`, require success. Token keeps ID/seed/denom/originCount.
-- **Emit** `Blackened(tokenId, 100 ether)` + `MetadataUpdate(tokenId)`.
+- **Emit** `BlackShapeCreated(tokenId, 100 ether)` + `MetadataUpdate(tokenId)`.
 
 ### 9.7 Guards on existing paths
 Normal redemption rejects Black Shapes; the draft ERC-8060 `burn` path destroys one for zero.
 Compose/decompose/split reject Black inputs. `decompose` additionally reverts on an empty stack
-(`NoComposeRecord`). `split`/`redeem`/`sacrifice`
+(`NoComposeRecord`). `split`/`redeem`/`burnBacking`
 on a survivor abandon its compose stack (the records become inert), consistent with "you chose not
 to un-merge first" (DECOMPOSE_SPEC.md).
 
@@ -426,7 +426,7 @@ token (including 8 for Black), reverting for a nonexistent id; `backingOf(id)` �
 event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount);
 event Decomposed(uint256 indexed survivorId, uint256[] restoredIds, uint8 survivorDenomIndex, uint32 survivorOriginCount);
 event Split(uint256 indexed tokenId, bytes32 parentSeed, uint256[] newIds, uint8[] outDenoms, uint32[] originCounts);
-event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
+event BlackShapeCreated(uint256 indexed tokenId, uint256 burnedWei);
 event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId);   // one per input re-minted by decompose
 event MetadataUpdate(uint256 tokenId);          // ERC-4906
@@ -491,7 +491,7 @@ an indexer maintaining the origin balance ignores them and instead pairs each `D
 3. Origin conservation: `Σ live originCount (incl Black) == Σ mint-origins − Σ redeemed-origins`.
 4. Capacity: every token `originCount <= backing/UNIT`.
 5. Global capacity: `Σ originCount over live tokens <= Σ units of live backing`.
-6. Sacrifice accounting: `burnedBacking == 100 ether * blackShapeCount`.
+6. Burn accounting: `burnedBacking == 100 ether * blackShapeCount`.
 
 **Unit / regression:**
 - Forgery: mint 100 → split → recompose ⇒ `originCount == 1`, not Complete.
@@ -499,7 +499,7 @@ an indexer maintaining the origin balance ignores them and instead pairs each `D
 - Complete excludes tier 0: a 0.01 token (`units == 1`) is "Direct", never "Complete".
 - compose: ownership, Black-reject, invalid-sum reject, survivor ID/seed retained, backing up-only.
 - split: sum check, `>= 2`, all-fresh IDs, origin partition (§4 cases), input burned.
-- sacrifice: apex-gated, non-Complete reverts, double-sacrifice reverts, post-Black redeem/compose/
+- burnBacking: apex-gated, non-Complete reverts, double-burn reverts, post-Black redeem/compose/
   decompose/split revert, `backingOf == valueOf == 0`, `burnedBacking == 100`, balance −100 to 0xdEaD,
   transfers and zero-value `burn` still work.
 - ERC-4906 emission; `supportsInterface`.
@@ -537,15 +537,15 @@ This is economically harmless — no ETH or origins are created — but indexers
 
 ## 14. Security notes & documentation sweep
 
-- **ETH-out paths: three now** — fee forward, redeem/burn payout, and sacrifice → 0xdEaD
+- **ETH-out paths: three now** — fee forward, redeem/burn payout, and burnBacking → 0xdEaD
   (fixed 100 ETH, fixed unspendable dest, apex-Complete + owner gated, CEI + `nonReentrant`). Add
   invariant coverage.
 - Recompose has **zero external calls** (compose) / callback-safe minting (split, decompose), and
   backing is conserved by an explicit equality check ⇒ it cannot break solvency. `decompose` moves
   no ETH; it is not a fourth ETH-out path.
-- Marketplace mutation has **two in-place vectors**: **sacrifice** (compose up-only, split burns, so
+- Marketplace mutation has **two in-place vectors**: **burnBacking** (compose up-only, split burns, so
   those two never rug) and **decompose**, which shrinks the survivor's backing **down** in place
-  while keeping its id and seed, a buyer-beware vector of the same shape as sacrifice. ERC-4906
+  while keeping its id and seed, a buyer-beware vector of the same shape as burnBacking. ERC-4906
   speeds refresh of the token's own listing but does not cancel standing WETH offers/bids (§5); an
   integrator valuing a token by `backingOf` must treat an owner-held apex Complete as mutable to
   zero, and any composed token as mutable down to its pre-compose backing.
@@ -563,8 +563,8 @@ see §3), duplicate-origin accounting (conservation; duplicate `burnIds` revert)
 (conservation), token-ID manipulation (caller-named survivor, own tokens only), reentrancy
 (nonReentrant + CEI + compose has no calls), malicious receivers (accounting before mint),
 large-batch griefing (self-inflicted only), gas DoS (no third-party forcing), overflow (uint32 vs
-10,000; uint256 sums), event ambiguity (explicit lineage events), sacrifice twice (state flag), redeem
-after sacrifice (guard), recompose Black (guard), burned-ETH-as-backing (sacrificed excluded from
+10,000; uint256 sums), event ambiguity (explicit lineage events), burn backing twice (state flag), redeem
+after burnBacking (guard), recompose Black (guard), burned-ETH-as-backing (burned excluded from
 redeemable), forced ETH (inert surplus, unchanged), fee/reserve interaction (fee only on new ETH),
 apex Complete without 10,000 mints (impossible — `originCount == 10,000` requires 10,000 mints by
 conservation; density concentration cannot lower this).
@@ -599,7 +599,7 @@ tokens exist anywhere.
    (SPEC.md D3e); its TypeScript twin (`preview/src/splitSeed.ts`) and a Solidity↔TS parity fixture
    land here too, since the frontend must preview split children before their ids exist and phase 5's
    fixture/parity story otherwise covers only the renderer.
-4. **Accounting split + `sacrifice`** — `redeemableBacking`/`burnedBacking`, 0xdEaD sacrifice,
+4. **Accounting split + `burnBacking`** — `redeemableBacking`/`burnedBacking`, 0xdEaD burn,
    Black guards, updated solvency invariant + SECURITY.md.
 5. **Renderer** — inversion + provenance traits, TS lockstep, parity, metadata tests.
 6. **Frontend** — multi-tx compose orchestration, provenance UI, Complete/Black flows.
@@ -614,12 +614,12 @@ tokens exist anywhere.
 | Compose reversibility | Per-survivor LIFO stack of self-contained records; `composeDepth` view exposes the depth; `decompose` pops the top. |
 | Decompose identity | Exact inverse of compose: survivor keeps ID/seed and reverts to its pre-compose state; every input revived under its **original** ID/seed; `totalMinted` unchanged (ids reused). Batch + `*To` variants; no in-contract cap. |
 | Split identity | Input fully burned; all outputs are fresh IDs. |
-| Sacrifice identity | In-place transform (same ID/seed/geometry, inverted); `sacrifice` never burns. |
+| Burn-backing identity | In-place transform (same ID/seed/geometry, inverted); `burnBacking` never burns. |
 | Metadata refresh | ERC-4906 `MetadataUpdate` on every mutation. |
 | Provenance | One `uint originCount`, conserved; lineage in events; trees off-chain. |
 | Complete | `originCount == units && units > 1` (tier 0 excluded); "Complete" is the trait name. |
-| Sacrifice gate | Apex only (`originCount == 10,000 @ 100 ETH`). |
-| ETH sacrifice | Send 100 ETH to `0x…dEaD`. |
+| Burn-backing gate | Apex only (`originCount == 10,000 @ 100 ETH`). |
+| ETH burn | Send 100 ETH to `0x…dEaD`. |
 | Black transferability | Transferable (not soulbound). |
 | Composition freedom | Multi-tier allowed to any valid ladder denom; frontend defaults to ladder steps. |
 | Per-call caps | None; frontend chunks; gas is the limit. |
@@ -640,8 +640,8 @@ tokens exist anywhere.
 2. **Resolved.** The split origin partition is forgery-safe (the total is always conserved) and
    owner-controlled. Origin-density concentration is inherent to integer conservation and
    acknowledged in §3; it is economically irrational, not preventable by any partition rule.
-3. **Decided** (§17): 0xdEaD sacrifice, accepting the third ETH-out path for on-chain visibility.
-4. **Decided** (§14 caveat): in-place sacrifice can rug standing WETH bids on an apex Complete;
+3. **Decided** (§17): 0xdEaD burn, accepting the third ETH-out path for on-chain visibility.
+4. **Decided** (§14 caveat): in-place burnBacking can rug standing WETH bids on an apex Complete;
    documented, and ERC-4906 does not cancel offers.
 5. **Confirmed fine.** `uint32 originCount` (max 10,000) + `uint8 denomIndex` + `bool isBlack` pack
    into one slot with headroom; `uint256` backing sums stay far below overflow at any bounded scale.

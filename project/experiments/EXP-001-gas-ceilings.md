@@ -25,7 +25,7 @@
   | direct `compose(10,000 dust → 100 ETH)` | 1,133,751,468 | 37.8× over ceiling |
   | direct `split(100 ETH → 10,000 dust)` with 30M forwarded | fails | does not fit |
   | direct 10,000-input `decompose` with 30M forwarded | fails | does not fit |
-  | `sacrifice` on a genuine apex Complete | 88,001 | fits |
+  | `burnBacking` on a genuine apex Complete | 88,001 | fits |
 
   The legal tiered route has ratios `5,2,5,2,5,2,5,2`, so it is exactly `2,000 + 1,000 + 200 + 100 + 20 + 10 + 2 + 1 = 3,333` compositions. `test_Tiered10000DustApexUses3333BoundedComposes` executes that exact tree and asserts the final token is a 100 ETH Complete with origin count 10,000. This is a call-count and correctness result, not a transaction-count claim: `composeMany` can batch calls. The only measured batching evidence is the 10-call, 5-to-1 `composeMany` sample above; do not extrapolate it to a safe full-tree batch size.
 

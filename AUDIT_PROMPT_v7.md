@@ -121,7 +121,7 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
 ## Security properties to falsify
 
 1. Shapes remains solvent: its ETH balance covers every live, non-Black redeemable backing value.
-2. Minting is the only operation that increases redeemable backing. Redemption and sacrifice
+2. Minting is the only operation that increases redeemable backing. Redemption and burnBacking
    reduce it exactly; compose, decompose and split conserve it.
 3. Every direct or batch output charges exactly one flat fee. A fee is never counted as backing,
    retained accidentally, charged twice, bypassed, rounded by denomination or redirected from the

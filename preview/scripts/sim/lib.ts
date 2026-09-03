@@ -191,7 +191,7 @@ export async function createSim(dep: Deployment, keys: readonly Hex[]) {
   const redeemBatchTo = (actor: number, ids: bigint[], recipient: Address) =>
     sSend(actor, "redeemBatchTo", [ids, recipient]);
   const burn = (actor: number, id: bigint) => sSend(actor, "burn", [id]);
-  const sacrifice = (actor: number, id: bigint) => sSend(actor, "sacrifice", [id]);
+  const burnBacking = (actor: number, id: bigint) => sSend(actor, "burnBacking", [id]);
 
   /* ----------------------------- transfers ------------------------------ */
 
@@ -364,7 +364,7 @@ export async function createSim(dep: Deployment, keys: readonly Hex[]) {
     redeemBatch,
     redeemBatchTo,
     burn,
-    sacrifice,
+    burnBacking,
     transfer,
     safeTransferFrom,
     setApprovalForAll,

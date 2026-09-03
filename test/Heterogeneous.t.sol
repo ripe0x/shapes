@@ -538,11 +538,11 @@ contract HeterogeneousTest is ShapesBase {
 /// @notice Additional Black-token rejection paths beyond `test_PreviewsRejectBlackToMatchExecution`
 ///         in Shapes.t.sol: a Black compose burn input against solvency/supply invariants, a
 ///         Black inside `redeemBatch`, and `decompose`/`decomposeMany` of a Black survivor whose
-///         compose record predates the sacrifice, including after the token is transferred and
+///         compose record predates the burn, including after the token is transferred and
 ///         then burned for zero.
 contract BlackPathsTest is ShapesBase {
     /// @dev A genuine apex Complete: 10,000 direct 0.01 mints composed into one 100 ETH token
-    ///      carrying 10,000 origins, then sacrificed. Mirrors `BlackShapeTest._buildApexComplete`
+    ///      carrying 10,000 origins, then Black. Mirrors `BlackShapeTest._buildApexComplete`
     ///      in Shapes.t.sol.
     function _buildApexComplete() internal returns (uint256 id) {
         vm.prank(alice);
@@ -562,7 +562,7 @@ contract BlackPathsTest is ShapesBase {
     function test_BlackIsRejectedAsAComposeBurnInput() public {
         uint256 black = _buildApexComplete();
         vm.prank(alice);
-        shapes.sacrifice(black);
+        shapes.burnBacking(black);
 
         uint256 survivor = _mint(alice, DENOMS[0]);
         uint256[] memory burn = new uint256[](1);
@@ -589,7 +589,7 @@ contract BlackPathsTest is ShapesBase {
     function test_RedeemBatchContainingABlackReverts() public {
         uint256 black = _buildApexComplete();
         vm.prank(alice);
-        shapes.sacrifice(black);
+        shapes.burnBacking(black);
 
         uint256 live = _mint(alice, DENOMS[4]);
 
@@ -616,13 +616,13 @@ contract BlackPathsTest is ShapesBase {
     }
 
     /// @notice `decompose` and `decomposeMany` both refuse a Black survivor even though its
-    ///         compose record (built before the sacrifice) is still there, on either owner across
+    ///         compose record (built before the burn) is still there, on either owner across
     ///         a transfer. The record survives the Black token's own zero-value `burn`, but the
     ///         burned id can no longer be decomposed at all.
     function test_DecomposeOfABlackSurvivorIsRefusedAndRecordStaysInert() public {
         uint256 black = _buildApexComplete();
         vm.prank(alice);
-        shapes.sacrifice(black);
+        shapes.burnBacking(black);
         assertEq(shapes.composeDepth(black), 1, "apex build left one compose record");
 
         vm.prank(alice);
@@ -645,7 +645,7 @@ contract BlackPathsTest is ShapesBase {
         shapes.decompose(black);
 
         uint256 blackShapeCountBefore = shapes.blackShapeCount();
-        uint256 sacrificedBefore = shapes.burnedBacking();
+        uint256 burnedBefore = shapes.burnedBacking();
 
         vm.prank(bob);
         shapes.burn(black); // zero-value burn, allowed for Black
@@ -658,7 +658,7 @@ contract BlackPathsTest is ShapesBase {
         assertEq(
             shapes.blackShapeCount(), blackShapeCountBefore - 1, "burning a Black Shape lowers the live count"
         );
-        assertEq(shapes.burnedBacking(), sacrificedBefore, "burnedBacking unaffected by the burn");
+        assertEq(shapes.burnedBacking(), burnedBefore, "burnedBacking unaffected by the burn");
         _assertSolvent();
     }
 }

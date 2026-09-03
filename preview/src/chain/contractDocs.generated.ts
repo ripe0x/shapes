@@ -7,7 +7,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "Shapes",
     "kind": "token",
     "description": "ETH-backed ERC-721 tokens with exact redemption value.",
-    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure without changing total redeemable backing. Three operations move ETH out. Redemption sends a burned token's redeemable backing to the caller or a chosen recipient. Sacrifice sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends only `pendingFees`, which is never part of the reserve. Compose, decompose and split move no ETH. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. `owner()` gives no admin rights. Administrative rights are held separately by `admin()`, which configures presentation and fees and can never reach backing, redemption or token ownership. `artist()` permanently attributes the deployment to its deployer and grants no authority. Reentrancy: every state-changing entrypoint declared here is guarded. The inherited ERC-721 transfer and approval functions are not, so during a `safeTransferFrom` the receiver can redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are public libraries whose addresses are linked into this bytecode at deploy time, with no setter. Their functions run under `DELEGATECALL`, so they read and write this contract's storage and emit its events. Neither holds authority: every access check runs here first. Neither writes ERC-721 state, moves ETH, or touches the owner token or the admin address. Each receives a pointer to one storage struct and can reach nothing else. See project/ARCHITECTURE.md.",
+    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure without changing total redeemable backing. Three operations move ETH out. Redemption sends a burned token's redeemable backing to the caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends only `pendingFees`, which is never part of the reserve. Compose, decompose and split move no ETH. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. `owner()` gives no admin rights. Administrative rights are held separately by `admin()`, which configures presentation and fees and can never reach backing, redemption or token ownership. `artist()` permanently attributes the deployment to its deployer and grants no authority. Reentrancy: every state-changing entrypoint declared here is guarded. The inherited ERC-721 transfer and approval functions are not, so during a `safeTransferFrom` the receiver can redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are public libraries whose addresses are linked into this bytecode at deploy time, with no setter. Their functions run under `DELEGATECALL`, so they read and write this contract's storage and emit its events. Neither holds authority: every access check runs here first. Neither writes ERC-721 state, moves ETH, or touches the owner token or the admin address. Each receives a pointer to one storage struct and can reach nothing else. See project/ARCHITECTURE.md.",
     "functions": [
       {
         "name": "admin",
@@ -318,7 +318,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "uint256"
           }
         ],
-        "notice": "Number of Black Shapes alive now. `sacrifice` raises it; burning a Black Shape for zero lowers it. `burnedBacking`, which counts ETH that has already left, does not move when one is burned.",
+        "notice": "Number of Black Shapes alive now. `burnBacking` raises it; burning a Black Shape for zero lowers it. `burnedBacking`, which counts ETH that has already left, does not move when one is burned.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -364,6 +364,34 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "burnBacking",
+        "signature": "burnBacking(uint256)",
+        "stateMutability": "nonpayable",
+        "inputs": [
+          {
+            "name": "tokenId",
+            "type": "uint256"
+          }
+        ],
+        "outputs": [],
+        "notice": "Permanently burn an apex Complete Shape's backing, turning it into a Black Shape. Owner only, one way. The token keeps its id, seed and geometry; its backing is sent to an unspendable address and it becomes non-redeemable and non-recomposable. The resulting zero-value Black Shape stays transferable and may be burned for zero.",
+        "dev": "Only a complete apex Shape may have its backing burned. It becomes Black, its backing leaves `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH is sent to the fixed unspendable address. The token stays alive but can no longer redeem ETH. CEI: the token is marked Black before the transfer, which is last.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "burnBacking",
+          "inputs": [
+            {
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        }
+      },
+      {
         "name": "burnedBacking",
         "signature": "burnedBacking()",
         "stateMutability": "view",
@@ -374,7 +402,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "uint256"
           }
         ],
-        "notice": "Cumulative backing already sent to the unspendable address by `sacrifice`. This ETH is no longer held by the contract and can never be redeemed. Monotonic.",
+        "notice": "Cumulative backing already sent to the unspendable address by `burnBacking`. This ETH is no longer held by the contract and can never be redeemed. Monotonic.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -2452,34 +2480,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
-        "name": "sacrifice",
-        "signature": "sacrifice(uint256)",
-        "stateMutability": "nonpayable",
-        "inputs": [
-          {
-            "name": "tokenId",
-            "type": "uint256"
-          }
-        ],
-        "outputs": [],
-        "notice": "Permanently sacrifice an apex Complete Shape's backing, turning it into a Black Shape. Owner only, one way. The token keeps its id, seed and geometry; its backing is sent to an unspendable address and it becomes non-redeemable and non-recomposable. The resulting zero-value Black Shape stays transferable and may be burned for zero.",
-        "dev": "Only a complete apex Shape may be sacrificed. It becomes Black, its backing leaves `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH is sent to the fixed unspendable address. The token stays alive but can no longer redeem ETH. CEI: the token is marked Black before the transfer, which is last.",
-        "params": {},
-        "returns": {},
-        "abi": {
-          "type": "function",
-          "name": "sacrifice",
-          "inputs": [
-            {
-              "name": "tokenId",
-              "type": "uint256"
-            }
-          ],
-          "outputs": [],
-          "stateMutability": "nonpayable"
-        }
-      },
-      {
         "name": "safeTransferFrom",
         "signature": "safeTransferFrom(address,address,uint256)",
         "stateMutability": "nonpayable",
@@ -3521,8 +3521,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": "This event emits when the metadata of a range of tokens is changed. So that the third-party platforms such as NFT market could timely update the images and related attributes of the NFTs."
       },
       {
-        "name": "Blackened",
-        "signature": "Blackened(uint256,uint256)",
+        "name": "BlackShapeCreated",
+        "signature": "BlackShapeCreated(uint256,uint256)",
         "inputs": [
           {
             "name": "tokenId",
@@ -3530,12 +3530,12 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "indexed": true
           },
           {
-            "name": "sacrificedWei",
+            "name": "burnedWei",
             "type": "uint256",
             "indexed": false
           }
         ],
-        "notice": "Emitted when an apex Complete Shape is sacrificed and becomes a Black Shape. `sacrificedWei` is sent to an unspendable address and is never redeemable again.",
+        "notice": "Emitted when an apex Complete Shape's backing is burned and it becomes a Black Shape. `burnedWei` is sent to an unspendable address and is never redeemable again.",
         "dev": ""
       },
       {
@@ -4381,7 +4381,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": "`sacrifice` requires an apex Complete: 100 ETH with an origin per 0.01 unit."
+        "dev": "`burnBacking` requires an apex Complete: 100 ETH with an origin per 0.01 unit."
       },
       {
         "name": "NotShapeOwner",
@@ -4465,7 +4465,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": "A Black Shape cannot be redeemed, composed, decomposed or sacrificed again. It remains transferable and may be destroyed through the draft ERC-8060 `burn` path."
+        "dev": "A Black Shape cannot be redeemed, composed, decomposed or have its backing burned again. It remains transferable and may be destroyed through the draft ERC-8060 `burn` path."
       },
       {
         "name": "UnsupportedCollection",
@@ -8569,7 +8569,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": "A Black Shape cannot be redeemed, composed, decomposed or sacrificed again. It remains transferable and may be destroyed through the draft ERC-8060 `burn` path."
+        "dev": "A Black Shape cannot be redeemed, composed, decomposed or have its backing burned again. It remains transferable and may be destroyed through the draft ERC-8060 `burn` path."
       },
       {
         "name": "UnsupportedDenomination",

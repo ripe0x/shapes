@@ -243,7 +243,7 @@ contract ContractOwnershipTest is Test {
         // `supportsInterface` must never advertise an interface whose members are not all
         // implemented here, so the narrower capability interfaces are pinned alongside it in
         // Composability.t.sol.
-        assertEq(type(IShapes).interfaceId, bytes4(0x2ba22587), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x9bde7d5a), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

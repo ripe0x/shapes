@@ -1931,14 +1931,14 @@ contract RecompositionTest is ShapesBase {
 }
 
 /* ==================================================================== *
- *  Black Shape sacrifice and zero-value burn
+ *  Black Shape backing burn and zero-value burn
  * ==================================================================== */
 
 contract BlackShapeTest is ShapesBase {
     address internal constant DEAD = 0x000000000000000000000000000000000000dEaD;
 
     /// @dev A genuine apex Complete: 10,000 direct 0.01 mints composed into one 100 ETH token
-    ///      carrying 10,000 origins. The only sacrificable state; nothing cheaper reaches it,
+    ///      carrying 10,000 origins. The only state whose backing can be burned; nothing cheaper reaches it,
     ///      because origins are conserved and only a direct mint creates one.
     function _buildApexComplete() internal returns (uint256 id) {
         vm.prank(alice);
@@ -1967,7 +1967,7 @@ contract BlackShapeTest is ShapesBase {
         survivor = shapes.compose(first, burn);
     }
 
-    function test_SacrificeCreatesBlackWithoutBurningAndIgnoresPositionsTarget() public {
+    function test_BurnBackingCreatesBlackWithoutBurningAndIgnoresPositionsTarget() public {
         MockPositionResolver resolver = new MockPositionResolver();
         resolver.setShouldRevert(true);
         shapes.setPointer(uint8(IShapes.Pointer.Positions), address(resolver));
@@ -1977,9 +1977,9 @@ contract BlackShapeTest is ShapesBase {
         assertEq(shapes.redeemableBacking(), DENOMS[8], "reserve is the apex backing");
 
         vm.expectEmit(true, false, false, true, address(shapes));
-        emit IShapes.Blackened(id, DENOMS[8]);
+        emit IShapes.BlackShapeCreated(id, DENOMS[8]);
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         assertTrue(shapes.isBlack(id), "now Black");
         assertTrue(shapes.exists(id), "Black remains a live ERC721");
@@ -1987,7 +1987,7 @@ contract BlackShapeTest is ShapesBase {
         assertEq(shapes.blackShapeCount(), 1);
         assertEq(shapes.burnedBacking(), DENOMS[8]);
         assertEq(shapes.redeemableBacking(), 0, "backing left the reserve");
-        assertEq(DEAD.balance, deadBefore + DENOMS[8], "sacrificed to the burn address");
+        assertEq(DEAD.balance, deadBefore + DENOMS[8], "backing sent to the burn address");
         assertEq(address(shapes).balance, balBefore - DENOMS[8], "contract paid it out");
         assertEq(shapes.backingOf(id), 0, "black backing reads zero");
         assertEq(shapes.valueOf(id), 0, "black draft ERC-8060 value reads zero");
@@ -2003,7 +2003,7 @@ contract BlackShapeTest is ShapesBase {
     function test_BlackRejectsRedeemAndRecompositionButCanBurnForZero() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         // Non-redeemable.
         vm.prank(alice);
@@ -2024,10 +2024,10 @@ contract BlackShapeTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
         shapes.split(id, outs);
 
-        // One way: cannot sacrifice twice.
+        // One way: cannot burn backing twice.
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, id));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         uint256 balanceBefore = alice.balance;
         uint256 mintedBefore = shapes.totalMinted();
@@ -2037,7 +2037,7 @@ contract BlackShapeTest is ShapesBase {
         shapes.burn(id);
 
         assertEq(alice.balance, balanceBefore, "zero-value burn transfers no ETH");
-        assertEq(shapes.burnedBacking(), DENOMS[8], "historical sacrifice remains counted");
+        assertEq(shapes.burnedBacking(), DENOMS[8], "historical burn remains counted");
         assertEq(shapes.blackShapeCount(), 0, "blackShapeCount counts the Black Shapes alive now");
         assertFalse(shapes.exists(id), "burn retires the Black id");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
@@ -2047,26 +2047,26 @@ contract BlackShapeTest is ShapesBase {
         assertEq(next, mintedBefore, "burned Black id is never reused");
     }
 
-    function test_SacrificeRejectsDirectApex() public {
+    function test_BurnBackingRejectsDirectApex() public {
         uint256 id = _mint(alice, DENOMS[8]); // 100 ETH, originCount 1, not Complete
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
     }
 
-    function test_SacrificeRejectsCompleteBelowApex() public {
+    function test_BurnBackingRejectsCompleteBelowApex() public {
         uint256 id = _buildComplete005();
         assertTrue(shapes.isComplete(id));
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotApexComplete.selector, id));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
     }
 
-    function test_SacrificeRejectsNonOwner() public {
+    function test_BurnBackingRejectsNonOwner() public {
         uint256 id = _mint(alice, DENOMS[4]);
         vm.prank(bob);
         vm.expectRevert(abi.encodeWithSelector(IShapes.NotShapeOwner.selector, id, bob));
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
     }
 
     /// @notice `split` and `compose` reject a Black Shape, and the previews report the same
@@ -2074,7 +2074,7 @@ contract BlackShapeTest is ShapesBase {
     function test_PreviewsRejectBlackToMatchExecution() public {
         uint256 id = _buildApexComplete();
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         uint8[] memory outs = new uint8[](2);
         outs[0] = 7; // 50 ETH
@@ -2107,30 +2107,30 @@ contract BlackShapeTest is ShapesBase {
 
     /// @notice A Black Shape backs nothing, so its denomination cannot be recovered from
     ///         `backingOf`. `shapeState` reports it from the stored index. The face value and the
-    ///         artwork survive the sacrifice; only the redeemable value goes.
+    ///         artwork survive the burn; only the redeemable value goes.
     function test_BlackShapeReadsAsApexWithNothingRedeemable() public {
         uint256 id = _buildApexComplete();
         string memory cardBefore = shapes.unicodeCard(id);
         uint8 geneBefore = shapes.inkGeneOf(id);
 
         vm.prank(alice);
-        shapes.sacrifice(id);
+        shapes.burnBacking(id);
 
         assertEq(shapes.backingOf(id), 0, "a Black Shape backs nothing");
-        assertEq(uint8(shapes.formationOf(id)), uint8(ShapeFormation.Black), "sacrifice sets Black");
+        assertEq(uint8(shapes.formationOf(id)), uint8(ShapeFormation.Black), "burnBacking sets Black");
         assertFalse(shapes.isComplete(id), "Black is terminal, not Complete");
 
         ShapeState memory st = shapes.shapeState(id);
         assertTrue(st.isBlack);
         assertEq(uint8(st.formation), uint8(ShapeFormation.Black), "lens agrees with the core");
-        assertEq(st.denominationIndex, 8, "the apex index survives the sacrifice");
+        assertEq(st.denominationIndex, 8, "the apex index survives the burn");
         assertEq(st.faceValueWei, DENOMS[8], "face value is the apex amount");
         assertEq(st.redeemableValueWei, 0, "nothing is redeemable");
         assertEq(st.originCount, 10_000, "origins are unchanged");
         assertEq(st.inkGene, geneBefore, "the gene is unchanged");
 
         // The card is a function of geometry, denomination and gene, none of which moved.
-        assertEq(shapes.unicodeCard(id), cardBefore, "sacrifice must not change the artwork");
+        assertEq(shapes.unicodeCard(id), cardBefore, "burnBacking must not change the artwork");
     }
 }
 
