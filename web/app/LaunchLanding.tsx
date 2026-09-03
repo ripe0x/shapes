@@ -349,25 +349,6 @@ export function LaunchLanding({
         </div>
       </section>
 
-      <section className="launch-section launch-tiers" id="tiers" aria-labelledby="tiers-title">
-        <div className="launch-section-heading">
-          <div>
-            <p className="launch-kicker">Nine fixed tiers</p>
-            <h2 id="tiers-title">Value tiers</h2>
-          </div>
-          <p>
-            Each value is exact and fully redeemable. A one-time 0.001 ETH mint fee applies to
-            any shape mint. No fees to merge, split, or redeem.
-          </p>
-        </div>
-
-        <div className="tier-grid">
-          {TIERS.map((tier, index) => (
-            <TierCard tier={tier} index={index} key={tier.value} />
-          ))}
-        </div>
-      </section>
-
       <section className="launch-section launch-mechanics" id="lineage" aria-labelledby="mechanics-title">
         <div className="mechanics-copy">
           <p className="launch-kicker">How it works</p>

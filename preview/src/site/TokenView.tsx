@@ -118,7 +118,7 @@ export function TokenView({
   const [focusedKey, setFocusedKey] = React.useState<string | null>(null);
   const [expandedKeys, setExpandedKeys] = React.useState<ReadonlySet<string>>(new Set());
   React.useEffect(() => {
-    setFocusedKey("root");
+    setFocusedKey(null);
     setExpandedKeys(provTree ? initialExpandedKeys(provTree.root) : new Set());
   }, [provTree]);
 
