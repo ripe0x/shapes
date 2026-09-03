@@ -857,8 +857,12 @@ export interface SplitFrom {
  * Metadata JSON attributes block, built from a composition and its already-rendered SVG. Shared
  * by the seed-drawn path (`tokenMetadataJson`) and the sampled path (`sampledTokenMetadataJson`
  * in `./sampling`). `splitFrom`, when present, appends "Split From" / "Split Origin" as the last
- * two attributes after the fixed traits and token #0's conditional collection-owner trait; omitted
+ * two attributes after the fixed traits and the conditional collection-owner trait; omitted
  * from `attributes` entirely when absent, mirroring `ShapeRenderer._splitTraits`.
+ *
+ * `isOwnerToken` is the renderer's `ownerToken` flag, which `Shapes.tokenURI` reads from the live
+ * `ownerToken()`. It defaults to `tokenId === 0n`, the owner token in the parity corpus, which
+ * mints no others.
  */
 export function metadataJsonFromComposition(
   c: Composition,
@@ -871,6 +875,7 @@ export function metadataJsonFromComposition(
   namePrefix: string,
   description: string,
   splitFrom?: SplitFrom,
+  isOwnerToken: boolean = tokenId === 0n,
 ): string {
   const units = unitsOf(c);
   const complete = !inverted && units > 1n && originCount === units;
@@ -878,10 +883,10 @@ export function metadataJsonFromComposition(
     ? `,{"trait_type":"Split From","value":"${LABELS[splitFrom.parentDenomIndex]} ETH"},` +
       `{"trait_type":"Split Origin","value":"${LABELS[splitFrom.originDenomIndex]} ETH"}`
     : "";
-  const name = tokenId === 0n
+  const name = isOwnerToken
     ? `${namePrefix}${tokenId.toString()}, Contract Owner`
     : `${namePrefix}${tokenId.toString()}`;
-  const contractOwnerTrait = tokenId === 0n
+  const contractOwnerTrait = isOwnerToken
     ? `,{"value":"Contract Owner"}`
     : "";
   return (

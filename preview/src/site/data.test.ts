@@ -78,7 +78,14 @@ function makeClient(opts: {
   mintStart?: bigint;
   genesisHash?: `0x${string}`;
 }) {
-  const counts = {multicall: 0, readContract: 0, calls: new Map<string, number>()};
+  const counts = {
+    multicall: 0,
+    readContract: 0,
+    /** Highest number of multicalls in flight at once. 1 proves the chunks are paced, not burst. */
+    peakConcurrentMulticalls: 0,
+    calls: new Map<string, number>(),
+  };
+  let inFlight = 0;
 
   function resolve(functionName: string, args: readonly unknown[] | undefined): unknown {
     counts.calls.set(functionName, (counts.calls.get(functionName) ?? 0) + 1);
@@ -149,6 +156,12 @@ function makeClient(opts: {
       contracts: {functionName: string; args?: readonly unknown[]}[];
     }) {
       counts.multicall++;
+      inFlight++;
+      counts.peakConcurrentMulticalls = Math.max(counts.peakConcurrentMulticalls, inFlight);
+      // A real multicall resolves on a later tick; yielding here lets a caller that fires chunks
+      // in parallel show up as concurrency rather than as one-at-a-time.
+      await Promise.resolve();
+      inFlight--;
       return contracts.map((c) => {
         try {
           return {status: "success", result: resolve(c.functionName, c.args)};
@@ -201,8 +214,24 @@ function pagedIndexerFixture(
   }) as typeof fetch;
 }
 
-function indexedToken(id: bigint) {
-  return {id: id.toString()};
+/** One indexer `token` row, as the GraphQL boundary serializes it. The defaults describe an
+ *  ordinary smallest-denomination mint; overrides describe everything else. */
+function indexedToken(id: bigint, overrides: Record<string, unknown> = {}) {
+  return {
+    id: id.toString(),
+    seed: `0x${"0".repeat(63)}7`,
+    denomIndex: 0,
+    backingWei: DENOMINATIONS[0].wei.toString(),
+    originCount: 1,
+    composeDepth: 0,
+    inkGene: 0,
+    modules: null,
+    isBlack: false,
+    owner: OWNER,
+    splitFromDenom: null,
+    splitOriginDenom: null,
+    ...overrides,
+  };
 }
 
 const NORMAL: FakeToken = {
@@ -252,6 +281,8 @@ test("loadSite: multicall path chunks ids and reads per-token fields for live id
 
   // 1203 ownerOf calls in 500-call chunks = 3 multicalls, plus 1 for the per-token fields.
   assert.equal(counts.multicall, 4);
+  // Chunks are paced, not fired together: a burst is what public gateways answer with HTTP 429.
+  assert.equal(counts.peakConcurrentMulticalls, 1);
   // Header, the single flat-fee read, ownerToken, and mintStart go one-by-one.
   assert.equal(counts.readContract, 8);
 });
@@ -473,13 +504,9 @@ test("loadSite: a non-revert ownerToken failure rejects the load instead of hidi
   await assert.rejects(loadSite(client, dep), /RPC unavailable/);
 });
 
-test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state stays onchain", async () => {
-  const live = new Map<bigint, FakeToken>([
-    [2n, NORMAL],
-    [5n, {...NORMAL, black: true}],
-    [1200n, {...NORMAL, backing: DENOMINATIONS[8].wei, seed: `0x${"0".repeat(63)}9`, composeDepth: 3n}],
-  ]);
-  const {client, counts} = makeClient({minted: 1203n, live, multicall3: true, headBlock: 100n});
+test("loadSite: a fresh indexer supplies every token field with no per-token chain read", async () => {
+  const live = new Map<bigint, FakeToken>();
+  const {client, counts} = makeClient({minted: 1203n, live, multicall3: true, headBlock: 100n, supply: 3n});
   const metrics: {source: string; indexerRequests: number}[] = [];
 
   const site = await loadSite(client, dep, {
@@ -487,21 +514,108 @@ test("loadSite: fresh indexer IDs avoid the minted-id scan but all token state s
     fetch: indexerFixture({
       block: 99,
       tokens: [
-        indexedToken(1200n),
-        indexedToken(5n),
-        indexedToken(2n),
+        indexedToken(1200n, {
+          denomIndex: 8,
+          backingWei: DENOMINATIONS[8].wei.toString(),
+          seed: `0x${"0".repeat(63)}9`,
+          composeDepth: 3,
+          originCount: 4,
+          inkGene: 2,
+        }),
+        indexedToken(5n, {isBlack: true, backingWei: "0"}),
+        indexedToken(2n, {owner: ARTIST}),
       ],
     }),
     onMetrics: (metric) => metrics.push(metric),
   });
 
   assert.deepEqual(site.tokens.map((t) => t.id), [1200n, 5n, 2n]);
-  assert.equal(site.tokens[0]!.seed, 9n); // bytes32 RPC data is normalized before detail rendering
-  assert.equal(site.tokens[0]!.composeDepth, 3);
+  const apex = site.tokens[0]!;
+  assert.equal(apex.seed, 9n); // bytes32 rows are normalized to the bigint SiteToken promises
+  assert.equal(apex.composeDepth, 3);
+  assert.equal(apex.di, 8);
+  assert.equal(apex.backing, DENOMINATIONS[8].wei);
+  assert.equal(apex.originCount, 4);
+  assert.equal(apex.inkGene, 2);
+  assert.equal(apex.owner, OWNER);
+  assert.equal(apex.meta.name, "Shape 1200");
+  assert.ok(apex.image.startsWith("data:image/svg+xml;base64,"));
+  assert.equal(
+    apex.meta.attributes.find((a) => a.trait_type === "Ink")?.value,
+    GENE_NAMES[2],
+  );
+  assert.equal(
+    apex.meta.attributes.find((a) => a.trait_type === "Independent Origins")?.value,
+    "4",
+  );
   assert.equal(site.tokens[1]!.di, -1); // Black remains live and visible
-  assert.equal(counts.multicall, 1); // six canonical reads for each candidate live id
-  assert.equal(counts.readContract, 7); // live header, one flat-fee read, ownerToken, mintStart; no totalMinted scan
+  assert.equal(site.tokens[1]!.backing, 0n);
+  assert.equal(site.tokens[2]!.owner, ARTIST);
+
+  assert.equal(counts.multicall, 0); // no per-token chain read at all
+  assert.equal(counts.readContract, 7); // live header, one flat-fee read, ownerToken, mintStart
   assert.deepEqual(metrics, [{source: "indexer", indexerRequests: 1}]);
+});
+
+test("loadSite: the owner token's own name and description come from the header's ownerToken", async () => {
+  const {client} = makeClient({
+    minted: 3n,
+    live: new Map(),
+    multicall3: true,
+    headBlock: 100n,
+    supply: 2n,
+    ownerToken: 2n,
+  });
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: indexerFixture({block: 100, tokens: [indexedToken(2n), indexedToken(1n)]}),
+  });
+
+  const ownerToken = site.tokens.find((t) => t.id === 2n)!;
+  assert.equal(ownerToken.meta.name, "Shape 2, Contract Owner");
+  assert.ok(ownerToken.meta.attributes.some((a) => a.trait_type === undefined && a.value === "Contract Owner"));
+  const ordinary = site.tokens.find((t) => t.id === 1n)!;
+  assert.equal(ordinary.meta.name, "Shape 1");
+  assert.ok(!ordinary.meta.attributes.some((a) => a.value === "Contract Owner"));
+});
+
+test("loadSite: on the indexer path only the ids the wallet just acted on are read from the chain", async () => {
+  // The indexer is one block behind on id 2: its row still shows the pre-compose state, and it
+  // has not yet seen that id 5 burned.
+  const live = new Map<bigint, FakeToken>([
+    [2n, {...NORMAL, composeDepth: 5n, owner: ARTIST}],
+  ]);
+  const {client, counts} = makeClient({minted: 6n, live, multicall3: true, headBlock: 100n, supply: 2n});
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: indexerFixture({block: 99, tokens: [indexedToken(5n), indexedToken(2n)]}),
+    dirtyIds: [2n, 5n],
+  });
+
+  assert.deepEqual(site.tokens.map((t) => t.id), [2n]); // 5 burned since the checkpoint
+  assert.equal(site.tokens[0]!.composeDepth, 5); // the chain read won over the stale row
+  assert.equal(site.tokens[0]!.owner, ARTIST);
+  // One aggregate covering both dirty ids, and nothing for the rest of the gallery.
+  assert.equal(counts.multicall, 1);
+  assert.equal(counts.calls.get("ownerOf"), 2); // the two dirty ids, not the six minted ones
+});
+
+test("loadSite: an indexer row the renderer rejects falls back to the chain", async () => {
+  const live = new Map<bigint, FakeToken>([[1n, NORMAL]]);
+  const {client, counts} = makeClient({minted: 2n, live, multicall3: true, headBlock: 100n});
+  const metrics: {source: string; indexerRequests: number}[] = [];
+
+  const site = await loadSite(client, dep, {
+    indexerUrl: "http://indexer.test",
+    fetch: indexerFixture({block: 100, tokens: [indexedToken(1n, {denomIndex: 99})]}),
+    onMetrics: (metric) => metrics.push(metric),
+  });
+
+  assert.deepEqual(site.tokens.map((t) => t.id), [1n]);
+  assert.deepEqual(metrics, [{source: "chain", indexerRequests: 0}]);
+  assert.equal(counts.calls.get("tokenURI"), 1); // rebuilt from the chain, not the bad row
 });
 
 test("loadSite: dep.indexerUrl alone (no options override) drives the indexer path, as SiteApp calls it", async () => {
