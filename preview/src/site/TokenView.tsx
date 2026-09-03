@@ -2,12 +2,8 @@ import React from "react";
 import {type PublicClient} from "viem";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {geometryAt, svgFromComposition, CANONICAL} from "../canonical/render";
-import {
-  loadHistory,
-  loadProvenance,
-  type HistEvent,
-  type ProvNode,
-} from "../chain/history";
+import {loadProvenance, type ProvNode} from "../chain/history";
+import {loadTokenHistory, type HistEvent} from "./tokenHistory";
 import {C, FONT, SANS, label} from "./theme";
 import {Section, Art, Modal, short, txUrl} from "./ui";
 import {localArt} from "./art";
@@ -52,6 +48,14 @@ const EVENT_LABEL: Record<HistEvent["kind"], string> = {
 interface DatedEvent extends HistEvent {
   dateTime: string;
 }
+
+const DATE_TIME = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
 
 export function TokenView({
   data,
@@ -131,35 +135,26 @@ export function TokenView({
       return next;
     });
 
-  // Token history from the event log, with block timestamps resolved to dates.
+  // Token history from the indexer. Null means no indexer answered within its freshness guard, and
+  // the section is not rendered at all.
   React.useEffect(() => {
     if (!publicClient) return;
     let cancelled = false;
     setHistory(null);
-    void (async () => {
-      const events = await loadHistory(publicClient, dep, tokenId);
-      const blocks = [...new Set(events.map((e) => e.block))];
-      const stamps = new Map(
-        await Promise.all(
-          blocks.map(async (b) => {
-            const blk = await publicClient.getBlock({blockNumber: b});
-            const dateTime = new Intl.DateTimeFormat(undefined, {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            }).format(new Date(Number(blk.timestamp) * 1000));
-            return [b, dateTime] as const;
-          }),
-        ),
-      );
-      if (!cancelled) {
-        setHistory(events.map((e) => ({...e, dateTime: stamps.get(e.block) ?? ""})).reverse());
-      }
-    })().catch(() => {
-      if (!cancelled) setHistory([]);
-    });
+    void loadTokenHistory(publicClient, dep, tokenId)
+      .then((events) => {
+        if (cancelled) return;
+        setHistory(
+          events === null
+            ? null
+            : events
+                .map((e) => ({...e, dateTime: DATE_TIME.format(new Date(e.timestamp * 1000))}))
+                .reverse(),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setHistory(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -488,14 +483,13 @@ function provNodeToTree(node: ProvNode, live: SiteToken[], path: string, liveIds
   };
 }
 
+/** The token's history, or nothing at all when the indexer has not supplied one: history comes
+ *  from the indexer only, and an empty section says less than no section. */
 function History({history, chainId}: {history: DatedEvent[] | null; chainId: number}) {
+  if (history === null || history.length === 0) return null;
   return (
     <Section title="HISTORY" pad="16px 48px 24px 32px">
-      {history === null ? (
-        <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>Reading the event log…</div>
-      ) : history.length === 0 ? (
-        <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>No events.</div>
-      ) : (
+      {(
         history.map((h) => (
           <div
             key={h.key}

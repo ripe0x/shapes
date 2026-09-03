@@ -151,19 +151,20 @@ export function AuctionView({
   const bidderIdentity = useEnsDisplay(publicClient, highestBidder);
 
   const auctionId = typeof auction === "object" && auction !== null ? auction.id : null;
-  const [bidHistory, setBidHistory] = React.useState<BidHistoryEntry[] | null>(null);
+  // "loading" until the first read resolves, null once the indexer has declined to supply a
+  // history (none configured, unreachable, or behind its freshness guard), otherwise the entries.
+  const [bidHistory, setBidHistory] = React.useState<BidHistoryEntry[] | null | "loading">("loading");
   React.useEffect(() => {
     if (!publicClient || auctionId === null) return;
     let cancelled = false;
-    setBidHistory(null);
+    setBidHistory("loading");
     void loadBidHistory(publicClient, dep, auctionId).then((entries) => {
       if (!cancelled) setBidHistory(entries);
     });
     return () => {
       cancelled = true;
     };
-    // txHash re-triggers the load after any confirmed auction transaction; loadBidHistory's own
-    // cache (keyed by log count) makes this a no-op unless a new bid actually landed.
+    // txHash re-triggers the load after any confirmed auction transaction.
   }, [publicClient, dep, auctionId, txHash]);
 
   if (auction === "error") {
@@ -633,25 +634,27 @@ export function AuctionView({
         </div>
       </div>
 
-      <Section title="BID HISTORY" pad="16px 48px 24px 32px">
-        {bidHistory === null ? (
-          <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>Reading the event log…</div>
-        ) : bidHistory.length === 0 ? (
-          <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>No bids yet.</div>
-        ) : (
-          bidHistory.map((entry) => (
-            <BidHistoryRow
-              key={entry.key}
-              entry={entry}
-              publicClient={publicClient}
-              chainId={dep.chainId}
-              data={data}
-              now={now}
-              onOpenToken={onOpenToken}
-            />
-          ))
-        )}
-      </Section>
+      {bidHistory !== null && (
+        <Section title="BID HISTORY" pad="16px 48px 24px 32px">
+          {bidHistory === "loading" ? (
+            <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>Reading bids…</div>
+          ) : bidHistory.length === 0 ? (
+            <div style={{fontSize: 13, color: C.muted, padding: "12px 0"}}>No bids yet.</div>
+          ) : (
+            bidHistory.map((entry) => (
+              <BidHistoryRow
+                key={entry.key}
+                entry={entry}
+                publicClient={publicClient}
+                chainId={dep.chainId}
+                data={data}
+                now={now}
+                onOpenToken={onOpenToken}
+              />
+            ))
+          )}
+        </Section>
+      )}
 
       {auction.yourCards.length > 0 && (
         <Section title="YOUR ESCROW" pad="26px 48px 36px 32px">

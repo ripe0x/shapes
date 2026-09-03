@@ -1,36 +1,9 @@
-import {formatEther, type PublicClient} from "viem";
-import {shapesAbi, denomLabel, denomIndexOf, DENOMINATIONS, type Deployment} from "./abi";
+import {type PublicClient} from "viem";
+import {shapesAbi, denomIndexOf, type Deployment} from "./abi";
 import {splitChildSeed} from "../splitSeed";
 
-const ZERO = "0x0000000000000000000000000000000000000000";
-
-export type HistKind =
-  | "mint"
-  | "bornFromSplit"
-  | "splitInto"
-  | "absorbed"
-  | "mergedAway"
-  | "decomposed"
-  | "revived"
-  | "backingBurned"
-  | "redeemed"
-  | "transfer";
-
-export interface HistEvent {
-  key: string;
-  block: bigint;
-  logIndex: number;
-  tx: `0x${string}`;
-  kind: HistKind;
-  /// One-line human description of what happened to this token.
-  text: string;
-}
-
-const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-
 // Public RPCs cap eth_getLogs at ~50k blocks, so a scan from block 0 is rejected outright. Walk
-// from the deploy block to head in windows under that cap and concatenate. Enough to reconstruct a
-// single token's lineage; an indexer is the right source once log volume grows.
+// from the deploy block to head in windows under that cap and concatenate.
 const MAX_RANGE = 45_000n;
 
 export async function paginate<T>(
@@ -43,109 +16,6 @@ export async function paginate<T>(
     const to = from + MAX_RANGE < latest ? from + MAX_RANGE : latest;
     out.push(...(await fetch(from, to)));
   }
-  return out;
-}
-
-/// Reconstruct a single token's on-chain history from the contract's event log. Each Shapes
-/// operation is a distinct event, and recomposition events name every token they touch, so a
-/// token's full lineage — its birth (a mint, or a split of some parent), the merges and splits it
-/// took part in, transfers, and any backing burn — is recoverable without an indexer. On a local dev
-/// chain the block range is tiny, so a full scan from block 0 is cheap.
-export async function loadHistory(
-  publicClient: PublicClient,
-  dep: Deployment,
-  id: bigint,
-): Promise<HistEvent[]> {
-  const base = {address: dep.shapes, abi: shapesAbi} as const;
-  const latest = await publicClient.getBlockNumber();
-  // Events keyed on this token by an indexed arg are fetched targeted (mint, burnBacking, redeem,
-  // and transfers of this id); a token composed from thousands of ancestors would otherwise pull
-  // every ShapeMinted log and overflow the RPC response. The recomposition events name touched
-  // ids in unindexed array args, so they are still fetched whole — but there is one per
-  // compose/split/decompose, far fewer than mints, so that stays cheap.
-  // Fetched one event type at a time: seven parallel log scans trip public gateways' burst limits.
-  const minted = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock, toBlock}));
-  const composed = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock}));
-  const split = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock, toBlock}));
-  const decomposed = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock}));
-  const backingBurned = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "BlackShapeCreated", args: {tokenId: id}, fromBlock, toBlock}));
-  const redeemed = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}, fromBlock, toBlock}));
-  const transfers = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}, fromBlock, toBlock}));
-
-  const out: HistEvent[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const push = (log: any, kind: HistKind, text: string) =>
-    out.push({
-      key: `${log.transactionHash}-${log.logIndex}`,
-      block: log.blockNumber as bigint,
-      logIndex: log.logIndex as number,
-      tx: log.transactionHash as `0x${string}`,
-      kind,
-      text,
-    });
-
-  for (const l of minted) {
-    if (l.args.tokenId === id) {
-      const oc = l.args.originCount ?? 0n; // uint256 → bigint
-      push(l, "mint", `${oc} origin${oc === 1n ? "" : "s"}, ${denomLabel(l.args.amountWei ?? 0n)} ETH`);
-    }
-  }
-  for (const l of split) {
-    if (l.args.newIds?.some((x) => x === id)) {
-      push(l, "bornFromSplit", `Created by splitting #${l.args.tokenId?.toString()}`);
-    }
-    if (l.args.tokenId === id) {
-      push(l, "splitInto", `Split into ${l.args.newIds?.length ?? 0} shapes`);
-    }
-  }
-  for (const l of composed) {
-    if (l.args.survivorId === id) {
-      const n = l.args.burnedIds?.length ?? 0;
-      push(l, "absorbed", `Absorbed ${n} Shape${n === 1 ? "" : "s"} and grew to a larger denomination`);
-    }
-    if (l.args.burnedIds?.some((x) => x === id)) {
-      push(l, "mergedAway", `Merged into #${l.args.survivorId?.toString()}`);
-    }
-  }
-  for (const l of decomposed) {
-    if (l.args.survivorId === id) {
-      const n = l.args.restoredIds?.length ?? 0;
-      const denom = DENOMINATIONS[l.args.survivorDenomIndex ?? 0]?.label ?? "?";
-      push(
-        l,
-        "decomposed",
-        `Released ${n} Shape${n === 1 ? "" : "s"} under their original IDs and reverted to ${denom} ETH`,
-      );
-    }
-    if (l.args.restoredIds?.some((x) => x === id)) {
-      push(l, "revived", `Revived under this original id by #${l.args.survivorId?.toString()}'s decompose`);
-    }
-  }
-  for (const l of backingBurned) {
-    if (l.args.tokenId === id) {
-      push(l, "backingBurned", `${formatEther(l.args.burnedWei ?? 0n)} ETH backing burned`);
-    }
-  }
-  for (const l of redeemed) {
-    if (l.args.tokenId === id) {
-      const oc = l.args.originCount ?? 0n;
-      push(
-        l,
-        "redeemed",
-        `${formatEther(l.args.amountWei ?? 0n)} ETH returned, ${oc} origin${oc === 1n ? "" : "s"} retired`,
-      );
-    }
-  }
-  for (const l of transfers) {
-    if (l.args.tokenId !== id) continue;
-    const from = (l.args.from ?? ZERO) as string;
-    const to = (l.args.to ?? ZERO) as string;
-    // The mint and burn Transfers (to/from the zero address) duplicate the semantic events above.
-    if (from === ZERO || to === ZERO) continue;
-    push(l, "transfer", `From ${short(from)} to ${short(to)}`);
-  }
-
-  out.sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));
   return out;
 }
 

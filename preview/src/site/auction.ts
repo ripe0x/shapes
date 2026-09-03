@@ -1,7 +1,15 @@
-import {decodeEventLog, formatEther, parseEther, type PublicClient} from "viem";
-import {auctionHouseAbi, shapesAbi, DENOMINATIONS, denomIndexOf, type Deployment} from "../chain/abi";
+import {formatEther, parseEther, type PublicClient} from "viem";
+import {auctionHouseAbi, shapesAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {paginate} from "../chain/history";
 import {UNIT} from "../canonical/denominations";
+import {
+  INDEXER_TIMEOUT_MS,
+  MAX_INDEXER_LAG_BLOCKS,
+  checkpointOf,
+  indexerQuery,
+  requireFreshCheckpoint,
+  type IndexerMeta,
+} from "./indexerClient";
 
 /** The smallest denomination, and the unit every bid amount is carried in. */
 export {UNIT};
@@ -257,110 +265,122 @@ export interface BidHistoryEntry {
   cards: BidHistoryCard[];
 }
 
-// Keyed by house address, auction id, and the count of BidPlaced logs seen so far: the entry list
-// only needs recomputing once a new bid appears, so a repeat call with the same log count returns
-// the prior result without re-fetching a receipt per bid.
-const bidHistoryCache = new Map<string, BidHistoryEntry[]>();
+/** Bids per auction in one read. An auction's bid count is bounded by its duration in practice;
+ *  this cap keeps a hostile or broken response from growing without limit. */
+const BID_LIMIT = 500;
+
+const BID_QUERY = `query AuctionBids($auctionId: BigInt!, $limit: Int!) {
+  _meta { status }
+  bids(where: {auctionId: $auctionId}, orderBy: "block", orderDirection: "desc", limit: $limit) {
+    items { id auctionId bidder units block logIndex txHash timestamp }
+  }
+}`;
+
+const ESCROWED_CARDS_QUERY = `query EscrowedCards($txHashes: [String!], $limit: Int!) {
+  escrowedCards(where: {txHash_in: $txHashes}, limit: $limit) {
+    items { id txHash tokenId denomIndex }
+  }
+}`;
+
+interface IndexedBid {
+  id: string;
+  auctionId: string;
+  bidder: `0x${string}`;
+  units: string;
+  block: string;
+  logIndex: number;
+  txHash: `0x${string}`;
+  timestamp: string;
+}
+
+interface IndexedEscrowedCard {
+  id: string;
+  txHash: `0x${string}`;
+  tokenId: string;
+  denomIndex: number;
+}
+
+export interface LoadBidHistoryOptions {
+  indexerUrl?: string;
+  fetch?: typeof fetch;
+  maxIndexerLagBlocks?: bigint;
+  indexerTimeoutMs?: number;
+}
 
 /**
- * Bid history for one auction, newest first. Each BidPlaced log is paired with the cards its
- * transaction moved into escrow: a card the bidder already held arrives as a Shapes Transfer to
- * the house, a card the ETH path mints arrives as ShapeMinted (which also gives its exact
- * denomination without a separate read). A transferred card's denomination is resolved by a live
- * backingOf read, since the mint event does not cover a card that already existed.
+ * Bid history for one auction, newest first, from the indexer. Each bid carries the cards its own
+ * transaction moved into the house's custody, with the denomination they held then. Null when the
+ * deployment names no indexer, or the indexer is unreachable, malformed, following another chain,
+ * or behind the chain head by more than `maxIndexerLagBlocks`; the caller renders no bid history
+ * rather than scanning the chain's event log for it.
  */
 export async function loadBidHistory(
   publicClient: PublicClient,
   dep: Deployment,
   auctionId: bigint,
-): Promise<BidHistoryEntry[]> {
-  if (!dep.auctionHouse) return [];
-  const house = {address: dep.auctionHouse, abi: auctionHouseAbi} as const;
-  const houseAddr = dep.auctionHouse.toLowerCase();
-  const shapesAddr = dep.shapes.toLowerCase();
-  const latest = await publicClient.getBlockNumber();
+  options: LoadBidHistoryOptions = {},
+): Promise<BidHistoryEntry[] | null> {
+  const url = options.indexerUrl ?? dep.indexerUrl;
+  const fetcher = options.fetch ?? globalThis.fetch;
+  if (!dep.auctionHouse || !url || !fetcher) return null;
 
-  const placed = await paginate(dep, latest, (fromBlock, toBlock) =>
-    publicClient.getContractEvents({...house, eventName: "BidPlaced", args: {auctionId}, fromBlock, toBlock}),
-  );
+  try {
+    const timeoutMs = options.indexerTimeoutMs ?? INDEXER_TIMEOUT_MS;
+    const [head, payload] = await Promise.all([
+      publicClient.getBlockNumber(),
+      indexerQuery<{_meta?: IndexerMeta; bids: {items: IndexedBid[]}}>(
+        url,
+        fetcher,
+        BID_QUERY,
+        {auctionId: auctionId.toString(), limit: BID_LIMIT},
+        timeoutMs,
+      ),
+    ]);
+    const bids = payload.data?.bids?.items;
+    if (!bids) throw new Error("Shapes indexer returned an invalid bid response");
+    requireFreshCheckpoint(
+      checkpointOf(payload.data?._meta, dep.chainId),
+      head,
+      options.maxIndexerLagBlocks ?? MAX_INDEXER_LAG_BLOCKS,
+    );
+    if (bids.length === 0) return [];
 
-  const cacheKey = `${houseAddr}:${auctionId}:${placed.length}`;
-  const cached = bidHistoryCache.get(cacheKey);
-  if (cached) return cached;
+    const txHashes = [...new Set(bids.map((row) => row.txHash))];
+    const cardsPayload = await indexerQuery<{escrowedCards: {items: IndexedEscrowedCard[]}}>(
+      url,
+      fetcher,
+      ESCROWED_CARDS_QUERY,
+      {txHashes, limit: BID_LIMIT * DENOMINATIONS.length},
+      timeoutMs,
+    );
+    const cardRows = cardsPayload.data?.escrowedCards?.items;
+    if (!cardRows) throw new Error("Shapes indexer returned an invalid escrowed-card response");
 
-  const backingCache = new Map<string, bigint | null>();
-  const backingOf = async (id: bigint): Promise<bigint | null> => {
-    const k = id.toString();
-    if (backingCache.has(k)) return backingCache.get(k)!;
-    let v: bigint | null;
-    try {
-      v = await publicClient.readContract({address: dep.shapes, abi: shapesAbi, functionName: "backingOf", args: [id]});
-    } catch {
-      v = null; // the card no longer exists: composed, split, or redeemed since
+    const cardsByTx = new Map<string, BidHistoryCard[]>();
+    for (const row of cardRows) {
+      const list = cardsByTx.get(row.txHash) ?? [];
+      list.push({id: BigInt(row.tokenId), di: row.denomIndex});
+      cardsByTx.set(row.txHash, list);
     }
-    backingCache.set(k, v);
-    return v;
-  };
-
-  const raw: Omit<BidHistoryEntry, "timestamp">[] = [];
-  for (const log of placed) {
-    const tx = log.transactionHash as `0x${string}`;
-    const receipt = await publicClient.getTransactionReceipt({hash: tx});
-
-    const enteredIds = new Set<bigint>();
-    const mintedAmounts = new Map<string, bigint>();
-    for (const rl of receipt.logs) {
-      if (rl.address.toLowerCase() !== shapesAddr) continue;
-      let decoded;
-      try {
-        decoded = decodeEventLog({abi: shapesAbi, data: rl.data, topics: rl.topics});
-      } catch {
-        continue; // a Shapes log this ABI does not decode
-      }
-      if (decoded.eventName === "Transfer") {
-        const args = decoded.args as {from: string; to: string; tokenId: bigint};
-        if (args.to.toLowerCase() === houseAddr) enteredIds.add(args.tokenId);
-      } else if (decoded.eventName === "ShapeMinted") {
-        const args = decoded.args as {tokenId: bigint; amountWei: bigint};
-        mintedAmounts.set(args.tokenId.toString(), args.amountWei);
-      }
+    for (const list of cardsByTx.values()) {
+      list.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     }
 
-    const cards: BidHistoryCard[] = [];
-    for (const id of enteredIds) {
-      const minted = mintedAmounts.get(id.toString());
-      const wei = minted ?? (await backingOf(id));
-      cards.push({id, di: wei === null ? -1 : denomIndexOf(wei)});
-    }
-    cards.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-
-    raw.push({
-      key: `${tx}-${log.logIndex}`,
-      block: log.blockNumber as bigint,
-      logIndex: log.logIndex as number,
-      tx,
-      bidder: log.args.bidder as `0x${string}`,
-      totalUnits: BigInt(log.args.units ?? 0n),
-      cards,
-    });
+    return bids
+      .map((row) => ({
+        key: row.id,
+        block: BigInt(row.block),
+        logIndex: row.logIndex,
+        tx: row.txHash,
+        bidder: row.bidder,
+        totalUnits: BigInt(row.units),
+        timestamp: Number(row.timestamp),
+        cards: cardsByTx.get(row.txHash) ?? [],
+      }))
+      .sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1));
+  } catch {
+    return null;
   }
-
-  const blocks = [...new Set(raw.map((e) => e.block))];
-  const stamps = new Map(
-    await Promise.all(
-      blocks.map(async (b) => {
-        const blk = await publicClient.getBlock({blockNumber: b});
-        return [b, Number(blk.timestamp)] as const;
-      }),
-    ),
-  );
-
-  const entries = raw
-    .map((e) => ({...e, timestamp: stamps.get(e.block) ?? 0}))
-    .sort((a, b) => (a.block === b.block ? b.logIndex - a.logIndex : a.block > b.block ? -1 : 1));
-
-  bidHistoryCache.set(cacheKey, entries);
-  return entries;
 }
 
 /** The lot's artwork, from the Shapes contract's tokenURI. */
