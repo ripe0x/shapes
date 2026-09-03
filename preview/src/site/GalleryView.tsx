@@ -90,12 +90,13 @@ export function ShapeGrid({
         <button
           key={t.id.toString()}
           type="button"
-          className="btn-ghost"
+          className="btn-ghost gallery-card"
           onClick={() => onOpenToken(t.id)}
           style={{display: "block", textAlign: "left"}}
         >
           <Art src={t.image} alt={`Shape ${t.id}`} />
           <div
+            className="gallery-card-meta"
             style={{
               marginTop: 11,
               display: "flex",
@@ -108,7 +109,9 @@ export function ShapeGrid({
             <span>{compactShapeTitle(t.id, t.id === ownerTokenId)}</span>
             <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : "Black"}</span>
           </div>
-          <div style={{marginTop: 4, fontSize: 11, color: C.muted, opacity: 0.7}}>{originsLabel(t)}</div>
+          <div className="gallery-card-origins" style={{marginTop: 4, fontSize: 11, color: C.muted}}>
+            {originsLabel(t)}
+          </div>
         </button>
       ))}
     </div>
