@@ -9,11 +9,12 @@ export const PUBLIC_SEPOLIA_RPCS = [
 
 /** Public mainnet endpoints from independent operators, tried after the configured primary and
  *  the deployment record's RPC. Free gateways rate-limit bursts with HTTP 429; the fallback
- *  transport moves to the next endpoint on any error. */
+ *  transport moves to the next endpoint on any error. Each endpoint must answer browser CORS
+ *  preflights; cloudflare-eth.com does not and is excluded. */
 export const PUBLIC_MAINNET_RPCS = [
   "https://ethereum-rpc.publicnode.com",
   "https://eth.llamarpc.com",
-  "https://cloudflare-eth.com",
+  "https://1rpc.io/eth",
 ] as const;
 
 function nonEmpty(value: string | undefined): value is string {
