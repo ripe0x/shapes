@@ -1,5 +1,6 @@
 import {C} from "./theme";
-import {Section, short} from "./ui";
+import {Section} from "./ui";
+import {AddressName} from "./AddressName";
 import {ShapeGrid} from "./GalleryView";
 import type {SiteData} from "./data";
 import {composeRung} from "./composeSelection";
@@ -59,7 +60,7 @@ export function MyShapesView({
                 ? `${tokens.length} Shape${tokens.length === 1 ? "" : "s"}, newest first.`
                 : "Reading the chain…"}
             </div>
-            <div style={{marginTop: 8, color: C.muted, fontSize: 11}}>{short(address)}</div>
+            <AddressName address={address} style={{marginTop: 8, color: C.muted, fontSize: 11, display: "block"}} />
           </div>
           <div className="shape-mode-toggle" role="group" aria-label="My Shapes mode">
             <button type="button" aria-pressed={true}>BROWSE</button>

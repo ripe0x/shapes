@@ -9,7 +9,8 @@ import {
   type ProvNode,
 } from "../chain/history";
 import {C, FONT, SANS, label} from "./theme";
-import {Section, Art, Modal, short, txUrl} from "./ui";
+import {Section, Art, Modal, txUrl} from "./ui";
+import {AddressName} from "./AddressName";
 import {localArt} from "./art";
 import {mintGene} from "../previewGene";
 import type {SiteData, SiteToken} from "./data";
@@ -258,7 +259,7 @@ export function TokenView({
               <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
                 <div>
                   Redeemed. {DENOMINATIONS[snap.di].wei.toString()} wei ({lbl} ETH) sent to{" "}
-                  {address ? short(address) : "the owner"}. The token is burned.
+                  {address ? <AddressName address={address} /> : "the owner"}. The token is burned.
                 </div>
                 {redeem.tx && (
                   <a
@@ -312,7 +313,7 @@ export function TokenView({
                 #{token.id.toString()} has had its backing burned. It remains part of the collection, but
                 has no redeemable ETH backing and cannot be split, composed, or redeemed.
               </div>
-              <div style={{marginTop: 14, color: C.muted, fontSize: 11}}>owner · {short(token.owner)}</div>
+              <div style={{marginTop: 14, color: C.muted, fontSize: 11}}>owner · <AddressName address={token.owner} /></div>
             </div>
           </div>
         </Section>
@@ -331,7 +332,16 @@ export function TokenView({
     size?: number;
     wrap?: "anywhere" | "normal";
   }[] = [
-    {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
+    {
+      k: "owner",
+      v: (
+        <>
+          <AddressName address={token.owner} />
+          {owned ? " (you)" : null}
+        </>
+      ),
+      wrap: "anywhere",
+    },
     ...(isOwnerToken
       ? [{
           k: "collection owner",
