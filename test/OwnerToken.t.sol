@@ -385,20 +385,24 @@ contract OwnerTokenTest is ShapesBase {
         _mintDust(alice, 4);
 
         string memory ownerBefore = _decodeTokenUri(shapes.tokenURI(0));
-        assertEq(vm.parseJsonString(ownerBefore, ".name"), "Shapes Collection Owner");
-        assertTrue(_contains(ownerBefore, '"trait_type":"Collection Owner"'));
+        assertEq(vm.parseJsonString(ownerBefore, ".name"), "Shape 0, Contract Owner");
+        assertTrue(_contains(ownerBefore, ',{"value":"Contract Owner"}'));
 
         string memory survivorBefore = _decodeTokenUri(shapes.tokenURI(1));
-        assertFalse(_contains(survivorBefore, '"trait_type":"Collection Owner"'));
+        assertFalse(_contains(survivorBefore, '{"value":"Contract Owner"}'));
 
         vm.prank(alice);
         shapes.compose(1, _ids4(0, 2, 3, 4));
 
         string memory survivorAfter = _decodeTokenUri(shapes.tokenURI(1));
-        assertEq(vm.parseJsonString(survivorAfter, ".name"), "Shapes Collection Owner");
+        assertEq(vm.parseJsonString(survivorAfter, ".name"), "Shape 1, Contract Owner");
         assertTrue(
-            _contains(survivorAfter, '"trait_type":"Collection Owner"'), "new owner token carries the trait"
+            _contains(survivorAfter, ',{"value":"Contract Owner"}'), "new owner token carries the trait"
         );
+
+        // #0 was burned into the survivor; it no longer exists to carry the old name.
+        vm.expectRevert();
+        shapes.tokenURI(0);
     }
 
     /* ---------------------------- hostile receiver ---------------------------- */

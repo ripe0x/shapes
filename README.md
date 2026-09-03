@@ -244,9 +244,10 @@ One live Shape is the owner token, and `owner()` always returns its current hold
 Shape: it can be transferred, redeemed, composed, decomposed, or split. A compose that absorbs it
 moves it to the survivor, the matching decompose restores it to that input, and splitting it gives
 it to the first output. Redeeming or burning the owner token ends collection ownership
-permanently: `owner()` returns zero and no other token inherits. Its metadata name is `Shapes
-Collection Owner`, with the exclusive trait `Collection Owner: true`. Holding it grants no
-administrative rights. Permissionless artwork minting starts at #1, which is the launch-auction
+permanently: `owner()` returns zero and no other token inherits. Its metadata name is the ordinary
+token name suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), with the exclusive
+value-only attribute `"Contract Owner"` (no `trait_type`). Holding it grants no administrative
+rights. Permissionless artwork minting starts at #1, which is the launch-auction
 lot.
 
 The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move

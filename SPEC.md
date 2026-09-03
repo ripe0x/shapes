@@ -598,7 +598,8 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   `decompose` and `split`: a compose absorbing it moves it to the survivor, the matching decompose
   restores it to that input, and a split of it gives it to the first output. `owner()` follows its
   current holder, or returns zero once it is redeemed or burned, which ends collection ownership
-  permanently. Its metadata name is `Shapes Collection Owner`, with `Collection Owner: true`;
+  permanently. Its metadata name is the ordinary token name suffixed with `, Contract Owner` (e.g.
+  `Shape 5, Contract Owner`), with a value-only `"Contract Owner"` attribute (no `trait_type`);
   holding it grants no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including

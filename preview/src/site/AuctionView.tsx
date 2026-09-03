@@ -284,6 +284,11 @@ export function AuctionView({
             {lotDenomLabel && (
               <div style={{marginTop: 8, fontSize: 12, color: C.muted}}>{lotDenomLabel} ETH Shape</div>
             )}
+            {lotToken?.meta.description && (
+              <p style={{margin: "14px 0 0", maxWidth: "48ch", fontSize: 13, lineHeight: 1.7, color: C.bodyDim}}>
+                {lotToken.meta.description}
+              </p>
+            )}
           </div>
 
           <div>

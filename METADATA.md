@@ -9,8 +9,9 @@ metadata service exists, so nothing here can rot or be withheld.
 The token `name` prefix and shared `description` are admin-set copy, stored on Shapes and passed
 into the renderer. `setMetadataCopy` edits both atomically. The one name exception is the owner
 token, the one live Shape that currently carries collection ownership (starts as #0, moves through
-`compose`, `decompose` and `split`): its fixed name is `Shapes Collection Owner`, regardless of
-the configured prefix. `contractURI`
+`compose`, `decompose` and `split`): its name is the ordinary `namePrefix` plus token id, suffixed
+with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), so the name tracks whichever token
+currently holds the role. `contractURI`
 uses the immutable ERC-721 name `Shapes` and the shared description, so collection and token
 descriptions cannot diverge. Copy defaults to the TypeScript canonical and is validated on set so
 it cannot break the JSON (`"`, `\`, C0 control bytes and over-length values revert). Everything
@@ -19,7 +20,9 @@ else is fixed on chain.
 The document has `name`, `description`, `image` (an inline SVG `data:image/svg+xml` URI), and a
 fixed `attributes` array. Every attribute `value` is a **string**. There are no numeric traits:
 numeric traits render as range sliders on OpenSea, which the collection does not use. String
-traits render as exact-match filters.
+traits render as exact-match filters. The owner-token entry (see below) omits `trait_type`
+entirely; marketplaces including OpenSea render a value-only attribute as a plain tag rather than
+a labeled trait.
 
 ## Attributes
 
@@ -40,7 +43,7 @@ traits render as exact-match filters.
 | 12 | `Complete` | `"false"` | `true` when `Origin Density` is 100% and the token is above the minimum tier. The `sacrifice` gate at the apex. |
 | 13 | `Black` | `"false"` | `true` when the token has been transformed via `sacrifice`. |
 | 14 | `Compose Depth` | `"2"` | Number of stacked composes the current holder can reverse, newest first. |
-| n/a | `Collection Owner` | `"true"` | Present only on the owner token, the one live Shape that currently carries collection ownership. It grants no administrative authority. |
+| n/a | *(none)* | `"Contract Owner"` | Value-only attribute (no `trait_type`), present only on the owner token, the one live Shape that currently carries collection ownership. It grants no administrative authority. |
 | n/a | `Split From` | `"10 ETH"` | Only on a split child (issue #21C): the immediate parent's denomination. See below. |
 | n/a | `Split Origin` | `"100 ETH"` | Only on a split child: the root split ancestor's denomination. See below. |
 

@@ -37,8 +37,9 @@ otherwise a normal backed and transferable NFT. It starts as #0 and moves only t
 (a donor moves it to the survivor), `decompose` (restored to that input) and `split` (given to the
 first output); `decomposeTo`/`splitTo` make the chosen recipient the collection owner. `owner()`
 returns its current holder, or zero once it is redeemed or burned, which ends collection ownership
-permanently with no token inheriting and no renounce entrypoint. Its fixed metadata name is
-`Shapes Collection Owner` and its exclusive metadata trait is `Collection Owner: true`.
+permanently with no token inheriting and no renounce entrypoint. Its metadata name is the
+ordinary token name suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), and its
+exclusive metadata attribute is the value-only `"Contract Owner"` (no `trait_type`).
 Holding it conveys no administrative authority. The separate `admin()` role controls only the
 documented bounded mutable surfaces.
 

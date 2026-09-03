@@ -20,7 +20,8 @@ const MAX_OG_STATE_LENGTH = 6000;
 export const revalidate = 3600;
 
 function shapeTitle(tokenId: bigint, isOwnerToken: boolean): string {
-  return isOwnerToken ? "Shapes Collection Owner" : `Shape ${tokenId.toString()}`;
+  const base = `Shape ${tokenId.toString()}`;
+  return isOwnerToken ? `${base}, Contract Owner` : base;
 }
 
 /** The live owner-token id for the `<title>`/OG description of `/shape/<id>`, or null when the
