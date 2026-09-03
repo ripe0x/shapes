@@ -113,8 +113,25 @@ and asserts `effectiveModulesOf` length equals the grid cell count, the deployme
 script trusting a foreign indexer already bound to port 42069. The script now refuses an occupied
 port and requires its own indexer process to be alive (`#85`). Indexer handlers are correct.
 
-## 9. Status
+## 9. Independent Codex audit of `AUDIT_PROMPT_v9.md` at `34d2c3b`
 
-Contracts at `c5f25c5`: 618 tests pass with 4 RPC-only skips, `Shapes` runtime 22,460 bytes
-(2,116 under EIP-170). Every finding in this file is fixed or accepted. Ready for the Sepolia
-rehearsal from `claude/contracts-page`.
+Recorded in `AUDIT_REPORT_v9_codex.md`. No Critical, High or Medium finding. Baseline reproduced: 669
+tests in both profiles, 4 fork tests, Medusa 14 properties, Anvil deploy and lifecycle (the indexer
+step needed a free port, which `#85` now enforces). Two Low findings, both already known:
+
+| id | severity | title | status |
+| --- | --- | --- | --- |
+| SHAPES-01 | Low | Presentation lock trusts renderer and collection behaviour behind the pointers | Same as S-3 and V9-1. Accepted: the residual is admin trust before locking; a probe at lock time cannot turn the freeze into a guarantee because a target can pass the probe and misbehave later |
+| SHAPES-02 | Low | Fees owed to a non-payable recipient are stranded | Same as V9-2. Accepted by the owner (D-44); the deploy path proves the recipient accepts plain ETH by simulation and the mainnet recipient is the Splits wallet, verified on a mainnet fork |
+
+Codex verified the trust model table (every delegating entrypoint, its gate and its target), the
+per-recipient fee accounting, the decompose round trip, storage slots after the fee layout change,
+and library isolation for all five linked libraries.
+
+## 10. Status
+
+Contracts at `34d2c3b` (source unchanged through `b337028`, the Sepolia deployment commit). Every
+finding across the v8 and v9 audits, the diff review, the fuzz campaign and Codex is fixed or
+accepted with a recorded decision. Sepolia rehearsal deployed at Shapes
+`0x6c2f9c00f44fbbf141dd166979903004b80d5f99`; site and indexer cut over. Mainnet gates left: merge
+`claude/contracts-page` to main, fund the deployer, `script/deploy.sh mainnet`.
