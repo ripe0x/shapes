@@ -19,6 +19,7 @@ import {dirname, join} from "node:path";
 import {keccak256, toBytes, type Hex} from "viem";
 import {createSim, ANVIL_KEYS, PRESENTS_TO, derivedKey, type Sim} from "./sim/lib";
 import {shapesAbi, auctionHouseAbi, type Deployment} from "../src/chain/abi";
+import {openOwnerAuction} from "./openOwnerAuction";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dep: Deployment = JSON.parse(readFileSync(join(here, "../public/deployment.json"), "utf8"));
@@ -664,6 +665,10 @@ async function main() {
   console.log(`  #${ctx.recordBranchChild} - a split child of a record-branch parent`);
   await sim.transfer(ctx.revivedOwner!, PRESENTS_TO, ctx.revivedInput!);
   console.log(`  #${ctx.revivedInput} - a revived input, restored by a decompose`);
+
+  /* ---------------------------- owner auction -------------------------------- */
+
+  await openOwnerAuction(sim, dep);
 
   /* -------------------------------- totals -------------------------------- */
 

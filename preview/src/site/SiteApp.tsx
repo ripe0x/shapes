@@ -16,7 +16,7 @@ import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AuctionView} from "./AuctionView";
-import {breakdown, loadAuction, loadLotImage, type AuctionSlot} from "./auction";
+import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 import {SiteFooter} from "./SiteFooter";
 
@@ -352,10 +352,12 @@ export function SiteApp({
   };
 
 
-  // Auction 0 is the collection's own. Reloaded after every auction transaction, and whenever
-  // the wallet changes, since escrow and the lead are both per-address. A deployment with no
-  // auction house has no auction to load, ever, so it resolves to null immediately rather than
-  // sitting in "loading" forever; otherwise the slot stays "loading" until the first read lands.
+  // Token 0 is the collection owner token; its auction is looked up by token id rather than an
+  // assumed auction id, since other auctions may exist before it. Reloaded after every auction
+  // transaction, and whenever the wallet changes, since escrow and the lead are both per-address.
+  // A deployment with no auction house has no auction to load, ever, so it resolves to null
+  // immediately rather than sitting in "loading" forever; otherwise the slot stays "loading"
+  // until the first read lands.
   const refreshAuction = React.useCallback(async () => {
     if (!dep.auctionHouse) {
       setAuction(null);
@@ -365,9 +367,9 @@ export function SiteApp({
     if (!publicClient) return;
     // A failed read (dead RPC, mid-redeploy chain, malformed response) degrades to the empty
     // state instead of surfacing an unhandled rejection.
-    let a: Awaited<ReturnType<typeof loadAuction>> = null;
+    let a: Awaited<ReturnType<typeof loadAuctionFor>> = null;
     try {
-      a = await loadAuction(publicClient, dep, 0n, address);
+      a = await loadAuctionFor(publicClient, dep, 0n, address);
     } catch {
       a = null;
     }

@@ -120,6 +120,28 @@ export function breakdown(backingWei: bigint): {di: number; count: number}[] {
   return out;
 }
 
+/**
+ * The auction listed for a token, resolved through the house's own index rather than an assumed
+ * auction id: the collection owner token is not necessarily the first auction created. Null when
+ * the token has no auction.
+ */
+export async function loadAuctionFor(
+  publicClient: PublicClient,
+  dep: Deployment,
+  tokenId: bigint,
+  viewer: `0x${string}` | undefined,
+): Promise<AuctionState | null> {
+  if (!dep.auctionHouse) return null;
+  const house = {address: dep.auctionHouse, abi: auctionHouseAbi} as const;
+  const [exists, auctionId] = await publicClient.readContract({
+    ...house,
+    functionName: "getAuctionFor",
+    args: [dep.shapes, tokenId],
+  });
+  if (!exists) return null;
+  return loadAuction(publicClient, dep, auctionId, viewer);
+}
+
 export async function loadAuction(
   publicClient: PublicClient,
   dep: Deployment,
