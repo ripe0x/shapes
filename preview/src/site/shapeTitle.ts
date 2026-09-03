@@ -2,10 +2,12 @@
  *  collection ownership (see `ownerToken()`); it moves across compose, decompose and split, so
  *  callers must pass the current owner-token state rather than comparing against a fixed id. */
 export function shapeTitle(tokenId: bigint, isOwnerToken: boolean): string {
-  return isOwnerToken ? "Shapes Collection Owner" : `Shape ${tokenId.toString()}`;
+  const base = `Shape ${tokenId.toString()}`;
+  return isOwnerToken ? `${base}, Contract Owner` : base;
 }
 
 /** Compact identity for token cards. */
 export function compactShapeTitle(tokenId: bigint, isOwnerToken: boolean): string {
-  return isOwnerToken ? "Collection Owner" : `#${tokenId.toString()}`;
+  const base = `#${tokenId.toString()}`;
+  return isOwnerToken ? `${base}, Contract Owner` : base;
 }

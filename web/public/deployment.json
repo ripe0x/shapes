@@ -8,5 +8,6 @@
   "lens": "0x259e90f875b7b975c09f05e5972f359ee0a3fa84",
   "auctionHouse": "0x351b7c9637c6abc1982be95f87961aff2f38647a",
   "mintFeeWei": "10000000000000",
+  "mintStart": "0",
   "fromBlock": 11616988
 }

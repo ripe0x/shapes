@@ -16,7 +16,8 @@ Audit this exact commit, not a branch tip. Record the full hash and clean status
 `AUDIT_PROMPT_v2.md` through `AUDIT_PROMPT_v6.md` are historical and not authoritative. Deploy
 tooling changes (the unified `script/Deploy.s.sol` and `script/deploy.sh`) land in a follow-up
 merge from branch `claude/post-deploy-56`, after this pinned commit; the contracts under audit are
-unaffected.
+unaffected. The immutable `mintStart` gate on public minting lands in a follow-up merge from branch
+`claude/mint-start`, also after this pinned commit.
 
 ```bash
 git fetch origin
@@ -37,8 +38,9 @@ otherwise a normal backed and transferable NFT. It starts as #0 and moves only t
 (a donor moves it to the survivor), `decompose` (restored to that input) and `split` (given to the
 first output); `decomposeTo`/`splitTo` make the chosen recipient the collection owner. `owner()`
 returns its current holder, or zero once it is redeemed or burned, which ends collection ownership
-permanently with no token inheriting and no renounce entrypoint. Its fixed metadata name is
-`Shapes Collection Owner` and its exclusive metadata trait is `Collection Owner: true`.
+permanently with no token inheriting and no renounce entrypoint. Its metadata name is the
+ordinary token name suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), and its
+exclusive metadata attribute is the value-only `"Contract Owner"` (no `trait_type`).
 Holding it conveys no administrative authority. The separate `admin()` role controls only the
 documented bounded mutable surfaces.
 
@@ -85,7 +87,10 @@ economic asymmetry itself as a vulnerability unless it violates a documented sec
 - `src/Shapes.sol`: payable genesis construction, the owner token and its movement through
   compose/decompose/split, flat-fee mint paths, fee forwarding, reserve accounting, redemption,
   recomposition, provenance, Black terminal state, owner/admin separation, renderer/collection
-  references, discovery and artist attestation.
+  references, discovery and artist attestation. The follow-up merge from `claude/mint-start` adds
+  the immutable `mintStart` gate on `mint`, `mintTo`, `mintBatch` and `mintBatchTo`; review it for
+  admin-free construction, exact boundary behavior at `block.timestamp == mintStart`, and that
+  Shape #0's constructor mint remains unconditional.
 - `src/ShapeAuctionHouse.sol` and `src/ShapeCardEscrow.sol`: lot custody, ETH/card bidding,
   per-card mint-fee quoting/payment, anti-sniping, settlement, pull delivery, escrow accounting and
   reentrancy boundaries.
@@ -180,6 +185,9 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
   `setFeeRecipient` and `setMintFee` into the delegatecalled `AdminOps` library, and lowering
   `optimizer_runs` to 20) brings the deployed source count from eleven to twelve.
 - `IShapes` is `0x86df37ba`.
+- The `claude/mint-start` follow-up merge changes this evidence: Shapes runtime becomes
+  23,796/23,776 bytes default/testnet (780/800 bytes of EIP-170 margin), `IShapes` becomes
+  `0xa381713f`, and both profiles pass 517 tests.
 - This candidate is not yet deployed to Sepolia or mainnet; there is no live-deployment evidence
   for it yet. Re-run Medusa, the Anvil lifecycle rehearsal, preview/web builds and the indexer
   checks against the pinned commit above rather than relying on prior releases' results.

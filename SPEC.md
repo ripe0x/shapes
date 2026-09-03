@@ -598,7 +598,8 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   `decompose` and `split`: a compose absorbing it moves it to the survivor, the matching decompose
   restores it to that input, and a split of it gives it to the first output. `owner()` follows its
   current holder, or returns zero once it is redeemed or burned, which ends collection ownership
-  permanently. Its metadata name is `Shapes Collection Owner`, with `Collection Owner: true`;
+  permanently. Its metadata name is the ordinary token name suffixed with `, Contract Owner` (e.g.
+  `Shape 5, Contract Owner`), with a value-only `"Contract Owner"` attribute (no `trait_type`);
   holding it grants no permissions. The separate `admin()` role can replace and permanently lock
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including
@@ -633,6 +634,11 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   a separate permissionless call that forwards the accrued total to `feeRecipient`. A batch accrues
   `quantity * mintFee` once. Auction ETH bids pay one fee for every minimal-denomination card the
   escrow creates, exposed exactly by `ShapeAuctionHouse.mintCostFor(backingWei)`.
+- `mintStart` is a `uint64` set once at construction and stored immutable; no admin path can read
+  or change it. `mint`, `mintTo`, `mintBatch` and `mintBatchTo` revert `MintNotOpen()` while
+  `block.timestamp < mintStart`, which also gates the ETH-backed auction bids that mint cards
+  through `ShapeCardEscrow._mintCards` calling `mintBatchTo`. The constructor mint of Shape #0 is
+  unconditional, so its transfer, auction listing and redemption all work before `mintStart`.
 - `receive` and `fallback` revert, so ETH cannot arrive except through `mint`.
   Forced ETH (selfdestruct, block rewards) is permanently inaccessible; the
   invariant asserted is `address(this).balance >= redeemableBacking + pendingFees`.

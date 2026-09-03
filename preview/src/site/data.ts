@@ -10,7 +10,9 @@ import {geneIndexOfName} from "../previewGene";
 export interface TokenMeta {
   name: string;
   description: string;
-  attributes: {trait_type: string; value: string}[];
+  /** `trait_type` is absent on a value-only attribute (e.g. the owner token's "Contract Owner"),
+   *  which marketplaces render as a plain tag rather than a labeled trait. */
+  attributes: {trait_type?: string; value: string}[];
 }
 
 export interface SiteToken {
@@ -159,7 +161,7 @@ function parseUri(uri: string): {image: string; meta: TokenMeta} {
     meta: {
       name: (json.name as string) ?? "",
       description: (json.description as string) ?? "",
-      attributes: ((json.attributes ?? []) as {trait_type: string; value: unknown}[]).map(
+      attributes: ((json.attributes ?? []) as {trait_type?: string; value: unknown}[]).map(
         (a) => ({trait_type: a.trait_type, value: String(a.value)}),
       ),
     },

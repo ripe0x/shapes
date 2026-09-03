@@ -10,6 +10,7 @@ import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
+import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {LensEquivalence} from "./LensEquivalence.s.sol";
 
@@ -29,6 +30,9 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///                              chain id 31337, where it defaults to the deployer.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
 ///        SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT  set true to allow a contract fee recipient.
+///        SHAPES_MINT_START     unix timestamp at or after which mintBatch/mintBatchTo accept
+///                              calls. Defaults to 0, which opens them immediately. Immutable
+///                              once deployed.
 ///
 ///      `ShapeLens` is periphery deployed alongside `Shapes`: it holds the rich view surface
 ///      (`shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt`,
@@ -117,6 +121,7 @@ contract Deploy is LensEquivalence {
         uint256 mintFee = vm.envOr("SHAPES_MINT_FEE_WEI", DEFAULT_MINT_FEE);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));
+        uint64 mintStart = uint64(vm.envOr("SHAPES_MINT_START", uint256(0)));
 
         if (feeRecipient == address(0)) {
             // On a local chain, defaulting to the deployer keeps `forge script` a one-liner.
@@ -147,7 +152,7 @@ contract Deploy is LensEquivalence {
         collection = new ShapeCollection(address(renderer));
 
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            mintFee, feeRecipient, address(renderer), address(collection)
+            mintFee, feeRecipient, address(renderer), address(collection), mintStart
         );
         lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
@@ -156,6 +161,15 @@ contract Deploy is LensEquivalence {
 
         // Prove the constructor configuration and pointer defaults landed as intended.
         require(shapes.mintFee() == mintFee, "mint fee mismatch");
+        require(shapes.mintStart() == mintStart, "mint start mismatch");
+
+        // A future mint start is provable right here, outside the broadcast: `_mintBatch` checks
+        // it before anything else, so the revert fires regardless of amount or quantity.
+        if (mintStart > block.timestamp) {
+            vm.expectRevert(IShapes.MintNotOpen.selector);
+            shapes.mintBatch(Denominations.amountAt(0), 1);
+        }
+
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         _requirePointersUnset(shapes);
@@ -231,6 +245,7 @@ contract Deploy is LensEquivalence {
         console.log("lens=%s", address(lens));
         console.log("auctionHouse=%s", address(house));
         console.log("mintFeeWei=%s", mintFee);
+        console.log("mintStart=%s", mintStart);
         console.log("feeRecipient=%s", feeRecipient);
         console.log("admin=%s", shapes.admin());
 

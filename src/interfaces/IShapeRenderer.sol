@@ -51,10 +51,11 @@ interface IShapeRenderer {
     ///      is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait;
     ///      it is the one input that is mutable chain state rather than fixed at mint.
     ///      `namePrefix` and `description` are the editorial copy the caller supplies. `ownerToken`
-    ///      names the collection owner token: `true` names it `Shapes Collection Owner` with
-    ///      `Collection Owner: true`; `false` uses `namePrefix` plus the decimal token id, with no
-    ///      such attribute. `description` is emitted verbatim. The renderer neither stores nor
-    ///      escapes caller-supplied copy; the caller owns its content.
+    ///      names the collection owner token: `true` appends `, Contract Owner` to `namePrefix`
+    ///      plus the decimal token id and adds a value-only `{"value":"Contract Owner"}` attribute
+    ///      (no `trait_type`); `false` uses `namePrefix` plus the decimal token id, with no such
+    ///      attribute. `description` is emitted verbatim. The renderer neither stores nor escapes
+    ///      caller-supplied copy; the caller owns its content.
     function metadataJSON(
         bytes32 seed,
         uint256 amountWei,
@@ -89,9 +90,10 @@ interface IShapeRenderer {
     ) external pure returns (string memory);
 
     /// @notice A base64 `data:application/json` URI wrapping `metadataJSON`.
-    /// @dev `ownerToken` names the collection owner token: `true` names it
-    ///      `Shapes Collection Owner` with `Collection Owner: true`; `false` uses `namePrefix`
-    ///      plus the decimal token id, with no such attribute.
+    /// @dev `ownerToken` names the collection owner token: `true` appends `, Contract Owner` to
+    ///      `namePrefix` plus the decimal token id and adds a value-only `Contract Owner`
+    ///      attribute; `false` uses `namePrefix` plus the decimal token id, with no such
+    ///      attribute.
     function tokenURI(
         bytes32 seed,
         uint256 amountWei,

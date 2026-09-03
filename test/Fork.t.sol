@@ -81,7 +81,7 @@ contract ForkTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         // The constructor balance includes backed Shape #0. Only the excess is stranded ETH.
         strayWei = address(shapes).balance - shapes.redeemableBacking();

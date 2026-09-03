@@ -90,7 +90,10 @@ remain distinct historical objects. That is the whole design.
 
 ## Minting
 
-Minting is permissionless.
+Minting is permissionless from the immutable `mintStart` timestamp onward. Before it, `mint`,
+`mintTo`, `mintBatch`, `mintBatchTo`, and ETH-backed auction bids that mint through them all
+revert `MintNotOpen()`. Shape #0 is minted unconditionally in the constructor, so it can be
+transferred, listed for auction, and redeemed before `mintStart`.
 
 ```solidity
 mint(uint256 amountWei) payable returns (uint256 tokenId)
@@ -230,7 +233,7 @@ outcome: stranding a few stray wei is strictly better than opening a withdrawal 
 reach the reserve.
 
 Direct ETH transfers to the contract revert. ETH arrives through the constructor-backed mint of
-Shape #0 and through later permissionless mints.
+Shape #0 and through later mints once `mintStart` has passed.
 
 Every wei counted by `redeemableBacking()` corresponds to a live non-Black Shape. Stateful
 invariants cover minting, transfer, redemption, burn, composition, decomposition, splitting,
@@ -244,10 +247,11 @@ One live Shape is the owner token, and `owner()` always returns its current hold
 Shape: it can be transferred, redeemed, composed, decomposed, or split. A compose that absorbs it
 moves it to the survivor, the matching decompose restores it to that input, and splitting it gives
 it to the first output. Redeeming or burning the owner token ends collection ownership
-permanently: `owner()` returns zero and no other token inherits. Its metadata name is `Shapes
-Collection Owner`, with the exclusive trait `Collection Owner: true`. Holding it grants no
-administrative rights. Permissionless artwork minting starts at #1, which is the launch-auction
-lot.
+permanently: `owner()` returns zero and no other token inherits. Its metadata name is the ordinary
+token name suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), with the exclusive
+value-only attribute `"Contract Owner"` (no `trait_type`). Holding it grants no administrative
+rights. Permissionless artwork minting starts at #1 and opens at the immutable `mintStart`
+timestamp; no admin path can move it.
 
 The deployer is also recorded permanently as `artist()`. This is attribution only: it cannot move
 ETH, administer metadata, receive fees, control the owner token, or authorize any operation. The artist may
@@ -639,8 +643,8 @@ lens previews what the token executes (see below) before reporting success.
 One wrapper, `script/deploy.sh <anvil|sepolia|mainnet>`, runs it for every target through the
 same code path, sourcing `script/env/<name>.env` for the values that differ: chain id, Foundry
 profile, default RPC, verify flag, main-branch guard, wallet mode, deployer, fee recipient, mint
-fee, EOA-recipient guard, indexer URL. `DRY_RUN=1` runs the guards and the forge simulation with
-no wallet, broadcast, or verification.
+fee, mint start, EOA-recipient guard, indexer URL. `DRY_RUN=1` runs the guards and the forge
+simulation with no wallet, broadcast, or verification.
 
 ```bash
 anvil                       # in one shell
@@ -671,7 +675,7 @@ After a real broadcast, the wrapper reads the broadcast artifact, reads back eve
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
 `indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
-`mintFeeWei`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
+`mintFeeWei`, `mintStart`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
 gitignored; Sepolia and mainnet records are committed.
 
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712

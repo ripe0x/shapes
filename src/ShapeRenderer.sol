@@ -28,8 +28,8 @@ import {ModuleCodec} from "./lib/ModuleCodec.sol";
 ///      constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The one
 ///      exception is the metadata `name` prefix and `description`, which `metadataJSON` writes
 ///      verbatim from its arguments; `Shapes` owns and supplies that copy and is trusted for it.
-///      The owner token has the fixed collection-role name `Shapes Collection Owner` and a
-///      `Collection Owner: true` attribute, independent of the supplied prefix.
+///      The owner token's name is `namePrefix` plus token id, suffixed with `, Contract Owner`,
+///      and it carries a value-only `Contract Owner` attribute (no `trait_type`).
 contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     using FixedPoint for uint256;
     using Round03Rand for Round03Rand.Stream;
@@ -1310,7 +1310,7 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
                     ',{"trait_type":"Compose Depth","value":"',
                     FixedPoint.toString(composeDepth),
                     '"}',
-                    _collectionOwnerTrait(ownerToken),
+                    _contractOwnerTrait(ownerToken),
                     _splitTraits(splitInfo),
                     "]}"
                 )
@@ -1318,21 +1318,26 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         );
     }
 
-    /// @dev The owner token is the transferable collection-ownership token. Its role is part of
-    ///      the token's identity, while every other token continues to use the configurable prefix.
+    /// @dev The owner token is the transferable collection-ownership token. Its name is the
+    ///      ordinary `namePrefix` plus token id, suffixed with `, Contract Owner`, so the name
+    ///      tracks whichever token currently holds the role.
     function _tokenName(string memory namePrefix, uint256 tokenId, bool ownerToken)
         private
         pure
         returns (string memory)
     {
-        if (ownerToken) return "Shapes Collection Owner";
+        if (ownerToken) {
+            return string(abi.encodePacked(namePrefix, FixedPoint.toString(tokenId), ", Contract Owner"));
+        }
         return string(abi.encodePacked(namePrefix, FixedPoint.toString(tokenId)));
     }
 
     /// @dev Descriptive metadata only. Privileged Shapes operations use the separate `admin()`.
-    function _collectionOwnerTrait(bool ownerToken) private pure returns (bytes memory) {
+    ///      Value-only (no `trait_type`); OpenSea and other marketplaces render such an entry as
+    ///      a plain tag rather than a labeled trait.
+    function _contractOwnerTrait(bool ownerToken) private pure returns (bytes memory) {
         if (!ownerToken) return bytes("");
-        return bytes(',{"trait_type":"Collection Owner","value":"true"}');
+        return bytes(',{"value":"Contract Owner"}');
     }
 
     /// @dev The provenance trait block, split out to keep `metadataJSON` under the stack limit.
