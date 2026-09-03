@@ -282,18 +282,37 @@ a 1 GB persistent Fly volume. There is no separate Postgres service. The index i
 reconstructable from Ethereum, and the site rejects unavailable or stale indexer responses in
 favor of its raw-RPC path, so the single-machine availability tradeoff is bounded and explicit.
 
-`fly.toml` pins the public Sepolia deployment and its `testnet` ladder, two archive-capable public
-RPCs, a 12-second poll, one indexing thread, a 1 GB shared-CPU Machine, and `/data/pglite` on the
-`shapes_indexer_data` volume. Provision and deploy from this directory:
+One Fly app per chain, each pinned to a `fly.<env>.toml` with a 12-second poll, one indexing
+thread, a 1 GB shared-CPU Machine, and `/data/pglite` on its own volume:
+`fly.sepolia.toml` (app `shapes-indexer`, `testnet` ladder) and `fly.mainnet.toml` (app
+`shapes-indexer-mainnet`, `mainnet` ladder). Both leave the primary RPC public and archive-capable
+with two more public RPCs as `PONDER_RPC_FALLBACKS`; neither toml is deployed directly.
+
+### Environments
+
+`deploy.sh` and `bootstrap.sh` are the one deploy path across chains: the toml holds every
+chain-specific value except the Shapes contract address and start block, which come from
+`deployments/<chainId>.json` at the repo root (written by `script/deploy.sh`) so the indexer is
+never pointed at a stale or wrong contract by hand.
 
 ```bash
-fly apps create shapes-indexer
-fly volumes create shapes_indexer_data --app shapes-indexer --region iad --size 1
-fly deploy
+# once per environment, before its first deploy
+indexer/bootstrap.sh sepolia   # or mainnet — prints the fly apps/volumes create commands
+# <run the printed commands yourself>
+
+# every time the contracts redeploy to that chain
+indexer/deploy.sh sepolia      # or mainnet — reads deployments/<chainId>.json, deploys, records
 ```
 
-Then read back `/health`, `/ready`, `/status`, and the gallery GraphQL query before adding
-`https://shapes-indexer.fly.dev` as `indexerUrl` in deployment metadata. Do not scale beyond one
+`DRY_RUN=1 indexer/deploy.sh <env>` resolves the contract address/start block, validates the toml,
+and prints the `fly deploy` command without calling Fly. A real run reads back `/health` and
+`/graphql` after deploying and records `{DATABASE_SCHEMA: shapesAddress}` in
+`indexer/deployments.json`, refusing a schema reused for a different address on a later run — bump
+`DATABASE_SCHEMA` in the toml for a new deployment on the same chain rather than mixing two
+contracts' history into one schema. Then read back `/health`, `/ready`, `/status`, and the gallery
+GraphQL query before adding the app's URL as `indexerUrl` in deployment metadata (mainnet:
+`INDEXER_URL` in `script/env/mainnet.env`, already set to `https://shapes-indexer-mainnet.fly.dev`
+and written into `deployments/1.json` by `script/deploy.sh`). Do not scale either app beyond one
 Machine while using PGlite; a future multi-Machine or sustained-load requirement is the trigger to
 migrate to Postgres.
 
