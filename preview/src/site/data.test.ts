@@ -2,7 +2,7 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {ContractFunctionRevertedError, encodeErrorResult, type PublicClient} from "viem";
 
-import {loadSite} from "./data";
+import {loadSite, seedFee, seedMintStart, type SiteData} from "./data";
 import {BLACK_FILTER, filterGalleryTokens, originsLabel} from "./GalleryView";
 import {filterOwnedTokens} from "./MyShapesView";
 import {DENOMINATIONS, shapesAbi, type Deployment} from "../chain/abi";
@@ -431,6 +431,30 @@ test("loadSite: oversized indexer response bodies fall back", async () => {
   });
 
   assert.deepEqual(site.tokens.map((token) => token.id), [1n]);
+});
+
+test("seedFee: no data yet seeds from the deployment record", () => {
+  assert.equal(seedFee({mintFeeWei: "500"}, null, 0), 500n);
+});
+
+test("seedFee: no data yet and no recorded fee is unknown, not zero", () => {
+  assert.equal(seedFee({mintFeeWei: undefined}, null, 0), null);
+  assert.equal(seedFee(undefined, null, 0), null);
+});
+
+test("seedFee: chain data overrides the seeded record value", () => {
+  const data: Pick<SiteData, "fees"> = {fees: [1n, 2n, 3n]};
+  assert.equal(seedFee({mintFeeWei: "500"}, data, 1), 2n);
+});
+
+test("seedMintStart: no data yet seeds from the deployment record, defaulting open", () => {
+  assert.equal(seedMintStart({mintStart: "1000"}, null), 1000n);
+  assert.equal(seedMintStart(undefined, null), 0n);
+});
+
+test("seedMintStart: chain data overrides the seeded record value", () => {
+  const data: Pick<SiteData, "mintStart"> = {mintStart: 42n};
+  assert.equal(seedMintStart({mintStart: "1000"}, data), 42n);
 });
 
 test("originsLabel counts mint origins and flags Complete", () => {

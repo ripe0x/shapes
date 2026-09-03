@@ -490,6 +490,7 @@ export function SiteApp({
     return renderHome(
       <MintPanel
         data={data}
+        dep={dep}
         chainId={dep.chainId}
         connected={isConnected}
         sel={sel}
