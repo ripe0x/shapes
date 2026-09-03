@@ -10,10 +10,9 @@
     --function check_MintThenRedeemRestoresExactReserve --solver z3 \
     --solver-timeout-assertion 30s --no-status -vv
 
-  # Medusa needs its configuration at the project root for crytic-compile. The link is temporary.
-  ln -s project/experiments/medusa-reserve.json medusa.json
-  /tmp/shapes-p1-medusa/medusa fuzz --config medusa.json --timeout 120 --test-limit 20000
-  unlink medusa.json
+  # script/medusa.sh copies the config to the repo root with an absolute platformConfig.target
+  # (crytic-compile resolves a relative target against its own cwd, not the repo root).
+  ./script/medusa.sh --timeout 120 --test-limit 20000
   ```
 
   Versions: Halmos 0.3.3, Medusa 1.5.1, crytic-compile 0.3.11, Forge 1.5.0, solc 0.8.28. The Medusa harness has only bounded valid lifecycle actions: initialize, mint dust, compose 5 dust, split a nickel, decompose, and redeem. Its two `property_` methods check exact reserve equality and solvency after every generated call.

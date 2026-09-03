@@ -282,10 +282,6 @@ jobs:
           tar -xzf "$RUNNER_TEMP/medusa-linux-x64.tar.gz" -C "$RUNNER_TEMP/medusa-bin"
           echo "$RUNNER_TEMP/medusa-bin" >> "$GITHUB_PATH"
 
-      # Medusa's crytic-compile adapter treats the config directory as its project root. Keep the
-      # reviewed configuration under project/experiments, but link it at root for this invocation.
+      # script/medusa.sh writes a root-level config with an absolute target; see its header.
       - name: fuzz reserve and lifecycle invariants
-        run: |
-          ln -s project/experiments/medusa-reserve.json medusa.json
-          trap 'rm -f medusa.json' EXIT
-          medusa fuzz --config medusa.json
+        run: ./script/medusa.sh
