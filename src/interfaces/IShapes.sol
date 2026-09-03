@@ -286,8 +286,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Replace the onchain renderer. Admin only, until presentation is locked. `tokenURI`
     ///         reads the renderer, so a change affects how a Shape looks and leaves its backing,
-    ///         redeemability and owner untouched. `newRenderer` must carry code and support
-    ///         `IShapeRenderer`.
+    ///         redeemability and owner untouched. `newRenderer` must carry code and support both
+    ///         `IShapeRenderer` and `IShapeGeometry`, since `geometryOf` and `moduleAt` call the
+    ///         renderer as `IShapeGeometry`.
     function setRenderer(address newRenderer) external;
 
     /// @notice Replace the collection metadata contract. Admin only, until presentation is
