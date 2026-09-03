@@ -971,6 +971,14 @@ else
   command -v npm >/dev/null || fail "npm is required for the indexer diff; rerun with LIFECYCLE_INDEXER=0 to skip"
   [ -d indexer/node_modules ] || (cd indexer && npm install --no-audit --no-fund >/dev/null)
   command -v curl >/dev/null || fail "curl is required for the indexer diff"
+  # A stray server already on this port (most often a developer's own long-running `ponder dev`
+  # on its default 42069) answers /ready immediately, so the loop below would silently diff
+  # against that unrelated database instead of the one this run just spawned. Fail fast here
+  # instead of producing a confusing indexed-count mismatch four minutes later.
+  if (exec 3<>"/dev/tcp/127.0.0.1/${INDEXER_PORT}") 2>/dev/null; then
+    exec 3<&- 3>&-
+    fail "port ${INDEXER_PORT} is already in use; set LIFECYCLE_INDEXER_PORT to a free port or stop the process on it"
+  fi
   TIP=$(cast block-number --rpc-url "$RPC")
   INDEXER_DIR=$(mktemp -d)
   LADDER=mainnet
@@ -986,7 +994,12 @@ else
 
   READY=0
   for _ in $(seq 1 300); do
-    if curl -fsS "http://127.0.0.1:${INDEXER_PORT}/ready" >/dev/null 2>&1; then READY=1; break; fi
+    # Require our own spawned process to still be alive, not just /ready answering: a stray
+    # server that raced onto this port after the preflight check would otherwise pass silently.
+    if kill -0 "$INDEXER_PID" 2>/dev/null && curl -fsS "http://127.0.0.1:${INDEXER_PORT}/ready" >/dev/null 2>&1; then
+      READY=1
+      break
+    fi
     kill -0 "$INDEXER_PID" 2>/dev/null || break
     sleep 2
   done
