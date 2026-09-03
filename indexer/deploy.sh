@@ -99,7 +99,9 @@ else
   echo "fly CLI not found; skipping config validate" >&2
 fi
 
-DEPLOY_CMD=(fly deploy --config "$TOML" -a "$APP"
+# fly deploy uses the current directory as the Docker build context, so it must run from
+# indexer/: the Dockerfile copies this package's package.json, not the workspace root's.
+DEPLOY_CMD=(fly deploy --config "$(basename "$TOML")" -a "$APP"
   -e "SHAPES_ADDRESS=$SHAPES_ADDRESS"
   -e "SHAPES_START_BLOCK=$FROM_BLOCK")
 
@@ -109,7 +111,7 @@ if [[ "${DRY_RUN:-}" == "1" ]]; then
   exit 0
 fi
 
-"${DEPLOY_CMD[@]}"
+(cd indexer && "${DEPLOY_CMD[@]}")
 
 [[ -f "$SCHEMA_LEDGER" ]] || echo '{}' > "$SCHEMA_LEDGER"
 jq --arg s "$SCHEMA" --arg a "$SHAPES_ADDRESS" '.[$s] = $a' "$SCHEMA_LEDGER" > "$SCHEMA_LEDGER.tmp"
