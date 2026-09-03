@@ -29,6 +29,9 @@ if cast block-number --rpc-url "$RPC" >/dev/null 2>&1; then
   say "Reusing the chain already answering on $RPC"
 else
   say "Booting a fresh chain via script/fork-dev.sh"
+  # fork-dev.sh writes the deployment file once the deploy has landed; a file left by an earlier
+  # chain would pass the wait below before this chain has any contracts.
+  rm -f "$DEPLOYMENT_FILE"
   ./script/fork-dev.sh &
   FORK_PID=$!
   trap 'kill $FORK_PID 2>/dev/null || true' EXIT INT TERM

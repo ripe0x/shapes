@@ -503,7 +503,7 @@ export function ManageShapeView({
 
 function ManageBack({tokenId, onBack}: {tokenId: bigint; onBack: () => void}) {
   return (
-    <div style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
+    <div className="token-detail-back">
       <button type="button" className="btn-ghost" onClick={onBack} style={{color: C.muted, letterSpacing: "0.14em"}}>
         ← SHAPE #{tokenId.toString()}
       </button>
