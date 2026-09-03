@@ -6,8 +6,9 @@ by `ShapeRenderer.sol`. The TypeScript canonical (`preview/src/canonical/render.
 default copy; `test/Parity.t.sol` asserts the two agree exactly at that default copy. No off-chain
 metadata service exists, so nothing here can rot or be withheld.
 
-The token `name` prefix and shared `description` are admin-set copy, stored on Shapes and passed
-into the renderer. `setMetadataCopy` edits both atomically. The one name exception is the owner
+The token `name` prefix and shared `description` are admin-set copy, stored on `ShapeCollection`
+and read back by `Shapes.tokenURI` and `Shapes.contractURI`. `ShapeCollection.setMetadataCopy` sets
+both together; `Shapes.refreshMetadata` then emits the ERC-4906 and ERC-7572 refresh signals. The one name exception is the owner
 token, the one live Shape that currently carries collection ownership (starts as #0, moves through
 `compose`, `decompose` and `split`): its name is the ordinary `namePrefix` plus token id, suffixed
 with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), so the name tracks whichever token

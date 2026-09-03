@@ -54,7 +54,8 @@ export const shapesAbi = parseAbi([
   "function setMintFee(uint256 newFee)",
   "function pendingFees() view returns (uint256)",
   "function withdrawFees()",
-  "function setMetadataCopy(string tokenNamePrefix_, string description_)",
+  "function refreshMetadata()",
+  "function collection() view returns (address)",
   "function positions() view returns (address target, bool locked)",
   "function market() view returns (address target, bool locked)",
   "function setPointer(uint8 pointer, address target)",
@@ -126,6 +127,7 @@ export const shapesAbi = parseAbi([
   "error PresentationIsLocked()",
   "error UnsupportedRenderer(address renderer)",
   "error UnsupportedCollection(address collection)",
+  "error CollectionNotSet()",
   "error TokenIsBlack(uint256 tokenId)",
   "error NoComposeInputs()",
   "error CannotComposeWithSelf(uint256 tokenId)",
@@ -134,7 +136,6 @@ export const shapesAbi = parseAbi([
   "error NoComposeRecord(uint256 survivorId)",
   "error NotApexComplete(uint256 tokenId)",
   "error DuplicateComposeInput(uint256 tokenId)",
-  "error InvalidCopy(uint8 field)",
   "error InvalidPointerTarget()",
   "error PointerIsLocked()",
   "error InvalidPointer()",
@@ -147,6 +148,27 @@ export const shapesAbi = parseAbi([
   "error DenominationIndexOutOfRange(uint256 index)",
 ]);
 
+
+// The collection metadata contract. It stores the token name prefix and the shared description
+// that `Shapes.tokenURI` and `Shapes.contractURI` read back, editable by the Shapes admin until
+// `Shapes.lockPresentation` freezes it.
+export const shapeCollectionAbi = parseAbi([
+  "function renderer() view returns (address)",
+  "function shapes() view returns (address)",
+  "function tokenNamePrefix() view returns (string)",
+  "function description() view returns (string)",
+  "function setMetadataCopy(string tokenNamePrefix_, string description_)",
+  "function contractURI(string name_, string description_) view returns (string)",
+  "function image() view returns (string)",
+  "function imageFor(bytes32 root) view returns (string)",
+  "function card(uint8 denomIndex) view returns (string)",
+  "function cardFor(bytes32 cardSeed, uint8 denomIndex) view returns (string)",
+  "event MetadataCopySet(string tokenNamePrefix, string description)",
+  "error InvalidCopy(uint8 field)",
+  "error DenominationIndexOutOfRange(uint256 index)",
+  "error PresentationIsLocked()",
+  "error AdminUnauthorizedAccount(address account)",
+]);
 
 /** The public libraries whose addresses are linked into `Shapes` at deploy time. */
 export type LibraryName =

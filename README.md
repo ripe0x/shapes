@@ -271,8 +271,11 @@ transferred through `transferAdmin` or permanently removed through `renounceAdmi
 of the owner token:
 
 - Presentation: the renderer and collection metadata contracts may be replaced via `setRenderer`
-  and `setCollection`, and the metadata copy, the token name prefix and description shared by token
-  and collection metadata, edited via `setMetadataCopy`. `lockPresentation` permanently freezes all
+  and `setCollection`. The metadata copy, the token name prefix and description shared by token and
+  collection metadata, lives on `ShapeCollection` and is edited there via `setMetadataCopy`, which
+  reads both the admin and the lock live from `Shapes`. A copy edit is two transactions:
+  `collection.setMetadataCopy`, then `shapes.refreshMetadata`, which emits the ERC-4906 and
+  ERC-7572 signals that make marketplaces re-read. `lockPresentation` permanently freezes all
   three: afterwards each of those three calls reverts `PresentationIsLocked`. Copy is validated so
   it cannot break the metadata JSON. All of it is read only by metadata views and cannot affect
   backing, redemption or ownership.
@@ -347,8 +350,8 @@ src/
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
     RecompositionOps.sol      the compose, decompose and split state machine, and the previews
-    AdminOps.sol              every configuration write: fee, copy, presentation, pointers, artist
-    CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
+    AdminOps.sol              every configuration write on Shapes: fee, presentation, pointers, artist
+    CopyValidation.sol        UTF-8 and JSON-safety validation for the collection's copy fields
     EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
     GeometrySampling.sol      the compose and split module-sampling procedures
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1

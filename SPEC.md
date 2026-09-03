@@ -382,9 +382,9 @@ builds. The renderer stays byte-parity with the canonical TypeScript renderer. S
 
 Every string in the SVG, and every string in the JSON other than the token `name` prefix and shared
 `description`, comes from a fixed table or from `fmt`. Those two are admin-set copy, stored on
-`Shapes` and passed into `metadataJSON`. `Shapes.setMetadataCopy` rejects any value containing `"`,
-`\`, or a C0 control byte and caps its length, so admin copy cannot break or restructure the
-document. `contractURI` uses the immutable ERC-721 collection name and the same description as
+`ShapeCollection` and read back by `Shapes` into `metadataJSON`.
+`ShapeCollection.setMetadataCopy` rejects any value containing `"`, `\`, or a C0 control byte and
+caps its length, so admin copy cannot break or restructure the document. `contractURI` uses the immutable ERC-721 collection name and the same description as
 tokens. No other caller-controlled text reaches either document.
 
 ### D13. Sizing: the painted extent is the controlled quantity
@@ -604,13 +604,15 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   the renderer and collection metadata contracts,
   can set, replace, clear and independently lock optional positions and market pointers, including
   locking either forever at zero, and can edit the token name prefix and description shared by token
-  and collection metadata via `setMetadataCopy`. The
-  renderer and collection are read only by `tokenURI`/`contractURI`; the positions target only by
-  `positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
+  and collection metadata via `ShapeCollection.setMetadataCopy`, followed by
+  `Shapes.refreshMetadata` to signal the change. The
+  renderer is read only by `tokenURI`; the collection by `tokenURI` and `contractURI`; the positions
+  target only by `positionOf`; the market is discovery only; the copy only by metadata views, and it
+  is validated on set so it cannot
   break the JSON. Admin may also redirect future mint fee withdrawals and adjust the mint fee
   amount within the cap of one denomination unit, but cannot reach backing, redemption, already-accrued fees or
-  token ownership. The copy is
-  deliberately not covered by the renderer lock; it stays editable until admin is renounced.
+  token ownership. The copy is frozen by `lockPresentation` along with the renderer and collection
+  pointers: `ShapeCollection.setMetadataCopy` reads that lock back from `Shapes`.
   There is no pause, upgrade path, proxy or administrative reserve path. Admin may be transferred
   or renounced without moving the owner token.
 - **Permanent artist attribution, separate from ownership and admin.** `artist()` records the

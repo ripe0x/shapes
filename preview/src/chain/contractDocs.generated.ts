@@ -448,7 +448,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "address"
           }
         ],
-        "notice": "The collection metadata contract, read only by `contractURI`. Replaceable by the admin via `setCollection` until `lockPresentation` freezes it.",
+        "notice": "The collection metadata contract. It stores the metadata copy `tokenURI` and `contractURI` read. Replaceable by the admin via `setCollection` until `lockPresentation` freezes it; zero until deployment sets it.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -996,34 +996,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
-        "name": "description",
-        "signature": "description()",
-        "stateMutability": "view",
-        "inputs": [],
-        "outputs": [
-          {
-            "name": "",
-            "type": "string"
-          }
-        ],
-        "notice": "The shared description emitted by both token metadata and `contractURI`.",
-        "dev": "Shared by token and collection metadata so the collection cannot describe itself differently from its tokens.",
-        "params": {},
-        "returns": {},
-        "abi": {
-          "type": "function",
-          "name": "description",
-          "inputs": [],
-          "outputs": [
-            {
-              "name": "",
-              "type": "string"
-            }
-          ],
-          "stateMutability": "view"
-        }
-      },
-      {
         "name": "exists",
         "signature": "exists(uint256)",
         "stateMutability": "view",
@@ -1397,7 +1369,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "stateMutability": "nonpayable",
         "inputs": [],
         "outputs": [],
-        "notice": "Permanently lock presentation. Admin only, one way. After this the renderer, the collection and the metadata copy are all fixed: `setRenderer`, `setCollection` and `setMetadataCopy` revert `PresentationIsLocked`.",
+        "notice": "Permanently lock presentation. Admin only, one way. After this the renderer, the collection and the collection's metadata copy are all fixed: `setRenderer`, `setCollection` and `IShapeCollection.setMetadataCopy` revert `PresentationIsLocked`.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -2362,6 +2334,24 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "refreshMetadata",
+        "signature": "refreshMetadata()",
+        "stateMutability": "nonpayable",
+        "inputs": [],
+        "outputs": [],
+        "notice": "Signal that every token's metadata and the contract-level metadata should be re-read. Admin only, state-changing in no other way.",
+        "dev": "`totalMinted` is at least one from construction onward, so the range always covers every id minted so far.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "refreshMetadata",
+          "inputs": [],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        }
+      },
+      {
         "name": "renderer",
         "signature": "renderer()",
         "stateMutability": "view",
@@ -2670,8 +2660,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "outputs": [],
-        "notice": "Replace the collection metadata contract. Admin only, and only while unlocked. Read only by `contractURI`; it can never touch ETH, backing or ownership. `newCollection` must carry code and support `IShapeCollection`.",
-        "dev": "",
+        "notice": "Replace the collection metadata contract. Admin only, and only while unlocked. Read by `tokenURI` and `contractURI`; it can never touch ETH, backing or ownership. `newCollection` must carry code and support `IShapeCollection`.",
+        "dev": "Replacing it replaces the stored metadata copy along with it, since the copy lives on the collection, so this emits ERC-4906 `BatchMetadataUpdate` over every minted id and `ContractURIUpdated` as well as `CollectionUpdated`.",
         "params": {},
         "returns": {},
         "abi": {
@@ -2709,42 +2699,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             {
               "name": "newRecipient",
               "type": "address"
-            }
-          ],
-          "outputs": [],
-          "stateMutability": "nonpayable"
-        }
-      },
-      {
-        "name": "setMetadataCopy",
-        "signature": "setMetadataCopy(string,string)",
-        "stateMutability": "nonpayable",
-        "inputs": [
-          {
-            "name": "tokenNamePrefix_",
-            "type": "string"
-          },
-          {
-            "name": "description_",
-            "type": "string"
-          }
-        ],
-        "outputs": [],
-        "notice": "Atomically set the token name prefix and the description shared with `contractURI`. Admin only. Emits both ERC-4906 `BatchMetadataUpdate` and `ContractURIUpdated`.",
-        "dev": "Written verbatim into metadata JSON, so all arguments must be well-formed UTF-8, length-capped (64-byte names, 2048-byte description), and free of bytes JSON forbids unescaped (`\"`, `\\`, C0 controls). Reverts `PresentationIsLocked` once `lockPresentation` has been called.",
-        "params": {},
-        "returns": {},
-        "abi": {
-          "type": "function",
-          "name": "setMetadataCopy",
-          "inputs": [
-            {
-              "name": "tokenNamePrefix_",
-              "type": "string"
-            },
-            {
-              "name": "description_",
-              "type": "string"
             }
           ],
           "outputs": [],
@@ -3161,34 +3115,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "abi": {
           "type": "function",
           "name": "symbol",
-          "inputs": [],
-          "outputs": [
-            {
-              "name": "",
-              "type": "string"
-            }
-          ],
-          "stateMutability": "view"
-        }
-      },
-      {
-        "name": "tokenNamePrefix",
-        "signature": "tokenNamePrefix()",
-        "stateMutability": "view",
-        "inputs": [],
-        "outputs": [
-          {
-            "name": "",
-            "type": "string"
-          }
-        ],
-        "notice": "The per-token metadata name prefix. A token's `name` is this followed by its id. Admin-editable via `setMetadataCopy` until `lockPresentation` freezes it.",
-        "dev": "Admin-editable via `setMetadataCopy`, written verbatim into every token's metadata. Frozen by `lockPresentation`.",
-        "params": {},
-        "returns": {},
-        "abi": {
-          "type": "function",
-          "name": "tokenNamePrefix",
           "inputs": [],
           "outputs": [
             {
@@ -3657,7 +3583,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "name": "ContractURIUpdated",
         "signature": "ContractURIUpdated()",
         "inputs": [],
-        "notice": "Standard contract-level metadata refresh signal, emitted when the collection copy changes.",
+        "notice": "Standard contract-level metadata refresh signal, emitted by `refreshMetadata`.",
         "dev": ""
       },
       {
@@ -4144,6 +4070,13 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": "The survivor of a compose cannot also appear in its burn set."
       },
       {
+        "name": "CollectionNotSet",
+        "signature": "CollectionNotSet()",
+        "inputs": [],
+        "notice": "",
+        "dev": "`tokenURI` and `contractURI` read the metadata copy from the collection, so both revert while the collection pointer is zero. Deployment sets it immediately after construction."
+      },
+      {
         "name": "ComposeRecordOutOfRange",
         "signature": "ComposeRecordOutOfRange(uint256,uint256,uint256)",
         "inputs": [
@@ -4349,18 +4282,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": ""
       },
       {
-        "name": "InvalidCopy",
-        "signature": "InvalidCopy(uint8)",
-        "inputs": [
-          {
-            "name": "field",
-            "type": "uint8"
-          }
-        ],
-        "notice": "",
-        "dev": "Metadata copy is written verbatim into JSON, so a value is rejected when it carries a `\"`, a `\\`, or a C0 control byte (which would break or restructure the document), is not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length cap. `field` is 0 name/prefix, 1 description."
-      },
-      {
         "name": "InvalidPointer",
         "signature": "InvalidPointer()",
         "inputs": [],
@@ -4490,7 +4411,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "signature": "PresentationIsLocked()",
         "inputs": [],
         "notice": "",
-        "dev": "`setRenderer`, `setCollection`, `setMetadataCopy` and `lockPresentation` revert once presentation is locked."
+        "dev": "`setRenderer`, `setCollection` and `lockPresentation` revert once presentation is locked, as does `IShapeCollection.setMetadataCopy`, which reads the lock back from here."
       },
       {
         "name": "ReentrancyGuardReentrantCall",
@@ -6307,8 +6228,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
   {
     "name": "ShapeCollection",
     "kind": "collection",
-    "description": "Collection-level presentation for Shapes.",
-    "dev": "Holds no state beyond the renderer address, has no owner and no initialiser. It reads the chain only for `seed()`, which is `block.prevrandao` folded with the block number, so an output that takes no seed advances once per block and every caller in the same block sees the same one. Passing a seed explicitly pins an output forever. Nothing here touches a token. The cards it renders are compositions the ladder allows, drawn through the same renderer and the same ink-gene derivation a mint uses, which is why they are indistinguishable from a real token's artwork.",
+    "description": "Collection-level metadata for Shapes: the editorial copy and the contract-level metadata built from it, plus seeded card previews.",
+    "dev": "Stores the token name prefix and the shared description. `Shapes.tokenURI` and `Shapes.contractURI` read both back from here. The only write path is `setMetadataCopy`, restricted to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Neither role is held here: both are read live from `shapes`. Rendering reads the chain only for `seed()`, which is `block.prevrandao` folded with the block number, so an output that takes no seed advances once per block and every caller in the same block sees the same one. Passing a seed explicitly pins an output forever. The cards rendered here are compositions the ladder allows, drawn through the same renderer and the same ink-gene derivation a mint uses, and are indistinguishable from a real token's artwork. No token is read or written.",
     "functions": [
       {
         "name": "card",
@@ -6400,11 +6321,11 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "stateMutability": "view",
         "inputs": [
           {
-            "name": "name",
+            "name": "name_",
             "type": "string"
           },
           {
-            "name": "description",
+            "name": "description_",
             "type": "string"
           }
         ],
@@ -6415,7 +6336,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Contract-level metadata URI, as a base64 `data:application/json`.",
-        "dev": "`name` and `description` are the editorial copy the caller supplies, emitted verbatim; the `image` is generated here. `Shapes` stores that copy and passes it through.",
+        "dev": "`name` and `description` are the editorial copy the caller supplies, emitted verbatim; the `image` is generated here. `Shapes.contractURI` supplies its ERC-721 `name()` and the `description` stored here.",
         "params": {},
         "returns": {},
         "abi": {
@@ -6423,14 +6344,42 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           "name": "contractURI",
           "inputs": [
             {
-              "name": "name",
+              "name": "name_",
               "type": "string"
             },
             {
-              "name": "description",
+              "name": "description_",
               "type": "string"
             }
           ],
+          "outputs": [
+            {
+              "name": "",
+              "type": "string"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
+        "name": "description",
+        "signature": "description()",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "notice": "The description emitted by both token metadata and `Shapes.contractURI`, so the collection cannot describe itself differently from its tokens.",
+        "dev": "",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "description",
+          "inputs": [],
           "outputs": [
             {
               "name": "",
@@ -6512,11 +6461,11 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "stateMutability": "view",
         "inputs": [
           {
-            "name": "name",
+            "name": "name_",
             "type": "string"
           },
           {
-            "name": "description",
+            "name": "description_",
             "type": "string"
           }
         ],
@@ -6535,11 +6484,11 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           "name": "json",
           "inputs": [
             {
-              "name": "name",
+              "name": "name_",
               "type": "string"
             },
             {
-              "name": "description",
+              "name": "description_",
               "type": "string"
             }
           ],
@@ -6609,6 +6558,70 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "setMetadataCopy",
+        "signature": "setMetadataCopy(string,string)",
+        "stateMutability": "nonpayable",
+        "inputs": [
+          {
+            "name": "tokenNamePrefix_",
+            "type": "string"
+          },
+          {
+            "name": "description_",
+            "type": "string"
+          }
+        ],
+        "outputs": [],
+        "notice": "Set the token name prefix and the shared description together.",
+        "dev": "Callable only by `IShapes(shapes()).admin()`, and only while that token's `presentationLocked()` is false; otherwise reverts `IShapes.PresentationIsLocked`. Both arguments must be well-formed UTF-8, length-capped (64-byte prefix, 2048-byte description), and free of bytes JSON forbids unescaped (`\"`, `\\`, C0 controls). Marketplaces re-read after a copy change when the admin then calls `Shapes.refreshMetadata`.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "setMetadataCopy",
+          "inputs": [
+            {
+              "name": "tokenNamePrefix_",
+              "type": "string"
+            },
+            {
+              "name": "description_",
+              "type": "string"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        }
+      },
+      {
+        "name": "shapes",
+        "signature": "shapes()",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "",
+            "type": "address"
+          }
+        ],
+        "notice": "The `Shapes` token this collection describes. Its `admin()` may edit the copy and its `presentationLocked()` freezes it. Immutable, set at construction.",
+        "dev": "",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "shapes",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "address"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
         "name": "supportsInterface",
         "signature": "supportsInterface(bytes4)",
         "stateMutability": "pure",
@@ -6645,10 +6658,69 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           ],
           "stateMutability": "pure"
         }
+      },
+      {
+        "name": "tokenNamePrefix",
+        "signature": "tokenNamePrefix()",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "notice": "The per-token metadata name prefix. A token's `name` is this followed by its id.",
+        "dev": "Read by `Shapes.tokenURI` and written verbatim into every token's metadata.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "tokenNamePrefix",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "string"
+            }
+          ],
+          "stateMutability": "view"
+        }
       }
     ],
-    "events": [],
+    "events": [
+      {
+        "name": "MetadataCopySet",
+        "signature": "MetadataCopySet(string,string)",
+        "inputs": [
+          {
+            "name": "tokenNamePrefix",
+            "type": "string",
+            "indexed": false
+          },
+          {
+            "name": "description",
+            "type": "string",
+            "indexed": false
+          }
+        ],
+        "notice": "Emitted when the admin rewrites the metadata copy.",
+        "dev": ""
+      }
+    ],
     "errors": [
+      {
+        "name": "AdminUnauthorizedAccount",
+        "signature": "AdminUnauthorizedAccount(address)",
+        "inputs": [
+          {
+            "name": "account",
+            "type": "address"
+          }
+        ],
+        "notice": "",
+        "dev": ""
+      },
       {
         "name": "DenominationIndexOutOfRange",
         "signature": "DenominationIndexOutOfRange(uint256)",
@@ -6662,11 +6734,42 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": ""
       },
       {
+        "name": "InvalidCopy",
+        "signature": "InvalidCopy(uint8)",
+        "inputs": [
+          {
+            "name": "field",
+            "type": "uint8"
+          }
+        ],
+        "notice": "",
+        "dev": "Metadata copy is written verbatim into JSON, so a value is rejected when it carries a `\"`, a `\\`, or a C0 control byte (which would break or restructure the document), is not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length cap. `field` is 0 name/prefix, 1 description."
+      },
+      {
+        "name": "PresentationIsLocked",
+        "signature": "PresentationIsLocked()",
+        "inputs": [],
+        "notice": "",
+        "dev": "`setRenderer`, `setCollection` and `lockPresentation` revert once presentation is locked, as does `IShapeCollection.setMetadataCopy`, which reads the lock back from here."
+      },
+      {
         "name": "RendererHasNoCode",
         "signature": "RendererHasNoCode(address)",
         "inputs": [
           {
             "name": "renderer",
+            "type": "address"
+          }
+        ],
+        "notice": "",
+        "dev": ""
+      },
+      {
+        "name": "ShapesHasNoCode",
+        "signature": "ShapesHasNoCode(address)",
+        "inputs": [
+          {
+            "name": "shapes",
             "type": "address"
           }
         ],
@@ -8485,7 +8588,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
   {
     "name": "AdminOps",
     "kind": "library",
-    "description": "Every configuration write path on `Shapes`: fee, metadata copy, presentation pointers, the two discovery pointers, and the artist attestation.",
+    "description": "Every configuration write path on `Shapes`: fee, presentation pointers, the two discovery pointers, and the artist attestation.",
     "dev": "Public library called through `DELEGATECALL`, so storage stays in `Shapes` and events are emitted from `Shapes`'s address. Each function is named after the `Shapes` entrypoint whose body it holds. No authorization happens here. Each caller in `Shapes` runs its own check first (`onlyAdmin`, or none for `attestArtist`, which is permissionless by design). Nothing here reaches token state, backing, redemption or the admin address itself: the admin address is written only by `Shapes`, so no library can hand the role to anyone. Every mutator takes a struct storage pointer and writes through it, so each reaches only the fields its own function moves. A bare `string`/`bytes` storage-pointer parameter cannot be reassigned from calldata or memory, since solc's copy codegen does not support that for a standalone reference-type parameter; assigning through a struct member reached via the pointer works, which is why these fields are grouped into structs.",
     "functions": [
       {
@@ -8517,18 +8620,18 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection and the metadata copy are all fixed.",
+        "dev": "Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection and the collection's metadata copy are all fixed.",
         "params": {},
         "returns": {}
       },
       {
         "name": "setCollection",
-        "signature": "setCollection(AdminOps.Presentation storage,address)",
+        "signature": "setCollection(AdminOps.Presentation storage,address,uint256)",
         "stateMutability": "",
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setCollection`.",
+        "dev": "Body of `Shapes.setCollection`. The collection stores the metadata copy, so a new one changes `tokenURI` for every existing token as well as `contractURI`; ERC-4906 and ERC-7572 both signal the refresh.",
         "params": {},
         "returns": {}
       },
@@ -8540,17 +8643,6 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "Body of `Shapes.setFeeRecipient`.",
-        "params": {},
-        "returns": {}
-      },
-      {
-        "name": "setMetadataCopy",
-        "signature": "setMetadataCopy(AdminOps.Presentation storage,AdminOps.CopyConfig storage,string,string,uint256)",
-        "stateMutability": "",
-        "inputs": [],
-        "outputs": [],
-        "notice": "",
-        "dev": "Body of `Shapes.setMetadataCopy`. Takes the presentation pointer for its lock: the copy is part of presentation and freezes with it.",
         "params": {},
         "returns": {}
       },
@@ -8647,7 +8739,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "name": "ContractURIUpdated",
         "signature": "ContractURIUpdated()",
         "inputs": [],
-        "notice": "Standard contract-level metadata refresh signal, emitted when the collection copy changes.",
+        "notice": "Standard contract-level metadata refresh signal, emitted by `refreshMetadata`.",
         "dev": ""
       },
       {
@@ -8842,7 +8934,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "signature": "PresentationIsLocked()",
         "inputs": [],
         "notice": "",
-        "dev": "`setRenderer`, `setCollection`, `setMetadataCopy` and `lockPresentation` revert once presentation is locked."
+        "dev": "`setRenderer`, `setCollection` and `lockPresentation` revert once presentation is locked, as does `IShapeCollection.setMetadataCopy`, which reads the lock back from here."
       },
       {
         "name": "UnsupportedCollection",

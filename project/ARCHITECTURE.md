@@ -36,7 +36,7 @@ every protocol fact. Everything else is presentation or an independent applicati
 | --- | --- | --- |
 | `Shapes` | The token. Reserve custody, minting, redemption, recomposition, every protocol view. | No |
 | `ShapeRenderer` | Onchain artwork and token metadata. Read only by `tokenURI`. | By admin until `lockPresentation` |
-| `ShapeCollection` | Collection-level metadata. Read only by `contractURI`. | By admin until `lockPresentation` |
+| `ShapeCollection` | Collection-level metadata, and the token name prefix and shared description `tokenURI` and `contractURI` read back. | By admin until `lockPresentation` |
 | `ShapeAuctionHouse` | English auction with bids denominated in Shape cards. Pulls tokens from bidders; holds no authority over `Shapes`. | Not wired in; discovered through the `market` pointer |
 
 Libraries linked into `Shapes` at deploy time, with no setter anywhere:
@@ -44,14 +44,16 @@ Libraries linked into `Shapes` at deploy time, with no setter anywhere:
 | Library | Role |
 | --- | --- |
 | `RecompositionOps` | The compose, decompose and split state machine, and the previews of compose and split. |
-| `AdminOps` | Every configuration write path: fee, metadata copy, renderer, collection, pointers, artist attestation. |
+| `AdminOps` | Every configuration write path on `Shapes`: fee, renderer, collection, pointers, artist attestation. |
 | `ComposeCompute` | Compose module sampling and ink gene assignment in one call. |
 | `GeometrySampling` | The compose and split module-sampling procedures. |
 | `InkGenes` | Ink gene assignment. |
 
+`CopyValidation` is linked the same way, into `ShapeCollection` rather than `Shapes`.
+
 Libraries whose code inlines into their callers (`internal` only, no linked address):
-`Denominations`, `ShapeMath`, `CopyValidation`, `EIP712Signature`, `ModuleCodec`,
-`GrammarV1Modules`, `Round03Rand`, `FixedPoint`.
+`Denominations`, `ShapeMath`, `EIP712Signature`, `ModuleCodec`, `GrammarV1Modules`, `Round03Rand`,
+`FixedPoint`.
 
 ## 3. Everything reachable from the token address
 
@@ -74,7 +76,11 @@ assumed, and run the same validation and the same sampling code the mutators run
 Collection views: `redeemableBacking`, `burnedBacking`, `blackShapeCount`, `totalSupply`,
 `totalMinted`, `owner`, `ownerToken`, `admin`, `artist`, `mintFee`, `mintStart`, `pendingFees`,
 `feeRecipient`, `renderer`, `collection`, `presentationLocked`, `positions`, `market`,
-`contractURI`, `tokenNamePrefix`, `description`.
+`contractURI`.
+
+The metadata copy is one hop out: `IShapeCollection.tokenNamePrefix` and
+`IShapeCollection.description` live on the address `collection()` returns, and
+`tokenURI`/`contractURI` read them back from there.
 
 Ladder views: `unit`, `denominationCount`, `denominationAt`, `isSupportedDenomination`.
 
@@ -144,9 +150,8 @@ totalMinted      the id counter
 
 Held by `Shapes` alone, outside any library's reach: `redeemableBacking`, `burnedBacking`,
 `blackShapeCount`, `pendingFees`, the owner token id and the admin address. `AdminOps` receives
-narrow pointers to the five groups it writes and nothing else: the fee config, the presentation
-config (`renderer`, `collection`, the lock), the metadata copy, the artist attestation and the
-pointer group.
+narrow pointers to the four groups it writes and nothing else: the fee config, the presentation
+config (`renderer`, `collection`, the lock), the artist attestation and the pointer group.
 
 The owner token id is written only by `Shapes`. No library can move collection ownership.
 
@@ -310,11 +315,20 @@ loops in `split` and `decompose` run after every write.
 Recorded so a reader does not have to reconstruct them from the code.
 
 **`lockPresentation` freezes the renderer, the collection and the metadata copy.** One lock over
-everything the name covers. `setRenderer`, `setCollection` and `setMetadataCopy` all revert
-`PresentationIsLocked` after it. The copy was previously outside the lock, which left an admin able
-to rewrite every token's name prefix and description on a collection whose presentation was
-advertised as permanent. Separate locks would be separate facts to reason about, and the copy is
-read from the same metadata document as the two contracts it now freezes with.
+everything the name covers. `setRenderer`, `setCollection` and `ShapeCollection.setMetadataCopy`
+all revert `PresentationIsLocked` after it; the collection reads the lock back from `Shapes` rather
+than holding one of its own. Separate locks would be separate facts to reason about, and the copy
+is read from the same metadata document as the two contracts it freezes with.
+
+**The metadata copy lives on the collection (D-41).** Presentation state sits with the presentation
+contracts: `ShapeCollection` stores the token name prefix and the shared description, validates
+them with `CopyValidation`, and gates `setMetadataCopy` on the admin and lock it reads live from
+the `Shapes` it is constructed with. The token holds no copy storage and no second admin role. Two
+consequences. The collection takes the token's address at construction, so `Shapes`'s constructor
+has no collection parameter and deployment fills the pointer with `setCollection` before anything
+else runs; `tokenURI` and `contractURI` revert `CollectionNotSet` while it is zero. And a copy edit
+is two transactions, because the collection cannot emit ERC-4906 from the token's address:
+`collection.setMetadataCopy`, then `shapes.refreshMetadata`.
 
 **The admin address and the owner token stay on the token.** The libraries hold every other write
 path, but `transferAdmin`, `renounceAdmin` and every owner-token move execute in `Shapes`'s own
@@ -349,13 +363,13 @@ value ladder is the token's fact, the grid is the renderer's.
 
 | Contract | Before | Default | Testnet | Margin (default) |
 | --- | --- | --- | --- | --- |
-| `Shapes` | 23,795 | 20,377 | 20,360 | 4,199 |
+| `Shapes` | 23,795 | 20,342 | 20,325 | 4,234 |
 | `ShapeLens` | 10,826 | deleted | deleted | |
 | `RecompositionOps` | new | 12,246 | 12,228 | |
-| `AdminOps` | 3,747 | 3,755 | 3,754 | |
+| `AdminOps` | 3,747 | 2,848 | 2,847 | |
 | `ShapeRenderer` | 23,442 | 23,442 | 23,441 | 1,134 |
 | `ShapeAuctionHouse` | 7,916 | 8,015 | 8,006 | 16,561 |
-| `ShapeCollection` | 4,077 | 4,077 | 4,070 | 20,499 |
+| `ShapeCollection` | 4,077 | 5,882 | 5,875 | 18,694 |
 | `GeometrySampling` | 4,714 | 4,714 | 4,714 | |
 | `ComposeCompute` | 1,258 | 1,258 | 1,258 | |
 | `EIP712Signature` | 1,006 | 1,006 | 1,006 | |
@@ -367,4 +381,4 @@ moves, measured on the pre-refactor source: stubbing the compose, split and deco
 recovered 6,910 bytes; stubbing the renderer, collection, pointer and admin-transfer write paths
 recovered 1,310. The views and previews added back about 2,690.
 
-`IShapes` is `0xaaf9b098`, pinned in `test/ContractOwnership.t.sol`.
+`IShapes` is `0x2ba22587`, pinned in `test/ContractOwnership.t.sol`.

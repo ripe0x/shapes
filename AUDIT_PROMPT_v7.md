@@ -98,13 +98,17 @@ economic asymmetry itself as a vulnerability unless it violates a documented sec
   reentrancy boundaries.
 - `src/ShapeRenderer.sol` and `src/ShapeCollection.sol`: metadata, bounded rendering,
   replaceability/locking and presentation-only entropy, including the owner token's special
-  identity.
+  identity. `ShapeCollection` also stores the admin-editable metadata copy and gates
+  `setMetadataCopy` on the `admin()` and `presentationLocked()` it reads live from `Shapes`;
+  confirm that cross-contract authority read and the `CollectionNotSet` window between
+  construction and `setCollection`.
 - The linked libraries: `RecompositionOps`, `AdminOps`, `ComposeCompute`, `CopyValidation`,
   `EIP712Signature`, `GeometrySampling` and `InkGenes`. `RecompositionOps` holds the compose,
   decompose and split bodies, the previews, and the decoded record reads, over one `ShapeStore`
   storage pointer; `AdminOps` holds every configuration write behind admin-gated wrappers in
-  `Shapes.sol`. Review the storage-struct layout each receives and the delegatecall boundary: no
-  library may write ERC-721 state, move ETH, or touch the owner token or the admin address.
+  `Shapes.sol`. `CopyValidation` links into `ShapeCollection`, not `Shapes`. Review the
+  storage-struct layout each receives and the delegatecall boundary: no library may write ERC-721
+  state, move ETH, or touch the owner token or the admin address.
 - All interfaces under `src/interfaces/`, including ERC-165 capability claims.
 - `script/Deploy.s.sol`, `script/deploy.sh`, shell guards, seed/evidence scripts and release fork
   tests: immutable configuration, exact value construction, wiring, ladder/profile selection and

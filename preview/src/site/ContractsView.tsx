@@ -56,6 +56,19 @@ function recordedAddress(dep: Deployment, name: string): `0x${string}` | undefin
 
 const isRead = (fn: DocFunction) => fn.stateMutability === "view" || fn.stateMutability === "pure";
 
+/** Enum-backed parameters, which reach the ABI as a bare `uint8`. Keyed `function.parameter`;
+ *  the array index is the enum value. Shown beside the input so a caller never has to look the
+ *  index up in the source. */
+const ENUM_MEMBERS: Record<string, readonly string[]> = {
+  "setPointer.pointer": ["Positions", "Market"],
+  "lockPointer.pointer": ["Positions", "Market"],
+};
+
+const enumHint = (fn: DocFunction, paramName: string): string | null => {
+  const members = ENUM_MEMBERS[`${fn.name}.${paramName}`];
+  return members ? members.map((member, value) => `${value} = ${member}`).join("  ") : null;
+};
+
 /** Decoded call output as text: bigints as decimal strings, everything structured as JSON. */
 export function displayResult(value: unknown): string {
   if (typeof value === "bigint") return value.toString();
@@ -260,6 +273,7 @@ function FunctionCard({
               {fn.inputs.map((input, i) => {
                 const key = input.name || `arg${i}`;
                 const paramDoc = fn.params[input.name] ?? "";
+                const members = enumHint(fn, input.name);
                 return (
                   <div key={key} style={{marginBottom: 8}}>
                     <div style={{display: "flex", alignItems: "center", gap: 8}}>
@@ -274,10 +288,11 @@ function FunctionCard({
                         id={`${fn.signature}-${key}`}
                         value={args[key] ?? ""}
                         onChange={(e) => setArgs((prev) => ({...prev, [key]: e.target.value}))}
-                        placeholder={input.type}
+                        placeholder={members ?? input.type}
                         spellCheck={false}
                         style={field}
                       />
+                      {members && <span style={{...hint, flexShrink: 0, whiteSpace: "nowrap"}}>{members}</span>}
                     </div>
                     {paramDoc && <p style={{margin: "3px 0 0 128px", ...hint, fontStyle: "italic"}}>{paramDoc}</p>}
                   </div>
