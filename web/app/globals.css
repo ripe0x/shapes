@@ -677,14 +677,14 @@ button {
   font-size: 15px;
 }
 
-/* Activity feed stats row (site/ActivityFeed.tsx): four counts above the list, one row of four
-   wrapping to two columns under 760px. `min-height` on the value holds the row's height while a
+/* Activity feed stats (site/ActivityFeed.tsx): four counts in the section heading's right column,
+   one row of four wrapping to two columns under 760px. `min-height` on the value holds the row's height while a
    value is still empty (initial load), so the list below does not jump once data lands. */
 .activity-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 32px;
-  padding-bottom: 48px;
+  grid-template-columns: repeat(4, auto);
+  gap: 48px;
+  align-items: end;
 }
 
 .activity-stat .launch-kicker {
@@ -694,7 +694,7 @@ button {
 .activity-stat-value {
   margin: 0;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: clamp(26px, 2.6vw, 40px);
+  font-size: clamp(22px, 2.2vw, 32px);
   font-weight: 500;
   letter-spacing: -0.04em;
   line-height: 1;
