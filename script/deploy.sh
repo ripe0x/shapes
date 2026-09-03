@@ -21,6 +21,8 @@
 #                                                 mint start; resolved after forge build.
 #   MINT_START                                     overrides the env file's MINT_START (a
 #                                                  rehearsal sets this a few minutes ahead).
+#   ALLOW_BRANCH_DEPLOY=1                         testnets only: deploy a pushed branch instead
+#                                                 of main (mainnet always requires main).
 #   DRY_RUN=1                                     simulate only: the REQUIRE_MAIN git guards
 #                                                  (branch, fetched origin/main, clean tree, no
 #                                                  untracked files) still run, but a failure only
@@ -160,18 +162,25 @@ if [ "$REQUIRE_MAIN" = "true" ]; then
     fi
   }
 
-  [ "$(git branch --show-current)" = "main" ] \
-    || git_guard_fail "deployments must run from main"
-  git fetch --quiet origin main
-  [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
-    || git_guard_fail "local main is not the fetched origin/main commit"
+  # Mainnet deploys only from main. A testnet rehearsal may deploy a pushed branch when the
+  # caller sets ALLOW_BRANCH_DEPLOY=1; the commit must still equal the fetched remote branch.
+  BRANCH="$(git branch --show-current)"
+  if [ "${ALLOW_BRANCH_DEPLOY:-0}" = "1" ] && [ "$CHAIN_ID" != "1" ] && [ -n "$BRANCH" ]; then
+    echo "  branch deploy allowed on chain $CHAIN_ID: $BRANCH"
+  else
+    [ "$BRANCH" = "main" ] || git_guard_fail "deployments must run from main (ALLOW_BRANCH_DEPLOY=1 permits a pushed branch on testnets)"
+    BRANCH="main"
+  fi
+  git fetch --quiet origin "$BRANCH"
+  [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$BRANCH")" ] \
+    || git_guard_fail "local $BRANCH is not the fetched origin/$BRANCH commit"
   git diff --quiet && git diff --cached --quiet \
     || git_guard_fail "tracked files are dirty; deployment commit is not exact"
   # deployments/ is written by a previous deploy, not an input to this one; untracked files
   # there don't make the deployment commit inexact.
   [ -z "$(git ls-files --others --exclude-standard -- . ':!deployments')" ] \
     || git_guard_fail "untracked files exist; deployment commit is not exact"
-  [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched main"
+  [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched $BRANCH"
 fi
 
 if [ "${FEE_RECIPIENT_MUST_BE_EOA:-false}" = "true" ]; then
