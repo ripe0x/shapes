@@ -10,6 +10,18 @@ import { mintGene } from "@shared/previewGene";
 import { SiteFooter } from "@shared/site/SiteFooter";
 
 const LAUNCH_AT = new Date("2026-09-03T12:00:00-04:00").getTime();
+const LAUNCH_AT_LABEL = "September 3, 12:00 PM ET";
+
+/** Local date/time label for a non-mainnet `mintStart`, e.g. on the Sepolia app site. */
+function formatMintDate(ms: number): string {
+  return new Date(ms).toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+}
 
 const TIERS = [
   { value: "0.01", grid: "5 × 5", marks: 25 },
@@ -177,15 +189,15 @@ function TierCard({ tier, index }: { tier: (typeof TIERS)[number]; index: number
   );
 }
 
-function useCountdown() {
+function useCountdown(targetMs: number) {
   const [remaining, setRemaining] = React.useState<number | null>(null);
 
   React.useEffect(() => {
-    const update = () => setRemaining(Math.max(0, LAUNCH_AT - Date.now()));
+    const update = () => setRemaining(Math.max(0, targetMs - Date.now()));
     update();
     const timer = window.setInterval(update, 1000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [targetMs]);
 
   const seconds = Math.floor((remaining ?? 0) / 1000);
   return {
@@ -199,14 +211,14 @@ function useCountdown() {
 
 function Countdown({
   countdown,
-  forceLive,
+  dateLabel,
   mintSlot,
 }: {
   countdown: ReturnType<typeof useCountdown>;
-  forceLive: boolean;
+  dateLabel: string;
   mintSlot?: React.ReactNode;
 }) {
-  const live = forceLive || countdown.live;
+  const live = countdown.live;
   const slotted = live && mintSlot !== undefined;
   const units = [
     [countdown.hours, "hours"],
@@ -221,9 +233,9 @@ function Countdown({
       aria-labelledby="mint-time"
     >
       <div>
-        <p className="launch-kicker">{forceLive ? "Mint" : "Mint opens"}</p>
+        <p className="launch-kicker">{live ? "Mint" : "Mint opens"}</p>
         <h2 id="mint-time">
-          {live ? "Minting is live." : "September 3, 12:00 PM ET"}
+          {live ? "Minting is live." : dateLabel}
         </h2>
       </div>
 
@@ -248,18 +260,23 @@ function Countdown({
 }
 
 export function LaunchLanding({
-  live: forceLive = false,
   mintSlot,
   footer,
+  mintStartSeconds,
 }: {
-  live?: boolean;
   mintSlot?: React.ReactNode;
   /** Replaces the default footer, e.g. with one carrying the reserve line for the app-mode
    *  index route. Pre-launch and the plain landing keep the default (no reserve line). */
   footer?: React.ReactNode;
+  /** The deployment's on-chain `mintStart()` (unix seconds; 0 means already open), which drives
+   *  the countdown instead of the hardcoded mainnet date. Omitted on the production landing,
+   *  which always counts down to the fixed mainnet launch copy. */
+  mintStartSeconds?: bigint;
 }) {
-  const countdown = useCountdown();
-  const live = forceLive || countdown.live;
+  const targetMs = mintStartSeconds === undefined ? LAUNCH_AT : Number(mintStartSeconds) * 1000;
+  const countdown = useCountdown(targetMs);
+  const live = countdown.live;
+  const dateLabel = mintStartSeconds === undefined ? LAUNCH_AT_LABEL : formatMintDate(targetMs);
 
   return (
     <main className="launch-page">
@@ -297,7 +314,7 @@ export function LaunchLanding({
         </figure>
       </section>
 
-      <Countdown countdown={countdown} forceLive={forceLive} mintSlot={mintSlot} />
+      <Countdown countdown={countdown} dateLabel={dateLabel} mintSlot={mintSlot} />
 
       <section className="launch-section launch-about" id="about" aria-labelledby="about-title">
         <div>

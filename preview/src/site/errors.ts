@@ -17,6 +17,7 @@ const ERROR_TEXT: Record<string, (args: readonly unknown[]) => string> = {
   SplitMismatch: () => "The outputs must sum to exactly the input's backing.",
   NoComposeRecord: () => "This Shape has no compose left to undo.",
   NotApexComplete: () => "Only a complete 1 ETH Shape can be sacrificed into Black.",
+  MintNotOpen: () => "Minting has not opened yet.",
 };
 
 /**

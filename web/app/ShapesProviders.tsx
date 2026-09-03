@@ -100,8 +100,10 @@ export function ShapesProviders({
   // rather than sitting behind "Connecting…", and a load failure surfaces inside the mint
   // section rather than replacing the whole page.
   if (isIndex && chainOnIndex) {
-    if (err) return <LaunchLanding live mintSlot={<p className="launch-mint-unavailable">{err}</p>} />;
-    if (!state) return <LaunchLanding live />;
+    // mintStartSeconds={0n} shows this transient placeholder as open immediately; the real gate
+    // (dep.mintStart, once state resolves) takes over on the very next render.
+    if (err) return <LaunchLanding mintStartSeconds={0n} mintSlot={<p className="launch-mint-unavailable">{err}</p>} />;
+    if (!state) return <LaunchLanding mintStartSeconds={0n} />;
   } else {
     if (err) return <div style={centered}>{err}</div>;
     if (!state) return <div style={centered}>Connecting…</div>;

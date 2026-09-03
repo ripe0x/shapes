@@ -76,6 +76,8 @@ export const shapesAbi = parseAbi([
   // Temporary read fallback for the superseded percentage-fee Sepolia deployment. New Shapes
   // contracts do not implement this selector.
   "function mintFeeFor(uint256 amountWei) view returns (uint256)",
+  // Unix seconds before which mintBatch/mintBatchTo revert MintNotOpen(); 0 means open at deploy.
+  "function mintStart() view returns (uint64)",
   "event ShapeMinted(uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed, uint256 originCount)",
   "event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount)",
   "event Composed(uint256 indexed survivorId, uint256[] burnedIds, uint8 denomIndex, uint32 originCount)",
@@ -119,6 +121,7 @@ export const shapesAbi = parseAbi([
   "error NotASplitChild(uint256 tokenId)",
   "error DuplicateComposeInput(uint256 tokenId)",
   "error NoOwnerToken()",
+  "error MintNotOpen()",
 ]);
 
 // ShapeLens: the read-only periphery holding `shapeState`, `previewCompose`, `previewSplit`,
@@ -173,9 +176,24 @@ export interface Deployment {
   /** Flat fee in wei for every Shape created. New deployment metadata includes this as a
    *  readback aid; transaction construction still reads the canonical value onchain. */
   mintFeeWei?: string;
+  /** Unix seconds before which the contract's immutable `mintStart` blocks minting, as a readback
+   *  aid; the site's authoritative value is the chain read in `SiteData.mintStart` (see
+   *  `mintStartOf` for parsing this field on its own, e.g. before that load completes). Absent or
+   *  "0" means open at deploy. */
+  mintStart?: string;
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
   fromBlock?: number;
+}
+
+/** Parses `Deployment.mintStart` (a JSON string) to the unix-seconds bigint the site computes
+ *  against. Missing, empty, or non-numeric values mean open at deploy. */
+export function mintStartOf(dep: Pick<Deployment, "mintStart">): bigint {
+  try {
+    return dep.mintStart ? BigInt(dep.mintStart) : 0n;
+  } catch {
+    return 0n;
+  }
 }
 
 // The nine denominations, in wei, with their display labels. Derived from the canonical table so

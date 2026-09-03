@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import { SiteApp, type View } from "@shared/site/SiteApp";
+import { mintStartOf } from "@shared/chain/abi";
 import { useShapesDeployment } from "./ShapesProviders";
 import { LaunchLanding } from "./LaunchLanding";
 
@@ -38,7 +39,9 @@ export function SiteRoot({
       initialView={initialView}
       initialTokenId={initialTokenId}
       onNavigate={(view, tokenId) => router.push(pathFor(view, tokenId))}
-      renderHome={(mint, footer) => <LaunchLanding live mintSlot={mint} footer={footer} />}
+      renderHome={(mint, footer) => (
+        <LaunchLanding mintSlot={mint} footer={footer} mintStartSeconds={mintStartOf(dep)} />
+      )}
     />
   );
 }

@@ -53,6 +53,9 @@ export interface SiteData {
   /** The live Shape currently holding collection ownership (see `ownerToken()`), or null once it
    *  has been redeemed or burned and no Shape has inherited it. Never derived from a fixed id. */
   ownerToken: bigint | null;
+  /** Unix seconds from the contract's immutable `mintStart()`; 0 means open at deploy. Read once
+   *  per site load, not per render; see `mintOpensIn` for the open/countdown computation. */
+  mintStart: bigint;
 }
 
 /** The indexer is advisory: a source this far behind the connected chain is rejected. */
@@ -363,7 +366,7 @@ async function fetchIndexedTokens(
 
 async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Promise<Omit<SiteData, "tokens">> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
-  const [reserve, supply, artist, artistReleaseHash, fees, ownerToken] = await Promise.all([
+  const [reserve, supply, artist, artistReleaseHash, fees, ownerToken, mintStart] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
     publicClient
@@ -376,6 +379,7 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
       .catch(() => null),
     loadMintFees(publicClient, dep),
     loadOwnerToken(publicClient, shapes),
+    publicClient.readContract({...shapes, functionName: "mintStart"}),
   ]);
   const artistAttested =
     artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
@@ -387,6 +391,7 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
     artistAttested,
     artistReleaseHash,
     ownerToken,
+    mintStart,
   };
 }
 
@@ -451,22 +456,24 @@ async function tokensFromIndexer(
 async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees, ownerToken] = await Promise.all([
-    publicClient.readContract({...shapes, functionName: "totalMinted"}),
-    publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
-    publicClient.readContract({...shapes, functionName: "totalSupply"}),
-    publicClient
-      .readContract({...shapes, functionName: "artist"})
-      .then((value) => value as `0x${string}`)
-      .catch(() => dep.artist ?? null),
-    publicClient
-      .readContract({...shapes, functionName: "artistReleaseHash"})
-      .then((value) => value as `0x${string}`)
-      .catch(() => null),
-    hasMulticall3(publicClient),
-    loadMintFees(publicClient, dep),
-    loadOwnerToken(publicClient, shapes),
-  ]);
+  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees, ownerToken, mintStart] =
+    await Promise.all([
+      publicClient.readContract({...shapes, functionName: "totalMinted"}),
+      publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
+      publicClient.readContract({...shapes, functionName: "totalSupply"}),
+      publicClient
+        .readContract({...shapes, functionName: "artist"})
+        .then((value) => value as `0x${string}`)
+        .catch(() => dep.artist ?? null),
+      publicClient
+        .readContract({...shapes, functionName: "artistReleaseHash"})
+        .then((value) => value as `0x${string}`)
+        .catch(() => null),
+      hasMulticall3(publicClient),
+      loadMintFees(publicClient, dep),
+      loadOwnerToken(publicClient, shapes),
+      publicClient.readContract({...shapes, functionName: "mintStart"}),
+    ]);
 
   const artistAttested =
     artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
@@ -527,6 +534,7 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
     artistAttested,
     artistReleaseHash,
     ownerToken,
+    mintStart,
   };
 }
 
