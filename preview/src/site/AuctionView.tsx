@@ -5,7 +5,7 @@ import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, label} from "./theme";
 import {Section, Modal, Art, txUrl, TxStage, txStageLabel, type PendingTx} from "./ui";
 import {localArt} from "./art";
-import {useEnsDisplay} from "./ens";
+import {useDisplayName} from "./useDisplayName";
 import {
   breakdown,
   chainNowFor,
@@ -148,7 +148,7 @@ export function AuctionView({
   // The standing bidder's identity, resolved before any early return so the hook order stays
   // fixed regardless of the auction slot's state.
   const highestBidder = typeof auction === "object" && auction !== null ? auction.highestBidder : undefined;
-  const bidderIdentity = useEnsDisplay(publicClient, highestBidder);
+  const bidderIdentity = useDisplayName(highestBidder);
 
   const auctionId = typeof auction === "object" && auction !== null ? auction.id : null;
   // "loading" until the first read resolves, null once the indexer has declined to supply a
@@ -645,7 +645,6 @@ export function AuctionView({
               <BidHistoryRow
                 key={entry.key}
                 entry={entry}
-                publicClient={publicClient}
                 chainId={dep.chainId}
                 data={data}
                 now={now}
@@ -778,25 +777,24 @@ export function AuctionView({
   );
 }
 
-/** One bid history row: bidder (ENS-resolved), the bidder's running total after this bid,
+/** One bid history row: the bidder, by name where they have one, the bidder's running total
+ *  after this bid,
  *  thumbnails (each labeled with its denomination) of the cards this bid's transaction moved
  *  into escrow, and the time it landed, relative to now and linking to the transaction. */
 function BidHistoryRow({
   entry,
-  publicClient,
   chainId,
   data,
   now,
   onOpenToken,
 }: {
   entry: BidHistoryEntry;
-  publicClient: PublicClient | undefined;
   chainId: number;
   data: SiteData | null;
   now: number;
   onOpenToken: (id: bigint) => void;
 }) {
-  const identity = useEnsDisplay(publicClient, entry.bidder);
+  const identity = useDisplayName(entry.bidder);
 
   return (
     <div

@@ -1,4 +1,4 @@
-import {type PublicClient} from "viem";
+import {formatEther, type PublicClient} from "viem";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {
   INDEXER_TIMEOUT_MS,
@@ -52,6 +52,9 @@ const HISTORY_QUERY = `query TokenHistory($id: BigInt!, $limit: Int!) {
   toChild: lineageEdges(where: {childId: $id}, limit: $limit) {
     items { id kind childId parentId parentDenomIndex block logIndex timestamp txHash }
   }
+  activitys(where: {tokenIds_has: $id}, orderBy: "orderKey", orderDirection: "desc", limit: $limit) {
+    items { id kind blockNumber logIndex timestamp txHash actor counterparty amountWei }
+  }
 }`;
 
 interface IndexedEdge {
@@ -66,6 +69,20 @@ interface IndexedEdge {
   txHash: `0x${string}`;
 }
 
+/** The `activity` row fields a token's own history reads. `tokenIds` itself is not selected: the
+ *  query already filters on this token, and no line here names a sibling id. */
+interface IndexedActivity {
+  id: string;
+  kind: string;
+  blockNumber: string;
+  logIndex: number;
+  timestamp: string;
+  txHash: `0x${string}`;
+  actor: `0x${string}`;
+  counterparty: `0x${string}` | null;
+  amountWei: string | null;
+}
+
 interface HistoryData {
   _meta?: IndexerMeta;
   token: {
@@ -77,6 +94,7 @@ interface HistoryData {
   } | null;
   fromParent: {items: IndexedEdge[]};
   toChild: {items: IndexedEdge[]};
+  activitys: {items: IndexedActivity[]};
 }
 
 export interface LoadTokenHistoryOptions {
@@ -119,15 +137,42 @@ function eventFrom(edge: IndexedEdge, kind: HistKind, text: string): HistEvent {
   };
 }
 
+const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
 /**
- * One token's history, from the indexer's lineage edges and its own mint row. Null when the
- * deployment names no indexer, or the indexer is unreachable, malformed, following another chain,
- * or behind the chain head by more than `maxIndexerLagBlocks`; the caller renders no history
- * section rather than scanning the chain's event log for it.
+ * The kinds an `activity` row supplies that a lineage edge cannot: a holder-to-holder transfer, a
+ * redemption, and a backing burn. Recompositions come from the edges instead, which carry the
+ * denominations and per-event counts those lines need. Null for every other kind.
+ */
+function historyFromActivity(row: IndexedActivity): HistEvent | null {
+  const at = {
+    key: row.id,
+    block: BigInt(row.blockNumber),
+    logIndex: row.logIndex,
+    timestamp: Number(row.timestamp),
+    tx: row.txHash,
+  };
+  const wei = row.amountWei === null ? 0n : BigInt(row.amountWei);
+  switch (row.kind) {
+    case "transfer":
+      return {...at, kind: "transfer", text: `From ${short(row.actor)} to ${short(row.counterparty ?? row.actor)}`};
+    case "redeem":
+      return {...at, kind: "redeemed", text: `${formatEther(wei)} ETH returned to ${short(row.actor)}`};
+    case "burnBacking":
+      return {...at, kind: "backingBurned", text: `${formatEther(wei)} ETH backing burned`};
+    default:
+      return null;
+  }
+}
+
+/**
+ * One token's history, from the indexer's lineage edges, its own mint row, and the activity rows
+ * naming it. Null when the deployment names no indexer, or the indexer is unreachable, malformed,
+ * following another chain, or behind the chain head by more than `maxIndexerLagBlocks`; the caller
+ * renders no history section rather than scanning the chain's event log for it.
  *
- * Covers birth (a mint, or the split that created it) and every recomposition the token took part
- * in. Transfers, redemptions, and backing burns are not lineage edges and are absent until the
- * indexer records them.
+ * Covers birth (a mint, or the split that created it), every recomposition the token took part in,
+ * holder-to-holder transfers, its redemption, and a burn of its backing.
  */
 export async function loadTokenHistory(
   publicClient: PublicClient,
@@ -151,7 +196,7 @@ export async function loadTokenHistory(
       ),
     ]);
     const data = payload.data;
-    if (!data?.fromParent?.items || !data.toChild?.items) {
+    if (!data?.fromParent?.items || !data.toChild?.items || !data.activitys?.items) {
       throw new Error("Shapes indexer returned an invalid history response");
     }
     requireFreshCheckpoint(
@@ -210,6 +255,11 @@ export async function loadTokenHistory(
           ),
         );
       }
+    }
+
+    for (const row of data.activitys.items) {
+      const event = historyFromActivity(row);
+      if (event) out.push(event);
     }
 
     out.sort((a, b) => (a.block === b.block ? a.logIndex - b.logIndex : a.block < b.block ? -1 : 1));

@@ -3,7 +3,8 @@ import { zeroAddress } from "viem";
 import { ponder } from "ponder:registry";
 
 import { AUCTION_HOUSE } from "../ponder.config";
-import { bid, collectionOwner, escrowedCard, lineageEdge, token } from "../ponder.schema";
+import { activity, auctionLot, collectionOwner, escrowedCard, lineageEdge, token } from "../ponder.schema";
+import { activityRow, mintActivityId, type ActivityAt } from "./lib/activity";
 import { backingForDenomIndex, denomIndexOfWei } from "./lib/denominations";
 import { childSeedOf } from "./lib/seed";
 
@@ -11,6 +12,20 @@ import { childSeedOf } from "./lib/seed";
 // array and emits one lineage edge per element, all sharing a transaction hash and log index.
 function edgeId(txHash: `0x${string}`, logIndex: number, position: number): string {
   return `${txHash}-${logIndex}-${position}`;
+}
+
+// Chain position of the event being handled, for the activity row it writes.
+function at(event: {
+  log: { logIndex: number };
+  block: { number: bigint; timestamp: bigint };
+  transaction: { hash: `0x${string}` };
+}): ActivityAt {
+  return {
+    txHash: event.transaction.hash,
+    logIndex: event.log.logIndex,
+    blockNumber: event.block.number,
+    timestamp: event.block.timestamp,
+  };
 }
 
 // `collectionOwner` has exactly one row, keyed by this constant id.
@@ -44,6 +59,20 @@ ponder.on("Shapes:ShapeMinted", async ({ event, context }) => {
     mintedAt: event.block.timestamp,
     mintTxHash: event.transaction.hash,
   });
+
+  // One activity row per transaction, however many Shapes it minted. `actor` and `logIndex` come
+  // from the first mint in the transaction; a transaction minting to more than one recipient is
+  // credited to that first recipient.
+  await context.db
+    .insert(activity)
+    .values({
+      ...activityRow(at(event), "mint", [tokenId], to, { amountWei }),
+      id: mintActivityId(event.transaction.hash),
+    })
+    .onConflictDoUpdate((row) => ({
+      tokenIds: [...row.tokenIds, tokenId],
+      amountWei: (row.amountWei ?? 0n) + amountWei,
+    }));
 });
 
 // A token's ink gene is assigned or reassigned. Emitted once per mint (right after ShapeMinted),
@@ -102,6 +131,12 @@ ponder.on("Shapes:Composed", async ({ event, context }) => {
       txHash: event.transaction.hash,
     });
   }
+
+  await context.db
+    .insert(activity)
+    .values(
+      activityRow(at(event), "compose", [survivorId, ...burnedIds], event.transaction.from),
+    );
 });
 
 // A split burns its input and mints fresh children, each seeded deterministically from the
@@ -162,6 +197,10 @@ ponder.on("Shapes:Split", async ({ event, context }) => {
       txHash: event.transaction.hash,
     });
   }
+
+  await context.db
+    .insert(activity)
+    .values(activityRow(at(event), "split", [tokenId, ...newIds], owner));
 });
 
 // A decompose reverses the survivor's most recent compose. The survivor keeps its id and reverts
@@ -206,24 +245,40 @@ ponder.on("Shapes:Decomposed", async ({ event, context }) => {
       txHash: event.transaction.hash,
     });
   }
+
+  await context.db
+    .insert(activity)
+    .values(activityRow(at(event), "decompose", [survivorId, ...restoredIds], owner));
 });
 
 // An apex Complete Shape has its 100 ETH backing burned. Terminal: it keeps its id and seed but
 // stops being redeemable or recomposable.
 ponder.on("Shapes:BlackShapeCreated", async ({ event, context }) => {
-  const { tokenId } = event.args;
+  const { tokenId, burnedWei } = event.args;
 
   await context.db.update(token, { id: tokenId }).set({
     isBlack: true,
     backingWei: 0n,
   });
+
+  await context.db
+    .insert(activity)
+    .values(
+      activityRow(at(event), "burnBacking", [tokenId], event.transaction.from, {
+        amountWei: burnedWei,
+      }),
+    );
 });
 
 // A token is burned and its backing returned. Terminal.
 ponder.on("Shapes:ShapeRedeemed", async ({ event, context }) => {
-  const { tokenId } = event.args;
+  const { tokenId, to, amountWei } = event.args;
 
   await context.db.update(token, { id: tokenId }).set({ live: false });
+
+  await context.db
+    .insert(activity)
+    .values(activityRow(at(event), "redeem", [tokenId], to, { amountWei }));
 });
 
 // The collection owner token moves: constructor genesis (max -> 0), compose (donor ->
@@ -234,7 +289,7 @@ ponder.on("Shapes:ShapeRedeemed", async ({ event, context }) => {
 // row isn't there yet or still holds a stale owner, the Transfer handler below corrects it;
 // every path that changes the owner token's holder also emits a Transfer in the same tx.
 ponder.on("Shapes:OwnerTokenMoved", async ({ event, context }) => {
-  const { toTokenId } = event.args;
+  const { fromTokenId, toTokenId } = event.args;
   const none = toTokenId === NO_OWNER_TOKEN;
 
   const ownerTokenId = none ? null : toTokenId;
@@ -244,6 +299,11 @@ ponder.on("Shapes:OwnerTokenMoved", async ({ event, context }) => {
     .insert(collectionOwner)
     .values({ id: OWNER_SINGLETON_ID, ownerTokenId, ownerAddress, updatedAtBlock: event.block.number })
     .onConflictDoUpdate({ ownerTokenId, ownerAddress, updatedAtBlock: event.block.number });
+
+  const moved = [fromTokenId, toTokenId].filter((id) => id !== NO_OWNER_TOKEN);
+  await context.db
+    .insert(activity)
+    .values(activityRow(at(event), "ownerTokenMoved", moved, event.transaction.from));
 });
 
 // Every non-burn transfer establishes the canonical owner. This deliberately includes mint
@@ -280,21 +340,72 @@ ponder.on("Shapes:Transfer", async ({ event, context }) => {
   if (collectionOwnerRow?.ownerTokenId === tokenId) {
     await context.db.update(collectionOwner, { id: OWNER_SINGLETON_ID }).set({ ownerAddress: to });
   }
+
+  // Only a holder-to-holder move is its own activity. A mint transfer is already the mint row,
+  // and the burn transfers are the redeem, compose and split rows.
+  if (from !== zeroAddress) {
+    await context.db
+      .insert(activity)
+      .values(activityRow(at(event), "transfer", [tokenId], from, { counterparty: to }));
+  }
 });
 
-// Bid history. `units` is the bidder's running escrowed total after the bid, which is what the
-// event carries.
-ponder.on("AuctionHouse:BidPlaced", async ({ event, context }) => {
+// A seller escrows a lot and opens an auction. `nft` is any ERC721; only a Shapes lot carries a
+// token id the feed can draw, and that id is kept for the bid, settlement and claim rows.
+ponder.on("ShapeAuctionHouse:AuctionCreated", async ({ event, context }) => {
+  const { auctionId, seller, nft, tokenId } = event.args;
+  const lot = nft.toLowerCase() === context.contracts.Shapes.address?.toLowerCase() ? tokenId : null;
+
+  await context.db.insert(auctionLot).values({ id: auctionId, tokenId: lot });
+
+  await context.db
+    .insert(activity)
+    .values(
+      activityRow(at(event), "auctionCreated", lot === null ? [] : [lot], seller, { auctionId }),
+    );
+});
+
+/** The Shape an auction escrows, as the activity row's `tokenIds`. Empty when the auction is
+ *  unknown or its lot belongs to another collection. */
+function lotIds(row: { tokenId: bigint | null } | null | undefined): bigint[] {
+  return row?.tokenId == null ? [] : [row.tokenId];
+}
+
+// A bid takes the lead. `units` is the bidder's whole escrowed total, not the increment.
+ponder.on("ShapeAuctionHouse:BidPlaced", async ({ event, context }) => {
   const { auctionId, bidder, units } = event.args;
 
-  await context.db.insert(bid).values({
-    id: `${event.transaction.hash}-${event.log.logIndex}`,
-    auctionId,
-    bidder,
-    units,
-    block: event.block.number,
-    logIndex: event.log.logIndex,
-    txHash: event.transaction.hash,
-    timestamp: event.block.timestamp,
-  });
+  await context.db
+    .insert(activity)
+    .values(
+      activityRow(at(event), "bid", lotIds(await context.db.find(auctionLot, { id: auctionId })), bidder, {
+        auctionId,
+        units: BigInt(units),
+      }),
+    );
+});
+
+// The outcome is recorded. The lot and the winning cards are both pulled afterwards.
+ponder.on("ShapeAuctionHouse:AuctionSettled", async ({ event, context }) => {
+  const { auctionId, winner, units } = event.args;
+
+  await context.db
+    .insert(activity)
+    .values(
+      activityRow(at(event), "auctionSettled", lotIds(await context.db.find(auctionLot, { id: auctionId })), winner, {
+        auctionId,
+        units: BigInt(units),
+      }),
+    );
+});
+
+// The lot leaves the house: to the winner if the auction sold, to the seller if it was cancelled.
+ponder.on("ShapeAuctionHouse:LotClaimed", async ({ event, context }) => {
+  const { auctionId, to } = event.args;
+
+  await context.db
+    .insert(activity)
+    .values(
+      activityRow(at(event), "lotClaimed", lotIds(await context.db.find(auctionLot, { id: auctionId })), to, { auctionId }),
+    );
 });

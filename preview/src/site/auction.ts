@@ -1,6 +1,5 @@
 import {formatEther, parseEther, type PublicClient} from "viem";
 import {auctionHouseAbi, shapesAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
-import {paginate} from "../chain/history";
 import {UNIT} from "../canonical/denominations";
 import {
   INDEXER_TIMEOUT_MS,
@@ -13,6 +12,23 @@ import {
 
 /** The smallest denomination, and the unit every bid amount is carried in. */
 export {UNIT};
+
+// Public RPCs cap eth_getLogs at ~50k blocks, so a scan from block 0 is rejected outright. Walk
+// from the deploy block to head in windows under that cap and concatenate.
+const MAX_RANGE = 45_000n;
+
+async function paginate<T>(
+  dep: Deployment,
+  latest: bigint,
+  fetch: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,
+): Promise<T[]> {
+  const out: T[] = [];
+  for (let from = BigInt(dep.fromBlock ?? 0); from <= latest; from += MAX_RANGE + 1n) {
+    const to = from + MAX_RANGE < latest ? from + MAX_RANGE : latest;
+    out.push(...(await fetch(from, to)));
+  }
+  return out;
+}
 
 export interface AuctionState {
   id: bigint;
@@ -271,8 +287,13 @@ const BID_LIMIT = 500;
 
 const BID_QUERY = `query AuctionBids($auctionId: BigInt!, $limit: Int!) {
   _meta { status }
-  bids(where: {auctionId: $auctionId}, orderBy: "block", orderDirection: "desc", limit: $limit) {
-    items { id auctionId bidder units block logIndex txHash timestamp }
+  activitys(
+    where: {kind: "bid", auctionId: $auctionId}
+    orderBy: "orderKey"
+    orderDirection: "desc"
+    limit: $limit
+  ) {
+    items { id actor units blockNumber logIndex txHash timestamp }
   }
 }`;
 
@@ -282,12 +303,12 @@ const ESCROWED_CARDS_QUERY = `query EscrowedCards($txHashes: [String!], $limit: 
   }
 }`;
 
+/** A `kind: "bid"` activity row: `actor` is the bidder, `units` its running escrowed total. */
 interface IndexedBid {
   id: string;
-  auctionId: string;
-  bidder: `0x${string}`;
+  actor: `0x${string}`;
   units: string;
-  block: string;
+  blockNumber: string;
   logIndex: number;
   txHash: `0x${string}`;
   timestamp: string;
@@ -328,7 +349,7 @@ export async function loadBidHistory(
     const timeoutMs = options.indexerTimeoutMs ?? INDEXER_TIMEOUT_MS;
     const [head, payload] = await Promise.all([
       publicClient.getBlockNumber(),
-      indexerQuery<{_meta?: IndexerMeta; bids: {items: IndexedBid[]}}>(
+      indexerQuery<{_meta?: IndexerMeta; activitys: {items: IndexedBid[]}}>(
         url,
         fetcher,
         BID_QUERY,
@@ -336,7 +357,7 @@ export async function loadBidHistory(
         timeoutMs,
       ),
     ]);
-    const bids = payload.data?.bids?.items;
+    const bids = payload.data?.activitys?.items;
     if (!bids) throw new Error("Shapes indexer returned an invalid bid response");
     requireFreshCheckpoint(
       checkpointOf(payload.data?._meta, dep.chainId),
@@ -369,10 +390,10 @@ export async function loadBidHistory(
     return bids
       .map((row) => ({
         key: row.id,
-        block: BigInt(row.block),
+        block: BigInt(row.blockNumber),
         logIndex: row.logIndex,
         tx: row.txHash,
-        bidder: row.bidder,
+        bidder: row.actor,
         totalUnits: BigInt(row.units),
         timestamp: Number(row.timestamp),
         cards: cardsByTx.get(row.txHash) ?? [],

@@ -69,6 +69,7 @@ test("loadTokenHistory: a mint-born token that later absorbed two Shapes", async
         // Both edges share a transaction and log index: one compose absorbing two Shapes.
         fromParent: {items: [edge({childId: "7"}), edge({id: `${TX}-3-1`, childId: "8"})]},
         toChild: {items: []},
+        activitys: {items: []},
       },
     }),
   });
@@ -98,6 +99,7 @@ test("loadTokenHistory: a split-born token reports its birth, not a mint", async
         },
         fromParent: {items: []},
         toChild: {items: [edge({kind: "split", childId: "7", parentId: "4"})]},
+        activitys: {items: []},
       },
     }),
   });
@@ -116,6 +118,7 @@ test("loadTokenHistory: a decompose names the denomination the survivor reverted
         token: null,
         fromParent: {items: [edge({kind: "revival", parentDenomIndex: 3})]},
         toChild: {items: []},
+        activitys: {items: []},
       },
     }),
   });
@@ -133,7 +136,9 @@ test("loadTokenHistory: no indexer, a stale one, or a failing one yields no hist
 
   const stale = await loadTokenHistory(headAt(200n), dep, 4n, {
     indexerUrl: "http://indexer.test",
-    fetch: graphql({data: {_meta: META, token: null, fromParent: {items: []}, toChild: {items: []}}}),
+    fetch: graphql({
+      data: {_meta: META, token: null, fromParent: {items: []}, toChild: {items: []}, activitys: {items: []}},
+    }),
   });
   assert.equal(stale, null);
 
@@ -145,6 +150,7 @@ test("loadTokenHistory: no indexer, a stale one, or a failing one yields no hist
         token: null,
         fromParent: {items: []},
         toChild: {items: []},
+        activitys: {items: []},
       },
     }),
   });
@@ -166,10 +172,10 @@ test("loadBidHistory: bids come from the indexer, newest first, with the cards e
         ? {
             data: {
               _meta: META,
-              bids: {
+              activitys: {
                 items: [
-                  {id: `${TX2}-1`, auctionId: "0", bidder: BIDDER, units: "300", block: "95", logIndex: 1, txHash: TX2, timestamp: "1700000500"},
-                  {id: `${TX}-1`, auctionId: "0", bidder: BIDDER, units: "100", block: "90", logIndex: 1, txHash: TX, timestamp: "1700000000"},
+                  {id: `${TX2}-1`, actor: BIDDER, units: "300", blockNumber: "95", logIndex: 1, txHash: TX2, timestamp: "1700000500"},
+                  {id: `${TX}-1`, actor: BIDDER, units: "100", blockNumber: "90", logIndex: 1, txHash: TX, timestamp: "1700000000"},
                 ],
               },
             },
@@ -206,7 +212,71 @@ test("loadBidHistory: no indexer or a stale one yields no bid history at all", a
 
   const stale = await loadBidHistory(headAt(200n), dep, 0n, {
     indexerUrl: "http://indexer.test",
-    fetch: graphql({data: {_meta: META, bids: {items: []}}}),
+    fetch: graphql({data: {_meta: META, activitys: {items: []}}}),
   });
   assert.equal(stale, null);
+});
+
+const OTHER = "0x2222222222222222222222222222222222222222" as `0x${string}`;
+
+function activityRow(overrides: Record<string, unknown>) {
+  return {
+    id: `${TX}-1`,
+    kind: "transfer",
+    blockNumber: "20",
+    logIndex: 1,
+    timestamp: "1600001000",
+    txHash: TX,
+    actor: BIDDER,
+    counterparty: null,
+    amountWei: null,
+    ...overrides,
+  };
+}
+
+test("loadTokenHistory: transfers, redemption and backing burn come from the activity rows", async () => {
+  const events = await loadTokenHistory(headAt(100n), dep, 4n, {
+    indexerUrl: "http://indexer.test",
+    fetch: graphql({
+      data: {
+        _meta: META,
+        token: {id: "4", mintDenomIndex: 0, mintedAtBlock: "10", mintedAt: "1600000000", mintTxHash: TX2},
+        fromParent: {items: []},
+        toChild: {items: []},
+        activitys: {
+          items: [
+            activityRow({counterparty: OTHER}),
+            activityRow({
+              id: `${TX}-2`,
+              kind: "burnBacking",
+              blockNumber: "30",
+              logIndex: 2,
+              actor: OTHER,
+              amountWei: "1000000000000000000",
+            }),
+            activityRow({
+              id: `${TX2}-3`,
+              kind: "redeem",
+              blockNumber: "40",
+              logIndex: 3,
+              txHash: TX2,
+              actor: OTHER,
+              amountWei: "500000000000000000",
+            }),
+            // A kind the lineage edges already cover is not repeated from the activity rows.
+            activityRow({id: `${TX2}-4`, kind: "compose", blockNumber: "50", logIndex: 4, txHash: TX2}),
+          ],
+        },
+      },
+    }),
+  });
+
+  assert.ok(events);
+  assert.deepEqual(
+    events.map((e) => e.kind),
+    ["mint", "transfer", "backingBurned", "redeemed"],
+  );
+  assert.equal(events[1]!.text, "From 0x1111…1111 to 0x2222…2222");
+  assert.equal(events[2]!.text, "1 ETH backing burned");
+  assert.equal(events[3]!.text, "0.5 ETH returned to 0x2222…2222");
 });

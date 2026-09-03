@@ -96,25 +96,66 @@ export const lineageEdge = onchainTable(
   }),
 );
 
-// One row per BidPlaced log. `units` is the bidder's running escrowed total after the bid, the
-// value the event carries, not the increment.
-export const bid = onchainTable(
-  "bid",
+// One row per protocol event that changes a Shape, plus the auction house events that move one.
+// The site joins these rows against `token` for artwork; rows are never deleted, so a burned
+// token's activity stays queryable.
+//
+// `tokenIds` holds every Shape the event touched, in a per-kind order:
+//   mint             every id minted in the transaction, in mint order
+//   compose          the survivor, then the burned inputs
+//   decompose        the survivor, then the restored inputs
+//   split            the burned input, then the children
+//   redeem           the redeemed id
+//   burnBacking      the id whose backing was burned
+//   transfer         the transferred id
+//   ownerTokenMoved  the id ownership left, then the id it moved to. Either is absent: the first
+//                    at the genesis assignment, the second when ownership ends.
+//   auction kinds    the lot, when the lot is a Shape. Empty for a lot from another collection.
+export const activity = onchainTable(
+  "activity",
   (t) => ({
-    // tx hash + log index: unique per BidPlaced log.
+    // Transaction hash and log index of the event this row records. A mint batch keys on the
+    // transaction hash alone, since one row covers every ShapeMinted in it.
     id: t.text().primaryKey(),
-    auctionId: t.bigint().notNull(),
-    bidder: t.hex().notNull(),
-    units: t.bigint().notNull(),
-    block: t.bigint().notNull(),
+    blockNumber: t.bigint().notNull(),
     logIndex: t.integer().notNull(),
-    txHash: t.hex().notNull(),
+    // `blockNumber << 32 | logIndex`. One descending sort on this column reproduces chain order,
+    // which the GraphQL layer needs because it orders and paginates on a single column. A block
+    // cannot hold 2^32 logs.
+    orderKey: t.bigint().notNull(),
     timestamp: t.bigint().notNull(),
+    txHash: t.hex().notNull(),
+    // "mint" | "compose" | "decompose" | "split" | "redeem" | "burnBacking" | "ownerTokenMoved"
+    // | "transfer" | "auctionCreated" | "bid" | "auctionSettled" | "lotClaimed"
+    kind: t.text().notNull(),
+    tokenIds: t.bigint().array().notNull(),
+    // The address the event credits: the recipient on a mint, the redeemer on a redeem, the
+    // sender on a transfer, the bidder, seller, winner or claimant on an auction event, and the
+    // transaction sender on every other kind.
+    actor: t.hex().notNull(),
+    // The transfer recipient. Null on every other kind.
+    counterparty: t.hex(),
+    // Backing minted, backing returned on redemption, or backing burned. Null on every other kind.
+    amountWei: t.bigint(),
+    auctionId: t.bigint(),
+    // The bidder's whole escrowed total on a bid and the winning total on a settlement, in
+    // 0.01 ETH units. Null on every other kind.
+    units: t.bigint(),
   }),
   (table) => ({
-    auctionIdx: index("bid_auction_idx").on(table.auctionId),
+    // The feed's only query: newest first, cursor-paginated.
+    orderKeyIdx: index("activity_order_key_idx").on(table.orderKey),
   }),
 );
+
+// The Shape an auction escrows, keyed by auction id. `AuctionCreated` is the only auction event
+// naming the lot, so the bid, settlement and claim handlers read it back from here to put the
+// same Shape on their activity rows. `tokenId` is null when the lot belongs to another
+// collection, which the house also accepts.
+export const auctionLot = onchainTable("auction_lot", (t) => ({
+  id: t.bigint().primaryKey(),
+  tokenId: t.bigint(),
+}));
 
 // One row per Shape moved into the auction house's custody, keyed by transaction so a bid can
 // list the cards its own transaction escrowed. `denomIndex` is the card's denomination at the

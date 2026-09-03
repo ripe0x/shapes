@@ -1,8 +1,9 @@
 # shapes-indexer
 
 A [Ponder](https://ponder.sh) indexer for the standalone Shapes ERC721
-(`src/Shapes.sol`). Turns the ten consumed onchain events into three Postgres tables —
-`token`, `lineage_edge`, and the `collection_owner` singleton — queryable over GraphQL
+(`src/Shapes.sol`) and its auction house. Turns the consumed onchain events into five Postgres
+tables — `token`, `lineage_edge`, `activity`, `auction_lot`, and the `collection_owner`
+singleton — queryable over GraphQL
 or `@ponder/client` SQL-over-HTTP, so a frontend never has to scan chain logs directly. Log
 scanning is fatal on mainnet and for any token with a deep composition /
 decomposition history, since a single Shape can have thousands of ancestor
@@ -28,15 +29,14 @@ cp .env.example .env.local   # then fill in the values below
 | `PONDER_CHAIN_ID` | `31347` (from `preview/public/deployment.json`, currently) | `1` |
 | `SHAPES_LADDER` | `mainnet` locally unless running the testnet profile | `mainnet` |
 | `SHAPES_ADDRESS` | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` (from `preview/public/deployment.json`, currently) | not deployed yet — placeholder in `.env.example` |
-| `AUCTION_HOUSE_ADDRESS` | the dev chain record's `.auctionHouse` | the deployment record's `.auctionHouse` |
+| `AUCTION_HOUSE_ADDRESS` | the deployment record's `auctionHouse` | the deployed auction house |
 | `SHAPES_START_BLOCK` | `0` is fine for a fresh local anvil chain | the Shapes deployment block |
+| `AUCTION_HOUSE_START_BLOCK` | optional; defaults to `SHAPES_START_BLOCK` | only when the house was deployed later |
 
 The dev chain's address/chainId/rpc drift as the local chain is redeployed —
 re-check `preview/public/deployment.json` if indexing comes up empty.
 `ponder.config.ts` throws immediately at startup if `SHAPES_ADDRESS` or
-`AUCTION_HOUSE_ADDRESS` is unset, rather than silently indexing nothing. The
-site reads token history and auction bid history from this indexer alone, so an
-indexer missing either address leaves those sections empty.
+`AUCTION_HOUSE_ADDRESS` is unset, rather than silently indexing nothing.
 
 ## Run
 
@@ -160,7 +160,55 @@ token at a time, starting as #0 and moved by compose, decompose, and split, ende
 
 No indexes: single row, looked up by its constant id.
 
-## The two frontend queries
+### `activity`
+
+One row per protocol event that changes a Shape, plus the auction house events that move one.
+The landing page's activity feed reads these and joins them against `token` for artwork.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `text` (PK) | `${txHash}-${logIndex}`; a mint batch keys on `${txHash}-mint` |
+| `blockNumber` | `bigint` | |
+| `logIndex` | `integer` | first `ShapeMinted` of the transaction on a mint row |
+| `orderKey` | `bigint` | `blockNumber << 32 \| logIndex`; one descending sort reproduces chain order |
+| `timestamp` | `bigint` | block timestamp, unix seconds |
+| `txHash` | `hex` | |
+| `kind` | `text` | see the kind table below |
+| `tokenIds` | `bigint[]` | every Shape the event touched, ordered per kind |
+| `actor` | `hex` | the address the event credits |
+| `counterparty` | `hex?` | the transfer recipient; null on every other kind |
+| `amountWei` | `bigint?` | backing minted, returned, or burned; null on every other kind |
+| `auctionId` | `bigint?` | auction kinds only |
+| `units` | `bigint?` | bid and settlement totals in 0.01 ETH units |
+
+| `kind` | Source event | `tokenIds` |
+| --- | --- | --- |
+| `mint` | every `ShapeMinted` in one transaction, folded into one row | the minted ids, in mint order |
+| `compose` | `Composed` | survivor, then the burned inputs |
+| `decompose` | `Decomposed` | survivor, then the restored inputs |
+| `split` | `Split` | the burned input, then the children |
+| `redeem` | `ShapeRedeemed` | the redeemed id |
+| `burnBacking` | `BlackShapeCreated` | the id whose backing was burned |
+| `ownerTokenMoved` | `OwnerTokenMoved` | the id ownership left, then the id it moved to; either is absent at the genesis assignment and when ownership ends |
+| `transfer` | `Transfer`, holder to holder only | the transferred id |
+| `auctionCreated` | `AuctionCreated` | the lot, when it is a Shape |
+| `bid` | `BidPlaced` | the lot, read back from `auction_lot` |
+| `auctionSettled` | `AuctionSettled` | the lot, read back from `auction_lot` |
+| `lotClaimed` | `LotClaimed` | the lot, read back from `auction_lot` |
+
+Index: `orderKey`, the feed's only ordering.
+
+### `auction_lot`
+
+The Shape an auction escrows, keyed by auction id. `AuctionCreated` is the only auction event
+naming the lot, so the bid, settlement and claim handlers read it back from here.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `bigint` (PK) | auction id |
+| `tokenId` | `bigint?` | null when the lot belongs to another collection |
+
+## The frontend queries
 
 **Gallery: live tokens, filterable by denomination, newest first, paginated.**
 
@@ -219,9 +267,37 @@ Both are also reachable over `@ponder/client` (`/sql/*`) as typed SQL
 queries against the same two tables, if GraphQL's shape doesn't fit a given
 call site.
 
+**Activity feed: every event, newest first, paginated.** The site follows this with a second
+query for the `token` rows named in `tokenIds`, which supplies the artwork for each row.
+
+```graphql
+query Activity($limit: Int!, $after: String) {
+  activitys(orderBy: "orderKey", orderDirection: "desc", limit: $limit, after: $after) {
+    items {
+      id
+      blockNumber
+      timestamp
+      txHash
+      kind
+      tokenIds
+      actor
+      counterparty
+      amountWei
+      auctionId
+      units
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}
+```
+
 ## Event handling notes
 
-The ten events and what each does to the three tables (`src/index.ts`):
+What each consumed event does to the tables (`src/index.ts`). Every event below except `InkGene`
+and `ModulesSampled` also writes one `activity` row; see the kind table above for which:
 
 - **`ShapeMinted(tokenId, to, amountWei, seed, originCount)`** — inserts a
   `token` row. `originCount` is always `1` on this event.
