@@ -4,8 +4,10 @@ import type {OwnerTokenNotice} from "./ownerTokenNotice";
 
 /**
  * The page grammar: a two-column section, 190px label column with a right border, content
- * column, 1px rule below. `labelNode` replaces the plain text label (used for the
- * recomposition tabs). `pad` overrides the content padding where a screen needs to.
+ * column, 1px rule below. Below 700px the two columns stack (`.site-section` in globals.css /
+ * site.html). `labelNode` replaces the plain text label (used for the recomposition tabs). `pad`
+ * overrides the content padding where a screen needs to, via the `--section-pad` custom property
+ * so the mobile rule can still collapse it.
  */
 export function Section({
   title,
@@ -21,21 +23,11 @@ export function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="site-section"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "190px minmax(0, 1fr)",
-        borderBottom: last ? "none" : `1px solid ${C.rule}`,
-      }}
-    >
-      <div
-        className="site-section-label"
-        style={{padding: "26px 24px 26px 48px", borderRight: `1px solid ${C.rule}`, ...label}}
-      >
-        {labelNode ?? title}
+    <div className={last ? "site-section is-last" : "site-section"}>
+      <div className="site-section-label">{labelNode ?? title}</div>
+      <div className="site-section-content" style={{"--section-pad": pad} as React.CSSProperties}>
+        {children}
       </div>
-      <div className="site-section-content" style={{padding: pad}}>{children}</div>
     </div>
   );
 }

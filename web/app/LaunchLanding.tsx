@@ -262,20 +262,20 @@ function Countdown({
 export function LaunchLanding({
   mintSlot,
   footer,
+  header,
   mintStartSeconds,
-  auctionActive,
 }: {
   mintSlot?: React.ReactNode;
   /** Replaces the default footer, e.g. with one carrying the reserve line for the app-mode
    *  index route. Pre-launch and the plain landing keep the default (no reserve line). */
   footer?: React.ReactNode;
+  /** The app's shared header, passed by the app-mode index route. It replaces the top-right link
+   *  slot the standalone landing renders in its place. */
+  header?: React.ReactNode;
   /** The deployment's on-chain `mintStart()` (unix seconds; 0 means already open), which drives
    *  the countdown instead of the hardcoded mainnet date. Omitted on the production landing,
    *  which always counts down to the fixed mainnet launch copy. */
   mintStartSeconds?: bigint;
-  /** Whether the house's latest auction is open for bids or awaiting settlement; adds the Auction
-   *  nav link when true. Omitted on the plain marketing landing, which has no live chain state. */
-  auctionActive?: boolean;
 }) {
   const targetMs = mintStartSeconds === undefined ? LAUNCH_AT : Number(mintStartSeconds) * 1000;
   const countdown = useCountdown(targetMs);
@@ -283,20 +283,22 @@ export function LaunchLanding({
   const dateLabel = mintStartSeconds === undefined ? LAUNCH_AT_LABEL : formatMintDate(targetMs);
 
   return (
-    <main className="launch-page">
-      {/* No header: the hero title is the wordmark. The play link keeps the header's slot. */}
-      <nav className="launch-play-link" aria-label="Primary navigation">
-        {live ? (
-          <div className="launch-nav-links">
-            <Link href="#mint">Mint</Link>
-            {auctionActive && <Link href="/auction">Auction</Link>}
-            <Link href="/gallery">Gallery</Link>
+    <main className={header ? "launch-page launch-page--header" : "launch-page"}>
+      {/* Without the app header the hero title is the wordmark, and the link slot sits where the
+          header nav would be. */}
+      {header ?? (
+        <nav className="launch-play-link" aria-label="Primary navigation">
+          {live ? (
+            <div className="launch-nav-links">
+              <Link href="#mint">Mint</Link>
+              <Link href="/gallery">Gallery</Link>
+              <Link href="/play">Play</Link>
+            </div>
+          ) : (
             <Link href="/play">Play</Link>
-          </div>
-        ) : (
-          <Link href="/play">Play</Link>
-        )}
-      </nav>
+          )}
+        </nav>
+      )}
 
       <section className="launch-hero" id="top">
         <div className="launch-intro">

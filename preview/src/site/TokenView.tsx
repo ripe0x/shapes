@@ -231,7 +231,7 @@ export function TokenView({
   const isOwnerToken = !!token && data?.ownerToken === token.id;
 
   const back = (
-    <div className="token-detail-back" style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
+    <div className="token-detail-back">
       <button
         type="button"
         className="btn-ghost"

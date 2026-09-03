@@ -702,19 +702,38 @@ script/deploy.sh mainnet
 After a real broadcast, the wrapper reads the broadcast artifact, reads back every deployed
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
-`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `auctionHouse`,
-`mintFeeWei`, `mintStart`, `libraries`, `fromBlock`). `libraries` maps each linked library's
-contract name to its address, taken from the broadcast's `libraries` array; the site's
-`/contracts` page reads it. Cutover to the site is a file copy. `deployments/31337.json` is
-gitignored; Sepolia and mainnet records are committed.
+`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
+`mintFeeWei`, `mintStart`, `libraries`, `fromBlock`, `auctionId`, `artistReleaseHash`).
+`libraries` maps each linked library's contract name to its address, taken from the broadcast's
+`libraries` array; the site's `/contracts` page reads it. Cutover to the site is a file copy.
+`deployments/31337.json` is gitignored; Sepolia and mainnet records are committed.
 
-For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
-digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
-Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the already-decided
-32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. The deploy
-wrapper's reported Shapes deployment transaction hash is the `releaseHash` used in this signing
-ceremony. Never issue multiple valid signatures for competing hashes because any relayer holding
-one can submit it first.
+Setting `LIST_OWNER_TOKEN=1` (as a shell export, which wins over the env file, or set directly in
+the env file) opts into listing the owner token (#0) in the auction house right after the
+readback, using `AUCTION_DURATION`, `AUCTION_RESERVE_UNITS`, `AUCTION_MIN_INCREMENT_BPS` and
+`AUCTION_EXTENSION_WINDOW` from the env file (86400 seconds, 0, 500 bps, and 900 seconds by
+default). `createAuction` only escrows the lot and opens the listing; the clock starts on the
+first bid, so `endTime` stays 0 until then. The wrapper refuses to list unless `ownerToken()` is 0
+and held by the deployer. `DRY_RUN=1` prints what would be listed and lists nothing. `RESUME=1`
+may list too, since it lists whatever token already exists on chain rather than anything from a
+new broadcast; if the owner token is already listed it is reported and skipped rather than
+refused. The resulting auction id, or `null` when nothing was listed, is recorded as `auctionId`
+in `deployments/<chainId>.json`.
+
+Setting `ATTEST_ARTIST=1` opts into signing and submitting the one-time artist attestation as a
+post-broadcast step of `script/deploy.sh`, after the readback and listing steps. It reads back
+every binding, displays the exact EIP-712 digest, simulates the call, requires an explicit
+confirmation, signs and broadcasts through the same wallet the deploy used, and verifies the
+permanent result. The release hash defaults to the Shapes deployment transaction hash reported by
+the wrapper; `SHAPES_RELEASE_HASH` overrides it with an already-decided 32-byte hash (document what
+it commits to before signing), and a value that disagrees with the deployment tx prints a loud
+warning. The signer must be `artist()` on the deployed Shapes, or the wrapper refuses. Keystore
+targets always prompt to retype the release hash before signing; `ATTEST_CONFIRM=<hash>` skips
+that prompt on the anvil target only, for non-interactive e2e runs. If `artistReleaseHash()` is
+already nonzero the step is skipped rather than refused, so `RESUME=1` can revisit an
+already-attested chain. `DRY_RUN=1` prints what would be signed and submits nothing. Never issue
+multiple valid signatures for competing hashes because any relayer holding one can submit it
+first.
 
 ## Deployed addresses
 

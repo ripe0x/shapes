@@ -4,7 +4,7 @@ import {useAccount, useDisconnect, usePublicClient, useSwitchChain, useWriteCont
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {txUrl, SyncStatus, type PendingTx} from "./ui";
+import {txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadSite, type SiteData, type SiteToken} from "./data";
 import {mintRequest} from "./mint";
@@ -19,6 +19,7 @@ import {AuctionView} from "./AuctionView";
 import {breakdown, isAuctionActive, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 import {SiteFooter} from "./SiteFooter";
+import {SiteHeader} from "./SiteHeader";
 
 // The generated contract documentation is large and only this view reads it, so it loads on
 // demand rather than riding in the main bundle.
@@ -63,7 +64,7 @@ export function SiteApp({
   /** When the view is "home", renders the mint panel and footer inside the host's own page shell
    *  (the landing page) instead of SiteApp's header/footer/mint view. Without it, "home" falls
    *  back to the mint view. */
-  renderHome?: (mint: React.ReactNode, footer: React.ReactNode, auctionActive: boolean) => React.ReactNode;
+  renderHome?: (mint: React.ReactNode, footer: React.ReactNode, header: React.ReactNode) => React.ReactNode;
 }) {
   const {address, isConnected, chainId: walletChainId} = useAccount();
   const {switchChainAsync} = useSwitchChain();
@@ -504,15 +505,36 @@ export function SiteApp({
   // Without a host to render into, "home" has no shell of its own and falls back to the mint
   // view, so the header nav and the mint view's own render check both treat it as "mint".
   const shownView = view === "home" && !renderHome ? "mint" : view;
-  const navColor = (v: View) => (shownView === v ? C.ink : C.muted);
+
+  // `active` is null on the home view, where no nav item corresponds to the page.
+  const header = (active: View | null) => (
+    <SiteHeader
+      active={active}
+      go={go}
+      routed={onNavigate !== undefined}
+      auctionActive={Boolean(dep.auctionHouse) && isAuctionActive(auction)}
+      isConnected={isConnected}
+      wrongChain={wrongChain}
+      accountLabel={accountLabel}
+      accountMenuOpen={accountMenuOpen}
+      setAccountMenuOpen={setAccountMenuOpen}
+      accountMenuRef={accountMenuRef}
+      onConnect={() => openConnectModal?.()}
+      onSwitchChain={() => void ensureChain()}
+      onDisconnect={disconnect}
+      refreshing={refreshing}
+      refreshFailed={refreshFailed}
+      onRetryRefresh={() => void refresh()}
+    />
+  );
 
   const reserveLine = data
     ? `The contract holds ${formatEther(data.reserve)} ETH backing ${data.supply.toString()} Shapes.`
     : null;
 
-  // The home view hosts the mint panel inside the host's own landing page shell, with no
-  // header or action toast; the panel's own status text carries mint feedback, and the footer
-  // still carries the reserve line and attribution.
+  // The home view hosts the mint panel inside the host's own landing page shell, with no action
+  // toast; the panel's own status text carries mint feedback, the footer still carries the
+  // reserve line and attribution, and the host places the shared header itself.
   if (view === "home" && renderHome) {
     return renderHome(
       <MintPanel
@@ -533,104 +555,13 @@ export function SiteApp({
         onConnect={() => openConnectModal?.()}
       />,
       <SiteFooter reserve={reserveLine} onContracts={() => go("contracts")} />,
-      isAuctionActive(auction),
+      header(null),
     );
   }
 
   return (
     <div id="top" style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
-      <header className="site-header">
-        <div className="site-header-inner">
-          {/* The Next host navigates "/" as a real route outside SiteApp's view state, so the
-              wordmark links there directly; the Vite preview has no such route and falls back to
-              the mint view, mirroring the /play link below. */}
-          {onNavigate ? (
-            <a href="/" className="site-nav-link">SHAPES</a>
-          ) : (
-            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")}>SHAPES</button>
-          )}
-          <nav className="site-nav" style={{display: "flex", gap: "clamp(20px, 4vw, 40px)"}}>
-            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
-              MINT
-            </button>
-            {dep.auctionHouse && isAuctionActive(auction) && (
-              <button type="button" className="btn-ghost site-nav-link" onClick={() => go("auction")} style={{color: navColor("auction")}}>
-                AUCTION
-              </button>
-            )}
-            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
-              GALLERY
-            </button>
-            {/* /play is a Next.js route outside SiteApp's view state, so it links as a plain
-                anchor. Only the Next host serves it; the Vite preview (no onNavigate) omits it. */}
-            {onNavigate && (
-              <a href="/play" className="site-nav-link" style={{color: C.muted}}>
-                PLAY
-              </a>
-            )}
-          </nav>
-          <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={() => void refresh()} style={{marginLeft: "auto"}} />
-          <div className="site-account" ref={accountMenuRef} style={{position: "relative"}}>
-            <button
-              type="button"
-              className="site-connect-btn"
-              aria-haspopup={isConnected ? "menu" : undefined}
-              aria-expanded={isConnected ? accountMenuOpen : undefined}
-              onClick={() =>
-                wrongChain
-                  ? void ensureChain()
-                  : isConnected
-                    ? setAccountMenuOpen((open) => !open)
-                    : openConnectModal?.()
-              }
-            >
-              <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
-                {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
-              </span>
-              {isConnected && <span aria-hidden="true">▾</span>}
-            </button>
-            {isConnected && accountMenuOpen && (
-              <div
-                role="menu"
-                aria-label="Wallet account"
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 8px)",
-                  right: 0,
-                  minWidth: 180,
-                  border: `1px solid ${C.border}`,
-                  background: C.page,
-                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.12)",
-                  zIndex: 30,
-                }}
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="account-menu-item"
-                  onClick={() => {
-                    setAccountMenuOpen(false);
-                    go("collection");
-                  }}
-                >
-                  MY SHAPES
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="account-menu-item"
-                  onClick={() => {
-                    setAccountMenuOpen(false);
-                    disconnect();
-                  }}
-                >
-                  DISCONNECT
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      {header(shownView)}
 
       {shownView === "mint" && (
         <MintView
