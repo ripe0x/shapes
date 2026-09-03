@@ -206,10 +206,26 @@ export function AuctionView({
     });
   };
 
+  // The confirm modal stays open while the bid is in flight so its stage line and the wallet
+  // prompt are seen together. It closes when the op settles; the picks are cleared only on
+  // success so a failed bid can be retried as it was.
+  const bidding = React.useRef(false);
+  React.useEffect(() => {
+    if (busy === "bid") {
+      bidding.current = true;
+      return;
+    }
+    if (busy === null && bidding.current) {
+      bidding.current = false;
+      setAsking(false);
+      if (!(txErr && txErr.op === "bid")) {
+        setPicked(new Set());
+        setEthAmount("");
+      }
+    }
+  }, [busy, txErr]);
+
   const submit = () => {
-    setAsking(false);
-    setPicked(new Set());
-    setEthAmount("");
     const cardIds = mode === "cards" ? pickedTokens.map((t) => t.id) : [];
     const backingWei = mode === "eth" && !ethInvalid ? ethWei : 0n;
     onBid(cardIds, backingWei);
@@ -508,6 +524,14 @@ export function AuctionView({
                 )}
               </button>
               <TxStage op="bid" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
+              {txHash && busy === null && (
+                <div style={{marginTop: 10, fontSize: 11, color: C.muted}}>
+                  Transaction confirmed ·{" "}
+                  <a href={txUrl(txHash, dep.chainId)} target="_blank" rel="noreferrer" style={{color: C.muted}}>
+                    View transaction
+                  </a>
+                </div>
+              )}
               {errLine("bid")}
 
               <p style={{margin: 0, fontSize: 11, lineHeight: 1.7, color: C.bodyDim}}>
@@ -568,6 +592,7 @@ export function AuctionView({
                       Cancel
                     </button>
                   </div>
+                  <TxStage op="bid" busy={busy} pendingTx={pendingTx} chainId={dep.chainId} />
                 </Modal>
               )}
             </div>
@@ -681,13 +706,6 @@ export function AuctionView({
           </div>
           <div>The house takes no fee</div>
         </div>
-        {txHash && (
-          <div style={{marginTop: 20, fontSize: 12}}>
-            <a href={txUrl(txHash, dep.chainId)} target="_blank" rel="noreferrer">
-              View the last transaction
-            </a>
-          </div>
-        )}
       </Section>
     </>
   );
