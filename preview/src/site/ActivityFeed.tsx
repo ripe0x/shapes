@@ -486,7 +486,7 @@ export function ActivityFeed({
       <div className="launch-section-heading">
         <div>
           <p className="launch-kicker">Onchain</p>
-          <h2 id="activity-title">Activity</h2>
+          <h2 id="activity-title">Proof of work</h2>
         </div>
         <p>
           Every mint, composition, split, redemption and auction, newest first. Shapes that no
