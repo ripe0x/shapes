@@ -11,6 +11,7 @@ import {ShapeCollection} from "../src/ShapeCollection.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {ShapeAuctionHouse} from "../src/ShapeAuctionHouse.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
+import {ShapeState} from "../src/ShapeTypes.sol";
 
 /* ==================================================================== *
  *  Hostile recipients for the `*To` value-flow paths (PR #1).
@@ -94,6 +95,21 @@ contract Handler is Test, IERC721Receiver {
     uint256[] public liveTokens;
     mapping(uint256 => uint256) private _indexOfToken;
 
+    /// @dev Per-survivor LIFO stack of pre-compose survivor-state hashes, pushed by `compose`/
+    ///      `composeMixed` right before the mutating call and popped by `decompose`/
+    ///      `decomposeMany` when reversing that record, mirroring the on-chain compose-record
+    ///      stack so the two never drift out of sync.
+    mapping(uint256 => bytes32[]) private _composePreHash;
+    /// @dev State hash of a token captured immediately before it was burned as a compose input,
+    ///      keyed by its id. Checked against the token's hash once `decompose`/`decomposeMany`
+    ///      re-mints it.
+    mapping(uint256 => bytes32) private _burnedInputHash;
+    /// @dev Set when a restored survivor or input's post-decompose hash does not match what was
+    ///      recorded before the compose that burned it. `invariant_DecomposeRestoredEveryRecordedState`
+    ///      asserts this stays false; a real mismatch is a `decompose` correctness bug, not a
+    ///      handler bug, so this never reverts inline (that would just hide the failing sequence).
+    bool public restoreMismatch;
+
     uint256[9] internal DENOMS = [
         Denominations.amountAt(0),
         Denominations.amountAt(1),
@@ -149,6 +165,37 @@ contract Handler is Test, IERC721Receiver {
         }
         liveTokens.pop();
         delete _indexOfToken[tokenId];
+    }
+
+    /// @dev Hash of every protocol-observable fact `shapeState` does not itself cover the render
+    ///      of: `shapeState` (seed, denomination, origins, ink gene, black flag, formation, face
+    ///      and redeemable value, materialized modules) plus `svg`. `tokenURI` re-derives from the
+    ///      same facts through JSON/base64 encoding and is redundant to hash on top of `shapeState`
+    ///      plus `svg`, and meaningfully more gas per call inside a stateful fuzz run; the dedicated
+    ///      `DecomposeRoundTrip.t.sol` fuzz test hashes/compares `tokenURI` directly instead.
+    function _hashState(uint256 tokenId) private view returns (bytes32) {
+        ShapeState memory st = shapes.shapeState(tokenId);
+        return keccak256(abi.encode(st, shapes.svg(tokenId)));
+    }
+
+    /// @dev Verifies one `decompose`/`decomposeMany` reversal against what `compose`/`composeMixed`
+    ///      recorded for `survivor`'s most recent still-open record: the survivor's post-decompose
+    ///      hash must match its pre-compose hash, and every re-minted input's hash must match its
+    ///      pre-burn hash. Pops `survivor`'s record stack so nested/stacked records keep matching
+    ///      the on-chain LIFO order. Sets `restoreMismatch` rather than asserting inline, so a real
+    ///      mismatch surfaces as an invariant failure with a shrinkable call sequence.
+    function _checkRestore(uint256 survivor, uint256[] memory restored) private {
+        bytes32[] storage stack = _composePreHash[survivor];
+        if (stack.length == 0) {
+            restoreMismatch = true;
+            return;
+        }
+        bytes32 expected = stack[stack.length - 1];
+        stack.pop();
+        if (_hashState(survivor) != expected) restoreMismatch = true;
+        for (uint256 i = 0; i < restored.length; ++i) {
+            if (_hashState(restored[i]) != _burnedInputHash[restored[i]]) restoreMismatch = true;
+        }
     }
 
     /* ----------------------------- actions ----------------------------- */
@@ -289,11 +336,19 @@ contract Handler is Test, IERC721Receiver {
         }
         if (got < ratio - 1) return;
 
+        bytes32 preHash = _hashState(survivor);
+        bytes32[] memory burnHashes = new bytes32[](burn.length);
+        for (uint256 i = 0; i < burn.length; ++i) {
+            burnHashes[i] = _hashState(burn[i]);
+        }
+
         vm.prank(owner);
         try shapes.compose(survivor, burn) {
             for (uint256 i = 0; i < burn.length; ++i) {
                 _untrack(burn[i]);
+                _burnedInputHash[burn[i]] = burnHashes[i];
             }
+            _composePreHash[survivor].push(preHash);
         } catch {}
     }
 
@@ -453,6 +508,7 @@ contract Handler is Test, IERC721Receiver {
         address owner = shapes.ownerOf(survivor);
         vm.prank(owner);
         try shapes.decompose(survivor) returns (uint256[] memory restored) {
+            _checkRestore(survivor, restored);
             for (uint256 i = 0; i < restored.length; ++i) {
                 _track(restored[i]);
             }
@@ -460,7 +516,9 @@ contract Handler is Test, IERC721Receiver {
     }
 
     /// @dev Reverse a compose, reviving the inputs to a hostile recipient. Moves no ETH; if the
-    ///      recipient rejects the mint the whole call reverts and the record stays intact.
+    ///      recipient rejects the mint the whole call reverts and the record stays intact. Still
+    ///      pops the tracked record stack (via `_checkRestore`) so it stays in sync with the
+    ///      on-chain compose-record stack for whichever survivor this reaches next.
     function decomposeToHostile(uint256 seed, uint256 recipSeed) public {
         if (liveTokens.length == 0) return;
         uint256 survivor = liveTokens[seed % liveTokens.length];
@@ -469,6 +527,7 @@ contract Handler is Test, IERC721Receiver {
         address recip = hostiles[recipSeed % 3];
         vm.prank(owner);
         try shapes.decomposeTo(survivor, recip) returns (uint256[] memory restored) {
+            _checkRestore(survivor, restored);
             for (uint256 i = 0; i < restored.length; ++i) {
                 _track(restored[i]);
             }
@@ -534,11 +593,19 @@ contract Handler is Test, IERC721Receiver {
             finalBurn[i] = burn[i];
         }
 
+        bytes32 preHash = _hashState(survivor);
+        bytes32[] memory burnHashes = new bytes32[](got);
+        for (uint256 i = 0; i < got; ++i) {
+            burnHashes[i] = _hashState(finalBurn[i]);
+        }
+
         vm.prank(owner);
         try shapes.compose(survivor, finalBurn) {
             for (uint256 i = 0; i < got; ++i) {
                 _untrack(finalBurn[i]);
+                _burnedInputHash[finalBurn[i]] = burnHashes[i];
             }
+            _composePreHash[survivor].push(preHash);
         } catch {}
     }
 
@@ -589,6 +656,7 @@ contract Handler is Test, IERC721Receiver {
         vm.prank(owner);
         try shapes.decomposeMany(ids) returns (uint256[][] memory restored) {
             for (uint256 i = 0; i < restored.length; ++i) {
+                _checkRestore(survivor, restored[i]);
                 for (uint256 j = 0; j < restored[i].length; ++j) {
                     _track(restored[i][j]);
                 }
@@ -691,6 +759,14 @@ contract ShapesInvariantTest is StdInvariant, Test {
             handler.ghostBackingIn() - handler.ghostBackingOut() - handler.ghostBurnedBacking(),
             "backing accounting drifted"
         );
+    }
+
+    /// @notice Every `decompose`/`decomposeMany` call the handler made restored the survivor and
+    ///         every re-minted input to exactly the state hash recorded right before the compose
+    ///         that burned it (`shapeState` plus `svg`). A shrunk failing sequence here is a
+    ///         `decompose` correctness bug, not a handler bug.
+    function invariant_DecomposeRestoredEveryRecordedState() public view {
+        assertFalse(handler.restoreMismatch(), "decompose did not restore a recorded pre-compose state");
     }
 
     /// @notice Burned backing is monotonic and always exactly one apex denomination per
