@@ -52,6 +52,22 @@
 #                                                  broadcast/Deploy.s.sol/<chainId>/run-latest.json.
 #                                                  For resuming from a broadcast produced by a
 #                                                  different checkout.
+#   ATTEST_ARTIST=1                               opt in to signing and submitting the one-time
+#                                                  artist attestation after the readback/listing
+#                                                  steps. The release hash defaults to the Shapes
+#                                                  creation transaction hash; SHAPES_RELEASE_HASH
+#                                                  overrides it (must be an exact bytes32, and a
+#                                                  mismatch against the creation tx prints a loud
+#                                                  warning). The signer must be artist() on the
+#                                                  deployed Shapes. A keystore env always prompts
+#                                                  to retype the release hash before signing;
+#                                                  ATTEST_CONFIRM=<hash> skips that prompt, but
+#                                                  only for the anvil target, so e2e runs can be
+#                                                  non-interactive. Idempotent: if
+#                                                  artistReleaseHash() is already nonzero the step
+#                                                  is skipped rather than refused, so RESUME can
+#                                                  revisit an already-attested chain. DRY_RUN=1
+#                                                  prints what would be signed and submits nothing.
 set -euo pipefail
 
 ENV_NAME="${1:-}"
@@ -71,6 +87,7 @@ ENV_FILE="script/env/${ENV_NAME}.env"
 
 DRY_RUN="${DRY_RUN:-0}"
 RESUME="${RESUME:-0}"
+ATTEST_ARTIST="${ATTEST_ARTIST:-0}"
 # Captured before sourcing the env file, which unconditionally sets VERIFY: a caller-exported
 # VERIFY wins over the env file's value.
 VERIFY_OVERRIDE="${VERIFY-}"
@@ -125,6 +142,7 @@ echo "  profile  $FOUNDRY_PROFILE"
 echo "  dry run  $DRY_RUN"
 echo "  resume   $RESUME"
 echo "  list owner token  $LIST_OWNER_TOKEN"
+echo "  attest artist     $ATTEST_ARTIST"
 
 # Deploy.s.sol reads SHAPES_MINT_FEE_WEI / SHAPES_FEE_RECIPIENT; the env file's own names
 # (MINT_FEE_WEI / FEE_RECIPIENT) are the reviewed values for this target. A caller-supplied
@@ -252,6 +270,9 @@ if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
   if [ "$LIST_OWNER_TOKEN" = "1" ]; then
     echo "  would list: owner token (#0), duration ${AUCTION_DURATION}s, reserve $AUCTION_RESERVE_UNITS units, min increment ${AUCTION_MIN_INCREMENT_BPS}bps, extension window ${AUCTION_EXTENSION_WINDOW}s"
+  fi
+  if [ "$ATTEST_ARTIST" = "1" ]; then
+    echo "  would attest: sign and submit the artist attestation once broadcast, release hash defaulting to the Shapes creation tx (override with SHAPES_RELEASE_HASH)"
   fi
   forge script script/Deploy.s.sol --rpc-url "$RPC"
   echo "dry run complete for $ENV_NAME"
@@ -443,11 +464,19 @@ else
   require_uint_read 'auction count' "$(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC")" 0
 fi
 
-[ "$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")" \
-    = "0x0000000000000000000000000000000000000000000000000000000000000000" ] \
-  || { echo "artist attribution unexpectedly signed during deployment" >&2; exit 1; }
-[ "$(cast call "$SHAPES" 'artistSignature()(bytes)' --rpc-url "$RPC")" = "0x" ] \
-  || { echo "artist signature unexpectedly populated during deployment" >&2; exit 1; }
+ZERO_HASH="0x0000000000000000000000000000000000000000000000000000000000000000"
+ARTIST_RELEASE_HASH_ONCHAIN=$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")
+# A fresh broadcast has attested nothing yet, so this must read zero. RESUME may be revisiting a
+# chain where a previous RESUME + ATTEST_ARTIST=1 run already signed it, so it only logs; the
+# attestation step below does its own zero check before signing anything.
+if [ "$RESUME" = "1" ]; then
+  echo "  artist release hash  $ARTIST_RELEASE_HASH_ONCHAIN"
+else
+  [ "$ARTIST_RELEASE_HASH_ONCHAIN" = "$ZERO_HASH" ] \
+    || { echo "artist attribution unexpectedly signed during deployment" >&2; exit 1; }
+  [ "$(cast call "$SHAPES" 'artistSignature()(bytes)' --rpc-url "$RPC")" = "0x" ] \
+    || { echo "artist signature unexpectedly populated during deployment" >&2; exit 1; }
+fi
 [ "$(cast call "$LENS" 'exists(uint256)(bool)' 0 --rpc-url "$RPC")" = "true" ] \
   || { echo "Shape #0 is not live" >&2; exit 1; }
 POSITIONS=$(cast call "$SHAPES" 'positions()(address,bool)' --rpc-url "$RPC")
@@ -510,11 +539,75 @@ if [ "$LIST_OWNER_TOKEN" = "1" ]; then
   fi
 fi
 
+# --- optional: sign and submit the one-time artist attestation ----------------------------------
+# A post-broadcast wrapper step, not part of Deploy.s.sol. Mirrors the retired
+# attest-artist-sepolia.sh (same digest, confirmation and postflight-readback safeguards) but works
+# for every env through the wallet already resolved above. Never issue a second valid signature for
+# a competing hash: anyone holding an older valid signature can win the one-time slot.
+
+if [ "$ATTEST_ARTIST" = "1" ]; then
+  if [ "$ARTIST_RELEASE_HASH_ONCHAIN" != "$ZERO_HASH" ]; then
+    echo "  skip: artist attestation already signed ($ARTIST_RELEASE_HASH_ONCHAIN)"
+  else
+    RELEASE_HASH="$SHAPES_TX"
+    if [ -n "${SHAPES_RELEASE_HASH:-}" ]; then
+      [[ "$SHAPES_RELEASE_HASH" =~ ^0x[0-9a-fA-F]{64}$ ]] \
+        || { echo "refusing: SHAPES_RELEASE_HASH must be an exact bytes32 hex value" >&2; exit 1; }
+      RELEASE_HASH="$SHAPES_RELEASE_HASH"
+      [ "$(lower "$SHAPES_RELEASE_HASH")" = "$(lower "$SHAPES_TX")" ] \
+        || echo "  WARNING: SHAPES_RELEASE_HASH ($SHAPES_RELEASE_HASH) overrides the Shapes creation tx ($SHAPES_TX)" >&2
+    fi
+
+    ATTEST_ARTIST_ADDRESS=$(cast call "$SHAPES" 'artist()(address)' --rpc-url "$RPC")
+    ATTEST_SIGNER=$(cast wallet address "${WALLET_ARGS[@]}")
+    [ "$(lower "$ATTEST_SIGNER")" = "$(lower "$ATTEST_ARTIST_ADDRESS")" ] \
+      || { echo "refusing: signer $ATTEST_SIGNER is not artist() ($ATTEST_ARTIST_ADDRESS)" >&2; exit 1; }
+    DIGEST=$(cast call "$SHAPES" 'artistAttestationDigest(bytes32)(bytes32)' "$RELEASE_HASH" --rpc-url "$RPC")
+
+    echo "Artist attestation for $ENV_NAME"
+    echo "  chain id       $ACTUAL_CHAIN_ID"
+    echo "  Shapes         $SHAPES"
+    echo "  artist         $ATTEST_ARTIST_ADDRESS"
+    echo "  release hash   $RELEASE_HASH"
+    echo "  EIP-712 digest $DIGEST"
+    echo
+    echo "This signature is permanent once submitted. Confirm the release-hash preimage separately."
+
+    if [ "$WALLET" = "anvil" ] && [ -n "${ATTEST_CONFIRM:-}" ]; then
+      [ "$ATTEST_CONFIRM" = "$RELEASE_HASH" ] \
+        || { echo "refusing: ATTEST_CONFIRM did not match the release hash" >&2; exit 1; }
+    else
+      read -r -p "Type the exact release hash to sign: " CONFIRM_HASH
+      [ "$CONFIRM_HASH" = "$RELEASE_HASH" ] \
+        || { echo "refusing: release hash confirmation did not match" >&2; exit 1; }
+    fi
+
+    ATTEST_SIGNATURE=$(cast wallet sign "${WALLET_ARGS[@]}" --no-hash "$DIGEST")
+
+    # Simulate the exact call before broadcasting. The artist may be an EIP-7702 delegated EOA;
+    # the attribution library checks its ECDSA key before falling back to ERC-1271.
+    cast call "$SHAPES" "attestArtist(bytes32,bytes)" "$RELEASE_HASH" "$ATTEST_SIGNATURE" \
+      --from "$ATTEST_ARTIST_ADDRESS" --rpc-url "$RPC" >/dev/null
+
+    ATTEST_TX=$(send_wait "$SHAPES" 'attestArtist(bytes32,bytes)' "$RELEASE_HASH" "$ATTEST_SIGNATURE")
+    echo "  transaction    $ATTEST_TX"
+
+    ARTIST_RELEASE_HASH_ONCHAIN=$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")
+    [ "$(lower "$ARTIST_RELEASE_HASH_ONCHAIN")" = "$(lower "$RELEASE_HASH")" ] \
+      || { echo "postflight release hash mismatch" >&2; exit 1; }
+    [ "$(cast call "$SHAPES" 'artistSignature()(bytes)' --rpc-url "$RPC")" = "$ATTEST_SIGNATURE" ] \
+      || { echo "postflight artist signature mismatch" >&2; exit 1; }
+    echo "  ok: artist attestation stored and read back ($ARTIST_RELEASE_HASH_ONCHAIN)"
+  fi
+fi
+
 # --- record the deployment: same key set and order as web/public/deployment.json, so cutover ----
 # is a plain file copy. Always written, verification failures above notwithstanding.
 
 mkdir -p deployments
 DEPLOYMENT_FILE="deployments/${CHAIN_ID}.json"
+ARTIST_RELEASE_HASH_RECORD=""
+[ "$ARTIST_RELEASE_HASH_ONCHAIN" = "$ZERO_HASH" ] || ARTIST_RELEASE_HASH_RECORD="$ARTIST_RELEASE_HASH_ONCHAIN"
 jq -n \
   --arg rpc "$RPC" \
   --arg indexerUrl "${INDEXER_URL:-}" \
@@ -528,7 +621,8 @@ jq -n \
   --arg mintStart "$MINT_START_ONCHAIN" \
   --argjson fromBlock "$FROM_BLOCK" \
   --arg auctionId "$AUCTION_ID" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,lens:$lens,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock,auctionId:(if $auctionId == "" then null else $auctionId end)}' \
+  --arg artistReleaseHash "$ARTIST_RELEASE_HASH_RECORD" \
+  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,lens:$lens,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock,auctionId:(if $auctionId == "" then null else $auctionId end),artistReleaseHash:(if $artistReleaseHash == "" then null else $artistReleaseHash end)}' \
   >"$DEPLOYMENT_FILE"
 
 echo
@@ -541,6 +635,7 @@ echo "  AuctionHouse    $HOUSE"
 echo "  deployment tx   $SHAPES_TX"
 echo "  from block      $FROM_BLOCK"
 echo "  auction id      ${AUCTION_ID:-none}"
+echo "  artist attest   ${ARTIST_RELEASE_HASH_RECORD:-none}"
 echo "  admin           $EFFECTIVE_DEPLOYER"
 echo "  wrote           $DEPLOYMENT_FILE"
 

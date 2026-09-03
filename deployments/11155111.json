@@ -10,5 +10,6 @@
   "mintFeeWei": "10000000000000",
   "mintStart": "1788403705",
   "fromBlock": 11623741,
-  "auctionId": null
+  "auctionId": null,
+  "artistReleaseHash": null
 }
