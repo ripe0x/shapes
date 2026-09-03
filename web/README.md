@@ -7,6 +7,14 @@ Chain target comes from `web/public/deployment.json`, with env overrides `SHAPES
 `SHAPES_CHAIN_ID`, and `SHAPES_ADDRESS` for the server-side deployment target (see
 `app/lib/deployment.ts`).
 
+`SHAPES_DEPLOYMENT_FILE` names a deployment record anywhere on disk and points the whole site at
+it: the browser receives it as a prop from the root layout (`ShapesProviders`) instead of fetching
+`/deployment.local.json`, the server routes read it through `serverDeployment()`, and
+`next.config.ts` picks the denomination ladder from its chain id. It wins over both
+`public/deployment.local.json` and the bundled `public/deployment.json`, so a run can target a
+chain without writing either file. This is how `npm run e2e:browser` points the site at the chain
+it deploys.
+
 For Sepolia, reads use the configured RPC first and then PublicNode, 1RPC, and Tenderly's public
 endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHAPES_RPC_URL` for
 browser reads when a paid/provider RPC is available. Requests are unbatched because shared site
@@ -56,3 +64,31 @@ npm run dev
 
 Open [https://shapes.localhost](https://shapes.localhost), or use
 [http://localhost:3000](http://localhost:3000) when running the plain Next dev server.
+
+## Browser end-to-end run
+
+```bash
+npm run e2e:browser        # from the repo root
+```
+
+`web/e2e/run.sh` builds the contracts, starts anvil on port 8590, deploys with
+`script/deploy.sh anvil`, copies the resulting `deployments/31337.json` into a temporary directory,
+builds and serves the site against that copy through `SHAPES_DEPLOYMENT_FILE`, and runs
+`web/e2e/browserFlow.mjs` in Chromium. It stops the chain and the server on exit and refuses to
+start when either port is already in use. `E2E_CHAIN_PORT`, `E2E_SITE_PORT` and `E2E_OUT_DIR`
+override the port pair and the screenshot directory (`web/e2e/out` by default, one image per step).
+
+The walkthrough connects a wallet, mints five 0.01 ETH Shapes, filters the gallery to them,
+composes them into one 0.05 ETH survivor, decomposes it, splits a 0.05 ETH Shape into five, redeems
+one, and reads `symbol` from the contracts page, checking the chain after every step. Every step is
+recorded and the run continues after a failure, so one broken step does not hide the ones after it.
+
+`web/e2e/wallet.mjs` installs the wallet: `page.addInitScript` defines an EIP-1193 provider as
+`window.ethereum` and announces it over EIP-6963, and every request is relayed to Node over one
+Playwright binding, where a viem wallet client on anvil's account 1 answers the account, chain and
+signing methods and forwards the rest to the RPC. Signing stays in Node so the page needs no
+bundled wallet code. The wallet starts locked, so the run goes through the site's own connect
+control instead of being reconnected on load.
+
+Playwright is already a devDependency of `preview/`; a fresh checkout needs
+`npx playwright install chromium` once.

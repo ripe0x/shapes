@@ -38,12 +38,17 @@ export function ShapesProviders({
   children,
   chainOnIndex,
   walletInitialState,
+  deployment,
 }: {
   children: React.ReactNode;
   chainOnIndex: boolean;
   /** Connection state decoded server-side from the request's cookies (see layout.tsx), so the
    *  first client render already reflects a previously connected wallet. */
   walletInitialState?: State;
+  /** Deployment record supplied by the server from `SHAPES_DEPLOYMENT_FILE` (see
+   *  `app/lib/deployment.ts`). Present only when that variable is set, and used instead of the
+   *  fetch below so one variable points the server routes and the browser at the same chain. */
+  deployment?: Deployment | null;
 }) {
   const pathname = usePathname();
   const isIndex = pathname === "/";
@@ -62,12 +67,15 @@ export function ShapesProviders({
     // path before notFound() can set the status, so a missing local file is not a non-ok response.
     const isJson = (response: Response) =>
       response.ok && (response.headers.get("content-type") ?? "").includes("json");
-    fetch("/deployment.local.json", { cache: "no-store" })
-      .then((response) => (isJson(response) ? response : fetch("/deployment.json", { cache: "no-store" })))
-      .then((response) => {
-        if (!response.ok) throw new Error("no deployment.json");
-        return response.json();
-      })
+    const load: Promise<Deployment> = deployment
+      ? Promise.resolve(deployment)
+      : fetch("/deployment.local.json", { cache: "no-store" })
+          .then((response) => (isJson(response) ? response : fetch("/deployment.json", { cache: "no-store" })))
+          .then((response) => {
+            if (!response.ok) throw new Error("no deployment.json");
+            return response.json();
+          });
+    load
       .then(async (dep: Deployment) => {
         const config = buildConfig(dep, {
           primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
@@ -97,7 +105,7 @@ export function ShapesProviders({
     return () => {
       active = false;
     };
-  }, [err, skipsChain, state]);
+  }, [deployment, err, skipsChain, state]);
 
   if (skipsChain) return children;
   // The index route in app mode hosts the mint panel inline: the hero renders immediately

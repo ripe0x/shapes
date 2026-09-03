@@ -142,6 +142,52 @@ jobs:
         if: always()
         run: pkill -f 'anvil --port 8545' || true
 
+  browser-e2e:
+    name: browser end-to-end
+    needs: changes
+    if: needs.changes.outputs.site == 'true' || needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out
+            cache
+          key: forge-build-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'lib/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'remappings.txt') }}
+          restore-keys: |
+            forge-build-${{ runner.os }}-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: install
+        run: npm ci
+
+      # Playwright is already a devDependency of preview/; only the browser needs fetching.
+      - name: install chromium
+        run: npx playwright install --with-deps chromium
+
+      # Owns its own chain (8590) and site (3190), deploys, and drives the real app in Chromium.
+      - name: browser walkthrough
+        run: npm run e2e:browser
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-e2e-screenshots
+          path: web/e2e/out
+          if-no-files-found: ignore
+
   renderer:
     name: renderer parity
     needs: changes

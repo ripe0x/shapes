@@ -9,9 +9,9 @@ import {
   type SampleDonor,
 } from "../canonical/sampling";
 import {C, SANS, label} from "./theme";
-import {Art, Modal, OwnerTokenBanner, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
+import {Art, Modal, OwnerTokenBanner, PreviewBoundary, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
 import type {SiteData, SiteToken} from "./data";
-import {buildComposeResultPreview} from "./composePreview";
+import {buildComposeResultPreview, effectiveRecordModules} from "./composePreview";
 import {shapeTitle} from "./shapeTitle";
 import {ownerTokenNotices, type OwnerTokenNotice} from "./ownerTokenNotice";
 
@@ -404,16 +404,18 @@ export function ManageShapeView({
           )}
 
           {action === "decompose" && (
-            <DecomposeFlow
-              token={token}
-              record={composeRecord}
-              unavailable={recordUnavailable}
-              notices={decomposeNotices}
-              busy={busy}
-              pendingTx={pendingTx}
-              chainId={dep.chainId}
-              onSubmit={() => onDecompose(token)}
-            />
+            <PreviewBoundary resetKey={token.id}>
+              <DecomposeFlow
+                token={token}
+                record={composeRecord}
+                unavailable={recordUnavailable}
+                notices={decomposeNotices}
+                busy={busy}
+                pendingTx={pendingTx}
+                chainId={dep.chainId}
+                onSubmit={() => onDecompose(token)}
+              />
+            </PreviewBoundary>
           )}
 
           {action === "redeem" && (
@@ -715,7 +717,15 @@ function DecomposeFlow({
           denominationIndex: record.survivorDenominationIndex,
           inkGene: record.survivorInkGene,
           faceValueWei: DENOMINATIONS[record.survivorDenominationIndex].wei,
-          modules: record.survivorModules,
+          // The record's own seed never changes across a compose, so the survivor's seed is the
+          // token's current one; `survivorModules` is empty when the pre-compose token was itself
+          // seed-drawn rather than materialized.
+          modules: effectiveRecordModules({
+            seed: token.seed,
+            denominationIndex: record.survivorDenominationIndex,
+            inkGene: record.survivorInkGene,
+            modules: record.survivorModules,
+          }),
         },
         token.id,
       )
@@ -726,7 +736,12 @@ function DecomposeFlow({
         denominationIndex: input.denominationIndex,
         inkGene: input.inkGene,
         faceValueWei: DENOMINATIONS[input.denominationIndex].wei,
-        modules: input.modules,
+        modules: effectiveRecordModules({
+          seed: BigInt(input.seed),
+          denominationIndex: input.denominationIndex,
+          inkGene: input.inkGene,
+          modules: input.modules,
+        }),
       },
       input.id,
     ),
