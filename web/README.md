@@ -55,17 +55,18 @@ recorded address shows as not recorded. The page reads nothing until a Call butt
 
 Deployed as two isolated Netlify projects (`../netlify.toml`):
 
-- Production launch site: `shapes.ripe.wtf`, branch `launch`, `SHAPES_SITE_MODE=landing`.
-  It serves the countdown at `/` and the chain-free playground at `/play`.
-- Sepolia application: separate Netlify URL, branch `main`, `SHAPES_SITE_MODE=app` and
-  `SHAPES_LADDER=testnet`.
+- Mainnet application: `shapes.ripe.wtf`, branch `main`, `SHAPES_SITE_MODE=app`. Builds the
+  default `public/deployment.json` record against the mainnet ladder, so the mint panel, gallery,
+  auction, and manage routes are all live at their normal paths.
+- Sepolia application: `shapes-sepolia.netlify.app`, branch `main`, `SHAPES_SITE_MODE=app`,
+  `SHAPES_LADDER=testnet`, `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`.
 
-Netlify builds use `npm run build:netlify`, which refuses an unsafe mode. A domain-level proxy
-blocks wallet, token, gallery, and auction routes on `shapes.ripe.wtf`, even if its environment is
-later misconfigured. `SHAPES_SITE_MODE` defaults to `app` when unset, including local development,
-so the app home with the full mint panel is at `/`. The root Netlify configuration explicitly
-includes `preview/` in its change detection because the playground and canonical renderer are
-shared from that workspace.
+The `launch` branch and `landing` mode carried the pre-mainnet countdown site and are retired from
+production; `landing` still exists as a build mode. Netlify builds use `npm run build:netlify`,
+which refuses an unsafe mode. `SHAPES_SITE_MODE`
+defaults to `app` when unset, including local development, so the app home with the full mint
+panel is at `/`. The root Netlify configuration explicitly includes `preview/` in its change
+detection because the playground and canonical renderer are shared from that workspace.
 
 ## Development
 

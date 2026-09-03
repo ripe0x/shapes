@@ -699,9 +699,10 @@ DRY_RUN=1 script/deploy.sh sepolia   # guards + simulation, nothing broadcast or
 script/deploy.sh sepolia             # broadcasts, verifies on Etherscan, records the deployment
 ```
 
-`script/env/mainnet.env` ships with `DEPLOYER`, `FEE_RECIPIENT`, and `MINT_FEE_WEI` empty; the
-wrapper refuses to run, `DRY_RUN` included, until D-05 (`project/DECISIONS.md`) is resolved and
-those values are filled in. Once they are, mainnet deploys the same way:
+`script/env/mainnet.env` ships with `DEPLOYER`, `FEE_RECIPIENT`, and `MINT_FEE_WEI` empty until D-05
+(`project/DECISIONS.md`) fills them in; the wrapper refuses to run, `DRY_RUN` included, while any
+of them are unset. D-05 is resolved and the mainnet Shapes deployed 2026-09-03 (see "Deployed
+addresses" above). Mainnet deploys the same way any other target does:
 
 ```bash
 DRY_RUN=1 script/deploy.sh mainnet
@@ -748,12 +749,18 @@ first.
 
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
-| Mainnet | not deployed | not deployed |
-| Sepolia | `0x5e742dc6c91b7090de9642ca54d68a1422d1fb24` | `0xbc80c7027d8dfdfc22b2af35b0d220cb259088aa` |
+| Mainnet | `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0` | `0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295` |
+| Sepolia | `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` | `0x7025fc7e13ca24505d471e193e2e2a54e960a1b2` |
+
+Mainnet deployed 2026-09-03 from `main` commit `a0a180b`. Mint fee is a flat 0.001 ETH per Shape;
+`mintStart` is `1788462000` (2026-09-03, 15:00 ET). Fees route to the 0xSplits wallet
+`0xD4ba7cA95f3983514DDa317C4428CDb8F59c7e72`. Owner token #0 is listed in auction `0`; the artist
+attestation is recorded onchain.
 
 The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
 mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in
-`web/public/deployment.json`, the machine-readable record the site reads from.
+`deployments/1.json` and `deployments/11155111.json`, the machine-readable records the site and
+indexer read from.
 
 ---
 
