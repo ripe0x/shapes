@@ -103,8 +103,19 @@ contract CollectionTest is Test {
     /* ------------------------------ wiring ------------------------------ */
 
     function test_ConstructorRefusesACodelessRenderer() public {
-        vm.expectRevert(abi.encodeWithSelector(ShapeCollection.RendererHasNoCode.selector, address(0xBEEF)));
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0xBEEF)));
         new ShapeCollection(IShapeRenderer(address(0xBEEF)), shapes);
+    }
+
+    function test_ConstructorRefusesARendererWithoutErc165Support() public {
+        // `shapes` has code and answers ERC-165, but not for `IShapeRenderer`.
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(shapes)));
+        new ShapeCollection(IShapeRenderer(address(shapes)), shapes);
+    }
+
+    function test_ConstructorAcceptsTheRealRenderer() public {
+        ShapeCollection fresh = new ShapeCollection(renderer, shapes);
+        assertEq(fresh.renderer(), address(renderer));
     }
 
     function test_ConstructorRefusesACodelessShapes() public {

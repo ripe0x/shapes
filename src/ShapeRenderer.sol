@@ -50,13 +50,6 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
 
     uint256 private constant TRI_HEIGHT = 0.866e18;
 
-    // Band parameters for the card-level solid draw. `compose` consumes that draw and discards
-    // its value: `inkGene` supplies the solid probability instead.
-    uint256 private constant PURE_OUTLINE_CHANCE = 0.05e18;
-    uint256 private constant PURE_SOLID_CHANCE = 0.05e18;
-    uint256 private constant SOLID_BAND_MIN = 0.3e18;
-    uint256 private constant SOLID_BAND_MAX = 0.9e18;
-
     /// @dev sqrt(2), for the diagonal line's 45 degree cap and the diamond's inner-ring inset.
     uint256 private constant SQRT2 = 1_414_213_562_373_095_048;
     /// @dev 2 - sqrt(2), the right triangle's inradius as a fraction of its leg half-length.
@@ -177,23 +170,6 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
 
         m.cx = g.x0 + (i % g.cols) * g.cell + g.halfCell;
         m.cy = g.y0 + (i / g.cols) * g.cell + g.halfCell;
-    }
-
-    /// @dev Maps a uniform draw onto a card-level solid probability. `compose` calls it and
-    ///      discards the result, keeping the stream aligned. `solidProbability` comes from the
-    ///      ink gene.
-    ///
-    ///        r <  PURE_OUTLINE_CHANCE     -> 0    every module outlined
-    ///        r >= 1 - PURE_SOLID_CHANCE   -> 1    every module solid
-    ///        otherwise                    -> remapped linearly onto the band
-    function _drawSolidProbability(uint256 r) private pure returns (uint256) {
-        if (r < PURE_OUTLINE_CHANCE) return 0;
-        uint256 upper = FixedPoint.WAD - PURE_SOLID_CHANCE;
-        if (r >= upper) return FixedPoint.WAD;
-
-        uint256 span = upper - PURE_OUTLINE_CHANCE;
-        uint256 t = ((r - PURE_OUTLINE_CHANCE) * FixedPoint.WAD) / span;
-        return SOLID_BAND_MIN + t.mulWad(SOLID_BAND_MAX - SOLID_BAND_MIN);
     }
 
     /// @dev How a card's marks actually painted. A mark counts as filled when its solid bit is
@@ -348,9 +324,8 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         card.wRatio = WRATIO;
         card.target = g.halfCell.mulWad(FILL);
         card.weight = (2 * card.target).mulWad(card.wRatio);
-        // The card-level fill draw is consumed here so the stream stays aligned with every
-        // downstream cell. Its value is discarded and the ink gene supplies the probability.
-        _drawSolidProbability(rnd.nextWad());
+        // One draw consumed here, unused, to keep the stream aligned with the reference renderer.
+        rnd.nextWad();
         card.inkGene = inkGene;
         card.solidProbability = InkGenes.geneProbabilityAt(inkGene);
 

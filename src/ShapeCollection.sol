@@ -8,6 +8,7 @@ import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
+import {AdminOps} from "./lib/AdminOps.sol";
 import {CopyValidation} from "./lib/CopyValidation.sol";
 import {Denominations} from "./lib/Denominations.sol";
 import {FixedPoint} from "./lib/FixedPoint.sol";
@@ -59,16 +60,17 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     string private _tokenNamePrefix;
     string private _description;
 
-    error RendererHasNoCode(address renderer);
     error ShapesHasNoCode(address shapes);
 
     /// @param renderer_ Renderer every card and the collection image are drawn through. Fixed at
-    ///        construction. `Shapes` holds its own renderer pointer, which the admin can replace
-    ///        until presentation is locked.
+    ///        construction and immutable after, so it is validated the same way `Shapes` validates
+    ///        its own renderer pointer: must have code and answer ERC-165 for `IShapeRenderer`.
+    ///        `Shapes` holds its own renderer pointer, which the admin can replace until
+    ///        presentation is locked.
     /// @param shapes_ The `Shapes` token this collection describes. Its `admin()` may edit the
     ///        metadata copy and its `presentationLocked()` freezes it. Fixed at construction.
     constructor(IShapeRenderer renderer_, IShapes shapes_) {
-        if (address(renderer_).code.length == 0) revert RendererHasNoCode(address(renderer_));
+        AdminOps.requireRenderer(address(renderer_));
         if (address(shapes_).code.length == 0) revert ShapesHasNoCode(address(shapes_));
         renderer = address(renderer_);
         shapes = address(shapes_);
