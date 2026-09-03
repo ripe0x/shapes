@@ -692,7 +692,7 @@ one can submit it first.
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
 | Mainnet | not deployed | not deployed |
-| Sepolia | `0xd4e7134cd9fbcb1f48d9e2cc460f2afa40b621b8` | `0x05f70c867f2e4a26ed98e33b59895db09ed12f2c` |
+| Sepolia | `0x5e742dc6c91b7090de9642ca54d68a1422d1fb24` | `0xbc80c7027d8dfdfc22b2af35b0d220cb259088aa` |
 
 The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
 mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in

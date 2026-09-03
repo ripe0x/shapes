@@ -2,11 +2,20 @@
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "indexerUrl": "https://shapes-indexer.fly.dev",
   "chainId": 11155111,
-  "shapes": "0xd4e7134cd9fbcb1f48d9e2cc460f2afa40b621b8",
-  "renderer": "0x05f70c867f2e4a26ed98e33b59895db09ed12f2c",
-  "collection": "0xd488531dfd3bcfd15876e4f4c623ba0c81b42368",
-  "auctionHouse": "0x65085c760df92925d23149a9d95624177ba6e637",
+  "shapes": "0x5e742dc6c91b7090de9642ca54d68a1422d1fb24",
+  "renderer": "0xbc80c7027d8dfdfc22b2af35b0d220cb259088aa",
+  "collection": "0xd96d64ebabaa0e946867b26e88882eeaefb3fe38",
+  "auctionHouse": "0x2564ed7269db94b42066069efbfcac8517210769",
   "mintFeeWei": "10000000000000",
-  "mintStart": "1788403705",
-  "fromBlock": 11623741
+  "mintStart": "1788431012",
+  "fromBlock": 11625974,
+  "libraries": {
+    "AdminOps": "0x074024c645e933e607dccdfd78af813ed96e1377",
+    "ComposeCompute": "0xfbf7f6e9552f93d2dbd86e30b3b0637be5d520ea",
+    "CopyValidation": "0xede9393cf5bd8037b9d4a15c2d864f97f98a9da7",
+    "EIP712Signature": "0x48208746f35222a751e5fe286a8942bfceaf0906",
+    "GeometrySampling": "0x991e1352b0f6131748f36d8d45f756d55ee930d3",
+    "InkGenes": "0x34a7a97b92288b3f804f416b3b15214fb85e4200",
+    "RecompositionOps": "0x352394b1caf0cde75d4d0e53d8d6658e50f8679b"
+  }
 }
