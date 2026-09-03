@@ -23,13 +23,7 @@ if (mode === "landing") {
   }
 }
 
-if (mode === "app") {
-  if (publicUrl === "https://shapes.ripe.wtf") {
-    fail("app mode cannot claim the production launch URL.");
-  }
-  if (ladder !== "testnet") {
-    fail("the deployed Sepolia app requires SHAPES_LADDER=testnet.");
-  }
-}
+// App mode builds for any URL and any ladder; next.config.ts checks the ladder against the
+// selected deployment record's chain id.
 
 console.log(`Netlify mode verified: ${mode}`);
