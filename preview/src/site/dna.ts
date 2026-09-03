@@ -451,7 +451,7 @@ export interface DnaSnapshot {
  * Classify and reconstruct a token's per-cell DNA once its identity fields and compose depth are
  * already known, whether from a live `shapeState`/`composeDepth` read (`loadDna`) or a
  * caller-supplied snapshot and depth (`loadDnaFromSnapshot`). Reads `composeRecordAt` or
- * `splitOriginOf` (both on `ShapeLens`) as the depth/modules classification requires. A
+ * `splitOriginOf` (both on `Shapes`) as the depth/modules classification requires. A
  * `splitOriginOf` revert (or any other read failure on that path) degrades to an `"unavailable"`
  * result rather than throwing, since `NotASplitChild` is an expected outcome whenever the
  * classification's assumption about stored state does not hold.
@@ -546,10 +546,10 @@ async function resolveDna(
 }
 
 /**
- * Read a live token's provenance and reconstruct its per-cell DNA. Reads `shapeState` (on
- * `ShapeLens`) and `composeDepth` (on `Shapes`) in parallel, then classifies and resolves via
- * `resolveDna`. A missing `dep.shapes` (a stale `deployment.json` predating the lens split) fails
- * every lens read the same way and is caught by the caller in `TokenView`, which renders the DNA
+ * Read a live token's provenance and reconstruct its per-cell DNA. Reads `shapeState` and
+ * `composeDepth` (both on `Shapes`) in parallel, then classifies and resolves via
+ * `resolveDna`. A missing `dep.shapes` (a stale `deployment.json`) fails
+ * every read the same way and is caught by the caller in `TokenView`, which renders the DNA
  * section as unavailable.
  */
 export async function loadDna(publicClient: PublicClient, dep: Deployment, tokenId: bigint): Promise<DnaResult> {
