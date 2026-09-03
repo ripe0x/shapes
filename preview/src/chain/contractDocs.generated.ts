@@ -7,7 +7,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "Shapes",
     "kind": "token",
     "description": "ETH-backed ERC-721 tokens with exact redemption value.",
-    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure and keep total redeemable backing unchanged. Three operations move ETH out. Redemption sends a burned token's backing to the caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends one recipient's accrued balance, tracked per recipient and summed in `pendingFees()`, accounted separately from the reserve. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. Holding it grants no permissions. Administration is the separate `admin()` role, which configures presentation and fees and cannot reach backing, redemption or token ownership. `artist()` records the deployer for attribution and grants no authority. Reentrancy: the mint, redemption, fee and recomposition entrypoints are guarded. The admin functions, `attestArtist` and the inherited ERC-721 transfer and approval functions are not. During a `safeTransferFrom` the receiver may redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are part of the trusted implementation. They are public libraries whose addresses are linked into this bytecode at deploy time, with no setter, and their functions run under `DELEGATECALL` in this contract's storage context. Every access check runs here before a call reaches them. Token and recomposition state lives in `_store`. ETH accounting, the owner token, the admin address and presentation state live in `Shapes`. See project/ARCHITECTURE.md.",
+    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure and keep total redeemable backing unchanged. Three operations move ETH out. Redemption sends a burned token's backing to the caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends one recipient's accrued balance, tracked per recipient and summed in `pendingFees()`, accounted separately from the reserve. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. Holding it grants no permissions. Administration is the separate `admin()` role, which configures fees, presentation, optional pointers and the admin address. Admin actions do not change Shape ownership or redeemable backing. `artist()` records the deployer for attribution and grants no authority. Reentrancy: the mint, redemption, fee and recomposition entrypoints are guarded. The admin functions, `attestArtist` and the inherited ERC-721 transfer and approval functions are not. During a `safeTransferFrom` the receiver may redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are linked libraries and part of the trusted implementation. They run with `DELEGATECALL` in this contract's storage context. `GeometrySampling` is a linked pure library. ERC-721 ownership and admin authorization are checked in `Shapes`. Token and recomposition state lives in `_store`. ETH accounting, the owner token, admin state and presentation state live in `Shapes`. See project/ARCHITECTURE.md.",
     "functions": [
       {
         "name": "admin",
@@ -514,7 +514,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Compose several Shapes into one. `survivorId` keeps its id and seed and becomes the summed denomination; the `burnIds` are burned into it. All must be owned by the caller and not Black. No ETH moves and no fee is charged. The summed backing must be a valid denomination. Origins are summed onto the survivor. If the owner token is among `burnIds`, ownership moves to `survivorId`.",
-        "dev": "Reshapes tokens and moves no ETH: the summed backing is unchanged, so `redeemableBacking` needs no adjustment and the reserve invariant holds by construction. `_burn` triggers no receiver callback, so this makes no external call. Guarded anyway.",
+        "dev": "Reshapes tokens and moves no ETH: the summed backing is unchanged, so `redeemableBacking` needs no adjustment and the reserve invariant holds by construction. `_burn` makes no external call.",
         "params": {},
         "returns": {},
         "abi": {
@@ -768,7 +768,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Reverse the survivor's most recent compose. The survivor keeps its id and seed and reverts to its pre-compose denomination, origin count and gene; every input burned by that compose is re-minted under its original id and seed, to the caller. Caller must own the survivor and it must not be Black. No ETH moves and no fee is charged. Stacked composes reverse newest first (LIFO); reverts `NoComposeRecord` if none remain. If the reversed compose had moved ownership from one of its inputs, ownership restores to that input.",
-        "dev": "The inverse of `compose`. Pops the survivor's top compose record: the survivor returns to its pre-compose state and every burned input is re-minted under its original id and seed. `totalMinted` does not move, because those ids are reused. Reuse cannot collide: a fresh mint takes `totalMinted` itself, above every id ever issued. Stacked composes unwind newest first. Backing is conserved. The owner token move, when the record holds one, waits until every restored id exists. See DECOMPOSE_SPEC.md.",
+        "dev": "The inverse of `compose`. Pops the survivor's top compose record: the survivor returns to its pre-compose state and every burned input is re-minted under its original id and seed. Restored ids are reused and do not increase `totalMinted`. Stacked composes unwind newest first. Backing is conserved. The owner token move, when the record holds one, waits until every restored id exists. See DECOMPOSE_SPEC.md.",
         "params": {},
         "returns": {},
         "abi": {
@@ -3691,7 +3691,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "outputs": [],
         "notice": "Forward `recipient`'s own accrued balance to it. Callable by anyone; the payout always goes to `recipient`, never the caller. Reverts `NoFeesPending` when nothing is owed to `recipient`. A recipient that reverts on receipt makes only this call revert for that recipient; minting and every other recipient's withdrawal are unaffected.",
-        "dev": "Pays `recipient` its own accrued balance, tracked independently of every other recipient's. `setFeeRecipient` never moves an entry here, so a recipient that changed or reverts cannot block another recipient's withdrawal.",
+        "dev": "Pays `recipient` its accrued fees. Each recipient has a separate balance, so changing or failing recipients do not block withdrawals for others.",
         "params": {},
         "returns": {},
         "abi": {
@@ -4810,7 +4810,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "ShapeRenderer",
     "kind": "renderer",
     "description": "Fully onchain SVG and metadata for Shape tokens.",
-    "dev": "The renderer has no owner, setters or mutable state. For the same inputs it returns the same output. `Shapes` holds the renderer address and the admin can replace it until presentation is locked. Repository parity tests compare this renderer with the reference TypeScript implementation in `preview/src/canonical/render.ts`: same draw order, same integer arithmetic, same string assembly, same decimal formatting. The SVG and the traits carry no injection surface: every byte comes from a compile-time constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The metadata `name` prefix and `description` are the exception. `metadataJSON` writes them verbatim from its arguments, and `Shapes` owns that copy and is trusted for it.",
+    "dev": "The renderer has no owner, setters or mutable state. For the same inputs it returns the same output. `Shapes` holds the renderer address and the admin can replace it until presentation is locked. Repository parity tests compare this contract with the reference TypeScript renderer. The SVG and the traits carry no injection surface: every byte comes from a compile-time constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The name prefix and description are inserted verbatim by `metadataJSON`. Callers must provide JSON-safe strings. `ShapeCollection` validates the copy used by Shapes.",
     "functions": [
       {
         "name": "cardGeometry",
@@ -6523,7 +6523,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "ShapeCollection",
     "kind": "collection",
     "description": "Collection-level metadata for Shapes: the editorial copy and the contract-level metadata built from it, plus seeded card previews.",
-    "dev": "Stores the token name prefix, the shared description and the owner token's own description. `Shapes.tokenURI` and `Shapes.contractURI` read them back from here. `setMetadataCopy` writes all three, restricted to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Both the admin address and the lock are read live from `shapes`. `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes no seed advances once per block and every caller in that block gets the same value. Passing a seed returns deterministic output for that seed. Preview cards use the same denomination ladder, ink-gene derivation and renderer as minted Shapes. No token is read or written.",
+    "dev": "Stores the token name prefix, the shared description and the owner token's own description. `Shapes.tokenURI` and `Shapes.contractURI` read them back from here. `setMetadataCopy` writes all three, restricted to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Both the admin address and the lock are read live from `shapes`. `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes no seed advances once per block and every caller in that block gets the same value. Passing a seed returns deterministic output for that seed. Preview cards use the Shapes denomination ladder and ink-gene derivation. They render through this collection's immutable renderer. No token is read or written.",
     "functions": [
       {
         "name": "card",
@@ -7054,6 +7054,18 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       {
         "name": "ShapesHasNoCode",
         "signature": "ShapesHasNoCode(address)",
+        "inputs": [
+          {
+            "name": "shapes",
+            "type": "address"
+          }
+        ],
+        "notice": "",
+        "dev": ""
+      },
+      {
+        "name": "ShapesUnsupported",
+        "signature": "ShapesUnsupported(address)",
         "inputs": [
           {
             "name": "shapes",

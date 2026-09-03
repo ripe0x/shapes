@@ -3,11 +3,11 @@ pragma solidity 0.8.28;
 
 /// @title IAdminControl
 /// @notice Explicit temporary administration, separate from collectible contract ownership.
-/// @dev The admin may configure presentation (the renderer, the collection and the metadata copy,
-///      all three frozen together by `IShapes.lockPresentation`), positions and market pointers,
-///      redirect future mint fees, and adjust the mint fee amount within a compile-time cap. It
-///      cannot reach backing, redemption, token ownership or accrued fees. The contract owner
-///      returned by `owner()` receives none of these permissions.
+/// @dev The admin configures presentation (the renderer, the collection and the metadata copy,
+///      all three frozen together by `IShapes.lockPresentation`), the positions and market
+///      pointers, the fee recipient for future mints, the mint fee within a compile-time cap, and
+///      the admin address. Admin actions do not change Shape ownership, redeemable backing or
+///      accrued fees. The contract owner returned by `owner()` receives none of these permissions.
 interface IAdminControl {
     event AdminTransferred(address indexed previousAdmin, address indexed newAdmin);
     event FeeRecipientUpdated(address indexed previousRecipient, address indexed newRecipient);

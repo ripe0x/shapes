@@ -178,24 +178,38 @@ contract Handler is Test, IERC721Receiver {
         return keccak256(abi.encode(st, shapes.svg(tokenId)));
     }
 
-    /// @dev Verifies one `decompose`/`decomposeMany` reversal against what `compose`/`composeMixed`
-    ///      recorded for `survivor`'s most recent still-open record: the survivor's post-decompose
-    ///      hash must match its pre-compose hash, and every re-minted input's hash must match its
-    ///      pre-burn hash. Pops `survivor`'s record stack so nested/stacked records keep matching
-    ///      the on-chain LIFO order. Sets `restoreMismatch` rather than asserting inline, so a real
-    ///      mismatch surfaces as an invariant failure with a shrinkable call sequence.
-    function _checkRestore(uint256 survivor, uint256[] memory restored) private {
+    /// @dev Pops `survivor`'s newest recorded pre-compose hash, mirroring the on-chain LIFO record
+    ///      stack, and returns it. Sets `restoreMismatch` when the harness stack is already empty,
+    ///      which means the tracked stack drifted from the on-chain one.
+    function _popPreHash(uint256 survivor) private returns (bytes32 expected) {
         bytes32[] storage stack = _composePreHash[survivor];
         if (stack.length == 0) {
             restoreMismatch = true;
-            return;
+            return bytes32(0);
         }
-        bytes32 expected = stack[stack.length - 1];
+        expected = stack[stack.length - 1];
         stack.pop();
-        if (_hashState(survivor) != expected) restoreMismatch = true;
+    }
+
+    /// @dev Each re-minted input's hash must match the hash taken right before the compose burned
+    ///      it. Callable after the whole decompose transaction has returned: an input's restored
+    ///      state is final once its record is popped, and no later record in the same call touches
+    ///      an id restored by an earlier one.
+    function _checkRestoredInputs(uint256[] memory restored) private {
         for (uint256 i = 0; i < restored.length; ++i) {
             if (_hashState(restored[i]) != _burnedInputHash[restored[i]]) restoreMismatch = true;
         }
+    }
+
+    /// @dev Verifies one `decompose` reversal against what `compose`/`composeMixed` recorded for
+    ///      `survivor`'s most recent still-open record: the survivor's post-decompose hash must
+    ///      match its pre-compose hash, and every re-minted input's hash must match its pre-burn
+    ///      hash. Sets `restoreMismatch` rather than asserting inline, so a real mismatch surfaces
+    ///      as an invariant failure with a shrinkable call sequence.
+    function _checkRestore(uint256 survivor, uint256[] memory restored) private {
+        bytes32 expected = _popPreHash(survivor);
+        if (_hashState(survivor) != expected) restoreMismatch = true;
+        _checkRestoredInputs(restored);
     }
 
     /* ----------------------------- actions ----------------------------- */
@@ -515,10 +529,9 @@ contract Handler is Test, IERC721Receiver {
         } catch {}
     }
 
-    /// @dev Reverse a compose, reviving the inputs to a hostile recipient. Moves no ETH; if the
-    ///      recipient rejects the mint the whole call reverts and the record stays intact. Still
-    ///      pops the tracked record stack (via `_checkRestore`) so it stays in sync with the
-    ///      on-chain compose-record stack for whichever survivor this reaches next.
+    /// @dev Reverse a compose, reviving the inputs to a hostile recipient. Moves no ETH. A
+    ///      recipient that rejects the mint reverts the whole call, leaving the on-chain record
+    ///      intact; the tracked stack is popped only on success, so the two stay in sync.
     function decomposeToHostile(uint256 seed, uint256 recipSeed) public {
         if (liveTokens.length == 0) return;
         uint256 survivor = liveTokens[seed % liveTokens.length];
@@ -640,6 +653,12 @@ contract Handler is Test, IERC721Receiver {
     /// @dev Reverses up to two stacked compose records on one survivor through the batch
     ///      `decomposeMany` entrypoint, instead of `decompose`'s single-record call, by repeating
     ///      the survivor's id `min(depth, 2)` times.
+    ///
+    ///      The survivor is compared against the oldest record popped, not against each one in
+    ///      turn. Unwinding N stacked records in a single call leaves the survivor in its state
+    ///      before the oldest of those composes; the N-1 intermediate states exist only inside the
+    ///      transaction and cannot be read afterwards. Every re-minted input is still checked
+    ///      against its own pre-burn hash, per record.
     function decomposeMany(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 survivor = liveTokens[seed % liveTokens.length];
@@ -655,12 +674,15 @@ contract Handler is Test, IERC721Receiver {
 
         vm.prank(owner);
         try shapes.decomposeMany(ids) returns (uint256[][] memory restored) {
+            bytes32 oldest;
             for (uint256 i = 0; i < restored.length; ++i) {
-                _checkRestore(survivor, restored[i]);
+                oldest = _popPreHash(survivor);
+                _checkRestoredInputs(restored[i]);
                 for (uint256 j = 0; j < restored[i].length; ++j) {
                     _track(restored[i][j]);
                 }
             }
+            if (_hashState(survivor) != oldest) restoreMismatch = true;
         } catch {}
     }
 
@@ -763,8 +785,10 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
     /// @notice Every `decompose`/`decomposeMany` call the handler made restored the survivor and
     ///         every re-minted input to exactly the state hash recorded right before the compose
-    ///         that burned it (`shapeState` plus `svg`). A shrunk failing sequence here is a
-    ///         `decompose` correctness bug, not a handler bug.
+    ///         that burned it (`shapeState` plus `svg`). For a `decomposeMany` unwinding several
+    ///         stacked records on one survivor, the survivor is compared against the oldest record
+    ///         popped, the only one of those states observable once the call returns. A shrunk
+    ///         failing sequence here is a `decompose` correctness bug, not a handler bug.
     function invariant_DecomposeRestoredEveryRecordedState() public view {
         assertFalse(handler.restoreMismatch(), "decompose did not restore a recorded pre-compose state");
     }
