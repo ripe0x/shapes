@@ -6,22 +6,12 @@ import Link from "next/link";
 import { DENOMINATIONS as RENDER_DENOMINATIONS } from "@shared/canonical/denominations";
 import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/canonical/sampling";
 import { localArt, sampleSeed } from "@shared/site/art";
+import { formatMintDate } from "@shared/site/mintOpensIn";
 import { mintGene } from "@shared/previewGene";
 import { SiteFooter } from "@shared/site/SiteFooter";
 
 const LAUNCH_AT = new Date("2026-09-03T12:00:00-04:00").getTime();
 const LAUNCH_AT_LABEL = "September 3, 12:00 PM ET";
-
-/** Local date/time label for a non-mainnet `mintStart`, e.g. on the Sepolia app site. */
-function formatMintDate(ms: number): string {
-  return new Date(ms).toLocaleString("en-US", {
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    timeZoneName: "short",
-  });
-}
 
 const TIERS = [
   { value: "0.01", grid: "5 × 5", marks: 25 },
@@ -190,7 +180,9 @@ function TierCard({ tier, index }: { tier: (typeof TIERS)[number]; index: number
 }
 
 function useCountdown(targetMs: number) {
-  const [remaining, setRemaining] = React.useState<number | null>(null);
+  // A target at or before the epoch is open whatever the clock reads, so the server and the first
+  // client render agree on it without waiting for the effect below.
+  const [remaining, setRemaining] = React.useState<number | null>(targetMs <= 0 ? 0 : null);
 
   React.useEffect(() => {
     const update = () => setRemaining(Math.max(0, targetMs - Date.now()));
@@ -285,7 +277,12 @@ export function LaunchLanding({
   const targetMs = mintStartSeconds === undefined ? LAUNCH_AT : Number(mintStartSeconds) * 1000;
   const countdown = useCountdown(targetMs);
   const live = countdown.live;
-  const dateLabel = mintStartSeconds === undefined ? LAUNCH_AT_LABEL : formatMintDate(targetMs);
+  // The server and the browser run in different time zones, so the label is rendered in UTC until
+  // the countdown's first tick, which happens only in the browser.
+  const dateLabel =
+    mintStartSeconds === undefined
+      ? LAUNCH_AT_LABEL
+      : formatMintDate(targetMs, countdown.ready ? undefined : "UTC");
 
   return (
     <main className={header ? "launch-page launch-page--header" : "launch-page"}>

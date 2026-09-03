@@ -13,6 +13,20 @@ export function mintOpensIn(nowMs: number, mintStartSeconds: bigint): MintOpenSt
   return {open: secondsLeft <= 0, secondsLeft};
 }
 
+/** Date and time label for a `mintStart`. `timeZone` names the zone to render it in; without one
+ *  the runtime's own zone is used, and a server and a browser in different zones produce different
+ *  text. Server-rendered markup passes a zone so the first client render matches. */
+export function formatMintDate(ms: number, timeZone?: string): string {
+  return new Date(ms).toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+    timeZone,
+  });
+}
+
 /** "H:MM:SS" for a countdown line; drops the hours place under an hour. */
 export function formatCountdown(secondsLeft: number): string {
   const s = Math.max(0, Math.floor(secondsLeft));
