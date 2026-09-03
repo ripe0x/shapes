@@ -675,7 +675,7 @@ After a real broadcast, the wrapper reads the broadcast artifact, reads back eve
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
 `indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
-`mintFeeWei`, `mintStart`, `fromBlock`, `auctionId`). Cutover to the site is a file copy. `deployments/31337.json` is
+`mintFeeWei`, `mintStart`, `fromBlock`, `auctionId`, `artistReleaseHash`). Cutover to the site is a file copy. `deployments/31337.json` is
 gitignored; Sepolia and mainnet records are committed.
 
 Setting `LIST_OWNER_TOKEN=1` (as a shell export, which wins over the env file, or set directly in
@@ -690,13 +690,20 @@ new broadcast; if the owner token is already listed it is reported and skipped r
 refused. The resulting auction id, or `null` when nothing was listed, is recorded as `auctionId`
 in `deployments/<chainId>.json`.
 
-For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
-digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
-Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the already-decided
-32-byte `SHAPES_RELEASE_HASH`; document what that hash commits to before signing. The deploy
-wrapper's reported Shapes deployment transaction hash is the `releaseHash` used in this signing
-ceremony. Never issue multiple valid signatures for competing hashes because any relayer holding
-one can submit it first.
+Setting `ATTEST_ARTIST=1` opts into signing and submitting the one-time artist attestation as a
+post-broadcast step of `script/deploy.sh`, after the readback and listing steps. It reads back
+every binding, displays the exact EIP-712 digest, simulates the call, requires an explicit
+confirmation, signs and broadcasts through the same wallet the deploy used, and verifies the
+permanent result. The release hash defaults to the Shapes deployment transaction hash reported by
+the wrapper; `SHAPES_RELEASE_HASH` overrides it with an already-decided 32-byte hash (document what
+it commits to before signing), and a value that disagrees with the deployment tx prints a loud
+warning. The signer must be `artist()` on the deployed Shapes, or the wrapper refuses. Keystore
+targets always prompt to retype the release hash before signing; `ATTEST_CONFIRM=<hash>` skips
+that prompt on the anvil target only, for non-interactive e2e runs. If `artistReleaseHash()` is
+already nonzero the step is skipped rather than refused, so `RESUME=1` can revisit an
+already-attested chain. `DRY_RUN=1` prints what would be signed and submits nothing. Never issue
+multiple valid signatures for competing hashes because any relayer holding one can submit it
+first.
 
 `Deploy.s.sol` also proves the lens previews what the token executes. `ShapeLens.previewCompose`
 matches `Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the
