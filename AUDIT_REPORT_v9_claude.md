@@ -27,13 +27,15 @@ reproducible and is reported again.
 | --- | --- |
 | `forge build --sizes` | compiles; `Shapes` 22,460 runtime (2,116 margin), `ShapeRenderer` 23,256 (1,320), `RecompositionOps` 12,146, `ShapeAuctionHouse` 8,015, `ShapeCollection` 6,753, `GeometrySampling` 4,714 |
 | `forge test` (baseline, before this audit's tests) | 618 passed, 0 failed, 4 skipped |
-| `forge test` (with `test/audit/V9*`) | 660 passed, 0 failed, 4 skipped |
-| `FOUNDRY_PROFILE=testnet forge test` | 659 passed, **1 failed**, 4 skipped — `invariant_DecomposeRestoredEveryRecordedState`, fuzz seed `0x9cedeff0a97ee43e647fbb4a77c1d15aa221d07bfe2a226aac333b7b748642eb`. Diagnosed as a defect in the invariant handler, not in the contract: finding V9-6 |
+| `forge test`, first run with `test/audit/V9*` | 660 passed, 0 failed, 4 skipped |
+| `FOUNDRY_PROFILE=testnet forge test` | 659 passed, **1 failed**, 4 skipped — `invariant_DecomposeRestoredEveryRecordedState`, fuzz seed `0x9ced…42eb`. Diagnosed as a defect in the invariant handler, not in the contract: finding V9-6 |
+| `forge test`, second run with the replay tests added | 663 passed, **1 failed**, 4 skipped — the same invariant, on a different random seed (`0x23c0…3c9e`) |
 
-The invariant failure is seed-dependent, not profile-dependent: the same seventeen-call sequence
-reproduces it under both profiles (`test/audit/V9InvariantReplay.t.sol`). The default-profile run
-above passed only because its randomly chosen seed never reached the sequence shape that triggers
-it.
+The invariant failure is neither profile-dependent nor rare. It appeared on the testnet profile
+first, then on the default profile with an unrelated seed, and the seventeen-call sequence that
+produced the first one reproduces under both profiles
+(`test/audit/V9InvariantReplay.t.sol`). Two of the three unseeded `forge test` runs made during
+this audit failed it. Treat the suite as currently red rather than green until V9-6 is fixed.
 
 Not run in this pass: the fork suite, Medusa, and the anvil deploy and lifecycle scripts. They
 were exercised at 7f6ccb5 by the v8 reviews; nothing in the delta touches their inputs, but that
@@ -46,10 +48,11 @@ reserve, mints backing that was never deposited, takes a token they do not own, 
 `address(this).balance >= redeemableBacking() + pendingFees()`, or corrupts the owner token
 pointer.
 
-One invariant did fail during this audit (`invariant_DecomposeRestoredEveryRecordedState`, on one
-fuzz seed). It was traced to the invariant handler and the contract was then verified correct
-against its own records on the exact failing sequence. That is V9-6, and it is the finding to fix
-first, because it is a break in the safety net rather than in the protocol.
+One invariant did fail during this audit
+(`invariant_DecomposeRestoredEveryRecordedState`, on two unrelated fuzz seeds). It was traced to
+the invariant handler and the contract was then verified correct against its own records on the
+exact failing sequence. That is V9-6, and it is the finding to fix first, because it is a break in
+the safety net rather than in the protocol.
 
 | id | severity | title | path:line | impact |
 | --- | --- | --- | --- | --- |
@@ -350,12 +353,13 @@ outside the fuzzer, in either profile:
   unwound through two `Handler.decompose` calls instead of one `decomposeMany`. No mismatch. Only
   the moment the handler's check runs differs.
 
-**Impact.** No ETH, no ownership, no contract behaviour. The cost is to the safety net: the suite
-is not deterministic across seeds and will fail in CI on any run that reaches a `decomposeMany`
-over a depth-2 survivor (rare in random fuzzing, which is why it has not surfaced before), and on
-that path the survivor comparison never tests anything true. A team that sees this failure and
-concludes the invariant is flaky is one step from switching off the check that would catch a real
-decompose regression.
+**Impact.** No ETH, no ownership, no contract behaviour. The cost is to the safety net, and it is
+larger than it looks: two of the three unseeded `forge test` runs made during this audit failed
+this invariant, on unrelated seeds and on different profiles. The suite is red roughly as often as
+it is green. On the `decomposeMany` path the survivor comparison also never tests anything true,
+so the check is both noisy and, for that path, vacuous. A team that sees this failure and concludes
+the invariant is flaky is one step from switching off the check that would catch a real decompose
+regression.
 
 **Recommended fix.** Check the survivor once, against the oldest hash popped, and keep the
 per-record input checks:
