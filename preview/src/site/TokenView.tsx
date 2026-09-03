@@ -113,7 +113,9 @@ export function TokenView({
     return {root, liveIds};
   }, [prov, data?.tokens]);
 
-  const [focusedKey, setFocusedKey] = React.useState<string>("root");
+  // No node is highlighted until the viewer picks one; the root only draws its selection ring
+  // after a click.
+  const [focusedKey, setFocusedKey] = React.useState<string | null>(null);
   const [expandedKeys, setExpandedKeys] = React.useState<ReadonlySet<string>>(new Set());
   React.useEffect(() => {
     setFocusedKey("root");
