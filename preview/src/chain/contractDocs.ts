@@ -19,6 +19,10 @@ export interface DocFunction {
   outputs: DocParam[];
   notice: string;
   dev: string;
+  /** Per-parameter `@param` text, keyed by parameter name. Empty when the source declares none. */
+  params: Record<string, string>;
+  /** Per-return `@return` text, keyed by return name (`_0` for an unnamed one). */
+  returns: Record<string, string>;
   /** The ABI entry to call with. Absent for a library function whose storage-pointer parameters
    *  keep it out of the ABI; such a function is documentation only. */
   abi?: AbiFunction;
@@ -48,6 +52,8 @@ export interface ContractDoc {
 interface NatSpecEntry {
   notice?: string;
   details?: string;
+  params?: Record<string, string>;
+  returns?: Record<string, string>;
 }
 
 interface NatSpecDoc {
@@ -71,6 +77,16 @@ export interface Artifact {
 /** Collapses NatSpec's wrapped continuation lines into one paragraph. */
 export function oneParagraph(text: unknown): string {
   return typeof text === "string" ? text.replace(/\s+/g, " ").trim() : "";
+}
+
+/** NatSpec's `@param`/`@return` map, each entry collapsed to one paragraph, keys sorted. */
+function textMap(entries: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(entries ?? {}).sort()) {
+    const text = oneParagraph(entries![key]);
+    if (text) out[key] = text;
+  }
+  return out;
 }
 
 /** Canonical ABI type of one parameter, tuples expanded to their component list. */
@@ -186,6 +202,8 @@ export function contractDocFromArtifact(name: string, kind: ContractKind, artifa
       outputs: paramsOf(item.outputs),
       notice: oneParagraph(userdoc.methods?.[signature]?.notice),
       dev: oneParagraph(devdoc.methods?.[signature]?.details),
+      params: textMap(devdoc.methods?.[signature]?.params),
+      returns: textMap(devdoc.methods?.[signature]?.returns),
       abi: {
         type: "function",
         name: item.name,
@@ -207,6 +225,8 @@ export function contractDocFromArtifact(name: string, kind: ContractKind, artifa
       outputs: [],
       notice: oneParagraph(userdoc.methods?.[signature]?.notice),
       dev: oneParagraph(devdoc.methods?.[signature]?.details),
+      params: textMap(devdoc.methods?.[signature]?.params),
+      returns: textMap(devdoc.methods?.[signature]?.returns),
     });
   }
 

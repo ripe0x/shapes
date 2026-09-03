@@ -59,7 +59,11 @@ const FIXTURE: Artifact = {
         title: "Fixture",
         details: "A dev\n     paragraph.",
         methods: {
-          "compose(uint256,uint256[])": {details: "Moves no ETH."},
+          "compose(uint256,uint256[])": {
+            details: "Moves no ETH.",
+            params: {burnIds: "The Shapes\n     to burn.", survivorId: "The Shape that survives."},
+            returns: {_0: "The survivor's id."},
+          },
           "setMintFee(AdminOps.FeeConfig storage,uint256)": {details: "Body of `Shapes.setMintFee`."},
         },
         events: {"Composed(uint256,uint256[])": {details: "Emitted from Shapes."}},
@@ -119,6 +123,10 @@ test("functions carry the ABI entry, canonical signature and both NatSpec texts,
     {name: "burnIds", type: "uint256[]"},
   ]);
   assert.deepEqual(compose.outputs, [{name: "", type: "uint256"}]);
+  // @param and @return text is carried per name, collapsed and key-sorted.
+  assert.deepEqual(compose.params, {burnIds: "The Shapes to burn.", survivorId: "The Shape that survives."});
+  assert.deepEqual(compose.returns, {_0: "The survivor's id."});
+  assert.deepEqual(doc.functions[0].params, {});
   // internalType is dropped; the entry is otherwise callable as-is.
   assert.deepEqual(compose.abi, {
     type: "function",

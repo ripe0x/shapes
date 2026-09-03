@@ -1,3 +1,5 @@
+import {parseEther} from "viem";
+
 /**
  * Text-field input to an ABI argument, for the call forms on `/contracts`. Every failure is
  * returned as a message; nothing here throws.
@@ -125,9 +127,14 @@ export function parseArgs(
   return {ok: true, values};
 }
 
-/** Parses the ETH value field of a payable call. Empty means zero. */
-export function parseValueWei(raw: string): ParseResult {
+/** Parses the ETH value field of a payable call to wei. Empty means zero. */
+export function parseEthValue(raw: string): ParseResult {
   const text = raw.trim();
   if (text.length === 0) return {ok: true, value: 0n};
-  return parseArg("uint256", text);
+  if (!/^\d+(\.\d+)?$/.test(text)) return {ok: false, error: "Value must be an ETH amount, for example 0.05"};
+  try {
+    return {ok: true, value: parseEther(text)};
+  } catch {
+    return {ok: false, error: "Value must be an ETH amount, for example 0.05"};
+  }
 }

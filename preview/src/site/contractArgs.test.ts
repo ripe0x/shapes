@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {parseArg, parseArgs, parseValueWei} from "./contractArgs";
+import {parseArg, parseArgs, parseEthValue} from "./contractArgs";
 
 const ok = (type: string, raw: string) => {
   const result = parseArg(type, raw);
@@ -88,8 +88,11 @@ test("parseArgs reports the first bad field by index", () => {
   assert.equal(bad.index, 1);
 });
 
-test("an empty value field on a payable call means zero wei", () => {
-  assert.deepEqual(parseValueWei("  "), {ok: true, value: 0n});
-  assert.deepEqual(parseValueWei("1000"), {ok: true, value: 1000n});
-  assert.equal(parseValueWei("1.5").ok, false);
+test("the payable value field is ETH, converted to wei, and empty means zero", () => {
+  assert.deepEqual(parseEthValue("  "), {ok: true, value: 0n});
+  assert.deepEqual(parseEthValue("1"), {ok: true, value: 1_000_000_000_000_000_000n});
+  assert.deepEqual(parseEthValue("0.05"), {ok: true, value: 50_000_000_000_000_000n});
+  assert.equal(parseEthValue("abc").ok, false);
+  assert.equal(parseEthValue("-1").ok, false);
+  assert.equal(parseEthValue("0x10").ok, false);
 });

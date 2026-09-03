@@ -22,6 +22,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Address allowed to perform administrative actions.",
         "dev": "Independent of `owner()` and of ownership of any Shape.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "admin",
@@ -52,6 +54,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "Gives permission to `to` to transfer `tokenId` token to another account. The approval is cleared when the token is transferred. Only a single account can be approved at a time, so approving the zero address clears previous approvals. Requirements: - The caller must own the token or be an approved operator. - `tokenId` must exist. Emits an {Approval} event.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "approve",
@@ -82,6 +86,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Permanent creator attribution: the address that deployed Shapes.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "artist",
@@ -113,6 +119,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "EIP-712 digest the artist signs for `releaseHash`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "artistAttestationDigest",
@@ -144,6 +152,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Release or artifact hash permanently approved by the artist.",
         "dev": "Zero means the one permitted attestation has not yet been stored.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "artistReleaseHash",
@@ -170,6 +180,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Raw EIP-712 signature permanently stored by the artist; empty before attestation.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "artistSignature",
@@ -200,6 +212,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Permanently store the artist's approval of this deployment and release.",
         "dev": "Anyone may relay the signature. Supports EOAs, EIP-7702 delegated EOAs and ERC-1271 wallets.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "attestArtist",
@@ -235,6 +249,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "ETH backing a live Shape. Black Shapes have no redeemable backing and return zero.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "backingOf",
@@ -271,6 +287,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns the number of tokens in ``owner``'s account.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "balanceOf",
@@ -302,6 +320,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Number of Black Shapes alive now. `sacrifice` raises it; burning a Black Shape for zero lowers it. `burnedBacking`, which counts ETH that has already left, does not move when one is burned.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "blackShapeCount",
@@ -328,6 +348,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Destroy `tokenId` and pay its current `valueOf` to its owner.",
         "dev": "Uses the `IERC721Value` burn surface with stricter authorization: only the current owner may burn. Approved operators must first take ownership through an ERC-721 transfer. Unlike `redeem`, this also destroys a Black Shape, for zero, with no ETH call. Structural burns never route through here.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "burn",
@@ -354,6 +376,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Cumulative backing already sent to the unspendable address by `sacrifice`. This ETH is no longer held by the contract and can never be redeemed. Monotonic.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "burnedBacking",
@@ -389,6 +413,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Deterministic seed assigned to a split child at `childIndex`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "childSeed",
@@ -424,6 +450,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The collection metadata contract, read only by `contractURI`. Replaceable by the admin via `setCollection` until `lockPresentation` freezes it.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "collection",
@@ -459,6 +487,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Compose several Shapes into one. `survivorId` keeps its id and seed and becomes the summed denomination; the `burnIds` are burned into it. All must be owned by the caller and not Black. No ETH moves and no fee is charged. The summed backing must be a valid denomination. Origins are summed onto the survivor. If the owner token is among `burnIds`, ownership moves to `survivorId`.",
         "dev": "Reshapes tokens without moving ETH: the summed backing is unchanged, so `redeemableBacking` needs no adjustment and the reserve invariant holds by construction. `_burn` triggers no receiver callback, so this makes no external call; it is guarded regardless.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "compose",
@@ -499,6 +529,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The survivor's compose-stack depth: how many stacked composes `decompose` can still reverse, newest first. Zero means nothing to decompose.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "composeDepth",
@@ -535,6 +567,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Run several composes in order in one transaction, each recording its own reversible entry. Every id is pre-existing (compose mints nothing and keeps each survivor's id), so a later call may name a survivor an earlier call produced. Bounded by block gas.",
         "dev": "Runs each `(survivorId, burnIds)` compose in order under one reentrancy guard. Compose mints nothing and keeps each survivor's id, so a later call may name a survivor an earlier call in the same batch produced. Each compose pushes its own reversible record. Atomic, and bounded by block gas; the caller sizes the batch.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "composeMany",
@@ -585,6 +619,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "One reversible compose record on `survivorId`'s stack, at `depth` (0 the oldest, `composeDepth(survivorId) - 1` the newest, next in line for `decompose`). Carries the survivor's pre-compose state and every burned input's snapshot: exactly what `decompose` reads to reverse that compose, each donor's materialized module bytes included, so the survivor's post-compose geometry can be reproduced off chain.",
         "dev": "`ownerTokenFrom` on the returned record names the input that held collection ownership before this compose, or `type(uint256).max` when none did. Reverts `ComposeRecordOutOfRange` for a depth at or past `composeDepth(survivorId)`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "composeRecordAt",
@@ -672,6 +708,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Collection-level metadata URI, read from the renderer.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "contractURI",
@@ -703,6 +741,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Reverse the survivor's most recent compose. The survivor keeps its id and seed and reverts to its pre-compose denomination, origin count and gene; every input burned by that compose is re-minted under its original id and seed, to the caller. Caller must own the survivor and it must not be Black. No ETH moves and no fee is charged. Stacked composes reverse newest first (LIFO); reverts `NoComposeRecord` if none remain. If the reversed compose had moved ownership from one of its inputs, ownership restores to that input.",
         "dev": "The inverse of `compose`. Pops the survivor's top compose record: the survivor returns to its pre-compose state and every burned input is re-minted under its original id and seed. `totalMinted` does not move, because those ids are reused. Reuse cannot collide: a fresh mint takes `totalMinted` itself, above every id ever issued. LIFO: stacked composes unwind newest first. Backing is conserved. The owner token move, if this record held one, waits until every restored id exists. See DECOMPOSE_SPEC.md.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "decompose",
@@ -739,6 +779,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Decompose several survivors in order in one transaction, restored inputs to the caller. Repeat an id to pop stacked records; list a nested tree parent-before-child. Bounded by block gas.",
         "dev": "Decomposes each survivor in order under one reentrancy guard. Repeat an id to pop several stacked records. List ids parent-before-child to unwind a nested tree, so a re-minted input exists by the time its own id is reached. Atomic, and bounded by block gas; the caller sizes the batch.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "decomposeMany",
@@ -779,6 +821,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Batch decompose with a caller-selected recipient for every restored input.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "decomposeManyTo",
@@ -823,6 +867,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Reverse the survivor's most recent compose, safely minting the restored inputs to `recipient` instead of the caller. If ownership restores to a restored input, `recipient` becomes the collection owner.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "decomposeTo",
@@ -863,6 +909,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The denomination-ladder index (0..8) currently stored by a live Shape.",
         "dev": "Reverts for a nonexistent id. Black Shapes retain and return apex index 8.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "denomIndexOf",
@@ -899,6 +947,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Backing amount at a denomination index.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "denominationAt",
@@ -930,6 +980,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Number of permanent denominations.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "denominationCount",
@@ -956,6 +1008,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The shared description emitted by both token metadata and `contractURI`.",
         "dev": "Shared by token and collection metadata so the collection cannot describe itself differently from its tokens.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "description",
@@ -987,6 +1041,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Whether `tokenId` is a live Shape right now.",
         "dev": "Never reverts. False for never-issued and burned ids, including ids consumed by compose or replaced by split; true for live Black Shapes.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "exists",
@@ -1018,6 +1074,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Where `withdrawFees` currently forwards accrued fees. Admin-updateable.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "feeRecipient",
@@ -1049,6 +1107,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Stable numeric formation class; metadata strings are presentation only.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "formationOf",
@@ -1085,6 +1145,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns the account approved for `tokenId` token. Requirements: - `tokenId` must exist.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "getApproved",
@@ -1121,6 +1183,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "inkGeneOf",
@@ -1161,6 +1225,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns if the `operator` is allowed to manage all of the assets of `owner`. See {setApprovalForAll}",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "isApprovedForAll",
@@ -1201,6 +1267,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Whether a live token is a Black Shape.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "isBlack",
@@ -1237,6 +1305,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Whether a Shape is Complete: not a Black Shape, above the minimum tier, and carrying one origin per 0.01 unit of backing (`originCount == backing / 0.01`).",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "isComplete",
@@ -1273,6 +1343,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Whether `amountWei` is one of the nine supported denominations.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "isSupportedDenomination",
@@ -1304,6 +1376,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Permanently freeze one explicit pointer. Admin only; may lock it at zero.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "lockPointer",
@@ -1325,6 +1399,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Permanently lock presentation. Admin only, one way. After this the renderer, the collection and the metadata copy are all fixed: `setRenderer`, `setCollection` and `setMetadataCopy` revert `PresentationIsLocked`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "lockPresentation",
@@ -1350,6 +1426,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The optional canonical market and whether its pointer is permanently locked.",
         "dev": "A zero target means none is configured. A true lock is permanent, including at zero.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "market",
@@ -1385,6 +1463,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Mint one Shape backed by `amountWei`, to the caller.",
         "dev": "`msg.value` must equal exactly `amountWei + mintFee()`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "mint",
@@ -1425,6 +1505,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Mint `quantity` Shapes, each backed by `amountWei`, to the caller.",
         "dev": "`msg.value` must equal exactly `quantity * (amountWei + mintFee())`. Each token receives a distinct id and a distinct seed.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "mintBatch",
@@ -1473,6 +1555,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Mint `quantity` Shapes, each backed by `amountWei`, to `to`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "mintBatchTo",
@@ -1512,6 +1596,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Flat fee in wei for every Shape created, charged on top of backing. Never enters backing. Set at construction and admin-adjustable afterward via `setMintFee`. The cap, enforced at construction and by `setMintFee`, is one denomination unit, `unit()`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "mintFee",
@@ -1538,6 +1624,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Unix timestamp at or after which public minting opens. Zero opens minting immediately. Immutable, set at construction.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "mintStart",
@@ -1573,6 +1661,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Mint one Shape backed by `amountWei`, to `to`.",
         "dev": "The recipient does not feed the seed, so naming one cannot be used to search for a particular artwork. `to` must be able to receive an ERC721.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "mintTo",
@@ -1613,6 +1703,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A live Shape's stored module array (`ModuleCodec`), empty when its geometry derives from `seed` under grammar v1.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "modulesOf",
@@ -1644,6 +1736,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns the token collection name.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "name",
@@ -1675,6 +1769,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Independent direct-mint origins credited to a live Shape (one per mint, conserved).",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "originCountOf",
@@ -1706,6 +1802,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Holder of the current owner token, or zero if it no longer exists.",
         "dev": "This address has no administrative authority. Ownership follows the owner token through `compose`, `decompose` and `split`. Redeeming or burning it ends collection ownership permanently: this returns zero and no other token inherits.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "owner",
@@ -1737,6 +1835,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns the owner of the `tokenId` token. Requirements: - `tokenId` must exist.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "ownerOf",
@@ -1768,6 +1868,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The id of the current owner token.",
         "dev": "Reverts `NoOwnerToken` once the owner token has been redeemed or burned.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "ownerToken",
@@ -1794,6 +1896,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Mint fees accrued and not yet withdrawn. Never part of `redeemableBacking`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "pendingFees",
@@ -1825,6 +1929,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The position the configured positions contract reports for `tokenId`, or zero.",
         "dev": "The positions contract is untrusted. A revert, an out-of-gas, a return that is not one word, and a word with bits set above the address all resolve to zero. Its only power is to mislead callers of this view.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "positionOf",
@@ -1860,6 +1966,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The optional canonical positions contract and whether its pointer is permanently locked.",
         "dev": "A zero target means none is configured. A true lock is permanent, including at zero.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "positions",
@@ -1890,6 +1998,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Whether presentation has been permanently locked. True freezes the renderer, the collection and the metadata copy.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "presentationLocked",
@@ -1929,6 +2039,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The state `compose(survivorId, burnIds)` would leave on the survivor if `account` called it now. Writes nothing.",
         "dev": "Applies compose's own rules against `account`: every token must exist, be held by `account` and not be Black, the survivor cannot be among `burnIds`, no id may repeat, and the summed backing must land on a denomination. Same errors, same order, same sampling code as `compose`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "previewCompose",
@@ -2019,6 +2131,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The children `split(tokenId, outDenoms)` would mint if `account` called it now, one entry per `outDenoms` index. Writes nothing.",
         "dev": "Applies split's own rules against `account`: the token must exist, be held by `account` and not be Black, there must be at least two outputs, and they must sum to the token's backing. Child ids are not predicted, because they depend on `totalMinted` at the time the split executes.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "previewSplit",
@@ -2084,6 +2198,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Burn a Shape and receive exactly its backing.",
         "dev": "Owner only, which fixes the payout destination. An approved operator reaches the same outcome by transferring the Shape to itself and redeeming in the same transaction, so approval is economically equivalent to granting redemption rights. Redeeming the owner token ends collection ownership permanently.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "redeem",
@@ -2115,6 +2231,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Burn several Shapes owned by the caller and receive the exact total backing.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "redeemBatch",
@@ -2155,6 +2273,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Batch redemption with a caller-selected ETH recipient.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "redeemBatchTo",
@@ -2194,6 +2314,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Redeem a caller-owned Shape and send its exact backing directly to `recipient`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "redeemTo",
@@ -2224,6 +2346,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "ETH available to redeem now, across every live non-Black Shape.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "redeemableBacking",
@@ -2250,6 +2374,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The onchain renderer. Replaceable by the admin via `setRenderer` until locked.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "renderer",
@@ -2271,6 +2397,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "renounceAdmin",
@@ -2305,6 +2433,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "EIP-2981 royalty, permanently zero.",
         "dev": "Declared rather than omitted so a marketplace reading the standard is told the rate instead of falling back to its own default.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "royaltyInfo",
@@ -2344,6 +2474,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Permanently sacrifice an apex Complete Shape's backing, turning it into a Black Shape. Owner only, one way. The token keeps its id, seed and geometry; its backing is sent to an unspendable address and it becomes non-redeemable and non-recomposable. The resulting zero-value Black Shape stays transferable and may be burned for zero.",
         "dev": "Only a complete apex Shape may be sacrificed. It becomes Black, its backing leaves `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH is sent to the fixed unspendable address. The token stays alive but can no longer redeem ETH. CEI: the token is marked Black before the transfer, which is last.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "sacrifice",
@@ -2378,6 +2510,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "Safely transfers `tokenId` token from `from` to `to`, checking first that contract recipients are aware of the ERC-721 protocol to prevent tokens from being forever locked. Requirements: - `from` cannot be the zero address. - `to` cannot be the zero address. - `tokenId` token must exist and be owned by `from`. - If the caller is not `from`, it must have been allowed to move this token by either {approve} or {setApprovalForAll}. - If `to` refers to a smart contract, it must implement {IERC721Receiver-onERC721Received}, which is called upon a safe transfer. Emits a {Transfer} event.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "safeTransferFrom",
@@ -2424,6 +2558,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "Safely transfers `tokenId` token from `from` to `to`. Requirements: - `from` cannot be the zero address. - `to` cannot be the zero address. - `tokenId` token must exist and be owned by `from`. - If the caller is not `from`, it must be approved to move this token by either {approve} or {setApprovalForAll}. - If `to` refers to a smart contract, it must implement {IERC721Receiver-onERC721Received}, which is called upon a safe transfer. Emits a {Transfer} event.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "safeTransferFrom",
@@ -2467,6 +2603,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The immutable visual seed of a live Shape.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "seedOf",
@@ -2502,6 +2640,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "Approve or remove `operator` as an operator for the caller. Operators can call {transferFrom} or {safeTransferFrom} for any token owned by the caller. Requirements: - The `operator` cannot be the address zero. Emits an {ApprovalForAll} event.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "setApprovalForAll",
@@ -2532,6 +2672,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Replace the collection metadata contract. Admin only, and only while unlocked. Read only by `contractURI`; it can never touch ETH, backing or ownership. `newCollection` must carry code and support `IShapeCollection`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "setCollection",
@@ -2558,6 +2700,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Redirect future mint fees. Already-accrued fees and the reserve are unaffected.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "setFeeRecipient",
@@ -2588,6 +2732,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Atomically set the token name prefix and the description shared with `contractURI`. Admin only. Emits both ERC-4906 `BatchMetadataUpdate` and `ContractURIUpdated`.",
         "dev": "Written verbatim into metadata JSON, so all arguments must be well-formed UTF-8, length-capped (64-byte names, 2048-byte description), and free of bytes JSON forbids unescaped (`\"`, `\\`, C0 controls). Reverts `PresentationIsLocked` once `lockPresentation` has been called.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "setMetadataCopy",
@@ -2618,6 +2764,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Change the flat per-Shape mint fee. Takes effect for every later mint and for the auction house's ETH-bid card minting, which reads the fee live. Reverts above the cap, one denomination unit (`IShapes.unit`).",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "setMintFee",
@@ -2648,6 +2796,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Set, replace or clear one explicit pointer. Admin only while that pointer is unlocked.",
         "dev": "Zero clears it. A nonzero target must contain code and answer ERC-165 for the interface its reader calls: `IShapePositionResolver` for positions, `IShapeAuctionHouse` for the market. No other call to the target ever occurs.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "setPointer",
@@ -2678,6 +2828,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Replace the onchain renderer. Admin only, and only while unlocked. The renderer is read only by `tokenURI`; changing it affects how a Shape looks, never its backing, redeemability or owner. `newRenderer` must carry code.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "setRenderer",
@@ -2709,6 +2861,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Every protocol fact about one live Shape in a single read.",
         "dev": "Reverts for an id that does not exist.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "shapeState",
@@ -2787,6 +2941,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Split a Shape into the denominations in `outDenoms`, which must sum to its backing. The input is burned; each output is a fresh id with a seed derived from the input's seed. No ETH moves and no fee is charged. Origins are partitioned across the outputs, each output filled to capacity in listed order. If the input is the owner token, ownership moves to the first output.",
         "dev": "Burns the input and mints outputs whose backing sums to the input's, so `redeemableBacking` is untouched. Child seeds derive from the parent seed, fixing the whole split tree at mint. All accounting precedes the `_safeMint` loop, so a receiver callback sees consistent state.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "split",
@@ -2851,6 +3007,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The split that minted `childId`: the parent's id, pre-split seed, denomination index, ink gene and effective module snapshot, the root split ancestor's denomination index, plus `childId`'s index among that split's outputs.",
         "dev": "`parentModules` is kept for provenance. Reproducing the child's sampled module bytes needs the branch decision `parentId` enables, not `parentModules`: `composeDepth(parentId)` selects between the compose-record pool and the grammar pool. See SAMPLING_SPEC.md. The record is written once per split and shared by every child of that split; only `childIndex` distinguishes them. It is never deleted, so it keeps answering how the token was created even after the child is composed or split again. Reverts `NotASplitChild` for a token that was never minted by `split`/`splitTo`, which covers an original mint and an input re-minted by `decompose`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "splitOriginOf",
@@ -2919,6 +3077,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Split a caller-owned Shape and safely mint every child to `recipient`. If the input is the owner token, `recipient` becomes the collection owner.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "splitTo",
@@ -2963,6 +3123,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "supportsInterface",
@@ -2994,6 +3156,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns the token collection symbol.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "symbol",
@@ -3020,6 +3184,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The per-token metadata name prefix. A token's `name` is this followed by its id. Admin-editable via `setMetadataCopy` until `lockPresentation` freezes it.",
         "dev": "Admin-editable via `setMetadataCopy`, written verbatim into every token's metadata. Frozen by `lockPresentation`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "tokenNamePrefix",
@@ -3051,6 +3217,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Fully onchain metadata. Base64 JSON containing a base64 SVG.",
         "dev": "Original mints use seed-based geometry (grammar v1). Compose survivors and split children carry stored sampled geometry (grammar v2) and use the sampled path. A split child always carries stored geometry, so its split provenance traits only ever reach the renderer through the sampled path.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "tokenURI",
@@ -3082,6 +3250,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The id counter: the next id to be issued, and one past the highest id ever issued (ids start at 0). Not a live-supply or mint count: `decompose` re-mints ids without advancing it, and burns do not decrease it. Use `totalSupply` for the live count.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "totalMinted",
@@ -3108,6 +3278,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Number of live Shapes.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "totalSupply",
@@ -3134,6 +3306,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "transferAdmin",
@@ -3168,6 +3342,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "",
         "dev": "Transfers `tokenId` token from `from` to `to`. WARNING: Note that the caller is responsible to confirm that the recipient is capable of receiving ERC-721 or else they may be permanently lost. Usage of {safeTransferFrom} prevents loss, though the caller must understand this adds an external call which potentially creates a reentrancy vulnerability. Requirements: - `from` cannot be the zero address. - `to` cannot be the zero address. - `tokenId` token must be owned by `from`. - If the caller is not `from`, it must be approved to move this token by either {approve} or {setApprovalForAll}. Emits a {Transfer} event.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "transferFrom",
@@ -3207,6 +3383,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Unicode rendering of a live Shape's module grid, cells separated by spaces and rows by newlines.",
         "dev": "For display. Machine-readable geometry is `IShapeGeometry` on `renderer()`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "unicodeCard",
@@ -3238,6 +3416,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Smallest denomination and accounting unit, 0.01 ETH.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "unit",
@@ -3269,6 +3449,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Native ETH the current owner would receive by burning `tokenId` now.",
         "dev": "Reverts for nonexistent token IDs.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "valueOf",
@@ -3295,6 +3477,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Forward every accrued mint fee to the current `feeRecipient`. Callable by anyone; the destination is always the recipient at the time of the call. Reverts `NoFeesPending` when nothing has accrued. A recipient that reverts on receipt makes only this call revert; minting is never affected, and the admin can redirect `feeRecipient` and retry.",
         "dev": "The recipient is read before the transfer. An admin contract that is also the fee recipient could redirect itself from its own `receive` hook, but the event and the transfer must name the address that actually received this withdrawal.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "withdrawFees",
@@ -4467,6 +4651,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "cardGeometry",
@@ -4575,6 +4761,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "`cardGeometry`, reading a materialized module array instead of a seed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "cardGeometrySampled",
@@ -4655,6 +4843,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Resolve a token into its full geometric description.",
         "dev": "Draw order, consensus critical (SPEC.md D5): 1. fill : always (consumed and discarded; see below) then per cell, row-major: 2. kind : always 3. solid : always 4. rotation : only when the kind takes more than one orientation `wRatio` is the constant `WRATIO` and takes no draw. The conditional consumption is load-bearing. Drawing unconditionally would desynchronise the stream and change every subsequent cell on the card. Ink genes (INK_GENES_IMPL_SPEC.md §4.2): the card-level fill draw is superseded by `inkGene`. The draw still happens, the stream must keep consuming it, but its value is discarded; `solidProbability` comes from `InkGenes.geneProbabilityAt` instead.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "compose",
@@ -4783,6 +4973,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Resolve a materialized token into its full geometric description (grammar v2).",
         "dev": "`modules` is a stored byte array (`ModuleCodec`), one byte per cell in row-major grid order; its length must equal the grid's cell count for `amountWei`. Position, size and weight derive from the grid and card constants exactly as `compose`; only the module identities (kind, solid, rotation) come from `modules` instead of a seed draw, so no `Round03Rand` stream runs here. `solidProbability` is still set from `inkGene`, as metadata: no solid draws occur on this path.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "composeSampled",
@@ -4898,6 +5090,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "grammarHash",
@@ -4924,6 +5118,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "grammarVersion",
@@ -4991,6 +5187,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The metadata JSON for a token, with the SVG inlined as a base64 data URI.",
         "dev": "`originCount` and `inverted` drive the provenance traits (Formation, Independent Origins, Origin Density, Complete, Black). `inverted` is the token's Black state. `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait. `composeDepth` is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait; it is the one input that is mutable chain state rather than fixed at mint. `namePrefix` and `description` are the editorial copy the caller supplies. `ownerToken` names the collection owner token: `true` appends `, Contract Owner` to `namePrefix` plus the decimal token id and adds a value-only `{\"value\":\"Contract Owner\"}` attribute (no `trait_type`); `false` uses `namePrefix` plus the decimal token id, with no such attribute. `description` is emitted verbatim. The renderer neither stores nor escapes caller-supplied copy; the caller owns its content.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "metadataJSON",
@@ -5103,6 +5301,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "`metadataJSON`, reading a materialized module array instead of a seed.",
         "dev": "`splitInfo` is the extra argument over `metadataJSON`: a split child always carries materialized geometry, so \"Split From\" / \"Split Origin\" are only ever plumbed through this sampled path, never the seed-based one. `Shapes.tokenURI` passes the all-zero, non-split value for every other sampled token (a compose survivor with no split ancestry of its own).",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "metadataJSONSampled",
@@ -5229,6 +5429,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "moduleAt",
@@ -5337,6 +5539,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "`moduleAt`, reading a materialized module array instead of a seed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "moduleAtSampled",
@@ -5417,6 +5621,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The module glyph sequence used as the `Modules` trait.",
         "dev": "The glyph stream depends on `inkGene` through the same solid/outline draws `renderSVG` uses, so it takes the same argument.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "moduleSequence",
@@ -5469,6 +5675,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "`moduleSequence`, reading a materialized module array instead of a seed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "moduleSequenceSampled",
@@ -5525,6 +5733,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The complete SVG document for a token.",
         "dev": "A Shape carries no type: a field, marks, nothing else. The denomination and the token number live in the metadata, not on the card face. `inverted` swaps the field and mark colors: false is a dark field with light marks, true is the exact inverse used by the Black Shape. Geometry and coordinates are identical between the two.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "renderSVG",
@@ -5585,6 +5795,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "`renderSVG`, reading a materialized module array instead of a seed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "renderSVGSampled",
@@ -5641,6 +5853,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The canonical module glyphs arranged in the Shape's denomination grid.",
         "dev": "Cells are separated by one ASCII space and rows by one `\\n`, with no trailing separator. This is a human-readable view of the same modules returned by `moduleSequence`; contracts should use `IShapeGeometry.moduleAt` for structured data.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "renderUnicode",
@@ -5693,6 +5907,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "`renderUnicode`, reading a materialized module array instead of a seed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "renderUnicodeSampled",
@@ -5737,6 +5953,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns true if this contract implements the interface defined by `interfaceId`. See the corresponding https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[ERC section] to learn more about how these ids are created. This function call must use less than 30 000 gas.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "supportsInterface",
@@ -5809,6 +6027,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A base64 `data:application/json` URI wrapping `metadataJSON`.",
         "dev": "`ownerToken` names the collection owner token: `true` appends `, Contract Owner` to `namePrefix` plus the decimal token id and adds a value-only `Contract Owner` attribute; `false` uses `namePrefix` plus the decimal token id, with no such attribute.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "tokenURI",
@@ -5921,6 +6141,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A base64 `data:application/json` URI wrapping `metadataJSONSampled`.",
         "dev": "`ownerToken` names the collection owner token, as in `tokenURI`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "tokenURISampled",
@@ -6106,6 +6328,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A card at `denomIndex`, seeded by the current block.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "card",
@@ -6146,6 +6370,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The card `seed` and `denomIndex` produce, with the ink gene derived exactly as a mint would derive it. No token is involved.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "cardFor",
@@ -6190,6 +6416,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Contract-level metadata URI, as a base64 `data:application/json`.",
         "dev": "`name` and `description` are the editorial copy the caller supplies, emitted verbatim; the `image` is generated here. `Shapes` stores that copy and passes it through.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "contractURI",
@@ -6225,6 +6453,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The collection image at the current block's seed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "image",
@@ -6256,6 +6486,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The collection image at `root`: a looping filmstrip of one frame per denomination and variant, stepped one frame at a time inside a one-frame window, on a square white ground with the card inset, rounded and shadowed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "imageFor",
@@ -6296,6 +6528,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The contract-level metadata JSON: `name` and `description` from the caller, `image` inline.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "json",
@@ -6331,6 +6565,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The renderer every output is drawn through.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "renderer",
@@ -6357,6 +6593,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The current block's seed. Advances once per block, so any two calls in the same block agree. Pass it to `imageFor` or `cardFor` to pin an output permanently.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "seed",
@@ -6388,6 +6626,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Returns true if this contract implements the interface defined by `interfaceId`. See the corresponding https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[ERC section] to learn more about how these ids are created. This function call must use less than 30 000 gas.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "supportsInterface",
@@ -6454,6 +6694,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The largest number of cards one bidder may have escrowed on one auction. A minimal set never needs more than twenty for any amount below 100 ETH, so this is headroom, not a constraint.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "MAX_CARDS_PER_BID",
@@ -6480,6 +6722,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The longest an auction may run. `createAuction` rejects a longer duration, and an `extensionWindow` larger than the duration.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "MAX_DURATION",
@@ -6506,6 +6750,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Number of auctions ever created. Ids are issued from 0.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "auctionCount",
@@ -6537,6 +6783,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "auctions",
@@ -6626,6 +6874,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Bid with Shapes, with ETH, or with both.",
         "dev": "`cardIds` are transferred in and valued at `backingOf`, which is zero for a Black Shape and so rejects one. `ethBackingWei` is minted into the minimal card set for that amount, which costs one flat Shapes mint fee per generated card; send exactly `mintCostFor(ethBackingWei)`. A bidder already holding the standing bid adds to it rather than replacing it.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "bid",
@@ -6669,6 +6919,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A bidder's escrowed total, in `UNIT` multiples.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "bidUnits",
@@ -6704,6 +6956,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Close an auction that never received a bid. Seller only. Records the outcome and moves nothing; the seller then pulls the lot back with `claimLot`.",
         "dev": "Records the close and returns nothing. The seller pulls the lot back with `claimLot`, which `highestBidder == address(0)` directs to them rather than to a winner. `nonReentrant` as defense in depth: `_takeBid`'s escrow mint accrues the Shapes fee to `pendingFees` rather than calling out to the fee recipient, so `bid` no longer holds a half-written auction across an external call to an arbitrary contract. The guard states the exclusion on the function regardless, so a later change to `bid` that reintroduces a callback is refused here even if it carries no guard of its own.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "cancelAuction",
@@ -6735,6 +6989,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The minimal card set for `backingWei`: `counts[i]` cards at denomination `i`. Reverts unless `backingWei` is a whole multiple of `UNIT`.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "cardsFor",
@@ -6766,6 +7022,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Take delivery of the lot: the winner once the auction has settled, or the seller of an auction that was cancelled unsold.",
         "dev": "`highestBidder` partitions the two outcomes: `settle` requires a bid and so leaves it set, `cancelAuction` requires none and so leaves it zero. Marked claimed before the transfer, so a collection that calls back finds nothing left to take twice.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "claimLot",
@@ -6792,6 +7050,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Pull the winning bid. Seller only, after settlement.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "claimProceeds",
@@ -6843,6 +7103,14 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Escrow an ERC721 and open an auction on it, priced in Shapes. The clock starts at the first bid, so an auction cannot expire unsold because nobody was watching on day one.",
         "dev": "The lot is escrowed with `transferFrom` rather than `safeTransferFrom`, so the house takes no receiver callback for it. The ownership check after the transfer binds an honest collection: a `transferFrom` that returns without moving anything is caught, as is a token the seller did not own. It does not bind a collection that also reports `ownerOf` falsely, and nothing on chain does. What bounds that case is the shape of the contract rather than a check inside it: `nft` is called here and in `claimLot`, and nowhere those calls can reach does anyone but the seller and the winner have something at stake.",
+        "params": {
+          "duration": "Seconds the auction runs for once the first bid lands. At most `MAX_DURATION`.",
+          "extensionWindow": "A bid inside this many seconds of the end pushes the end out by it. At most `duration`.",
+          "minIncrementBps": "How far a bid must clear the standing one, in basis points.",
+          "nft": "The collection the lot belongs to. Must have code and report the ERC721 interface under ERC165. That check rejects a wrong address, which is the common mistake; it does not bind a contract written to answer it falsely.",
+          "reserveUnits": "Smallest winning bid, in `UNIT` multiples."
+        },
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "createAuction",
@@ -6903,6 +7171,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The cards a bidder currently has escrowed on an auction.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "escrowedCards",
@@ -6951,6 +7221,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The auction holding `tokenId` of `nft`, if the house currently holds it under one.",
         "dev": "Paired with an existence flag because auction id 0 is a real id, and a bare zero would be indistinguishable from no auction.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "getAuctionFor",
@@ -6999,6 +7271,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Whether `tokenId` of `nft` is escrowed here under an auction that has not yet released it. Cheaper than `getAuctionFor` when the id is not needed.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "hasAuctionFor",
@@ -7039,6 +7313,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The smallest bid that would take the lead right now, in `UNIT` multiples.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "minimumBid",
@@ -7075,6 +7351,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Exact ETH required to mint the minimal card set for `backingWei`.",
         "dev": "Returns backing plus one flat Shapes mint fee for every card `cardsFor` produces.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "mintCostFor",
@@ -7123,6 +7401,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "Accepts a Shape only when it is minted here (`from == address(0)`) while a bid is minting one. An inbound `safeTransferFrom` carries a nonzero `from` and is refused: bidding by sending a card here directly is unsupported on purpose, since a bid must be one transaction, so that what it totals is compared against the standing bid exactly once. A contract fee recipient that gains control from `Shapes.withdrawFees` cannot push its own Shape in through this path either: `from` there is the recipient itself, not the zero address.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "onERC721Received",
@@ -7166,6 +7446,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Record the outcome. Permissionless once the auction has ended. An auction that never received a bid never ends; the seller exits it with `cancelAuction`.",
         "dev": "Touches no collection, so it cannot be made to revert by the lot and the outcome is always recordable. `nonReentrant` bars entry from a call already inside the house. It calls nothing itself, so the guard is not load-bearing today: `bid`'s pre-check requires `a.endTime == 0 || block.timestamp < a.endTime` and this requires the negation, so no transaction can reach both. It holds the same rule on both auction-closing paths, at one cold storage slot per call.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "settle",
@@ -7192,6 +7474,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The Shapes contract every bid is denominated in.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "shapes",
@@ -7223,6 +7507,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "ERC-165. Answers for `IShapeAuctionHouse` and `IERC165`.",
         "dev": "`Shapes.setPointer` requires the market pointer's target to answer for `IShapeAuctionHouse` before it will store the address.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "supportsInterface",
@@ -7254,6 +7540,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Pull back the cards of a bid that is no longer leading.",
         "dev": "Available to every bidder except the standing leader, whose cards are the live bid. Once settled the leader has become the winner and their cards belong to the seller, so the same check covers both phases.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "withdraw",
@@ -7768,7 +8056,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.compose`: record the inputs, fold them into the survivor, and write the survivor's new denomination, origin count, ink gene and sampled geometry.",
-        "dev": "`Shapes` has already rejected repeats, gated every token and burned each input, so each `burnIds` entry is a token the caller owned and this call still has the state of. `ownerTokenFrom` is the owner token's id plus one when one of the inputs held collection ownership, else zero; it is stored so `decompose` can hand ownership back."
+        "dev": "`Shapes` has already rejected repeats, gated every token and burned each input, so each `burnIds` entry is a token the caller owned and this call still has the state of. `ownerTokenFrom` is the owner token's id plus one when one of the inputs held collection ownership, else zero; it is stored so `decompose` can hand ownership back.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "composeRecordAt",
@@ -7777,7 +8067,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.composeRecordAt`: one reversible compose record, decoded.",
-        "dev": "`ownerTokenFrom` is returned as a token id, or `type(uint256).max` when that compose moved no collection ownership. The id-plus-one form the record stores is never returned."
+        "dev": "`ownerTokenFrom` is returned as a token id, or `type(uint256).max` when that compose moved no collection ownership. The id-plus-one form the record stores is never returned.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "decompose",
@@ -7786,7 +8078,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.decompose`: pop the survivor's newest compose record, restore the survivor's pre-compose state and rewrite every input burned by that compose.",
-        "dev": "Returns the restored ids for `Shapes` to mint, and the owner token id plus one when the reversed compose had taken collection ownership from one of those inputs, else zero. Ownership is restored by `Shapes` after the mints, so no receiver callback can see `ownerToken()` naming an id that does not exist yet."
+        "dev": "Returns the restored ids for `Shapes` to mint, and the owner token id plus one when the reversed compose had taken collection ownership from one of those inputs, else zero. Ownership is restored by `Shapes` after the mints, so no receiver callback can see `ownerToken()` naming an id that does not exist yet.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "previewCompose",
@@ -7795,7 +8089,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.previewCompose`: the state that compose would leave on the survivor.",
-        "dev": "Runs the same gates in the same order as `Shapes.compose` and this library's `compose`, against `account` instead of `msg.sender`, then the same `ComposeCompute` call over the same donor state. Writes nothing."
+        "dev": "Runs the same gates in the same order as `Shapes.compose` and this library's `compose`, against `account` instead of `msg.sender`, then the same `ComposeCompute` call over the same donor state. Writes nothing.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "previewSplit",
@@ -7804,7 +8100,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.previewSplit`: the children split would mint, in `outDenoms` order.",
-        "dev": "Runs the same gates in the same order as `Shapes.split` and this library's `split`, against `account` instead of `msg.sender`, and samples each child from the same pool. Writes nothing. Child ids are not predicted: they depend on `totalMinted` at execution."
+        "dev": "Runs the same gates in the same order as `Shapes.split` and this library's `split`, against `account` instead of `msg.sender`, and samples each child from the same pool. Writes nothing. Child ids are not predicted: they depend on `totalMinted` at execution.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "requireDistinctComposeInputs",
@@ -7819,6 +8117,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [],
         "notice": "Reverts `DuplicateComposeInput` if any token id appears twice in `ids`.",
         "dev": "Sorts a memory copy with a bottom-up merge sort and rejects adjacent equals, so the cost is O(n log n) and the answer does not depend on where the repeat sits. `compose` would already fail on the repeat, because `_burn` reverts on the second occurrence of an id it has already burned. This runs first for the named error, and so that `previewCompose`, which burns nothing, rejects the same input with the same error.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "requireDistinctComposeInputs",
@@ -7839,7 +8139,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.shapeState`: every protocol fact about one live Shape.",
-        "dev": "The caller has already required the token to exist."
+        "dev": "The caller has already required the token to exist.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "split",
@@ -7848,7 +8150,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Body of `Shapes.split`: record the parent, allocate origins across the outputs and write every child's state and sampled geometry.",
-        "dev": "`Shapes` has already gated the caller and burned the parent, whose state this call still has. Returns the child ids for `Shapes` to mint last."
+        "dev": "`Shapes` has already gated the caller and burned the parent, whose state this call still has. Returns the child ids for `Shapes` to mint last.",
+        "params": {},
+        "returns": {}
       }
     ],
     "events": [
@@ -8191,7 +8495,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.attestArtist`. Permissionless: anyone may relay the artist's signature, and only the artist can produce one."
+        "dev": "Body of `Shapes.attestArtist`. Permissionless: anyone may relay the artist's signature, and only the artist can produce one.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "lockPointer",
@@ -8200,7 +8506,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.lockPointer`. May lock a pointer at zero, which is permanent."
+        "dev": "Body of `Shapes.lockPointer`. May lock a pointer at zero, which is permanent.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "lockPresentation",
@@ -8209,7 +8517,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection and the metadata copy are all fixed."
+        "dev": "Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection and the metadata copy are all fixed.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "setCollection",
@@ -8218,7 +8528,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setCollection`."
+        "dev": "Body of `Shapes.setCollection`.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "setFeeRecipient",
@@ -8227,7 +8539,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setFeeRecipient`."
+        "dev": "Body of `Shapes.setFeeRecipient`.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "setMetadataCopy",
@@ -8236,7 +8550,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setMetadataCopy`. Takes the presentation pointer for its lock: the copy is part of presentation and freezes with it."
+        "dev": "Body of `Shapes.setMetadataCopy`. Takes the presentation pointer for its lock: the copy is part of presentation and freezes with it.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "setMintFee",
@@ -8245,7 +8561,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setMintFee`."
+        "dev": "Body of `Shapes.setMintFee`.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "setPointer",
@@ -8254,7 +8572,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setPointer`. A nonzero target must answer ERC-165 for the interface its reader calls: `IShapePositionResolver` for positions, which `Shapes.positionOf` staticcalls, and `IShapeAuctionHouse` for the market, which clients call directly. Zero clears the pointer and is always accepted."
+        "dev": "Body of `Shapes.setPointer`. A nonzero target must answer ERC-165 for the interface its reader calls: `IShapePositionResolver` for positions, which `Shapes.positionOf` staticcalls, and `IShapeAuctionHouse` for the market, which clients call directly. Zero clears the pointer and is always accepted.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "setRenderer",
@@ -8263,7 +8583,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setRenderer`. A new renderer changes `tokenURI` for every existing token, so ERC-4906 signals the refresh."
+        "dev": "Body of `Shapes.setRenderer`. A new renderer changes `tokenURI` for every existing token, so ERC-4906 signals the refresh.",
+        "params": {},
+        "returns": {}
       }
     ],
     "events": [
@@ -8600,6 +8922,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "composeSampleAndGene",
@@ -8705,7 +9029,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "`InkGenes.geneAtCompose` and `GeometrySampling.sampleComposeSorted` over the same donor pool, returned together.",
-        "dev": "The survivor's seed, pre-compose denomination and pre-compose gene come from `survivor` itself (`seed`, `denomIndex`, `inkGene`) rather than as separate parameters, since the caller already has them there."
+        "dev": "The survivor's seed, pre-compose denomination and pre-compose gene come from `survivor` itself (`seed`, `denomIndex`, `inkGene`) rather than as separate parameters, since the caller already has them there.",
+        "params": {},
+        "returns": {}
       }
     ],
     "events": [],
@@ -8751,6 +9077,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "buildSplitRecordPool",
@@ -8818,7 +9146,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "A materialized-parent split's sampling pool (SAMPLING_SPEC.md section 6, D3'): the parent's top compose record's donor modules, concatenated in canonical order: the record's pre-compose survivor first, then its inputs. Child-denomination- independent: built once per split call, shared by every child regardless of `outDenoms`.",
-        "dev": "`sortedInputs` must already be sorted ascending by `id` (`sortDonorsById`); this function does not sort. `rec.inputs` is stored in calldata order (`_compose` pushes in loop order), so the caller must sort before calling, or the split result would depend on the compose's original burnIds calldata order, breaking burn-order independence."
+        "dev": "`sortedInputs` must already be sorted ascending by `id` (`sortDonorsById`); this function does not sort. `rec.inputs` is stored in calldata order (`_compose` pushes in loop order), so the caller must sort before calling, or the split result would depend on the compose's original burnIds calldata order, breaking burn-order independence.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "buildSplitRecordPoolSorted",
@@ -8854,6 +9184,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "buildSplitRecordPoolSorted",
@@ -8921,7 +9253,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Sort `inputs` ascending by id and build a split record's pool in one call (SAMPLING_SPEC.md section 6, D3'). Equivalent to `sortDonorsById(inputs)` followed by `buildSplitRecordPool`, but as a single external call from `Shapes` instead of two: `Shapes._buildSplitRecordPool` sends the unsorted record inputs once and gets the pool bytes back directly, the same consolidation `sampleComposeSorted` applies to compose's sort-then-sample.",
-        "dev": ""
+        "dev": "",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "effectiveModulesOf",
@@ -8953,6 +9287,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A token's effective module array given its stored materialized bytes (empty if none) and its seed-derived identity. Used for informational snapshots (the `SplitRecord.parentModules` field) and for a compose record's donor-side effective modules; not used for split's own sampling pool (SAMPLING_SPEC.md section 6, D3'), which never falls back to a parent's own materialized bytes.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "effectiveModulesOf",
@@ -9009,6 +9345,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "A recordless split's sampling pool (SAMPLING_SPEC.md section 6, D3'): the parent seed's grammar v1 expression at the CHILD's own denomination, under the parent's ink gene. Ignores the parent's own materialized modules entirely, even when the parent is materialized (a split child being split again with no compose record of its own): the pool depends on the child's denomination, not the parent's stored geometry, so it is built once per distinct child denomination in a split, not once per split call.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "grammarSplitPool",
@@ -9065,6 +9403,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "sampleCompose",
@@ -9128,7 +9468,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Sample a compose survivor's new module array (SAMPLING_SPEC.md §5, decision D1′).",
-        "dev": "`donors` must already be in canonical order: the survivor at index 0, then burns ascending by id (`sortDonorsById` on the burn subset before prepending the survivor). Donor choice is units-weighted, with replacement. Module choice within a donor is uniform over that donor's not-yet-used modules, without replacement: each donor module contributes to at most one result cell, so compose provenance is injective at the cell level. `consumedMask[i]` is a bitmask over `mods[i]`, one bit per module index, up to 25 modules (denomination index 0) so it fits a `uint256` with room to spare. A donor's `remaining` count can never reach zero while it is still being drawn from: every donor's `amountAt` is strictly below the result's (a compose merges two or more positive-value donors into one higher-value survivor), and `Denominations.gridAt` is strictly decreasing in denomination index, so every donor's module count is at least the result's cell count. Total draws equal the result's cell count. See SAMPLING_SPEC.md §10 invariant 6."
+        "dev": "`donors` must already be in canonical order: the survivor at index 0, then burns ascending by id (`sortDonorsById` on the burn subset before prepending the survivor). Donor choice is units-weighted, with replacement. Module choice within a donor is uniform over that donor's not-yet-used modules, without replacement: each donor module contributes to at most one result cell, so compose provenance is injective at the cell level. `consumedMask[i]` is a bitmask over `mods[i]`, one bit per module index, up to 25 modules (denomination index 0) so it fits a `uint256` with room to spare. A donor's `remaining` count can never reach zero while it is still being drawn from: every donor's `amountAt` is strictly below the result's (a compose merges two or more positive-value donors into one higher-value survivor), and `Denominations.gridAt` is strictly decreasing in denomination index, so every donor's module count is at least the result's cell count. Total draws equal the result's cell count. See SAMPLING_SPEC.md §10 invariant 6.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "sampleComposeSorted",
@@ -9160,6 +9502,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "sampleComposeSorted",
@@ -9249,7 +9593,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Sort the burn-side donors, prepend the survivor, and sample the compose result in one call.",
-        "dev": "Equivalent to `sortDonorsById(burnDonors)` followed by `sampleCompose` on the survivor prepended to the sorted result, but as a single external call from `Shapes` instead of two: the sort and the donor-array assembly happen in this library's own call frame, so `Shapes` sends the unsorted burn donors once and gets the sampled bytes back directly. The survivor's seed comes from `survivor.seed` rather than a separate parameter."
+        "dev": "Equivalent to `sortDonorsById(burnDonors)` followed by `sampleCompose` on the survivor prepended to the sorted result, but as a single external call from `Shapes` instead of two: the sort and the donor-array assembly happen in this library's own call frame, so `Shapes` sends the unsorted burn donors once and gets the sampled bytes back directly. The survivor's seed comes from `survivor.seed` rather than a separate parameter.",
+        "params": {},
+        "returns": {}
       },
       {
         "name": "sampleSplitChild",
@@ -9281,6 +9627,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Sample one split child's module array from the split's pool (SAMPLING_SPEC.md §6, D3'). Uniform over `pool`, with replacement: `pool` is either a compose record's concatenated donor modules or a grammar v1 expression, never more than one donor's worth of state, so no units weighting. `moduleIndex` as reported/traced is the index into `pool` the byte was drawn from.",
         "dev": "`childIndex` enters the stream as a full uint256, matching the untruncated index `Shapes._childSeed` uses. Encoding it as a uint8 would give children at index i and i + 256 of the same parent at the same denomination an identical stream, and so identical stored modules. `pool` is unrelated to `childDenom`'s own grid size in the record branch (it is the record donors' combined module count); in the grammar branch the caller builds it sized to `childDenom`'s own grid via `grammarSplitPool`.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "sampleSplitChild",
@@ -9349,6 +9697,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Pick the split pool and sample one child in one call (SAMPLING_SPEC.md §6, D3'). `hasRecordPool` selects `recordPool` (already built once per split call by the caller, the same array for every child) when true, else the grammar pool at `childDenom` (built fresh here, since that pool depends on `childDenom`). As a single external call from `Shapes._splitTo`'s per-child loop instead of two (`grammarSplitPool` then `sampleSplitChild`), the same consolidation `sampleComposeSorted` and `buildSplitRecordPoolSorted` apply elsewhere in this library: `Shapes`'s own bytecode only needs the one call-site's worth of ABI encoding/decoding, material to staying under the EIP-170 runtime size limit.",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "sampleSplitChildFromPool",
@@ -9405,6 +9755,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": "",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "sortDonorsById",
@@ -9482,7 +9834,9 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Sort the burn-side donors ascending by token id. Stable, iterative bottom-up merge sort: O(n log n) with no recursion, safe at the burn counts a single compose call can reach.",
-        "dev": "`public`: an external call ABI-copies `arr` into the library's own memory, so the sort only takes effect on the copy this function returns. Callers must reassign their array from the return value; mutating the caller's original in place is not possible across the call boundary."
+        "dev": "`public`: an external call ABI-copies `arr` into the library's own memory, so the sort only takes effect on the copy this function returns. Callers must reassign their array from the return value; mutating the caller's original in place is not possible across the call boundary.",
+        "params": {},
+        "returns": {}
       }
     ],
     "events": [],
@@ -9565,6 +9919,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "The per-tier compose walk: steps the survivor's gene, one tier at a time, toward `center`, `best` or `worst` depending on a per-tier roll.",
         "dev": "`burnSeedFold` is the XOR of every burned token's `uint256(seed)`, so the order `burnIds` arrive in cannot affect the result: XOR is commutative and associative, so any permutation folds to the same value. Fresh entropy is forbidden: `R` and every per-tier roll are pure functions of the arguments alone. A homogeneous pool (`best == worst == center == survivorGene`) is a no-op by construction; the loop needs no special case for it.",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "geneAtCompose",
@@ -9633,6 +9989,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "Gene assigned at mint: a pure function of the token's seed and denomination tier.",
         "dev": "Dust (denomIndex 0) draws the full seven-gene lottery; every other direct mint draws only the narrow {Sparse, Murk, Dense} band. The extremes (Void, Faint, Rich, Solid) enter the population only through a dust mint (INK_GENES_DRAFT.md §2).",
+        "params": {},
+        "returns": {},
         "abi": {
           "type": "function",
           "name": "geneAtMint",
