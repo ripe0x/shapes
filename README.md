@@ -675,8 +675,20 @@ After a real broadcast, the wrapper reads the broadcast artifact, reads back eve
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
 `indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
-`mintFeeWei`, `mintStart`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
+`mintFeeWei`, `mintStart`, `fromBlock`, `auctionId`). Cutover to the site is a file copy. `deployments/31337.json` is
 gitignored; Sepolia and mainnet records are committed.
+
+Setting `LIST_OWNER_TOKEN=1` (as a shell export, which wins over the env file, or set directly in
+the env file) opts into listing the owner token (#0) in the auction house right after the
+readback, using `AUCTION_DURATION`, `AUCTION_RESERVE_UNITS`, `AUCTION_MIN_INCREMENT_BPS` and
+`AUCTION_EXTENSION_WINDOW` from the env file (86400 seconds, 0, 500 bps, and 900 seconds by
+default). `createAuction` only escrows the lot and opens the listing; the clock starts on the
+first bid, so `endTime` stays 0 until then. The wrapper refuses to list unless `ownerToken()` is 0
+and held by the deployer. `DRY_RUN=1` prints what would be listed and lists nothing. `RESUME=1`
+may list too, since it lists whatever token already exists on chain rather than anything from a
+new broadcast; if the owner token is already listed it is reported and skipped rather than
+refused. The resulting auction id, or `null` when nothing was listed, is recorded as `auctionId`
+in `deployments/<chainId>.json`.
 
 For Sepolia, `script/attest-artist-sepolia.sh` reads back every binding, displays the exact EIP-712
 digest, simulates the call, requires two explicit confirmations, broadcasts through the artist's
