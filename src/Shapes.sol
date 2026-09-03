@@ -35,7 +35,7 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 /// @title Shapes
 /// @notice ETH-backed ERC-721 tokens with exact redemption value.
 ///
-/// @dev Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose
+/// @dev Each live Shape is backed by one supported ETH denomination. Compose, decompose
 ///      and split change token structure and keep total redeemable backing unchanged.
 ///
 ///      Three operations move ETH out. Redemption sends a burned token's backing to the caller or
