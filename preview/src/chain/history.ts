@@ -63,16 +63,14 @@ export async function loadHistory(
   // every ShapeMinted log and overflow the RPC response. The recomposition events name touched
   // ids in unindexed array args, so they are still fetched whole — but there is one per
   // compose/split/decompose, far fewer than mints, so that stays cheap.
-  const [minted, composed, split, decomposed, backingBurned, redeemed, transfers] =
-    await Promise.all([
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "BlackShapeCreated", args: {tokenId: id}, fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}, fromBlock, toBlock})),
-      paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}, fromBlock, toBlock})),
-    ]);
+  // Fetched one event type at a time: seven parallel log scans trip public gateways' burst limits.
+  const minted = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeMinted", args: {tokenId: id}, fromBlock, toBlock}));
+  const composed = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Composed", fromBlock, toBlock}));
+  const split = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Split", fromBlock, toBlock}));
+  const decomposed = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Decomposed", fromBlock, toBlock}));
+  const backingBurned = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "BlackShapeCreated", args: {tokenId: id}, fromBlock, toBlock}));
+  const redeemed = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "ShapeRedeemed", args: {tokenId: id}, fromBlock, toBlock}));
+  const transfers = await paginate(dep, latest, (fromBlock, toBlock) => publicClient.getContractEvents({...base, eventName: "Transfer", args: {tokenId: id}, fromBlock, toBlock}));
 
   const out: HistEvent[] = [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
