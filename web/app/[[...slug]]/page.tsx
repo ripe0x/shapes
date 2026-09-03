@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BaseError, ContractFunctionRevertedError } from "viem";
 import type { View } from "@shared/site/SiteApp";
-import { shapesAbi } from "@shared/chain/abi";
+import { mintStartOf, shapesAbi } from "@shared/chain/abi";
 import { createShapesPublicClient } from "@shared/chain/rpc";
 import { SiteRoot } from "../SiteRoot";
 import { LaunchLanding } from "../LaunchLanding";
@@ -179,7 +179,11 @@ export default async function Page({ params }: { params: Promise<Params> }) {
   }
 
   if (slug.length === 0) {
-    return appOnly() ? <SiteRoot initialView="home" initialTokenId={null} /> : <LaunchLanding />;
+    return appOnly() ? (
+      <SiteRoot initialView="home" initialTokenId={null} />
+    ) : (
+      <LaunchLanding mintStartSeconds={mintStartOf(serverDeployment())} />
+    );
   }
 
   if (slug.length === 1 && slug[0] === "play") {
