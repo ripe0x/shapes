@@ -16,7 +16,7 @@ import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AuctionView} from "./AuctionView";
-import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
+import {breakdown, isAuctionActive, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 import {SiteFooter} from "./SiteFooter";
 
@@ -85,6 +85,7 @@ export function SiteApp({
   const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
+  const [ownerOnly, setOwnerOnly] = React.useState(false);
   const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection">("gallery");
   const [composeMode, setComposeMode] = React.useState(false);
   const [composeDraft, setComposeDraft] = React.useState<ComposeDraft>({
@@ -531,7 +532,7 @@ export function SiteApp({
         onOpenToken={openToken}
         onConnect={() => openConnectModal?.()}
       />,
-      <SiteFooter reserve={reserveLine} />,
+      <SiteFooter reserve={reserveLine} onContracts={() => go("contracts")} />,
     );
   }
 
@@ -551,7 +552,7 @@ export function SiteApp({
             <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
               MINT
             </button>
-            {dep.auctionHouse && (
+            {dep.auctionHouse && isAuctionActive(auction) && (
               <button type="button" className="btn-ghost site-nav-link" onClick={() => go("auction")} style={{color: navColor("auction")}}>
                 AUCTION
               </button>
@@ -559,12 +560,6 @@ export function SiteApp({
             <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
               GALLERY
             </button>
-            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("contracts")} style={{color: navColor("contracts")}}>
-              CONTRACTS
-            </button>
-            <a href="/#lineage" className="site-nav-link" style={{color: C.muted}}>
-              HOW IT WORKS
-            </a>
             {/* /play is a Next.js route outside SiteApp's view state, so it links as a plain
                 anchor. Only the Next host serves it; the Vite preview (no onNavigate) omits it. */}
             {onNavigate && (
@@ -677,7 +672,15 @@ export function SiteApp({
       )}
 
       {view === "gallery" && (
-        <GalleryView data={data} filter={filter} setFilter={setFilter} onOpenToken={openToken} />
+        <GalleryView
+          data={data}
+          filter={filter}
+          setFilter={setFilter}
+          address={address}
+          ownerOnly={ownerOnly}
+          setOwnerOnly={setOwnerOnly}
+          onOpenToken={openToken}
+        />
       )}
       {view === "contracts" && (
         <React.Suspense fallback={<div style={{padding: 48, fontSize: 13, color: C.muted}}>Loading contracts…</div>}>
@@ -805,7 +808,7 @@ export function SiteApp({
         </div>
       )}
 
-      <SiteFooter dep={dep} topRule reserve={reserveLine} />
+      <SiteFooter topRule reserve={reserveLine} onContracts={() => go("contracts")} />
     </div>
   );
 }

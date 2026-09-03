@@ -1,23 +1,22 @@
 import type React from "react";
-import type { Deployment } from "../chain/abi";
-import { addrUrl } from "./ui";
 
 /**
- * Footer shared by the app shell and the launch page: attribution, an optional link to the
- * connected contract, and a jump back to the top of the page. `dep` is omitted on the launch page,
- * which has no connected contract. `topRule` adds the 1px rule the app shell needs to close off
- * its last section; the launch page supplies its own rule above the footer. `reserve` is the
+ * Footer shared by the app shell and the launch page: attribution, a link to the contracts page,
+ * and a jump back to the top of the page. `topRule` adds the 1px rule the app shell needs to close
+ * off its last section; the launch page supplies its own rule above the footer. `reserve` is the
  * contract reserve line (e.g. "The contract holds X ETH backing N Shapes."), rendered under the
- * attribution when given; omitted wherever the caller has no loaded chain data.
+ * attribution when given; omitted wherever the caller has no loaded chain data. `onContracts`
+ * navigates within a mounted SiteApp's own view state; omitted where no SiteApp is mounted (the
+ * standalone marketing landing page), where the link falls back to a plain `/contracts` href.
  */
 export function SiteFooter({
-  dep,
   topRule = false,
   reserve,
+  onContracts,
 }: {
-  dep?: Deployment | null;
   topRule?: boolean;
   reserve?: React.ReactNode;
+  onContracts?: () => void;
 }) {
   return (
     <footer className={topRule ? "site-footer-outer site-footer-ruled" : "site-footer-outer"}>
@@ -35,10 +34,10 @@ export function SiteFooter({
           )}
         </span>
         <span className="site-footer-links">
-          {dep && (
-            <a href={addrUrl(dep.shapes, dep.chainId)} target="_blank" rel="noreferrer">
-              Contract
-            </a>
+          {onContracts ? (
+            <button type="button" className="btn-ghost" onClick={onContracts}>Contracts</button>
+          ) : (
+            <a href="/contracts">Contracts</a>
           )}
           <a href="#top">Back to top</a>
         </span>
