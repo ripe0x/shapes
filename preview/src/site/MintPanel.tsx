@@ -21,7 +21,11 @@ const gridText = (di: number) => `${GRIDS[di][0]} × ${GRIDS[di][1]}`;
 const MAX_QTY = 100;
 const clampQty = (n: number) => Math.min(MAX_QTY, Math.max(1, n));
 
-/** The nine-row denomination ladder. Hovering a row cycles its thumbnail every 300ms starting
+/** Interval for every cycling sample in the panel: the ladder's hover thumbnails and the auto-rotating
+ *  sample art share it so they move at one speed. */
+const SAMPLE_CYCLE_MS = 300;
+
+/** The nine-row denomination ladder. Hovering a row cycles its thumbnail every SAMPLE_CYCLE_MS starting
  *  from a random frame; clicking a row selects it. */
 function DenomLadder({sel, onSelect}: {sel: number; onSelect: (i: number) => void}) {
   const [hover, setHover] = React.useState(-1);
@@ -31,14 +35,14 @@ function DenomLadder({sel, onSelect}: {sel: number; onSelect: (i: number) => voi
   const hoverBase = React.useRef(0);
   const timer = React.useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Hovering a row swaps its thumbnail immediately and then cycles every 300ms. One timer at
+  // Hovering a row swaps its thumbnail immediately and then cycles every SAMPLE_CYCLE_MS. One timer at
   // a time.
   const enter = (i: number) => {
     if (timer.current) clearInterval(timer.current);
     hoverBase.current = 1 + Math.floor(Math.random() * 4096);
     setHover(i);
     setTick(0);
-    timer.current = setInterval(() => setTick((t) => t + 1), 300);
+    timer.current = setInterval(() => setTick((t) => t + 1), SAMPLE_CYCLE_MS);
   };
   const leave = () => {
     if (timer.current) clearInterval(timer.current);
@@ -119,11 +123,11 @@ export function MintPanel({
   const [sample, setSample] = React.useState(0);
   React.useEffect(() => setSample(0), [sel]);
 
-  // The sample preview auto-rotates through the 12 samples every 1.2s. Off under
+  // The sample preview auto-rotates through the 12 samples every SAMPLE_CYCLE_MS. Off under
   // prefers-reduced-motion.
   React.useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const id = setInterval(() => setSample((s) => s + 1), 1200);
+    const id = setInterval(() => setSample((s) => s + 1), SAMPLE_CYCLE_MS);
     return () => clearInterval(id);
   }, [sel]);
 
