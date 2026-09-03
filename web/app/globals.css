@@ -223,6 +223,32 @@ button {
   gap: 36px 28px;
   padding: 48px;
 }
+/* Gallery grid card: rounded corners and a drop shadow on the artwork (matching the hero image's
+   rect, scaled down), title and origin count hidden until hover or keyboard focus. */
+.gallery-card .shape-art {
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.22);
+}
+.gallery-card-meta,
+.gallery-card-origins {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.gallery-card:hover .gallery-card-meta,
+.gallery-card:focus-visible .gallery-card-meta {
+  opacity: 1;
+}
+.gallery-card:hover .gallery-card-origins,
+.gallery-card:focus-visible .gallery-card-origins {
+  opacity: 0.7;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-card-meta,
+  .gallery-card-origins {
+    transition: none;
+  }
+}
 /* Empty state for a token grid: no Shapes owned, or no Shapes eligible to compose. */
 .shape-grid-empty {
   padding: 48px;
