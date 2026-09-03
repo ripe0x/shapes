@@ -353,18 +353,22 @@ function Thumb({thumb, onOpenToken}: {thumb: ActivityThumb; onOpenToken: (id: bi
 
 function ActivityRow({
   row,
+  index,
   chainId,
   nowSeconds,
   onOpenToken,
 }: {
   row: ActivityRowModel;
+  index: number;
   chainId: number;
   nowSeconds: bigint;
   onOpenToken: (id: bigint) => void;
 }) {
   const {event} = row;
+  // Rows rise in sequence once the list scrolls into view; the delay restarts every page so a
+  // "Show more" batch cascades from its own first row.
   return (
-    <li className="activity-row">
+    <li className="activity-row" style={{animationDelay: `${(index % ACTIVITY_PAGE_SIZE) * 45}ms`}}>
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
         {row.detail && <span className="activity-detail">{row.detail}</span>}
@@ -481,11 +485,32 @@ export function ActivityFeed({
 
   const rows = events.map((event) => activityRowModel(event, tokens));
 
+  // The cascade runs once, when the list first enters the viewport. Until then the rows stay
+  // hidden by the `.activity-list` rule only after this effect arms it, so a render without
+  // JavaScript or without IntersectionObserver shows the rows plainly.
+  const listRef = React.useRef<HTMLUListElement>(null);
+  const [revealed, setRevealed] = React.useState(false);
+  React.useEffect(() => {
+    const list = listRef.current;
+    if (!list || revealed || typeof IntersectionObserver === "undefined") return;
+    list.classList.add("is-armed");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRevealed(true);
+          observer.disconnect();
+        }
+      },
+      {rootMargin: "0px 0px -10% 0px"},
+    );
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [revealed, rows.length > 0]);
+
   return (
     <section className="launch-section launch-activity" id="activity" aria-labelledby="activity-title">
       <div className="launch-section-heading">
         <div>
-          <p className="launch-kicker">Onchain</p>
           <h2 id="activity-title">Proof of work</h2>
         </div>
         <div className="activity-stats">
@@ -516,11 +541,12 @@ export function ActivityFeed({
       {status === "ready" && rows.length === 0 && <p className="activity-note">Nothing has happened yet.</p>}
 
       {rows.length > 0 && (
-        <ul className="activity-list">
-          {rows.map((row) => (
+        <ul ref={listRef} className={`activity-list${revealed ? " is-revealed" : ""}`}>
+          {rows.map((row, index) => (
             <ActivityRow
               key={row.event.id}
               row={row}
+              index={index}
               chainId={chainId}
               nowSeconds={nowSeconds}
               onOpenToken={onOpenToken}
