@@ -63,7 +63,14 @@ is never hashed; `incorrect-equality` on `_previousBlockHash` guards block zero 
 intentional stream draw; the rest are standard patterns covered by `nonReentrant` entrypoints and
 pull-based settlement.
 
-## 5. Status
+## 5. Independent Codex audit of `AUDIT_PROMPT_v8.md`
 
-Open before the next Sepolia deploy: the per-recipient fee accrual commit (in progress) and the
-Codex audit result.
+Recorded in `AUDIT_REPORT_v8_codex.md`: no Critical, High, Medium or Low finding; nine adversarial
+attempts retained and passing; every property in the brief verified with test and source evidence.
+Codex did not raise S-1 to S-3 or the two copy-move Mediums that the in-house reviews found; those
+are fixed on the branch regardless.
+
+## 6. Status
+
+Open before the next Sepolia deploy: the per-recipient fee accrual commit (in progress). Both
+audits are complete.
