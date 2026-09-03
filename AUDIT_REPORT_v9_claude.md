@@ -211,6 +211,12 @@ applies, and an asymmetric guard is the kind of thing a later refactor reads as 
 
 **Compatibility.** ABI and storage unchanged; one new constructor revert path.
 
+**Status.** Fixed. The constructor now rejects `address(this)` with the same
+`AdminInvalidFeeRecipient` error as `setFeeRecipient`, in `src/Shapes.sol`. Covered by
+`test/audit/V9FeesAndPresentation.t.sol:test_Finding_ConstructorRejectsItsOwnPredictedAddressAsFeeRecipient`
+(uses `vm.computeCreateAddress` to predict the deployer's own address) and
+`test_Finding_ConstructorRejectsZeroFeeRecipient`.
+
 ### V9-4 — the `uint96` id bound rests on gas, not on deposited ETH
 
 **Severity** Informational. **Path** `src/ShapeTypes.sol:35-46` (the comment and
@@ -263,6 +269,11 @@ split-and-recompose cycle rather than on a per-id ETH cost.
 
 **Compatibility.** Comment only.
 
+**Status.** Fixed. `src/ShapeTypes.sol`'s `ComposeInput` doc now states the real bound: ids are
+issued by mint and by split, each costing gas, so `2**96` ids is unreachable by gas alone. It is
+the only place in `src/` that stated the false per-mint-ETH justification; `ComposeRecord` and
+`SplitRecord` did not restate it, so no other edit was needed.
+
 ### V9-5 — the library-isolation argument covers two of five linked libraries
 
 **Severity** Informational. **Path** `test/LibraryIsolation.t.sol:43-51,94-97`,
@@ -309,6 +320,19 @@ state the actual reason for each class: call protection for the libraries that t
 pointer, and the absence of a storage pointer for the rest.
 
 **Compatibility.** Tests and comments only.
+
+**Status.** Partially fixed. `test/LibraryIsolation.t.sol`'s header now names all five libraries
+`Shapes` links (`AdminOps`, `EIP712Signature`, `GeometrySampling`, `InkGenes`,
+`RecompositionOps`, confirmed against `linkReferences` in `out/Shapes.sol/Shapes.json`) and states
+the correct split: `AdminOps` and `RecompositionOps` carry compiler call protection because they
+expose non-view/non-pure public functions taking a storage pointer; `EIP712Signature`,
+`GeometrySampling` and `InkGenes` expose only `pure`/`view` public functions, so solc emits no
+guard, and they are safe because no public function of theirs takes a storage pointer. Deferred:
+extending the test bodies to exercise a direct call against `EIP712Signature`, `GeometrySampling`
+and `InkGenes` with a Shapes-state fingerprint assertion (still only `RecompositionOps` and
+`AdminOps` are exercised there; `test/audit/V9ViewsAndLibraries.t.sol:test_Attempt7_DirectCallsToEveryLinkedLibrary`
+separately covers `GeometrySampling`, `EIP712Signature`, `RecompositionOps` and `AdminOps`, but not
+`InkGenes`).
 
 ### V9-6 — the decompose invariant reports a false failure on `decomposeMany`
 
