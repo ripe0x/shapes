@@ -19,6 +19,17 @@ it supports. Rainbow does not support testnets and is not used for Sepolia accep
 project id (local dev), the config falls back to injected wallets only, so no relay identity is
 created.
 
+## Contracts page
+
+`/contracts` lists every deployed contract and linked library with its address, and every function,
+event and error with the NatSpec the Solidity carries. It is generated from the Foundry artifacts
+in `out/` by `preview/scripts/genContractDocs.ts` into
+`preview/src/chain/contractDocs.generated.ts`, which is committed, so the site build needs no
+forge. After any ABI or NatSpec change run `forge build` and then `npm run contracts:docs` from
+`preview/`, and commit the regenerated file; `npm run contracts:docs:check` fails on drift and runs
+in CI. Library addresses come from the deployment record's `libraries` key; a library with no
+recorded address shows as not recorded. The page reads nothing until a Call button is pressed.
+
 Deployed as two isolated Netlify projects (`../netlify.toml`):
 
 - Production launch site: `shapes.ripe.wtf`, branch `launch`, `SHAPES_SITE_MODE=landing`.

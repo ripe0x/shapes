@@ -19,8 +19,21 @@ import {AuctionView} from "./AuctionView";
 import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 import {SiteFooter} from "./SiteFooter";
+import type {WriteRequest} from "./ContractsView";
 
-export type View = "home" | "mint" | "auction" | "gallery" | "collection" | "token" | "manage";
+// The generated contract documentation is large and only this view reads it, so it loads on
+// demand rather than riding in the main bundle.
+const ContractsView = React.lazy(() => import("./ContractsView"));
+
+export type View =
+  | "home"
+  | "mint"
+  | "auction"
+  | "gallery"
+  | "collection"
+  | "token"
+  | "manage"
+  | "contracts";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -195,6 +208,16 @@ export function SiteApp({
     } as Parameters<typeof writeContractAsync>[0]);
     setPendingTx({op, hash});
     return hash;
+  };
+
+  // The /contracts page builds its own call from the generated ABI, so it names the target and
+  // the ABI itself rather than going through the two bound helpers above.
+  const writeAny = async (request: WriteRequest) => {
+    await ensureChain();
+    return writeContractAsync({
+      ...request,
+      chainId: dep.chainId,
+    } as Parameters<typeof writeContractAsync>[0]);
   };
 
   const doMint = async () => {
@@ -520,6 +543,9 @@ export function SiteApp({
             <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
               GALLERY
             </button>
+            <button type="button" className="btn-ghost site-nav-link" onClick={() => go("contracts")} style={{color: navColor("contracts")}}>
+              CONTRACTS
+            </button>
             <a href="/#lineage" className="site-nav-link" style={{color: C.muted}}>
               HOW IT WORKS
             </a>
@@ -635,6 +661,17 @@ export function SiteApp({
 
       {view === "gallery" && (
         <GalleryView data={data} filter={filter} setFilter={setFilter} onOpenToken={openToken} />
+      )}
+      {view === "contracts" && (
+        <React.Suspense fallback={<div style={{padding: 48, fontSize: 13, color: C.muted}}>Loading contracts…</div>}>
+          <ContractsView
+            dep={dep}
+            publicClient={publicClient}
+            connected={isConnected}
+            onConnect={() => openConnectModal?.()}
+            onWrite={writeAny}
+          />
+        </React.Suspense>
       )}
       {view === "collection" && !composeMode && (
         <MyShapesView
