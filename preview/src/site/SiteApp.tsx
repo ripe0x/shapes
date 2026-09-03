@@ -18,7 +18,7 @@ import {TokenView} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AuctionView} from "./AuctionView";
-import {breakdown, isAuctionActive, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
+import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
 import {useEnsDisplay} from "./ens";
 import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
@@ -533,7 +533,6 @@ export function SiteApp({
       active={active}
       go={go}
       routed={onNavigate !== undefined}
-      auctionActive={Boolean(dep.auctionHouse) && isAuctionActive(auction)}
       isConnected={isConnected}
       wrongChain={wrongChain}
       accountLabel={accountLabel}
