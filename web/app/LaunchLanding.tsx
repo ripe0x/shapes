@@ -13,18 +13,6 @@ import { SiteFooter } from "@shared/site/SiteFooter";
 const LAUNCH_AT = new Date("2026-09-03T12:00:00-04:00").getTime();
 const LAUNCH_AT_LABEL = "September 3, 12:00 PM ET";
 
-const TIERS = [
-  { value: "0.01", grid: "5 × 5", marks: 25 },
-  { value: "0.05", grid: "4 × 5", marks: 20 },
-  { value: "0.1", grid: "4 × 4", marks: 16 },
-  { value: "0.5", grid: "3 × 4", marks: 12 },
-  { value: "1", grid: "3 × 3", marks: 9 },
-  { value: "5", grid: "2 × 3", marks: 6 },
-  { value: "10", grid: "2 × 2", marks: 4 },
-  { value: "50", grid: "1 × 2", marks: 2 },
-  { value: "100", grid: "1 × 1", marks: 1 },
-] as const;
-
 type ProvenanceCard = {
   key: string;
   value: string;
@@ -124,58 +112,6 @@ function ProvenanceCardView({ card, className }: { card: ProvenanceCard; classNa
       <Image src={card.image} alt={`${card.value} ETH Shape`} width={250} height={350} unoptimized />
       <span>{card.value} ETH</span>
     </div>
-  );
-}
-
-function TierCard({ tier, index }: { tier: (typeof TIERS)[number]; index: number }) {
-  const [hovered, setHovered] = React.useState(false);
-  const [tick, setTick] = React.useState(0);
-  const [hoverBase, setHoverBase] = React.useState(0);
-  const timer = React.useRef<number | null>(null);
-
-  const stop = React.useCallback(() => {
-    if (timer.current) window.clearInterval(timer.current);
-    timer.current = null;
-    setHovered(false);
-    setTick(0);
-  }, []);
-
-  const start = () => {
-    if (timer.current) window.clearInterval(timer.current);
-    setHoverBase(1 + Math.floor(Math.random() * 4_096));
-    setHovered(true);
-    setTick(0);
-    timer.current = window.setInterval(() => setTick((current) => current + 1), 300);
-  };
-
-  React.useEffect(() => stop, [stop]);
-
-  const frame = hovered ? hoverBase + tick : 0;
-  const seed = sampleSeed(12_000 + index * 127 + frame * 613);
-  // Geometry is tier-indexed and identical on both ladders. Use the active build's amount so a
-  // testnet-ladder build can render the landing page's mainnet-labeled examples safely.
-  const denomination = RENDER_DENOMINATIONS[index];
-  const image = localArt(seed, denomination, mintGene(seed, denomination));
-
-  return (
-    <article className="tier" onMouseEnter={start} onMouseLeave={stop}>
-      <div className="tier-value">
-        <strong>{tier.value}</strong>
-        <span>ETH</span>
-      </div>
-      <Image
-        className="tier-art"
-        src={image}
-        alt={`Example ${tier.value} ETH Shape`}
-        width={250}
-        height={350}
-        unoptimized
-      />
-      <div className="tier-cost">
-        <span>{tier.grid} grid</span>
-        <strong>{tier.marks} {tier.marks === 1 ? "mark" : "marks"}</strong>
-      </div>
-    </article>
   );
 }
 
