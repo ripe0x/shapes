@@ -10,11 +10,13 @@ export const PUBLIC_SEPOLIA_RPCS = [
 /** Public mainnet endpoints from independent operators, tried after the configured primary and
  *  the deployment record's RPC. Free gateways rate-limit bursts with HTTP 429; the fallback
  *  transport moves to the next endpoint on any error. Each endpoint must answer browser CORS
- *  preflights; cloudflare-eth.com does not and is excluded. */
+ *  preflights and serve eth_getLogs over the deployment's block range: publicnode answers calls
+ *  but refuses logs, so drpc and Tenderly follow it; llamarpc and cloudflare fail CORS; 1rpc caps
+ *  logs at 50 blocks. */
 export const PUBLIC_MAINNET_RPCS = [
   "https://ethereum-rpc.publicnode.com",
-  "https://eth.llamarpc.com",
-  "https://1rpc.io/eth",
+  "https://eth.drpc.org",
+  "https://gateway.tenderly.co/public/mainnet",
 ] as const;
 
 function nonEmpty(value: string | undefined): value is string {
