@@ -32,10 +32,8 @@ shapes.supportsInterface(type(IAdminControl).interfaceId);       // bounded admi
 renderer.supportsInterface(type(IShapeGeometry).interfaceId);    // module-level geometry
 ```
 
-Deterministic previews and full-state reads (`previewCompose`, `previewSplit`, `shapeState`) are
-not on `Shapes` and are not ERC165-advertised: they live on `ShapeLens`, a separate, stateless,
-ownerless periphery contract that takes the deployed `Shapes` address as its only constructor
-argument. Get its address from the deployment rather than probing `Shapes` for it.
+Every protocol action, view and preview is on `Shapes`. There is no periphery read contract and no
+second address to configure: the token address is the whole integration surface.
 
 The interfaces are declared under [src/interfaces](src/interfaces), including the segmented
 Shape capabilities, admin control, and renderer geometry surfaces. `owner()` reports the holder of
@@ -53,20 +51,20 @@ Integrators must never use artist status or attestation as authorization over Sh
 
 ## Reading a Shape
 
-For cheap direct checks across core state and the stateless lens, use:
+For cheap direct checks, use:
 
 ```solidity
-lens.exists(shapeId);         // never reverts: true for every live Shape, including Black
+shapes.exists(shapeId);       // never reverts: true for every live Shape, including Black
 shapes.denomIndexOf(shapeId); // stored 0..8 ladder index; reverts when the token is not live
 shapes.valueOf(shapeId);      // redeemable ETH now; zero for Black, reverts when not live
 ```
 
-`denomIndexOf` is part of the denomination-oriented `IShapeValue` capability as well as `IShapes`.
-`exists` lives on `IShapeLens` because generic ERC721 liveness is read-only periphery rather than
-part of the narrower value capability. In particular, do not infer denomination from `valueOf` or
-`backingOf`: a live Black Shape has denomination index 8 but redeemable value zero.
+`denomIndexOf` is part of the denomination-oriented `IShapeValue` capability as well as `IShapes`;
+`exists` is on `IShapes` only, because generic ERC721 liveness is not part of the narrower value
+capability. Do not infer denomination from `valueOf` or `backingOf`: a live Black Shape has
+denomination index 8 but redeemable value zero.
 
-`ShapeLens.shapeState` returns everything about a live Shape in one call:
+`shapes.shapeState` returns everything about a live Shape in one call:
 
 ```solidity
 struct ShapeState {
@@ -85,8 +83,8 @@ struct ShapeState {
 For a payment check, `redeemableValueWei` is the number to trust: it is the ETH you will actually
 receive on redemption, and it is 0 for a Black (sacrificed) Shape.
 
-The lens aggregates these state-owned core facts; it reads the stored denomination through
-`denomIndexOf` rather than reconstructing it from backing.
+`shapeState` reads the stored denomination index rather than reconstructing it from backing, so a
+Black Shape still reports its denomination.
 
 ## Accepting a Shape as payment
 
@@ -100,7 +98,7 @@ The user approves your contract for their Shape first (standard ERC721 `approve`
 ```solidity
 // SomeMint charges a 0.1 ETH Shape as its mint fee.
 function mint(uint256 shapeId) external {
-    ShapeState memory s = lens.shapeState(shapeId);
+    ShapeState memory s = shapes.shapeState(shapeId);
     require(s.redeemableValueWei == 0.1 ether, "wrong denomination");
 
     shapes.transferFrom(msg.sender, address(this), shapeId); // pull the fee
@@ -134,15 +132,17 @@ invariant is fuzzed against reverting, non-receiving and reentrant recipients (S
 ## Previewing before you act
 
 Compose and split outcomes are deterministic and previewable off-chain and on-chain, so a UI or
-a contract can show or verify a result before committing. Both previews are on `ShapeLens`, not
-`Shapes`:
+a contract can show or verify a result before committing. Both previews are on `Shapes`, beside the
+mutators they predict:
 
 ```solidity
-lens.previewCompose(survivorId, burnIds);   // returns the full ShapeState the compose would yield
-lens.previewSplit(tokenId, outDenoms);      // returns a ShapeChildPreview[] for the children
+shapes.previewCompose(account, survivorId, burnIds); // the ShapeState the compose would yield
+shapes.previewSplit(account, tokenId, outDenoms);    // a ShapeChildPreview[] for the children
 ```
 
-These are `view` and require no ownership.
+Both are `view` and write nothing. `account` is the address whose compose or split is being
+simulated: a preview applies the same ownership and liveness gate that account would meet, so a
+preview that reverts tells you the call would revert for that caller, with the same error.
 
 ## What to know before you rely on it
 

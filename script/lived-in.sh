@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One command for a fully lived-in local Shapes chain: boots (or reuses) a dev chain, deploys the
 # contracts, then seeds weeks of dated activity across 30 wallets exercising every entrypoint of
-# Shapes, ShapeLens and ShapeAuctionHouse, with a curated set of presents sent to the browsing
+# Shapes and ShapeAuctionHouse, with a curated set of presents sent to the browsing
 # wallet at the end.
 #
 #   ./script/lived-in.sh
@@ -51,17 +51,16 @@ cast rpc evm_setIntervalMining 12 --rpc-url "$RPC" >/dev/null
 mkdir -p "$(dirname "$LOCAL_DEPLOYMENT_FILE")"
 cp "$DEPLOYMENT_FILE" "$LOCAL_DEPLOYMENT_FILE"
 
-read -r CHAIN_ID SHAPES LENS RENDERER COLLECTION HOUSE FROM_BLOCK <<<"$(python3 -c "
+read -r CHAIN_ID SHAPES RENDERER COLLECTION HOUSE FROM_BLOCK <<<"$(python3 -c "
 import json
 d = json.load(open('$DEPLOYMENT_FILE'))
-print(d['chainId'], d['shapes'], d['lens'], d['renderer'], d.get('collection', '?'), d.get('auctionHouse', '?'), d.get('fromBlock', 0))
+print(d['chainId'], d['shapes'], d['renderer'], d.get('collection', '?'), d.get('auctionHouse', '?'), d.get('fromBlock', 0))
 ")"
 
 say "Ready"
 echo "  RPC             $RPC"
 echo "  chain id        $CHAIN_ID"
 echo "  Shapes          $SHAPES"
-echo "  ShapeLens       $LENS"
 echo "  ShapeRenderer   $RENDERER"
 echo "  ShapeCollection $COLLECTION"
 echo "  AuctionHouse    $HOUSE"

@@ -1,6 +1,6 @@
 import React from "react";
 import {hexToBytes, maxUint256, type Hex, type PublicClient} from "viem";
-import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
+import {DENOMINATIONS, shapesAbi, type Deployment} from "../chain/abi";
 import {CANONICAL, renderShape} from "../canonical/render";
 import {
   renderSampledShape,
@@ -114,8 +114,8 @@ export function ManageShapeView({
 
     void publicClient
       .readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
+        address: dep.shapes,
+        abi: shapesAbi,
         functionName: "composeRecordAt",
         args: [token.id, BigInt(token.composeDepth - 1)],
       })
@@ -142,7 +142,7 @@ export function ManageShapeView({
     return () => {
       cancelled = true;
     };
-  }, [dep.lens, publicClient, token]);
+  }, [dep.shapes, publicClient, token]);
 
   const canSplit = !!token && token.di > 0;
   const splitDenominationIndex = canSplit ? token.di - 1 : -1;
@@ -162,8 +162,8 @@ export function ManageShapeView({
 
     void (async () => {
       const state = await publicClient.readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
+        address: dep.shapes,
+        abi: shapesAbi,
         functionName: "shapeState",
         args: [token.id],
       });
@@ -222,7 +222,7 @@ export function ManageShapeView({
     return () => {
       cancelled = true;
     };
-  }, [action, canSplit, composeRecord, dep.lens, publicClient, recordUnavailable, splitDenominationIndex, splitRatio, token]);
+  }, [action, canSplit, composeRecord, dep.shapes, publicClient, recordUnavailable, splitDenominationIndex, splitRatio, token]);
 
   if (!token) {
     return (

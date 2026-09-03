@@ -82,12 +82,11 @@ SHAPES_FEE_RECIPIENT="$FEE_RECIPIENT" RPC_URL="$RPC" ./script/deploy.sh anvil
 SHAPES=$(jq -r '.shapes' "$RAW_DEPLOYMENT_FILE")
 RENDERER=$(jq -r '.renderer' "$RAW_DEPLOYMENT_FILE")
 COLLECTION=$(jq -r '.collection' "$RAW_DEPLOYMENT_FILE")
-LENS=$(jq -r '.lens' "$RAW_DEPLOYMENT_FILE")
 HOUSE=$(jq -r '.auctionHouse' "$RAW_DEPLOYMENT_FILE")
 MINT_FEE=$(jq -r '.mintFeeWei' "$RAW_DEPLOYMENT_FILE")
 ARTIST=$(cast call "$SHAPES" "artist()(address)" --rpc-url "$RPC")
 
-[ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] || { echo "could not read deployed addresses from $RAW_DEPLOYMENT_FILE"; exit 1; }
+[ -n "$SHAPES" ] && [ -n "$RENDERER" ] || { echo "could not read deployed addresses from $RAW_DEPLOYMENT_FILE"; exit 1; }
 
 if [ -n "$SEED_WALLETS" ]; then
   say "Seeding wallets with $SEED_ETH ETH each"
@@ -112,7 +111,6 @@ jq --arg artist "$ARTIST" '. + {artist: $artist}' "$RAW_DEPLOYMENT_FILE" >"$DEPL
 say "Ready"
 echo "  Shapes        $SHAPES"
 echo "  Artist        $ARTIST"
-echo "  ShapeLens     $LENS"
 echo "  ShapeRenderer $RENDERER"
 echo "  ShapeCollection $COLLECTION"
 echo "  AuctionHouse  $HOUSE"

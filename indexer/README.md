@@ -271,7 +271,7 @@ The ten events and what each does to the three tables (`src/index.ts`):
 read calls, not a mirror of the larger browser ABI in `preview/src/chain/abi.ts`.
 New core views such as `exists` and `denomIndexOf` belong here only if the
 indexer starts calling them. When a consumed event or read changes, rebuild the
-contracts and copy that exact entry from the relevant compiled Shapes or lens
+contracts and copy that exact entry from the compiled Shapes
 artifact so field names, types, and `indexed` flags match deployed bytecode.
 
 ## Production deployment: Fly + persistent PGlite

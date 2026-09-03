@@ -1,10 +1,9 @@
 import {parseAbi} from "viem";
 import {DENOMINATIONS as CANONICAL_AMOUNTS, LABELS as CANONICAL_LABELS} from "../canonical/denominations";
 
-// The subset of the Shapes ERC721 the chain tester calls. Human-readable form; viem parses it
-// to the full ABI at import. `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`,
-// `composeRecordAt`, `splitOriginOf`, `exists`, `positionOf` and the raw denomination-grid/
-// support lookups moved to `ShapeLens` (see `shapeLensAbi` below) and are not declared here.
+// The subset of the Shapes ERC721 the chain tester and the site call. Human-readable form; viem
+// parses it to the full ABI at import. Every protocol action, view and preview is on this one
+// contract, so there is no second address to configure.
 export const shapesAbi = parseAbi([
   "struct ComposeCall { uint256 survivorId; uint256[] burnIds; }",
   "function mint(uint256 amountWei) payable returns (uint256 tokenId)",
@@ -95,6 +94,20 @@ export const shapesAbi = parseAbi([
   "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
+  "struct ShapeChildPreview { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; bytes modules; }",
+  "struct ShapeState { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bool isBlack; uint8 formation; uint256 faceValueWei; uint256 redeemableValueWei; bytes modules; }",
+  "struct ComposeInputView { uint256 id; bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bytes modules; }",
+  "struct ComposeRecordView { uint8 survivorDenominationIndex; uint32 survivorOriginCount; uint8 survivorInkGene; bytes survivorModules; uint256 ownerTokenFrom; ComposeInputView[] inputs; }",
+  "function previewCompose(address account, uint256 survivorId, uint256[] burnIds) view returns (ShapeState result)",
+  "function previewSplit(address account, uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
+  "function shapeState(uint256 tokenId) view returns (ShapeState)",
+  "function unicodeCard(uint256 tokenId) view returns (string)",
+  "function composeRecordAt(uint256 survivorId, uint256 depth) view returns (ComposeRecordView)",
+  "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint256 parentId, uint8 parentDenomIndex, uint8 originDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
+  "function exists(uint256 tokenId) view returns (bool)",
+  "function positionOf(uint256 tokenId) view returns (address)",
+  "function isSupportedDenomination(uint256 amountWei) pure returns (bool)",
+  "error DenominationIndexOutOfRange(uint256 index)",
   "error UnsupportedDenomination(uint256 amountWei)",
   "error IncorrectPayment(uint256 expected, uint256 provided)",
   "error ZeroQuantity()",
@@ -124,36 +137,6 @@ export const shapesAbi = parseAbi([
   "error MintNotOpen()",
 ]);
 
-// ShapeLens: the read-only periphery holding `shapeState`, `previewCompose`, `previewSplit`,
-// `unicodeCard`, `composeRecordAt` and `splitOriginOf`, moved off `Shapes` to keep the token's
-// runtime bytecode under the EIP-170 size limit. Deployed separately; see `Deployment.lens`.
-export const shapeLensAbi = parseAbi([
-  "struct ShapeChildPreview { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; uint256 faceValueWei; bytes modules; }",
-  "struct ShapeState { bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bool isBlack; uint8 formation; uint256 faceValueWei; uint256 redeemableValueWei; bytes modules; }",
-  "struct ComposeInputView { uint256 id; bytes32 seed; uint8 denominationIndex; uint32 originCount; uint8 inkGene; bytes modules; }",
-  "struct ComposeRecordView { uint8 survivorDenominationIndex; uint32 survivorOriginCount; uint8 survivorInkGene; bytes survivorModules; uint256 ownerTokenFrom; ComposeInputView[] inputs; }",
-  "function previewCompose(uint256 survivorId, uint256[] burnIds) view returns (ShapeState result)",
-  "function previewSplit(uint256 tokenId, uint8[] outDenoms) view returns (ShapeChildPreview[] children)",
-  "function shapeState(uint256 tokenId) view returns (ShapeState)",
-  "function unicodeCard(uint256 tokenId) view returns (string)",
-  "function composeRecordAt(uint256 survivorId, uint256 depth) view returns (ComposeRecordView)",
-  "function splitOriginOf(uint256 childId) view returns (bytes32 parentSeed, uint256 parentId, uint8 parentDenomIndex, uint8 originDenomIndex, uint8 parentInkGene, bytes parentModules, uint256 childIndex)",
-  "function exists(uint256 tokenId) view returns (bool)",
-  "function positionOf(uint256 tokenId) view returns (address)",
-  "function isSupportedDenomination(uint256 amountWei) pure returns (bool)",
-  "function gridForAmount(uint256 amountWei) pure returns (uint256 cols, uint256 rows)",
-  "function modulesForAmount(uint256 amountWei) pure returns (uint256)",
-  // Custom errors, from IShapes.sol, that previewCompose/previewSplit/composeRecordAt apply the
-  // same validation as the mutating calls and revert with, so a revert decodes to a named error.
-  "error CannotComposeWithSelf(uint256 tokenId)",
-  "error ComposeRecordOutOfRange(uint256 survivorId, uint256 depth, uint256 depthAvailable)",
-  "error DenominationIndexOutOfRange(uint256 index)",
-  "error DuplicateComposeInput(uint256 tokenId)",
-  "error EmptyRecomposition()",
-  "error SplitMismatch(uint256 inputBacking, uint256 outputSum)",
-  "error TokenIsBlack(uint256 tokenId)",
-  "error UnsupportedDenomination(uint256 amountWei)",
-]);
 
 export interface Deployment {
   rpc: string;
@@ -165,11 +148,6 @@ export interface Deployment {
   /** Permanent deployer attribution. Optional while deployment metadata still targets a
    *  pre-attribution contract; the site also attempts to read it directly from Shapes. */
   artist?: `0x${string}`;
-  /** ShapeLens: the read-only periphery contract. The DNA/provenance section and other
-   *  lens-backed reads have nothing to call without it; see the per-call fallbacks in
-   *  `site/dna.ts` and `site/TokenView.tsx` for what happens when it is absent from
-   *  `deployment.json` (a stale file from before the lens split). */
-  lens: `0x${string}`;
   renderer: `0x${string}`;
   collection?: `0x${string}`;
   auctionHouse?: `0x${string}`;

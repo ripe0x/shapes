@@ -1,6 +1,6 @@
 /**
  * Shared chain-actor helpers for the dev-chain simulation scripts (`simulate.ts`,
- * `simulateHistory.ts`). Wraps every Shapes / ShapeLens / ShapeAuctionHouse entrypoint the
+ * `simulateHistory.ts`). Wraps every Shapes / ShapeAuctionHouse entrypoint the
  * scripts drive behind a small set of functions bound to a deployment and a pool of wallets, so
  * neither script hand-rolls gas buffering, event parsing or client setup.
  */
@@ -18,7 +18,7 @@ import {
   type WalletClient,
 } from "viem";
 import {privateKeyToAccount} from "viem/accounts";
-import {shapesAbi, shapeLensAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../../src/chain/abi";
+import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../../src/chain/abi";
 
 /** Anvil's ten default, publicly-known test private keys, in account order. Test chains only. */
 export const ANVIL_KEYS: readonly Hex[] = [
@@ -238,23 +238,33 @@ export async function createSim(dep: Deployment, keys: readonly Hex[]) {
     return sSend(relayerIdx, "attestArtist", [releaseHash, signature]);
   }
 
-  /* ---------------------------- lens reads ------------------------------- */
+  /* ------------------------------- reads --------------------------------- */
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const previewCompose = (survivorId: bigint, burnIds: bigint[]): Promise<any> =>
-    pub.readContract({address: dep.lens, abi: shapeLensAbi, functionName: "previewCompose", args: [survivorId, burnIds]});
+  const previewCompose = (actor: number, survivorId: bigint, burnIds: bigint[]): Promise<any> =>
+    pub.readContract({
+      address: dep.shapes,
+      abi: shapesAbi,
+      functionName: "previewCompose",
+      args: [addr(actor), survivorId, burnIds],
+    });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const previewSplit = (tokenId: bigint, outDenoms: number[]): Promise<any> =>
-    pub.readContract({address: dep.lens, abi: shapeLensAbi, functionName: "previewSplit", args: [tokenId, outDenoms]});
+  const previewSplit = (actor: number, tokenId: bigint, outDenoms: number[]): Promise<any> =>
+    pub.readContract({
+      address: dep.shapes,
+      abi: shapesAbi,
+      functionName: "previewSplit",
+      args: [addr(actor), tokenId, outDenoms],
+    });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const shapeState = (tokenId: bigint): Promise<any> =>
-    pub.readContract({address: dep.lens, abi: shapeLensAbi, functionName: "shapeState", args: [tokenId]});
+    pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "shapeState", args: [tokenId]});
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const composeRecordAt = (survivorId: bigint, depth: bigint): Promise<any> =>
-    pub.readContract({address: dep.lens, abi: shapeLensAbi, functionName: "composeRecordAt", args: [survivorId, depth]});
+    pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "composeRecordAt", args: [survivorId, depth]});
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const splitOriginOf = (childId: bigint): Promise<any> =>
-    pub.readContract({address: dep.lens, abi: shapeLensAbi, functionName: "splitOriginOf", args: [childId]});
+    pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "splitOriginOf", args: [childId]});
   const composeDepth = (tokenId: bigint): Promise<bigint> =>
     pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "composeDepth", args: [tokenId]}) as Promise<bigint>;
 

@@ -267,25 +267,20 @@ The "Filled" metadata count already derives from the module list and works on bo
 Compose and split already store everything needed to reconstruct per-cell sampling provenance
 for any live token. Two read-only views expose that storage without adding new state.
 
-Both views live on `ShapeLens` (`src/ShapeLens.sol`), not on `Shapes` itself: they were moved off
-the token contract, along with `shapeState`, `previewCompose`, `previewSplit` and `unicodeCard`, to
-keep `Shapes`'s runtime bytecode under the EIP-170 size limit. `Shapes` instead exposes the minimal
-raw accessors `ShapeLens` reads to reassemble them — `composeRecordHeaderAt` / `composeRecordInputAt`
-for compose records, `splitOriginRaw` for split origins — documented in `IShapes.sol`. The
-reconstruction recipes below are unaffected: they describe the same on-chain data, just reached
-through `IShapeLens.composeRecordAt` / `IShapeLens.splitOriginOf` instead of a method on `Shapes`.
+Both views are on `Shapes`, as is every other protocol read. Their bodies live in the linked
+`RecompositionOps` library beside the mutators whose records they decode.
 
-### `ShapeLens.composeRecordAt(survivorId, depth)`
+### `composeRecordAt(survivorId, depth)`
 
 `_composeStack[survivorId]` already holds a `ComposeRecord` per stacked compose (`decompose`'s
 own reversal data). `composeRecordAt` returns the record at `depth` (0 the oldest, `composeDepth
 (survivorId) - 1` the newest) as a `ComposeRecordView`: the survivor's pre-compose state
 (denomination index, origin count, ink gene, materialized modules, empty if the survivor was
 unmaterialized at that point) and one `ComposeInputView` per burned input (id, seed, denomination
-index, origin count, ink gene, materialized modules). `ShapeLens` calls `Shapes.composeRecordHeaderAt`
-once for the survivor-side fields and input count, then `Shapes.composeRecordInputAt` once per
-input; it checks `depth` against `Shapes.composeDepth` itself and reverts `ComposeRecordOutOfRange`
-when `depth >= composeDepth(survivorId)`, matching what the removed `Shapes.composeRecordAt` did.
+index, origin count, ink gene, materialized modules). It reverts `ComposeRecordOutOfRange` when
+`depth >= composeDepth(survivorId)`. `ownerTokenFrom` is returned as a token id, or
+`type(uint256).max` when that compose moved no collection ownership; the id-plus-one form the record
+stores is never returned.
 
 Reconstruction recipe: rebuild the donor array with the survivor's snapshot first, then the
 `inputs` sorted ascending by id (they are stored in calldata order, not canonical order), recompute
@@ -293,7 +288,7 @@ Reconstruction recipe: rebuild the donor array with the survivor's snapshot firs
 with the survivor's own live seed (unchanged by compose) and its post-compose denomination index.
 The result equals the survivor's live materialized bytes at that stack depth.
 
-### `ShapeLens.splitOriginOf(childId)`
+### `splitOriginOf(childId)`
 
 Split has no equivalent storage before this change: the parent is burned and its seed and modules
 deleted, so a child previously carried no on-chain trace of its origin. `_splitTo` now writes one
@@ -301,11 +296,10 @@ append-only `SplitRecord` per split call (parent id, parent seed, parent denomin
 split ancestor's denomination index, parent ink gene, and the parent's own effective modules read
 before it is burned), shared by every child of that split, and one `SplitOriginRef` per child
 (which record, and the child's index within it). `splitOriginOf` returns `(parentSeed, parentId,
-parentDenomIndex, originDenomIndex, parentInkGene, parentModules, childIndex)` — a passthrough over
-`Shapes.splitOriginRaw`, already minimal — and reverts `NotASplitChild` when `childId` carries no
-entry.
+parentDenomIndex, originDenomIndex, parentInkGene, parentModules, childIndex)` and reverts
+`NotASplitChild` when `childId` carries no entry.
 
-`originDenomIndex` (issue #21C) is the root split ancestor's denomination: the parent's own
+`originDenomIndex` is the root split ancestor's denomination: the parent's own
 `originDenomIndex` when the parent was itself a split child, else `parentDenomIndex`. It backs the
 "Split Origin" metadata trait (METADATA.md) and, unlike every other `SplitRecord` field, cannot be
 reconstructed from chain history after the fact: a compose record or a later split carries only its
@@ -321,7 +315,7 @@ there to read back.
 Reconstruction recipe:
 
 1. Read `Shapes.composeDepth(parentId)`.
-2. If it is nonzero (record branch): read `ShapeLens.composeRecordAt(parentId, composeDepth(parentId)
+2. If it is nonzero (record branch): read `composeRecordAt(parentId, composeDepth(parentId)
    - 1)` for the parent's top compose record, rebuild the donor array with the record's survivor
    snapshot first then its `inputs` sorted ascending by id (stored in calldata order, not canonical
    order, the same as the compose recipe above), and pass it to
@@ -344,11 +338,11 @@ never reused for anything other than that one split, and `decompose` never re-mi
 that only a split ever issued.
 
 A split child's `SplitOriginRef` is never deleted, so `splitOriginOf` keeps answering after the
-child is subsequently mutated: composed into a survivor (its `_sampledModules` then reflects the
+child is subsequently mutated: composed into a survivor (its stored modules then reflect the
 newer compose, not the split), or burned as a later compose's input and restored by that compose's
 own `decompose` (same id, same record, unaffected by the round trip in between). The view answers
-"how was this token created," not "what does it currently look like" — `ShapeLens.shapeState(childId)
-.modules` is the latter.
+"how was this token created", not "what does it currently look like": `shapeState(childId).modules`
+is the latter.
 
 ### Gas
 

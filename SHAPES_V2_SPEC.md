@@ -650,7 +650,7 @@ tokens exist anywhere.
 
 ## 19. Final value and position discovery amendment
 
-- `ShapeLens.exists(tokenId)` exposes ERC-721 liveness without reverting. It is true for any live
+- `exists(tokenId)` exposes ERC-721 liveness without reverting. It is true for any live
   Shape, including Black, and false for never-issued, redeemed/burned, split-parent and
   compose-consumed ids. Decompose can make a compose-consumed id live again.
 - `denomIndexOf(tokenId)` exposes the stored denomination index directly, returns 0..8 for a live
@@ -670,7 +670,7 @@ tokens exist anywhere.
   permanently freezes only the selected entry and may lock it while zero. Pointer id 0 means
   Positions and 1 means Market; every other id reverts. Nonzero targets must carry code when set,
   but locking freezes only the stored address, not the target's implementation.
-- `ShapeLens.positionOf(tokenId)` returns zero without a positions target. Otherwise it queries the
+- `positionOf(tokenId)` returns zero without a positions target. Otherwise it queries the
   target without checking token existence, backing or position status; failures and malformed
   address returns become zero.
 - A positions target may aggregate future position systems. The market pointer is discovery only.

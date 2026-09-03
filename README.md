@@ -199,12 +199,14 @@ not reduce either one.
 ## Optional external positions and market
 
 `positions()` and `market()` expose two explicit canonical ecosystem pointers, each paired with its
-independent permanent lock state. Both launch at `(address(0), false)`. Canonical means the contract
-surfaced by Shapes, not exclusive: anyone may build alternatives.
+independent permanent lock state. `market` names the auction house the deploy registered; `positions`
+launches empty. A nonzero target must answer ERC-165 for the interface its reader calls,
+`IShapePositionResolver` for positions and `IShapeAuctionHouse` for the market. Canonical means the
+contract surfaced by Shapes, not exclusive: anyone may build alternatives.
 
-`ShapeLens.positionOf(tokenId)` queries the configured positions contract. With no positions target
-it returns zero immediately. The target defines aggregation and position lifecycle; the lens does
-not check token existence, backing, claim validity or authorization. Reverts, excessive gas use and
+`positionOf(tokenId)` queries the configured positions contract. With no positions target it
+returns zero immediately. The target defines aggregation and position lifecycle; this view does not
+check token existence, backing, claim validity or authorization. Reverts, excessive gas use and
 malformed results return zero. A malicious target can mislead this view but cannot affect ownership,
 backing, redemption, burn, recomposition, rendering or reserve solvency. Core state-changing Shape
 operations never call either pointer.
@@ -322,9 +324,9 @@ and so the artwork, permanent.
 
 ```
 src/
-  Shapes.sol             ERC721 + the reserve
+  Shapes.sol             ERC721 + the reserve, every protocol action, view and preview
+  ShapeTypes.sol         the types Shapes, its libraries and its interfaces share
   ShapeRenderer.sol      fully onchain SVG and metadata
-  ShapeLens.sol          read-only periphery, split out to stay under the EIP-170 limit
   ShapeCollection.sol    collection-level presentation, seeded previews of unminted cards
   ShapeAuctionHouse.sol  English auction for any ERC721, bids denominated in Shape cards
   ShapeCardEscrow.sol    custody and valuation for bids made of Shape cards
@@ -333,22 +335,20 @@ src/
     IERC721Value.sol
     IShapeRenderer.sol
     IShapePositionResolver.sol
-    IShapeLens.sol
     IShapeCollection.sol
     IShapeAuctionHouse.sol
     IShapeCardEscrow.sol
     IShapeGeometry.sol
-    IShapeCapabilities.sol
     IAdminControl.sol
   lib/
     Denominations.sol         the nine amounts and their grids
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
     ComposeCompute.sol        module sampling and ink gene assignment in one call
-    AdminOps.sol              artist attestation, metadata copy, and fee-config mutators
+    RecompositionOps.sol      the compose, decompose and split state machine, and the previews
+    AdminOps.sol              every configuration write: fee, copy, presentation, pointers, artist
     CopyValidation.sol        UTF-8 and JSON-safety validation for owner-editable copy fields
     EIP712Signature.sol       reusable deployment-bound digest and EOA/ERC-1271 verification
-    PointerOps.sol            positions/market pointer configuration and one-way locks
     GeometrySampling.sol      the compose and split module-sampling procedures
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
@@ -357,8 +357,6 @@ script/
   Deploy.s.sol                the one deploy script, run for anvil, Sepolia, and mainnet alike
   deploy.sh                   the one wrapper: script/deploy.sh <anvil|sepolia|mainnet>
   env/                        anvil.env, sepolia.env, mainnet.env, values only, no secrets
-  DeployLens.s.sol            replacement lens for an already-deployed Shapes
-  LensEquivalence.s.sol       deploy-time proof that a lens previews what the token executes
   SeedShapes.s.sol            seeds an already-deployed Shapes; no seeding inside Deploy.s.sol
   e2e-anvil.sh                live end-to-end check against a local chain, via deploy.sh anvil
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
@@ -463,7 +461,7 @@ the two commands above. One command from the repo root:
 
 This boots (or reuses) the dev chain, deploys the contracts, then runs
 `preview/scripts/simulateHistory.ts` against it: roughly six weeks of dated activity across 30
-wallets, exercising every external function of `Shapes`, `ShapeLens` and `ShapeAuctionHouse`
+wallets, exercising every external function of `Shapes` and `ShapeAuctionHouse`
 several times each from different wallets, including full auction lifecycles, and ending with a
 curated set of presents sent to the browsing wallet. It then copies the deployment to
 `web/public/deployment.local.json` (gitignored, never the tracked `deployment.json`), which the
@@ -637,8 +635,8 @@ id selects the required denomination ladder — mainnet requires the mainnet lad
 testnet ladder, anvil accepts either — and any other chain id reverts. It sends the minimum
 denomination to `Shapes`, which mints backed Shape #0 to the deployer, then asserts every
 deployment value landed as intended, smoke-tests the renderer, verifies `artist()` is the
-deployer and that Shapes begins with an empty artist release hash and signature, and proves the
-lens previews what the token executes (see below) before reporting success.
+deployer and that Shapes begins with an empty artist release hash and signature, registers the
+auction house as the `market` pointer, and reads both pointers back before reporting success.
 
 One wrapper, `script/deploy.sh <anvil|sepolia|mainnet>`, runs it for every target through the
 same code path, sourcing `script/env/<name>.env` for the values that differ: chain id, Foundry
@@ -674,7 +672,7 @@ script/deploy.sh mainnet
 After a real broadcast, the wrapper reads the broadcast artifact, reads back every deployed
 contract on chain, polls Etherscan for verified source when `VERIFY=true`, and writes
 `deployments/<chainId>.json` with the same key set as `web/public/deployment.json` (`rpc`,
-`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `lens`, `auctionHouse`,
+`indexerUrl`, `chainId`, `shapes`, `renderer`, `collection`, `auctionHouse`,
 `mintFeeWei`, `mintStart`, `fromBlock`). Cutover to the site is a file copy. `deployments/31337.json` is
 gitignored; Sepolia and mainnet records are committed.
 
@@ -685,18 +683,6 @@ Foundry account, and verifies the permanent result. Set `SHAPES_ADDRESS` and the
 wrapper's reported Shapes deployment transaction hash is the `releaseHash` used in this signing
 ceremony. Never issue multiple valid signatures for competing hashes because any relayer holding
 one can submit it first.
-
-`Deploy.s.sol` also proves the lens previews what the token executes. `ShapeLens.previewCompose`
-matches `Shapes.compose` only while both resolve the externally linked `ComposeCompute` to the
-same deployment, so the script mints a probe token, splits it, composes it back, and requires the
-preview to equal the resulting core state byte for byte. The probe runs in the `forge script`
-simulation and is never broadcast: no probe token, no ETH, no token ids consumed.
-
-Redeploying the lens on its own runs the same check against the live token:
-
-```bash
-SHAPES_ADDRESS=0x... forge script script/DeployLens.s.sol --rpc-url $RPC   # dry run first
-```
 
 ## Deployed addresses
 

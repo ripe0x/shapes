@@ -1,6 +1,6 @@
 import React from "react";
 import {type PublicClient} from "viem";
-import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
+import {DENOMINATIONS, shapesAbi, type Deployment} from "../chain/abi";
 import {C, label} from "./theme";
 import {Art, OwnerTokenBanner, Section, TxStage, txStageLabel, type PendingTx} from "./ui";
 import type {SiteData, SiteToken} from "./data";
@@ -337,10 +337,10 @@ function ComposeReview({
     if (!complete || !survivor || !publicClient) return;
     void publicClient
       .readContract({
-        address: dep.lens,
-        abi: shapeLensAbi,
+        address: dep.shapes,
+        abi: shapesAbi,
         functionName: "previewCompose",
-        args: [survivor.id, burnIds],
+        args: [survivor.owner, survivor.id, burnIds],
       })
       .then((result) => {
         if (!cancelled) setPreview(buildComposeResultPreview(result, survivor.id));
@@ -353,7 +353,7 @@ function ComposeReview({
     };
     // burnKey is the stable representation of the sorted burn-id list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [burnKey, complete, dep.lens, publicClient, survivor]);
+  }, [burnKey, complete, dep.shapes, publicClient, survivor]);
 
   if (!complete) {
     return (

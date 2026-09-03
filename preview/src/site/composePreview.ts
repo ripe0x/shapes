@@ -15,7 +15,7 @@ export interface ComposeResultPreview {
   image: string;
 }
 
-/** Render the exact materialized result returned by ShapeLens.previewCompose. */
+/** Render the exact materialized result returned by Shapes.previewCompose. */
 export function buildComposeResultPreview(
   state: ComposePreviewState,
   tokenId: bigint,

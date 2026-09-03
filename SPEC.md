@@ -606,7 +606,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   locking either forever at zero, and can edit the token name prefix and description shared by token
   and collection metadata via `setMetadataCopy`. The
   renderer and collection are read only by `tokenURI`/`contractURI`; the positions target only by
-  `ShapeLens.positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
+  `positionOf`; the market is discovery only; the copy only by metadata views, and it is validated on set so it cannot
   break the JSON. Admin may also redirect future mint fee withdrawals and adjust the mint fee
   amount within the cap of one denomination unit, but cannot reach backing, redemption, already-accrued fees or
   token ownership. The copy is
@@ -690,9 +690,10 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   reverts to its snapshot gene, each revived input regains its own), so an `InkGene` event fires for
   the survivor and every revived id but no roll occurs. A compose then a decompose leave the gene
   exactly where it started (DECOMPOSE_SPEC.md).
-- **`simulateCompose`/`simulateSplit`** preview the exact gene a real `compose`/`split`
-  would produce, `view`, touching no storage — mirrors `compose`'s validation with an explicit
-  duplicate-burn-id check in place of relying on `_burn` reverting.
+- **`previewCompose`/`previewSplit`** report the exact gene a real `compose`/`split` would
+  produce. Both are `view`, write nothing, and take the account whose ownership is assumed. They
+  share their gates with the mutators, so a repeated burn id is rejected on both sides with
+  `DuplicateComposeInput`.
 - **One-tx apexes are not reachable.** `compose` burns its inputs in an O(n) loop, so a single
   transaction composing 10,000 dust straight into a 100 costs about 70.8M gas
   (`test_ComposeMegaGasProfile_10000Dust`), well over the block gas limit. This is fine for the
@@ -701,7 +702,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 ### D18. Final value and position discovery interfaces
 
-- **Direct liveness.** `ShapeLens.exists(tokenId)` is a non-reverting view of ERC-721 liveness: true for every
+- **Direct liveness.** `exists(tokenId)` is a non-reverting view of ERC-721 liveness: true for every
   live token including Black, and false for never-issued, redeemed/burned, split-parent and
   compose-consumed IDs. Decompose makes a revived input live again.
 - **Stored denomination fact.** `denomIndexOf(tokenId)` returns the live token's stored 0..8 ladder
@@ -723,7 +724,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   increasing IDs. The only identity revival is the exact set of compose inputs restored by its
   LIFO decompose record; redemption, public burn and split never recycle retired IDs.
 - **Explicit positions and market pointers.** `positions()` and `market()` each return the target
-  plus its independent lock state. Both launch empty and unlocked. `ShapeLens.positionOf(tokenId)`
+  plus its independent lock state. `positionOf(tokenId)`
   returns zero without a positions target; otherwise it queries the target without a token-existence
   or backing check. Reverts and malformed address returns become zero.
 - **Future position semantics.** The external protocol may escrow a fully funded claim against a
@@ -758,4 +759,4 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 | Solidity SVG byte-identical to TypeScript fixtures | `forge test --mc Parity` |
 | Reserve solvency under fuzzed mint/transfer/redeem sequences | `forge test --mc Invariant` |
 | Value alias, burn settlement, Black zero-burn and ID lifecycle | `forge test --mc ValueDiscoveryTest` |
-| Pointer configuration, lens delegation and administrative isolation | `forge test --mc PointersTest` |
+| Pointer configuration and administrative isolation | `forge test --mc PointersTest` |

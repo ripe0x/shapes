@@ -45,19 +45,21 @@ Holding it conveys no administrative authority. The separate `admin()` role cont
 documented bounded mutable surfaces.
 
 The release exposes exactly two named canonical discovery pointers, `positions()` and `market()`.
-Both begin zero and unlocked; admin may set, clear or permanently lock each independently. A
-nonzero target must contain code. Renouncing admin freezes every still-unlocked pointer at its last
-value because no caller remains authorized. Canonical means surfaced by Shapes, not exclusive.
+`positions` begins zero; the deploy registers the auction house as `market`. Both begin unlocked;
+admin may set, clear or permanently lock each independently. A nonzero target must contain code and
+answer ERC-165 for the interface its reader calls. Renouncing admin freezes every still-unlocked
+pointer at its last value because no caller remains authorized. Canonical means surfaced by Shapes,
+not exclusive.
 
 The pointers and their targets must remain powerless over Shapes. No core value or token-state
-operation may read or call them. `ShapeLens.positionOf` is optional periphery: it reads the current
-positions target with a 50,000-gas cap and converts revert, out-of-gas, empty, short or malformed
-returns to the zero address. The market target is discovery-only and is never called by Shapes or
-ShapeLens.
+operation may read or call them. `Shapes.positionOf` reads the current positions target with a
+50,000-gas cap and converts revert, out-of-gas, empty, short or malformed returns to the zero
+address. The market target is discovery-only and is never called by Shapes.
 
-`PointerOps` and `AdminOps` are stateless linked libraries. Shapes reaches each by delegatecall only
-through admin-gated wrappers; `PointerOps` mutates the positions/market pointer and lock slots,
-`AdminOps` executes `attestArtist`, `setMetadataCopy`, `setFeeRecipient` and `setMintFee`, and
+`RecompositionOps` and `AdminOps` are stateless linked libraries. Shapes reaches each by
+delegatecall; `RecompositionOps` runs the compose, decompose and split state machine and the
+previews over one `ShapeStore` pointer, `AdminOps` runs every configuration write behind
+admin-gated wrappers, and
 neither has authority at its own deployed address. Treat storage-slot selection, delegatecall
 boundaries and linked address integrity as high-priority review areas for both.
 
@@ -94,15 +96,15 @@ economic asymmetry itself as a vulnerability unless it violates a documented sec
 - `src/ShapeAuctionHouse.sol` and `src/ShapeCardEscrow.sol`: lot custody, ETH/card bidding,
   per-card mint-fee quoting/payment, anti-sniping, settlement, pull delivery, escrow accounting and
   reentrancy boundaries.
-- `src/ShapeLens.sol`: liveness, state/provenance/preview reads, bounded positions lookup and
-  compose-record decoding of `ownerTokenFrom`.
 - `src/ShapeRenderer.sol` and `src/ShapeCollection.sol`: metadata, bounded rendering,
   replaceability/locking and presentation-only entropy, including the owner token's special
   identity.
-- The seven linked libraries: `AdminOps`, `ComposeCompute`, `CopyValidation`, `EIP712Signature`,
-  `GeometrySampling`, `InkGenes` and `PointerOps`. `AdminOps` hosts `attestArtist`,
-  `setMetadataCopy`, `setFeeRecipient` and `setMintFee` behind admin-gated delegatecall wrappers in
-  `Shapes.sol`; review its storage-slot selection and delegatecall boundary alongside `PointerOps`.
+- The linked libraries: `RecompositionOps`, `AdminOps`, `ComposeCompute`, `CopyValidation`,
+  `EIP712Signature`, `GeometrySampling` and `InkGenes`. `RecompositionOps` holds the compose,
+  decompose and split bodies, the previews, and the decoded record reads, over one `ShapeStore`
+  storage pointer; `AdminOps` holds every configuration write behind admin-gated wrappers in
+  `Shapes.sol`. Review the storage-struct layout each receives and the delegatecall boundary: no
+  library may write ERC-721 state, move ETH, or touch the owner token or the admin address.
 - All interfaces under `src/interfaces/`, including ERC-165 capability claims.
 - `script/Deploy.s.sol`, `script/deploy.sh`, shell guards, seed/evidence scripts and release fork
   tests: immutable configuration, exact value construction, wiring, ladder/profile selection and
@@ -133,12 +135,12 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
    and presentation; it cannot alter reserve accounting, auction eligibility or lifecycle behavior
    of any token. `OwnerTokenMoved` and the compose record's `ownerTokenFrom` match actual movement
    exactly, including nested and nothing-to-restore cases.
-9. Positions, market, their targets and PointerOps cannot move Shapes or ETH, change backing or
+9. Positions, market and their targets cannot move Shapes or ETH, change backing or
    denomination, block/redirect redemption, affect mint/recomposition, change ownership, execute
    for holders, or enter any core authorization decision.
 10. Pointer entries enforce independent lock permanence, authorization, code checks and exact zero
     behavior. Admin renunciation creates no alternate setter or locker.
-11. `ShapeLens.positionOf` cannot make any core operation depend on an external target and cannot
+11. `Shapes.positionOf` cannot make any core operation depend on an external target and cannot
     turn hostile return data or gas consumption into uncontrolled failure.
 12. Direct artist attestation is deployment-bound, one-time, signature-valid and powerless. The
     payable genesis constructor cannot misaccount backing or charge a public mint fee.
@@ -148,7 +150,7 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
     claimant, cannot be claimed twice, and cannot be stranded by another party's receiver behavior.
 15. Bids use redeemable backing, advance by a representable whole unit, and cannot charge or lock
     more than accepted. Anti-sniping can extend but never shorten the deadline.
-16. Lens and renderer calls cannot mutate value state or become required for redemption. Renderer
+16. Renderer and collection calls cannot mutate value state or become required for redemption. Renderer
     replacement/locking cannot alter ownership, backing, provenance or redemption rights.
 17. Solidity rendering remains byte-identical to accepted TypeScript fixtures and the frozen
     legacy oracle.
@@ -165,7 +167,7 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
 - Review every external call and checks-effects-interactions boundary. Treat permanent loss or lock
   of a user's asset as a finding even when global solvency remains intact.
 - Trace every core state-changing entrypoint and confirm it never reads or calls positions, market
-  or a registered target. Review PointerOps' storage slots against the exact Shapes layout and all
+  or a registered target. Review each library's storage-struct layout against the exact Shapes layout and all
   inheritance effects.
 - Resolve D-17 explicitly: `minIncrementBps` is seller-supplied `uint16` without a separate policy
   cap. Determine whether any value causes overflow, an unrepresentable/deadlocked next bid,
@@ -178,16 +180,11 @@ fee/ABI assumptions expose an onchain safety or liveness failure.
 
 ## Existing evidence, not substitutes for review
 
-- Default and testnet Foundry profiles each pass 508 tests with 4 expected RPC-only skips.
-- Runtime sizes, default/testnet: Shapes 23,606/23,586 bytes (970/990 bytes of EIP-170 margin);
-  ShapeRenderer 23,437/23,436; ShapeLens 10,826/10,808; ShapeAuctionHouse unchanged 7,939/7,930.
-  The prerequisite byte-recovery pass (extracting `attestArtist`, `setMetadataCopy`,
-  `setFeeRecipient` and `setMintFee` into the delegatecalled `AdminOps` library, and lowering
-  `optimizer_runs` to 20) brings the deployed source count from eleven to twelve.
-- `IShapes` is `0x86df37ba`.
-- The `claude/mint-start` follow-up merge changes this evidence: Shapes runtime becomes
-  23,796/23,776 bytes default/testnet (780/800 bytes of EIP-170 margin), `IShapes` becomes
-  `0xa381713f`, and both profiles pass 517 tests.
+- Default and testnet Foundry profiles each pass 519 tests with 4 expected RPC-only skips.
+- Runtime sizes, default/testnet: Shapes 20,370/20,353 bytes (4,206/4,223 bytes of EIP-170 margin);
+  RecompositionOps 12,246/12,228; ShapeRenderer 23,442/23,441; ShapeAuctionHouse 8,015/8,006;
+  ShapeCollection 4,077/4,070.
+- `IShapes` is `0xaaf9b098`.
 - This candidate is not yet deployed to Sepolia or mainnet; there is no live-deployment evidence
   for it yet. Re-run Medusa, the Anvil lifecycle rehearsal, preview/web builds and the indexer
   checks against the pinned commit above rather than relying on prior releases' results.

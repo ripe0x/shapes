@@ -283,32 +283,64 @@ answer different questions and are not two views of one number.
 CEI holds in every mutator: state is written before any external call, and the receiver-callback
 loops in `split` and `decompose` run after every write.
 
-## 11. Measured runtime sizes
+## 11. Decisions taken here
 
-Measured with `forge build --sizes`, `optimizer_runs = 20`, `via_ir = true`. EIP-170 limit 24,576.
+Recorded so a reader does not have to reconstruct them from the code.
 
-Before this refactor, default profile:
+**One presentation lock, not two.** `lockPresentation` freezes the renderer and the collection
+together, because `setRenderer` and `setCollection` already gated on the same flag. Two independent
+locks would be two facts to reason about where the code has one, and nothing has asked to freeze
+half of presentation.
 
-| Contract | Runtime | Margin |
-| --- | --- | --- |
-| `Shapes` | 23,795 | 781 |
-| `ShapeLens` | 10,826 | 13,750 |
-| `ShapeRenderer` | 23,442 | 1,134 |
+**The admin address and the owner token stay on the token.** The libraries hold every other write
+path, but `transferAdmin`, `renounceAdmin` and every owner-token move execute in `Shapes`'s own
+runtime. Moving them would make a library able to hand over the admin role or move collection
+ownership, which is worth more than the roughly 250 bytes it would recover.
 
-Spikes that sized the moves, on the same source:
+**`blackShapeCount` counts what its name says.** It is the number of Black Shapes alive now, so
+burning one for zero lowers it. `burnedBacking` stays cumulative and monotonic, because that ETH has
+already left the contract. The two answer different questions.
 
-| Bodies removed from `Shapes` | Runtime | Recovered |
-| --- | --- | --- |
-| `_compose`, `_splitTo`, `_decomposeTo` and their helpers | 16,885 | 6,910 |
-| the renderer, collection, pointer and admin-transfer write paths | 22,485 | 1,310 |
+**A pointer must answer the interface its reader calls.** A market target must support
+`IShapeAuctionHouse`, a positions target `IShapePositionResolver`. A live contract of the wrong kind
+is refused rather than stored and silently useless. Zero always clears.
 
-Final measured sizes are recorded in section 12 of this file and in `foundry.toml`.
+**The duplicate-input check runs on both sides.** `requireDistinct` sorts a memory copy of `burnIds`
+and rejects adjacent equals, in `compose` and in `previewCompose` alike. Before, the mutator relied
+on `_burn` reverting on the second occurrence and reported `ERC721NonexistentToken`, while the
+preview reported `DuplicateComposeInput`. Now both report `DuplicateComposeInput`, and the check is
+one function.
 
-## 12. Measured result
+**Previews name their account.** `previewCompose(account, ...)` and `previewSplit(account, ...)`
+apply the ownership gate that account would meet. A preview with no account cannot answer the
+question the caller is actually asking, which is whether their call would go through.
 
-See the table kept current here after each size-affecting change.
+**Grid geometry is not on the token.** `gridForAmount` and `modulesForAmount` are gone;
+`IShapeGeometry.cardGeometry` on `renderer()` already returned columns, rows and module count. The
+value ladder is the token's fact, the grid is the renderer's.
 
-| Contract | Default | Testnet | Margin (default) |
-| --- | --- | --- | --- |
-| `Shapes` | (recorded at P5) | | |
-</invoke>
+## 12. Measured runtime sizes
+
+`forge build --sizes`, `optimizer_runs = 20`, `via_ir = true`. EIP-170 limit 24,576.
+
+| Contract | Before | Default | Testnet | Margin (default) |
+| --- | --- | --- | --- | --- |
+| `Shapes` | 23,795 | 20,370 | 20,353 | 4,206 |
+| `ShapeLens` | 10,826 | deleted | deleted | |
+| `RecompositionOps` | new | 12,246 | 12,228 | |
+| `AdminOps` | 3,747 | 3,747 | 3,746 | |
+| `ShapeRenderer` | 23,442 | 23,442 | 23,441 | 1,134 |
+| `ShapeAuctionHouse` | 7,916 | 8,015 | 8,006 | 16,561 |
+| `ShapeCollection` | 4,077 | 4,077 | 4,070 | 20,499 |
+| `GeometrySampling` | 4,714 | 4,714 | 4,714 | |
+| `ComposeCompute` | 1,258 | 1,258 | 1,258 | |
+| `EIP712Signature` | 1,006 | 1,006 | 1,006 | |
+| `CopyValidation` | 852 | 852 | 852 | |
+| `InkGenes` | 729 | 729 | 729 | |
+
+`Shapes` carries more surface than before and is 3,425 bytes smaller. The spikes that sized the
+moves, measured on the pre-refactor source: stubbing the compose, split and decompose bodies
+recovered 6,910 bytes; stubbing the renderer, collection, pointer and admin-transfer write paths
+recovered 1,310. The views and previews added back about 2,690.
+
+`IShapes` is `0xaaf9b098`, pinned in `test/ContractOwnership.t.sol`.

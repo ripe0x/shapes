@@ -290,13 +290,11 @@ require_uint_read() {
 RENDERER=$(contract_address ShapeRenderer)
 COLLECTION=$(contract_address ShapeCollection)
 SHAPES=$(contract_address Shapes)
-LENS=$(contract_address ShapeLens)
 HOUSE=$(contract_address ShapeAuctionHouse)
 
 require_address ShapeRenderer "$RENDERER"
 require_address ShapeCollection "$COLLECTION"
 require_address Shapes "$SHAPES"
-require_address ShapeLens "$LENS"
 require_address ShapeAuctionHouse "$HOUSE"
 
 # Linked libraries are deployed before the script run and recorded separately by Foundry.
@@ -348,7 +346,6 @@ if [ "$VERIFY" = "true" ]; then
   verify_one src/ShapeRenderer.sol:ShapeRenderer ShapeRenderer "$RENDERER"
   verify_one src/ShapeCollection.sol:ShapeCollection ShapeCollection "$COLLECTION"
   verify_one src/Shapes.sol:Shapes Shapes "$SHAPES"
-  verify_one src/ShapeLens.sol:ShapeLens ShapeLens "$LENS"
   verify_one src/ShapeAuctionHouse.sol:ShapeAuctionHouse ShapeAuctionHouse "$HOUSE"
 
   while IFS=: read -r source contract address; do
@@ -385,7 +382,6 @@ require_address_read renderer "$(cast call "$SHAPES" 'renderer()(address)' --rpc
 require_address_read collection "$(cast call "$SHAPES" 'collection()(address)' --rpc-url "$RPC")" "$COLLECTION"
 require_address_read 'collection renderer' \
   "$(cast call "$COLLECTION" 'renderer()(address)' --rpc-url "$RPC")" "$RENDERER"
-require_address_read 'lens target' "$(cast call "$LENS" 'shapes()(address)' --rpc-url "$RPC")" "$SHAPES"
 require_address_read 'auction-house target' "$(cast call "$HOUSE" 'shapes()(address)' --rpc-url "$RPC")" "$SHAPES"
 
 MINT_FEE_ONCHAIN=$(cast call "$SHAPES" 'mintFee()(uint256)' --rpc-url "$RPC" | awk '{print $1}')
@@ -404,14 +400,19 @@ require_uint_read 'auction count' "$(cast call "$HOUSE" 'auctionCount()(uint256)
   || { echo "artist attribution unexpectedly signed during deployment" >&2; exit 1; }
 [ "$(cast call "$SHAPES" 'artistSignature()(bytes)' --rpc-url "$RPC")" = "0x" ] \
   || { echo "artist signature unexpectedly populated during deployment" >&2; exit 1; }
-[ "$(cast call "$LENS" 'exists(uint256)(bool)' 0 --rpc-url "$RPC")" = "true" ] \
+[ "$(cast call "$SHAPES" 'exists(uint256)(bool)' 0 --rpc-url "$RPC")" = "true" ] \
   || { echo "Shape #0 is not live" >&2; exit 1; }
+# The two discovery pointers. The market names the auction house the deploy just registered;
+# positions starts empty because no positions contract exists. Neither is locked.
 POSITIONS=$(cast call "$SHAPES" 'positions()(address,bool)' --rpc-url "$RPC")
 MARKET=$(cast call "$SHAPES" 'market()(address,bool)' --rpc-url "$RPC")
+echo "  positions    $POSITIONS" | tr '\n' ' '; echo
+echo "  market       $MARKET" | tr '\n' ' '; echo
 [ "$POSITIONS" = $'0x0000000000000000000000000000000000000000\nfalse' ] \
   || { echo "positions pointer did not start empty and unlocked" >&2; exit 1; }
-[ "$MARKET" = $'0x0000000000000000000000000000000000000000\nfalse' ] \
-  || { echo "market pointer did not start empty and unlocked" >&2; exit 1; }
+# `cast call` returns a checksummed address; `contract_address` lowercases. Compare on one case.
+[ "$(echo "$MARKET" | tr '[:upper:]' '[:lower:]')" = "$HOUSE"$'\nfalse' ] \
+  || { echo "market pointer does not name the deployed auction house, unlocked" >&2; exit 1; }
 
 echo "  ok: onchain readback matches the deploy"
 
@@ -427,12 +428,11 @@ jq -n \
   --arg shapes "$SHAPES" \
   --arg renderer "$RENDERER" \
   --arg collection "$COLLECTION" \
-  --arg lens "$LENS" \
   --arg auctionHouse "$HOUSE" \
   --arg mintFeeWei "$MINT_FEE_ONCHAIN" \
   --arg mintStart "$MINT_START_ONCHAIN" \
   --argjson fromBlock "$FROM_BLOCK" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,lens:$lens,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock}' \
+  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,fromBlock:$fromBlock}' \
   >"$DEPLOYMENT_FILE"
 
 echo
@@ -440,7 +440,6 @@ echo "Deployed to $ENV_NAME (chain $CHAIN_ID)"
 echo "  Shapes          $SHAPES"
 echo "  ShapeRenderer   $RENDERER"
 echo "  ShapeCollection $COLLECTION"
-echo "  ShapeLens       $LENS"
 echo "  AuctionHouse    $HOUSE"
 echo "  deployment tx   $SHAPES_TX"
 echo "  from block      $FROM_BLOCK"
