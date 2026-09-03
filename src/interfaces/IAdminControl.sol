@@ -28,7 +28,8 @@ interface IAdminControl {
 
     /// @notice Redirect future mint fees to `newRecipient`. Fees already accrued to the previous
     ///         recipient stay owed to it, withdrawable by anyone via `withdrawFees`; the reserve
-    ///         is unaffected either way.
+    ///         is unaffected either way. Reverts for the zero address and for this token's own
+    ///         address, which cannot receive ETH.
     function setFeeRecipient(address newRecipient) external;
 
     /// @notice Change the flat per-Shape mint fee. Takes effect for every later mint and for the

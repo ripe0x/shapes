@@ -2934,7 +2934,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "outputs": [],
-        "notice": "Redirect future mint fees to `newRecipient`. Fees already accrued to the previous recipient stay owed to it, withdrawable by anyone via `withdrawFees`; the reserve is unaffected either way.",
+        "notice": "Redirect future mint fees to `newRecipient`. Fees already accrued to the previous recipient stay owed to it, withdrawable by anyone via `withdrawFees`; the reserve is unaffected either way. Reverts for the zero address and for this token's own address, which cannot receive ETH.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -3026,7 +3026,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "outputs": [],
-        "notice": "Replace the onchain renderer. Admin only, until presentation is locked. `tokenURI` reads the renderer, so a change affects how a Shape looks and leaves its backing, redeemability and owner untouched. `newRenderer` must carry code and support `IShapeRenderer`.",
+        "notice": "Replace the onchain renderer. Admin only, until presentation is locked. `tokenURI` reads the renderer, so a change affects how a Shape looks and leaves its backing, redeemability and owner untouched. `newRenderer` must carry code and support both `IShapeRenderer` and `IShapeGeometry`, since `geometryOf` and `moduleAt` call the renderer as `IShapeGeometry`.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -8925,7 +8925,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setFeeRecipient`. Only points future accrual at `newRecipient`; fees already credited to `previousRecipient` stay owed to it and are untouched here.",
+        "dev": "Body of `Shapes.setFeeRecipient`. Only points future accrual at `newRecipient`; fees already credited to `previousRecipient` stay owed to it and are untouched here. Rejects the zero address and `address(this)`, which in this delegatecall library is `Shapes` itself: `Shapes` has no payable `receive`, so fees credited to its own address could never be withdrawn.",
         "params": {},
         "returns": {}
       },

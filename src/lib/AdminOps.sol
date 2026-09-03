@@ -7,6 +7,7 @@ import {IERC4906} from "@openzeppelin/contracts/interfaces/IERC4906.sol";
 import {IAdminControl} from "../interfaces/IAdminControl.sol";
 import {IShapeAuctionHouse} from "../interfaces/IShapeAuctionHouse.sol";
 import {IShapeCollection} from "../interfaces/IShapeCollection.sol";
+import {IShapeGeometry} from "../interfaces/IShapeGeometry.sol";
 import {IShapePositionResolver} from "../interfaces/IShapePositionResolver.sol";
 import {IShapeRenderer} from "../interfaces/IShapeRenderer.sol";
 import {IShapes} from "../interfaces/IShapes.sol";
@@ -69,11 +70,17 @@ library AdminOps {
 
     /* ---------------------------- presentation ---------------------------- */
 
-    /// @notice Reverts unless `renderer` has code and answers ERC-165 for `IShapeRenderer`.
+    /// @notice Reverts unless `renderer` has code and answers ERC-165 for both `IShapeRenderer`
+    ///         and `IShapeGeometry`. `Shapes.geometryOf` and `Shapes.moduleAt` call the renderer
+    ///         as `IShapeGeometry`, so both interfaces must be supported for every renderer that
+    ///         installs.
     /// @dev A zero address has no code, so the length check rejects it. `Shapes`'s constructor
     ///      calls this before it writes the initial renderer.
     function requireRenderer(address renderer) internal view {
-        if (renderer.code.length == 0 || !_supports(renderer, type(IShapeRenderer).interfaceId)) {
+        if (
+            renderer.code.length == 0 || !_supports(renderer, type(IShapeRenderer).interfaceId)
+                || !_supports(renderer, type(IShapeGeometry).interfaceId)
+        ) {
             revert IShapes.UnsupportedRenderer(renderer);
         }
     }
@@ -130,8 +137,13 @@ library AdminOps {
 
     /// @dev Body of `Shapes.setFeeRecipient`. Only points future accrual at `newRecipient`; fees
     ///      already credited to `previousRecipient` stay owed to it and are untouched here.
+    ///      Rejects the zero address and `address(this)`, which in this delegatecall library is
+    ///      `Shapes` itself: `Shapes` has no payable `receive`, so fees credited to its own address
+    ///      could never be withdrawn.
     function setFeeRecipient(FeeConfig storage fees, address newRecipient) public {
-        if (newRecipient == address(0)) revert IAdminControl.AdminInvalidFeeRecipient(address(0));
+        if (newRecipient == address(0) || newRecipient == address(this)) {
+            revert IAdminControl.AdminInvalidFeeRecipient(newRecipient);
+        }
         address previousRecipient = fees.feeRecipient;
         fees.feeRecipient = newRecipient;
         emit IAdminControl.FeeRecipientUpdated(previousRecipient, newRecipient);
