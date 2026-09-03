@@ -146,8 +146,9 @@ recipient now blocks only its own `withdrawFees` call; minting and every other r
 withdrawal are unaffected. If `withdrawFees` fails, the balance it targeted is untouched (the
 whole call reverts), and `setFeeRecipient` only points future accrual elsewhere — it does not move
 what is already owed to the reverting recipient, which stays stuck until that recipient can accept
-ETH. The deploy script still refuses an initial contract recipient unless
-`SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true` is set explicitly; prefer an EOA. Renouncing admin
+ETH. The deploy script proves the initial recipient accepts a plain ETH transfer by simulating one
+before deploying, rather than requiring an EOA; a contract that accepts plain ETH (a 0xSplits
+wallet, for example) passes the same guard an EOA does. Renouncing admin
 freezes the final recipient, so its ability to accept ETH should be confirmed first, though a
 reverting recipient at that point only strands its own balance, never anyone else's, and never the
 reserve.

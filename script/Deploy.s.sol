@@ -29,7 +29,6 @@ import {Script} from "forge-std/Script.sol";
 ///        SHAPES_FEE_RECIPIENT  where fees accrue and, by default, are sent by `withdrawFees`.
 ///                              Required off chain id 31337, where it defaults to the deployer.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
-///        SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT  set true to allow a contract fee recipient.
 ///        SHAPES_MINT_START     unix timestamp at or after which mintBatch/mintBatchTo accept
 ///                              calls. Defaults to 0, which opens them immediately. Immutable
 ///                              once deployed.
@@ -130,12 +129,17 @@ contract Deploy is Script {
             mintFee <= MAX_SANE_MINT_FEE,
             "flat fee above the on-chain cap (one denomination unit): the constructor would reject it"
         );
+        // A recipient that cannot receive plain ETH would block its own `withdrawFees` call
+        // permanently: a later redirect starts a new accrual for the new recipient rather than
+        // recovering this one's. Prove acceptance here instead of gating on code length, since a
+        // contract (a 0xSplits wallet, for example) can accept ETH just as reliably as an EOA.
+        // The probe runs the transfer from its own throwaway address rather than this script's:
+        // forge refuses `address(this)` inside a Script contract since its address is ephemeral.
+        // `vm.deal`/`call` run only in this simulation, never as a broadcast transaction.
+        EthAcceptanceProbe probe = new EthAcceptanceProbe();
+        vm.deal(address(probe), 1);
         require(
-            feeRecipient.code.length == 0 || vm.envOr("SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT", false),
-            "fee recipient is a contract: a reverting receive would block its own withdrawFees call "
-            "permanently, since a later redirect starts a new accrual for the new recipient rather "
-            "than recovering this one's. Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is "
-            "audited to always accept ETH"
+            probe.probe(feeRecipient), "fee recipient rejects plain ETH: withdrawFees would revert forever"
         );
 
         // Shapes derives the genesis seed from the previous block. A fresh local chain is still
@@ -260,5 +264,13 @@ contract Deploy is Script {
         console.log("tokenNamePrefix=%s", collection.tokenNamePrefix());
         console.log("description=%s", collection.description());
         console.log("ownerTokenDescription=%s", collection.ownerTokenDescription());
+    }
+}
+
+/// @dev Forwards its own balance to `target` in a plain ETH transfer. Exists only so `Deploy` can
+///      prove a fee recipient accepts ETH without referencing its own (ephemeral) address.
+contract EthAcceptanceProbe {
+    function probe(address target) external returns (bool accepted) {
+        (accepted,) = target.call{value: address(this).balance}("");
     }
 }
