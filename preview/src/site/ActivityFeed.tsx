@@ -330,6 +330,7 @@ function ActivityRow({
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
         {row.detail && <span className="activity-detail">{row.detail}</span>}
+        <span className="activity-detail">{addressLabel(event.actor)}</span>
       </div>
 
       <div className="activity-thumbs">
@@ -345,10 +346,13 @@ function ActivityRow({
       </div>
 
       <div className="activity-row-foot">
-        <span>{addressLabel(event.actor)}</span>
-        <span>{relativeTime(event.timestamp, nowSeconds)}</span>
-        <a href={txUrl(event.txHash, chainId)} target="_blank" rel="noreferrer">
-          {event.txHash.slice(0, 10)}… on evm.now
+        <a
+          href={txUrl(event.txHash, chainId)}
+          target="_blank"
+          rel="noreferrer"
+          title={`Transaction ${event.txHash} on evm.now`}
+        >
+          {relativeTime(event.timestamp, nowSeconds)}
         </a>
       </div>
     </li>

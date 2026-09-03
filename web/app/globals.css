@@ -757,10 +757,16 @@ button {
 
 .activity-row-foot {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 16px;
   text-align: right;
+}
+
+.activity-row-foot a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.activity-row-foot a:hover {
+  color: var(--ink);
 }
 
 .activity-note {
