@@ -237,7 +237,7 @@ These five are grouped: each is *effectively* permissionless (any caller may inv
 | Caller | Owner of an apex (100 ETH) Complete Shape |
 | Parameters | `tokenId` (user-controlled) |
 | Call chain | `→ Shapes._requireCallerOwnsLive() → Shapes._sendEth(UNSPENDABLE, 100 ether)` |
-| State modified | `_shapes[tokenId].isBlack`, `redeemableBacking`, `sacrificedBacking`, `blackCount` |
+| State modified | `_shapes[tokenId].isBlack`, `redeemableBacking`, `burnedBacking`, `blackShapeCount` |
 | Value flow | out — fixed 100 ETH to `0x…dEaD` |
 | Reentrancy guard | yes |
 

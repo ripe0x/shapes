@@ -644,8 +644,8 @@ contract BlackPathsTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IShapes.TokenIsBlack.selector, black));
         shapes.decompose(black);
 
-        uint256 blackCountBefore = shapes.blackCount();
-        uint256 sacrificedBefore = shapes.sacrificedBacking();
+        uint256 blackShapeCountBefore = shapes.blackShapeCount();
+        uint256 sacrificedBefore = shapes.burnedBacking();
 
         vm.prank(bob);
         shapes.burn(black); // zero-value burn, allowed for Black
@@ -655,8 +655,8 @@ contract BlackPathsTest is ShapesBase {
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, black));
         shapes.decompose(black);
 
-        assertEq(shapes.blackCount(), blackCountBefore, "blackCount unaffected by the burn");
-        assertEq(shapes.sacrificedBacking(), sacrificedBefore, "sacrificedBacking unaffected by the burn");
+        assertEq(shapes.blackShapeCount(), blackShapeCountBefore, "blackShapeCount unaffected by the burn");
+        assertEq(shapes.burnedBacking(), sacrificedBefore, "burnedBacking unaffected by the burn");
         _assertSolvent();
     }
 }

@@ -28,8 +28,8 @@ type Formation = "Black" | "Complete" | "Fragment" | "Direct" | "Composed";
 
 interface Reserve {
   redeemableBacking: bigint;
-  sacrificedBacking: bigint;
-  blackCount: bigint;
+  burnedBacking: bigint;
+  blackShapeCount: bigint;
   balance: bigint;
   supply: bigint;
   minted: bigint;
@@ -192,18 +192,18 @@ export function ChainApp({dep}: {dep: Deployment}) {
     if (!publicClient || !address) return;
     const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-    const [redeemableBacking, sacrificedBacking, blackCount, supply, minted, fee, balance, acct] =
+    const [redeemableBacking, burnedBacking, blackShapeCount, supply, minted, fee, balance, acct] =
       await Promise.all([
         publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
-        publicClient.readContract({...shapes, functionName: "sacrificedBacking"}),
-        publicClient.readContract({...shapes, functionName: "blackCount"}),
+        publicClient.readContract({...shapes, functionName: "burnedBacking"}),
+        publicClient.readContract({...shapes, functionName: "blackShapeCount"}),
         publicClient.readContract({...shapes, functionName: "totalSupply"}),
         publicClient.readContract({...shapes, functionName: "totalMinted"}),
         publicClient.readContract({...shapes, functionName: "mintFee"}),
         publicClient.getBalance({address: dep.shapes}),
         publicClient.getBalance({address}),
       ]);
-    setReserve({redeemableBacking, sacrificedBacking, blackCount, balance, supply, minted});
+    setReserve({redeemableBacking, burnedBacking, blackShapeCount, balance, supply, minted});
     setMintFee(fee);
     setAcctBalance(acct);
 
@@ -845,8 +845,11 @@ function ReserveCard({
       <Row k="contract balance" v={`${formatEther(reserve.balance)} ETH`} />
       <Row k="redeemableBacking()" v={`${formatEther(reserve.redeemableBacking)} ETH`} />
       <Row k="invariant  balance ≥ redeemable" v={solvent ? "OK" : "INSOLVENT"} danger={!solvent} />
-      {reserve.blackCount > 0n && (
-        <Row k="sacrificed (Black)" v={`${formatEther(reserve.sacrificedBacking)} ETH · ${reserve.blackCount} black`} />
+      {reserve.blackShapeCount > 0n && (
+        <Row
+          k="sacrificed (Black Shapes)"
+          v={`${formatEther(reserve.burnedBacking)} ETH · ${reserve.blackShapeCount} Black Shapes`}
+        />
       )}
       <Row k="live / minted" v={`${reserve.supply} / ${reserve.minted}`} />
       <Row k="mint fee" v={`${formatEther(feePerNft)} ETH per Shape`} />

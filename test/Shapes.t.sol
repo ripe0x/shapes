@@ -1963,8 +1963,8 @@ contract BlackShapeTest is ShapesBase {
         assertTrue(shapes.isBlack(id), "now Black");
         assertTrue(lens.exists(id), "Black remains a live ERC721");
         assertEq(shapes.denomIndexOf(id), 8, "Black retains its apex denomination index");
-        assertEq(shapes.blackCount(), 1);
-        assertEq(shapes.sacrificedBacking(), DENOMS[8]);
+        assertEq(shapes.blackShapeCount(), 1);
+        assertEq(shapes.burnedBacking(), DENOMS[8]);
         assertEq(shapes.redeemableBacking(), 0, "backing left the reserve");
         assertEq(DEAD.balance, deadBefore + DENOMS[8], "sacrificed to the burn address");
         assertEq(address(shapes).balance, balBefore - DENOMS[8], "contract paid it out");
@@ -2016,8 +2016,8 @@ contract BlackShapeTest is ShapesBase {
         shapes.burn(id);
 
         assertEq(alice.balance, balanceBefore, "zero-value burn transfers no ETH");
-        assertEq(shapes.sacrificedBacking(), DENOMS[8], "historical sacrifice remains counted");
-        assertEq(shapes.blackCount(), 1, "blackCount is cumulative");
+        assertEq(shapes.burnedBacking(), DENOMS[8], "historical sacrifice remains counted");
+        assertEq(shapes.blackShapeCount(), 1, "blackShapeCount is cumulative");
         assertFalse(lens.exists(id), "burn retires the Black id");
         vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, id));
         shapes.ownerOf(id);

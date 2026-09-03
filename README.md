@@ -193,7 +193,7 @@ without burning it. The same ID, owner, seed, provenance and artwork geometry re
 updated to the inverted Black rendering. A Black Shape stays transferable and may be burned for
 zero, but it cannot be redeemed, composed, decomposed or sacrificed again.
 
-`sacrificedBacking` and `blackCount` are cumulative historical counters. Burning a Black Shape does
+`burnedBacking` and `blackShapeCount` are cumulative historical counters. Burning a Black Shape does
 not reduce either one.
 
 ## Optional external positions and market

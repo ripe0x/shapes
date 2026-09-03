@@ -17,6 +17,8 @@ interface IAdminControl {
     error AdminInvalidAdmin(address admin);
     error AdminInvalidFeeRecipient(address recipient);
 
+    /// @notice Address allowed to perform administrative actions.
+    /// @dev Independent of `owner()` and of ownership of any Shape.
     function admin() external view returns (address);
 
     function transferAdmin(address newAdmin) external;

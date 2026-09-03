@@ -672,11 +672,11 @@ async function main() {
 
   /* -------------------------------- totals -------------------------------- */
 
-  const [supply, reserve, pendingFees, blackCount, auctionCount] = await Promise.all([
+  const [supply, reserve, pendingFees, blackShapeCount, auctionCount] = await Promise.all([
     sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "totalSupply"}),
     sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "redeemableBacking"}),
     sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "pendingFees"}),
-    sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "blackCount"}),
+    sim.pub.readContract({address: dep.shapes, abi: shapesAbi, functionName: "blackShapeCount"}),
     sim.pub.readContract({address: dep.auctionHouse!, abi: auctionHouseAbi, functionName: "auctionCount"}),
   ]);
 
@@ -685,7 +685,7 @@ async function main() {
   console.log(`  live supply: ${supply}`);
   console.log(`  reserve: ${reserve} wei`);
   console.log(`  pendingFees: ${pendingFees} wei`);
-  console.log(`  black count: ${blackCount}`);
+  console.log(`  Black Shape count: ${blackShapeCount}`);
   console.log(`  auctions created: ${auctionCount}`);
   console.log(`  auctions settled: ${ctx.auctionsSettled}`);
   console.log(`  auctions cancelled: ${ctx.auctionsCancelled}`);

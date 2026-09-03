@@ -196,7 +196,7 @@ its pre-compose backing.
 
 A 100 ETH Complete can be permanently transformed into a Black Shape by its owner. The token keeps
 its ID, seed, geometry, and lineage; only the colors invert (`#000↔#fff`). After: not redeemable,
-not recomposable, `backingOf` = `valueOf` = 0, `sacrificedBacking` permanently reports 100 ETH.
+not recomposable, `backingOf` = `valueOf` = 0, `burnedBacking` permanently reports 100 ETH.
 Black Shapes remain transferable and may be destroyed through `burn` for zero; `sacrifice` itself
 does not burn the token. Black burns do not reduce the cumulative sacrifice counters. Black Shapes
 remain transferable ERC721s (not soulbound).
@@ -205,7 +205,7 @@ remain transferable ERC721s (not soulbound).
 balance drops). `0xdEaD` has no code, so no reentrancy; the call is behind
 checks-effects-interactions and `nonReentrant`. This is an *economic* burn (the ETH becomes
 permanently unspendable) — Ethereum has no way to truly destroy arbitrary ETH, so an unspendable
-address is the standard. The sacrifice is independently verifiable on-chain (`sacrificedBacking`
+address is the standard. The sacrifice is independently verifiable on-chain (`burnedBacking`
 and the `Blackened` event, plus the balance decrease).
 
 This adds a **third** ETH-out path to the contract (fee forward, redeem/burn payout, sacrifice). It
@@ -234,8 +234,8 @@ struct ShapeData {
 mapping(uint256 => ShapeData) private _shapes;
 
 uint256 public redeemableBacking;   // renamed from totalBacking
-uint256 public sacrificedBacking;   // monotonic; Black Shapes' burned backing
-uint256 public blackCount;          // monotonic; number of Shapes ever made Black
+uint256 public burnedBacking;   // monotonic; Black Shapes' burned backing
+uint256 public blackShapeCount;          // monotonic; number of Shapes ever made Black
 uint256 public totalSupply;         // live tokens, INCLUDING Black
 uint256 public totalMinted;         // ids issued; the highest is totalMinted-1 (bumped by split mints; NOT by decompose, which reuses ids)
 
@@ -397,7 +397,7 @@ function sacrifice(uint256 tokenId) external nonReentrant;
 ```
 - **Checks:** caller owns `tokenId`; `!isBlack`; `originCount == COMPLETE_ORIGINS && denomIndex == 8`.
 - **Effects (CEI):** `isBlack = true`; `redeemableBacking -= 100 ether`;
-  `sacrificedBacking += 100 ether`; `blackCount += 1`. **Interaction:**
+  `burnedBacking += 100 ether`; `blackShapeCount += 1`. **Interaction:**
   `UNSPENDABLE.call{value: 100 ether}("")`, require success. Token keeps ID/seed/denom/originCount.
 - **Emit** `Blackened(tokenId, 100 ether)` + `MetadataUpdate(tokenId)`.
 
@@ -414,7 +414,7 @@ false for never-issued or retired ids; `denomIndexOf(id)` → the stored 0..8 la
 token (including 8 for Black), reverting for a nonexistent id; `backingOf(id)` → 0 if Black else
 `amountAt(denomIndex)`; `originCountOf`, `isBlack`, `isComplete`
 (`!Black && units > 1 && originCount == units`, `units = backing/UNIT`), `redeemableBacking`,
-`sacrificedBacking`, `blackCount`, `composeDepth(survivorId)` → `_composeStack[survivorId].length`
+`burnedBacking`, `blackShapeCount`, `composeDepth(survivorId)` → `_composeStack[survivorId].length`
 (how many stacked composes `decompose` can still reverse). `tokenURI` passes
 `(seed, amount, id, originCount, isBlack, composeDepth)` to the renderer.
 
@@ -487,11 +487,11 @@ an indexer maintaining the origin balance ignores them and instead pairs each `D
 **New invariants (stateful fuzz, ci profile):**
 1. Solvency: `balance >= redeemableBacking`.
 2. Backing conservation: compose/split leave `redeemableBacking` unchanged; `redeemableBacking
-   + sacrificedBacking` never exceeds cumulative real ETH in.
+   + burnedBacking` never exceeds cumulative real ETH in.
 3. Origin conservation: `Σ live originCount (incl Black) == Σ mint-origins − Σ redeemed-origins`.
 4. Capacity: every token `originCount <= backing/UNIT`.
 5. Global capacity: `Σ originCount over live tokens <= Σ units of live backing`.
-6. Sacrifice accounting: `sacrificedBacking == 100 ether * blackCount`.
+6. Sacrifice accounting: `burnedBacking == 100 ether * blackShapeCount`.
 
 **Unit / regression:**
 - Forgery: mint 100 → split → recompose ⇒ `originCount == 1`, not Complete.
@@ -500,7 +500,7 @@ an indexer maintaining the origin balance ignores them and instead pairs each `D
 - compose: ownership, Black-reject, invalid-sum reject, survivor ID/seed retained, backing up-only.
 - split: sum check, `>= 2`, all-fresh IDs, origin partition (§4 cases), input burned.
 - sacrifice: apex-gated, non-Complete reverts, double-sacrifice reverts, post-Black redeem/compose/
-  decompose/split revert, `backingOf == valueOf == 0`, `sacrificedBacking == 100`, balance −100 to 0xdEaD,
+  decompose/split revert, `backingOf == valueOf == 0`, `burnedBacking == 100`, balance −100 to 0xdEaD,
   transfers and zero-value `burn` still work.
 - ERC-4906 emission; `supportsInterface`.
 - Existing suite updated for the new ladder + provenance (fixtures, any hardcoded `25 ETH`).
@@ -599,7 +599,7 @@ tokens exist anywhere.
    (SPEC.md D3e); its TypeScript twin (`preview/src/splitSeed.ts`) and a Solidity↔TS parity fixture
    land here too, since the frontend must preview split children before their ids exist and phase 5's
    fixture/parity story otherwise covers only the renderer.
-4. **Accounting split + `sacrifice`** — `redeemableBacking`/`sacrificedBacking`, 0xdEaD sacrifice,
+4. **Accounting split + `sacrifice`** — `redeemableBacking`/`burnedBacking`, 0xdEaD sacrifice,
    Black guards, updated solvency invariant + SECURITY.md.
 5. **Renderer** — inversion + provenance traits, TS lockstep, parity, metadata tests.
 6. **Frontend** — multi-tx compose orchestration, provenance UI, Complete/Black flows.

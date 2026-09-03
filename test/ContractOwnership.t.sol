@@ -252,8 +252,10 @@ contract ContractOwnershipTest is Test {
         // `ownerToken` was added when collection ownership moved from being fixed to Shape #0 to
         // following a movable owner token (issue #56).
         // `mintStart` was added with the immutable mint-start gate on `mintBatch`/`mintBatchTo`.
+        // `blackCount` became `blackShapeCount` and `sacrificedBacking` became `burnedBacking`,
+        // which changed both selectors.
         // Update these constants only when the function set changes on purpose.
-        assertEq(type(IShapes).interfaceId, bytes4(0xa381713f), "IShapes id changed");
+        assertEq(type(IShapes).interfaceId, bytes4(0x374d44fd), "IShapes id changed");
         assertEq(type(IAdminControl).interfaceId, bytes4(0x0ce8a022), "admin interface id changed");
 
         assertTrue(shapes.supportsInterface(type(IShapes).interfaceId));

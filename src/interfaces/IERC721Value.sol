@@ -9,6 +9,7 @@ interface IERC721Value {
     function valueOf(uint256 tokenId) external view returns (uint256);
 
     /// @notice Destroy `tokenId` and pay its current `valueOf` to its owner.
-    /// @dev Only the current owner may burn. A zero-value token is destroyed with no ETH transfer.
+    /// @dev Only the current owner may burn. An approved operator must first take ownership
+    ///      through an ERC-721 transfer. A zero-value token is destroyed with no ETH transfer.
     function burn(uint256 tokenId) external;
 }

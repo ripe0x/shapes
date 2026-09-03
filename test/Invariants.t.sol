@@ -657,11 +657,11 @@ contract ShapesInvariantTest is StdInvariant, Test {
     /// @notice Sacrificed backing is monotonic and always exactly 100 ETH per Black Shape.
     function invariant_SacrificeAccounting() public view {
         assertEq(
-            shapes.sacrificedBacking(),
-            Denominations.amountAt(8) * shapes.blackCount(),
+            shapes.burnedBacking(),
+            Denominations.amountAt(8) * shapes.blackShapeCount(),
             "sacrifice per Black drifted"
         );
-        assertEq(shapes.sacrificedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
+        assertEq(shapes.burnedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
     }
 
     /// @notice Every wei counted by redeemableBacking corresponds to a live Shape.

@@ -7,25 +7,23 @@ import {ShapeFormation} from "./IShapeCapabilities.sol";
 import {IERC721Value} from "./IERC721Value.sol";
 
 /// @title IShapes
-/// @notice ETH wrapped into unique ERC721 objects at nine fixed denominations.
+/// @notice ETH wrapped into unique ERC-721 objects at nine fixed denominations.
 /// @dev A Shape holds an exact amount of ETH. Redeeming or burning it destroys the token and
 ///      returns exactly that amount to its owner. The other reserve outflow is `sacrifice`, which
-///      sends a fixed 100 ETH to an unspendable address and is callable only by an apex Complete
-///      Shape's owner. No pause, upgrade path, recovery function or admin path reaches the reserve.
-///      One live Shape is the owner token, tracked by `_ownerToken` and exposed by `ownerToken()`.
-///      It starts as #0 and moves through `compose`, `decompose` and `split`; `owner()` follows
-///      its current holder, returning zero once it is redeemed or burned. Ownership grants no
-///      permissions. A separate `admin()` role may administer and independently lock the renderer,
-///      positions pointer and market pointer, may redirect future mint fees and adjust the mint
-///      fee amount within a compile-time cap, and cannot otherwise touch backing. It may be
-///      transferred or renounced without moving Shape #0.
+///      sends an apex Complete Shape's backing to an unspendable address and is callable only by
+///      that Shape's owner. No pause, upgrade path, recovery function or admin path reaches the
+///      reserve.
 ///
-///      `shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt` (rich
-///      struct form) and `splitOriginOf` (rich-named form) are not declared here: they are
-///      read-only periphery, deployed separately as `ShapeLens` (`IShapeLens`) to keep this
-///      contract's runtime bytecode under the EIP-170 size limit. `modulesOf`,
-///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the minimal
-///      raw accessors `ShapeLens` reads to reconstruct them.
+///      One live Shape is the owner token, exposed by `ownerToken()`. It starts as #0 and moves
+///      through `compose`, `decompose` and `split`. `owner()` follows its holder and returns zero
+///      once it is redeemed or burned. Holding it grants no permissions. The separate `admin()`
+///      role administers presentation and pointers, redirects future mint fees and adjusts the mint
+///      fee within a compile-time cap. It reaches nothing else, and it may be transferred or
+///      renounced without moving any Shape.
+///
+///      Rich read-only views live on `ShapeLens` (`IShapeLens`) rather than here. `modulesOf`,
+///      `composeRecordHeaderAt`, `composeRecordInputAt` and `splitOriginRaw` below are the raw
+///      accessors it reads to assemble them.
 interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The two fixed pointers administered by `setPointer` and `lockPointer`.
     enum Pointer {
@@ -106,9 +104,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         uint32[] originCounts
     );
 
-    /// @notice Emitted when an apex Complete Shape is sacrificed into Black. `sacrificedWei`
-    ///         (100 ETH) is sent
-    ///         to a provably unspendable address and is never redeemable again.
+    /// @notice Emitted when an apex Complete Shape is sacrificed and becomes a Black Shape.
+    ///         `sacrificedWei` is sent to an unspendable address and is never redeemable again.
     event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
 
     /// @notice Emitted whenever a token's ink gene is assigned or changes: once per mint, once
@@ -130,9 +127,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         id when a survivor's compose is reversed, in addition to the aggregate `Decomposed`.
     event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId);
 
-    /// @notice Emitted whenever a token's materialized module geometry (`ModuleCodec`) is set or
+    /// @notice Emitted whenever a token's sampled module geometry (`ModuleCodec`) is set or
     ///         restored: the survivor after `compose`, each child after `split`, and both the
-    ///         survivor and every re-minted input after `decompose`. Empty `modules` signals the
+    ///         survivor and every re-minted input after `decompose`. Empty `modules` means the
     ///         token's geometry has reverted to seed-derived grammar v1.
     event ModulesSampled(uint256 indexed tokenId, bytes modules);
 
@@ -157,7 +154,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev A mint fee, at construction or via `setMintFee`, above the cap, `unit()`.
     error MintFeeAboveCap(uint256 fee);
     error DirectDepositRejected();
-    /// @dev `mintBatch` and `mintBatchTo` revert before `block.timestamp` reaches `mintStart`.
+    /// @dev Every public mint entrypoint reverts before `block.timestamp` reaches `mintStart`.
     error MintNotOpen();
     /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
     ///      minting and transferring to `address(this)` are both refused.
@@ -214,9 +211,9 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         `unit()`.
     function mintFee() external view returns (uint256);
 
-    /// @notice Unix timestamp at or after which `mintBatch` and `mintBatchTo` accept calls. Zero
-    ///         means open at deploy. Immutable, set at construction. The constructor mints Shape
-    ///         #0 before this gate applies.
+    /// @notice Unix timestamp at or after which public minting opens. Zero opens minting
+    ///         immediately. Immutable, set at construction.
+    /// @dev Shape #0 is minted in the constructor and is not subject to this gate.
     function mintStart() external view returns (uint64);
 
     /// @notice Mint fees accrued and not yet withdrawn. Never part of `redeemableBacking`.
@@ -243,10 +240,10 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Anyone may relay the signature. Supports EOAs, EIP-7702 delegated EOAs and ERC-1271 wallets.
     function attestArtist(bytes32 releaseHash, bytes calldata signature) external;
 
-    /// @notice The current holder of the owner token, or zero while there is none.
-    /// @dev Ownership follows the owner token through `compose`, `decompose` and `split`.
-    ///      Redeeming or burning the owner token ends collection ownership permanently: this
-    ///      returns zero and no other token inherits. Carries no administrative authority.
+    /// @notice Holder of the current owner token, or zero if it no longer exists.
+    /// @dev This address has no administrative authority. Ownership follows the owner token through
+    ///      `compose`, `decompose` and `split`. Redeeming or burning it ends collection ownership
+    ///      permanently: this returns zero and no other token inherits.
     function owner() external view returns (address);
 
     /// @notice The id of the current owner token.
@@ -347,15 +344,12 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function redeem(uint256 tokenId) external;
 
     /// @notice Burn several Shapes owned by the caller and receive the exact total backing.
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatch(uint256[] calldata tokenIds) external returns (uint256 totalWei);
 
     /// @notice Redeem a caller-owned Shape and send its exact backing directly to `recipient`.
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemTo(uint256 tokenId, address payable recipient) external;
 
     /// @notice Batch redemption with a caller-selected ETH recipient.
-    /// @dev Redeeming the owner token ends collection ownership permanently.
     function redeemBatchTo(uint256[] calldata tokenIds, address payable recipient)
         external
         returns (uint256 totalWei);
@@ -419,10 +413,10 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
         external
         returns (uint256[] memory newIds);
 
-    /// @notice Permanently sacrifice an apex Complete Shape's 100 ETH backing, turning it Black.
-    ///         Owner only, one way. The token keeps its id, seed and geometry; its 100 ETH is sent
-    ///         to an unspendable address and it becomes non-redeemable and non-recomposable. The
-    ///         resulting zero-value Black Shape remains transferable and may be burned for zero.
+    /// @notice Permanently sacrifice an apex Complete Shape's backing, turning it into a Black
+    ///         Shape. Owner only, one way. The token keeps its id, seed and geometry; its backing is
+    ///         sent to an unspendable address and it becomes non-redeemable and non-recomposable.
+    ///         The resulting zero-value Black Shape stays transferable and may be burned for zero.
     function sacrifice(uint256 tokenId) external;
 
     /* ----------------------------- views ------------------------------ */
@@ -430,16 +424,18 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice ETH available to redeem now, across every live non-Black Shape.
     function redeemableBacking() external view returns (uint256);
 
-    /// @notice Cumulative backing sacrificed by Black Shapes. Monotonic; 100 ETH per Black Shape.
-    function sacrificedBacking() external view returns (uint256);
+    /// @notice Cumulative backing already sent to the unspendable address by `sacrifice`. This ETH
+    ///         is no longer held by the contract and can never be redeemed. Monotonic.
+    function burnedBacking() external view returns (uint256);
 
-    /// @notice Number of Shapes ever sacrificed into Black. Monotonic even after a Black burn.
-    function blackCount() external view returns (uint256);
+    /// @notice Number of Black Shapes ever created by `sacrifice`. Monotonic: burning a Black
+    ///         Shape does not decrease it.
+    function blackShapeCount() external view returns (uint256);
 
-    /// @notice Whether a live token is Black.
+    /// @notice Whether a live token is a Black Shape.
     function isBlack(uint256 tokenId) external view returns (bool);
 
-    /// @notice ETH backing a live Shape.
+    /// @notice ETH backing a live Shape. Black Shapes have no redeemable backing and return zero.
     function backingOf(uint256 tokenId) external view returns (uint256);
 
     /// @notice The denomination-ladder index (0..8) currently stored by a live Shape.
@@ -455,10 +451,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice A live Shape's ink gene (0..6). Assigned at mint; evolves only through `compose`.
     function inkGeneOf(uint256 tokenId) external view returns (uint8);
 
-    /// @notice A live Shape's raw materialized module array (`ModuleCodec`), empty when its
-    ///         geometry derives from `seed` under grammar v1. The minimal raw accessor
-    ///         `ShapeLens` reads to assemble the rich views moved off this contract; the lens reads
-    ///         the other required state-owned fact directly through `denomIndexOf`.
+    /// @notice A live Shape's stored module array (`ModuleCodec`), empty when its geometry derives
+    ///         from `seed` under grammar v1.
     function modulesOf(uint256 tokenId) external view returns (bytes memory);
 
     /// @notice Collection-level metadata URI, read from the renderer.
@@ -467,16 +461,16 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice Stable numeric formation class; metadata strings are presentation only.
     function formationOf(uint256 tokenId) external view returns (ShapeFormation);
 
-    /// @notice Whether a Shape is Complete: not Black, above the minimum tier, and carrying one
-    ///         origin per 0.01 unit of backing (`originCount == backing / 0.01`).
+    /// @notice Whether a Shape is Complete: not a Black Shape, above the minimum tier, and
+    ///         carrying one origin per 0.01 unit of backing (`originCount == backing / 0.01`).
     function isComplete(uint256 tokenId) external view returns (bool);
 
     /// @notice Number of live Shapes.
     function totalSupply() external view returns (uint256);
 
     /// @notice The id counter: the next id to be issued, and one past the highest id ever issued
-    ///         (ids start at 0). Not a live-supply or mint count — `decompose` re-mints ids
-    ///         without advancing it, and burns do not decrease it. Use `totalSupply` for live count.
+    ///         (ids start at 0). Not a live-supply or mint count: `decompose` re-mints ids without
+    ///         advancing it, and burns do not decrease it. Use `totalSupply` for the live count.
     function totalMinted() external view returns (uint256);
 
     /// @notice The survivor's compose-stack depth: how many stacked composes `decompose` can still
@@ -485,16 +479,11 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Raw accessor for one compose record's survivor-side fields on `survivorId`'s stack
     ///         at `depth` (0 the oldest, `composeDepth(survivorId) - 1` the newest, next in line
-    ///         for `decompose`), plus the record's input count. `ShapeLens.composeRecordAt`
-    ///         combines this with `composeRecordInputAt` to reassemble the full
-    ///         `ComposeRecordView` (IShapeLens); declared here rather than as a rich struct getter
-    ///         to keep this contract's runtime bytecode under the EIP-170 size limit.
-    ///         `ownerTokenFrom` is the raw `ComposeRecord.ownerTokenFrom` value, the owner token's
-    ///         id plus one if this compose moved ownership from one of the record's inputs, else
-    ///         zero; `ShapeLens.composeRecordAt` decodes it to `ComposeRecordView.ownerTokenFrom`.
-    /// @dev No `depth` bounds check: an out-of-range `depth` panics on the storage array access
-    ///      rather than reverting `ComposeRecordOutOfRange`. `ShapeLens.composeRecordAt` checks
-    ///      `depth` against `composeDepth` itself and reverts that error before calling this.
+    ///         for `decompose`), plus the record's input count. `ownerTokenFrom` is the owner
+    ///         token's id plus one when that compose moved ownership from one of the record's
+    ///         inputs, else zero.
+    /// @dev An out-of-range `depth` uses Solidity's normal array bounds panic. There is no
+    ///      `ComposeRecordOutOfRange` check here.
     function composeRecordHeaderAt(uint256 survivorId, uint256 depth)
         external
         view
@@ -524,25 +513,18 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
             bytes memory modules
         );
 
-    /// @notice The split that minted `childId`: the parent's id and pre-split seed, denomination
-    ///         index, ink gene and own effective module snapshot (SAMPLING_SPEC.md), the root
-    ///         split ancestor's denomination index, plus `childId`'s index among that split's
-    ///         outputs. `parentModules` is informational (D3'): reproducing the child's module
-    ///         bytes as sampled at split time needs the branch decision `parentId` enables, not
-    ///         `parentModules` directly — see SAMPLING_SPEC.md section 12 for the reconstruction
-    ///         recipe (`composeDepth(parentId)` selects between the compose-record pool and the
-    ///         grammar pool). `originDenomIndex` (issue #21C) backs the "Split Origin" metadata
-    ///         trait directly, with no reconstruction: the parent's own `originDenomIndex` when
-    ///         the parent was itself a split child, else `parentDenomIndex`.
+    /// @notice The split that minted `childId`: the parent's id, pre-split seed, denomination
+    ///         index, ink gene and effective module snapshot, the root split ancestor's
+    ///         denomination index, plus `childId`'s index among that split's outputs.
+    ///         `parentModules` is kept for provenance. Reproducing the child's sampled module bytes
+    ///         needs the branch decision `parentId` enables, not `parentModules`:
+    ///         `composeDepth(parentId)` selects between the compose-record pool and the grammar
+    ///         pool. See SAMPLING_SPEC.md for the reconstruction recipe.
     /// @dev The record is written once per split and shared by every child of that split; only
-    ///      `childIndex` distinguishes them. It survives the child's own later mutation (e.g. the
-    ///      child subsequently used as a compose survivor): this view answers how the token was
-    ///      created, not what it currently looks like, so it keeps answering even though
-    ///      `IShapeLens.shapeState(childId).modules` has since moved on to a later operation's
-    ///      result. Reverts `NotASplitChild` for a token that was never minted by `split`/
-    ///      `splitTo` (an original mint, or an input re-minted verbatim by `decompose`). Already
-    ///      minimal (a passthrough, no struct assembly), so `ShapeLens.splitOriginOf` returns this
-    ///      unchanged rather than reassembling anything.
+    ///      `childIndex` distinguishes them. It is never deleted, so it keeps answering how the
+    ///      token was created even after the child is composed or split again. Reverts
+    ///      `NotASplitChild` for a token that was never minted by `split`/`splitTo`, which covers
+    ///      an original mint and an input re-minted by `decompose`.
     function splitOriginRaw(uint256 childId)
         external
         view
