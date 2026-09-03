@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Script from "next/script";
+import { initialWalletState } from "@shared/chain/wagmi";
 import { ShapesProviders } from "./ShapesProviders";
 import { appOnly } from "./lib/siteMode";
 import "./globals.css";
@@ -32,7 +34,13 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Decodes the wallet's last-known connection from the request's cookies (see
+  // preview/src/chain/wagmi.ts's ssrStorage) so the very first render already reflects it,
+  // instead of starting disconnected and waiting on a post-mount reconnect.
+  const cookieHeader = (await headers()).get("cookie");
+  const walletInitialState = initialWalletState(cookieHeader);
+
   return (
     <html lang="en">
       {/* suppressHydrationWarning: browser extensions (e.g. screen recorders) inject body
@@ -46,7 +54,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {`delete console.timeStamp;`}
           </Script>
         )}
-        <ShapesProviders chainOnIndex={appOnly()}>{children}</ShapesProviders>
+        <ShapesProviders chainOnIndex={appOnly()} walletInitialState={walletInitialState}>
+          {children}
+        </ShapesProviders>
       </body>
     </html>
   );
