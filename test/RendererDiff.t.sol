@@ -133,7 +133,8 @@ contract RendererDiffTest is Test {
                     gene,
                     composeDepth,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    false
                 )
             )
         );
@@ -149,7 +150,8 @@ contract RendererDiffTest is Test {
                     gene,
                     composeDepth,
                     NAME_PREFIX,
-                    DESCRIPTION
+                    DESCRIPTION,
+                    false
                 )
             )
         );
@@ -212,7 +214,8 @@ contract RendererDiffTest is Test {
                     composeDepth,
                     NAME_PREFIX,
                     DESCRIPTION,
-                    splitInfo
+                    splitInfo,
+                    false
                 )
             )
         );
@@ -229,7 +232,8 @@ contract RendererDiffTest is Test {
                     composeDepth,
                     NAME_PREFIX,
                     DESCRIPTION,
-                    splitInfo
+                    splitInfo,
+                    false
                 )
             )
         );
@@ -322,7 +326,8 @@ contract RendererDiffTest is Test {
                         DESCRIPTION,
                         SplitProvenance({
                             isSplitChild: gene % 2 == 0, parentDenomIndex: gene, originDenomIndex: 8
-                        })
+                        }),
+                        false
                     )
                 )
             );
@@ -352,7 +357,8 @@ contract RendererDiffTest is Test {
                             uint8(3),
                             depths[j],
                             NAME_PREFIX,
-                            DESCRIPTION
+                            DESCRIPTION,
+                            false
                         )
                     )
                 );
@@ -373,7 +379,18 @@ contract RendererDiffTest is Test {
                 _diff(
                     abi.encodeCall(
                         IShapeRenderer.metadataJSON,
-                        (seed, amountWei, 1, originCounts[i], false, uint8(2), 0, NAME_PREFIX, DESCRIPTION)
+                        (
+                            seed,
+                            amountWei,
+                            1,
+                            originCounts[i],
+                            false,
+                            uint8(2),
+                            0,
+                            NAME_PREFIX,
+                            DESCRIPTION,
+                            false
+                        )
                     )
                 );
             }

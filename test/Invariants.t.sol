@@ -602,7 +602,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         // The handler must own and account for every live Shape. Genesis ownership is covered by
         // ContractOwnership.t.sol, so retire it before handing this collection to the handler.
@@ -756,6 +756,23 @@ contract ShapesInvariantTest is StdInvariant, Test {
             uint256 id = handler.liveTokens(i);
             if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
             assertTrue(Denominations.isSupported(shapes.backingOf(id)), "token holds an off-ladder amount");
+        }
+    }
+
+    /// @dev Set once `ownerToken()` has reverted, so later runs of the invariant below can catch
+    ///      it ever coming back.
+    bool internal ownerTokenEverAbsent;
+
+    /// @notice While the owner token exists, `owner()` is exactly its ERC-721 holder and the
+    ///         token is live. Once `ownerToken()` reverts (redeemed or burned), it never
+    ///         succeeds again for the rest of the run: ownership does not silently reappear.
+    function invariant_OwnerTokenTracksItsHolder() public {
+        try shapes.ownerToken() returns (uint256 id) {
+            assertFalse(ownerTokenEverAbsent, "owner token reappeared after ending");
+            assertEq(shapes.owner(), shapes.ownerOf(id), "owner() did not match the owner token's holder");
+        } catch {
+            ownerTokenEverAbsent = true;
+            assertEq(shapes.owner(), address(0), "owner() nonzero with no owner token");
         }
     }
 
@@ -1049,7 +1066,7 @@ contract AuctionInvariantTest is StdInvariant, Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
         );
         house = new ShapeAuctionHouse(address(shapes));
         handler = new AuctionHandler(shapes, house);
@@ -1194,7 +1211,7 @@ contract AuctionInvariantHostileFeeTest is AuctionInvariantTest {
         collection = new ShapeCollection(address(renderer));
         hostile = new HostileAuctionFeeRecipient();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(hostile), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(hostile), address(renderer), address(collection), 0
         );
         house = new ShapeAuctionHouse(address(shapes));
         hostile.setTargets(shapes, address(house));

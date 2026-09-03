@@ -70,6 +70,11 @@ abstract contract LensEquivalence is Script {
         // A freshly started anvil simulates at block 0.
         if (block.number == 0) vm.roll(1);
 
+        // `mintTo` below reverts `MintNotOpen` until `block.timestamp >= shapes.mintStart()`. The
+        // probe never broadcasts, so warping the local simulated clock forward proves nothing
+        // false about the deployed contract: on chain, `mintStart` still gates every real mint.
+        if (block.timestamp < shapes.mintStart()) vm.warp(shapes.mintStart());
+
         address probe = address(uint160(uint256(keccak256("shapes.lens.equivalence.probe"))));
         uint256 amountWei = Denominations.amountAt(PROBE_PARENT_INDEX);
         uint256 cost = amountWei + shapes.mintFee();

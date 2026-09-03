@@ -1,5 +1,5 @@
 import React from "react";
-import {hexToBytes, type Hex, type PublicClient} from "viem";
+import {hexToBytes, maxUint256, type Hex, type PublicClient} from "viem";
 import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
 import {CANONICAL, renderShape} from "../canonical/render";
 import {
@@ -9,10 +9,11 @@ import {
   type SampleDonor,
 } from "../canonical/sampling";
 import {C, SANS, label} from "./theme";
-import {Art, Modal, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
+import {Art, Modal, OwnerTokenBanner, Section, short, TxStage, txStageLabel, type PendingTx} from "./ui";
 import type {SiteData, SiteToken} from "./data";
 import {buildComposeResultPreview} from "./composePreview";
 import {shapeTitle} from "./shapeTitle";
+import {ownerTokenNotices, type OwnerTokenNotice} from "./ownerTokenNotice";
 
 type ManageAction = "split" | "decompose" | "redeem" | "sacrifice";
 
@@ -20,6 +21,8 @@ interface ComposeRecordPreview {
   survivorDenominationIndex: number;
   survivorInkGene: number;
   survivorModules: Hex;
+  /** The input that carried collection ownership before this compose, or null when none did. */
+  restoredOwnerTokenId: bigint | null;
   inputs: {
     id: bigint;
     seed: Hex;
@@ -72,6 +75,7 @@ export function ManageShapeView({
 }) {
   const token = data?.tokens.find((candidate) => candidate.id === tokenId) ?? null;
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
+  const ownerTokenId = data?.ownerToken ?? null;
   const [action, setAction] = React.useState<ManageAction | null>(null);
   const [confirming, setConfirming] = React.useState<"split" | "redeem" | "sacrifice" | null>(null);
   const [composeRecord, setComposeRecord] = React.useState<ComposeRecordPreview | null>(null);
@@ -121,6 +125,7 @@ export function ManageShapeView({
           survivorDenominationIndex: record.survivorDenominationIndex,
           survivorInkGene: record.survivorInkGene,
           survivorModules: record.survivorModules,
+          restoredOwnerTokenId: record.ownerTokenFrom === maxUint256 ? null : record.ownerTokenFrom,
           inputs: record.inputs.map((input) => ({
             id: input.id,
             seed: input.seed,
@@ -237,7 +242,7 @@ export function ManageShapeView({
       <main>
         <ManageBack tokenId={tokenId} onBack={onBack} />
         <Section title="BLACK SHAPE" pad="36px 48px 44px 32px">
-          <ManageIdentity token={token} owned={owned} />
+          <ManageIdentity token={token} owned={owned} isOwnerToken={token.id === ownerTokenId} />
           <p style={{margin: "26px 0 0", maxWidth: "60ch", fontFamily: SANS, color: C.bodyDim, fontSize: 14, lineHeight: 1.6}}>
             This Shape has already been sacrificed. It remains transferable, but its backing is
             permanently unredeemable and no lifecycle actions remain.
@@ -261,6 +266,15 @@ export function ManageShapeView({
     : !owned
       ? `Only ${short(token.owner)} can manage this Shape.`
       : null;
+
+  const splitNotices = ownerTokenNotices({action: "split", actingTokenId: token.id, ownerTokenId});
+  const redeemNotices = ownerTokenNotices({action: "redeem", actingTokenId: token.id, ownerTokenId});
+  const decomposeNotices = ownerTokenNotices({
+    action: "decompose",
+    actingTokenId: token.id,
+    ownerTokenId,
+    restoredOwnerTokenId: composeRecord?.restoredOwnerTokenId ?? null,
+  });
 
   const availability = (allowed: boolean, unavailable: string) =>
     ownerBlock ?? (allowed ? null : unavailable);
@@ -337,7 +351,7 @@ export function ManageShapeView({
     <main>
       <ManageBack tokenId={tokenId} onBack={onBack} />
       <Section title="MANAGE SHAPE" pad="32px 48px 38px 32px">
-        <ManageIdentity token={token} owned={owned} />
+        <ManageIdentity token={token} owned={owned} isOwnerToken={token.id === ownerTokenId} />
       </Section>
 
       {action === null ? (
@@ -394,6 +408,7 @@ export function ManageShapeView({
               token={token}
               record={composeRecord}
               unavailable={recordUnavailable}
+              notices={decomposeNotices}
               busy={busy}
               pendingTx={pendingTx}
               chainId={dep.chainId}
@@ -427,6 +442,7 @@ export function ManageShapeView({
             Composing those Shapes later will not restore #{token.id.toString()} or its artwork.
             The total ETH backing remains unchanged.
           </p>
+          <OwnerTokenBanner notices={splitNotices} />
           <ConfirmButtons
             op="split"
             busy={busy}
@@ -448,6 +464,7 @@ export function ManageShapeView({
           <p style={{margin: "0 0 24px", fontFamily: SANS, color: C.muted, fontSize: 14, lineHeight: 1.6}}>
             The token, its artwork, and its remaining compose history will no longer be live.
           </p>
+          <OwnerTokenBanner notices={redeemNotices} />
           <ConfirmButtons
             op="redeem"
             busy={busy}
@@ -494,12 +511,20 @@ function ManageBack({tokenId, onBack}: {tokenId: bigint; onBack: () => void}) {
   );
 }
 
-function ManageIdentity({token, owned}: {token: SiteToken; owned: boolean}) {
+function ManageIdentity({
+  token,
+  owned,
+  isOwnerToken,
+}: {
+  token: SiteToken;
+  owned: boolean;
+  isOwnerToken: boolean;
+}) {
   return (
     <div style={{display: "flex", flexWrap: "wrap", alignItems: "center", gap: 26}}>
       <Art src={token.image} alt={`Shape ${token.id.toString()}`} width={104} />
       <div>
-        <div style={{fontSize: 28}}>{shapeTitle(token.id)}</div>
+        <div style={{fontSize: 28}}>{shapeTitle(token.id, isOwnerToken)}</div>
         <div style={{marginTop: 8, color: C.bodyDim, fontSize: 14}}>
           {token.di >= 0 ? `${DENOMINATIONS[token.di].label} ETH` : "Black Shape"}
         </div>
@@ -669,6 +694,7 @@ function DecomposeFlow({
   token,
   record,
   unavailable,
+  notices,
   busy,
   pendingTx,
   chainId,
@@ -677,6 +703,7 @@ function DecomposeFlow({
   token: SiteToken;
   record: ComposeRecordPreview | null;
   unavailable: boolean;
+  notices: OwnerTokenNotice[];
   busy: string | null;
   pendingTx: PendingTx | null;
   chainId: number;
@@ -747,6 +774,7 @@ function DecomposeFlow({
         No ETH moves and no fee is charged. This Shape has {token.composeDepth} compose
         {token.composeDepth === 1 ? "" : "s"} remaining, and they can only be undone newest first.
       </p>
+      <OwnerTokenBanner notices={notices} />
       <button type="button" className="btn-filled" onClick={onSubmit} disabled={!!busy || !record} style={{marginTop: 26, padding: "11px 24px"}}>
         {txStageLabel(
           "decompose",

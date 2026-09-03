@@ -10,21 +10,29 @@ import {ShapeLens} from "../src/ShapeLens.sol";
 import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
+import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 import {LensEquivalence} from "./LensEquivalence.s.sol";
 
 /// @notice Deploys the renderer, collection metadata, token, read-only lens, and auction house.
 ///
-/// @dev The mint fee and initial fee recipient are deployment parameters, not source constants.
-///      `mintFee` is admin-adjustable afterward via `setMintFee`, up to the on-chain
-///      cap of one denomination unit. The initial admin is the deployer and may redirect future fee
-///      withdrawals or change the fee amount, so the initial recipient still must be chosen
-///      deliberately here.
+/// @dev One script for every chain. Chain id selects the required ladder and the fee-recipient
+///      default; every other input is a value passed in by the caller (see script/deploy.sh and
+///      script/env/*.env), not a fork of this file.
 ///
-///        SHAPES_MINT_FEE_WEI   flat fee per Shape in wei. Defaults to 0.001 ETH on mainnet.
-///        SHAPES_FEE_RECIPIENT  where accrued fees are sent by `withdrawFees`. Must be set off
-///                              local chains.
+///      `mintFee` is admin-adjustable afterward via `setMintFee`, up to the on-chain cap of one
+///      denomination unit. The initial admin is the deployer and may redirect future fee
+///      withdrawals or change the fee amount, so the initial recipient must be chosen here.
+///
+///        SHAPES_MINT_FEE_WEI   flat fee per Shape in wei. Defaults to one tenth of a
+///                              denomination unit.
+///        SHAPES_FEE_RECIPIENT  where accrued fees are sent by `withdrawFees`. Required off
+///                              chain id 31337, where it defaults to the deployer.
 ///        SHAPES_RENDERER       reuse an already-deployed renderer instead of deploying one.
+///        SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT  set true to allow a contract fee recipient.
+///        SHAPES_MINT_START     unix timestamp at or after which mintBatch/mintBatchTo accept
+///                              calls. Defaults to 0, which opens them immediately. Immutable
+///                              once deployed.
 ///
 ///      `ShapeLens` is periphery deployed alongside `Shapes`: it holds the rich view surface
 ///      (`shapeState`, `previewCompose`, `previewSplit`, `unicodeCard`, `composeRecordAt`,
@@ -40,22 +48,23 @@ import {LensEquivalence} from "./LensEquivalence.s.sol";
 ///      house costs an auction rather than the collection.
 ///
 ///      Deployment sends the minimum denomination to `Shapes`, which atomically mints backed
-///      Shape #0 to the deployer. Its holder is returned by `owner()` but receives no
-///      administrative permissions.
-///      Permissionless artwork minting therefore begins at #1. The deployer is also the initial
-///      `admin()` and may transfer or renounce that separate role. Admin can redirect only future
-///      mint fees; it cannot change the amount, touch backing, or alter redemption.
+///      Shape #0 to the deployer. Its holder is returned by `owner()` and `ownerToken()` but
+///      receives no administrative permissions. Permissionless artwork minting therefore begins
+///      at #1. The deployer is also the initial `admin()` and may transfer or renounce that
+///      separate role. Admin can redirect only future mint fees; it cannot change the amount,
+///      touch backing, or alter redemption.
 ///
-///      Local:
-///        forge script script/DeployShapes.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+///      No seeding here. Seeding an already-deployed Shapes is script/SeedShapes.s.sol.
 ///
-///      Live (dry run first, always):
-///        SHAPES_FEE_RECIPIENT=0x... forge script script/DeployShapes.s.sol --rpc-url $RPC
-///        SHAPES_FEE_RECIPIENT=0x... forge script script/DeployShapes.s.sol --rpc-url $RPC \
-///          --broadcast --verify
-contract DeployShapes is LensEquivalence {
+///      Run through script/deploy.sh, which supplies the chain-specific RPC, wallet and env
+///      values from script/env/<name>.env. Direct invocation:
+///
+///        forge script script/Deploy.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+contract Deploy is LensEquivalence {
     uint256 internal constant DEFAULT_MINT_FEE = Denominations.UNIT / 10;
     uint256 internal constant ANVIL_CHAIN_ID = 31337;
+    uint256 internal constant SEPOLIA_CHAIN_ID = 11155111;
+    uint256 internal constant MAINNET_CHAIN_ID = 1;
 
     /// @dev Mirrors the on-chain cap (one denomination unit) the constructor enforces
     ///      unconditionally. Checked here first only so a fat-fingered value fails with a clear
@@ -64,6 +73,7 @@ contract DeployShapes is LensEquivalence {
     uint256 internal constant MAX_SANE_MINT_FEE = Denominations.UNIT;
 
     error WrongLadder(string compiled, string expected);
+    error UnsupportedChain(uint256 chainid);
 
     function _requirePointersUnset(Shapes shapes) private view {
         (address positions, bool positionsLocked) = shapes.positions();
@@ -74,13 +84,25 @@ contract DeployShapes is LensEquivalence {
         require(!marketLocked, "market should start unlocked");
     }
 
-    /// @dev The ladder is compiled in and the backing amounts it names are permanent once deployed.
-    ///      Any chain that carries real value must get the mainnet ladder; anvil may use either,
-    ///      since a local chain funds any rung.
-    function _requireMainnetLadderOffAnvil() internal view {
-        if (block.chainid == ANVIL_CHAIN_ID) return;
-        if (keccak256(bytes(Denominations.LADDER_NAME)) != keccak256("mainnet")) {
-            revert WrongLadder(Denominations.LADDER_NAME, "mainnet");
+    /// @dev The ladder is compiled in and the amounts it names are permanent once deployed.
+    ///      Mainnet requires the mainnet ladder, Sepolia requires the testnet ladder, and anvil
+    ///      accepts either since a local chain funds any rung. Any other chain id is refused
+    ///      outright: nothing here knows what ladder a chain nobody named should carry.
+    function _requireLadderForChain() internal view {
+        uint256 id = block.chainid;
+        if (id == ANVIL_CHAIN_ID) return;
+
+        string memory expected;
+        if (id == MAINNET_CHAIN_ID) {
+            expected = "mainnet";
+        } else if (id == SEPOLIA_CHAIN_ID) {
+            expected = "testnet";
+        } else {
+            revert UnsupportedChain(id);
+        }
+
+        if (keccak256(bytes(Denominations.LADDER_NAME)) != keccak256(bytes(expected))) {
+            revert WrongLadder(Denominations.LADDER_NAME, expected);
         }
     }
 
@@ -94,11 +116,12 @@ contract DeployShapes is LensEquivalence {
             ShapeAuctionHouse house
         )
     {
-        _requireMainnetLadderOffAnvil();
+        _requireLadderForChain();
 
         uint256 mintFee = vm.envOr("SHAPES_MINT_FEE_WEI", DEFAULT_MINT_FEE);
         address feeRecipient = vm.envOr("SHAPES_FEE_RECIPIENT", address(0));
         address existingRenderer = vm.envOr("SHAPES_RENDERER", address(0));
+        uint64 mintStart = uint64(vm.envOr("SHAPES_MINT_START", uint256(0)));
 
         if (feeRecipient == address(0)) {
             // On a local chain, defaulting to the deployer keeps `forge script` a one-liner.
@@ -117,8 +140,8 @@ contract DeployShapes is LensEquivalence {
             "redirects it. Set SHAPES_ALLOW_CONTRACT_FEE_RECIPIENT=true if it is audited to always accept ETH"
         );
 
-        // Shapes derives the genesis seed from the previous block. A fresh local Anvil chain is
-        // still at block 0 during forge's simulation, although the broadcast transaction mines in
+        // Shapes derives the genesis seed from the previous block. A fresh local chain is still
+        // at block 0 during forge's simulation, although the broadcast transaction mines in
         // block 1. Advance only that simulation so the constructor cannot underflow.
         if (block.number == 0) vm.roll(1);
 
@@ -129,7 +152,7 @@ contract DeployShapes is LensEquivalence {
         collection = new ShapeCollection(address(renderer));
 
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            mintFee, feeRecipient, address(renderer), address(collection)
+            mintFee, feeRecipient, address(renderer), address(collection), mintStart
         );
         lens = new ShapeLens(address(shapes));
         house = new ShapeAuctionHouse(address(shapes));
@@ -137,9 +160,16 @@ contract DeployShapes is LensEquivalence {
         vm.stopBroadcast();
 
         // Prove the constructor configuration and pointer defaults landed as intended.
-        // Admin may redirect future fee withdrawals, adjust the fee amount up to one denomination unit, and
-        // may replace the renderer, positions and market pointers until each independent lock is used.
         require(shapes.mintFee() == mintFee, "mint fee mismatch");
+        require(shapes.mintStart() == mintStart, "mint start mismatch");
+
+        // A future mint start is provable right here, outside the broadcast: `_mintBatch` checks
+        // it before anything else, so the revert fires regardless of amount or quantity.
+        if (mintStart > block.timestamp) {
+            vm.expectRevert(IShapes.MintNotOpen.selector);
+            shapes.mintBatch(Denominations.amountAt(0), 1);
+        }
+
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
         _requirePointersUnset(shapes);
@@ -150,23 +180,28 @@ contract DeployShapes is LensEquivalence {
 
         // `vm.startBroadcast()` changes the sender of the CREATEs. In a test that calls this
         // script, that sender is intentionally not the test contract (`msg.sender` here).
-        // Prove the four deployment-bound roles agree; live wrappers separately pin this
-        // address to their explicitly selected sender.
+        // Prove the roles agree; live wrappers separately pin this address to their explicitly
+        // selected sender.
         address deployedAdmin = shapes.admin();
         require(shapes.ownerOf(0) == deployedAdmin, "Shape #0 owner/admin mismatch");
         require(shapes.owner() == deployedAdmin, "contract owner/admin mismatch");
         require(shapes.artist() == deployedAdmin, "artist/admin mismatch");
+        require(shapes.ownerToken() == 0, "owner token should be Shape #0");
         require(shapes.artistReleaseHash() == bytes32(0), "artist attribution should start unsigned");
         require(shapes.artistSignature().length == 0, "artist signature should start empty");
         require(shapes.backingOf(0) == Denominations.amountAt(0), "Shape #0 backing mismatch");
         require(shapes.totalMinted() == 1, "permissionless minting should begin at #1");
+        require(shapes.denominationCount() == 9, "denomination count mismatch");
+        require(shapes.denominationAt(0) == Denominations.amountAt(0), "minimum denomination mismatch");
+        require(shapes.denomIndexOf(0) == 0, "Shape #0 denomination mismatch");
+        require(lens.exists(0), "Shape #0 must exist");
 
         // Smoke the renderer through the interface the token will actually use. A renderer
         // that cannot produce metadata would leave every token permanently unrenderable.
         require(
             bytes(
                 IShapeRenderer(address(renderer))
-                    .tokenURI(bytes32(0), Denominations.amountAt(0), 1, 1, false, 0, 0, "Shape ", "x")
+                    .tokenURI(bytes32(0), Denominations.amountAt(0), 1, 1, false, 0, 0, "Shape ", "x", false)
             )
             .length > 500,
             "renderer produced no metadata"
@@ -183,7 +218,8 @@ contract DeployShapes is LensEquivalence {
                         6,
                         0,
                         "Shape ",
-                        "x"
+                        "x",
+                        false
                     )
             )
             .length > 500,
@@ -202,23 +238,16 @@ contract DeployShapes is LensEquivalence {
         require(house.shapes() == address(shapes), "auction house points at another token");
         require(house.auctionCount() == 0, "auction house is not fresh");
 
-        console.log("chain id      ", block.chainid);
-        console.log("ShapeRenderer ", address(renderer));
-        console.log("ShapeCollection", address(collection));
-        console.log("Shapes        ", address(shapes));
-        console.log("ShapeLens     ", address(lens));
-        console.log("AuctionHouse  ", address(house));
-        console.log("mint fee (wei)", mintFee);
-        console.log("fee recipient ", feeRecipient);
-        console.log("contract owner ", shapes.owner());
-        console.log("admin         ", shapes.admin());
-        console.log("artist        ", shapes.artist());
-        console.log("");
-        console.log(
-            "Reserve rules are immutable. Admin may redirect fee withdrawals and adjust the fee up to the cap."
-        );
-        console.log("Shape #0 represents collectible ownership.");
-        console.log("Presentation, positions and market settings are independently lockable.");
+        console.log("chainId=%s", block.chainid);
+        console.log("renderer=%s", address(renderer));
+        console.log("collection=%s", address(collection));
+        console.log("shapes=%s", address(shapes));
+        console.log("lens=%s", address(lens));
+        console.log("auctionHouse=%s", address(house));
+        console.log("mintFeeWei=%s", mintFee);
+        console.log("mintStart=%s", mintStart);
+        console.log("feeRecipient=%s", feeRecipient);
+        console.log("admin=%s", shapes.admin());
 
         // Runs last: the probe advances simulated token state, so every check and log above it
         // reads a fresh collection.

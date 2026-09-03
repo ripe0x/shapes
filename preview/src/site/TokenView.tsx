@@ -228,6 +228,7 @@ export function TokenView({
   const token = data?.tokens.find((t) => t.id === tokenId) ?? null;
   const snap = redeem.status === "done" && redeem.snap?.id === tokenId ? redeem.snap : null;
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
+  const isOwnerToken = !!token && data?.ownerToken === token.id;
 
   const back = (
     <div className="token-detail-back" style={{padding: "20px 48px", borderBottom: `1px solid ${C.rule}`, fontSize: 11, letterSpacing: "0.14em"}}>
@@ -252,7 +253,8 @@ export function TokenView({
           <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={localArt(snap.seed, DENOMINATIONS[snap.di].wei, snap.inkGene)} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0}}>
-              <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(snap.id)}</div>
+              {/* Burned: never the live owner token. */}
+              <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(snap.id, false)}</div>
               <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
                 <div>
                   Redeemed. {DENOMINATIONS[snap.di].wei.toString()} wei ({lbl} ETH) sent to{" "}
@@ -284,7 +286,8 @@ export function TokenView({
       <main className="token-detail-page">
         {back}
         <Section title="SHAPE">
-          <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId)}</div>
+          {/* Not live: never the current owner token. */}
+          <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId, false)}</div>
           <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.bodyDim, maxWidth: "60ch"}}>
             {data
               ? `Shape ${tokenId.toString()} is no longer live. It was redeemed or recomposed. Its history is below.`
@@ -304,7 +307,7 @@ export function TokenView({
           <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
             <Art src={token.image} alt={`Black Shape ${token.id}`} width={340} />
             <div style={{flex: "1 1 320px", minWidth: 0}}>
-              <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id)}</div>
+              <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id, isOwnerToken)}</div>
               <div style={{marginTop: 20, fontFamily: SANS, fontSize: 14, lineHeight: 1.6}}>
                 #{token.id.toString()} has been sacrificed. It remains part of the collection, but
                 has no redeemable ETH backing and cannot be split, composed, or redeemed.
@@ -329,11 +332,11 @@ export function TokenView({
     wrap?: "anywhere" | "normal";
   }[] = [
     {k: "owner", v: owned ? `${short(token.owner)} (you)` : short(token.owner), wrap: "anywhere"},
-    ...(token.id === 0n
+    ...(isOwnerToken
       ? [{
           k: "collection owner",
           v: "true",
-          description: "Holding Shape 0 represents collection ownership and grants no administrative authority.",
+          description: "Holding this Shape represents collection ownership and grants no administrative authority.",
           wrap: "anywhere" as const,
         }]
       : []),
@@ -353,7 +356,7 @@ export function TokenView({
         <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
           <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
           <div style={{flex: "1 1 320px", minWidth: 0}}>
-            <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id)}</div>
+            <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id, isOwnerToken)}</div>
             <div style={{marginTop: 16, fontSize: 18, lineHeight: 1.4, color: C.bodyDim}}>{lbl} ETH</div>
             <div style={{margin: "32px 0 0"}}>
               {tokRows.map((r) => (

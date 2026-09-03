@@ -20,3 +20,7 @@ cache-testnet/
 
 # Local Netlify folder
 .netlify
+
+# Local anvil deploy record (deployments/<chainId>.json). Sepolia and mainnet records are
+# committed by the cutover PR.
+deployments/31337.json

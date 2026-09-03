@@ -71,7 +71,7 @@ abstract contract ShapesBase is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         // Most legacy subsystem tests need an otherwise-empty collection. ContractOwnership.t.sol
         // exercises the live genesis token itself; burn it here while preserving issued id 0.
@@ -334,7 +334,7 @@ contract FeeTest is ShapesBase {
 
     function test_ZeroFeeIsSupported() public {
         Shapes free = new Shapes{value: Denominations.amountAt(0)}(
-            0, feeRecipient, address(renderer), address(collection)
+            0, feeRecipient, address(renderer), address(collection), 0
         );
         vm.prank(alice);
         uint256 id = free.mintTo{value: DENOMS[4]}(DENOMS[4], alice);
@@ -348,7 +348,7 @@ contract FeeTest is ShapesBase {
     function test_RevertingFeeRecipientBlocksWithdrawalButNotMintingOrRedemption() public {
         RevertingFeeRecipient bad = new RevertingFeeRecipient();
         Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(bad), address(renderer), address(collection)
+            MINT_FEE, address(bad), address(renderer), address(collection), 0
         );
 
         vm.prank(alice);
@@ -379,25 +379,27 @@ contract FeeTest is ShapesBase {
     function test_ConstructorRejectsZeroAddresses() public {
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminInvalidFeeRecipient.selector, address(0)));
         new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0), address(renderer), address(collection)
+            MINT_FEE, address(0), address(renderer), address(collection), 0
         );
 
         vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedRenderer.selector, address(0)));
-        new Shapes{value: Denominations.amountAt(0)}(MINT_FEE, feeRecipient, address(0), address(collection));
+        new Shapes{value: Denominations.amountAt(0)}(
+            MINT_FEE, feeRecipient, address(0), address(collection), 0
+        );
     }
 
     function test_ConstructorRejectsFeeAboveCap() public {
         uint256 cap = shapes.unit();
         vm.expectRevert(abi.encodeWithSelector(IShapes.MintFeeAboveCap.selector, cap + 1));
         new Shapes{value: Denominations.amountAt(0)}(
-            cap + 1, feeRecipient, address(renderer), address(collection)
+            cap + 1, feeRecipient, address(renderer), address(collection), 0
         );
     }
 
     function test_ConstructorStoresAndChargesTheFlatFee() public {
         uint256 customFee = Denominations.UNIT / 2;
         Shapes custom = new Shapes{value: Denominations.amountAt(0)}(
-            customFee, feeRecipient, address(renderer), address(collection)
+            customFee, feeRecipient, address(renderer), address(collection), 0
         );
         assertEq(custom.mintFee(), customFee);
 
@@ -834,7 +836,7 @@ contract ReserveTest is ShapesBase {
     function test_ReentrantMintFromFeeRecipientIsBlocked() public {
         ReentrantFeeRecipient fr = new ReentrantFeeRecipient();
         Shapes s = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(fr), address(renderer), address(collection)
+            MINT_FEE, address(fr), address(renderer), address(collection), 0
         );
         s.redeemTo(0, payable(address(0xD15CA4D)));
         fr.configure(IShapes(address(s)), DENOMS[4]);

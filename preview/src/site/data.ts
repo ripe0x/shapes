@@ -1,4 +1,4 @@
-import type {PublicClient} from "viem";
+import {BaseError, ContractFunctionRevertedError, type PublicClient} from "viem";
 import {
   shapesAbi,
   DENOMINATIONS,
@@ -10,7 +10,9 @@ import {geneIndexOfName} from "../previewGene";
 export interface TokenMeta {
   name: string;
   description: string;
-  attributes: {trait_type: string; value: string}[];
+  /** `trait_type` is absent on a value-only attribute (e.g. the owner token's "Contract Owner"),
+   *  which marketplaces render as a plain tag rather than a labeled trait. */
+  attributes: {trait_type?: string; value: string}[];
 }
 
 export interface SiteToken {
@@ -48,6 +50,9 @@ export interface SiteData {
   artistAttested: boolean;
   /** Null when deployment metadata targets a pre-attribution Shapes contract. */
   artistReleaseHash: `0x${string}` | null;
+  /** The live Shape currently holding collection ownership (see `ownerToken()`), or null once it
+   *  has been redeemed or burned and no Shape has inherited it. Never derived from a fixed id. */
+  ownerToken: bigint | null;
 }
 
 /** The indexer is advisory: a source this far behind the connected chain is rejected. */
@@ -100,6 +105,27 @@ async function loadMintFees(publicClient: PublicClient, dep: Deployment): Promis
   }
 }
 
+/** Reads the current owner-token id once per site load (alongside `artist`/`reserve`/`supply`,
+ *  not on a per-render basis). Null only when the contract reverts `NoOwnerToken`, meaning the
+ *  collection has been redeemed or burned. Any other failure (RPC, a deployment predating this
+ *  selector) rethrows so the caller's existing load-error handling applies. */
+async function loadOwnerToken(
+  publicClient: PublicClient,
+  shapes: {address: `0x${string}`; abi: typeof shapesAbi},
+): Promise<bigint | null> {
+  try {
+    return await publicClient.readContract({...shapes, functionName: "ownerToken"});
+  } catch (e) {
+    if (e instanceof BaseError) {
+      const reverted = e.walk((err) => err instanceof ContractFunctionRevertedError);
+      if (reverted instanceof ContractFunctionRevertedError && reverted.data?.errorName === "NoOwnerToken") {
+        return null;
+      }
+    }
+    throw e;
+  }
+}
+
 interface IndexerResponse {
   data?: {
     _meta?: {status?: Record<string, {id: number; block: {number: number}}>};
@@ -135,7 +161,7 @@ function parseUri(uri: string): {image: string; meta: TokenMeta} {
     meta: {
       name: (json.name as string) ?? "",
       description: (json.description as string) ?? "",
-      attributes: ((json.attributes ?? []) as {trait_type: string; value: unknown}[]).map(
+      attributes: ((json.attributes ?? []) as {trait_type?: string; value: unknown}[]).map(
         (a) => ({trait_type: a.trait_type, value: String(a.value)}),
       ),
     },
@@ -337,7 +363,7 @@ async function fetchIndexedTokens(
 
 async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Promise<Omit<SiteData, "tokens">> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
-  const [reserve, supply, artist, artistReleaseHash, fees] = await Promise.all([
+  const [reserve, supply, artist, artistReleaseHash, fees, ownerToken] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
     publicClient
@@ -349,6 +375,7 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
       .then((value) => value as `0x${string}`)
       .catch(() => null),
     loadMintFees(publicClient, dep),
+    loadOwnerToken(publicClient, shapes),
   ]);
   const artistAttested =
     artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
@@ -359,6 +386,7 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
     artist,
     artistAttested,
     artistReleaseHash,
+    ownerToken,
   };
 }
 
@@ -423,7 +451,7 @@ async function tokensFromIndexer(
 async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
 
-  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees] = await Promise.all([
+  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees, ownerToken] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "totalMinted"}),
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
     publicClient.readContract({...shapes, functionName: "totalSupply"}),
@@ -437,6 +465,7 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
       .catch(() => null),
     hasMulticall3(publicClient),
     loadMintFees(publicClient, dep),
+    loadOwnerToken(publicClient, shapes),
   ]);
 
   const artistAttested =
@@ -497,6 +526,7 @@ async function loadSiteFromChain(publicClient: PublicClient, dep: Deployment): P
     artist,
     artistAttested,
     artistReleaseHash,
+    ownerToken,
   };
 }
 

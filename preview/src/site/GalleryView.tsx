@@ -70,16 +70,18 @@ export function GalleryView({
         </div>
       </Section>
 
-      <ShapeGrid tokens={filtered} onOpenToken={onOpenToken} />
+      <ShapeGrid tokens={filtered} ownerTokenId={data?.ownerToken ?? null} onOpenToken={onOpenToken} />
     </main>
   );
 }
 
 export function ShapeGrid({
   tokens,
+  ownerTokenId,
   onOpenToken,
 }: {
   tokens: SiteToken[];
+  ownerTokenId: bigint | null;
   onOpenToken: (id: bigint) => void;
 }) {
   return (
@@ -103,7 +105,7 @@ export function ShapeGrid({
               color: C.muted,
             }}
           >
-            <span>{compactShapeTitle(t.id)}</span>
+            <span>{compactShapeTitle(t.id, t.id === ownerTokenId)}</span>
             <span>{t.di >= 0 ? `${DENOMINATIONS[t.di].label} ETH` : "Black"}</span>
           </div>
           <div style={{marginTop: 4, fontSize: 11, color: C.muted, opacity: 0.7}}>{originsLabel(t)}</div>

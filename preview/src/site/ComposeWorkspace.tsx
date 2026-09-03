@@ -2,7 +2,7 @@ import React from "react";
 import {type PublicClient} from "viem";
 import {DENOMINATIONS, shapeLensAbi, type Deployment} from "../chain/abi";
 import {C, label} from "./theme";
-import {Art, Section, TxStage, txStageLabel, type PendingTx} from "./ui";
+import {Art, OwnerTokenBanner, Section, TxStage, txStageLabel, type PendingTx} from "./ui";
 import type {SiteData, SiteToken} from "./data";
 import {buildComposeResultPreview, type ComposeResultPreview} from "./composePreview";
 import {
@@ -13,6 +13,7 @@ import {
   ownedTokens,
   selectedComposeTokens,
 } from "./composeSelection";
+import {ownerTokenNotices} from "./ownerTokenNotice";
 
 export interface ComposeDraft {
   session: number;
@@ -124,6 +125,7 @@ export function ComposeWorkspace({
         pendingTx={pendingTx}
         error={txErr?.op === "compose" ? txErr.text : null}
         lockedSurvivorId={lockedSurvivor}
+        ownerTokenId={data?.ownerToken ?? null}
         onChange={change}
         onEdit={() => change({phase: "select"})}
         onCancel={onCancel}
@@ -298,6 +300,7 @@ function ComposeReview({
   pendingTx,
   error,
   lockedSurvivorId,
+  ownerTokenId,
   onChange,
   onEdit,
   onCancel,
@@ -312,6 +315,7 @@ function ComposeReview({
   pendingTx: PendingTx | null;
   error: string | null;
   lockedSurvivorId: bigint | null;
+  ownerTokenId: bigint | null;
   onChange: (patch: Partial<ComposeDraft>) => void;
   onEdit: () => void;
   onCancel: () => void;
@@ -437,6 +441,14 @@ function ComposeReview({
               No ETH moves and no fee is charged. The other token IDs are absorbed into #{survivor.id.toString()}.
               Undoing its newest composition restores them with their original IDs and artwork.
             </div>
+            <OwnerTokenBanner
+              notices={ownerTokenNotices({
+                action: "compose",
+                actingTokenId: survivor.id,
+                donorIds: burnIds,
+                ownerTokenId,
+              })}
+            />
             <button
               type="button"
               className="btn-filled"

@@ -1,5 +1,6 @@
 import React from "react";
 import {C, label} from "./theme";
+import type {OwnerTokenNotice} from "./ownerTokenNotice";
 
 /**
  * The page grammar: a two-column section, 190px label column with a right border, content
@@ -97,6 +98,35 @@ export function Modal({
         <div style={{...label, marginBottom: 18}}>{title}</div>
         {children}
       </div>
+    </div>
+  );
+}
+
+/** Explicit confirmation-step copy for an action that moves or ends collection ownership (see
+ *  `ownerTokenNotices`). "warning" severity (redeem/burn of the owner token) gets a brighter
+ *  border and bold text, the only distinct-warning style this monochrome design system has. */
+export function OwnerTokenBanner({notices}: {notices: OwnerTokenNotice[]}) {
+  if (notices.length === 0) return null;
+  const warning = notices.some((notice) => notice.severity === "warning");
+  return (
+    <div
+      style={{
+        margin: "20px 0 0",
+        padding: "16px 20px",
+        maxWidth: "60ch",
+        border: `1px solid ${warning ? C.ink : C.border}`,
+        background: C.row,
+      }}
+    >
+      <div style={{...label, color: warning ? C.ink : C.muted}}>COLLECTION OWNERSHIP</div>
+      {notices.map((notice) => (
+        <p
+          key={notice.text}
+          style={{margin: "8px 0 0", color: C.ink, fontSize: 13, lineHeight: 1.6, fontWeight: warning ? 600 : 400}}
+        >
+          {notice.text}
+        </p>
+      ))}
     </div>
   );
 }

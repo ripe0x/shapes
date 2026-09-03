@@ -38,6 +38,17 @@ export const token = onchainTable(
   }),
 );
 
+// Single row tracking the collection owner token (issue #56): exactly one live Shape can be the
+// owner token at a time, moved by compose, decompose, split, and ended by redeem/burn. Keyed by
+// a constant id since there is never more than one row. `ownerTokenId`/`ownerAddress` are both
+// null when no token holds ownership (after the owner token is redeemed or burned).
+export const collectionOwner = onchainTable("collection_owner", (t) => ({
+  id: t.text().primaryKey(),
+  ownerTokenId: t.bigint(),
+  ownerAddress: t.hex(),
+  updatedAtBlock: t.bigint().notNull(),
+}));
+
 // One row per parent-child step in a token's provenance, emitted by compose, decompose, and
 // `parentId` is the surviving/continuing token; `childId` is the token consumed into it
 // (continuation) or produced from it (split). `childSeed` is the child's seed at the

@@ -88,6 +88,46 @@ jobs:
       - name: test
         run: FOUNDRY_PROFILE=ci forge test -vv
 
+  deploy-anvil:
+    name: deploy (anvil) + e2e
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            out
+            cache
+          key: forge-build-${{ runner.os }}-${{ hashFiles('src/**/*.sol', 'lib/**/*.sol', 'test/**/*.sol', 'script/**/*.sol', 'foundry.toml', 'remappings.txt') }}
+          restore-keys: |
+            forge-build-${{ runner.os }}-
+
+      # script/deploy.sh and script/e2e-anvil.sh both expect a chain already answering on
+      # 127.0.0.1:8545; this job owns starting and stopping it.
+      - name: start anvil
+        run: |
+          anvil --port 8545 >/tmp/anvil.log 2>&1 &
+          for _ in $(seq 1 50); do
+            cast block-number --rpc-url http://127.0.0.1:8545 >/dev/null 2>&1 && exit 0
+            sleep 0.2
+          done
+          echo "anvil never came up"; cat /tmp/anvil.log; exit 1
+
+      - name: end-to-end (script/e2e-anvil.sh)
+        run: script/e2e-anvil.sh
+
+      - name: stop anvil
+        if: always()
+        run: pkill -f 'anvil --port 8545' || true
+
   renderer:
     name: renderer parity
     needs: changes

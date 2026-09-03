@@ -53,11 +53,11 @@ incremented by each `compose`, decremented back by the matching `decompose`.
 
 ## Token #0 — Collection Owner (implemented)
 
-Token #0 has the fixed metadata name `Shapes Collection Owner`, independent of the editable token
-name prefix. It alone appends `{"trait_type":"Collection Owner","value":"true"}` after
-`Compose Depth`. The trait identifies the transferable collection-ownership token. It is
-descriptive only: holding #0 grants no administrative authority, and all privileged calls remain
-gated by the separate `admin()` role.
+The owner token (initially #0, moving with compose, decompose and split per `ownerToken()`) is
+named `<prefix><id>, Contract Owner`. It alone appends the value-only attribute
+`{"value":"Contract Owner"}` after `Compose Depth`; marketplaces render a value-only attribute as a
+plain tag. The attribute is descriptive only: holding the owner token grants no administrative
+authority, and all privileged calls remain gated by the separate `admin()` role.
 
 ## Parity + tests
 

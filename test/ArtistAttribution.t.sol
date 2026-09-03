@@ -47,7 +47,7 @@ contract ArtistAttributionTest is Test {
 
         vm.startPrank(artist);
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
         );
         vm.stopPrank();
     }
@@ -110,7 +110,7 @@ contract ArtistAttributionTest is Test {
         uint256 genesisAmount = Denominations.amountAt(0);
         vm.startPrank(artist);
         Shapes other = new Shapes{value: genesisAmount}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
         );
         vm.stopPrank();
         assertEq(other.artist(), artist);
@@ -179,7 +179,7 @@ contract ArtistAttributionTest is Test {
         vm.deal(deployer, Denominations.amountAt(0));
         vm.startPrank(deployer);
         deployed = new Shapes{value: Denominations.amountAt(0)}(
-            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection)
+            Denominations.UNIT / 10, address(0xFEE), address(renderer), address(collection), 0
         );
         vm.stopPrank();
     }

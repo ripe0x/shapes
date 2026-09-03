@@ -503,7 +503,7 @@ contract OutputTest is RendererTestBase {
                 assertTrue(raw[raw.length - 1] != bytes1("0"), label);
             }
             string memory json = renderer.metadataJSON(
-                bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+                bytes32(uint256(7)), DENOMS[i], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
             );
             assertEq(
                 vm.parseJsonString(json, ".attributes[0].value"),
@@ -516,40 +516,41 @@ contract OutputTest is RendererTestBase {
     /// @notice The token number lives in the metadata name, not on the card.
     function test_TokenNumberIsInMetadataOnly() public view {
         string memory json = renderer.metadataJSON(
-            bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
         assertEq(vm.parseJsonString(json, ".name"), "Shape 123");
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), DENOMS[4], false, 0), "123"));
     }
 
-    /// @notice Shape #0 carries its collection role in both its fixed title and one boolean trait.
+    /// @notice Shape #0 carries its collection role in both its name and one value-only attribute.
     function test_CollectionOwnerTokenHasDistinctMetadataIdentity() public view {
         string memory ownerJson = renderer.metadataJSON(
-            bytes32(uint256(1)), DENOMS[0], 0, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            bytes32(uint256(1)), DENOMS[0], 0, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, true
         );
-        assertEq(vm.parseJsonString(ownerJson, ".name"), "Shapes Collection Owner");
-        assertEq(vm.parseJsonString(ownerJson, ".attributes[15].trait_type"), "Collection Owner");
-        assertEq(vm.parseJsonString(ownerJson, ".attributes[15].value"), "true");
+        assertEq(vm.parseJsonString(ownerJson, ".name"), "Shape 0, Contract Owner");
+        assertEq(vm.parseJsonString(ownerJson, ".attributes[15].value"), "Contract Owner");
+        assertTrue(_contains(ownerJson, ',{"value":"Contract Owner"}'));
 
         string memory ordinaryJson = renderer.metadataJSON(
-            bytes32(uint256(1)), DENOMS[0], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION
+            bytes32(uint256(1)), DENOMS[0], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
         assertEq(vm.parseJsonString(ordinaryJson, ".name"), "Shape 1");
-        assertFalse(_contains(ordinaryJson, '"trait_type":"Collection Owner"'));
+        assertFalse(_contains(ordinaryJson, '{"value":"Contract Owner"}'));
     }
 
     /// @notice tokenURI must decode to real JSON containing a real inline SVG.
     function testFuzz_TokenUriIsValidBase64Json(bytes32 seed, uint8 which, uint16 tokenId) public view {
         uint256 amount = DENOMS[which % 9];
-        string memory uri =
-            renderer.tokenURI(seed, amount, tokenId, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION);
+        string memory uri = renderer.tokenURI(
+            seed, amount, tokenId, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION, tokenId == 0
+        );
 
         assertTrue(_startsWith(uri, "data:application/json;base64,"), "json data uri");
         string memory json = string(Base64Decode.decode(_after(uri, "data:application/json;base64,")));
 
         // real JSON, parseable field by field
         string memory expectedName = tokenId == 0
-            ? "Shapes Collection Owner"
+            ? "Shape 0, Contract Owner"
             : string(abi.encodePacked("Shape ", vm.toString(uint256(tokenId))));
         assertEq(vm.parseJsonString(json, ".name"), expectedName);
         assertGt(bytes(vm.parseJsonString(json, ".description")).length, 40);
@@ -567,7 +568,7 @@ contract OutputTest is RendererTestBase {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
         string memory json =
-            renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION);
+            renderer.metadataJSON(seed, amount, 1, 1, false, _gene(seed), 0, NAME_PREFIX, DESCRIPTION, false);
 
         assertEq(vm.parseJsonString(json, ".attributes[0].trait_type"), "ETH Value");
         assertEq(
@@ -603,8 +604,9 @@ contract OutputTest is RendererTestBase {
         uint256 idx = which % 9;
         uint256 amount = DENOMS[idx];
         uint8 gene = _gene(seed);
-        string memory json =
-            renderer.metadataJSON(seed, amount, 1, 1, false, gene, composeDepth, NAME_PREFIX, DESCRIPTION);
+        string memory json = renderer.metadataJSON(
+            seed, amount, 1, 1, false, gene, composeDepth, NAME_PREFIX, DESCRIPTION, false
+        );
 
         assertEq(vm.parseJsonString(json, ".attributes[6].trait_type"), "Primitive");
         string memory primitive = vm.parseJsonString(json, ".attributes[6].value");
@@ -717,7 +719,7 @@ contract TokenMetadataTest is RendererTestBase {
     function setUp() public override {
         super.setUp();
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, address(0xFEE), address(renderer), address(collection)
+            MINT_FEE, address(0xFEE), address(renderer), address(collection), 0
         );
         vm.deal(alice, 1_000 ether);
     }
@@ -748,16 +750,16 @@ contract TokenMetadataTest is RendererTestBase {
         return string(Base64Decode.decode(_after(shapes.tokenURI(id), "data:application/json;base64,")));
     }
 
-    /// @notice The actual Shapes tokenURI path preserves #0's fixed identity even when an admin
-    ///         changes the ordinary token-name prefix.
+    /// @notice The actual Shapes tokenURI path tracks #0's owner-token name through an admin
+    ///         change to the ordinary token-name prefix.
     function test_CollectionOwnerIdentityFlowsThroughShapesTokenURI() public {
         string memory initial = _decodeJson(0);
-        assertEq(vm.parseJsonString(initial, ".name"), "Shapes Collection Owner");
-        assertEq(vm.parseJsonString(initial, ".attributes[15].trait_type"), "Collection Owner");
-        assertEq(vm.parseJsonString(initial, ".attributes[15].value"), "true");
+        assertEq(vm.parseJsonString(initial, ".name"), "Shape 0, Contract Owner");
+        assertEq(vm.parseJsonString(initial, ".attributes[15].value"), "Contract Owner");
+        assertTrue(_contains(initial, ',{"value":"Contract Owner"}'));
 
         shapes.setMetadataCopy("Form ", "A reshaped description of the object.");
-        assertEq(vm.parseJsonString(_decodeJson(0), ".name"), "Shapes Collection Owner");
+        assertEq(vm.parseJsonString(_decodeJson(0), ".name"), "Form 0, Contract Owner");
     }
 
     /// @notice The on-chain token drives the provenance traits from its own (originCount, isBlack),
@@ -936,7 +938,7 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(
             shapes.tokenURI(id),
             renderer.tokenURI(
-                seed, DENOMS[4], id, 1, false, shapes.inkGeneOf(id), 0, NAME_PREFIX, DESCRIPTION
+                seed, DENOMS[4], id, 1, false, shapes.inkGeneOf(id), 0, NAME_PREFIX, DESCRIPTION, false
             )
         );
     }

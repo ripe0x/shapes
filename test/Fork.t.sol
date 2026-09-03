@@ -11,7 +11,7 @@ import {ShapeRenderer} from "../src/ShapeRenderer.sol";
 import {IERC721Value} from "../src/interfaces/IERC721Value.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
-import {DeployShapes} from "../script/DeployShapes.s.sol";
+import {Deploy} from "../script/Deploy.s.sol";
 import {Base64Decode} from "./utils/Base64Decode.sol";
 
 /// @notice Full lifecycle against a real mainnet fork.
@@ -81,7 +81,7 @@ contract ForkTest is Test {
         renderer = new ShapeRenderer();
         collection = new ShapeCollection(address(renderer));
         shapes = new Shapes{value: Denominations.amountAt(0)}(
-            MINT_FEE, feeRecipient, address(renderer), address(collection)
+            MINT_FEE, feeRecipient, address(renderer), address(collection), 0
         );
         // The constructor balance includes backed Shape #0. Only the excess is stranded ETH.
         strayWei = address(shapes).balance - shapes.redeemableBacking();
@@ -110,7 +110,7 @@ contract ForkTest is Test {
         // The script requires an explicit recipient off anvil, and refuses a contract one.
         vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
 
-        DeployShapes deployer = new DeployShapes();
+        Deploy deployer = new Deploy();
         (ShapeRenderer r, ShapeCollection c, Shapes s, ShapeLens l, ShapeAuctionHouse h) = deployer.run();
 
         assertEq(s.mintFee(), MINT_FEE, "default flat fee not applied");
@@ -120,6 +120,7 @@ contract ForkTest is Test {
         assertEq(s.artist(), s.admin(), "artist should be the deployer");
         assertEq(s.owner(), s.admin(), "contract owner should be the deployer");
         assertEq(s.ownerOf(0), s.admin(), "Shape #0 should belong to the deployer");
+        assertEq(s.ownerToken(), 0, "owner token should be Shape #0");
         assertEq(s.artistReleaseHash(), bytes32(0), "attribution should start unsigned");
         assertEq(s.artistSignature(), bytes(""), "signature should start empty");
         assertEq(address(l.shapes()), address(s), "lens mismatch");
@@ -134,7 +135,7 @@ contract ForkTest is Test {
         assertGt(address(r).code.length, 0, "renderer missing code");
         // Smoke the renderer through the interface the token uses; no mint needed.
         assertGt(
-            bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x")).length,
+            bytes(r.tokenURI(bytes32(0), DENOMS[0], 1, 1, false, 0, 0, "Shape ", "x", false)).length,
             500,
             "no metadata"
         );

@@ -54,12 +54,16 @@ struct ComposeInputView {
 /// @notice One reversible compose record as returned by `composeRecordAt`: the survivor's
 ///         pre-compose state and every input burned into it, in the order recorded.
 /// @dev `survivorModules` is the survivor's materialized geometry snapshot before the compose,
-///      empty if it had none.
+///      empty if it had none. `ownerTokenFrom` is the id of the input that carried collection
+///      ownership before this compose, or `type(uint256).max` when none did; `decompose` restores
+///      ownership to that input. This is `Shapes.ComposeRecord.ownerTokenFrom` decoded from its
+///      id-plus-one storage encoding, never the raw value.
 struct ComposeRecordView {
     uint8 survivorDenominationIndex;
     uint32 survivorOriginCount;
     uint8 survivorInkGene;
     bytes survivorModules;
+    uint256 ownerTokenFrom;
     ComposeInputView[] inputs;
 }
 

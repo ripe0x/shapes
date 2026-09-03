@@ -2,7 +2,7 @@ import { zeroAddress } from "viem";
 
 import { ponder } from "ponder:registry";
 
-import { lineageEdge, token } from "../ponder.schema";
+import { collectionOwner, lineageEdge, token } from "../ponder.schema";
 import { backingForDenomIndex, denomIndexOfWei } from "./lib/denominations";
 import { childSeedOf } from "./lib/seed";
 
@@ -11,6 +11,11 @@ import { childSeedOf } from "./lib/seed";
 function edgeId(txHash: `0x${string}`, logIndex: number, position: number): string {
   return `${txHash}-${logIndex}-${position}`;
 }
+
+// `collectionOwner` has exactly one row, keyed by this constant id.
+const OWNER_SINGLETON_ID = "singleton";
+// The contract's "no owner token" sentinel: type(uint256).max.
+const NO_OWNER_TOKEN = 2n ** 256n - 1n;
 
 // A token is born. originCount is always 1 on this event; the contract emits it only from a
 // direct mint, never from recomposition.
@@ -192,6 +197,26 @@ ponder.on("Shapes:ShapeRedeemed", async ({ event, context }) => {
   await context.db.update(token, { id: tokenId }).set({ live: false });
 });
 
+// The collection owner token moves: constructor genesis (max -> 0), compose (donor ->
+// survivor), decompose (survivor -> restored input), split (parent -> first child), and
+// redeem/burn of the owner token (id -> max, "none"). Only `toTokenId` matters for state.
+// `ownerAddress` is read from the target token's row when it already carries the right value
+// (compose survivor, decompose restore, or a mint row inserted with its final owner). Where the
+// row isn't there yet or still holds a stale owner, the Transfer handler below corrects it;
+// every path that changes the owner token's holder also emits a Transfer in the same tx.
+ponder.on("Shapes:OwnerTokenMoved", async ({ event, context }) => {
+  const { toTokenId } = event.args;
+  const none = toTokenId === NO_OWNER_TOKEN;
+
+  const ownerTokenId = none ? null : toTokenId;
+  const ownerAddress = none ? null : ((await context.db.find(token, { id: toTokenId }))?.owner ?? null);
+
+  await context.db
+    .insert(collectionOwner)
+    .values({ id: OWNER_SINGLETON_ID, ownerTokenId, ownerAddress, updatedAtBlock: event.block.number })
+    .onConflictDoUpdate({ ownerTokenId, ownerAddress, updatedAtBlock: event.block.number });
+});
+
 // Every non-burn transfer establishes the canonical owner. This deliberately includes mint
 // transfers: splitTo/decomposeTo only expose the recipient in ERC721 Transfer, not in their
 // aggregate structural event, so transaction.from is insufficient for contracts and delegated
@@ -204,4 +229,11 @@ ponder.on("Shapes:Transfer", async ({ event, context }) => {
   }
 
   await context.db.update(token, { id: tokenId }).set({ owner: to });
+
+  // If this transfer moves the current owner token, keep the singleton's address in sync. This
+  // covers OwnerTokenMoved firing before the row exists or before its owner is final.
+  const collectionOwnerRow = await context.db.find(collectionOwner, { id: OWNER_SINGLETON_ID });
+  if (collectionOwnerRow?.ownerTokenId === tokenId) {
+    await context.db.update(collectionOwner, { id: OWNER_SINGLETON_ID }).set({ ownerAddress: to });
+  }
 });

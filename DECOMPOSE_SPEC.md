@@ -73,6 +73,17 @@ Effects (CEI, mint last):
 7. Emit `Decomposed(survivorId, restoredIds, survivorDenomIndex, survivorOriginCount)`, `InkGene` for survivor + each restored id, `MetadataUpdate(survivorId)`.
 8. Interactions: `_safeMint(msg.sender, inp.id)` for each input.
 
+### Owner token in compose/decompose records
+
+`ComposeRecord` carries one more field, `ownerTokenFrom` (`uint96`, same id-plus-one encoding as
+the rest of Shapes' owner-token storage; 0 means none). `compose` reads it before the input loop:
+if the owner token is one of `burnIds`, `rec.ownerTokenFrom` is set to that input's encoded id and
+the owner token moves to `survivorId`; if the owner token is the survivor itself, nothing changes.
+`decompose` reads `rec.ownerTokenFrom` before `stack.pop()`: nonzero restores the owner token to
+that input; zero leaves it wherever it already is. This is symmetric with the rest of the record:
+self-contained, read from storage with no caller-supplied data, correct under nested compose stacks
+because each push/pop only ever concerns its own record's inputs.
+
 ## Safety — why re-minting burned ids is collision-free
 
 - **Fresh mints never collide.** Ids are issued from 0, so the highest id ever issued is `totalMinted - 1`. `mint` and `split` take `totalMinted` itself, strictly greater than that. A re-minted input id is `<= totalMinted - 1`, so no fresh mint reproduces it.
