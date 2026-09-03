@@ -253,11 +253,16 @@ function Countdown({
 
 export function LaunchLanding({
   mintSlot,
+  activity,
   footer,
   header,
   mintStartSeconds,
 }: {
   mintSlot?: React.ReactNode;
+  /** The onchain activity feed, placed under the mint section. Passed by the app-mode index
+   *  route, which has the deployment record the feed reads its indexer from. The standalone
+   *  landing has no deployment and omits it. */
+  activity?: React.ReactNode;
   /** Replaces the default footer, e.g. with one carrying the reserve line for the app-mode
    *  index route. Pre-launch and the plain landing keep the default (no reserve line). */
   footer?: React.ReactNode;
@@ -319,6 +324,8 @@ export function LaunchLanding({
       </section>
 
       <Countdown countdown={countdown} dateLabel={dateLabel} mintSlot={mintSlot} />
+
+      {activity}
 
       <section className="launch-section launch-about" id="about" aria-labelledby="about-title">
         <div>

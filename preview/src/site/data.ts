@@ -289,7 +289,7 @@ async function batchRead(
 // Per-token reads, in call order within each token's chunk slice.
 const FIELDS = ["backingOf", "seedOf", "isBlackShape", "tokenURI", "composeDepth"] as const;
 
-async function readJsonBounded(response: Response): Promise<IndexerResponse> {
+async function readJsonBounded<T>(response: Response): Promise<T> {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > MAX_INDEXER_RESPONSE_BYTES) {
     throw new Error("Shapes indexer response is too large");
@@ -300,7 +300,7 @@ async function readJsonBounded(response: Response): Promise<IndexerResponse> {
     if (new TextEncoder().encode(text).byteLength > MAX_INDEXER_RESPONSE_BYTES) {
       throw new Error("Shapes indexer response is too large");
     }
-    return JSON.parse(text) as IndexerResponse;
+    return JSON.parse(text) as T;
   }
 
   const reader = response.body.getReader();
@@ -318,15 +318,26 @@ async function readJsonBounded(response: Response): Promise<IndexerResponse> {
     text += decoder.decode(value, {stream: true});
   }
   text += decoder.decode();
-  return JSON.parse(text) as IndexerResponse;
+  return JSON.parse(text) as T;
 }
 
-async function fetchIndexerPage(
+/** GraphQL endpoint for an indexer origin, with any trailing slash removed. */
+export function indexerEndpoint(url: string): string {
+  return `${url.replace(/\/$/, "")}/graphql`;
+}
+
+/**
+ * POSTs one GraphQL query to an indexer endpoint under the site's timeout and response-size
+ * bounds, and returns the parsed body. Shared by every indexer read so no call site can skip
+ * those bounds; interpreting `data`/`errors` is the caller's job.
+ */
+export async function queryIndexer<T>(
   endpoint: string,
   fetcher: typeof fetch,
-  after: string | null,
+  query: string,
+  variables: Record<string, unknown>,
   timeoutMs: number,
-): Promise<IndexerResponse> {
+): Promise<T> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("Shapes indexer timeout must be positive");
   }
@@ -336,11 +347,11 @@ async function fetchIndexerPage(
     const response = await fetcher(endpoint, {
       method: "POST",
       headers: {"content-type": "application/json"},
-      body: JSON.stringify({query: INDEXER_QUERY, variables: {limit: INDEXER_PAGE_SIZE, after}}),
+      body: JSON.stringify({query, variables}),
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Shapes indexer returned HTTP ${response.status}`);
-    return await readJsonBounded(response);
+    return await readJsonBounded<T>(response);
   } finally {
     clearTimeout(timer);
   }
@@ -353,7 +364,7 @@ async function fetchIndexedTokens(
   expectedSupply: bigint,
   timeoutMs: number,
 ): Promise<{tokens: IndexedTokenId[]; indexedBlock: bigint; requests: number}> {
-  const endpoint = `${url.replace(/\/$/, "")}/graphql`;
+  const endpoint = indexerEndpoint(url);
   const tokens: IndexedTokenId[] = [];
   let after: string | null = null;
   let indexedBlock: bigint | undefined;
@@ -369,7 +380,13 @@ async function fetchIndexedTokens(
       throw new Error("Shapes indexer returned too many pages");
     }
 
-    const payload = await fetchIndexerPage(endpoint, fetcher, after, timeoutMs);
+    const payload: IndexerResponse = await queryIndexer<IndexerResponse>(
+      endpoint,
+      fetcher,
+      INDEXER_QUERY,
+      {limit: INDEXER_PAGE_SIZE, after},
+      timeoutMs,
+    );
     if (payload.errors?.length || !payload.data?.tokens || !payload.data._meta?.status) {
       throw new Error(payload.errors?.[0]?.message ?? "Shapes indexer returned an invalid response");
     }
