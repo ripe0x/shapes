@@ -7,9 +7,12 @@ Baseline: `origin/main` at `c9eb8a2`. This worktree branches from `0c17835` and 
 thirty commits behind; the gap renamed the old `decompose` to `split` and added a new
 `decompose` as compose's exact inverse. Read §6 before trusting any recomposition vocabulary.
 
-This draft also predates the `ShapeLens` split (PR #29): every `shapeState`/`previewCompose`/
-`previewSplit`/`unicodeCard` reference below that reads as a call on `Shapes` is now a call on
-`ShapeLens`, a separate stateless periphery contract, instead.
+This draft also predates the `ShapeLens` split (PR #29) and the D-40 architecture pass that
+reversed it. `ShapeLens` and `IShapeCapabilities.sol` no longer exist: every `shapeState`/
+`previewCompose`/`previewSplit`/`unicodeCard` reference below is a call on `Shapes` again, and the
+capability interfaces live on `IShapes.sol`. D-40 also renamed `lockRenderer` to
+`lockPresentation`, `SplitMismatch` to `SplitSumMismatch` and `EmptyRecomposition` to
+`NoComposeInputs`. See project/ARCHITECTURE.md for the current design.
 
 Scope: a release mechanism for token 0 of the collection, in which bids arrive as Shape
 cards and the artist is paid in Shapes. Plus a general auction contract others can reuse,

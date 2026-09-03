@@ -48,7 +48,7 @@ fixed 100 ETH to `0x…dEaD`.
   is burned before any ETH moves.
 - Renderer (`ShapeRenderer`) is `pure`/`view`-only, byte-parity with a canonical TypeScript
   renderer (10 primitive kinds, 52 module appearances), and is admin-replaceable until
-  `lockRenderer` (a cosmetic power only; the renderer never touches ETH).
+  `lockPresentation` (a cosmetic power only; the renderer never touches ETH).
 - Token IDs are sequential from 0 (`firstTokenId = totalMinted`), so lower ID ⟺ minted earlier.
 
 ---
@@ -240,7 +240,7 @@ uint256 public totalSupply;         // live tokens, INCLUDING Black
 uint256 public totalMinted;         // ids issued; the highest is totalMinted-1 (bumped by split mints; NOT by decompose, which reuses ids)
 
 // mintFee is immutable; feeRecipient is admin-updateable for future mints;
-// renderer and rendererLocked are admin-controlled and one-way lockable
+// renderer, collection and metadata copy are admin-controlled and one-way lockable together
 
 // per-survivor LIFO stack of self-contained compose records, enabling decompose (§9.3)
 struct ComposeInput {           // one burned input, everything needed to re-mint it verbatim
@@ -430,7 +430,7 @@ event Blackened(uint256 indexed tokenId, uint256 sacrificedWei);
 event ShapeRedeemed(uint256 indexed tokenId, address indexed to, uint256 amountWei, uint256 originCount);
 event ShapeRevived(uint256 indexed survivorId, uint256 indexed revivedId);   // one per input re-minted by decompose
 event MetadataUpdate(uint256 tokenId);          // ERC-4906
-// existing: ShapeMinted (+ originCount=1), MintFeePaid, RendererUpdated, RendererLocked
+// existing: ShapeMinted (+ originCount=1), MintFeePaid, RendererUpdated, PresentationLocked
 // filterable edges: ShapeAbsorbed (per compose input), ShapeFragmentCreated (per split child)
 // new error NoComposeRecord(survivorId): raised by decompose on an empty stack
 ```

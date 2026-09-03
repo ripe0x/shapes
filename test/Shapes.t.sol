@@ -1052,7 +1052,7 @@ contract FormationTest is ShapesBase {
         assertEq(uint8(shapes.formationOf(kids[0])), uint8(ShapeFormation.Direct), "kept the origin");
         assertEq(uint8(shapes.formationOf(kids[1])), uint8(ShapeFormation.Fragment), "no origin");
 
-        // `ShapeLens` recomputes the same classification from the core's getters.
+        // `shapeState` reports the same classification as the per-field getter.
         uint256[5] memory all = [direct, first, a, kids[0], kids[1]];
         for (uint256 i = 0; i < all.length; ++i) {
             assertEq(
@@ -1778,9 +1778,9 @@ contract RecompositionTest is ShapesBase {
         uint256 first = _mintMany(DENOMS[0], 5);
         uint256[] memory burn = new uint256[](2);
         burn[0] = first + 1;
-        burn[1] = first + 1; // duplicate: second _burn hits a nonexistent token
+        burn[1] = first + 1;
         vm.prank(alice);
-        vm.expectRevert();
+        vm.expectRevert(abi.encodeWithSelector(IShapes.DuplicateComposeInput.selector, first + 1));
         shapes.compose(first, burn);
     }
 

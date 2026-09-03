@@ -34,8 +34,9 @@ struct ShapeData {
 
 /// @notice One burned compose input, holding everything `decompose` needs to re-mint it verbatim.
 /// @dev `modules` is the input's sampled geometry, empty if it had none. `id` is the token id
-///      narrowed to `uint96`; ids are issued one at a time, so reaching 2**96 is not economically
-///      feasible.
+///      narrowed to `uint96`. Ids are sequential and issued one per mint, so the narrowing is
+///      lossless below 2**96 ids, about 7.9e28 mints, each of which costs at least one 0.01 ETH
+///      unit of backing.
 struct ComposeInput {
     bytes32 seed;
     uint96 id;
@@ -155,7 +156,7 @@ struct ComposeInputView {
 /// @notice One reversible compose record as returned by `IShapes.composeRecordAt`: the survivor's
 ///         pre-compose state and every input burned into it, in the order recorded.
 /// @dev `survivorModules` is the survivor's materialized geometry snapshot before the compose,
-///      empty if it had none. `ownerTokenFrom` is the id of the input that carried collection
+///      empty if it had none. `ownerTokenFrom` is the id of the input that held collection
 ///      ownership before this compose, or `type(uint256).max` when none did, the same no-owner-
 ///      token id `OwnerTokenMoved` uses; `decompose` restores ownership to that input. The stored
 ///      id-plus-one encoding is never returned.

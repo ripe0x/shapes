@@ -93,7 +93,10 @@ is allowed to write.
 Rules that make this safe, all enforced by construction:
 
 1. **A library holds no authority.** Every access check runs in `Shapes` before it delegates.
-   `AdminOps` has no `onlyAdmin`; the caller applied it.
+   `AdminOps` has no `onlyAdmin`; the caller applied it. The one exception is `attestArtist`, which
+   is deliberately ungated on both sides: the gate is the EIP-712 signature check inside
+   `AdminOps.attestArtist` against the immutable `artist` address `Shapes` passes in, so anyone may
+   relay the artist's signature and no one can forge one.
 2. **A library never writes ERC-721 state.** Minting, burning and every ownership check execute in
    the token's own runtime. A library cannot move a token.
 3. **A library never moves ETH.** Only `Shapes` has a payable entrypoint and only `Shapes` calls
@@ -108,8 +111,15 @@ Rules that make this safe, all enforced by construction:
 
 Only `Shapes` declares the storage. The libraries declare the struct types and receive pointers.
 
-Calling a library at its own address does nothing: a storage-pointer parameter resolves against the
-caller's storage, and a library deployment has none. The libraries are reachable, and inert.
+A direct `CALL` to a library at its own address cannot reach the token. Two things stop it, and
+either alone is sufficient. First, solc emits call protection into a public library that has any
+non-view, non-pure external function: the runtime compares `address(this)` with the library address
+written into its own code at deployment and reverts when they match, which is the direct-call case.
+Every mutator in `RecompositionOps` and `AdminOps` reverts this way, measured in
+`test/LibraryIsolation.t.sol`. Second, a storage-pointer argument resolves against the account
+executing the code. Under `DELEGATECALL` that is the token; under a direct `CALL` it is the library's
+own storage account, which no contract reads, so a write that got through would land where nothing
+looks. The `public view` and `public pure` functions carry no guard, because they cannot write.
 
 What goes in a library: the state machine, and the reads that reassemble what it records. A view
 that is one storage lookup, such as `splitOriginOf`, stays on the token, where a reader following
@@ -133,9 +143,10 @@ totalMinted      the id counter
 ```
 
 Held by `Shapes` alone, outside any library's reach: `redeemableBacking`, `burnedBacking`,
-`blackShapeCount`, `pendingFees`, the owner token id, the admin address, `renderer`, `collection`
-and `presentationLocked`. `AdminOps` receives narrow pointers to the fee, copy, attestation and
-pointer groups it writes and nothing else.
+`blackShapeCount`, `pendingFees`, the owner token id and the admin address. `AdminOps` receives
+narrow pointers to the five groups it writes and nothing else: the fee config, the presentation
+config (`renderer`, `collection`, the lock), the metadata copy, the artist attestation and the
+pointer group.
 
 The owner token id is written only by `Shapes`. No library can move collection ownership.
 
@@ -146,19 +157,23 @@ library holds the snapshotting, the accumulation, the sampling and the state wri
 
 `compose(survivorId, burnIds)`
 
-1. `Shapes` rejects a repeated id (`RecompositionOps.requireDistinct`), then gates the survivor.
+1. `Shapes` gates the survivor, then rejects a repeated id
+   (`RecompositionOps.requireDistinctComposeInputs`).
 2. `Shapes` loops the inputs: rejects a self-burn, gates ownership and liveness, moves the owner
-   token if this input carried it, burns the token, emits `ShapeAbsorbed`.
+   token if this input held it, burns the token, emits `ShapeAbsorbed`.
 3. `RecompositionOps.compose` snapshots each input into the survivor's compose record, accumulates
    the donor pool, computes the new denomination, ink gene and sampled modules, writes the
    survivor, and emits `Composed`, `InkGene`, `ModulesSampled` and `MetadataUpdate`.
 
 `split(tokenId, outDenoms)`
 
-1. `Shapes` gates ownership and liveness and burns the parent.
+1. `Shapes` gates ownership and liveness and burns the parent, then moves the owner token to the
+   first child's id if the parent held it, and emits `OwnerTokenMoved`. The id is known before the
+   split runs, because the children take the next `outDenoms.length` ids; a later output-sum
+   mismatch reverts the whole call, so the pointer cannot be left on an unminted id.
 2. `RecompositionOps.split` validates the output sum, records the split, allocates origins, samples
-   each child's modules, writes the children, moves the owner token to the first child if the
-   parent carried it, and emits `Split`, `InkGene`, `ShapeFragmentCreated` and `ModulesSampled`.
+   each child's modules, writes the children, and emits `Split`, `InkGene`,
+   `ShapeFragmentCreated` and `ModulesSampled`.
 3. `Shapes` safe-mints the children last, after every write.
 
 `decompose(survivorId)`
@@ -185,7 +200,7 @@ library code cannot occur.
 mutator applies to `msg.sender`, so a preview that would revert for a caller reverts for that
 caller in the preview too.
 
-A repeated id in `burnIds` is rejected by `requireDistinct` in both paths, with the same
+A repeated id in `burnIds` is rejected by `requireDistinctComposeInputs` in both paths, with the same
 `DuplicateComposeInput` error. It sorts a memory copy of the ids and rejects adjacent equals, so it
 is O(n log n) and identical on both sides.
 
@@ -294,10 +309,12 @@ loops in `split` and `decompose` run after every write.
 
 Recorded so a reader does not have to reconstruct them from the code.
 
-**One presentation lock, not two.** `lockPresentation` freezes the renderer and the collection
-together, because `setRenderer` and `setCollection` already gated on the same flag. Two independent
-locks would be two facts to reason about where the code has one, and nothing has asked to freeze
-half of presentation.
+**`lockPresentation` freezes the renderer, the collection and the metadata copy.** One lock over
+everything the name covers. `setRenderer`, `setCollection` and `setMetadataCopy` all revert
+`PresentationIsLocked` after it. The copy was previously outside the lock, which left an admin able
+to rewrite every token's name prefix and description on a collection whose presentation was
+advertised as permanent. Separate locks would be separate facts to reason about, and the copy is
+read from the same metadata document as the two contracts it now freezes with.
 
 **The admin address and the owner token stay on the token.** The libraries hold every other write
 path, but `transferAdmin`, `renounceAdmin` and every owner-token move execute in `Shapes`'s own
@@ -312,7 +329,7 @@ already left the contract. The two answer different questions.
 `IShapeAuctionHouse`, a positions target `IShapePositionResolver`. A live contract of the wrong kind
 is refused rather than stored and silently useless. Zero always clears.
 
-**The duplicate-input check runs on both sides.** `requireDistinct` sorts a memory copy of `burnIds`
+**The duplicate-input check runs on both sides.** `requireDistinctComposeInputs` sorts a memory copy of `burnIds`
 and rejects adjacent equals, in `compose` and in `previewCompose` alike. Before, the mutator relied
 on `_burn` reverting on the second occurrence and reported `ERC721NonexistentToken`, while the
 preview reported `DuplicateComposeInput`. Now both report `DuplicateComposeInput`, and the check is
@@ -332,10 +349,10 @@ value ladder is the token's fact, the grid is the renderer's.
 
 | Contract | Before | Default | Testnet | Margin (default) |
 | --- | --- | --- | --- | --- |
-| `Shapes` | 23,795 | 20,370 | 20,353 | 4,206 |
+| `Shapes` | 23,795 | 20,377 | 20,360 | 4,199 |
 | `ShapeLens` | 10,826 | deleted | deleted | |
 | `RecompositionOps` | new | 12,246 | 12,228 | |
-| `AdminOps` | 3,747 | 3,747 | 3,746 | |
+| `AdminOps` | 3,747 | 3,755 | 3,754 | |
 | `ShapeRenderer` | 23,442 | 23,442 | 23,441 | 1,134 |
 | `ShapeAuctionHouse` | 7,916 | 8,015 | 8,006 | 16,561 |
 | `ShapeCollection` | 4,077 | 4,077 | 4,070 | 20,499 |
@@ -345,7 +362,7 @@ value ladder is the token's fact, the grid is the renderer's.
 | `CopyValidation` | 852 | 852 | 852 | |
 | `InkGenes` | 729 | 729 | 729 | |
 
-`Shapes` carries more surface than before and is 3,425 bytes smaller. The spikes that sized the
+`Shapes` carries more surface than before and is 3,418 bytes smaller. The spikes that sized the
 moves, measured on the pre-refactor source: stubbing the compose, split and decompose bodies
 recovered 6,910 bytes; stubbing the renderer, collection, pointer and admin-transfer write paths
 recovered 1,310. The views and previews added back about 2,690.

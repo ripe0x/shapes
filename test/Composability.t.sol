@@ -75,8 +75,8 @@ contract ComposabilityTest is Test {
         first = shapes.mintBatch{value: count * (DENOMS[0] + _fee(DENOMS[0]))}(DENOMS[0], count);
     }
 
-    /// @notice The deterministic-preview capability (previewCompose/previewSplit) moved off
-    ///         `Shapes` onto `ShapeLens`; `Shapes` no longer advertises it.
+    /// @notice The three capability ids `Shapes` advertises, pinned so a member added to or
+    ///         removed from one of them cannot change an id unnoticed.
     function test_AdvertisesGranularCapabilities() public view {
         assertEq(type(IShapeValue).interfaceId, bytes4(0xd07d718a), "IShapeValue id changed");
         assertTrue(shapes.supportsInterface(type(IShapeValue).interfaceId));
@@ -91,7 +91,7 @@ contract ComposabilityTest is Test {
 
     /// @notice Regression for a review finding: relocating view/pure functions off `Shapes` (issue
     ///         #21, size recovery) left `supportsInterface` advertising `IShapeValue` and
-    ///         `IShapeProvenance` while some of their members existed only on `ShapeLens`, so a
+    ///         `IShapeProvenance` while some of their members lived on a separate contract, so a
     ///         caller that gates on ERC-165 and then calls the missing selector would revert. An
     ///         advertised capability must never contain an unimplemented selector: this exercises
     ///         every view/pure member of each capability interface through a handle typed to that

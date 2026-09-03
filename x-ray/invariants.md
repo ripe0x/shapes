@@ -1,6 +1,13 @@
 # Invariant Map
 
 > Shapes | D-36 flat-fee update applied; guard counts require regeneration before external audit
+>
+> Snapshot of the pre-D-40 tree. `ShapeLens` is deleted, the compose/split/decompose state machine
+> and every configuration write now live in the `RecompositionOps` and `AdminOps` delegatecall
+> libraries, and `lockRenderer`/`rendererLocked`/`RendererIsLocked` are `lockPresentation`/
+> `presentationLocked`/`PresentationIsLocked`, which now freeze the metadata copy too. Line numbers,
+> guard counts and contract names below are as of that snapshot. Current design:
+> project/ARCHITECTURE.md.
 
 ---
 

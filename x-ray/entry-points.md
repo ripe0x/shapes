@@ -2,6 +2,13 @@
 
 > Shapes entry points: permissionless token operations, holder-gated lifecycle operations, and a
 > separate bounded admin surface.
+>
+> Snapshot of the pre-D-40 tree. `ShapeLens` is deleted, the compose/split/decompose state machine
+> and every configuration write now live in the `RecompositionOps` and `AdminOps` delegatecall
+> libraries, and `lockRenderer`/`rendererLocked`/`RendererIsLocked` are `lockPresentation`/
+> `presentationLocked`/`PresentationIsLocked`, which now freeze the metadata copy too. Line numbers,
+> guard counts and contract names below are as of that snapshot. Current design:
+> project/ARCHITECTURE.md.
 
 ---
 

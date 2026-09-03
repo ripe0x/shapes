@@ -143,8 +143,9 @@ go:
 6. Testnet (sepolia) deploy + manual walkthrough: mint dust, mint 1 ETH, compose with
    simulate-preview parity, decompose/split, redeem. Verify contracts on Etherscan.
 7. Post-deploy policy decisions documented for the maintainer: final fee recipient,
-   when/whether to `lockRenderer`, and when/whether to `renounceAdmin`. Admin also controls
-   metadata copy and the independently lockable positions and market pointers.
+   when/whether to `lockPresentation`, and when/whether to `renounceAdmin`. `lockPresentation`
+   freezes the renderer, the collection and the metadata copy together. Admin also controls the
+   independently lockable positions and market pointers.
 8. Items 1–2 of Task 3 resolved (tuned constants, epoch decision) — these are the two
    blockers that must be settled BEFORE any deploy, since both are immutable.
 

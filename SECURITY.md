@@ -190,7 +190,7 @@ bypasses Black terminality. Three low findings were fixed and pinned with regres
 Accepted from the same audit: `setRenderer` validates the renderer by ERC165 claim and code
 presence but does not smoke-call it (owner-controlled; the deploy script already smoke-tests the
 renderer, and a hostile renderer is cosmetic only — see the Renderer replaceability row); the
-`grammarHash` geometry version is therefore only frozen once `lockRenderer` is called; and batch
+`grammarHash` geometry version is therefore only frozen once `lockPresentation` is called; and batch
 sizes stay uncapped (self-inflicted, per finding #7).
 
 ### 11. A fee-recipient-seller could steal a bidder's escrowed cards — corrected from low to theft, fixed
@@ -243,7 +243,7 @@ exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defe
 | Denomination validation | Exact `==` comparisons, no ranges, no rounding, no fallthrough. Because the *index* is stored rather than a wei amount, an off-ladder backing value is unrepresentable in storage. |
 | Forced ETH | Surplus from `selfdestruct`, coinbase or pre-deploy funding leaves `redeemableBacking` untouched, cannot be extracted, and cannot corrupt accounting — no function reads `address(this).balance`. |
 | DoS against the reserve | An owner that rejects ETH causes `_payRedemption` to revert, reverting the whole redemption: the token is never burned and the backing is never lost. |
-| Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is admin-replaceable until `lockRenderer`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only, never backing, redemption or ownership, and after locking it is fixed forever. |
+| Renderer replaceability | The renderer itself is pure: no state, no owner, no setter, verified stable across block number, timestamp, prevrandao, base fee and chain id. On `Shapes` the renderer pointer is admin-replaceable until `lockPresentation`, and both the constructor and `setRenderer` refuse a codeless address. The pointer is read only by `tokenURI`, so a replacement changes appearance only, never backing, redemption or ownership, and after locking it is fixed forever. |
 | Positions and market pointers | Both start empty and unlocked, may be replaced or cleared by admin, and may be locked independently at any value including zero. A nonzero target must contain code and answer ERC-165 for the interface its reader calls. Only `positionOf` queries positions; it forwards a fixed gas cap and converts reverts, out-of-gas and malformed results to zero. A hostile target can mislead discovery but cannot affect Shapes state or reserve behavior. The market target is never called by Shapes. |
 | Contract ownership | One live Shape is the owner token, tracked by `_ownerToken` and starting as #0, atomically backed and minted to the deployer. `owner()` follows its current holder, returning zero once it is redeemed or burned. Compose moves it from a burned donor to the survivor; decompose restores it to that input; split gives it to the first output; `decomposeTo`/`splitTo` make the recipient the collection owner. No authorization check reads `owner()` or `ownerToken()`. |
 | Artist attribution | `artist()` is constructor-set and immutable. Shapes directly stores one nonzero `artistReleaseHash` and the raw `artistSignature`; zero release hash is the unsigned sentinel. The EIP-712 digest binds chain id, exact Shapes address, artist and release hash. The stateless linked `EIP712Signature` library checks canonical ECDSA first so an EIP-7702 delegated EOA can still sign, then ERC-1271 for contract wallets. Anyone may relay, but nobody can replace or clear a successful attestation. For ERC-1271, the permanent proof is validity at execution time because wallet policy may later change. Attribution grants no artist-authorized call. |
@@ -268,18 +268,18 @@ exists. The `nonReentrant` guards on `cancelAuction` and `settle` remain as defe
    collectible-economics choice before mainnet. Admin can raise or lower the fee later via
    `setMintFee`, within the cap; that changes the reroll-cost ratio going forward but never
    backing already minted.
-4. **The admin can replace the renderer until it is locked, and can edit the metadata copy at any
-   time.** Both are cosmetic powers. The renderer is `view`-only and the copy is read only by
-   metadata views; neither can touch ETH, backing, redemption or ownership. A compromised admin
-   could point `tokenURI` at a renderer producing misleading or offensive metadata until
-   `lockRenderer` is called, and could set an offensive or misleading prefix/description via
-   `setMetadataCopy`. Copy is validated on set — a `"`, `\`, C0 control byte, or
-   over-length value reverts — so it cannot break or restructure the metadata JSON, but it is not
-   HTML-escaped: a marketplace that renders `description` as HTML will display admin-supplied
-   markup. The description is shared by token and collection metadata; the immutable ERC-721 name
-   supplies the collection name. Copy is deliberately never frozen: `lockRenderer` freezes the renderer and collection
-   pointers, not the copy, which stays editable while an admin remains. Hold admin in a multisig;
-   renounce it to freeze copy permanently at its last value.
+4. **The admin can replace the renderer and edit the metadata copy until presentation is locked.**
+   Both are cosmetic powers. The renderer is `view`-only and the copy is read only by metadata
+   views; neither can touch ETH, backing, redemption or ownership. A compromised admin could point
+   `tokenURI` at a renderer producing misleading or offensive metadata, and could set an offensive
+   or misleading prefix/description via `setMetadataCopy`. Copy is validated on set — a `"`, `\`,
+   C0 control byte, or over-length value reverts — so it cannot break or restructure the metadata
+   JSON, but it is not HTML-escaped: a marketplace that renders `description` as HTML will display
+   admin-supplied markup. The description is shared by token and collection metadata; the immutable
+   ERC-721 name supplies the collection name. `lockPresentation` freezes the renderer, the
+   collection and the copy together and is one way, so after it none of the three can be changed by
+   any admin. Until then, hold admin in a multisig; renouncing admin also freezes all three
+   permanently at their last values.
 5. **The admin can designate canonical positions and market targets until each is locked.** Either
    pointer can be replaced, cleared or permanently locked at zero independently. A configured
    target may be upgradeable or malicious, but has no authority over Shapes. Canonical does not

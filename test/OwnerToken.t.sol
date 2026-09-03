@@ -166,17 +166,17 @@ contract OwnerTokenTest is ShapesBase {
 
     /* ------------------------- composeRecordAt ------------------------- */
 
-    function test_LensComposeRecordAtOwnerTokenFromIsNoneWhenSurvivorAlreadyHeldIt() public {
+    function test_ComposeRecordAtOwnerTokenFromIsNoneWhenSurvivorAlreadyHeldIt() public {
         shapes.transferFrom(address(this), alice, 0);
         _mintDust(alice, 4); // ids 1..4
         vm.prank(alice);
         shapes.compose(0, _ids4(1, 2, 3, 4));
 
         ComposeRecordView memory rec = shapes.composeRecordAt(0, 0);
-        assertEq(rec.ownerTokenFrom, type(uint256).max, "no input carried ownership into this compose");
+        assertEq(rec.ownerTokenFrom, type(uint256).max, "no input held ownership into this compose");
     }
 
-    function test_LensComposeRecordAtOwnerTokenFromNamesTheDonor() public {
+    function test_ComposeRecordAtOwnerTokenFromNamesTheDonor() public {
         shapes.transferFrom(address(this), alice, 0);
         _mintDust(alice, 4); // ids 1..4
         vm.prank(alice);
@@ -186,7 +186,7 @@ contract OwnerTokenTest is ShapesBase {
         assertEq(rec.ownerTokenFrom, 0, "the burned owner token's id");
     }
 
-    function test_LensComposeRecordAtOwnerTokenFromPerDepthAcrossNestedComposes() public {
+    function test_ComposeRecordAtOwnerTokenFromPerDepthAcrossNestedComposes() public {
         shapes.transferFrom(address(this), alice, 0);
         _mintDust(alice, 4); // ids 1..4
         vm.prank(alice);

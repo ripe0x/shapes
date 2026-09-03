@@ -270,11 +270,12 @@ destination of future mint fees. It can be
 transferred through `transferAdmin` or permanently removed through `renounceAdmin`, independently
 of the owner token:
 
-- Presentation: the renderer and collection metadata contracts may be replaced until
-  `lockRenderer` permanently freezes both pointers. The metadata copy, the token name prefix and
-  description shared by token and collection metadata, is edited via `setMetadataCopy` and is not covered by `lockRenderer`; it stays editable
-  for as long as an admin remains. Copy is validated so it cannot break the metadata
-  JSON. All of it is read only by metadata views and cannot affect backing, redemption or ownership.
+- Presentation: the renderer and collection metadata contracts may be replaced via `setRenderer`
+  and `setCollection`, and the metadata copy, the token name prefix and description shared by token
+  and collection metadata, edited via `setMetadataCopy`. `lockPresentation` permanently freezes all
+  three: afterwards each of those three calls reverts `PresentationIsLocked`. Copy is validated so
+  it cannot break the metadata JSON. All of it is read only by metadata views and cannot affect
+  backing, redemption or ownership.
 - The positions and market pointers may each be set, replaced or cleared through `setPointer` until
   `lockPointer` permanently freezes that entry. Pointer id 0 is Positions and 1 is Market; other
   ids revert. Either entry may be locked while zero.
@@ -315,7 +316,7 @@ function of seed and denomination, so `renderSVG` does not take a token id at al
 
 A token's artwork is a pure function of its seed and denomination for a given renderer, and both
 are fixed at mint. The admin can replace the renderer to correct a rendering bug — which would
-re-derive every token's artwork through the new code — until `lockRenderer` makes the renderer,
+re-derive every token's artwork through the new code — until `lockPresentation` makes the renderer,
 and so the artwork, permanent.
 
 ---

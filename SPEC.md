@@ -626,7 +626,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   (`Denominations.UNIT`), and admin-adjustable afterward via `setMintFee` within that same cap.
   The initial `feeRecipient` is set at construction; admin may redirect subsequent withdrawals.
   `renderer` is
-  mutable until `lockRenderer`; both `setRenderer` and the constructor refuse a
+  mutable until `lockPresentation`; both `setRenderer` and the constructor refuse a
   codeless renderer, so `tokenURI` can never be pointed at an address without code.
 - The committed mainnet initial mint fee is a flat 0.001 ETH for every Shape created, regardless of
   denomination. The isolated 1/100 testnet build uses 0.00001 ETH. Fees accrue to `pendingFees` in
@@ -655,7 +655,7 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
   redeemed, and its backing would be stranded while `redeemableBacking` went on
   counting it.
 - The renderer address is checked for code at construction and on replacement. Metadata has
-  no fallback path; the renderer becomes permanent only after `lockRenderer`.
+  no fallback path; the renderer becomes permanent only after `lockPresentation`.
 
 ### D17. Ink Genes
 

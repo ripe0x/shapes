@@ -75,9 +75,10 @@ library RecompositionOps {
     /// @notice Reverts `DuplicateComposeInput` if any token id appears twice in `ids`.
     /// @dev Sorts a memory copy with a bottom-up merge sort and rejects adjacent equals, so the
     ///      cost is O(n log n) and the answer does not depend on where the repeat sits. `compose`
-    ///      and `previewCompose` both call this, so both reject a repeated input with the same
-    ///      error rather than one failing later on a token the other has not burned.
-    function requireDistinct(uint256[] calldata ids) public pure {
+    ///      would already fail on the repeat, because `_burn` reverts on the second occurrence of
+    ///      an id it has already burned. This runs first for the named error, and so that
+    ///      `previewCompose`, which burns nothing, rejects the same input with the same error.
+    function requireDistinctComposeInputs(uint256[] calldata ids) public pure {
         uint256 n = ids.length;
         if (n < 2) return;
 
@@ -120,7 +121,7 @@ library RecompositionOps {
     ///         the survivor's new denomination, origin count, ink gene and sampled geometry.
     /// @dev `Shapes` has already rejected repeats, gated every token and burned each input, so
     ///      each `burnIds` entry is a token the caller owned and this call still has the state of.
-    ///      `ownerTokenFrom` is the owner token's id plus one when one of the inputs carried
+    ///      `ownerTokenFrom` is the owner token's id plus one when one of the inputs held
     ///      collection ownership, else zero; it is stored so `decompose` can hand ownership back.
     function compose(
         ShapeStore storage st,
@@ -329,7 +330,8 @@ library RecompositionOps {
         delete st.modules[tokenId];
 
         // One split record per split operation, referenced by every child below. `splitRecords`
-        // grows by one entry per call, so a `uint64` index cannot realistically be exhausted.
+        // grows by one entry per call, so the `uint64` index is lossless below 2**64 splits, about
+        // 1.8e19 calls, each of which burns a token and mints at least two.
         uint64 splitRecordIndex = uint64(st.splitRecords.length);
         st.splitRecords.push(rec);
 
@@ -457,7 +459,7 @@ library RecompositionOps {
         if (n == 0) revert IShapes.NoComposeInputs();
 
         requireLiveOwner(st, survivorId, _tokenOwner(survivorId), account);
-        requireDistinct(burnIds);
+        requireDistinctComposeInputs(burnIds);
 
         ShapeData storage s = st.shapes[survivorId];
         uint8 oldIndex = s.denomIndex;

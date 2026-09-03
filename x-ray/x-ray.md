@@ -1,6 +1,12 @@
 # X-Ray Report
 
 > Shapes | 3,066 nSLOC (in-scope contracts/libraries; 3,583 including 517 nSLOC of interfaces) | `2167dc7` (`HEAD`, detached from `main`) | Foundry | 22/08/26
+>
+> Snapshot of the pre-D-40 tree. `ShapeLens` is deleted, the compose/split/decompose state machine
+> and every configuration write now live in the `RecompositionOps` and `AdminOps` delegatecall
+> libraries, and `lockRenderer` is `lockPresentation`, which now freezes the metadata copy too.
+> Contract names, sizes and line numbers below are as of that snapshot. Current design:
+> project/ARCHITECTURE.md.
 
 ---
 

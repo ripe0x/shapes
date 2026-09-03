@@ -163,7 +163,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
     /// @inheritdoc IShapes
     /// @dev Admin-editable via `setMetadataCopy`, written verbatim into every token's metadata.
-    ///      Not frozen by `lockPresentation`.
+    ///      Frozen by `lockPresentation`.
     function tokenNamePrefix() public view returns (string memory) {
         return _copyConfig.tokenNamePrefix;
     }
@@ -328,7 +328,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         external
         onlyAdmin
     {
-        AdminOps.setMetadataCopy(_copyConfig, tokenNamePrefix_, description_, _store.totalMinted);
+        AdminOps.setMetadataCopy(
+            _presentation, _copyConfig, tokenNamePrefix_, description_, _store.totalMinted
+        );
     }
 
     /// @inheritdoc IShapes
@@ -640,7 +642,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         if (n == 0) revert NoComposeInputs();
 
         _requireCallerOwnsLive(survivorId);
-        RecompositionOps.requireDistinct(burnIds);
+        RecompositionOps.requireDistinctComposeInputs(burnIds);
 
         uint96 ownerTokenFrom;
         for (uint256 i = 0; i < n; ++i) {
@@ -716,7 +718,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      seed. `totalMinted` does not move, because those ids are reused. Reuse cannot collide:
     ///      a fresh mint takes `totalMinted` itself, above every id ever issued. LIFO: stacked
     ///      composes unwind newest first. Backing is conserved. The owner token move, if this record
-    ///      carried one, waits until every restored id exists. See DECOMPOSE_SPEC.md.
+    ///      held one, waits until every restored id exists. See DECOMPOSE_SPEC.md.
     function decompose(uint256 survivorId) external nonReentrant returns (uint256[] memory restoredIds) {
         return _decomposeTo(survivorId, msg.sender);
     }

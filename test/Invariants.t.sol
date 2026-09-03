@@ -83,6 +83,9 @@ contract Handler is Test, IERC721Receiver {
     /// @dev Cumulative count of `sacrifice` calls. `Shapes.blackShapeCount` counts the Black Shapes
     ///      alive now, so it falls behind this once one is burned for zero.
     uint256 public ghostSacrificeCount;
+    /// @dev Cumulative count of Black Shapes burned for zero, the only way a Black leaves the
+    ///      supply. `ghostSacrificeCount - ghostBlackBurned` is the live Black count.
+    uint256 public ghostBlackBurned;
 
     uint256[] public liveTokens;
     mapping(uint256 => uint256) private _indexOfToken;
@@ -328,6 +331,22 @@ contract Handler is Test, IERC721Receiver {
         try shapes.sacrifice(id) {
             ghostSacrificed += DENOMS[8];
             ghostSacrificeCount += 1;
+        } catch {}
+    }
+
+    /// @dev Burn a live Black Shape for zero, the only exit a Black has: it cannot be redeemed,
+    ///      composed, decomposed or sacrificed again. Its backing is already zero, so no reserve
+    ///      ghost moves; only the live Black count does.
+    function burnBlack(uint256 seed) public {
+        if (liveTokens.length == 0) return;
+        uint256 id = liveTokens[seed % liveTokens.length];
+        if (!shapes.isBlack(id)) return;
+
+        address owner = shapes.ownerOf(id);
+        vm.prank(owner);
+        try shapes.burn(id) {
+            ghostBlackBurned += 1;
+            _untrack(id);
         } catch {}
     }
 
@@ -615,7 +634,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](20);
+        bytes4[] memory selectors = new bytes4[](21);
         selectors[0] = Handler.mint.selector;
         selectors[1] = Handler.mintBatch.selector;
         selectors[2] = Handler.transfer.selector;
@@ -636,6 +655,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         selectors[17] = Handler.decomposeMany.selector;
         selectors[18] = Handler.withdrawFees.selector;
         selectors[19] = Handler.setMintFee.selector;
+        selectors[20] = Handler.burnBlack.selector;
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
@@ -658,8 +678,9 @@ contract ShapesInvariantTest is StdInvariant, Test {
         );
     }
 
-    /// @notice Sacrificed backing is monotonic and always exactly 100 ETH per sacrifice, and the
-    ///         live Black Shape count never exceeds the number of sacrifices.
+    /// @notice Sacrificed backing is monotonic and always exactly one apex denomination per
+    ///         sacrifice, and the live Black Shape count is exactly the Blacks created minus the
+    ///         Blacks burned for zero.
     function invariant_SacrificeAccounting() public view {
         assertEq(
             shapes.burnedBacking(),
@@ -667,8 +688,10 @@ contract ShapesInvariantTest is StdInvariant, Test {
             "sacrifice per Black drifted"
         );
         assertEq(shapes.burnedBacking(), handler.ghostSacrificed(), "sacrifice accounting drifted");
-        assertLe(
-            shapes.blackShapeCount(), handler.ghostSacrificeCount(), "live Black count exceeds sacrifices"
+        assertEq(
+            shapes.blackShapeCount(),
+            handler.ghostSacrificeCount() - handler.ghostBlackBurned(),
+            "live Black count is not sacrifices minus Black burns"
         );
     }
 

@@ -53,9 +53,10 @@ library AdminOps {
         string description;
     }
 
-    /// @dev The two metadata contracts and the one lock that freezes them. `renderer` is read only
-    ///      by `tokenURI`, `collection` only by `contractURI`, so nothing here can affect ETH,
-    ///      backing, redemption or ownership. One lock, because presentation is one decision.
+    /// @dev The two metadata contracts and the lock that freezes them and the metadata copy.
+    ///      `renderer` is read only by `tokenURI`, `collection` only by `contractURI`, so nothing
+    ///      here can affect ETH, backing, redemption or ownership. One lock, because presentation
+    ///      is one decision.
     struct Presentation {
         address renderer;
         address collection;
@@ -114,8 +115,8 @@ library AdminOps {
         emit IShapes.CollectionUpdated(newCollection);
     }
 
-    /// @dev Body of `Shapes.lockPresentation`. One way: after this neither the renderer nor the
-    ///      collection can change again.
+    /// @dev Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection
+    ///      and the metadata copy are all fixed.
     function lockPresentation(Presentation storage p) public {
         _requireUnlocked(p);
         p.locked = true;
@@ -128,13 +129,16 @@ library AdminOps {
 
     /* -------------------------------- copy -------------------------------- */
 
-    /// @dev Body of `Shapes.setMetadataCopy`.
+    /// @dev Body of `Shapes.setMetadataCopy`. Takes the presentation pointer for its lock: the
+    ///      copy is part of presentation and freezes with it.
     function setMetadataCopy(
+        Presentation storage p,
         CopyConfig storage copy,
         string calldata newTokenNamePrefix,
         string calldata newDescription,
         uint256 totalMinted
     ) public {
+        _requireUnlocked(p);
         CopyValidation.requireJsonSafe(newTokenNamePrefix, MAX_NAME_BYTES, 0);
         CopyValidation.requireJsonSafe(newDescription, MAX_DESCRIPTION_BYTES, 1);
         copy.tokenNamePrefix = newTokenNamePrefix;

@@ -159,8 +159,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev Redemption requires `msg.sender` to be the owner, which the contract can never be, so
     ///      minting and transferring to `address(this)` are both refused.
     error SelfCustodyRejected(uint256 tokenId);
-    /// @dev `setRenderer`, `setCollection` and `lockPresentation` revert once presentation is
-    ///      locked.
+    /// @dev `setRenderer`, `setCollection`, `setMetadataCopy` and `lockPresentation` revert once
+    ///      presentation is locked.
     error PresentationIsLocked();
     /// @dev A renderer must have code and explicitly support the stable `IShapeRenderer`
     ///      capability; the zero address fails the code check.
@@ -256,8 +256,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @notice The onchain renderer. Replaceable by the admin via `setRenderer` until locked.
     function renderer() external view returns (address);
 
-    /// @notice Whether presentation has been permanently locked. True freezes both the renderer
-    ///         and the collection.
+    /// @notice Whether presentation has been permanently locked. True freezes the renderer, the
+    ///         collection and the metadata copy.
     function presentationLocked() external view returns (bool);
 
     /// @notice The collection metadata contract, read only by `contractURI`. Replaceable by the
@@ -265,6 +265,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function collection() external view returns (address);
 
     /// @notice The per-token metadata name prefix. A token's `name` is this followed by its id.
+    ///         Admin-editable via `setMetadataCopy` until `lockPresentation` freezes it.
     function tokenNamePrefix() external view returns (string memory);
 
     /// @notice The shared description emitted by both token metadata and `contractURI`.
@@ -290,16 +291,17 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         `newCollection` must carry code and support `IShapeCollection`.
     function setCollection(address newCollection) external;
 
-    /// @notice Permanently lock presentation. Admin only, one way. After this neither the
-    ///         renderer nor the collection can change again. Does not freeze the metadata copy,
-    ///         which the admin keeps editing via `setMetadataCopy`.
+    /// @notice Permanently lock presentation. Admin only, one way. After this the renderer, the
+    ///         collection and the metadata copy are all fixed: `setRenderer`, `setCollection` and
+    ///         `setMetadataCopy` revert `PresentationIsLocked`.
     function lockPresentation() external;
 
     /// @notice Atomically set the token name prefix and the description shared with `contractURI`.
     ///         Admin only. Emits both ERC-4906 `BatchMetadataUpdate` and `ContractURIUpdated`.
     /// @dev Written verbatim into metadata JSON, so all arguments must be well-formed UTF-8,
     ///      length-capped (64-byte names, 2048-byte description), and free of bytes JSON forbids
-    ///      unescaped (`"`, `\`, C0 controls). Not affected by `lockRenderer`; copy is never frozen.
+    ///      unescaped (`"`, `\`, C0 controls). Reverts `PresentationIsLocked` once
+    ///      `lockPresentation` has been called.
     function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external;
 
     /* --------------------------- pointer admin ------------------------- */
@@ -489,7 +491,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     ///         the survivor's pre-compose state and every burned input's snapshot: exactly what
     ///         `decompose` reads to reverse that compose, each donor's materialized module bytes
     ///         included, so the survivor's post-compose geometry can be reproduced off chain.
-    /// @dev `ownerTokenFrom` on the returned record names the input that carried collection
+    /// @dev `ownerTokenFrom` on the returned record names the input that held collection
     ///      ownership before this compose, or `type(uint256).max` when none did. Reverts
     ///      `ComposeRecordOutOfRange` for a depth at or past `composeDepth(survivorId)`.
     function composeRecordAt(uint256 survivorId, uint256 depth)

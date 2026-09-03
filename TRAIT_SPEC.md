@@ -1,7 +1,7 @@
 # Shape traits — additions (v2)
 
 New collectible/rarity attributes added to `metadataJSON`. All are **renderer-only** (the renderer
-is admin-replaceable until `lockRenderer`) and **aesthetic** — they carry no economic weight;
+is admin-replaceable until `lockPresentation`) and **aesthetic** — they carry no economic weight;
 redemption value stays denomination-only (SPEC.md D15). Every value below is **byte-parity-critical**:
 the canonical TypeScript renderer must emit identical bytes, verified by `Parity.t.sol` fixtures.
 
