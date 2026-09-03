@@ -223,7 +223,7 @@ export function ChainApp({dep}: {dep: Deployment}) {
         publicClient.readContract({...shapes, functionName: "seedOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "originCountOf", args: [id]}),
         publicClient.readContract({...shapes, functionName: "isComplete", args: [id]}),
-        publicClient.readContract({...shapes, functionName: "isBlack", args: [id]}),
+        publicClient.readContract({...shapes, functionName: "isBlackShape", args: [id]}),
         publicClient.readContract({...shapes, functionName: "tokenURI", args: [id]}),
         publicClient.readContract({...shapes, functionName: "composeDepth", args: [id]}),
       ]);

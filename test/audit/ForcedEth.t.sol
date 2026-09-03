@@ -112,7 +112,7 @@ contract ForcedEthTest is AuditBase {
 
         assertEq(address(0xdEaD).balance, deadBefore + DENOMS[8], "burnBacking sent the wrong amount");
         assertEq(shapes.burnedBacking(), DENOMS[8], "burnedBacking wrong");
-        assertTrue(shapes.isBlack(first), "token not marked Black");
+        assertTrue(shapes.isBlackShape(first), "token not marked Black");
         assertEq(shapes.backingOf(first), 0, "Black token still redeemable");
         _assertReserveInvariant();
 

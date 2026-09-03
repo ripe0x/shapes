@@ -328,7 +328,7 @@ contract Handler is Test, IERC721Receiver {
     function burnBacking(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
-        if (shapes.isBlack(id)) return;
+        if (shapes.isBlackShape(id)) return;
         if (shapes.backingOf(id) != DENOMS[8] || shapes.originCountOf(id) != 10_000) return;
 
         address owner = shapes.ownerOf(id);
@@ -345,7 +345,7 @@ contract Handler is Test, IERC721Receiver {
     function burnBlack(uint256 seed) public {
         if (liveTokens.length == 0) return;
         uint256 id = liveTokens[seed % liveTokens.length];
-        if (!shapes.isBlack(id)) return;
+        if (!shapes.isBlackShape(id)) return;
 
         address owner = shapes.ownerOf(id);
         vm.prank(owner);
@@ -504,7 +504,7 @@ contract Handler is Test, IERC721Receiver {
             uint256 id = liveTokens[i];
             if (id == survivor) continue;
             if (shapes.ownerOf(id) != owner) continue;
-            if (shapes.isBlack(id)) continue;
+            if (shapes.isBlackShape(id)) continue;
             candidates[nCand++] = id;
         }
 
@@ -814,7 +814,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         uint256 n = handler.liveTokenCount();
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
-            if (shapes.isBlack(id)) continue; // Black tokens hold no redeemable backing
+            if (shapes.isBlackShape(id)) continue; // Black tokens hold no redeemable backing
             assertTrue(Denominations.isSupported(shapes.backingOf(id)), "token holds an off-ladder amount");
         }
     }
@@ -851,7 +851,7 @@ contract ShapesInvariantTest is StdInvariant, Test {
         uint256 before = sink.balance;
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = handler.liveTokens(i);
-            if (shapes.isBlack(id)) continue; // Black Shapes are intentionally non-redeemable
+            if (shapes.isBlackShape(id)) continue; // Black Shapes are intentionally non-redeemable
             expected += shapes.backingOf(id);
 
             vm.prank(shapes.ownerOf(id));

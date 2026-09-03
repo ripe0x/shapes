@@ -366,7 +366,7 @@ contract OwnerTokenTest is ShapesBase {
 
         vm.prank(alice);
         shapes.burnBacking(0);
-        assertTrue(shapes.isBlack(0));
+        assertTrue(shapes.isBlackShape(0));
         assertEq(shapes.owner(), alice, "burnBacking keeps ownership");
         assertEq(shapes.ownerToken(), 0);
 

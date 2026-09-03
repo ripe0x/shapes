@@ -66,7 +66,7 @@ Protocol actions: `mint`, `mintTo`, `mintBatch`, `mintBatchTo`, `redeem`, `redee
 `decomposeMany`, `decomposeManyTo`, `split`, `splitTo`, `burnBacking`, `withdrawFees`,
 `attestArtist`.
 
-Per-token views: `exists`, `backingOf`, `valueOf`, `isBlack`, `denomIndexOf`, `seedOf`,
+Per-token views: `exists`, `backingOf`, `valueOf`, `isBlackShape`, `denomIndexOf`, `seedOf`,
 `originCountOf`, `inkGeneOf`, `modulesOf`, `formationOf`, `isComplete`, `shapeState`,
 `composeDepth`, `composeRecordAt`, `splitOriginOf`, `positionOf`, `tokenURI`, `unicodeCard`.
 

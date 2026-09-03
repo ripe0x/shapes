@@ -257,7 +257,7 @@ contract AuctionPathsTest is AuditBase {
         shapes.compose(first, burn);
         vm.prank(alice);
         shapes.burnBacking(first);
-        assertTrue(shapes.isBlack(first), "not Black");
+        assertTrue(shapes.isBlackShape(first), "not Black");
 
         uint256 lot = _mint(bob, DENOMS[0]);
         uint256 auctionId = _list(bob, lot, 1);

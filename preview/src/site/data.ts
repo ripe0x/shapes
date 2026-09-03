@@ -238,7 +238,7 @@ async function batchRead(
 }
 
 // Per-token reads, in call order within each token's chunk slice.
-const FIELDS = ["backingOf", "seedOf", "isBlack", "tokenURI", "composeDepth"] as const;
+const FIELDS = ["backingOf", "seedOf", "isBlackShape", "tokenURI", "composeDepth"] as const;
 
 async function readJsonBounded(response: Response): Promise<IndexerResponse> {
   const declaredLength = Number(response.headers.get("content-length"));

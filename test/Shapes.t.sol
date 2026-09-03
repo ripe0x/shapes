@@ -1990,7 +1990,7 @@ contract BlackShapeTest is ShapesBase {
         vm.prank(alice);
         shapes.burnBacking(id);
 
-        assertTrue(shapes.isBlack(id), "now Black");
+        assertTrue(shapes.isBlackShape(id), "now Black");
         assertTrue(shapes.exists(id), "Black remains a live ERC721");
         assertEq(shapes.denomIndexOf(id), 8, "Black retains its apex denomination index");
         assertEq(shapes.blackShapeCount(), 1);

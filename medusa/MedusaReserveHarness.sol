@@ -90,7 +90,7 @@ contract MedusaReserveHarness {
     ///      stay exact should one ever be reached; the deterministic build-and-burn path is the
     ///      unit suite's job (`Shapes.t.sol#_buildApexComplete`), not a bounded-gas fuzz call.
     function burnBackingIfApex() external {
-        if (!_isLive(lastId) || shapes.isBlack(lastId)) return;
+        if (!_isLive(lastId) || shapes.isBlackShape(lastId)) return;
         if (shapes.denomIndexOf(lastId) != 8 || shapes.originCountOf(lastId) != Denominations.unitsAt(8)) {
             return;
         }

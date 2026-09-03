@@ -1288,8 +1288,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
-        "name": "isBlack",
-        "signature": "isBlack(uint256)",
+        "name": "isBlackShape",
+        "signature": "isBlackShape(uint256)",
         "stateMutability": "view",
         "inputs": [
           {
@@ -1309,7 +1309,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "returns": {},
         "abi": {
           "type": "function",
-          "name": "isBlack",
+          "name": "isBlackShape",
           "inputs": [
             {
               "name": "tokenId",

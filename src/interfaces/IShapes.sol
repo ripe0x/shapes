@@ -450,7 +450,7 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     function blackShapeCount() external view returns (uint256);
 
     /// @notice Whether a live token is a Black Shape.
-    function isBlack(uint256 tokenId) external view returns (bool);
+    function isBlackShape(uint256 tokenId) external view returns (bool);
 
     /// @notice ETH backing a live Shape. Black Shapes have no redeemable backing and return zero.
     function backingOf(uint256 tokenId) external view returns (uint256);

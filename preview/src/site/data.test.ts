@@ -112,7 +112,7 @@ function makeClient(opts: {
         return t!.backing;
       case "seedOf":
         return t!.seed;
-      case "isBlack":
+      case "isBlackShape":
         return t!.black;
       case "tokenURI":
         return tokenUriFor(id, t!);

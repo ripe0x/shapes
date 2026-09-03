@@ -845,7 +845,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    function isBlack(uint256 tokenId) public view returns (bool) {
+    function isBlackShape(uint256 tokenId) public view returns (bool) {
         _requireOwned(tokenId);
         return _store.shapes[tokenId].isBlack;
     }

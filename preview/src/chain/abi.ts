@@ -66,7 +66,7 @@ export const shapesAbi = parseAbi([
   "function seedOf(uint256 tokenId) view returns (bytes32)",
   "function originCountOf(uint256 tokenId) view returns (uint256)",
   "function inkGeneOf(uint256 tokenId) view returns (uint8)",
-  "function isBlack(uint256 tokenId) view returns (bool)",
+  "function isBlackShape(uint256 tokenId) view returns (bool)",
   "function ownerOf(uint256 tokenId) view returns (address)",
   "function redeemableBacking() view returns (uint256)",
   "function burnedBacking() view returns (uint256)",

@@ -103,7 +103,7 @@ export const shapesAbi = [
   },
   {
     "type": "function",
-    "name": "isBlack",
+    "name": "isBlackShape",
     "inputs": [
       {
         "name": "tokenId",
