@@ -3,10 +3,9 @@ import { FONT } from "../site/theme";
 import { forDisplay, C as PROV_C } from "../app/ui";
 import { donorColor, GridOverlayCells, byteHex, useActiveCell } from "../app/provenance";
 import { CANONICAL } from "../canonical/params";
-import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
-import { WAD } from "../canonical/wad";
-import { composeSampledShape, grammarSplitPoolBytes, type ComposeTraceCell } from "../canonical/sampling";
-import { DENOMINATIONS, GRIDS, UNIT, unitsAt } from "../canonical/denominations";
+import { composeShape, svgFromComposition } from "../canonical/render";
+import { composeSampledShape, grammarSplitPoolBytes } from "../canonical/sampling";
+import { DENOMINATIONS, GRIDS, unitsAt } from "../canonical/denominations";
 // The playground presents mainnet values even when the adjacent app is built for Sepolia. The
 // denomination indexes, grids, and composition ratios are identical between both ladders.
 import { LABELS } from "../canonical/ladders/mainnet";
@@ -14,11 +13,8 @@ import { geneAtMint } from "../canonical/ink";
 import { decodeModuleByte } from "../canonical/moduleCodec";
 import {
   buildCompleteShape,
-  composeNodes,
-  composeSummedIndex,
   decomposeNode,
   emptySession,
-  keepCard,
   liveNodes,
   nodeComposition,
   randomSeed,
@@ -29,7 +25,6 @@ import {
   type PlaySession,
 } from "./session";
 import { decodeSession, encodeSession, sessionShareable } from "./urlCodec";
-import { downloadCardPng, downloadComposeGif, downloadLadderPng, downloadSquarePng } from "./exports";
 
 /** Split's single-donor highlight color, matching provenance.tsx's convention for split
  *  provenance (`cellStyleAt`/`cellDetailAt`): one warn-color highlight, no per-donor tints. */
@@ -71,18 +66,6 @@ const MAX_TRAY_CARDS = 100;
 
 function seedHex(seed: bigint): string {
   return "0x" + seed.toString(16).padStart(64, "0");
-}
-
-/** A selection's summed backing, formatted for display. Every denomination is a whole multiple
- *  of UNIT (0.01 ETH), so any sum is too — at most two decimal places. */
-function formatEth(wei: bigint): string {
-  const hundredths = wei / UNIT;
-  const whole = hundredths / 100n;
-  const frac = hundredths % 100n;
-  if (frac === 0n) return `${whole} ETH`;
-  const fracStr = (frac < 10n ? "0" : "") + frac.toString();
-  const trimmed = fracStr.endsWith("0") ? fracStr.slice(0, 1) : fracStr;
-  return `${whole}.${trimmed} ETH`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -356,8 +339,6 @@ function TrayCard({
   session,
   selected,
   menu,
-  onToggle,
-  onRemove,
   onOpenMenu,
   onSplit,
   onDecompose,
@@ -473,222 +454,6 @@ function TrayBeat({
               onSacrifice={onSacrifice}
             />
           ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * Beat 3 — compose
- * ------------------------------------------------------------------ */
-
-/** WAD bigint to a display float, the same conversion `GridOverlayCells` (app/provenance.tsx)
- *  uses for its own positioning percentages. */
-function toFloat(w: bigint): number {
-  return Number(w) / Number(WAD);
-}
-
-/** `color` at `alpha` composited over solid black: `color * alpha` per channel, opaque. Used for
- *  the reveal's per-cell covers, so they read as a darkened, donor-tinted version of the color
- *  rather than the raw saturated donor swatch. */
-function tintOverBlack(hex: string, alpha = 0.65): string {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.round(((n >> 16) & 0xff) * alpha);
-  const g = Math.round(((n >> 8) & 0xff) * alpha);
-  const b = Math.round((n & 0xff) * alpha);
-  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-}
-
-/**
- * The compose reveal: an opaque donor-tinted cover over each grid cell, fading out one by one in
- * trace order. Reimplements `GridOverlayCells`'s WAD -> percent positioning (app/provenance.tsx)
- * rather than reusing it, because each cover needs a class name for the reduced-motion-gated CSS
- * animation below, and `GridOverlayCells`'s `cellStyle` can only carry inline style. Pure CSS
- * keyframes with a per-cell `animation-delay`; no JS timers, nothing random — the same trace
- * produces the same reveal every time.
- */
-function RevealOverlay({ composition, trace }: { composition: Composition; trace: ComposeTraceCell[] }) {
-  const leftPct = (toFloat(composition.x0) / 250) * 100;
-  const topPct = (toFloat(composition.y0) / 350) * 100;
-  const widthPct = ((toFloat(composition.cell) * composition.cols) / 250) * 100;
-  const heightPct = ((toFloat(composition.cell) * composition.rows) / 350) * 100;
-  return (
-    <div
-      style={{
-        position: "absolute",
-        left: `${leftPct}%`,
-        top: `${topPct}%`,
-        width: `${widthPct}%`,
-        height: `${heightPct}%`,
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${composition.cols}, 1fr)`,
-          gridTemplateRows: `repeat(${composition.rows}, 1fr)`,
-          width: "100%",
-          height: "100%",
-        }}
-      >
-        {trace.map((cell, j) => (
-          <div
-            key={j}
-            className="play-reveal-cell"
-            style={
-              {
-                background: tintOverBlack(donorColor(cell.donorIndex)),
-                "--cell-i": j,
-              } as React.CSSProperties & Record<"--cell-i", number>
-            }
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** The compose result card: the finished artwork, fully rendered underneath from the start, with
- *  the reveal overlay on top when a trace is present. Keyed by the caller on the result node's
- *  key, so a new compose remounts this (and restarts the CSS animation) from scratch. */
-function ComposeResultCard({
-  composition,
-  trace,
-  inverted,
-}: {
-  composition: Composition;
-  trace: ComposeTraceCell[] | null;
-  inverted: boolean;
-}) {
-  const svg = React.useMemo(() => svgFromComposition(composition, 0n, CANONICAL, inverted), [composition, inverted]);
-  return (
-    <div
-      style={{
-        position: "relative",
-        aspectRatio: "2.5 / 3.5",
-        background: C.art,
-        overflow: "hidden",
-        lineHeight: 0,
-        outline: `1px solid ${C.border}`,
-        outlineOffset: -1,
-      }}
-    >
-      <div dangerouslySetInnerHTML={{ __html: forDisplay(svg) }} />
-      {trace && <RevealOverlay composition={composition} trace={trace} />}
-    </div>
-  );
-}
-
-function ComposeBeat({
-  nodes,
-  selected,
-  onCompose,
-  error,
-  lastResult,
-  inverted,
-  onToggleInverted,
-}: {
-  nodes: PlayNode[];
-  selected: Set<number>;
-  onCompose: () => void;
-  error: string | null;
-  lastResult: PlayNode | null;
-  inverted: boolean;
-  onToggleInverted: () => void;
-}) {
-  const selectedNodes = nodes.filter((n) => selected.has(n.key));
-  const sumWei = selectedNodes.reduce((acc, n) => acc + DENOMINATIONS[n.denomIndex], 0n);
-  const summedIndex = composeSummedIndex(selectedNodes);
-  const survivor =
-    selectedNodes.length > 0 ? selectedNodes.reduce((a, b) => (b.demoId < a.demoId ? b : a)) : null;
-  const validAboveSurvivor = survivor != null && summedIndex >= 0 && summedIndex > survivor.denomIndex;
-
-  let reason: string | null = null;
-  if (selectedNodes.length < 2) reason = "select at least two cards";
-  else if (summedIndex < 0) reason = `${formatEth(sumWei)} is not a denomination`;
-  else if (!validAboveSurvivor) reason = "result must be above the survivor's denomination";
-
-  const canCompose = reason === null;
-
-  const resultComposition = React.useMemo(() => (lastResult ? nodeComposition(lastResult) : null), [lastResult]);
-  // Exports of a black (sacrificed) result default to inverted, regardless of the manual toggle
-  // below (which still lets a visitor invert a non-black result's exports).
-  const effectiveInverted = inverted || lastResult?.black === true;
-
-  const [gifBusy, setGifBusy] = React.useState<string | null>(null);
-
-  const handleGif = async () => {
-    if (!lastResult) return;
-    setGifBusy("rendering…");
-    try {
-      await downloadComposeGif(lastResult, LABELS[lastResult.denomIndex], effectiveInverted, (done, total) =>
-        setGifBusy(`rendering ${done}/${total}…`),
-      );
-    } catch (e) {
-      console.error("GIF export failed", e);
-    } finally {
-      setGifBusy(null);
-    }
-  };
-
-  return (
-    <section className="play-section">
-      <SectionLabel>Compose</SectionLabel>
-      {nodes.length === 0 ? (
-        <p className="play-empty">Select cards from the tray to compose them.</p>
-      ) : (
-        <div className="play-compose-bar">
-          <div style={{ ...mono, fontSize: 10.5, color: C.body }}>
-            {selectedNodes.length} selected · {formatEth(sumWei)}
-          </div>
-          {reason && <div style={{ ...mono, fontSize: 10.5, color: C.muted }}>{reason}</div>}
-          {!reason && summedIndex >= 0 && (
-            <div style={{ ...mono, fontSize: 10.5, color: C.body }}>
-              → {LABELS[summedIndex]} ETH ({GRIDS[summedIndex][0]}×{GRIDS[summedIndex][1]})
-            </div>
-          )}
-          <PlayButton onClick={onCompose} disabled={!canCompose}>
-            Compose
-          </PlayButton>
-        </div>
-      )}
-      {error && <div style={{ ...mono, fontSize: 11, color: C.muted, marginBottom: 16 }}>{error}</div>}
-
-      {lastResult && resultComposition && (
-        <div key={lastResult.key} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ width: "min(320px, 80vw)" }}>
-            <ComposeResultCard
-              composition={resultComposition}
-              trace={lastResult.trace ?? null}
-              inverted={lastResult.black === true}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <PlayButton
-              small
-              onClick={() => downloadCardPng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, effectiveInverted)}
-            >
-              Card PNG
-            </PlayButton>
-            <PlayButton
-              small
-              onClick={() => downloadSquarePng(resultComposition, LABELS[lastResult.denomIndex], lastResult.seed, effectiveInverted)}
-            >
-              Square PNG
-            </PlayButton>
-            <PlayButton small disabled={gifBusy !== null} onClick={handleGif}>
-              {gifBusy ?? "GIF"}
-            </PlayButton>
-            <PlayButton small active={inverted} onClick={onToggleInverted}>
-              Black
-            </PlayButton>
-          </div>
-          <Prose>
-            {lastResult.black
-              ? "Black."
-              : `Composed from ${lastResult.parents?.length ?? 0} Shapes. Every cell sampled from a parent.`}
-          </Prose>
         </div>
       )}
     </section>

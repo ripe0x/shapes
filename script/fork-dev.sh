@@ -27,14 +27,11 @@ cd "$REPO_ROOT"
 # Empty by default: a plain local chain. Set FORK_URL to a mainnet RPC to fork instead.
 FORK_URL=${FORK_URL:-}
 PORT=${PORT:-8545}
-# Anvil's default chain id, which browser wallets already have configured for localhost:8545.
-# Caveat: a wallet keys networks by chain id, so another local node also on 31337 (a second
-# anvil, a Hardhat chain) can silently receive transactions meant for this one. Override with
-# CHAIN_ID when running more than one local chain.
-CHAIN_ID=${CHAIN_ID:-31337}
+# Fixed at Anvil's default chain id: Deploy.s.sol only accepts chain id 1, 11155111 or 31337
+# (script/Deploy.s.sol), and script/env/anvil.env pins script/deploy.sh anvil to 31337, so no
+# other chain id would deploy successfully here.
+CHAIN_ID=31337
 RPC="http://127.0.0.1:${PORT}"
-# Anvil's first default account. Public, well-known, test-only.
-PK0=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 DEPLOYMENT_FILE="$REPO_ROOT/preview/public/deployment.json"
 # Comma-separated addresses to fund for browser-wallet use, and how much each gets.
 # Defaults to the dev browser wallet so the UI is usable immediately after spin-up.
@@ -72,27 +69,25 @@ if [ "$(cast code "$MULTICALL3" --rpc-url "$RPC")" = "0x" ]; then
   say "Etching Multicall3"
   cast rpc anvil_setCode "$MULTICALL3" "$(cat "$REPO_ROOT/script/multicall3-runtime.hex")" --rpc-url "$RPC" >/dev/null
 fi
-# Block height before the deploy: lower bound for the frontend's event-log scans (the
-# Deployment interface's optional fromBlock). 0 on a plain chain, fork head when forking.
-DEPLOY_BLOCK=$(cast block-number --rpc-url "$RPC")
-
 say "Deploying Shapes"
-# The deploy script only defaults the fee recipient to the deployer on chain id 31337; on any
-# other chain it requires SHAPES_FEE_RECIPIENT to be set explicitly. Pass a clean empty EOA
-# (also the right choice on a fork, where account 0 carries an EIP-7702 delegation the script's
-# no-contract-fee-recipient guard would reject).
+# The deploy wrapper only defaults the fee recipient to the deployer on chain id 31337; on any
+# other chain it requires FEE_RECIPIENT set in the target env file. Pass a clean empty EOA
+# (also the right choice on a fork, where account 0 carries an EIP-7702 delegation the deploy
+# script's no-contract-fee-recipient guard would reject).
 FEE_RECIPIENT=0x0000000000000000000000000000000000000FEE
-OUT=$(SHAPES_FEE_RECIPIENT="$FEE_RECIPIENT" \
-  forge script script/DeployShapes.s.sol --rpc-url "$RPC" --private-key "$PK0" --broadcast 2>&1)
-SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-COLLECTION=$(echo "$OUT" | grep -oE 'ShapeCollection\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-LENS=$(echo "$OUT" | grep -oE 'ShapeLens\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-MINT_FEE=$(cast call "$SHAPES" "mintFee()(uint256)" --rpc-url "$RPC" | awk '{print $1}')
+RAW_DEPLOYMENT_FILE="$REPO_ROOT/deployments/${CHAIN_ID}.json"
+command -v jq >/dev/null || { echo "jq is required to read $RAW_DEPLOYMENT_FILE" >&2; exit 1; }
+SHAPES_FEE_RECIPIENT="$FEE_RECIPIENT" RPC_URL="$RPC" ./script/deploy.sh anvil
+
+SHAPES=$(jq -r '.shapes' "$RAW_DEPLOYMENT_FILE")
+RENDERER=$(jq -r '.renderer' "$RAW_DEPLOYMENT_FILE")
+COLLECTION=$(jq -r '.collection' "$RAW_DEPLOYMENT_FILE")
+LENS=$(jq -r '.lens' "$RAW_DEPLOYMENT_FILE")
+HOUSE=$(jq -r '.auctionHouse' "$RAW_DEPLOYMENT_FILE")
+MINT_FEE=$(jq -r '.mintFeeWei' "$RAW_DEPLOYMENT_FILE")
 ARTIST=$(cast call "$SHAPES" "artist()(address)" --rpc-url "$RPC")
 
-[ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] || { echo "could not parse deployed addresses"; echo "$OUT"; exit 1; }
+[ -n "$SHAPES" ] && [ -n "$RENDERER" ] && [ -n "$LENS" ] || { echo "could not read deployed addresses from $RAW_DEPLOYMENT_FILE"; exit 1; }
 
 if [ -n "$SEED_WALLETS" ]; then
   say "Seeding wallets with $SEED_ETH ETH each"
@@ -109,21 +104,10 @@ if [ -n "$SEED_WALLETS" ]; then
   done
 fi
 
+# deployments/31337.json (written by script/deploy.sh) is the single source of the record shape.
+# The preview frontend's file adds only "artist", which the deploy record has no reason to carry.
 mkdir -p "$(dirname "$DEPLOYMENT_FILE")"
-cat >"$DEPLOYMENT_FILE" <<JSON
-{
-  "rpc": "$RPC",
-  "chainId": $CHAIN_ID,
-  "shapes": "$SHAPES",
-  "artist": "$ARTIST",
-  "lens": "$LENS",
-  "renderer": "$RENDERER",
-  "collection": "$COLLECTION",
-  "auctionHouse": "$HOUSE",
-  "mintFeeWei": "$MINT_FEE",
-  "fromBlock": $DEPLOY_BLOCK
-}
-JSON
+jq --arg artist "$ARTIST" '. + {artist: $artist}' "$RAW_DEPLOYMENT_FILE" >"$DEPLOYMENT_FILE"
 
 say "Ready"
 echo "  Shapes        $SHAPES"

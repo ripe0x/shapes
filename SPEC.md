@@ -30,7 +30,7 @@ decision taken and the reason. Nothing was resolved silently.
 | 6 | Solidity port of the canonical renderer | `src/ShapeRenderer.sol`, `src/lib/` |
 | 7 | ERC721 + reserve | `src/Shapes.sol` |
 | 8 | Byte-parity tests, unit tests, fuzz tests, stateful solvency invariant | `test/` |
-| 9 | Deployment script and local Anvil run | `script/DeployShapes.s.sol` |
+| 9 | Deployment script and local Anvil run | `script/Deploy.s.sol` |
 | 10 | Adversarial security review | `SECURITY.md` |
 
 The ordering matters in one respect: **the renderer is written in TypeScript
