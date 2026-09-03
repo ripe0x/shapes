@@ -92,6 +92,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     uint256 private constant APEX_INDEX = 8;
     /// @dev Destination for burned backing. No known key, so the ETH is unspendable.
     address private constant UNSPENDABLE = 0x000000000000000000000000000000000000dEaD;
+    /// @dev Gas forwarded to the untrusted positions contract by `positionOf`. Ample for a mapping
+    ///      read; bounds a hostile target's ability to consume the caller's stipend.
+    uint256 private constant POSITIONS_GAS = 50_000;
 
     /* ------------------------ fee and presentation ------------------------ */
 
@@ -956,10 +959,6 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         if (modules.length != 0) return r.renderUnicodeSampled(modules, amountWei, d.inkGene);
         return r.renderUnicode(d.seed, amountWei, d.inkGene);
     }
-
-    /// @dev Gas forwarded to the untrusted positions contract. Ample for a mapping read; bounds a
-    ///      hostile target's ability to consume the caller's stipend.
-    uint256 private constant POSITIONS_GAS = 50_000;
 
     /// @inheritdoc IShapes
     /// @dev The positions contract is untrusted. A revert, an out-of-gas, a return that is not one

@@ -108,6 +108,13 @@ Rules that make this safe, all enforced by construction:
 
 Only `Shapes` declares the storage. The libraries declare the struct types and receive pointers.
 
+Calling a library at its own address does nothing: a storage-pointer parameter resolves against the
+caller's storage, and a library deployment has none. The libraries are reachable, and inert.
+
+What goes in a library: the state machine, and the reads that reassemble what it records. A view
+that is one storage lookup, such as `splitOriginOf`, stays on the token, where a reader following
+the function lands on its body.
+
 ## 5. Storage ownership
 
 `ShapeTypes.sol` declares every shared type: the formation enum, the storage structs, and the view
