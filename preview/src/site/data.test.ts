@@ -19,6 +19,7 @@ const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`
 const OWNER = "0x1111111111111111111111111111111111111111" as `0x${string}`;
 const ARTIST = "0x2222222222222222222222222222222222222222" as `0x${string}`;
 const RELEASE_HASH = `0x${"44".repeat(32)}` as `0x${string}`;
+const GENESIS_HASH = `0x${"aa".repeat(32)}` as `0x${string}`;
 
 test("filterOwnedTokens matches wallet addresses without changing newest-first order", () => {
   const tokens = [
@@ -75,6 +76,7 @@ function makeClient(opts: {
   /** A non-revert failure on the ownerToken read, distinct from a decoded NoOwnerToken revert. */
   ownerTokenReadFails?: boolean;
   mintStart?: bigint;
+  genesisHash?: `0x${string}`;
 }) {
   const counts = {multicall: 0, readContract: 0, calls: new Map<string, number>()};
 
@@ -133,6 +135,9 @@ function makeClient(opts: {
     },
     async getBlockNumber() {
       return opts.headBlock ?? 100n;
+    },
+    async getBlock() {
+      return {hash: opts.genesisHash ?? GENESIS_HASH};
     },
     async readContract({functionName, args}: {functionName: string; args?: readonly unknown[]}) {
       counts.readContract++;
@@ -343,6 +348,79 @@ test("loadSite: incremental rescan with no previous snapshot matches a full firs
   assert.deepEqual(plain.tokens.map((t) => t.id), explicit.tokens.map((t) => t.id));
   assert.equal(countsA.calls.get("ownerOf"), countsB.calls.get("ownerOf"));
   assert.equal(countsA.calls.get("tokenURI"), countsB.calls.get("tokenURI"));
+});
+
+test("loadSite: a chain reset (smaller totalMinted) is detected and falls back to a full scan", async () => {
+  const firstLive = new Map<bigint, FakeToken>([
+    [0n, NORMAL],
+    [1n, NORMAL],
+    [2n, NORMAL],
+    [3n, NORMAL],
+    [4n, NORMAL],
+  ]);
+  const {client: firstClient} = makeClient({minted: 5n, live: firstLive, multicall3: true});
+  const first = await loadSite(firstClient, dep);
+  assert.equal(first.scannedMinted, 5n);
+
+  // The chain came back from block 0: fewer tokens overall, and id 0 has a different seed even
+  // though the id itself still exists.
+  const resetLive = new Map<bigint, FakeToken>([
+    [0n, {...NORMAL, seed: `0x${"0".repeat(63)}5`}],
+    [1n, NORMAL],
+  ]);
+  const {client: resetClient, counts} = makeClient({minted: 2n, live: resetLive, multicall3: true});
+
+  const second = await loadSite(resetClient, dep, {previous: first});
+
+  assert.equal(second.scannedMinted, 2n);
+  assert.deepEqual(second.tokens.map((t) => t.id).sort(), [0n, 1n]);
+  assert.equal(second.tokens.find((t) => t.id === 0n)!.seed, 5n); // reread, not the stale cache
+  // Full scan: only the 2 ids on the new chain, not new-ids-since-5 plus the 5 previously live.
+  assert.equal(counts.calls.get("ownerOf"), 2);
+});
+
+test("loadSite: a changed deployment address is detected and falls back to a full scan", async () => {
+  const live = new Map<bigint, FakeToken>([[0n, NORMAL], [1n, NORMAL]]);
+  const {client: firstClient} = makeClient({minted: 2n, live, multicall3: true});
+  const first = await loadSite(firstClient, dep);
+
+  const otherDep = {...dep, shapes: "0x0000000000000000000000000000000000beef" as `0x${string}`};
+  const otherLive = new Map<bigint, FakeToken>([
+    [0n, {...NORMAL, seed: `0x${"0".repeat(63)}6`}],
+    [1n, NORMAL],
+    [2n, NORMAL],
+  ]);
+  const {client: otherClient, counts} = makeClient({minted: 3n, live: otherLive, multicall3: true});
+
+  const second = await loadSite(otherClient, otherDep, {previous: first});
+
+  assert.equal(second.tokens.find((t) => t.id === 0n)!.seed, 6n); // reread, not the stale cache
+  // Full scan: all 3 ids on the new deployment, not 1 new id plus the 2 previously live.
+  assert.equal(counts.calls.get("ownerOf"), 3);
+});
+
+test("loadSite: a differing genesis block hash (same chainId/address) falls back to a full scan", async () => {
+  const live = new Map<bigint, FakeToken>([[0n, NORMAL], [1n, NORMAL]]);
+  const {client: firstClient} = makeClient({minted: 2n, live, multicall3: true});
+  const first = await loadSite(firstClient, dep);
+
+  // Same chainId and contract address, but a reset chain: totalMinted happens to be at least as
+  // large as before, so scannedMinted/chainId/shapes all match; only the genesis hash differs.
+  const resetLive = new Map<bigint, FakeToken>([
+    [0n, {...NORMAL, seed: `0x${"0".repeat(63)}7`}],
+    [1n, NORMAL],
+  ]);
+  const {client: resetClient, counts} = makeClient({
+    minted: 2n,
+    live: resetLive,
+    multicall3: true,
+    genesisHash: `0x${"bb".repeat(32)}` as `0x${string}`,
+  });
+
+  const second = await loadSite(resetClient, dep, {previous: first});
+
+  assert.equal(second.tokens.find((t) => t.id === 0n)!.seed, 7n); // reread, not the stale cache
+  assert.equal(counts.calls.get("ownerOf"), 2); // full scan, not an incremental no-op
 });
 
 test("loadSite: superseded percentage-fee Sepolia remains readable until redeployment", async () => {

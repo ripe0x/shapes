@@ -50,6 +50,19 @@ export interface SiteData {
    *  needs a fresh `ownerOf`. 0 from an indexer-sourced load, forcing a full rescan the first time
    *  a later refresh falls back to the chain (the indexer never walks this id range itself). */
   scannedMinted: bigint;
+  /** `dep.chainId` as of this load. The chain-fallback path treats a mismatch against the current
+   *  deployment as proof `previous` came from a different chain and discards it; see the reset
+   *  check in `loadSiteFromChain`. */
+  chainId: number;
+  /** `dep.shapes` as of this load, checked the same way as `chainId`. */
+  shapes: `0x${string}`;
+  /** Hash of block `dep.fromBlock` (or block 0 when `fromBlock` is unset, e.g. a local dev chain)
+   *  as of this load. A dev chain restarted from block 0 typically keeps its chainId and, via a
+   *  deterministic deployer, often the same `shapes` address too, so `chainId`/`shapes` alone
+   *  don't catch it; this block's hash changes on any such restart because it belongs to a fresh
+   *  genesis. `"0x0"` from an indexer-sourced load (that path never reads a block), forcing a full
+   *  rescan the first time a later refresh falls back to the chain, mirroring `scannedMinted`. */
+  genesisHash: `0x${string}`;
   reserve: bigint; // redeemableBacking()
   supply: bigint; // totalSupply()
   fees: bigint[]; // flat mintFee(), repeated per denomination for the selector UI
@@ -423,6 +436,10 @@ async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Prom
     // The indexer supplies live ids directly; it never walks the id range, so there is no
     // scanned boundary to record. See the SiteData.scannedMinted doc comment.
     scannedMinted: 0n,
+    chainId: dep.chainId,
+    shapes: dep.shapes,
+    // No block read on this path; see the SiteData.genesisHash doc comment.
+    genesisHash: "0x0",
     reserve,
     supply,
     fees,
@@ -495,6 +512,10 @@ async function tokensFromIndexer(
  * names explicitly (a same-owner state change `ownerOf` alone can't reveal, e.g. compose onto
  * one's own token). Every other previously-live id reuses its cached fields untouched.
  *
+ * `previous` is discarded in favor of a full scan when it looks like it came from a different
+ * chain (or a reset one wearing the same address) rather than a later state of the same one; see
+ * the reset check below and the `SiteData.chainId`/`shapes`/`genesisHash` doc comments.
+ *
  * Black Shapes remain in the gallery. They have zero backing and denomination index -1, but their
  * on-chain tokenURI is still the canonical artwork and should not disappear from public history.
  */
@@ -505,8 +526,9 @@ async function loadSiteFromChain(
   dirtyIds: readonly bigint[],
 ): Promise<SiteData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
+  const genesisBlockNumber = dep.fromBlock !== undefined ? BigInt(dep.fromBlock) : 0n;
 
-  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees, ownerToken, mintStart] =
+  const [minted, reserve, supply, artist, artistReleaseHash, viaMulticall, fees, ownerToken, mintStart, genesisBlock] =
     await Promise.all([
       publicClient.readContract({...shapes, functionName: "totalMinted"}),
       publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
@@ -523,13 +545,28 @@ async function loadSiteFromChain(
       loadMintFees(publicClient, dep),
       loadOwnerToken(publicClient, shapes),
       publicClient.readContract({...shapes, functionName: "mintStart"}),
+      publicClient.getBlock({blockNumber: genesisBlockNumber}),
     ]);
+  const genesisHash = genesisBlock.hash as `0x${string}`;
 
   const artistAttested =
     artistReleaseHash !== null && artistReleaseHash !== `0x${"00".repeat(32)}`;
 
-  const previouslyLive = new Map(previous?.tokens.map((t) => [t.id, t] as const) ?? []);
-  const scannedMinted = previous?.scannedMinted ?? 0n;
+  // A reset chain (e.g. a dev chain restarted from block 0) can keep the same chainId and, via a
+  // deterministic deployer, the same `shapes` address, while `totalMinted` and every token's
+  // state are unrelated to what `previous` recorded. Any of these mismatches means `previous`
+  // does not describe this chain, so it's discarded in favor of a full scan; see the SiteData
+  // field doc comments for what each one catches.
+  const resetDetected =
+    previous !== null &&
+    (minted < previous.scannedMinted ||
+      previous.chainId !== dep.chainId ||
+      previous.shapes !== dep.shapes ||
+      previous.genesisHash !== genesisHash);
+  const effectivePrevious = resetDetected ? null : previous;
+
+  const previouslyLive = new Map(effectivePrevious?.tokens.map((t) => [t.id, t] as const) ?? []);
+  const scannedMinted = effectivePrevious?.scannedMinted ?? 0n;
   const dirty = new Set(dirtyIds);
 
   // New ids since the last scan, plus every id previously live: unchanged ids in between never
@@ -604,6 +641,9 @@ async function loadSiteFromChain(
   return {
     tokens,
     scannedMinted: minted,
+    chainId: dep.chainId,
+    shapes: dep.shapes,
+    genesisHash,
     reserve,
     supply,
     fees,
