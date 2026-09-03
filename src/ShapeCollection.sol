@@ -4,7 +4,6 @@ pragma solidity 0.8.28;
 import {Base64} from "@openzeppelin/contracts/utils/Base64.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
-import {IAdminControl} from "./interfaces/IAdminControl.sol";
 import {IShapeCollection} from "./interfaces/IShapeCollection.sol";
 import {IShapeRenderer} from "./interfaces/IShapeRenderer.sol";
 import {IShapes} from "./interfaces/IShapes.sol";
@@ -93,8 +92,8 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /// @inheritdoc IShapeCollection
     function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external {
         IShapes token = IShapes(shapes);
-        if (msg.sender != token.admin()) revert IAdminControl.AdminUnauthorizedAccount(msg.sender);
-        if (token.presentationLocked()) revert IShapes.PresentationIsLocked();
+        if (msg.sender != token.admin()) revert AdminUnauthorizedAccount(msg.sender);
+        if (token.presentationLocked()) revert PresentationIsLocked();
         CopyValidation.requireJsonSafe(tokenNamePrefix_, MAX_NAME_BYTES, 0);
         CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
         _tokenNamePrefix = tokenNamePrefix_;

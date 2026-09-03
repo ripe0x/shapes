@@ -4,6 +4,7 @@ pragma solidity 0.8.28;
 import {IERC721Receiver} from "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 import {IShapes} from "../../src/interfaces/IShapes.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IShapeCollection} from "../../src/interfaces/IShapeCollection.sol";
 import {IShapePositionResolver} from "../../src/interfaces/IShapePositionResolver.sol";
 
 /// @notice Configurable position resolver used to exercise exact and zero position results.
@@ -82,6 +83,21 @@ contract DirtyAddressResolver {
             mstore(0, shl(160, 1))
             return(0, 32)
         }
+    }
+}
+
+/// @notice Answers ERC-165 for `IShapeCollection` with a configurable `shapes()`, isolating
+///         `AdminOps.requireCollection`'s binding check from a genuine `ShapeCollection`'s
+///         behavior.
+contract MockCollection {
+    address public shapes;
+
+    constructor(address shapes_) {
+        shapes = shapes_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IShapeCollection).interfaceId || interfaceId == type(IERC165).interfaceId;
     }
 }
 

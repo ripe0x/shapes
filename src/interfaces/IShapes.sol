@@ -165,7 +165,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     /// @dev A renderer must have code and explicitly support the stable `IShapeRenderer`
     ///      capability; the zero address fails the code check.
     error UnsupportedRenderer(address renderer);
-    /// @dev A collection must explicitly support the stable `IShapeCollection` capability.
+    /// @dev A collection must explicitly support the stable `IShapeCollection` capability and
+    ///      report this token's address from its `shapes()`.
     error UnsupportedCollection(address collection);
     /// @dev A Black Shape cannot be redeemed, composed, decomposed or have its backing burned
     ///      again. It remains transferable and may be destroyed through the draft ERC-8060 `burn`
@@ -189,7 +190,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
     error DuplicateComposeInput(uint256 tokenId);
     /// @dev `tokenURI` and `contractURI` read the metadata copy from the collection, so both
     ///      revert while the collection pointer is zero. Deployment sets it immediately after
-    ///      construction.
+    ///      construction. `lockPresentation` also reverts this while the pointer is zero, since
+    ///      locking with no collection would make both permanently unreachable.
     error CollectionNotSet();
     /// @dev A nonzero positions or market pointer must contain code and answer ERC-165 for the
     ///      interface its reader calls.
@@ -284,7 +286,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Replace the collection metadata contract. Admin only, until presentation is
     ///         locked. `tokenURI` and `contractURI` read it, and it reaches no ETH, backing or
-    ///         ownership. `newCollection` must carry code and support `IShapeCollection`.
+    ///         ownership. `newCollection` must carry code, support `IShapeCollection`, and report
+    ///         this token's address from its `shapes()`.
     /// @dev Replacing it replaces the stored metadata copy along with it, since the copy lives on
     ///      the collection, so this emits ERC-4906 `BatchMetadataUpdate` over every minted id and
     ///      `ContractURIUpdated` as well as `CollectionUpdated`.
@@ -292,6 +295,8 @@ interface IShapes is IERC721, IERC721Value, IAdminControl {
 
     /// @notice Permanently lock presentation. Admin only, one way. After this the renderer
     ///         pointer, the collection pointer and the collection's metadata copy are permanent.
+    /// @dev Requires a collection to already be set; otherwise `tokenURI` and `contractURI` would
+    ///      be permanently unreachable.
     function lockPresentation() external;
 
     /// @notice Signal that every token's metadata and the contract-level metadata should be

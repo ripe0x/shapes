@@ -77,9 +77,13 @@ library AdminOps {
         }
     }
 
-    /// @notice Reverts unless `collection` has code and answers ERC-165 for `IShapeCollection`.
+    /// @notice Reverts unless `collection` has code, answers ERC-165 for `IShapeCollection`, and
+    ///         reports this token as the `Shapes` it is bound to.
     function requireCollection(address collection) internal view {
         if (collection.code.length == 0 || !_supports(collection, type(IShapeCollection).interfaceId)) {
+            revert IShapes.UnsupportedCollection(collection);
+        }
+        if (IShapeCollection(collection).shapes() != address(this)) {
             revert IShapes.UnsupportedCollection(collection);
         }
     }
@@ -107,9 +111,12 @@ library AdminOps {
     }
 
     /// @dev Body of `Shapes.lockPresentation`. One way. After this the renderer pointer, the
-    ///      collection pointer and the collection's metadata copy are permanent.
+    ///      collection pointer and the collection's metadata copy are permanent. Requires a
+    ///      collection to already be set, otherwise `tokenURI` and `contractURI` would be
+    ///      permanently unreachable.
     function lockPresentation(Presentation storage p) public {
         _requireUnlocked(p);
+        if (p.collection == address(0)) revert IShapes.CollectionNotSet();
         p.locked = true;
         emit IShapes.PresentationLocked(p.renderer, p.collection);
     }

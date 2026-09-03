@@ -7,7 +7,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "Shapes",
     "kind": "token",
     "description": "ETH-backed ERC-721 tokens with exact redemption value.",
-    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure without changing total redeemable backing. Three operations move ETH out. Redemption sends a burned token's redeemable backing to the caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends only `pendingFees`, which is never part of the reserve. Compose, decompose and split move no ETH. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. `owner()` gives no admin rights. Administrative rights are held separately by `admin()`, which configures presentation and fees and can never reach backing, redemption or token ownership. `artist()` permanently attributes the deployment to its deployer and grants no authority. Reentrancy: every state-changing entrypoint declared here is guarded. The inherited ERC-721 transfer and approval functions are not, so during a `safeTransferFrom` the receiver can redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are public libraries whose addresses are linked into this bytecode at deploy time, with no setter. Their functions run under `DELEGATECALL`, so they read and write this contract's storage and emit its events. Neither holds authority: every access check runs here first. Neither writes ERC-721 state, moves ETH, or touches the owner token or the admin address. Each receives a pointer to one storage struct and can reach nothing else. See project/ARCHITECTURE.md.",
+    "dev": "Each live non-Black Shape is backed by one supported ETH denomination. Compose, decompose and split change token structure and keep total redeemable backing unchanged. Three operations move ETH out. Redemption sends a burned token's backing to the caller or a chosen recipient. `burnBacking` sends an apex Shape's backing to a fixed unspendable address. Fee withdrawal sends `pendingFees`, which is accounted separately from the reserve. One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is redeemed or burned. Holding it grants no permissions. Administration is the separate `admin()` role, which configures presentation and fees and cannot reach backing, redemption or token ownership. `artist()` records the deployer for attribution and grants no authority. Reentrancy: the mint, redemption, fee and recomposition entrypoints are guarded. The admin functions, `attestArtist` and the inherited ERC-721 transfer and approval functions are not. During a `safeTransferFrom` the receiver may redeem the Shape from inside its own `onERC721Received`. Accounting stays exact. An integrator must not assume the token still exists after that callback returns. Reserve invariant: `address(this).balance >= redeemableBacking() + pendingFees()`. Equality holds in normal use. ETH forced into the contract outside its payable entrypoints is not withdrawable. `RecompositionOps` and `AdminOps` are part of the trusted implementation. They are public libraries whose addresses are linked into this bytecode at deploy time, with no setter, and their functions run under `DELEGATECALL` in this contract's storage context. Every access check runs here before a call reaches them. Token and recomposition state lives in `_store`. ETH accounting, the owner token, the admin address and presentation state live in `Shapes`. See project/ARCHITECTURE.md.",
     "functions": [
       {
         "name": "admin",
@@ -347,7 +347,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "outputs": [],
         "notice": "Destroy `tokenId` and pay its current `valueOf` to its owner.",
-        "dev": "Uses the `IERC721Value` burn surface with stricter authorization: only the current owner may burn. Approved operators must first take ownership through an ERC-721 transfer. Unlike `redeem`, this also destroys a Black Shape, for zero, with no ETH call. Structural burns never route through here.",
+        "dev": "The `IERC721Value` burn path. The current owner may burn; an approved operator must first take ownership through an ERC-721 transfer. Destroys a Black Shape for zero with no ETH call. Compose and split burn their inputs through their own paths.",
         "params": {},
         "returns": {},
         "abi": {
@@ -375,7 +375,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "outputs": [],
         "notice": "Permanently burn an apex Complete Shape's backing, turning it into a Black Shape. Owner only, one way. The token keeps its id, seed and geometry; its backing is sent to an unspendable address and it becomes non-redeemable and non-recomposable. The resulting zero-value Black Shape stays transferable and may be burned for zero.",
-        "dev": "Only a complete apex Shape may have its backing burned. It becomes Black, its backing leaves `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH is sent to the fixed unspendable address. The token stays alive but can no longer redeem ETH. CEI: the token is marked Black before the transfer, which is last.",
+        "dev": "Requires an apex Complete Shape. It becomes Black, its backing leaves `redeemableBacking`, the same amount is added to `burnedBacking`, and that ETH goes to the fixed unspendable address. The token stays alive and can no longer redeem ETH. The token is marked Black before the transfer, which is last.",
         "params": {},
         "returns": {},
         "abi": {
@@ -476,7 +476,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "address"
           }
         ],
-        "notice": "The collection metadata contract. It stores the metadata copy `tokenURI` and `contractURI` read. Replaceable by the admin via `setCollection` until `lockPresentation` freezes it; zero until deployment sets it.",
+        "notice": "The collection metadata contract. It stores the metadata copy `tokenURI` and `contractURI` read. Replaceable by the admin via `setCollection` until presentation is locked. Zero from construction until deployment calls `setCollection`.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -514,7 +514,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Compose several Shapes into one. `survivorId` keeps its id and seed and becomes the summed denomination; the `burnIds` are burned into it. All must be owned by the caller and not Black. No ETH moves and no fee is charged. The summed backing must be a valid denomination. Origins are summed onto the survivor. If the owner token is among `burnIds`, ownership moves to `survivorId`.",
-        "dev": "Reshapes tokens without moving ETH: the summed backing is unchanged, so `redeemableBacking` needs no adjustment and the reserve invariant holds by construction. `_burn` triggers no receiver callback, so this makes no external call; it is guarded regardless.",
+        "dev": "Reshapes tokens and moves no ETH: the summed backing is unchanged, so `redeemableBacking` needs no adjustment and the reserve invariant holds by construction. `_burn` triggers no receiver callback, so this makes no external call. Guarded anyway.",
         "params": {},
         "returns": {},
         "abi": {
@@ -594,7 +594,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Run several composes in order in one transaction, each recording its own reversible entry. Every id is pre-existing (compose mints nothing and keeps each survivor's id), so a later call may name a survivor an earlier call produced. Bounded by block gas.",
-        "dev": "Runs each `(survivorId, burnIds)` compose in order under one reentrancy guard. Compose mints nothing and keeps each survivor's id, so a later call may name a survivor an earlier call in the same batch produced. Each compose pushes its own reversible record. Atomic, and bounded by block gas; the caller sizes the batch.",
+        "dev": "Runs each `(survivorId, burnIds)` compose in order under one reentrancy guard. Compose mints nothing and keeps each survivor's id, so a later call may name a survivor an earlier call in the same batch produced. Each compose pushes its own reversible record. Atomic, and bounded by block gas: the caller sizes the batch.",
         "params": {},
         "returns": {},
         "abi": {
@@ -645,7 +645,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "(uint8,uint32,uint8,bytes,uint256,(uint256,bytes32,uint8,uint32,uint8,bytes)[])"
           }
         ],
-        "notice": "One reversible compose record on `survivorId`'s stack, at `depth` (0 the oldest, `composeDepth(survivorId) - 1` the newest, next in line for `decompose`). Carries the survivor's pre-compose state and every burned input's snapshot: exactly what `decompose` reads to reverse that compose, each donor's materialized module bytes included, so the survivor's post-compose geometry can be reproduced off chain.",
+        "notice": "One reversible compose record on `survivorId`'s stack, at `depth` (0 the oldest, `composeDepth(survivorId) - 1` the newest, next in line for `decompose`). Carries the survivor's pre-compose state and every burned input's snapshot: what `decompose` reads to reverse that compose, each donor's materialized module bytes included, so the survivor's post-compose geometry can be reproduced off chain.",
         "dev": "`ownerTokenFrom` on the returned record names the input that held collection ownership before this compose, or `type(uint256).max` when none did. Reverts `ComposeRecordOutOfRange` for a depth at or past `composeDepth(survivorId)`.",
         "params": {},
         "returns": {},
@@ -768,7 +768,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Reverse the survivor's most recent compose. The survivor keeps its id and seed and reverts to its pre-compose denomination, origin count and gene; every input burned by that compose is re-minted under its original id and seed, to the caller. Caller must own the survivor and it must not be Black. No ETH moves and no fee is charged. Stacked composes reverse newest first (LIFO); reverts `NoComposeRecord` if none remain. If the reversed compose had moved ownership from one of its inputs, ownership restores to that input.",
-        "dev": "The inverse of `compose`. Pops the survivor's top compose record: the survivor returns to its pre-compose state and every burned input is re-minted under its original id and seed. `totalMinted` does not move, because those ids are reused. Reuse cannot collide: a fresh mint takes `totalMinted` itself, above every id ever issued. LIFO: stacked composes unwind newest first. Backing is conserved. The owner token move, if this record held one, waits until every restored id exists. See DECOMPOSE_SPEC.md.",
+        "dev": "The inverse of `compose`. Pops the survivor's top compose record: the survivor returns to its pre-compose state and every burned input is re-minted under its original id and seed. `totalMinted` does not move, because those ids are reused. Reuse cannot collide: a fresh mint takes `totalMinted` itself, above every id ever issued. Stacked composes unwind newest first. Backing is conserved. The owner token move, when the record holds one, waits until every restored id exists. See DECOMPOSE_SPEC.md.",
         "params": {},
         "returns": {},
         "abi": {
@@ -806,7 +806,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Decompose several survivors in order in one transaction, restored inputs to the caller. Repeat an id to pop stacked records; list a nested tree parent-before-child. Bounded by block gas.",
-        "dev": "Decomposes each survivor in order under one reentrancy guard. Repeat an id to pop several stacked records. List ids parent-before-child to unwind a nested tree, so a re-minted input exists by the time its own id is reached. Atomic, and bounded by block gas; the caller sizes the batch.",
+        "dev": "Decomposes each survivor in order under one reentrancy guard. Repeat an id to pop several stacked records. List ids parent-before-child to unwind a nested tree, so a re-minted input exists by the time its own id is reached. Atomic, and bounded by block gas: the caller sizes the batch.",
         "params": {},
         "returns": {},
         "abi": {
@@ -1040,7 +1040,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Whether `tokenId` is a live Shape right now.",
-        "dev": "Never reverts. False for never-issued and burned ids, including ids consumed by compose or replaced by split; true for live Black Shapes.",
+        "dev": "Never reverts. False for a never-issued or burned id, including one consumed by compose or replaced by split. True for a live Black Shape.",
         "params": {},
         "returns": {},
         "abi": {
@@ -1397,8 +1397,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "stateMutability": "nonpayable",
         "inputs": [],
         "outputs": [],
-        "notice": "Permanently lock presentation. Admin only, one way. After this the renderer, the collection and the collection's metadata copy are all fixed: `setRenderer`, `setCollection` and `IShapeCollection.setMetadataCopy` revert `PresentationIsLocked`.",
-        "dev": "",
+        "notice": "Permanently lock presentation. Admin only, one way. After this the renderer pointer, the collection pointer and the collection's metadata copy are permanent.",
+        "dev": "Requires a collection to already be set; otherwise `tokenURI` and `contractURI` would be permanently unreachable.",
         "params": {},
         "returns": {},
         "abi": {
@@ -1660,7 +1660,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Mint one Shape backed by `amountWei`, to `to`.",
-        "dev": "The recipient does not feed the seed, so naming one cannot be used to search for a particular artwork. `to` must be able to receive an ERC721.",
+        "dev": "The recipient does not feed the seed, so naming one cannot search for a particular artwork. `to` must be able to receive an ERC-721.",
         "params": {},
         "returns": {},
         "abi": {
@@ -1701,7 +1701,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "bytes"
           }
         ],
-        "notice": "A live Shape's stored module array (`ModuleCodec`), empty when its geometry derives from `seed` under grammar v1.",
+        "notice": "A live Shape's materialized module array (`ModuleCodec`), empty when its geometry derives from `seed` under grammar v1.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -1928,7 +1928,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "The position the configured positions contract reports for `tokenId`, or zero.",
-        "dev": "The positions contract is untrusted. A revert, an out-of-gas, a return that is not one word, and a word with bits set above the address all resolve to zero. Its only power is to mislead callers of this view.",
+        "dev": "The positions contract is untrusted. A revert, an out-of-gas, a return that is not one word, and a word with bits set above the address all resolve to zero. A hostile target can mislead callers of this view and nothing further.",
         "params": {},
         "returns": {},
         "abi": {
@@ -2197,7 +2197,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "outputs": [],
         "notice": "Burn a Shape and receive exactly its backing.",
-        "dev": "Owner only, which fixes the payout destination. An approved operator reaches the same outcome by transferring the Shape to itself and redeeming in the same transaction, so approval is economically equivalent to granting redemption rights. Redeeming the owner token ends collection ownership permanently.",
+        "dev": "Owner only, which fixes the payout destination. An approved operator reaches the same outcome by transferring the Shape to itself and redeeming in one transaction, so an approval is economically equivalent to granting redemption rights. Redeeming the owner token ends collection ownership permanently.",
         "params": {},
         "returns": {},
         "abi": {
@@ -2367,7 +2367,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "stateMutability": "nonpayable",
         "inputs": [],
         "outputs": [],
-        "notice": "Signal that every token's metadata and the contract-level metadata should be re-read. Admin only, state-changing in no other way.",
+        "notice": "Signal that every token's metadata and the contract-level metadata should be re-read. Admin only. Emits events and writes no state.",
         "dev": "`totalMinted` is at least one from construction onward, so the range always covers every id minted so far.",
         "params": {},
         "returns": {},
@@ -2390,7 +2390,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "address"
           }
         ],
-        "notice": "The onchain renderer. Replaceable by the admin via `setRenderer` until locked.",
+        "notice": "The onchain renderer. Replaceable by the admin via `setRenderer` until presentation is locked.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -2450,7 +2450,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "EIP-2981 royalty, permanently zero.",
-        "dev": "Declared rather than omitted so a marketplace reading the standard is told the rate instead of falling back to its own default.",
+        "dev": "Declared so a marketplace reading ERC-2981 gets an explicit zero rate.",
         "params": {},
         "returns": {},
         "abi": {
@@ -2660,7 +2660,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "outputs": [],
-        "notice": "Replace the collection metadata contract. Admin only, and only while unlocked. Read by `tokenURI` and `contractURI`; it can never touch ETH, backing or ownership. `newCollection` must carry code and support `IShapeCollection`.",
+        "notice": "Replace the collection metadata contract. Admin only, until presentation is locked. `tokenURI` and `contractURI` read it, and it reaches no ETH, backing or ownership. `newCollection` must carry code, support `IShapeCollection`, and report this token's address from its `shapes()`.",
         "dev": "Replacing it replaces the stored metadata copy along with it, since the copy lives on the collection, so this emits ERC-4906 `BatchMetadataUpdate` over every minted id and `ContractURIUpdated` as well as `CollectionUpdated`.",
         "params": {},
         "returns": {},
@@ -2780,7 +2780,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "outputs": [],
-        "notice": "Replace the onchain renderer. Admin only, and only while unlocked. The renderer is read only by `tokenURI`; changing it affects how a Shape looks, never its backing, redeemability or owner. `newRenderer` must carry code.",
+        "notice": "Replace the onchain renderer. Admin only, until presentation is locked. `tokenURI` reads the renderer, so a change affects how a Shape looks and leaves its backing, redeemability and owner untouched. `newRenderer` must carry code and support `IShapeRenderer`.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -2894,7 +2894,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Split a Shape into the denominations in `outDenoms`, which must sum to its backing. The input is burned; each output is a fresh id with a seed derived from the input's seed. No ETH moves and no fee is charged. Origins are partitioned across the outputs, each output filled to capacity in listed order. If the input is the owner token, ownership moves to the first output.",
-        "dev": "Burns the input and mints outputs whose backing sums to the input's, so `redeemableBacking` is untouched. Child seeds derive from the parent seed, fixing the whole split tree at mint. All accounting precedes the `_safeMint` loop, so a receiver callback sees consistent state.",
+        "dev": "Burns the input and mints outputs whose backing sums to the input's, so `redeemableBacking` is untouched. Child seeds derive from the parent seed. All accounting precedes the `_safeMint` loop, so a receiver callback sees consistent state.",
         "params": {},
         "returns": {},
         "abi": {
@@ -2960,7 +2960,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "The split that minted `childId`: the parent's id, pre-split seed, denomination index, ink gene and effective module snapshot, the root split ancestor's denomination index, plus `childId`'s index among that split's outputs.",
-        "dev": "`parentModules` is kept for provenance. Reproducing the child's sampled module bytes needs the branch decision `parentId` enables, not `parentModules`: `composeDepth(parentId)` selects between the compose-record pool and the grammar pool. See SAMPLING_SPEC.md. The record is written once per split and shared by every child of that split; only `childIndex` distinguishes them. It is never deleted, so it keeps answering how the token was created even after the child is composed or split again. Reverts `NotASplitChild` for a token that was never minted by `split`/`splitTo`, which covers an original mint and an input re-minted by `decompose`.",
+        "dev": "`parentModules` is kept for provenance. Reproducing the child's materialized module bytes needs `parentId`: `composeDepth(parentId)` selects between the compose-record pool and the grammar pool. See SAMPLING_SPEC.md. The record is written once per split and shared by every child of that split, distinguished by `childIndex`. It is kept after the child is composed or split again. Reverts `NotASplitChild` for a token that was never minted by `split`/`splitTo`, which covers an original mint and an input re-minted by `decompose`.",
         "params": {},
         "returns": {},
         "abi": {
@@ -3142,7 +3142,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Fully onchain metadata. Base64 JSON containing a base64 SVG.",
-        "dev": "Original mints use seed-based geometry (grammar v1). Compose survivors and split children carry stored sampled geometry (grammar v2) and use the sampled path. A split child always carries stored geometry, so its split provenance traits only ever reach the renderer through the sampled path.",
+        "dev": "An original mint derives its geometry from `seed` under grammar v1. A compose survivor and a split child carry materialized module bytes and render under grammar v2. A split child always carries materialized bytes, so its split provenance traits reach the renderer through the sampled path.",
         "params": {},
         "returns": {},
         "abi": {
@@ -3402,7 +3402,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "Forward every accrued mint fee to the current `feeRecipient`. Callable by anyone; the destination is always the recipient at the time of the call. Reverts `NoFeesPending` when nothing has accrued. A recipient that reverts on receipt makes only this call revert; minting is never affected, and the admin can redirect `feeRecipient` and retry.",
-        "dev": "The recipient is read before the transfer. An admin contract that is also the fee recipient could redirect itself from its own `receive` hook, but the event and the transfer must name the address that actually received this withdrawal.",
+        "dev": "The recipient is read before the transfer, so the event names the address that received this withdrawal even when the recipient changes `feeRecipient` from its own `receive` hook.",
         "params": {},
         "returns": {},
         "abi": {
@@ -4074,7 +4074,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "signature": "CollectionNotSet()",
         "inputs": [],
         "notice": "",
-        "dev": "`tokenURI` and `contractURI` read the metadata copy from the collection, so both revert while the collection pointer is zero. Deployment sets it immediately after construction."
+        "dev": "`tokenURI` and `contractURI` read the metadata copy from the collection, so both revert while the collection pointer is zero. Deployment sets it immediately after construction. `lockPresentation` also reverts this while the pointer is zero, since locking with no collection would make both permanently unreachable."
       },
       {
         "name": "ComposeRecordOutOfRange",
@@ -4477,7 +4477,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": "A collection must explicitly support the stable `IShapeCollection` capability."
+        "dev": "A collection must explicitly support the stable `IShapeCollection` capability and report this token's address from its `shapes()`."
       },
       {
         "name": "UnsupportedDenomination",
@@ -4516,7 +4516,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "ShapeRenderer",
     "kind": "renderer",
     "description": "Fully onchain SVG and metadata for Shape tokens.",
-    "dev": "This contract is a direct port of `preview/src/canonical/render.ts`. Same draw order, same integer arithmetic, same string assembly, same decimal formatting. The parity suite asserts byte-identical output against fixtures generated by that file, so the two cannot drift. The renderer has no owner, no setters and no upgrade path; `Shapes` references it by address and can replace it until locked. Nothing it emits depends on mutable chain state, so a token's artwork is fixed at mint and cannot change afterwards. The SVG and the traits carry no injection surface: every byte comes from a compile-time constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The one exception is the metadata `name` prefix and `description`, which `metadataJSON` writes verbatim from its arguments; `Shapes` owns and supplies that copy and is trusted for it. The owner token's name is `namePrefix` plus token id, suffixed with `, Contract Owner`, and it carries a value-only `Contract Owner` attribute (no `trait_type`).",
+    "dev": "The renderer has no owner, setters or mutable state. For the same inputs it returns the same output. `Shapes` holds the renderer address and the admin can replace it until presentation is locked. Repository parity tests compare this renderer with the reference TypeScript implementation in `preview/src/canonical/render.ts`: same draw order, same integer arithmetic, same string assembly, same decimal formatting. The SVG and the traits carry no injection surface: every byte comes from a compile-time constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The metadata `name` prefix and `description` are the exception. `metadataJSON` writes them verbatim from its arguments, and `Shapes` owns that copy and is trusted for it.",
     "functions": [
       {
         "name": "cardGeometry",
@@ -4680,7 +4680,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "uint256"
           }
         ],
-        "notice": "`cardGeometry`, reading a materialized module array instead of a seed.",
+        "notice": "`cardGeometry`, reading a materialized module array in place of a seed.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -4763,7 +4763,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Resolve a token into its full geometric description.",
-        "dev": "Draw order, consensus critical (SPEC.md D5): 1. fill : always (consumed and discarded; see below) then per cell, row-major: 2. kind : always 3. solid : always 4. rotation : only when the kind takes more than one orientation `wRatio` is the constant `WRATIO` and takes no draw. The conditional consumption is load-bearing. Drawing unconditionally would desynchronise the stream and change every subsequent cell on the card. Ink genes (INK_GENES_IMPL_SPEC.md §4.2): the card-level fill draw is superseded by `inkGene`. The draw still happens, the stream must keep consuming it, but its value is discarded; `solidProbability` comes from `InkGenes.geneProbabilityAt` instead.",
+        "dev": "Draw order is part of the geometry definition and must not change. See SPEC.md for the canonical draw sequence. 1. fill : always, then discarded then per cell, row-major: 2. kind : always 3. solid : always 4. rotation : when the kind takes more than one orientation `wRatio` is the constant `WRATIO` and takes no draw. The rotation draw is conditional, and that is load-bearing: drawing it for every kind would desynchronise the stream and change every later cell on the card. The card-level fill draw is consumed to keep the stream aligned and its value is discarded. `solidProbability` comes from `InkGenes.geneProbabilityAt(inkGene)`. See INK_GENES_IMPL_SPEC.md.",
         "params": {},
         "returns": {},
         "abi": {
@@ -4893,7 +4893,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Resolve a materialized token into its full geometric description (grammar v2).",
-        "dev": "`modules` is a stored byte array (`ModuleCodec`), one byte per cell in row-major grid order; its length must equal the grid's cell count for `amountWei`. Position, size and weight derive from the grid and card constants exactly as `compose`; only the module identities (kind, solid, rotation) come from `modules` instead of a seed draw, so no `Round03Rand` stream runs here. `solidProbability` is still set from `inkGene`, as metadata: no solid draws occur on this path.",
+        "dev": "`modules` is a materialized byte array (`ModuleCodec`), one byte per cell in row-major grid order. Its length must equal the grid's cell count for `amountWei`. Position, size and weight derive from the grid and card constants as they do in `compose`. The module identities (kind, solid, rotation) are decoded from `modules`, so no `Round03Rand` stream runs here. `solidProbability` is set from `inkGene` for metadata.",
         "params": {},
         "returns": {},
         "abi": {
@@ -5107,7 +5107,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "The metadata JSON for a token, with the SVG inlined as a base64 data URI.",
-        "dev": "`originCount` and `inverted` drive the provenance traits (Formation, Independent Origins, Origin Density, Complete, Black). `inverted` is the token's Black state. `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait. `composeDepth` is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait; it is the one input that is mutable chain state rather than fixed at mint. `namePrefix` and `description` are the editorial copy the caller supplies. `ownerToken` names the collection owner token: `true` appends `, Contract Owner` to `namePrefix` plus the decimal token id and adds a value-only `{\"value\":\"Contract Owner\"}` attribute (no `trait_type`); `false` uses `namePrefix` plus the decimal token id, with no such attribute. `description` is emitted verbatim. The renderer neither stores nor escapes caller-supplied copy; the caller owns its content.",
+        "dev": "`originCount` and `inverted` drive the provenance traits (Formation, Independent Origins, Origin Density, Complete, Black). `inverted` is the token's Black state. `inkGene` drives both the artwork (see `renderSVG`) and the `Ink` trait. `composeDepth` is the token's reversible-compose stack depth, surfaced as the `Compose Depth` trait; it is the one input that reads mutable chain state. `namePrefix` and `description` are the editorial copy the caller supplies. `ownerToken` names the collection owner token: `true` appends `, Contract Owner` to `namePrefix` plus the decimal token id and adds a value-only `{\"value\":\"Contract Owner\"}` attribute (no `trait_type`); `false` uses `namePrefix` plus the decimal token id, with no such attribute. `description` is emitted verbatim. The renderer neither stores nor escapes caller-supplied copy; the caller owns its content.",
         "params": {},
         "returns": {},
         "abi": {
@@ -5220,8 +5220,8 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "string"
           }
         ],
-        "notice": "`metadataJSON`, reading a materialized module array instead of a seed.",
-        "dev": "`splitInfo` is the extra argument over `metadataJSON`: a split child always carries materialized geometry, so \"Split From\" / \"Split Origin\" are only ever plumbed through this sampled path, never the seed-based one. `Shapes.tokenURI` passes the all-zero, non-split value for every other sampled token (a compose survivor with no split ancestry of its own).",
+        "notice": "`metadataJSON`, reading a materialized module array in place of a seed.",
+        "dev": "`splitInfo` is the extra argument over `metadataJSON`. A split child always carries materialized geometry, so \"Split From\" and \"Split Origin\" reach the renderer through this path. `Shapes.tokenURI` passes the all-zero, non-split value for a compose survivor with no split ancestry.",
         "params": {},
         "returns": {},
         "abi": {
@@ -5458,7 +5458,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "uint256"
           }
         ],
-        "notice": "`moduleAt`, reading a materialized module array instead of a seed.",
+        "notice": "`moduleAt`, reading a materialized module array in place of a seed.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -5594,7 +5594,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "string"
           }
         ],
-        "notice": "`moduleSequence`, reading a materialized module array instead of a seed.",
+        "notice": "`moduleSequence`, reading a materialized module array in place of a seed.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -5653,7 +5653,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "The complete SVG document for a token.",
-        "dev": "A Shape carries no type: a field, marks, nothing else. The denomination and the token number live in the metadata, not on the card face. `inverted` swaps the field and mark colors: false is a dark field with light marks, true is the exact inverse used by the Black Shape. Geometry and coordinates are identical between the two.",
+        "dev": "The card face is a field with marks on it. The denomination and the token number live in the metadata. `inverted` swaps the field and mark colors: false is a dark field with light marks, true is the inverse used by the Black Shape. Geometry and coordinates are identical between the two.",
         "params": {},
         "returns": {},
         "abi": {
@@ -5714,7 +5714,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "string"
           }
         ],
-        "notice": "`renderSVG`, reading a materialized module array instead of a seed.",
+        "notice": "`renderSVG`, reading a materialized module array in place of a seed.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -5773,7 +5773,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "The canonical module glyphs arranged in the Shape's denomination grid.",
-        "dev": "Cells are separated by one ASCII space and rows by one `\\n`, with no trailing separator. This is a human-readable view of the same modules returned by `moduleSequence`; contracts should use `IShapeGeometry.moduleAt` for structured data.",
+        "dev": "Cells are separated by one ASCII space and rows by one `\\n`, with no trailing separator. A human-readable view of the modules `moduleSequence` returns. Contracts should read `IShapeGeometry.moduleAt` for structured data.",
         "params": {},
         "returns": {},
         "abi": {
@@ -5826,7 +5826,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "string"
           }
         ],
-        "notice": "`renderUnicode`, reading a materialized module array instead of a seed.",
+        "notice": "`renderUnicode`, reading a materialized module array in place of a seed.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -6177,7 +6177,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": "A byte in a materialized array failed `ModuleCodec.isValid`."
+        "dev": "A byte in a materialized module array failed `ModuleCodec.isValid`."
       },
       {
         "name": "InvalidModuleLength",
@@ -6229,7 +6229,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "ShapeCollection",
     "kind": "collection",
     "description": "Collection-level metadata for Shapes: the editorial copy and the contract-level metadata built from it, plus seeded card previews.",
-    "dev": "Stores the token name prefix and the shared description. `Shapes.tokenURI` and `Shapes.contractURI` read both back from here. The only write path is `setMetadataCopy`, restricted to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Neither role is held here: both are read live from `shapes`. Rendering reads the chain only for `seed()`, which is `block.prevrandao` folded with the block number, so an output that takes no seed advances once per block and every caller in the same block sees the same one. Passing a seed explicitly pins an output forever. The cards rendered here are compositions the ladder allows, drawn through the same renderer and the same ink-gene derivation a mint uses, and are indistinguishable from a real token's artwork. No token is read or written.",
+    "dev": "Stores the token name prefix and the shared description. `Shapes.tokenURI` and `Shapes.contractURI` read both back from here. `setMetadataCopy` writes them, restricted to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Both the admin address and the lock are read live from `shapes`. `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes no seed advances once per block and every caller in that block gets the same value. Passing a seed returns deterministic output for that seed. Preview cards use the same denomination ladder, ink-gene derivation and renderer as minted Shapes. No token is read or written.",
     "functions": [
       {
         "name": "card",
@@ -6289,7 +6289,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "string"
           }
         ],
-        "notice": "The card `seed` and `denomIndex` produce, with the ink gene derived exactly as a mint would derive it. No token is involved.",
+        "notice": "The card `seed` and `denomIndex` produce, with the ink gene derived the way a mint derives it. No token is involved.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -6372,7 +6372,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "string"
           }
         ],
-        "notice": "The description emitted by both token metadata and `Shapes.contractURI`, so the collection cannot describe itself differently from its tokens.",
+        "notice": "The description emitted by both token metadata and `Shapes.contractURI`, so the collection and its tokens carry one description.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -6540,7 +6540,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "bytes32"
           }
         ],
-        "notice": "The current block's seed. Advances once per block, so any two calls in the same block agree. Pass it to `imageFor` or `cardFor` to pin an output permanently.",
+        "notice": "The current block's seed, `block.prevrandao` hashed with the block number. Any two calls in the same block agree. Pass it to `imageFor` or `cardFor` to reproduce an output later.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -6719,7 +6719,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": ""
+        "dev": "`setMetadataCopy` reverts this when the caller is not `IShapes(shapes()).admin()`. Same error `IAdminControl` declares, so either ABI decodes it identically."
       },
       {
         "name": "DenominationIndexOutOfRange",
@@ -6750,19 +6750,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "signature": "PresentationIsLocked()",
         "inputs": [],
         "notice": "",
-        "dev": "`setRenderer`, `setCollection` and `lockPresentation` revert once presentation is locked, as does `IShapeCollection.setMetadataCopy`, which reads the lock back from here."
-      },
-      {
-        "name": "RendererHasNoCode",
-        "signature": "RendererHasNoCode(address)",
-        "inputs": [
-          {
-            "name": "renderer",
-            "type": "address"
-          }
-        ],
-        "notice": "",
-        "dev": ""
+        "dev": "`setMetadataCopy` reverts this once `IShapes(shapes()).presentationLocked()` is true. Same error `IShapes` declares, so either ABI decodes it identically."
       },
       {
         "name": "ShapesHasNoCode",
@@ -6775,6 +6763,18 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "notice": "",
         "dev": ""
+      },
+      {
+        "name": "UnsupportedRenderer",
+        "signature": "UnsupportedRenderer(address)",
+        "inputs": [
+          {
+            "name": "renderer",
+            "type": "address"
+          }
+        ],
+        "notice": "",
+        "dev": "A renderer must have code and explicitly support the stable `IShapeRenderer` capability; the zero address fails the code check."
       }
     ]
   },
@@ -8150,7 +8150,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "RecompositionOps",
     "kind": "library",
     "description": "The compose, decompose and split state machine, the previews of compose and split, and the decoded reads over the state they write.",
-    "dev": "Public library called through `DELEGATECALL` from `Shapes`, so it reads and writes `Shapes`'s storage and emits `Shapes`'s events from `Shapes`'s address. Each function is named after the `Shapes` entrypoint whose body it holds. Boundaries, all relied on by the reserve invariant and by `Shapes`'s access control: - No authority. `Shapes` applies the ownership gate before delegating here. - No ERC-721 writes. Minting and burning execute in `Shapes`'s own runtime, so nothing here can move a token. - No ETH. Recomposition never changes total backing, so `redeemableBacking` is not in `ShapeStore` and cannot be reached from here. - No collection ownership. The owner token id is not in `ShapeStore`; `Shapes` moves it. - One storage pointer. `ShapeStore` is the whole of what this library can write. `Shapes`'s address is linked into its bytecode at deploy time with no setter, so a call into this library cannot be redirected afterwards.",
+    "dev": "Public library called through `DELEGATECALL` from `Shapes`, so it reads and writes `Shapes`'s storage and emits `Shapes`'s events from `Shapes`'s address. Part of the trusted implementation: its address is linked into `Shapes`'s bytecode at deploy time with no setter, so a call into it cannot be redirected afterwards. Each function is named after the `Shapes` entrypoint whose body it holds. Structure the reserve invariant and `Shapes`'s access control rely on: - This library receives `_store`, which holds token and recomposition state. - `Shapes` applies the ownership gate before delegating here. - Minting and burning execute in `Shapes`'s own runtime. - Recomposition keeps total backing unchanged, so `redeemableBacking` stays on `Shapes`. - The owner token id stays on `Shapes`, which moves it.",
     "functions": [
       {
         "name": "compose",
@@ -8219,7 +8219,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         ],
         "outputs": [],
         "notice": "Reverts `DuplicateComposeInput` if any token id appears twice in `ids`.",
-        "dev": "Sorts a memory copy with a bottom-up merge sort and rejects adjacent equals, so the cost is O(n log n) and the answer does not depend on where the repeat sits. `compose` would already fail on the repeat, because `_burn` reverts on the second occurrence of an id it has already burned. This runs first for the named error, and so that `previewCompose`, which burns nothing, rejects the same input with the same error.",
+        "dev": "Sorts a memory copy with a bottom-up merge sort and rejects adjacent equals, so the cost is O(n log n) and the answer does not depend on where the repeat sits. It runs before the burns so `compose` reports `DuplicateComposeInput` instead of `_burn`'s nonexistent-token revert, and so `previewCompose`, which burns nothing, rejects the same input with the same error.",
         "params": {},
         "returns": {},
         "abi": {
@@ -8589,7 +8589,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "AdminOps",
     "kind": "library",
     "description": "Every configuration write path on `Shapes`: fee, presentation pointers, the two discovery pointers, and the artist attestation.",
-    "dev": "Public library called through `DELEGATECALL`, so storage stays in `Shapes` and events are emitted from `Shapes`'s address. Each function is named after the `Shapes` entrypoint whose body it holds. No authorization happens here. Each caller in `Shapes` runs its own check first (`onlyAdmin`, or none for `attestArtist`, which is permissionless by design). Nothing here reaches token state, backing, redemption or the admin address itself: the admin address is written only by `Shapes`, so no library can hand the role to anyone. Every mutator takes a struct storage pointer and writes through it, so each reaches only the fields its own function moves. A bare `string`/`bytes` storage-pointer parameter cannot be reassigned from calldata or memory, since solc's copy codegen does not support that for a standalone reference-type parameter; assigning through a struct member reached via the pointer works, which is why these fields are grouped into structs.",
+    "dev": "Public library called through `DELEGATECALL`, so storage stays in `Shapes` and events are emitted from `Shapes`'s address. Part of the trusted implementation: its address is linked into `Shapes`'s bytecode at deploy time with no setter. Each function is named after the `Shapes` entrypoint whose body it holds. Authorization runs in `Shapes` before it delegates here: `onlyAdmin` on every setter, and no gate on `attestArtist`, which is permissionless by design. The admin address is written by `Shapes`. Each mutator here receives a pointer to the struct holding the fields it writes. Each such struct groups fields that one function writes together. A bare `string` or `bytes` storage-pointer parameter cannot be assigned from calldata or memory, because solc emits no copy for a standalone reference-type parameter. Assigning through a struct member reached via the pointer works, which is why these fields live in structs.",
     "functions": [
       {
         "name": "attestArtist",
@@ -8609,7 +8609,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.lockPointer`. May lock a pointer at zero, which is permanent.",
+        "dev": "Body of `Shapes.lockPointer`. A pointer may be locked at zero, which is permanent.",
         "params": {},
         "returns": {}
       },
@@ -8620,7 +8620,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.lockPresentation`. One way: after this the renderer, the collection and the collection's metadata copy are all fixed.",
+        "dev": "Body of `Shapes.lockPresentation`. One way. After this the renderer pointer, the collection pointer and the collection's metadata copy are permanent. Requires a collection to already be set, otherwise `tokenURI` and `contractURI` would be permanently unreachable.",
         "params": {},
         "returns": {}
       },
@@ -8664,7 +8664,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "outputs": [],
         "notice": "",
-        "dev": "Body of `Shapes.setPointer`. A nonzero target must answer ERC-165 for the interface its reader calls: `IShapePositionResolver` for positions, which `Shapes.positionOf` staticcalls, and `IShapeAuctionHouse` for the market, which clients call directly. Zero clears the pointer and is always accepted.",
+        "dev": "Body of `Shapes.setPointer`. A nonzero target must answer ERC-165 for the interface its reader calls: `IShapePositionResolver` for positions, which `Shapes.positionOf` staticcalls, and `IShapeAuctionHouse` for the market, which clients call directly. Zero clears the pointer.",
         "params": {},
         "returns": {}
       },
@@ -8883,6 +8883,13 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": ""
       },
       {
+        "name": "CollectionNotSet",
+        "signature": "CollectionNotSet()",
+        "inputs": [],
+        "notice": "",
+        "dev": "`tokenURI` and `contractURI` read the metadata copy from the collection, so both revert while the collection pointer is zero. Deployment sets it immediately after construction. `lockPresentation` also reverts this while the pointer is zero, since locking with no collection would make both permanently unreachable."
+      },
+      {
         "name": "InvalidArtistReleaseHash",
         "signature": "InvalidArtistReleaseHash()",
         "inputs": [],
@@ -8946,7 +8953,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": "A collection must explicitly support the stable `IShapeCollection` capability."
+        "dev": "A collection must explicitly support the stable `IShapeCollection` capability and report this token's address from its `shapes()`."
       },
       {
         "name": "UnsupportedRenderer",

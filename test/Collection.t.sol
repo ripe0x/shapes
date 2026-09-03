@@ -11,6 +11,7 @@ import {IShapeCollection} from "../src/interfaces/IShapeCollection.sol";
 import {IShapeRenderer} from "../src/interfaces/IShapeRenderer.sol";
 import {IShapes} from "../src/interfaces/IShapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
+import {MockCollection} from "./mocks/Mocks.sol";
 
 contract CollectionTest is Test {
     ShapeRenderer internal renderer;
@@ -214,5 +215,55 @@ contract CollectionTest is Test {
 
     function test_CollectionAdvertisesItsCapability() public view {
         assertTrue(collection.supportsInterface(type(IShapeCollection).interfaceId));
+    }
+
+    /// @notice A genuine `ShapeCollection` constructed against a different `Shapes` reports that
+    ///         other token from `shapes()`, so binding it here must be refused.
+    function test_ShapesRefusesACollectionBoundToAnotherToken() public {
+        Shapes otherShapes = new Shapes{value: Denominations.amountAt(0)}(
+            Denominations.UNIT / 10, feeRecipient, address(renderer), 0
+        );
+        ShapeCollection foreign = new ShapeCollection(renderer, otherShapes);
+
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedCollection.selector, address(foreign)));
+        shapes.setCollection(address(foreign));
+    }
+
+    /// @notice A mock that answers ERC-165 for `IShapeCollection` but reports an unrelated
+    ///         `shapes()` isolates the binding check from ERC-165 support.
+    function test_ShapesRefusesACollectionThatMisreportsItsBinding() public {
+        MockCollection impostor = new MockCollection(address(0xBEEF));
+
+        vm.expectRevert(abi.encodeWithSelector(IShapes.UnsupportedCollection.selector, address(impostor)));
+        shapes.setCollection(address(impostor));
+    }
+
+    /// @notice A fresh collection genuinely bound to this token is accepted.
+    function test_ShapesAcceptsACollectionBoundToItself() public {
+        Shapes fresh = new Shapes{value: Denominations.amountAt(0)}(
+            Denominations.UNIT / 10, feeRecipient, address(renderer), 0
+        );
+        ShapeCollection bound = new ShapeCollection(renderer, fresh);
+
+        fresh.setCollection(address(bound));
+        assertEq(fresh.collection(), address(bound));
+    }
+
+    /* --------------------------- presentation lock --------------------------- */
+
+    /// @notice Locking with no collection set would strand `tokenURI` and `contractURI`, so it is
+    ///         refused instead.
+    function test_LockPresentationRevertsWithNoCollectionSet() public {
+        Shapes fresh = new Shapes{value: Denominations.amountAt(0)}(
+            Denominations.UNIT / 10, feeRecipient, address(renderer), 0
+        );
+        assertEq(fresh.collection(), address(0));
+
+        vm.expectRevert(IShapes.CollectionNotSet.selector);
+        fresh.lockPresentation();
+
+        fresh.setCollection(address(new ShapeCollection(renderer, fresh)));
+        fresh.lockPresentation();
+        assertTrue(fresh.presentationLocked());
     }
 }

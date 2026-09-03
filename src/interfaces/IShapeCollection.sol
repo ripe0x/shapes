@@ -25,6 +25,14 @@ interface IShapeCollection {
     ///      cap. `field` is 0 name/prefix, 1 description.
     error InvalidCopy(uint8 field);
 
+    /// @dev `setMetadataCopy` reverts this when the caller is not `IShapes(shapes()).admin()`.
+    ///      Same error `IAdminControl` declares, so either ABI decodes it identically.
+    error AdminUnauthorizedAccount(address account);
+
+    /// @dev `setMetadataCopy` reverts this once `IShapes(shapes()).presentationLocked()` is true.
+    ///      Same error `IShapes` declares, so either ABI decodes it identically.
+    error PresentationIsLocked();
+
     /// @notice The renderer every output is drawn through.
     function renderer() external view returns (address);
 
