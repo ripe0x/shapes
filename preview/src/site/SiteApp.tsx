@@ -1,6 +1,6 @@
 import React from "react";
 import {formatEther, parseEventLogs} from "viem";
-import {useAccount, useDisconnect, usePublicClient, useWriteContract} from "wagmi";
+import {useAccount, useDisconnect, usePublicClient, useSwitchChain, useWriteContract} from "wagmi";
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
@@ -53,7 +53,15 @@ export function SiteApp({
    *  back to the mint view. */
   renderHome?: (mint: React.ReactNode, footer: React.ReactNode) => React.ReactNode;
 }) {
-  const {address, isConnected} = useAccount();
+  const {address, isConnected, chainId: walletChainId} = useAccount();
+  const {switchChainAsync} = useSwitchChain();
+  const wrongChain = isConnected && walletChainId !== dep.chainId;
+  // Every write goes through the deployment chain. A wallet on another chain is asked to switch
+  // (wagmi adds the chain to the wallet when it is unknown) before the transaction is built,
+  // instead of failing with a chain mismatch.
+  const ensureChain = async () => {
+    if (walletChainId !== dep.chainId) await switchChainAsync({chainId: dep.chainId});
+  };
   const {disconnect} = useDisconnect();
   const {openConnectModal} = useConnectModal();
   const publicClient = usePublicClient({chainId: dep.chainId});
@@ -155,6 +163,7 @@ export function SiteApp({
   // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
   // (no hash yet) apart from "pending" (hash in hand, waiting for the receipt).
   const write = async (op: string, functionName: string, args: readonly unknown[], value?: bigint) => {
+    await ensureChain();
     const hash = await writeContractAsync({
       address: dep.shapes,
       abi: shapesAbi,
@@ -174,6 +183,7 @@ export function SiteApp({
     value?: bigint,
     gas?: bigint,
   ) => {
+    await ensureChain();
     const hash = await writeContractAsync({
       address: dep.auctionHouse!,
       abi: auctionHouseAbi,
@@ -526,11 +536,15 @@ export function SiteApp({
               aria-haspopup={isConnected ? "menu" : undefined}
               aria-expanded={isConnected ? accountMenuOpen : undefined}
               onClick={() =>
-                isConnected ? setAccountMenuOpen((open) => !open) : openConnectModal?.()
+                wrongChain
+                  ? void ensureChain()
+                  : isConnected
+                    ? setAccountMenuOpen((open) => !open)
+                    : openConnectModal?.()
               }
             >
               <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
-                {isConnected ? accountLabel : "CONNECT"}
+                {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
               </span>
               {isConnected && <span aria-hidden="true">▾</span>}
             </button>
