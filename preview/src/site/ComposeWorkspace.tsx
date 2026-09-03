@@ -195,7 +195,7 @@ export function ComposeWorkspace({
       </div>
 
       {inventory.length === 0 && data && (
-        <div style={{padding: 48, color: C.muted, fontSize: 13}}>This wallet has no Shapes to compose.</div>
+        <div className="shape-grid-empty">This wallet has no Shapes to compose.</div>
       )}
 
       {draft.selectedIds.length > 0 && rung && (

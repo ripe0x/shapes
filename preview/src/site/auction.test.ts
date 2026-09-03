@@ -72,11 +72,11 @@ test("isAuctionActive: true pre-bid, live, and ended-but-unsettled; false once s
   assert.equal(isAuctionActive(mockAuction({endTime: 500n, chainNow: 1_000, settled: true})), false);
 });
 
-// SiteApp passes this same isAuctionActive(auction) value both to gate the header's own AUCTION
-// link and as renderHome's third argument (the home nav's Auction link), so this single pure
-// check covers both call sites: no jsdom/react-dom is wired into this suite (see wagmi.test.ts's
-// plain node:test pattern) to render SiteApp itself and inspect what it passed to renderHome.
-test("isAuctionActive: the value SiteApp forwards to renderHome for the home nav's Auction link", () => {
+// SiteApp passes this value into the shared SiteHeader's auctionActive prop, gating its AUCTION
+// link on every view including the home view (rendered via renderHome's header argument): no
+// jsdom/react-dom is wired into this suite (see wagmi.test.ts's plain node:test pattern) to render
+// SiteApp itself and inspect what it passed to SiteHeader.
+test("isAuctionActive: the value SiteApp forwards to SiteHeader's AUCTION link", () => {
   assert.equal(isAuctionActive(mockAuction({endTime: 1_500n, chainNow: 1_000})), true); // live
   assert.equal(isAuctionActive(mockAuction({endTime: 500n, chainNow: 1_000, settled: true})), false);
 });

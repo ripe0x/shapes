@@ -282,10 +282,10 @@ export function AuctionView({
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            paddingLeft: 48,
             // Top and bottom padding both equal TOP_MARGIN (not the panel's 36): the artwork's
             // own margins are symmetric top-to-bottom by requirement, independent of the
-            // panel's own bottom inset before its section rule.
+            // panel's own bottom inset before its section rule. Left padding is set by
+            // .auction-hero-art in site.html/globals.css so a mobile rule can shrink it.
             paddingTop: TOP_MARGIN,
             paddingBottom: TOP_MARGIN,
             ...(artMaxHeight != null ? {height: artMaxHeight + 2 * TOP_MARGIN} : null),
@@ -321,7 +321,9 @@ export function AuctionView({
           className="auction-hero-panel"
           style={{
             borderLeft: `1px solid ${C.rule}`,
-            padding: `${TOP_MARGIN}px 48px 36px 26px`,
+            // Right/bottom/left padding is set by .auction-hero-panel in site.html/globals.css
+            // so a mobile rule can shrink it; top padding tracks TOP_MARGIN, so it stays here.
+            paddingTop: TOP_MARGIN,
             display: "flex",
             flexDirection: "column",
             gap: 22,

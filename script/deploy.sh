@@ -52,6 +52,49 @@
 #                                                  broadcast/Deploy.s.sol/<chainId>/run-latest.json.
 #                                                  For resuming from a broadcast produced by a
 #                                                  different checkout.
+#   LIST_OWNER_TOKEN=1                            opt in to listing the owner token (#0) in the
+#                                                  auction house right after the readback, using
+#                                                  AUCTION_DURATION, AUCTION_RESERVE_UNITS,
+#                                                  AUCTION_MIN_INCREMENT_BPS and
+#                                                  AUCTION_EXTENSION_WINDOW from the env file
+#                                                  (86400s, 0, 500bps, 900s by default).
+#                                                  createAuction only escrows the lot and opens the
+#                                                  listing; the clock starts on the first bid.
+#                                                  Allowed under RESUME too, and skips rather than
+#                                                  refuses when the owner token is already listed.
+#                                                  DRY_RUN=1 prints what would be listed and lists
+#                                                  nothing. Records auctionId in
+#                                                  deployments/<chainId>.json.
+#   ATTEST_ARTIST=1                               opt in to signing and submitting the one-time
+#                                                  artist attestation after the readback/listing
+#                                                  steps. The release hash defaults to the Shapes
+#                                                  creation transaction hash; SHAPES_RELEASE_HASH
+#                                                  overrides it (must be an exact bytes32, and a
+#                                                  mismatch against the creation tx prints a loud
+#                                                  warning). The signer must be artist() on the
+#                                                  deployed Shapes. A keystore env always prompts
+#                                                  to retype the release hash before signing;
+#                                                  ATTEST_CONFIRM=<hash> skips that prompt, but
+#                                                  only for the anvil target, so e2e runs can be
+#                                                  non-interactive. Idempotent: if
+#                                                  artistReleaseHash() is already nonzero the step
+#                                                  is skipped rather than refused, so RESUME can
+#                                                  revisit an already-attested chain. DRY_RUN=1
+#                                                  prints what would be signed and submits nothing.
+#   ALLOW_BRANCH_DEPLOY=1                         opt in to deploying from a feature branch
+#                                                  instead of main, for a target whose env file
+#                                                  sets BRANCH_DEPLOY_ALLOWED=true (anvil and
+#                                                  sepolia; never mainnet). Without the env file's
+#                                                  opt-in, refuses outright, DRY_RUN included. With
+#                                                  it, replaces the REQUIRE_MAIN "must run from
+#                                                  main" and "local main is not the fetched
+#                                                  origin/main commit" guards with the same check
+#                                                  against the current branch: HEAD must equal the
+#                                                  fetched origin/<branch> commit. The dirty-tree
+#                                                  and untracked-file guards are unaffected. Records
+#                                                  the deployed commit and branch in
+#                                                  deployments/<chainId>.json regardless of this
+#                                                  flag.
 set -euo pipefail
 
 ENV_NAME="${1:-}"
@@ -71,12 +114,17 @@ ENV_FILE="script/env/${ENV_NAME}.env"
 
 DRY_RUN="${DRY_RUN:-0}"
 RESUME="${RESUME:-0}"
+ATTEST_ARTIST="${ATTEST_ARTIST:-0}"
 # Captured before sourcing the env file, which unconditionally sets VERIFY: a caller-exported
 # VERIFY wins over the env file's value.
 VERIFY_OVERRIDE="${VERIFY-}"
 # A shell-provided MINT_START (a rehearsal setting it a few minutes ahead) must survive the env
 # file's own MINT_START assignment below, so it is snapshotted before sourcing.
 MINT_START_OVERRIDE="${MINT_START:-}"
+# Same pattern for LIST_OWNER_TOKEN: a shell export wins over whatever the env file sets.
+LIST_OWNER_TOKEN_OVERRIDE="${LIST_OWNER_TOKEN-}"
+# Same pattern for ALLOW_BRANCH_DEPLOY: it is a shell opt-in, not something the env file sets.
+ALLOW_BRANCH_DEPLOY_OVERRIDE="${ALLOW_BRANCH_DEPLOY-}"
 
 set -a
 # shellcheck source=/dev/null
@@ -85,6 +133,17 @@ set +a
 
 [ -z "$VERIFY_OVERRIDE" ] || VERIFY="$VERIFY_OVERRIDE"
 [ -z "$MINT_START_OVERRIDE" ] || MINT_START="$MINT_START_OVERRIDE"
+[ -z "$LIST_OWNER_TOKEN_OVERRIDE" ] || LIST_OWNER_TOKEN="$LIST_OWNER_TOKEN_OVERRIDE"
+# Opt-in, post-broadcast listing of the owner token (#0) in the auction house. Terms fall back to
+# these defaults if the env file leaves them blank.
+LIST_OWNER_TOKEN="${LIST_OWNER_TOKEN:-0}"
+AUCTION_DURATION="${AUCTION_DURATION:-86400}"
+AUCTION_RESERVE_UNITS="${AUCTION_RESERVE_UNITS:-0}"
+AUCTION_MIN_INCREMENT_BPS="${AUCTION_MIN_INCREMENT_BPS:-500}"
+AUCTION_EXTENSION_WINDOW="${AUCTION_EXTENSION_WINDOW:-900}"
+[ -z "$ALLOW_BRANCH_DEPLOY_OVERRIDE" ] || ALLOW_BRANCH_DEPLOY="$ALLOW_BRANCH_DEPLOY_OVERRIDE"
+ALLOW_BRANCH_DEPLOY="${ALLOW_BRANCH_DEPLOY:-0}"
+BRANCH_DEPLOY_ALLOWED="${BRANCH_DEPLOY_ALLOWED:-false}"
 
 # Mainnet's env file ships with the deployer, fee recipient and fee left blank until D-05
 # (project/DECISIONS.md) is resolved. Refuse before touching any RPC, dry run included.
@@ -114,6 +173,9 @@ echo "  rpc      $RPC"
 echo "  profile  $FOUNDRY_PROFILE"
 echo "  dry run  $DRY_RUN"
 echo "  resume   $RESUME"
+echo "  list owner token  $LIST_OWNER_TOKEN"
+echo "  attest artist     $ATTEST_ARTIST"
+echo "  allow branch deploy  $ALLOW_BRANCH_DEPLOY"
 
 # Deploy.s.sol reads SHAPES_MINT_FEE_WEI / SHAPES_FEE_RECIPIENT; the env file's own names
 # (MINT_FEE_WEI / FEE_RECIPIENT) are the reviewed values for this target. A caller-supplied
@@ -145,6 +207,9 @@ ACTUAL_CHAIN_ID="$(cast chain-id --rpc-url "$RPC")"
   || { echo "refusing: $RPC reports chain id $ACTUAL_CHAIN_ID, expected $CHAIN_ID" >&2; exit 1; }
 echo "  ok: chain id $ACTUAL_CHAIN_ID"
 
+DEPLOY_BRANCH="$(git branch --show-current)"
+DEPLOY_COMMIT="$(git rev-parse HEAD)"
+
 if [ "$REQUIRE_MAIN" = "true" ]; then
   # A real broadcast refuses on any failure here. Under DRY_RUN=1 or RESUME=1 the same checks
   # still run, but a failure only warns what a real broadcast would refuse: DRY_RUN broadcasts
@@ -160,18 +225,29 @@ if [ "$REQUIRE_MAIN" = "true" ]; then
     fi
   }
 
-  [ "$(git branch --show-current)" = "main" ] \
-    || git_guard_fail "deployments must run from main"
-  git fetch --quiet origin main
-  [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
-    || git_guard_fail "local main is not the fetched origin/main commit"
+  if [ "$ALLOW_BRANCH_DEPLOY" = "1" ]; then
+    # A rehearsal from a feature branch. Refuses outright, DRY_RUN included, on any target whose
+    # env file hasn't opted in (mainnet never does): this is a caller asking for an exception, not
+    # a normal run, so a missing opt-in is refused rather than warned.
+    [ "$BRANCH_DEPLOY_ALLOWED" = "true" ] \
+      || { echo "refusing: branch deploys are not allowed for this target" >&2; exit 1; }
+    git fetch --quiet origin "$DEPLOY_BRANCH"
+    [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$DEPLOY_BRANCH")" ] \
+      || git_guard_fail "local $DEPLOY_BRANCH is not the fetched origin/$DEPLOY_BRANCH commit"
+  else
+    [ "$DEPLOY_BRANCH" = "main" ] \
+      || git_guard_fail "deployments must run from main"
+    git fetch --quiet origin main
+    [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] \
+      || git_guard_fail "local main is not the fetched origin/main commit"
+  fi
   git diff --quiet && git diff --cached --quiet \
     || git_guard_fail "tracked files are dirty; deployment commit is not exact"
   # deployments/ is written by a previous deploy, not an input to this one; untracked files
   # there don't make the deployment commit inexact.
   [ -z "$(git ls-files --others --exclude-standard -- . ':!deployments')" ] \
     || git_guard_fail "untracked files exist; deployment commit is not exact"
-  [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched main"
+  [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched $DEPLOY_BRANCH"
 fi
 
 if [ "${FEE_RECIPIENT_MUST_BE_EOA:-false}" = "true" ]; then
@@ -239,6 +315,12 @@ fi
 
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
+  if [ "$LIST_OWNER_TOKEN" = "1" ]; then
+    echo "  would list: owner token (#0), duration ${AUCTION_DURATION}s, reserve $AUCTION_RESERVE_UNITS units, min increment ${AUCTION_MIN_INCREMENT_BPS}bps, extension window ${AUCTION_EXTENSION_WINDOW}s"
+  fi
+  if [ "$ATTEST_ARTIST" = "1" ]; then
+    echo "  would attest: sign and submit the artist attestation once broadcast, release hash defaulting to the Shapes creation tx (override with SHAPES_RELEASE_HASH)"
+  fi
   forge script script/Deploy.s.sol --rpc-url "$RPC"
   echo "dry run complete for $ENV_NAME"
   exit 0
@@ -260,6 +342,21 @@ fi
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
 
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# Mirrors e2e-anvil.sh's send_wait: cast send returns before the transaction is reliably mined on
+# this toolchain, so poll for the receipt before the next sequenced send races it. --gas-limit
+# sidesteps the estimator's under-estimate on a nonReentrant-guarded function (its gas refund is
+# credited only at the end of the transaction, after the estimate is taken). Uses the wallet
+# resolved above, so it only runs where WALLET_ARGS is meaningful (never under DRY_RUN).
+send_wait() {
+  local hash
+  hash=$(cast send --gas-limit 600000 --rpc-url "$RPC" "${WALLET_ARGS[@]}" "$@" --json | jq -r '.transactionHash')
+  for _ in $(seq 1 100); do
+    cast receipt "$hash" --rpc-url "$RPC" >/dev/null 2>&1 && { echo "$hash"; return 0; }
+  done
+  echo "tx $hash was not mined" >&2
+  exit 1
+}
 
 contract_address() {
   jq -r --arg name "$1" \
@@ -373,9 +470,18 @@ FROM_BLOCK=$(cast to-dec "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.blockNumber'
 
 require_address_read admin "$(cast call "$SHAPES" 'admin()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
 require_address_read artist "$(cast call "$SHAPES" 'artist()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
-require_address_read owner "$(cast call "$SHAPES" 'owner()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
-require_address_read 'Shape #0 owner' \
-  "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+# Shapes.owner() and ownerOf(0) both track whoever holds the owner token, which a fresh broadcast
+# always mints to the deployer. RESUME may be revisiting a chain where a previous RESUME +
+# LIST_OWNER_TOKEN=1 run already escrowed it into the auction house, moving both, so it only logs;
+# the owner-token listing step below does its own ownership checks.
+if [ "$RESUME" = "1" ]; then
+  echo "  owner           $(cast call "$SHAPES" 'owner()(address)' --rpc-url "$RPC")"
+  echo "  Shape #0 owner  $(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")"
+else
+  require_address_read owner "$(cast call "$SHAPES" 'owner()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+  require_address_read 'Shape #0 owner' \
+    "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+fi
 [ -z "${FEE_RECIPIENT:-}" ] || require_address_read 'fee recipient' \
   "$(cast call "$SHAPES" 'feeRecipient()(address)' --rpc-url "$RPC")" "$FEE_RECIPIENT"
 require_address_read renderer "$(cast call "$SHAPES" 'renderer()(address)' --rpc-url "$RPC")" "$RENDERER"
@@ -409,13 +515,27 @@ require_uint_read 'denomination count' "$(cast call "$SHAPES" 'denominationCount
 require_uint_read 'Shape #0 denomination' \
   "$(cast call "$SHAPES" 'denomIndexOf(uint256)(uint8)' 0 --rpc-url "$RPC")" 0
 require_uint_read 'owner token' "$(cast call "$SHAPES" 'ownerToken()(uint256)' --rpc-url "$RPC")" 0
-require_uint_read 'auction count' "$(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC")" 0
+# A fresh broadcast has listed nothing yet, so this must read 0. RESUME may be revisiting a chain
+# where a previous RESUME + LIST_OWNER_TOKEN=1 run already listed the owner token, so it only logs.
+if [ "$RESUME" = "1" ]; then
+  echo "  auction count   $(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC" | awk '{print $1}')"
+else
+  require_uint_read 'auction count' "$(cast call "$HOUSE" 'auctionCount()(uint256)' --rpc-url "$RPC")" 0
+fi
 
-[ "$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")" \
-    = "0x0000000000000000000000000000000000000000000000000000000000000000" ] \
-  || { echo "artist attribution unexpectedly signed during deployment" >&2; exit 1; }
-[ "$(cast call "$SHAPES" 'artistSignature()(bytes)' --rpc-url "$RPC")" = "0x" ] \
-  || { echo "artist signature unexpectedly populated during deployment" >&2; exit 1; }
+ZERO_HASH="0x0000000000000000000000000000000000000000000000000000000000000000"
+ARTIST_RELEASE_HASH_ONCHAIN=$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")
+# A fresh broadcast has attested nothing yet, so this must read zero. RESUME may be revisiting a
+# chain where a previous RESUME + ATTEST_ARTIST=1 run already signed it, so it only logs; the
+# attestation step below does its own zero check before signing anything.
+if [ "$RESUME" = "1" ]; then
+  echo "  artist release hash  $ARTIST_RELEASE_HASH_ONCHAIN"
+else
+  [ "$ARTIST_RELEASE_HASH_ONCHAIN" = "$ZERO_HASH" ] \
+    || { echo "artist attribution unexpectedly signed during deployment" >&2; exit 1; }
+  [ "$(cast call "$SHAPES" 'artistSignature()(bytes)' --rpc-url "$RPC")" = "0x" ] \
+    || { echo "artist signature unexpectedly populated during deployment" >&2; exit 1; }
+fi
 [ "$(cast call "$SHAPES" 'exists(uint256)(bool)' 0 --rpc-url "$RPC")" = "true" ] \
   || { echo "Shape #0 is not live" >&2; exit 1; }
 # The two discovery pointers. The market names the auction house the deploy just registered;
@@ -432,6 +552,119 @@ echo "  market       $MARKET" | tr '\n' ' '; echo
 
 echo "  ok: onchain readback matches the deploy"
 
+# --- optional: list the owner token (#0) in the auction house -----------------------------------
+# A post-broadcast wrapper step, not part of Deploy.s.sol: createAuction only escrows the lot and
+# opens the listing, the clock starts on the first bid (endTime stays 0 until then). Allowed under
+# RESUME too, since it lists the token that already exists on chain rather than anything from this
+# broadcast.
+
+AUCTION_ID=""
+if [ "$LIST_OWNER_TOKEN" = "1" ]; then
+  HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
+  OWNER_TOKEN_HOLDER=$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")
+
+  if [ "$HAS_AUCTION" = "true" ]; then
+    [ "$RESUME" = "1" ] \
+      || { echo "refusing: owner token already has an auction on a supposedly fresh deploy" >&2; exit 1; }
+    echo "  skip: owner token is already listed"
+  elif [ "$RESUME" = "1" ] && [ "$(lower "$OWNER_TOKEN_HOLDER")" != "$(lower "$EFFECTIVE_DEPLOYER")" ]; then
+    echo "  skip: owner token is held by $OWNER_TOKEN_HOLDER, not the deployer; not listing" >&2
+  else
+    [ "$(cast call "$SHAPES" 'ownerToken()(uint256)' --rpc-url "$RPC")" = "0" ] \
+      || { echo "refusing: ownerToken() is not 0" >&2; exit 1; }
+    require_address_read 'owner token holder' "$OWNER_TOKEN_HOLDER" "$EFFECTIVE_DEPLOYER"
+
+    echo "Listing the owner token (#0) in the auction house"
+    echo "  duration            ${AUCTION_DURATION}s"
+    echo "  reserve units       $AUCTION_RESERVE_UNITS"
+    echo "  min increment bps   $AUCTION_MIN_INCREMENT_BPS"
+    echo "  extension window    ${AUCTION_EXTENSION_WINDOW}s"
+
+    send_wait "$SHAPES" 'approve(address,uint256)' "$HOUSE" 0 >/dev/null
+    send_wait "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32)' \
+      "$SHAPES" 0 "$AUCTION_DURATION" "$AUCTION_RESERVE_UNITS" "$AUCTION_MIN_INCREMENT_BPS" \
+      "$AUCTION_EXTENSION_WINDOW" >/dev/null
+
+    HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
+    [ "$HAS_AUCTION" = "true" ] || { echo "owner token listing did not take effect" >&2; exit 1; }
+  fi
+
+  if [ "$HAS_AUCTION" = "true" ]; then
+    AUCTION_INFO=$(cast call "$HOUSE" 'getAuctionFor(address,uint256)(bool,uint256)' "$SHAPES" 0 --rpc-url "$RPC")
+    AUCTION_ID=$(printf '%s' "$AUCTION_INFO" | tail -1 | awk '{print $1}')
+    require_address_read 'Shape #0 owner' "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$HOUSE"
+    AUCTION_STRUCT=$(cast call "$HOUSE" \
+      "auctions(uint256)(address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)" \
+      "$AUCTION_ID" --rpc-url "$RPC")
+    AUCTION_END_TIME=$(printf '%s' "$AUCTION_STRUCT" | sed -n '4p' | awk '{print $1}')
+    [ "$AUCTION_END_TIME" = "0" ] \
+      || { echo "auction $AUCTION_ID has a nonzero endTime ($AUCTION_END_TIME)" >&2; exit 1; }
+    echo "  ok: owner token listed as auction $AUCTION_ID (endTime $AUCTION_END_TIME, still waiting on a first bid)"
+  fi
+fi
+
+# --- optional: sign and submit the one-time artist attestation ----------------------------------
+# A post-broadcast wrapper step, not part of Deploy.s.sol. Mirrors the retired
+# attest-artist-sepolia.sh (same digest, confirmation and postflight-readback safeguards) but works
+# for every env through the wallet already resolved above. Never issue a second valid signature for
+# a competing hash: anyone holding an older valid signature can win the one-time slot.
+
+if [ "$ATTEST_ARTIST" = "1" ]; then
+  if [ "$ARTIST_RELEASE_HASH_ONCHAIN" != "$ZERO_HASH" ]; then
+    echo "  skip: artist attestation already signed ($ARTIST_RELEASE_HASH_ONCHAIN)"
+  else
+    RELEASE_HASH="$SHAPES_TX"
+    if [ -n "${SHAPES_RELEASE_HASH:-}" ]; then
+      [[ "$SHAPES_RELEASE_HASH" =~ ^0x[0-9a-fA-F]{64}$ ]] \
+        || { echo "refusing: SHAPES_RELEASE_HASH must be an exact bytes32 hex value" >&2; exit 1; }
+      RELEASE_HASH="$SHAPES_RELEASE_HASH"
+      [ "$(lower "$SHAPES_RELEASE_HASH")" = "$(lower "$SHAPES_TX")" ] \
+        || echo "  WARNING: SHAPES_RELEASE_HASH ($SHAPES_RELEASE_HASH) overrides the Shapes creation tx ($SHAPES_TX)" >&2
+    fi
+
+    ATTEST_ARTIST_ADDRESS=$(cast call "$SHAPES" 'artist()(address)' --rpc-url "$RPC")
+    ATTEST_SIGNER=$(cast wallet address "${WALLET_ARGS[@]}")
+    [ "$(lower "$ATTEST_SIGNER")" = "$(lower "$ATTEST_ARTIST_ADDRESS")" ] \
+      || { echo "refusing: signer $ATTEST_SIGNER is not artist() ($ATTEST_ARTIST_ADDRESS)" >&2; exit 1; }
+    DIGEST=$(cast call "$SHAPES" 'artistAttestationDigest(bytes32)(bytes32)' "$RELEASE_HASH" --rpc-url "$RPC")
+
+    echo "Artist attestation for $ENV_NAME"
+    echo "  chain id       $ACTUAL_CHAIN_ID"
+    echo "  Shapes         $SHAPES"
+    echo "  artist         $ATTEST_ARTIST_ADDRESS"
+    echo "  release hash   $RELEASE_HASH"
+    echo "  EIP-712 digest $DIGEST"
+    echo
+    echo "This signature is permanent once submitted. Confirm the release-hash preimage separately."
+
+    if [ "$WALLET" = "anvil" ] && [ -n "${ATTEST_CONFIRM:-}" ]; then
+      [ "$ATTEST_CONFIRM" = "$RELEASE_HASH" ] \
+        || { echo "refusing: ATTEST_CONFIRM did not match the release hash" >&2; exit 1; }
+    else
+      read -r -p "Type the exact release hash to sign: " CONFIRM_HASH
+      [ "$CONFIRM_HASH" = "$RELEASE_HASH" ] \
+        || { echo "refusing: release hash confirmation did not match" >&2; exit 1; }
+    fi
+
+    ATTEST_SIGNATURE=$(cast wallet sign "${WALLET_ARGS[@]}" --no-hash "$DIGEST")
+
+    # Simulate the exact call before broadcasting. The artist may be an EIP-7702 delegated EOA;
+    # the attribution library checks its ECDSA key before falling back to ERC-1271.
+    cast call "$SHAPES" "attestArtist(bytes32,bytes)" "$RELEASE_HASH" "$ATTEST_SIGNATURE" \
+      --from "$ATTEST_ARTIST_ADDRESS" --rpc-url "$RPC" >/dev/null
+
+    ATTEST_TX=$(send_wait "$SHAPES" 'attestArtist(bytes32,bytes)' "$RELEASE_HASH" "$ATTEST_SIGNATURE")
+    echo "  transaction    $ATTEST_TX"
+
+    ARTIST_RELEASE_HASH_ONCHAIN=$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")
+    [ "$(lower "$ARTIST_RELEASE_HASH_ONCHAIN")" = "$(lower "$RELEASE_HASH")" ] \
+      || { echo "postflight release hash mismatch" >&2; exit 1; }
+    [ "$(cast call "$SHAPES" 'artistSignature()(bytes)' --rpc-url "$RPC")" = "$ATTEST_SIGNATURE" ] \
+      || { echo "postflight artist signature mismatch" >&2; exit 1; }
+    echo "  ok: artist attestation stored and read back ($ARTIST_RELEASE_HASH_ONCHAIN)"
+  fi
+fi
+
 # --- record the deployment: same key set and order as web/public/deployment.json, so cutover ----
 # is a plain file copy. Always written, verification failures above notwithstanding.
 
@@ -444,6 +677,8 @@ DEPLOYMENT_FILE="deployments/${CHAIN_ID}.json"
 LIBRARIES_JSON=$(jq -r '[.libraries[]? // empty] | map(split(":")) | map({key: .[1], value: (.[2] | ascii_downcase)}) | from_entries' \
   "$BROADCAST_FILE")
 
+ARTIST_RELEASE_HASH_RECORD=""
+[ "$ARTIST_RELEASE_HASH_ONCHAIN" = "$ZERO_HASH" ] || ARTIST_RELEASE_HASH_RECORD="$ARTIST_RELEASE_HASH_ONCHAIN"
 jq -n \
   --arg rpc "$RPC" \
   --arg indexerUrl "${INDEXER_URL:-}" \
@@ -456,7 +691,11 @@ jq -n \
   --arg mintStart "$MINT_START_ONCHAIN" \
   --argjson libraries "$LIBRARIES_JSON" \
   --argjson fromBlock "$FROM_BLOCK" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,libraries:$libraries,fromBlock:$fromBlock}' \
+  --arg auctionId "$AUCTION_ID" \
+  --arg artistReleaseHash "$ARTIST_RELEASE_HASH_RECORD" \
+  --arg commit "$DEPLOY_COMMIT" \
+  --arg branch "$DEPLOY_BRANCH" \
+  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,libraries:$libraries,fromBlock:$fromBlock,auctionId:(if $auctionId == "" then null else $auctionId end),artistReleaseHash:(if $artistReleaseHash == "" then null else $artistReleaseHash end),commit:$commit,branch:$branch}' \
   >"$DEPLOYMENT_FILE"
 
 echo
@@ -467,7 +706,11 @@ echo "  ShapeCollection $COLLECTION"
 echo "  AuctionHouse    $HOUSE"
 echo "  deployment tx   $SHAPES_TX"
 echo "  from block      $FROM_BLOCK"
+echo "  auction id      ${AUCTION_ID:-none}"
+echo "  artist attest   ${ARTIST_RELEASE_HASH_RECORD:-none}"
 echo "  admin           $EFFECTIVE_DEPLOYER"
+echo "  commit          $DEPLOY_COMMIT"
+echo "  branch          $DEPLOY_BRANCH"
 echo "  wrote           $DEPLOYMENT_FILE"
 
 if [ "${#VERIFY_FAILURES[@]}" -gt 0 ]; then

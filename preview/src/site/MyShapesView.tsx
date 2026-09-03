@@ -75,9 +75,7 @@ export function MyShapesView({
         )}
       </Section>
       {data && tokens.length === 0 ? (
-        <div style={{padding: 48, color: C.muted, fontSize: 13}}>
-          This wallet does not currently own any Shapes.
-        </div>
+        <div className="shape-grid-empty">This wallet does not currently own any Shapes.</div>
       ) : (
         <ShapeGrid tokens={tokens} ownerTokenId={data?.ownerToken ?? null} onOpenToken={onOpenToken} />
       )}
