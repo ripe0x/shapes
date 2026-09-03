@@ -180,6 +180,9 @@ choosing a contract recipient knows the failure is terminal.
 **Compatibility.** The first option adds an external function: ABI grows, storage layout and
 existing behaviour unchanged. The second changes documentation only.
 
+**Status:** accepted by the owner 2026-09-03; the deploy path now proves the recipient accepts
+plain ETH instead of requiring an EOA.
+
 ### V9-3 — the constructor accepts the token itself as fee recipient
 
 **Severity** Informational. **Path** `src/Shapes.sol:216`, against `src/lib/AdminOps.sol:144`.

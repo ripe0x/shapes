@@ -250,10 +250,35 @@ if [ "$REQUIRE_MAIN" = "true" ]; then
   [ "$DRY_RUN" = "1" ] || [ "$RESUME" = "1" ] || echo "  ok: clean, exact, fetched $DEPLOY_BRANCH"
 fi
 
-if [ "${FEE_RECIPIENT_MUST_BE_EOA:-false}" = "true" ]; then
-  [ "$(cast code "$FEE_RECIPIENT" --rpc-url "$RPC")" = "0x" ] \
-    || { echo "refusing: fee recipient $FEE_RECIPIENT has code" >&2; exit 1; }
-  echo "  ok: fee recipient is an EOA"
+# Behavioral guard, not a code-length check: a contract (a 0xSplits wallet, for example) can
+# accept plain ETH as reliably as an EOA, and code-length only rules out contracts, not a
+# reverting EOA-shaped proxy. Simulates the transfer `withdrawFees` would make; no flag bypasses
+# it. Needs a funded `--from` to simulate against: DEPLOYER, sourced from the env file for
+# sepolia and mainnet, or anvil's well-known default account 0.
+if [ -n "${FEE_RECIPIENT:-}" ]; then
+  FEE_RECIPIENT_FROM="${DEPLOYER:-}"
+  if [ "$ENV_NAME" = "anvil" ] && [ -z "$FEE_RECIPIENT_FROM" ]; then
+    FEE_RECIPIENT_FROM="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  fi
+  [ -n "$FEE_RECIPIENT_FROM" ] \
+    || { echo "refusing: no DEPLOYER set in $ENV_FILE to simulate the fee recipient transfer from" >&2; exit 1; }
+  if FEE_RECIPIENT_CALL_ERR=$(cast call "$FEE_RECIPIENT" --value 1 --from "$FEE_RECIPIENT_FROM" --rpc-url "$RPC" 2>&1); then
+    FEE_RECIPIENT_KIND="EOA"
+    [ "$(cast code "$FEE_RECIPIENT" --rpc-url "$RPC")" = "0x" ] || FEE_RECIPIENT_KIND="contract"
+    echo "  ok: fee recipient accepts plain ETH ($FEE_RECIPIENT_KIND)"
+  elif echo "$FEE_RECIPIENT_CALL_ERR" | grep -qi "insufficient funds"; then
+    # The simulation's `--from` has no balance on this chain, not a rejection by the recipient.
+    # Only DRY_RUN downgrades this to a warning; a real broadcast still refuses.
+    if [ "$DRY_RUN" = "1" ]; then
+      echo "  warn: cannot verify fee recipient accepts plain ETH: $FEE_RECIPIENT_FROM is unfunded on $ENV_NAME" >&2
+    else
+      echo "refusing: cannot verify fee recipient accepts plain ETH: fund $FEE_RECIPIENT_FROM on $ENV_NAME (or set DEPLOYER to a funded address) and retry" >&2
+      exit 1
+    fi
+  else
+    echo "refusing: fee recipient $FEE_RECIPIENT rejects plain ETH" >&2
+    exit 1
+  fi
 fi
 
 if [ "$VERIFY" = "true" ] && [ "$DRY_RUN" != "1" ]; then
@@ -321,7 +346,7 @@ if [ "$DRY_RUN" = "1" ]; then
   if [ "$ATTEST_ARTIST" = "1" ]; then
     echo "  would attest: sign and submit the artist attestation once broadcast, release hash defaulting to the Shapes creation tx (override with SHAPES_RELEASE_HASH)"
   fi
-  forge script script/Deploy.s.sol --rpc-url "$RPC"
+  forge script script/Deploy.s.sol --tc Deploy --rpc-url "$RPC"
   echo "dry run complete for $ENV_NAME"
   exit 0
 fi
@@ -331,7 +356,7 @@ if [ "$RESUME" = "1" ]; then
   [ -f "$BROADCAST_FILE" ] \
     || { echo "refusing: RESUME=1 but no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
 else
-  FORGE_ARGS=(script script/Deploy.s.sol --rpc-url "$RPC" "${WALLET_ARGS[@]}")
+  FORGE_ARGS=(script script/Deploy.s.sol --tc Deploy --rpc-url "$RPC" "${WALLET_ARGS[@]}")
   [ -n "${DEPLOYER:-}" ] && FORGE_ARGS+=(--sender "$DEPLOYER")
   FORGE_ARGS+=(--broadcast)
   forge "${FORGE_ARGS[@]}"
