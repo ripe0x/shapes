@@ -8,12 +8,15 @@ export interface ServerDeployment {
   rpc: string;
   chainId: number;
   shapes: `0x${string}`;
+  /** Unix seconds before which minting is closed; missing or empty means open. */
+  mintStart?: string;
 }
 
 interface DeploymentFile {
   rpc: string;
   chainId: number;
   shapes: string;
+  mintStart?: string;
 }
 
 /** `web/public/deployment.local.json` (gitignored, written by `script/lived-in.sh`) if present.
@@ -35,5 +38,6 @@ export function serverDeployment(): ServerDeployment {
     rpc: process.env.SHAPES_RPC_URL || fallback.rpc,
     chainId: process.env.SHAPES_CHAIN_ID ? Number(process.env.SHAPES_CHAIN_ID) : fallback.chainId,
     shapes: (process.env.SHAPES_ADDRESS || fallback.shapes) as `0x${string}`,
+    mintStart: process.env.SHAPES_MINT_START || fallback.mintStart,
   };
 }
