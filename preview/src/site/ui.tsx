@@ -131,6 +131,43 @@ export function OwnerTokenBanner({notices}: {notices: OwnerTokenNotice[]}) {
   );
 }
 
+/** Header indicator for the chain-fallback load: "Refreshing…" while one is in flight, or a
+ *  one-line notice with a retry action once one fails. Views keep rendering the previous data
+ *  underneath either way. */
+export function SyncStatus({
+  refreshing,
+  failed,
+  onRetry,
+  style,
+}: {
+  refreshing: boolean;
+  failed: boolean;
+  onRetry: () => void;
+  style?: React.CSSProperties;
+}) {
+  if (failed) {
+    return (
+      <span style={{fontSize: 11, color: C.muted, whiteSpace: "nowrap", ...style}}>
+        Chain read failed; showing the last known state.{" "}
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onRetry}
+          style={{color: C.ink, textDecoration: "underline"}}
+        >
+          Retry
+        </button>
+      </span>
+    );
+  }
+  if (refreshing) {
+    return (
+      <span style={{fontSize: 11, color: C.muted, whiteSpace: "nowrap", ...style}}>Refreshing…</span>
+    );
+  }
+  return null;
+}
+
 export const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 export const txUrl = (hash: string, chainId: number) =>

@@ -45,6 +45,8 @@ interface FakeToken {
   black: boolean;
   composeDepth: bigint;
   ink: string;
+  /** Defaults to OWNER; set to simulate a transfer between loads. */
+  owner?: `0x${string}`;
 }
 
 function tokenUriFor(id: bigint, t: FakeToken): string {
@@ -74,9 +76,10 @@ function makeClient(opts: {
   ownerTokenReadFails?: boolean;
   mintStart?: bigint;
 }) {
-  const counts = {multicall: 0, readContract: 0};
+  const counts = {multicall: 0, readContract: 0, calls: new Map<string, number>()};
 
   function resolve(functionName: string, args: readonly unknown[] | undefined): unknown {
+    counts.calls.set(functionName, (counts.calls.get(functionName) ?? 0) + 1);
     const id = (args?.[0] ?? 0n) as bigint;
     const t = opts.live.get(id);
     switch (functionName) {
@@ -107,7 +110,7 @@ function makeClient(opts: {
         return opts.mintStart ?? 0n;
       case "ownerOf":
         if (!t) throw new Error("ERC721NonexistentToken");
-        return OWNER;
+        return t.owner ?? OWNER;
       case "backingOf":
         return t!.backing;
       case "seedOf":
@@ -261,6 +264,85 @@ test("loadSite: falls back to single reads when the chain has no Multicall3", as
   assert.equal(counts.multicall, 0);
   // Header reads (including ownerToken and mintStart), then 3 ownerOf + 5 per-token fields.
   assert.equal(counts.readContract, 8 + 3 + 5);
+});
+
+test("loadSite: incremental rescan rereads only new ids, known live ids, and their fields when needed", async () => {
+  const live = new Map<bigint, FakeToken>([
+    [0n, NORMAL], // stays live with the same owner and fields
+    [1n, NORMAL], // will burn before the second load
+  ]);
+  const opts = {minted: 2n, live, multicall3: true};
+  const {client, counts} = makeClient(opts);
+
+  const first = await loadSite(client, dep);
+  assert.deepEqual(first.tokens.map((t) => t.id), [1n, 0n]);
+  assert.equal(first.scannedMinted, 2n);
+
+  live.delete(1n); // burned
+  live.set(2n, NORMAL); // newly minted
+  opts.minted = 3n;
+  counts.calls.clear();
+
+  const second = await loadSite(client, dep, {previous: first});
+
+  assert.deepEqual(second.tokens.map((t) => t.id), [2n, 0n]); // 1 dropped out, burned
+  assert.equal(second.scannedMinted, 3n);
+  // ownerOf: the one new id (2) plus every previously-live id (0 and 1), not a 0..2 rescan.
+  assert.equal(counts.calls.get("ownerOf"), 3);
+  // Per-token fields: only the newly-live id 2. Id 0's cached fields (unchanged owner, not
+  // dirty) are reused untouched.
+  assert.equal(counts.calls.get("tokenURI"), 1);
+  assert.equal(counts.calls.get("backingOf"), 1);
+});
+
+test("loadSite: incremental rescan rereads a dirty id even when its owner is unchanged", async () => {
+  const live = new Map<bigint, FakeToken>([[0n, NORMAL]]);
+  const opts = {minted: 1n, live, multicall3: true};
+  const {client, counts} = makeClient(opts);
+
+  const first = await loadSite(client, dep);
+  assert.equal(first.tokens[0]!.composeDepth, 0);
+
+  // Same owner, but the on-chain state changed (e.g. a self-compose) in a way ownerOf can't see.
+  live.set(0n, {...NORMAL, composeDepth: 1n});
+  counts.calls.clear();
+
+  const notDirty = await loadSite(client, dep, {previous: first});
+  assert.equal(notDirty.tokens[0]!.composeDepth, 0); // stale cache, correctly reused
+  assert.equal(counts.calls.get("tokenURI"), undefined);
+
+  const dirtyResult = await loadSite(client, dep, {previous: first, dirtyIds: [0n]});
+  assert.equal(dirtyResult.tokens[0]!.composeDepth, 1); // dirty id forced a fresh read
+  assert.equal(counts.calls.get("tokenURI"), 1);
+});
+
+test("loadSite: incremental rescan rereads fields when a known id's owner changed", async () => {
+  const live = new Map<bigint, FakeToken>([[0n, NORMAL]]);
+  const opts = {minted: 1n, live, multicall3: true};
+  const {client, counts} = makeClient(opts);
+
+  const first = await loadSite(client, dep);
+  assert.equal(first.tokens[0]!.owner, OWNER);
+
+  live.set(0n, {...NORMAL, owner: ARTIST});
+  counts.calls.clear();
+
+  const second = await loadSite(client, dep, {previous: first});
+  assert.equal(second.tokens[0]!.owner, ARTIST);
+  assert.equal(counts.calls.get("tokenURI"), 1); // owner mismatch alone triggers a reread
+});
+
+test("loadSite: incremental rescan with no previous snapshot matches a full first-load scan", async () => {
+  const live = new Map<bigint, FakeToken>([[2n, NORMAL], [5n, {...NORMAL, black: true}]]);
+  const {client: clientA, counts: countsA} = makeClient({minted: 6n, live, multicall3: true});
+  const {client: clientB, counts: countsB} = makeClient({minted: 6n, live, multicall3: true});
+
+  const plain = await loadSite(clientA, dep);
+  const explicit = await loadSite(clientB, dep, {previous: null});
+
+  assert.deepEqual(plain.tokens.map((t) => t.id), explicit.tokens.map((t) => t.id));
+  assert.equal(countsA.calls.get("ownerOf"), countsB.calls.get("ownerOf"));
+  assert.equal(countsA.calls.get("tokenURI"), countsB.calls.get("tokenURI"));
 });
 
 test("loadSite: superseded percentage-fee Sepolia remains readable until redeployment", async () => {
