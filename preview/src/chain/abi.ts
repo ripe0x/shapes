@@ -220,6 +220,16 @@ export function mintStartOf(dep: Pick<Deployment, "mintStart">): bigint {
   }
 }
 
+/** Parses `Deployment.mintFeeWei` (a JSON string) to the wei bigint it records. Null when
+ *  missing, empty, or non-numeric, distinct from a recorded zero fee. */
+export function mintFeeOf(dep: Pick<Deployment, "mintFeeWei">): bigint | null {
+  try {
+    return dep.mintFeeWei ? BigInt(dep.mintFeeWei) : null;
+  } catch {
+    return null;
+  }
+}
+
 // The nine denominations, in wei, with their display labels. Derived from the canonical table so
 // the two cannot drift; that table is ladder-selected at build time and parity-tested against
 // src/lib/Denominations.sol.

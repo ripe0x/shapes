@@ -1,13 +1,13 @@
 import React from "react";
 import {formatEther} from "viem";
 import {useAccount, useBalance} from "wagmi";
-import {DENOMINATIONS} from "../chain/abi";
+import {DENOMINATIONS, type Deployment} from "../chain/abi";
 import {GRIDS} from "../canonical/denominations";
 import {C, FONT, SANS} from "./theme";
 import {Art, txUrl} from "./ui";
 import {localArt, sampleSeed} from "./art";
 import {mintGene} from "../previewGene";
-import type {SiteData} from "./data";
+import {seedFee, seedMintStart, type SiteData} from "./data";
 import type {MintState} from "./SiteApp";
 import {formatCountdown, mintOpensIn} from "./mintOpensIn";
 
@@ -98,6 +98,7 @@ function DenomLadder({sel, onSelect}: {sel: number; onSelect: (i: number) => voi
 
 export function MintPanel({
   data,
+  dep,
   chainId,
   connected,
   sel,
@@ -110,6 +111,10 @@ export function MintPanel({
   onConnect,
 }: {
   data: SiteData | null;
+  /** The deployment record, used only to seed the fee and mint-gate before `data` loads; see
+   *  `seedFee`/`seedMintStart`. Omitted where the caller has no record handy, in which case the
+   *  panel waits on `data` exactly as it did before seeding existed. */
+  dep?: Deployment;
   chainId: number;
   connected: boolean;
   sel: number;
@@ -142,7 +147,7 @@ export function MintPanel({
   };
 
   const wei = DENOMINATIONS[sel].wei;
-  const fee = data?.fees[sel] ?? null;
+  const fee = seedFee(dep, data, sel);
   const q = BigInt(qty);
   const sampleNo = ((sample % 12) + 12) % 12;
   const minted = mint.minted ?? null;
@@ -150,7 +155,7 @@ export function MintPanel({
   // One 1s tick drives the "mint opens in" countdown; skipped entirely once already open, since
   // mintStart is immutable and cannot start blocking again.
   const [now, setNow] = React.useState(() => Date.now());
-  const mintGate = data ? mintOpensIn(now, data.mintStart) : {open: true, secondsLeft: 0};
+  const mintGate = mintOpensIn(now, seedMintStart(dep, data));
   React.useEffect(() => {
     if (mintGate.open) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
