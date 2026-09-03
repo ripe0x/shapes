@@ -2,6 +2,7 @@ import React from "react";
 import {formatEther} from "viem";
 import {DENOMINATIONS} from "../chain/abi";
 import {tokenArt, type ArtToken} from "./art";
+import {AddressName} from "./AddressName";
 import {INDEXER_TIMEOUT_MS, indexerEndpoint, queryIndexer} from "./data";
 import {C} from "./theme";
 import {short, txUrl} from "./ui";
@@ -57,9 +58,7 @@ export function activityLabel(kind: string): string {
   return LABELS[kind] ?? kind;
 }
 
-/** How an address reads in the feed.
- *  TODO: swap for `AddressName` (preview/src/site/AddressName.tsx) once the ENS/GNS/WNS resolver
- *  lands, so a named actor shows its name instead of the shortened address. */
+/** Short address form for text-only detail lines, such as the counterparty of a transfer. */
 function addressLabel(address: `0x${string}`): string {
   return short(address);
 }
@@ -330,7 +329,9 @@ function ActivityRow({
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
         {row.detail && <span className="activity-detail">{row.detail}</span>}
-        <span className="activity-detail">{addressLabel(event.actor)}</span>
+        <span className="activity-detail">
+          <AddressName address={event.actor} />
+        </span>
       </div>
 
       <div className="activity-thumbs">
