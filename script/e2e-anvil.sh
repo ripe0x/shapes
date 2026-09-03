@@ -40,12 +40,14 @@ send_wait() {
 }
 
 say "Deploying"
-OUT=$(forge script script/DeployShapes.s.sol --rpc-url "$RPC" --private-key "$PK0" --broadcast 2>&1) \
-  || { echo "$OUT" >&2; fail "deployment reverted"; }
-SHAPES=$(echo "$OUT" | grep -oE 'Shapes\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}') \
-  || { echo "$OUT" >&2; fail "no Shapes address in the deploy output"; }
-RENDERER=$(echo "$OUT" | grep -oE 'ShapeRenderer\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
-HOUSE=$(echo "$OUT" | grep -oE 'AuctionHouse\s+0x[0-9a-fA-F]{40}' | tail -1 | grep -oE '0x[0-9a-fA-F]{40}')
+DEPLOYMENT_FILE="deployments/31337.json"
+RPC_URL="$RPC" ./script/deploy.sh anvil || fail "deployment reverted"
+command -v jq >/dev/null || { echo "jq is required to read $DEPLOYMENT_FILE" >&2; exit 1; }
+# deployments/31337.json stores addresses lowercase; cast call always returns them checksummed,
+# so this suite's plain string comparisons against $SHAPES/$HOUSE need the same case.
+SHAPES=$(cast --to-checksum-address "$(jq -r '.shapes' "$DEPLOYMENT_FILE")")
+RENDERER=$(cast --to-checksum-address "$(jq -r '.renderer' "$DEPLOYMENT_FILE")")
+HOUSE=$(cast --to-checksum-address "$(jq -r '.auctionHouse' "$DEPLOYMENT_FILE")")
 echo "  Shapes        $SHAPES"
 echo "  ShapeRenderer $RENDERER"
 echo "  AuctionHouse  $HOUSE"
