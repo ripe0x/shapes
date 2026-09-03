@@ -19,14 +19,12 @@ import {ModuleCodec} from "./lib/ModuleCodec.sol";
 ///      same output. `Shapes` holds the renderer address and the admin can replace it until
 ///      presentation is locked.
 ///
-///      Repository parity tests compare this renderer with the reference TypeScript
-///      implementation in `preview/src/canonical/render.ts`: same draw order, same integer
-///      arithmetic, same string assembly, same decimal formatting.
+///      Repository parity tests compare this contract with the reference TypeScript renderer.
 ///
 ///      The SVG and the traits carry no injection surface: every byte comes from a compile-time
-///      constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The metadata
-///      `name` prefix and `description` are the exception. `metadataJSON` writes them verbatim
-///      from its arguments, and `Shapes` owns that copy and is trusted for it.
+///      constant, a fixed lookup table, or `FixedPoint.fmt` over a bounded integer. The name
+///      prefix and description are inserted verbatim by `metadataJSON`. Callers must provide
+///      JSON-safe strings. `ShapeCollection` validates the copy used by Shapes.
 contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     using FixedPoint for uint256;
     using Round03Rand for Round03Rand.Stream;

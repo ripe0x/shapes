@@ -45,8 +45,8 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 ///
 ///      One live Shape is the owner token. `owner()` tracks its holder and returns zero once it is
 ///      redeemed or burned. Holding it grants no permissions. Administration is the separate
-///      `admin()` role, which configures presentation and fees and cannot reach backing,
-///      redemption or token ownership.
+///      `admin()` role, which configures fees, presentation, optional pointers and the admin
+///      address. Admin actions do not change Shape ownership or redeemable backing.
 ///
 ///      `artist()` records the deployer for attribution and grants no authority.
 ///
@@ -60,12 +60,12 @@ import {ShapeMath} from "./lib/ShapeMath.sol";
 ///      Equality holds in normal use. ETH forced into the contract outside its payable entrypoints
 ///      is not withdrawable.
 ///
-///      `RecompositionOps` and `AdminOps` are part of the trusted implementation. They are public
-///      libraries whose addresses are linked into this bytecode at deploy time, with no setter,
-///      and their functions run under `DELEGATECALL` in this contract's storage context. Every
-///      access check runs here before a call reaches them. Token and recomposition state lives in
-///      `_store`. ETH accounting, the owner token, the admin address and presentation state live
-///      in `Shapes`. See project/ARCHITECTURE.md.
+///      `RecompositionOps` and `AdminOps` are linked libraries and part of the trusted
+///      implementation. They run with `DELEGATECALL` in this contract's storage context.
+///      `GeometrySampling` is a linked pure library. ERC-721 ownership and admin authorization
+///      are checked in `Shapes`. Token and recomposition state lives in `_store`. ETH accounting,
+///      the owner token, admin state and presentation state live in `Shapes`. See
+///      project/ARCHITECTURE.md.
 contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /* ------------------------------ state ------------------------------ */
 
@@ -104,10 +104,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @dev Mint fee and fee recipient, grouped so `AdminOps` reaches both through one pointer.
     AdminOps.FeeConfig private _feeConfig;
 
-    /// @dev Fee accrual is per recipient: each mint's fee credits whoever `_feeConfig.feeRecipient`
-    ///      names at accrual time, so `setFeeRecipient` cannot move a balance already credited to
-    ///      the outgoing recipient. `_totalFeesOwed` is the sum of every entry, kept as a running
-    ///      total rather than summed on read.
+    /// @dev Mint fees accrue to the fee recipient set at mint time.
+    ///      Changing the recipient does not move fees already accrued.
+    ///      `_totalFeesOwed` tracks the sum of all recipient balances.
     mapping(address => uint256) private _feesOwed;
     uint256 private _totalFeesOwed;
 
@@ -151,9 +150,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return _artistAttestation.signature;
     }
 
-    /// @dev The renderer, the collection and the lock that freezes both. `tokenURI` and
-    ///      `contractURI` read them. The lock also freezes the collection's metadata copy: the
-    ///      collection reads `presentationLocked()` back from here.
+    /// @dev Renderer, collection and presentation lock.
+    ///      `ShapeCollection` also reads this lock before allowing metadata copy changes.
     AdminOps.Presentation private _presentation;
 
     /// @inheritdoc IShapes
@@ -207,8 +205,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     ///      to `mintStart_`. Public minting begins at #1.
     ///
     ///      The collection is not a constructor parameter, because `ShapeCollection` is constructed
-    ///      with this token's address. `tokenURI` and `contractURI` revert `CollectionNotSet` until
-    ///      the admin calls `setCollection`, which deployment does immediately.
+    ///      with this token's address. `tokenURI` and `contractURI` revert until the admin sets the
+    ///      collection.
     constructor(uint256 mintFee_, address feeRecipient_, address renderer_, uint64 mintStart_)
         payable
         ERC721("Shapes", "SHAPE")
@@ -412,12 +410,12 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
 
         // The fee is flat per token, so a batch costs the same as `quantity` separate mints.
         //
-        // One seed root per batch; each token's seed mixes in its own id, so seeds are distinct
-        // within a batch. No minter or recipient identity feeds the root, so naming a recipient
-        // cannot search for a seed. Seeds are grindable: `firstTokenId == totalMinted`, so a minter
-        // can advance the ordinal with more mints and select visual traits at about one mint fee
-        // per try. Never treat a seed as secure randomness. Seeds do not affect backing or
-        // redemption value, so trait scarcity is best-effort.
+        // Each token mixes its id into one batch seed root, so seeds differ within a batch.
+        // The recipient does not affect the seed.
+        //
+        // Seeds are grindable: `firstTokenId == totalMinted`, so a minter can advance the
+        // ordinal with more mints and search visual traits at about one mint fee per try.
+        // Never treat a seed as secure randomness. Seeds do not affect redemption value.
         uint256 denomIndex;
         {
             bool ok;
@@ -464,9 +462,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @inheritdoc IShapes
-    /// @dev Pays `recipient` its own accrued balance, tracked independently of every other
-    ///      recipient's. `setFeeRecipient` never moves an entry here, so a recipient that changed
-    ///      or reverts cannot block another recipient's withdrawal.
+    /// @dev Pays `recipient` its accrued fees. Each recipient has a separate balance, so changing
+    ///      or failing recipients do not block withdrawals for others.
     function withdrawFees(address recipient) external nonReentrant {
         uint256 amount = _feesOwed[recipient];
         if (amount == 0) revert NoFeesPending();
@@ -595,8 +592,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     /// @dev Reshapes tokens and moves no ETH: the summed backing is unchanged, so
     ///      `redeemableBacking` needs no adjustment and the reserve invariant holds by
-    ///      construction. `_burn` triggers no receiver callback, so this makes no external call.
-    ///      Guarded anyway.
+    ///      construction. `_burn` makes no external call.
     function compose(uint256 survivorId, uint256[] calldata burnIds) external nonReentrant returns (uint256) {
         return _compose(survivorId, burnIds);
     }
@@ -624,7 +620,9 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     }
 
     /// @dev The ownership and liveness gate for a token this call consumes. The check itself is
-    ///      `RecompositionOps.requireLiveOwner`, which `previewCompose` and `previewSplit` call.
+    ///      `RecompositionOps.requireLiveOwner`. `previewCompose` and `previewSplit` run
+    ///      `RecompositionOps`'s private `_requireLive`, the same liveness check without the
+    ///      ownership check.
     function _requireCallerOwnsLive(uint256 tokenId) private view {
         RecompositionOps.requireLiveOwner(_store, tokenId, ownerOf(tokenId), msg.sender);
     }
@@ -690,8 +688,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         _burn(tokenId);
 
         // The children take the next `outDenoms.length` ids, so the first is the current counter.
-        // `RecompositionOps.split` validates the output sum after this; a mismatch reverts the whole
-        // call, so moving the owner token first cannot leave it pointing at an unminted id.
+        // If the parent is the owner token, ownership moves to the first child id.
         if (tokenId + 1 == _ownerToken) {
             uint256 firstId = _store.totalMinted;
             _ownerToken = firstId + 1;
@@ -710,8 +707,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
     /// @inheritdoc IShapes
     /// @dev The inverse of `compose`. Pops the survivor's top compose record: the survivor returns
     ///      to its pre-compose state and every burned input is re-minted under its original id and
-    ///      seed. `totalMinted` does not move, because those ids are reused. Reuse cannot collide:
-    ///      a fresh mint takes `totalMinted` itself, above every id ever issued. Stacked composes
+    ///      seed. Restored ids are reused and do not increase `totalMinted`. Stacked composes
     ///      unwind newest first. Backing is conserved. The owner token move, when the record holds
     ///      one, waits until every restored id exists. See DECOMPOSE_SPEC.md.
     function decompose(uint256 survivorId) external nonReentrant returns (uint256[] memory restoredIds) {
@@ -950,11 +946,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         return RecompositionOps.previewSplit(_store, tokenId, outDenoms);
     }
 
-    /// @dev The renderer arguments a live token resolves to: `modules` non-empty selects the
-    ///      sampled path and `seed` the grammar v1 path, plus the denomination amount, the
-    ///      provenance fields, the compose-stack depth and the owner-token flag. Assembled once
-    ///      and shared by `tokenURI`, `unicodeCard` and the token-id render views. Reverts
-    ///      `ERC721NonexistentToken` for an id that does not exist.
+    /// @dev Inputs shared by the token rendering views.
+    ///      Non-empty `modules` selects sampled rendering; otherwise rendering uses `seed`.
     struct RenderInputs {
         bytes32 seed;
         bytes modules;

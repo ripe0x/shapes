@@ -28,8 +28,8 @@ import {InkGenes} from "./lib/InkGenes.sol";
 ///      no seed advances once per block and every caller in that block gets the same value.
 ///      Passing a seed returns deterministic output for that seed.
 ///
-///      Preview cards use the same denomination ladder, ink-gene derivation and renderer as
-///      minted Shapes. No token is read or written.
+///      Preview cards use the Shapes denomination ladder and ink-gene derivation. They render
+///      through this collection's immutable renderer. No token is read or written.
 contract ShapeCollection is IShapeCollection, IERC165 {
     /// @inheritdoc IShapeCollection
     address public immutable renderer;
@@ -51,8 +51,7 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     /// @dev Longest either description may be, in bytes.
     uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
 
-    /// @dev Copy written at construction. The parity suite asserts byte identity against
-    ///      `preview/src/canonical/render.ts`.
+    /// @dev Default metadata copy set at construction.
     string private constant DEFAULT_TOKEN_NAME_PREFIX = "Shape ";
     string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
         "Burning it returns exactly that amount to its owner. Higher denominations resolve "
