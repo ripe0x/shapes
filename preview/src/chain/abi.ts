@@ -150,21 +150,22 @@ export const shapesAbi = parseAbi([
 ]);
 
 
-// The collection metadata contract. It stores the token name prefix and the shared description
-// that `Shapes.tokenURI` and `Shapes.contractURI` read back, editable by the Shapes admin until
-// `Shapes.lockPresentation` freezes it.
+// The collection metadata contract. It stores the token name prefix, the shared description and
+// the owner token's own description, all read back by `Shapes.tokenURI` and `Shapes.contractURI`
+// and editable by the Shapes admin until `Shapes.lockPresentation` freezes them.
 export const shapeCollectionAbi = parseAbi([
   "function renderer() view returns (address)",
   "function shapes() view returns (address)",
   "function tokenNamePrefix() view returns (string)",
   "function description() view returns (string)",
-  "function setMetadataCopy(string tokenNamePrefix_, string description_)",
+  "function ownerTokenDescription() view returns (string)",
+  "function setMetadataCopy(string tokenNamePrefix_, string description_, string ownerTokenDescription_)",
   "function contractURI(string name_, string description_) view returns (string)",
   "function image() view returns (string)",
   "function imageFor(bytes32 root) view returns (string)",
   "function card(uint8 denomIndex) view returns (string)",
   "function cardFor(bytes32 cardSeed, uint8 denomIndex) view returns (string)",
-  "event MetadataCopySet(string tokenNamePrefix, string description)",
+  "event MetadataCopySet(string tokenNamePrefix, string description, string ownerTokenDescription)",
   "error InvalidCopy(uint8 field)",
   "error DenominationIndexOutOfRange(uint256 index)",
   "error PresentationIsLocked()",

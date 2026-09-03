@@ -20,6 +20,15 @@ contract ParityTest is Test {
     string internal constant DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
         "Burning it returns exactly that amount to its owner. Higher denominations resolve "
         "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+    string internal constant OWNER_TOKEN_DESCRIPTION = "The contract owner token of Shapes. Its current holder is returned by owner() and has no "
+        "administrative authority. Ownership moves with this Shape through compose, decompose and "
+        "split. Redeeming or burning it ends contract ownership.";
+
+    /// @dev The copy `Shapes.tokenURI` passes the renderer for a token id: the owner token's own
+    ///      description, or the shared one. The fixtures treat id 0 as the owner token.
+    function _descriptionFor(uint256 tokenId) internal pure returns (string memory) {
+        return tokenId == 0 ? OWNER_TOKEN_DESCRIPTION : DESCRIPTION;
+    }
 
     ShapeRenderer internal renderer;
 
@@ -336,7 +345,7 @@ contract ParityTest is Test {
                 genes[i],
                 composeDepths[i],
                 NAME_PREFIX,
-                DESCRIPTION,
+                _descriptionFor(tokenIds[i]),
                 tokenIds[i] == 0
             );
             assertEq(got, expectedMetadata[i], why[i]);
@@ -531,7 +540,7 @@ contract ParityTest is Test {
                 gene,
                 sampledRenderComposeDepth[i],
                 NAME_PREFIX,
-                DESCRIPTION,
+                _descriptionFor(sampledRenderTokenId[i]),
                 SplitProvenance({
                     isSplitChild: sampledRenderIsSplitChild[i],
                     parentDenomIndex: sampledRenderParentDenomIndex[i],

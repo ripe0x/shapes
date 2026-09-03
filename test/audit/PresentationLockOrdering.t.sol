@@ -32,7 +32,7 @@ contract PresentationLockOrderingTest is AuditBase {
         shapes.setCollection(address(otherCollection));
 
         vm.expectRevert(IShapes.PresentationIsLocked.selector);
-        collection.setMetadataCopy("Hacked ", "hacked");
+        collection.setMetadataCopy("Hacked ", "hacked", "ok");
 
         vm.expectRevert(IShapes.PresentationIsLocked.selector);
         shapes.lockPresentation();
@@ -47,17 +47,17 @@ contract PresentationLockOrderingTest is AuditBase {
     function test_CopyGateReadsTheLockLiveAndTheAdminLive() public {
         vm.prank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        collection.setMetadataCopy("Nope ", "nope");
+        collection.setMetadataCopy("Nope ", "nope", "ok");
 
         // Handing the admin role over moves the copy right with it, immediately.
         shapes.transferAdmin(alice);
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
         );
-        collection.setMetadataCopy("Nope ", "nope");
+        collection.setMetadataCopy("Nope ", "nope", "ok");
 
         vm.prank(alice);
-        collection.setMetadataCopy("Piece ", "a description");
+        collection.setMetadataCopy("Piece ", "a description", "ok");
         assertEq(collection.tokenNamePrefix(), "Piece ", "copy edit did not land");
 
         vm.prank(alice);
@@ -65,7 +65,7 @@ contract PresentationLockOrderingTest is AuditBase {
 
         vm.prank(alice);
         vm.expectRevert(IShapes.PresentationIsLocked.selector);
-        collection.setMetadataCopy("After ", "after");
+        collection.setMetadataCopy("After ", "after", "ok");
     }
 
     /// @notice `setCollection` refuses a collection not bound to this token, so a rogue collection

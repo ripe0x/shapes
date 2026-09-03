@@ -188,6 +188,9 @@ contract Deploy is Script {
             "default token name prefix mismatch"
         );
         require(bytes(collection.description()).length > 100, "default description missing");
+        require(
+            bytes(collection.ownerTokenDescription()).length > 100, "default owner token description missing"
+        );
 
         // `vm.startBroadcast()` changes the sender of the CREATEs. In a test that calls this
         // script, that sender is intentionally not the test contract (`msg.sender` here).
@@ -256,5 +259,6 @@ contract Deploy is Script {
         console.log("admin=%s", shapes.admin());
         console.log("tokenNamePrefix=%s", collection.tokenNamePrefix());
         console.log("description=%s", collection.description());
+        console.log("ownerTokenDescription=%s", collection.ownerTokenDescription());
     }
 }

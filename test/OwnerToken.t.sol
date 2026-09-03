@@ -437,6 +437,59 @@ contract OwnerTokenTest is ShapesBase {
         assertEq(shapes.ownerOf(0), alice);
     }
 
+    /* --------------------------- owner-token copy -------------------------- */
+
+    /// @dev The `description` field of a token's rendered metadata.
+    function _descriptionOf(uint256 tokenId) internal view returns (string memory) {
+        return vm.parseJsonString(_decodeTokenUri(shapes.tokenURI(tokenId)), ".description");
+    }
+
+    /// @notice The owner token renders the collection's owner-token description; every other live
+    ///         token renders the shared one.
+    function test_OwnerTokenRendersItsOwnDescription() public {
+        uint256 ordinary = _mintDust(alice, 1);
+        assertTrue(
+            keccak256(bytes(collection.ownerTokenDescription()))
+                != keccak256(bytes(collection.description())),
+            "the two default descriptions are the same string"
+        );
+        assertEq(_descriptionOf(0), collection.ownerTokenDescription(), "owner token description");
+        assertEq(_descriptionOf(ordinary), collection.description(), "ordinary token description");
+    }
+
+    /// @notice The owner-token description follows the role. A compose absorbing the owner token
+    ///         moves it to the survivor; decomposing that compose hands it back to the original id,
+    ///         which the survivor then stops rendering.
+    function test_OwnerTokenDescriptionFollowsTheRoleThroughCompose() public {
+        shapes.transferFrom(address(this), alice, 0);
+        uint256 first = _mintDust(alice, 4);
+        vm.prank(alice);
+        shapes.compose(first, _ids4(0, first + 1, first + 2, first + 3));
+
+        assertEq(shapes.ownerToken(), first, "owner token did not move");
+        assertEq(_descriptionOf(first), collection.ownerTokenDescription(), "survivor description");
+        vm.expectRevert(abi.encodeWithSelector(IERC721Errors.ERC721NonexistentToken.selector, 0));
+        shapes.tokenURI(0);
+
+        vm.prank(alice);
+        shapes.decompose(first);
+        assertEq(shapes.ownerToken(), 0, "owner token did not return");
+        assertEq(_descriptionOf(0), collection.ownerTokenDescription(), "restored owner description");
+        assertEq(_descriptionOf(first), collection.description(), "survivor kept the owner description");
+    }
+
+    /// @notice The admin rewrites the owner-token description until `lockPresentation` freezes it.
+    function test_OwnerTokenDescriptionIsEditableUntilTheLock() public {
+        collection.setMetadataCopy("Shape ", "A shared description.", "An owner description.");
+        assertEq(collection.ownerTokenDescription(), "An owner description.", "edit not stored");
+        assertEq(_descriptionOf(0), "An owner description.", "edit did not reach tokenURI");
+
+        shapes.lockPresentation();
+        vm.expectRevert(IShapes.PresentationIsLocked.selector);
+        collection.setMetadataCopy("Shape ", "A shared description.", "Another owner description.");
+        assertEq(collection.ownerTokenDescription(), "An owner description.", "copy changed after the lock");
+    }
+
     /* ------------------------------- admin --------------------------------- */
 
     function test_OwnerTokenHolderHasNoAdminPermissions() public {
@@ -449,7 +502,7 @@ contract OwnerTokenTest is ShapesBase {
 
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        collection.setMetadataCopy("x", "y");
+        collection.setMetadataCopy("x", "y", "ok");
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.lockPresentation();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));

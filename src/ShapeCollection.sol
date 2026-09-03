@@ -17,10 +17,11 @@ import {InkGenes} from "./lib/InkGenes.sol";
 /// @notice Collection-level metadata for Shapes: the editorial copy and the contract-level
 ///         metadata built from it, plus seeded card previews.
 ///
-/// @dev Stores the token name prefix and the shared description. `Shapes.tokenURI` and
-///      `Shapes.contractURI` read both back from here. `setMetadataCopy` writes them, restricted
-///      to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Both the
-///      admin address and the lock are read live from `shapes`.
+/// @dev Stores the token name prefix, the shared description and the owner token's own
+///      description. `Shapes.tokenURI` and `Shapes.contractURI` read them back from here.
+///      `setMetadataCopy` writes all three, restricted to the admin of the bound `Shapes` and
+///      frozen by that token's `lockPresentation`. Both the admin address and the lock are read
+///      live from `shapes`.
 ///
 ///      `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes
 ///      no seed advances once per block and every caller in that block gets the same value.
@@ -46,7 +47,7 @@ contract ShapeCollection is IShapeCollection, IERC165 {
 
     /// @dev Longest a name prefix may be, in bytes.
     uint256 private constant MAX_NAME_BYTES = 64;
-    /// @dev Longest a description may be, in bytes.
+    /// @dev Longest either description may be, in bytes.
     uint256 private constant MAX_DESCRIPTION_BYTES = 2048;
 
     /// @dev Copy written at construction. The parity suite asserts byte identity against
@@ -55,9 +56,13 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     string private constant DEFAULT_DESCRIPTION = "Shapes are ETH-backed onchain objects. Each Shape wraps an exact amount of ETH. "
         "Burning it returns exactly that amount to its owner. Higher denominations resolve "
         "into fewer, larger modules. Artwork and metadata are generated entirely onchain.";
+    string private constant DEFAULT_OWNER_TOKEN_DESCRIPTION = "The contract owner token of Shapes. Its current holder is returned by owner() and has no "
+        "administrative authority. Ownership moves with this Shape through compose, decompose and "
+        "split. Redeeming or burning it ends contract ownership.";
 
     string private _tokenNamePrefix;
     string private _description;
+    string private _ownerTokenDescription;
 
     error ShapesHasNoCode(address shapes);
 
@@ -75,6 +80,7 @@ contract ShapeCollection is IShapeCollection, IERC165 {
         shapes = address(shapes_);
         _tokenNamePrefix = DEFAULT_TOKEN_NAME_PREFIX;
         _description = DEFAULT_DESCRIPTION;
+        _ownerTokenDescription = DEFAULT_OWNER_TOKEN_DESCRIPTION;
     }
 
     /* -------------------------------- copy ------------------------------ */
@@ -90,15 +96,26 @@ contract ShapeCollection is IShapeCollection, IERC165 {
     }
 
     /// @inheritdoc IShapeCollection
-    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external {
+    function ownerTokenDescription() external view returns (string memory) {
+        return _ownerTokenDescription;
+    }
+
+    /// @inheritdoc IShapeCollection
+    function setMetadataCopy(
+        string calldata tokenNamePrefix_,
+        string calldata description_,
+        string calldata ownerTokenDescription_
+    ) external {
         IShapes token = IShapes(shapes);
         if (msg.sender != token.admin()) revert AdminUnauthorizedAccount(msg.sender);
         if (token.presentationLocked()) revert PresentationIsLocked();
         CopyValidation.requireJsonSafe(tokenNamePrefix_, MAX_NAME_BYTES, 0);
         CopyValidation.requireJsonSafe(description_, MAX_DESCRIPTION_BYTES, 1);
+        CopyValidation.requireJsonSafe(ownerTokenDescription_, MAX_DESCRIPTION_BYTES, 2);
         _tokenNamePrefix = tokenNamePrefix_;
         _description = description_;
-        emit MetadataCopySet(tokenNamePrefix_, description_);
+        _ownerTokenDescription = ownerTokenDescription_;
+        emit MetadataCopySet(tokenNamePrefix_, description_, ownerTokenDescription_);
     }
 
     /* ------------------------------ seeding ----------------------------- */

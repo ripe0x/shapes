@@ -21,7 +21,9 @@ import {GENE_PROBABILITY} from "./ink";
 import {
   CANONICAL,
   DESCRIPTION,
+  OWNER_TOKEN_DESCRIPTION,
   composeShape,
+  descriptionFor,
   geometryAt,
   metadataJsonFromComposition,
   seedHex,
@@ -524,6 +526,7 @@ export function sampledTokenMetadataJson(
   description: string = DESCRIPTION,
   p: Params = CANONICAL,
   splitFrom?: SplitFrom,
+  ownerTokenDescription: string = OWNER_TOKEN_DESCRIPTION,
 ): string {
   const c = composeSampledShape(modules, denomIndex, inkGene, p);
   const svg = svgFromComposition(c, tokenId, p, inverted);
@@ -536,7 +539,7 @@ export function sampledTokenMetadataJson(
     inkGene,
     composeDepth,
     namePrefix,
-    description,
+    descriptionFor(tokenId, description, ownerTokenDescription),
     splitFrom,
   );
 }

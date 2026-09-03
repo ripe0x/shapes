@@ -159,11 +159,12 @@ contract CollectionTest is Test {
         string memory beforeContract = shapes.contractURI();
 
         vm.expectEmit(true, true, true, true, address(collection));
-        emit IShapeCollection.MetadataCopySet("Form ", "A reshaped description.");
-        collection.setMetadataCopy("Form ", "A reshaped description.");
+        emit IShapeCollection.MetadataCopySet("Form ", "A reshaped description.", "An owner description.");
+        collection.setMetadataCopy("Form ", "A reshaped description.", "An owner description.");
 
         assertEq(collection.tokenNamePrefix(), "Form ");
         assertEq(collection.description(), "A reshaped description.");
+        assertEq(collection.ownerTokenDescription(), "An owner description.");
         assertNotEq(shapes.tokenURI(0), before, "token metadata did not follow the copy");
         assertNotEq(shapes.contractURI(), beforeContract, "contract metadata did not follow the copy");
     }
@@ -172,7 +173,7 @@ contract CollectionTest is Test {
         address stranger = makeAddr("stranger");
         vm.prank(stranger);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, stranger));
-        collection.setMetadataCopy("x ", "y");
+        collection.setMetadataCopy("x ", "y", "ok");
     }
 
     /// @notice Authority is read live from the token, so an admin transfer moves the copy right
@@ -184,22 +185,22 @@ contract CollectionTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, address(this))
         );
-        collection.setMetadataCopy("x ", "y");
+        collection.setMetadataCopy("x ", "y", "ok");
 
         vm.prank(nextAdmin);
-        collection.setMetadataCopy("x ", "y");
+        collection.setMetadataCopy("x ", "y", "ok");
         assertEq(collection.tokenNamePrefix(), "x ");
     }
 
     /// @notice The token's presentation lock freezes the copy, which the collection enforces by
     ///         reading the lock back from the token.
     function test_PresentationLockFreezesTheCopy() public {
-        collection.setMetadataCopy("Before ", "Editable while presentation is unlocked.");
+        collection.setMetadataCopy("Before ", "Editable while presentation is unlocked.", "ok");
 
         shapes.lockPresentation();
 
         vm.expectRevert(IShapes.PresentationIsLocked.selector);
-        collection.setMetadataCopy("After ", "Frozen once presentation is locked.");
+        collection.setMetadataCopy("After ", "Frozen once presentation is locked.", "ok");
         assertEq(collection.tokenNamePrefix(), "Before ", "copy changed after the lock");
     }
 

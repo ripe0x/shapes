@@ -758,7 +758,7 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(vm.parseJsonString(initial, ".attributes[15].value"), "Contract Owner");
         assertTrue(_contains(initial, ',{"value":"Contract Owner"}'));
 
-        collection.setMetadataCopy("Form ", "A reshaped description of the object.");
+        collection.setMetadataCopy("Form ", "A reshaped description of the object.", "An owner description.");
         assertEq(vm.parseJsonString(_decodeJson(0), ".name"), "Form 0, Contract Owner");
     }
 
@@ -972,7 +972,7 @@ contract TokenMetadataTest is RendererTestBase {
         string memory idStr = vm.toString(id);
         assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat("Shape ", idStr), "default name");
 
-        collection.setMetadataCopy("Form ", "A reshaped description of the object.");
+        collection.setMetadataCopy("Form ", "A reshaped description of the object.", "An owner description.");
 
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".name"), string.concat("Form ", idStr), "name prefix updated");
@@ -989,7 +989,11 @@ contract TokenMetadataTest is RendererTestBase {
     function test_DescriptionIsSharedWithCollectionMetadata() public {
         assertTrue(_contains(_decodeContract(), '"name":"Shapes"'), "default collection name");
 
-        collection.setMetadataCopy(collection.tokenNamePrefix(), "A rewritten shared description.");
+        collection.setMetadataCopy(
+            collection.tokenNamePrefix(),
+            "A rewritten shared description.",
+            collection.ownerTokenDescription()
+        );
 
         string memory j = _decodeContract();
         assertEq(vm.parseJsonString(j, ".name"), "Shapes", "collection name follows ERC-721 name");
@@ -1009,8 +1013,8 @@ contract TokenMetadataTest is RendererTestBase {
         shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]); // genesis #0 plus public #1
 
         vm.expectEmit(true, true, true, true, address(collection));
-        emit IShapeCollection.MetadataCopySet("P ", "D");
-        collection.setMetadataCopy("P ", "D");
+        emit IShapeCollection.MetadataCopySet("P ", "D", "O");
+        collection.setMetadataCopy("P ", "D", "O");
 
         vm.expectEmit(true, true, true, true, address(shapes));
         emit BatchMetadataUpdate(0, 1);
@@ -1030,20 +1034,20 @@ contract TokenMetadataTest is RendererTestBase {
     function test_NonAdminCannotUpdateCopy() public {
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        collection.setMetadataCopy("x ", "y");
+        collection.setMetadataCopy("x ", "y", "ok");
         vm.stopPrank();
     }
 
     /// @notice `lockPresentation` freezes the metadata copy along with the renderer and the
     ///         collection: editable before the lock, `PresentationIsLocked` after it.
     function test_CopyFreezesWithPresentation() public {
-        collection.setMetadataCopy("Before ", "Copy is editable while presentation is unlocked.");
+        collection.setMetadataCopy("Before ", "Copy is editable while presentation is unlocked.", "ok");
         assertEq(collection.tokenNamePrefix(), "Before ");
 
         shapes.lockPresentation();
 
         vm.expectRevert(IShapes.PresentationIsLocked.selector);
-        collection.setMetadataCopy("After ", "Copy is frozen once presentation is locked.");
+        collection.setMetadataCopy("After ", "Copy is frozen once presentation is locked.", "ok");
         assertEq(collection.tokenNamePrefix(), "Before ", "copy changed after the lock");
     }
 
@@ -1052,13 +1056,13 @@ contract TokenMetadataTest is RendererTestBase {
     function test_CopyRejectsJsonBreakingBytes() public {
         // A double quote closes the string early and lets the rest forge structure.
         vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
-        collection.setMetadataCopy("Shape ", 'x","image":"https://evil.example/a.png","attributes":[]}');
+        collection.setMetadataCopy("Shape ", 'x","image":"https://evil.example/a.png","attributes":[]}', "ok");
 
         // Backslash (would start a JSON escape) and a C0 control byte are refused too.
         vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(0)));
-        collection.setMetadataCopy("Sh\\ape ", "ok");
+        collection.setMetadataCopy("Sh\\ape ", "ok", "ok");
         vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
-        collection.setMetadataCopy("Shape ", "line\nbreak");
+        collection.setMetadataCopy("Shape ", "line\nbreak", "ok");
     }
 
     /// @notice The length caps bound indexer cost and revert with the right field.
@@ -1073,9 +1077,11 @@ contract TokenMetadataTest is RendererTestBase {
         }
 
         vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(0)));
-        collection.setMetadataCopy(string(longName), "ok");
+        collection.setMetadataCopy(string(longName), "ok", "ok");
         vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
-        collection.setMetadataCopy("Shape ", string(longDesc));
+        collection.setMetadataCopy("Shape ", string(longDesc), "ok");
+        vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(2)));
+        collection.setMetadataCopy("Shape ", "ok", string(longDesc));
 
         // At the caps exactly, it passes.
         bytes memory maxName = new bytes(64);
@@ -1086,8 +1092,9 @@ contract TokenMetadataTest is RendererTestBase {
         for (uint256 i = 0; i < maxDesc.length; ++i) {
             maxDesc[i] = "a";
         }
-        collection.setMetadataCopy(string(maxName), string(maxDesc));
+        collection.setMetadataCopy(string(maxName), string(maxDesc), string(maxDesc));
         assertEq(bytes(collection.description()).length, 2048);
+        assertEq(bytes(collection.ownerTokenDescription()).length, 2048);
     }
 
     /// @notice Malformed UTF-8 is refused, so copy can never emit a byte sequence a strict
@@ -1103,12 +1110,12 @@ contract TokenMetadataTest is RendererTestBase {
 
         // Same rule on the name argument (field 0).
         vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(0)));
-        collection.setMetadataCopy(string(bytes(hex"f5808080")), "ok"); // 0xF5 lead: above U+10FFFF
+        collection.setMetadataCopy(string(bytes(hex"f5808080")), "ok", "ok"); // 0xF5 lead: above U+10FFFF
     }
 
     function _expectBadDesc(bytes memory bad) internal {
         vm.expectRevert(abi.encodeWithSelector(IShapeCollection.InvalidCopy.selector, uint8(1)));
-        collection.setMetadataCopy("Shape ", string(bad));
+        collection.setMetadataCopy("Shape ", string(bad), "ok");
     }
 
     /// @notice Well-formed multi-byte UTF-8 is accepted and round-trips byte-exact through storage
@@ -1119,7 +1126,7 @@ contract TokenMetadataTest is RendererTestBase {
 
         string memory prefix = unicode"Formeß ";
         string memory desc = unicode"Formes — «carrés» 形 🜂";
-        collection.setMetadataCopy(prefix, desc);
+        collection.setMetadataCopy(prefix, desc, desc);
 
         assertEq(collection.description(), desc, "description not stored byte-exact");
         string memory j = _decodeJson(id);
@@ -1131,14 +1138,16 @@ contract TokenMetadataTest is RendererTestBase {
     ///         contract never ships in a state its own API could not reproduce.
     function test_DefaultCopyPassesTheValidator() public {
         // Re-setting the getters through the validated setters must succeed.
-        collection.setMetadataCopy(collection.tokenNamePrefix(), collection.description());
+        collection.setMetadataCopy(
+            collection.tokenNamePrefix(), collection.description(), collection.ownerTokenDescription()
+        );
     }
 
     /// @notice Empty copy is allowed: the name is the bare token id, the description empty.
     function test_EmptyCopyIsValidJson() public {
         vm.prank(alice);
         uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
-        collection.setMetadataCopy("", "");
+        collection.setMetadataCopy("", "", "");
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".name"), vm.toString(id), "name is the bare id");
         assertEq(vm.parseJsonString(j, ".description"), "", "empty description");
@@ -1171,7 +1180,7 @@ contract TokenMetadataTest is RendererTestBase {
         bytes32 seed = shapes.seedOf(id);
         string memory svg = renderer.renderSVG(seed, DENOMS[4], false, shapes.inkGeneOf(id));
 
-        collection.setMetadataCopy("Renamed ", "A different description entirely.");
+        collection.setMetadataCopy("Renamed ", "A different description entirely.", "ok");
 
         assertEq(shapes.backingOf(id), backing, "backing moved");
         assertEq(shapes.redeemableBacking(), reserve, "reserve moved");

@@ -36,7 +36,7 @@ every protocol fact. Everything else is presentation or an independent applicati
 | --- | --- | --- |
 | `Shapes` | The token. Reserve custody, minting, redemption, recomposition, every protocol view. | No |
 | `ShapeRenderer` | Onchain artwork and token metadata. Read only by `tokenURI`. | By admin until `lockPresentation` |
-| `ShapeCollection` | Collection-level metadata, and the token name prefix and shared description `tokenURI` and `contractURI` read back. | By admin until `lockPresentation` |
+| `ShapeCollection` | Collection-level metadata, and the token name prefix, shared description and owner-token description `tokenURI` and `contractURI` read back. | By admin until `lockPresentation` |
 | `ShapeAuctionHouse` | English auction with bids denominated in Shape cards. Pulls tokens from bidders; holds no authority over `Shapes`. | Not wired in; discovered through the `market` pointer |
 
 Libraries linked into `Shapes` at deploy time, with no setter anywhere:
@@ -78,9 +78,12 @@ Collection views: `redeemableBacking`, `burnedBacking`, `blackShapeCount`, `tota
 `feesOwedTo`, `feeRecipient`, `renderer`, `collection`, `presentationLocked`, `positions`,
 `market`, `contractURI`.
 
-The metadata copy is one hop out: `IShapeCollection.tokenNamePrefix` and
-`IShapeCollection.description` live on the address `collection()` returns, and
-`tokenURI`/`contractURI` read them back from there.
+The metadata copy is one hop out: `IShapeCollection.tokenNamePrefix`,
+`IShapeCollection.description` and `IShapeCollection.ownerTokenDescription` live on the address
+`collection()` returns, and `tokenURI`/`contractURI` read them back from there. `tokenURI` passes
+the renderer the owner-token description for whichever Shape currently carries collection
+ownership and the shared description for every other token; `contractURI` always passes the
+shared one.
 
 Ladder views: `unit`, `denominationCount`, `denominationAt`, `isSupportedDenomination`.
 
@@ -329,8 +332,9 @@ than holding one of its own. Separate locks would be separate facts to reason ab
 is read from the same metadata document as the two contracts it freezes with.
 
 **The metadata copy lives on the collection (D-41).** Presentation state sits with the presentation
-contracts: `ShapeCollection` stores the token name prefix and the shared description, validates
-them with `CopyValidation`, and gates `setMetadataCopy` on the admin and lock it reads live from
+contracts: `ShapeCollection` stores the token name prefix, the shared description and the
+owner-token description, validates all three with `CopyValidation`, and gates `setMetadataCopy` on
+the admin and lock it reads live from
 the `Shapes` it is constructed with. The token holds no copy storage and no second admin role. Two
 consequences. The collection takes the token's address at construction, so `Shapes`'s constructor
 has no collection parameter and deployment fills the pointer with `setCollection` before anything

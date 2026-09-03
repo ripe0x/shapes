@@ -104,7 +104,7 @@ contract ContractOwnershipTest is Test {
 
         vm.startPrank(alice);
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
-        collection.setMetadataCopy("x", "y");
+        collection.setMetadataCopy("x", "y", "ok");
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
         shapes.refreshMetadata();
         vm.expectRevert(abi.encodeWithSelector(IAdminControl.AdminUnauthorizedAccount.selector, alice));
@@ -129,7 +129,7 @@ contract ContractOwnershipTest is Test {
         shapes.setFeeRecipient(bob);
 
         vm.prank(alice);
-        collection.setMetadataCopy("x", "y");
+        collection.setMetadataCopy("x", "y", "ok");
         vm.prank(alice);
         shapes.setFeeRecipient(bob);
         assertEq(shapes.feeRecipient(), bob);

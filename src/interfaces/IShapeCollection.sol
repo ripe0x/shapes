@@ -7,7 +7,9 @@ pragma solidity 0.8.28;
 ///         cards that no token needs to exist for.
 /// @dev The copy is stored here and edited by the admin of the `Shapes` this contract is bound
 ///      to, until that token's presentation is locked. `Shapes.tokenURI` and `Shapes.contractURI`
-///      read it back from this address.
+///      read it back from this address. Two descriptions are stored: the shared one and the
+///      owner token's, which `Shapes.tokenURI` substitutes for whichever Shape currently carries
+///      collection ownership.
 ///
 ///      Every rendered output is a function of a seed and the denomination ladder, drawn through
 ///      the renderer this contract was constructed with. A function that takes a seed returns
@@ -15,14 +17,14 @@ pragma solidity 0.8.28;
 ///      once per block.
 interface IShapeCollection {
     /// @notice Emitted when the admin rewrites the metadata copy.
-    event MetadataCopySet(string tokenNamePrefix, string description);
+    event MetadataCopySet(string tokenNamePrefix, string description, string ownerTokenDescription);
 
     error DenominationIndexOutOfRange(uint256 index);
 
     /// @dev Metadata copy is written verbatim into JSON, so a value is rejected when it carries a
     ///      `"`, a `\`, or a C0 control byte (which would break or restructure the document), is
     ///      not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length
-    ///      cap. `field` is 0 name/prefix, 1 description.
+    ///      cap. `field` is 0 name/prefix, 1 description, 2 owner-token description.
     error InvalidCopy(uint8 field);
 
     /// @dev `setMetadataCopy` reverts this when the caller is not `IShapes(shapes()).admin()`.
@@ -51,18 +53,28 @@ interface IShapeCollection {
     /// @dev Read by `Shapes.tokenURI` and written verbatim into every token's metadata.
     function tokenNamePrefix() external view returns (string memory);
 
-    /// @notice The description emitted by both token metadata and `Shapes.contractURI`, so the
-    ///         collection and its tokens carry one description.
+    /// @notice The description emitted by every ordinary token's metadata and by
+    ///         `Shapes.contractURI`, so the collection and its tokens carry one description.
     function description() external view returns (string memory);
 
-    /// @notice Set the token name prefix and the shared description together.
+    /// @notice The description emitted by the owner token's metadata in place of `description()`.
+    /// @dev `Shapes.tokenURI` selects it for whichever live Shape currently carries collection
+    ///      ownership. `Shapes.contractURI` always uses `description()`.
+    function ownerTokenDescription() external view returns (string memory);
+
+    /// @notice Set the token name prefix, the shared description and the owner token's
+    ///         description together.
     /// @dev Callable only by `IShapes(shapes()).admin()`, and only while that token's
     ///      `presentationLocked()` is false; otherwise reverts `IShapes.PresentationIsLocked`.
-    ///      Both arguments must be well-formed UTF-8, length-capped (64-byte prefix, 2048-byte
-    ///      description), and free of bytes JSON forbids unescaped (`"`, `\`, C0 controls).
-    ///      Marketplaces re-read after a copy change when the admin then calls
+    ///      Every argument must be well-formed UTF-8, length-capped (64-byte prefix, 2048 bytes
+    ///      for each description), and free of bytes JSON forbids unescaped (`"`, `\`, C0
+    ///      controls). Marketplaces re-read after a copy change when the admin then calls
     ///      `Shapes.refreshMetadata`.
-    function setMetadataCopy(string calldata tokenNamePrefix_, string calldata description_) external;
+    function setMetadataCopy(
+        string calldata tokenNamePrefix_,
+        string calldata description_,
+        string calldata ownerTokenDescription_
+    ) external;
 
     /* ---------------------------- collection ------------------------------ */
 

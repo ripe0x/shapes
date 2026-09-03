@@ -1034,6 +1034,8 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
         uint256 amountWei = Denominations.amountAt(d.denomIndex);
         uint256 depth = _store.composeStack[tokenId].length;
         bool isOwnerToken = tokenId + 1 == _ownerToken;
+        // The owner token carries its own description; every other token carries the shared one.
+        string memory description = isOwnerToken ? c.ownerTokenDescription() : c.description();
         if (modules.length != 0) {
             return IShapeRenderer(_presentation.renderer)
                 .tokenURISampled(
@@ -1045,7 +1047,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                     d.inkGene,
                     depth,
                     c.tokenNamePrefix(),
-                    c.description(),
+                    description,
                     _splitProvenanceOf(tokenId),
                     isOwnerToken
                 );
@@ -1060,7 +1062,7 @@ contract Shapes is ERC721, ReentrancyGuard, IShapes, IERC2981, IERC4906 {
                 d.inkGene,
                 depth,
                 c.tokenNamePrefix(),
-                c.description(),
+                description,
                 isOwnerToken
             );
     }

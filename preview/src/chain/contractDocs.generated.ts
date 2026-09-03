@@ -6261,7 +6261,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "ShapeCollection",
     "kind": "collection",
     "description": "Collection-level metadata for Shapes: the editorial copy and the contract-level metadata built from it, plus seeded card previews.",
-    "dev": "Stores the token name prefix and the shared description. `Shapes.tokenURI` and `Shapes.contractURI` read both back from here. `setMetadataCopy` writes them, restricted to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Both the admin address and the lock are read live from `shapes`. `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes no seed advances once per block and every caller in that block gets the same value. Passing a seed returns deterministic output for that seed. Preview cards use the same denomination ladder, ink-gene derivation and renderer as minted Shapes. No token is read or written.",
+    "dev": "Stores the token name prefix, the shared description and the owner token's own description. `Shapes.tokenURI` and `Shapes.contractURI` read them back from here. `setMetadataCopy` writes all three, restricted to the admin of the bound `Shapes` and frozen by that token's `lockPresentation`. Both the admin address and the lock are read live from `shapes`. `seed()` hashes `block.prevrandao` with the block number, so a rendering call that takes no seed advances once per block and every caller in that block gets the same value. Passing a seed returns deterministic output for that seed. Preview cards use the same denomination ladder, ink-gene derivation and renderer as minted Shapes. No token is read or written.",
     "functions": [
       {
         "name": "card",
@@ -6404,7 +6404,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "string"
           }
         ],
-        "notice": "The description emitted by both token metadata and `Shapes.contractURI`, so the collection and its tokens carry one description.",
+        "notice": "The description emitted by every ordinary token's metadata and by `Shapes.contractURI`, so the collection and its tokens carry one description.",
         "dev": "",
         "params": {},
         "returns": {},
@@ -6534,6 +6534,34 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "ownerTokenDescription",
+        "signature": "ownerTokenDescription()",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "",
+            "type": "string"
+          }
+        ],
+        "notice": "The description emitted by the owner token's metadata in place of `description()`.",
+        "dev": "`Shapes.tokenURI` selects it for whichever live Shape currently carries collection ownership. `Shapes.contractURI` always uses `description()`.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "ownerTokenDescription",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "string"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
         "name": "renderer",
         "signature": "renderer()",
         "stateMutability": "view",
@@ -6591,7 +6619,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "setMetadataCopy",
-        "signature": "setMetadataCopy(string,string)",
+        "signature": "setMetadataCopy(string,string,string)",
         "stateMutability": "nonpayable",
         "inputs": [
           {
@@ -6601,11 +6629,15 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           {
             "name": "description_",
             "type": "string"
+          },
+          {
+            "name": "ownerTokenDescription_",
+            "type": "string"
           }
         ],
         "outputs": [],
-        "notice": "Set the token name prefix and the shared description together.",
-        "dev": "Callable only by `IShapes(shapes()).admin()`, and only while that token's `presentationLocked()` is false; otherwise reverts `IShapes.PresentationIsLocked`. Both arguments must be well-formed UTF-8, length-capped (64-byte prefix, 2048-byte description), and free of bytes JSON forbids unescaped (`\"`, `\\`, C0 controls). Marketplaces re-read after a copy change when the admin then calls `Shapes.refreshMetadata`.",
+        "notice": "Set the token name prefix, the shared description and the owner token's description together.",
+        "dev": "Callable only by `IShapes(shapes()).admin()`, and only while that token's `presentationLocked()` is false; otherwise reverts `IShapes.PresentationIsLocked`. Every argument must be well-formed UTF-8, length-capped (64-byte prefix, 2048 bytes for each description), and free of bytes JSON forbids unescaped (`\"`, `\\`, C0 controls). Marketplaces re-read after a copy change when the admin then calls `Shapes.refreshMetadata`.",
         "params": {},
         "returns": {},
         "abi": {
@@ -6618,6 +6650,10 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             },
             {
               "name": "description_",
+              "type": "string"
+            },
+            {
+              "name": "ownerTokenDescription_",
               "type": "string"
             }
           ],
@@ -6723,7 +6759,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "events": [
       {
         "name": "MetadataCopySet",
-        "signature": "MetadataCopySet(string,string)",
+        "signature": "MetadataCopySet(string,string,string)",
         "inputs": [
           {
             "name": "tokenNamePrefix",
@@ -6732,6 +6768,11 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           },
           {
             "name": "description",
+            "type": "string",
+            "indexed": false
+          },
+          {
+            "name": "ownerTokenDescription",
             "type": "string",
             "indexed": false
           }
@@ -6775,7 +6816,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "",
-        "dev": "Metadata copy is written verbatim into JSON, so a value is rejected when it carries a `\"`, a `\\`, or a C0 control byte (which would break or restructure the document), is not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length cap. `field` is 0 name/prefix, 1 description."
+        "dev": "Metadata copy is written verbatim into JSON, so a value is rejected when it carries a `\"`, a `\\`, or a C0 control byte (which would break or restructure the document), is not well-formed UTF-8 (which a strict consumer would reject), or exceeds its length cap. `field` is 0 name/prefix, 1 description, 2 owner-token description."
       },
       {
         "name": "PresentationIsLocked",
