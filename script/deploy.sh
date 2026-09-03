@@ -17,6 +17,8 @@
 #   SHAPES_FEE_RECIPIENT / SHAPES_MINT_FEE_WEI     forwarded to Deploy.s.sol; must agree with a
 #                                                  nonempty FEE_RECIPIENT / MINT_FEE_WEI in the
 #                                                  env file if one is set there.
+#   MINT_START_DELAY                               seconds from the post-compile clock to the
+#                                                 mint start; resolved after forge build.
 #   MINT_START                                     overrides the env file's MINT_START (a
 #                                                  rehearsal sets this a few minutes ahead).
 #   DRY_RUN=1                                     simulate only: the REQUIRE_MAIN git guards
@@ -220,6 +222,21 @@ fi
 # deployments/<chainId>.json is written. Verification runs as its own step below instead, after a
 # real broadcast or under RESUME, where a failure is recorded and the run continues.
 
+# A relative mint start is resolved after the compile, not at command start: a cold via_ir build
+# takes minutes, so "now + N" computed earlier would already be in the past when the broadcast
+# lands. Pad MINT_START_DELAY for the broadcast itself (sequential transactions, ~12 s blocks).
+if [ -n "${MINT_START_DELAY:-}" ]; then
+  # The env file may set MINT_START=0 (open at deploy); only a real absolute value conflicts.
+  if [ -n "${MINT_START:-}" ] && [ "$MINT_START" != "0" ]; then
+    echo "set MINT_START or MINT_START_DELAY, not both" >&2; exit 1
+  fi
+  say "Compiling before resolving the relative mint start"
+  forge build >/dev/null
+  MINT_START=$(( $(date +%s) + MINT_START_DELAY ))
+  export SHAPES_MINT_START="$MINT_START"
+  echo "  mint start   $MINT_START (now + ${MINT_START_DELAY}s)"
+fi
+
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
   forge script script/Deploy.s.sol --rpc-url "$RPC"
@@ -308,7 +325,7 @@ if [ "$VERIFY" = "true" ]; then
   verify_one() {
     local fq_name="$1" bare_name="$2" address="$3"
     local ctor_types ctor_args=()
-    ctor_types=$(forge inspect "$bare_name" abi 2>/dev/null \
+    ctor_types=$(forge inspect "$bare_name" abi --json 2>/dev/null \
       | jq -r '[.[] | select(.type=="constructor") | .inputs[].type] | join(",")')
     if [ -n "$ctor_types" ]; then
       local vals=()
