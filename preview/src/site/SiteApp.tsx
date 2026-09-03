@@ -409,13 +409,18 @@ export function SiteApp({
     }
   };
 
+  // The house call targets the auction the page loaded for token 0, never a fixed id: on a
+  // chain with earlier auctions the owner token's auction is not id 0.
+  const auctionId = auction !== "loading" && auction !== null ? auction.id : null;
+
   const doBid = (cardIds: bigint[], ethBackingWei: bigint) => {
+    if (auctionId === null) return;
     const sorted = [...cardIds].sort((a, b) => (a < b ? -1 : 1));
     const fee = breakdown(ethBackingWei).reduce(
       (sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n),
       0n,
     );
-    void runHouse("bid", "bid", [0n, sorted, ethBackingWei], ethBackingWei + fee);
+    void runHouse("bid", "bid", [auctionId, sorted, ethBackingWei], ethBackingWei + fee);
   };
 
   const openToken = (id: bigint) => {
@@ -603,9 +608,9 @@ export function SiteApp({
           txErr={txErr}
           txHash={txHash}
           onBid={doBid}
-          onWithdraw={() => void runHouse("withdraw", "withdraw", [0n])}
-          onSettle={() => void runHouse("settle", "settle", [0n])}
-          onClaim={() => void runHouse("claim", "claimProceeds", [0n])}
+          onWithdraw={() => { if (auctionId !== null) void runHouse("withdraw", "withdraw", [auctionId]); }}
+          onSettle={() => { if (auctionId !== null) void runHouse("settle", "settle", [auctionId]); }}
+          onClaim={() => { if (auctionId !== null) void runHouse("claim", "claimProceeds", [auctionId]); }}
           onOpenToken={openToken}
         />
       )}
