@@ -1,12 +1,8 @@
 # Indexer
 
-A Ponder indexer follows the mainnet deployment and serves token state, lineage and an activity feed over GraphQL. It is the fastest way to read the collection without an RPC call per token. Source is in `indexer/` of the repository; run your own or use the hosted one.
+The repository ships a Ponder indexer, in `indexer/`, that follows the mainnet deployment and serves token state, lineage and an activity feed over GraphQL. Run your own copy for any integration that needs the collection without an RPC call per token. The instance behind shapes.ripe.wtf is the site's own backend, reached only through the site, and is not a public API.
 
-| Network | Endpoint |
-| --- | --- |
-| Mainnet | `https://shapes-indexer-mainnet.fly.dev/graphql` |
-
-The endpoint accepts `POST` with `{"query": "…"}` and serves a GraphiQL page on `GET`. Every list query takes `where`, `orderBy`, `orderDirection`, `limit`, `after` and `before`; results come back as `{ items, pageInfo { hasNextPage endCursor } }`. `bigint` columns are strings.
+The GraphQL server accepts `POST` with `{"query": "…"}` and serves a GraphiQL page on `GET`. Every list query takes `where`, `orderBy`, `orderDirection`, `limit`, `after` and `before`; results come back as `{ items, pageInfo { hasNextPage endCursor } }`. `bigint` columns are strings.
 
 ## Tables
 
@@ -78,7 +74,7 @@ The Shape each auction escrows as its lot, and every card moved into the house's
 
 ## Freshness
 
-`_meta { status }` reports the indexed block. The hosted indexer follows the chain head; a token page or feed that needs the current block should read the chain for that one value and the indexer for everything else.
+`_meta { status }` reports the indexed block. A token page or feed that needs the current block should read the chain for that one value and the indexer for everything else.
 
 ## Running your own
 
