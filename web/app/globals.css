@@ -407,34 +407,6 @@ button {
   letter-spacing: 0.14em;
 }
 @media (max-width: 700px) {
-  .site-header-inner {
-    height: auto !important;
-    min-height: 54px;
-    padding: 12px 20px 0 !important;
-    gap: 12px !important;
-    flex-wrap: wrap;
-    width: 100% !important;
-    margin-inline: 0 !important;
-  }
-  .site-nav {
-    order: 3;
-    width: calc(100% + 40px);
-    margin: 0 -20px;
-    padding: 0 20px 12px;
-    gap: 22px !important;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .site-nav > * {
-    flex: 0 0 auto;
-    white-space: nowrap;
-  }
-  .site-nav::-webkit-scrollbar {
-    display: none;
-  }
-  .site-account {
-    margin-left: auto !important;
-  }
   .site-section {
     display: block;
   }
@@ -544,6 +516,10 @@ button {
 .site-account {
   margin-left: auto;
 }
+.site-nav {
+  display: flex;
+  gap: clamp(20px, 4vw, 40px);
+}
 .site-nav-link {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
   font-size: 11px;
@@ -572,6 +548,113 @@ button {
 .site-connect-btn:hover {
   background: transparent;
   color: var(--ink);
+}
+/* Hamburger nav for narrow viewports. Hidden entirely above 700px (see the max-width: 700px
+   block below); at and under it, .site-nav and .site-account are hidden instead and this takes
+   over. The toggle turns into a close (X) via .is-open on its three bars. */
+.site-mobile-nav {
+  display: none;
+  margin-left: auto;
+}
+.site-mobile-nav-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+}
+.site-mobile-nav-icon {
+  position: relative;
+  display: block;
+  width: 20px;
+  height: 14px;
+}
+.site-mobile-nav-icon span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--ink);
+  transition: transform 0.15s ease, opacity 0.15s ease, top 0.15s ease;
+}
+.site-mobile-nav-icon span:nth-child(1) {
+  top: 0;
+}
+.site-mobile-nav-icon span:nth-child(2) {
+  top: 6px;
+}
+.site-mobile-nav-icon span:nth-child(3) {
+  top: 12px;
+}
+.site-mobile-nav-icon.is-open span:nth-child(1) {
+  top: 6px;
+  transform: rotate(45deg);
+}
+.site-mobile-nav-icon.is-open span:nth-child(2) {
+  opacity: 0;
+}
+.site-mobile-nav-icon.is-open span:nth-child(3) {
+  top: 6px;
+  transform: rotate(-45deg);
+}
+/* Full-width panel under the header. Positions against .site-header (the nearest positioned
+   ancestor, via its sticky position) rather than .site-header-inner, so it spans the viewport
+   instead of the inner content column. visibility is delayed on close so the fade/slide plays
+   before the panel leaves the tab order. */
+.site-mobile-nav-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--page);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 0.14s ease, transform 0.14s ease, visibility 0s linear 0.14s;
+}
+.site-mobile-nav-panel.is-open {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.site-mobile-nav-row {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  width: 100%;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--rule);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  text-align: left;
+  background: none;
+  cursor: pointer;
+}
+.site-mobile-nav-account [role="menu"] .site-mobile-nav-row {
+  padding-left: 36px;
+  font-size: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .site-mobile-nav-icon span,
+  .site-mobile-nav-panel {
+    transition: none;
+  }
+}
+@media (max-width: 700px) {
+  .site-nav,
+  .site-account {
+    display: none;
+  }
+  .site-mobile-nav {
+    display: flex;
+  }
 }
 .site-footer-outer.site-footer-ruled {
   border-top: 1px solid var(--rule);
