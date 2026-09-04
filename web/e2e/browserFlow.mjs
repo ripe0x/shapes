@@ -238,7 +238,7 @@ async function main() {
       const header = page.locator("header.site-header").first();
       await header.waitFor({timeout: 60_000});
       const nav = (await header.locator("nav.site-nav").innerText()).split("\n").map((s) => s.trim());
-      assert.deepEqual(nav, ["MINT", "GALLERY", "PLAY"], `header nav is ${JSON.stringify(nav)}`);
+      assert.deepEqual(nav, ["MINT", "GALLERY"], `header nav is ${JSON.stringify(nav)}`);
       const headerText = await header.innerText();
       assert.ok(!/CONTRACTS/.test(headerText), "header still offers CONTRACTS");
       assert.ok(!/HOW IT WORKS/.test(headerText), "header still offers HOW IT WORKS");
