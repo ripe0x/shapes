@@ -1,6 +1,5 @@
 [profile.default]
-# The mainnet denomination ladder. `FOUNDRY_PROFILE=testnet` swaps in the 100x-smaller one;
-# see src/lib/Denominations.sol.
+# The mainnet denomination ladder; see src/lib/Denominations.sol.
 remappings = ["ladder/=ladders/mainnet/"]
 src = "src"
 out = "out"
@@ -10,12 +9,12 @@ script = "script"
 solc_version = "0.8.28"
 evm_version = "cancun"
 optimizer = true
-# `Shapes` runtime sits a few KB under the EIP-170 24,576 limit; measure both profiles with
+# `Shapes` runtime sits a few KB under the EIP-170 24,576 limit; measure with
 # `forge build --sizes`. The recomposition state machine and every configuration write path live
 # in the linked `RecompositionOps` and `AdminOps` libraries; see project/ARCHITECTURE.md.
 # `optimizer_runs` 1 measured larger on `Shapes` than 20; runtime size does not move monotonically
-# with `optimizer_runs`. Re-measure both the default and testnet profiles with
-# `forge build --sizes` before changing this value in either direction.
+# with `optimizer_runs`. Re-measure with `forge build --sizes` before changing this value in
+# either direction.
 optimizer_runs = 20
 via_ir = true
 bytecode_hash = "none"
@@ -28,15 +27,6 @@ gas_reports = ["Shapes", "ShapeRenderer"]
 # block gas limit), not a contract limit. See DECOMPOSE_SPEC.md.
 gas_limit = "18446744073709551615"
 block_gas_limit = 30_000_000_000
-
-# Builds and tests against the 100x-smaller ladder, which is what public testnet deploys use.
-# Inherits every other setting from the default profile.
-[profile.testnet]
-remappings = ["ladder/=ladders/testnet/"]
-# Separate artifact and cache directories. Sharing the default profile's would let a build resolve
-# `ladder/` to one table and then reuse artifacts compiled against the other.
-out = "out-testnet"
-cache_path = "cache-testnet"
 
 [profile.default.fuzz]
 runs = 512
@@ -52,15 +42,6 @@ runs = 4096
 [profile.ci.invariant]
 runs = 512
 depth = 128
-
-[rpc_endpoints]
-sepolia = "${SEPOLIA_RPC_URL}"
-base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
-
-# Etherscan v2: one API key covers all chains, selected by chain id.
-[etherscan]
-sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
-base_sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 84532 }
 
 [fmt]
 line_length = 110

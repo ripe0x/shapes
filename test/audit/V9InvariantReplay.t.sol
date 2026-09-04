@@ -11,10 +11,8 @@ import {Denominations} from "../../src/lib/Denominations.sol";
 import {ComposeRecordView, ShapeState} from "../../src/ShapeTypes.sol";
 
 /// @notice Deterministic replay of the seventeen-call sequence that broke
-///         `invariant_DecomposeRestoredEveryRecordedState` under
-///         `FOUNDRY_PROFILE=testnet forge test --fuzz-seed
-///         0x9cedeff0a97ee43e647fbb4a77c1d15aa221d07bfe2a226aac333b7b748642eb`. Same setup, same
-///         actions, same order, so the sequence can be bisected without rerunning the fuzzer.
+///         `invariant_DecomposeRestoredEveryRecordedState`. Same setup, same actions, same order,
+///         so the sequence can be bisected without rerunning the fuzzer.
 contract V9InvariantReplayTest is Test {
     uint256 internal constant MINT_FEE = Denominations.UNIT / 10;
 

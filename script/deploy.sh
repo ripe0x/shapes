@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# One deploy path for anvil, Sepolia and mainnet. The environment is a values file
+# One deploy path for anvil and mainnet. The environment is a values file
 # (script/env/<name>.env), never a separate script: every guard and every step below runs
 # identically regardless of target, gated only by the values that file sets.
 #
 # Usage:
-#   script/deploy.sh <anvil|sepolia|mainnet>
+#   script/deploy.sh <anvil|mainnet>
 #
 # Overrides:
-#   SEPOLIA_RPC_URL / MAINNET_RPC_URL / RPC_URL   RPC endpoint, overrides the env file default.
+#   MAINNET_RPC_URL / RPC_URL                     RPC endpoint, overrides the env file default.
 #   FOUNDRY_PROFILE                               forge profile, overrides the env file default.
 #   KEYSTORE_PASSWORD_FILE                        read the keystore password from this file
 #                                                  (chmod 600) instead of an interactive prompt.
@@ -87,8 +87,8 @@
 #                                                  prints what would be signed and submits nothing.
 #   ALLOW_BRANCH_DEPLOY=1                         opt in to deploying from a feature branch
 #                                                  instead of main, for a target whose env file
-#                                                  sets BRANCH_DEPLOY_ALLOWED=true (anvil and
-#                                                  sepolia; never mainnet). Without the env file's
+#                                                  sets BRANCH_DEPLOY_ALLOWED=true (anvil; never
+#                                                  mainnet). Without the env file's
 #                                                  opt-in, refuses outright, DRY_RUN included. With
 #                                                  it, replaces the REQUIRE_MAIN "must run from
 #                                                  main" and "local main is not the fetched
@@ -103,9 +103,9 @@ set -euo pipefail
 
 ENV_NAME="${1:-}"
 case "$ENV_NAME" in
-  anvil | sepolia | mainnet) ;;
+  anvil | mainnet) ;;
   *)
-    echo "usage: script/deploy.sh <anvil|sepolia|mainnet>" >&2
+    echo "usage: script/deploy.sh <anvil|mainnet>" >&2
     exit 1
     ;;
 esac
@@ -161,7 +161,6 @@ if [ "$ENV_NAME" = "mainnet" ]; then
 fi
 
 case "$ENV_NAME" in
-  sepolia) RPC="${SEPOLIA_RPC_URL:-${RPC_URL:-$RPC_DEFAULT}}" ;;
   mainnet) RPC="${MAINNET_RPC_URL:-${RPC_URL:-$RPC_DEFAULT}}" ;;
   anvil) RPC="${RPC_URL:-$RPC_DEFAULT}" ;;
 esac
@@ -258,7 +257,7 @@ fi
 # accept plain ETH as reliably as an EOA, and code-length only rules out contracts, not a
 # reverting EOA-shaped proxy. Simulates the transfer `withdrawFees` would make; no flag bypasses
 # it. Needs a funded `--from` to simulate against: DEPLOYER, sourced from the env file for
-# sepolia and mainnet, or anvil's well-known default account 0.
+# mainnet, or anvil's well-known default account 0.
 if [ -n "${FEE_RECIPIENT:-}" ]; then
   FEE_RECIPIENT_FROM="${DEPLOYER:-}"
   if [ "$ENV_NAME" = "anvil" ] && [ -z "$FEE_RECIPIENT_FROM" ]; then
@@ -638,10 +637,10 @@ if [ "$LIST_OWNER_TOKEN" = "1" ]; then
 fi
 
 # --- optional: sign and submit the one-time artist attestation ----------------------------------
-# A post-broadcast wrapper step, not part of Deploy.s.sol. Mirrors the retired
-# attest-artist-sepolia.sh (same digest, confirmation and postflight-readback safeguards) but works
-# for every env through the wallet already resolved above. Never issue a second valid signature for
-# a competing hash: anyone holding an older valid signature can win the one-time slot.
+# A post-broadcast wrapper step, not part of Deploy.s.sol. Signs through the wallet already
+# resolved above, with the same digest, confirmation and postflight-readback safeguards as every
+# other step. Never issue a second valid signature for a competing hash: anyone holding an older
+# valid signature can win the one-time slot.
 
 if [ "$ATTEST_ARTIST" = "1" ]; then
   if [ "$ARTIST_RELEASE_HASH_ONCHAIN" != "$ZERO_HASH" ]; then

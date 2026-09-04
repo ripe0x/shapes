@@ -120,8 +120,7 @@ its own seed.
 The mainnet deployment's initial value is a flat **0.001 ETH per Shape created**, independent of
 backing. `admin()` may adjust `mintFee` afterward via `setMintFee`, up to the compile-time cap
 one denomination unit (`unit()`), and may redirect `feeRecipient` so future fees accrue to a new
-address. A 100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee. The isolated testnet
-build scales the initial fee with its 1/100 denomination ladder to 0.00001 ETH per Shape.
+address. A 100 ETH Shape and a 0.01 ETH Shape each pay the same flat fee.
 
 `mintFee()` returns the current per-Shape fee, read live by every mint. Fees accrue per recipient,
 credited to whoever `feeRecipient()` names at the time of the mint, and never join the reserve;
@@ -361,9 +360,9 @@ src/
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
     ModuleCodec.sol           one-byte encoding for a module's kind, solid, and rotation
 script/
-  Deploy.s.sol                the one deploy script, run for anvil, Sepolia, and mainnet alike
-  deploy.sh                   the one wrapper: script/deploy.sh <anvil|sepolia|mainnet>
-  env/                        anvil.env, sepolia.env, mainnet.env, values only, no secrets
+  Deploy.s.sol                the one deploy script, run for anvil and mainnet alike
+  deploy.sh                   the one wrapper: script/deploy.sh <anvil|mainnet>
+  env/                        anvil.env, mainnet.env, values only, no secrets
   SeedShapes.s.sol            seeds an already-deployed Shapes; no seeding inside Deploy.s.sol
   lifecycle.sh                every entrypoint walked against a deployed system, plus an indexer diff
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
@@ -374,8 +373,7 @@ test/
   Hardening.t.sol             regressions for the adversarial review findings
   Invariants.t.sol            stateful solvency invariants
   Fork.t.sol                  full lifecycle against a mainnet fork (env-gated)
-  fixtures/fixtures.mainnet.json  generated default-ladder corpus, do not hand-edit
-  fixtures/fixtures.testnet.json  generated testnet-ladder corpus, do not hand-edit
+  fixtures/fixtures.mainnet.json  generated ladder corpus, do not hand-edit
 preview/                      the generative preview harness + chain tester
 web/docs/                     developer docs served at shapes.ripe.wtf/docs
 netlify.toml                  repository-root Netlify config; builds the web workspace
@@ -412,7 +410,7 @@ forge coverage --ir-minimum --skip script \
 
 ### Against a live chain
 
-`script/lifecycle.sh <anvil|sepolia>` walks every protocol entrypoint against a system
+`script/lifecycle.sh anvil` walks every protocol entrypoint against a system
 `script/deploy.sh` has just deployed, reading the addresses back from
 `deployments/<chainId>.json` and asserting on-chain state around each call: the genesis owner
 token and its pointers, all four mint entrypoints, compose and decompose with the owner token as
@@ -423,9 +421,8 @@ the owner token redeemed last. The reserve invariant, `balance == redeemableBack
 pendingFees`, is rechecked after every state change. It closes by running the Ponder indexer
 against the same chain in a throwaway database and diffing every live token's owner and
 denomination, the collection-owner row, and the lineage-edge counts against what the run caused.
-It takes the same environment name as `deploy.sh`, so one code path covers a local chain and a
-public testnet; `LIFECYCLE_APEX=0` skips the apex section, which costs 10000 mints, and
-`LIFECYCLE_INDEXER=0` skips the diff.
+It takes the same environment name as `deploy.sh`. `LIFECYCLE_APEX=0` skips the apex section,
+which costs 10000 mints, and `LIFECYCLE_INDEXER=0` skips the diff.
 
 ```bash
 anvil --port 8545 --gas-limit 5000000000   # the apex section folds 10000 origins per transaction
@@ -576,11 +573,9 @@ are the contract between them.
 
 ```bash
 cd preview
-npm run fixtures                       # writes fixtures.mainnet.json
-SHAPES_LADDER=testnet npm run fixtures # writes fixtures.testnet.json
+npm run fixtures   # writes fixtures.mainnet.json
 cd ..
 forge test --mc Parity
-FOUNDRY_PROFILE=testnet forge test --mc Parity
 ```
 
 Regenerate whenever the canonical renderer changes, and expect the parity suite to fail loudly
@@ -661,15 +656,15 @@ browser wallet is required; there is no keyless path.
 
 ## Deploying
 
-One script, `script/Deploy.s.sol`, deploys every environment: anvil, Sepolia, and mainnet. Chain
-id selects the required denomination ladder — mainnet requires the mainnet ladder, Sepolia the
-testnet ladder, anvil accepts either — and any other chain id reverts. It sends the minimum
+One script, `script/Deploy.s.sol`, deploys every environment: anvil and mainnet. Chain id selects
+the required denomination ladder — mainnet requires the mainnet ladder, anvil accepts whatever is
+compiled in — and any other chain id reverts. It sends the minimum
 denomination to `Shapes`, which mints backed Shape #0 to the deployer, then asserts every
 deployment value landed as intended, smoke-tests the renderer, verifies `artist()` is the
 deployer and that Shapes begins with an empty artist release hash and signature, registers the
 auction house as the `market` pointer, and reads both pointers back before reporting success.
 
-One wrapper, `script/deploy.sh <anvil|sepolia|mainnet>`, runs it for every target through the
+One wrapper, `script/deploy.sh <anvil|mainnet>`, runs it for every target through the
 same code path, sourcing `script/env/<name>.env` for the values that differ: chain id, Foundry
 profile, default RPC, verify flag, main-branch guard, wallet mode, deployer, fee recipient, mint
 fee, mint start, EOA-recipient guard, indexer URL. `DRY_RUN=1` runs the guards and the forge
@@ -682,13 +677,13 @@ anvil                       # in one shell
 ./script/lifecycle.sh anvil # walk every entrypoint against what was just deployed
 ```
 
-Sepolia and mainnet sign with the ripe0x Foundry keystore (interactive prompt, or
-`KEYSTORE_PASSWORD_FILE` to read the password from a file instead of a prompt). Both require a
-fetched, clean, exact `main` to deploy from; the wrapper checks and refuses otherwise.
+Mainnet signs with the ripe0x Foundry keystore (interactive prompt, or `KEYSTORE_PASSWORD_FILE`
+to read the password from a file instead of a prompt), and requires a fetched, clean, exact `main`
+to deploy from; the wrapper checks and refuses otherwise.
 
 Setting `ALLOW_BRANCH_DEPLOY=1` opts into deploying from a feature branch instead of main, for a
-target whose env file sets `BRANCH_DEPLOY_ALLOWED=true` (anvil and Sepolia; never mainnet, so a
-rehearsal can run from a branch without ever touching mainnet's guard). Without the env file's
+target whose env file sets `BRANCH_DEPLOY_ALLOWED=true` (anvil; never mainnet). Without the env
+file's
 opt-in the wrapper refuses outright, `DRY_RUN` included. With it, the "must run from main" and
 "local main is not the fetched origin/main commit" guards are replaced with the same check against
 the current branch: `HEAD` must equal the fetched `origin/<branch>` commit. The dirty-tree and
@@ -696,8 +691,8 @@ untracked-file guards apply either way. Every deploy, branch or main, records th
 and branch as `commit` and `branch` in `deployments/<chainId>.json`.
 
 ```bash
-DRY_RUN=1 script/deploy.sh sepolia   # guards + simulation, nothing broadcast or written
-script/deploy.sh sepolia             # broadcasts, verifies on Etherscan, records the deployment
+DRY_RUN=1 script/deploy.sh mainnet   # guards + simulation, nothing broadcast or written
+script/deploy.sh mainnet             # broadcasts, verifies on Etherscan, records the deployment
 ```
 
 `script/env/mainnet.env` ships with `DEPLOYER`, `FEE_RECIPIENT`, and `MINT_FEE_WEI` empty until D-05
@@ -717,7 +712,7 @@ contract on chain, polls Etherscan for verified source when `VERIFY=true`, and w
 `mintStart`, `libraries`, `fromBlock`, `auctionId`, `artistReleaseHash`, `commit`, `branch`).
 `libraries` maps each linked library's contract name to its address, taken from the broadcast's
 `libraries` array; the site's `/contracts` page reads it. Cutover to the site is a file copy.
-`deployments/31337.json` is gitignored; Sepolia and mainnet records are committed.
+`deployments/31337.json` is gitignored; the mainnet record is committed.
 
 Setting `LIST_OWNER_TOKEN=1` (as a shell export, which wins over the env file, or set directly in
 the env file) opts into listing the owner token (#0) in the auction house right after the
@@ -751,17 +746,14 @@ first.
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
 | Mainnet | `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0` | `0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295` |
-| Sepolia | `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` | `0x7025fc7e13ca24505d471e193e2e2a54e960a1b2` |
 
 Mainnet deployed 2026-09-03 from `main` commit `a0a180b`. Mint fee is a flat 0.001 ETH per Shape;
 `mintStart` is `1788462000` (2026-09-03, 15:00 ET). Fees route to the 0xSplits wallet
 `0xD4ba7cA95f3983514DDa317C4428CDb8F59c7e72`. Owner token #0 is listed in auction `0`; the artist
 attestation is recorded onchain.
 
-The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
-mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in
-`deployments/1.json` and `deployments/11155111.json`, the machine-readable records the site and
-indexer read from.
+Full addresses, ABI-relevant metadata, and fee/block info are in `deployments/1.json`, the
+machine-readable record the site and indexer read from.
 
 ---
 

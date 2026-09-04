@@ -285,8 +285,8 @@ drives `setFeeRecipient` and `withdrawFees` against two known recipients, assert
    `feeRecipient` only starts a new accrual for the new recipient — it does not move the blocked
    recipient's own balance, which stays owed to it, unlost, until it can accept ETH. Renouncing
    admin freezes the current recipient permanently.
-2. **The mint fee is bounded, not immutable.** The mainnet initial value is 0.001 ETH per Shape and
-   the 1/100 testnet build uses 0.00001 ETH per Shape. Admin may change it afterward via
+2. **The mint fee is bounded, not immutable.** The mainnet initial value is 0.001 ETH per Shape.
+   Admin may change it afterward via
    `setMintFee`, up to the compile-time cap of one compiled denomination unit (`unit()`). The
    deploy script rejects an initial value above that same cap, matching the constructor's own
    enforcement.

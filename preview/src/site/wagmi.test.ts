@@ -4,7 +4,7 @@ import {createServer} from "node:http";
 import {create as createQrCode} from "cuer/QrCode";
 import {connect, createConfig, writeContract, mock} from "@wagmi/core";
 import {decodeFunctionData, http} from "viem";
-import {sepolia} from "viem/chains";
+import {mainnet} from "viem/chains";
 
 import {buildConfig} from "../chain/wagmi";
 import {mintRequest} from "./mint";
@@ -18,12 +18,12 @@ const localDep: Deployment = {
   mintFeeWei: "0",
 };
 
-const sepoliaDep: Deployment = {
-  rpc: "https://ethereum-sepolia-rpc.publicnode.com",
-  chainId: sepolia.id,
+const mainnetDep: Deployment = {
+  rpc: "https://ethereum-rpc.publicnode.com",
+  chainId: mainnet.id,
   shapes: "0x00000000000000000000000000000000000000AA",
   renderer: "0x00000000000000000000000000000000000000CC",
-  mintFeeWei: "10000000000000",
+  mintFeeWei: "1000000000000000",
 };
 
 const PROJECT_ID = "60af16a1be7c0077e8df5570cbed082f";
@@ -38,19 +38,18 @@ test("server-rendered hosts can defer wallet hydration until React mounts", () =
   assert.equal(buildConfig(localDep)._internal.ssr, false);
   assert.equal(buildConfig(localDep, {ssr: true})._internal.ssr, true);
   assert.equal(
-    buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID, ssr: true})._internal.ssr,
+    buildConfig(mainnetDep, {walletConnectProjectId: PROJECT_ID, ssr: true})._internal.ssr,
     true,
   );
 });
 
-test("a project id activates RainbowKit's standard wallet inventory on Sepolia only", () => {
-  const config = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID});
+test("a project id activates RainbowKit's standard wallet inventory on the deployment chain", () => {
+  const config = buildConfig(mainnetDep, {walletConnectProjectId: PROJECT_ID});
 
-  // The site declares exactly the deployment chain. Individual wallets may choose not to support
-  // testnets; Rainbow is not used as Sepolia acceptance evidence.
+  // The site declares exactly the deployment chain.
   assert.deepEqual(
     config.chains.map((chain) => chain.id),
-    [sepolia.id],
+    [mainnet.id],
   );
 
   // getDefaultConfig wires RainbowKit's maintained inventory instead of a custom wallet list.
@@ -60,16 +59,16 @@ test("a project id activates RainbowKit's standard wallet inventory on Sepolia o
   assert.ok(connectors.some((c) => c.id === "baseAccount"));
 });
 
-test("the Sepolia config uses viem's canonical chain (Multicall3 + explorer)", () => {
-  const chain = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
-  // Canonical `sepolia` from viem/wagmi, rather than a hand-built public-chain definition.
-  assert.equal(chain.id, sepolia.id);
-  assert.equal(chain.name, sepolia.name);
+test("the mainnet config uses viem's canonical chain (Multicall3 + explorer)", () => {
+  const chain = buildConfig(mainnetDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
+  // Canonical `mainnet` from viem/wagmi, rather than a hand-built public-chain definition.
+  assert.equal(chain.id, mainnet.id);
+  assert.equal(chain.name, mainnet.name);
   assert.equal(
     chain.contracts?.multicall3?.address?.toLowerCase(),
     "0xca11bde05977b3631167028862be2a173976ca11",
   );
-  assert.match(chain.blockExplorers?.default.url ?? "", /sepolia\.etherscan\.io/);
+  assert.match(chain.blockExplorers?.default.url ?? "", /etherscan\.io/);
 });
 
 // A minimal JSON-RPC endpoint that answers the read calls viem makes while preparing a send and
@@ -79,7 +78,7 @@ function rpcRecorder() {
   const reply = (method: string): unknown => {
     switch (method) {
       case "eth_chainId":
-        return "0xaa36a7"; // 11155111
+        return "0x1";
       case "eth_blockNumber":
         return "0x1";
       case "eth_getTransactionCount":
@@ -118,21 +117,21 @@ function rpcRecorder() {
   return {server, sent};
 }
 
-test("Mint initiates a real Sepolia transaction to the Shapes contract", async () => {
+test("Mint initiates a real mainnet transaction to the Shapes contract", async () => {
   const {server, sent} = rpcRecorder();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const {port} = server.address() as {port: number};
   const url = `http://127.0.0.1:${port}`;
 
   const account = "0x1111111111111111111111111111111111111111" as const;
-  const chainDep = {...sepoliaDep, rpc: url};
-  // The Sepolia chain the app configures, but with its RPC pointed at the local recorder so the
-  // mock wallet's send is captured instead of hitting a live Sepolia node.
+  const chainDep = {...mainnetDep, rpc: url};
+  // The mainnet chain the app configures, but with its RPC pointed at the local recorder so the
+  // mock wallet's send is captured instead of hitting a live node.
   const base = buildConfig(chainDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
   const chain = {...base, rpcUrls: {default: {http: [url]}}};
   // getDefaultConfig's WalletConnect connectors cannot open a relay session headlessly, so the
   // send is driven by a mock wallet on that same chain. The point under test is that mintRequest,
-  // pushed through wagmi + viem against a Sepolia-configured chain, emits the right eth_sendTransaction.
+  // pushed through wagmi + viem against a mainnet-configured chain, emits the right eth_sendTransaction.
   const config = createConfig({
     chains: [chain],
     connectors: [mock({accounts: [account]})],
@@ -140,11 +139,11 @@ test("Mint initiates a real Sepolia transaction to the Shapes contract", async (
     ssr: false,
   });
   const connection = await connect(config, {connector: config.connectors[0]});
-  // The wallet connects on Sepolia, not mainnet or an empty namespace.
-  assert.equal(connection.chainId, sepolia.id);
+  // The wallet connects on the deployment chain, not an empty namespace.
+  assert.equal(connection.chainId, mainnet.id);
 
-  // mintRequest pins chainId 11155111; writeContract rejects a connector on any other chain, so a
-  // successful send is itself proof the wallet is on Sepolia.
+  // mintRequest pins the deployment chain id; writeContract rejects a connector on any other
+  // chain, so a successful send is itself proof the wallet is on it.
   const req = mintRequest(chainDep, {amountWei: 10n ** 16n, quantity: 1, fee: 5n * 10n ** 14n});
   await writeContract(config, req as unknown as Parameters<typeof writeContract>[1]);
 
@@ -152,7 +151,7 @@ test("Mint initiates a real Sepolia transaction to the Shapes contract", async (
 
   assert.equal(sent.length, 1, "exactly one transaction should be sent");
   const tx = sent[0];
-  assert.equal(tx.to?.toLowerCase(), sepoliaDep.shapes.toLowerCase());
+  assert.equal(tx.to?.toLowerCase(), mainnetDep.shapes.toLowerCase());
   // 0.01 ETH denomination + 0.0005 ETH fee = 0.0105 ETH
   assert.equal(BigInt(tx.value ?? "0x0"), 10n ** 16n + 5n * 10n ** 14n);
   const decoded = decodeFunctionData({abi: shapesAbi, data: tx.data as `0x${string}`});

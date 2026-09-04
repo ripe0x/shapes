@@ -57,9 +57,9 @@ test("OG client advances past a blackholed primary transport", async () => {
   assert.deepEqual(attempts, ["blackholed primary", "healthy fallback"]);
 });
 
-test("Sepolia provider list keeps a configured primary before independent public fallbacks", () => {
-  const urls = rpcUrlsForChain(11155111, "https://deployment.example", "https://paid.example");
+test("mainnet provider list keeps a configured primary before independent public fallbacks", () => {
+  const urls = rpcUrlsForChain(1, "https://deployment.example", "https://paid.example");
   assert.deepEqual(urls.slice(0, 2), ["https://paid.example", "https://deployment.example"]);
-  assert.ok(urls.includes("https://ethereum-sepolia-rpc.publicnode.com"));
-  assert.ok(urls.includes("https://public.1rpc.io/sepolia"));
+  assert.ok(urls.includes("https://ethereum-rpc.publicnode.com"));
+  assert.ok(urls.includes("https://eth.drpc.org"));
 });

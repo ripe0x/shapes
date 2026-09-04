@@ -5,10 +5,7 @@ import { donorColor, GridOverlayCells, useActiveCell, DetailPanel } from "../app
 import { CANONICAL } from "../canonical/params";
 import { composeShape, svgFromComposition } from "../canonical/render";
 import { composeSampledShape, grammarSplitPoolBytes } from "../canonical/sampling";
-import { DENOMINATIONS, GRIDS, unitsAt } from "../canonical/denominations";
-// The playground presents mainnet values even when the adjacent app is built for Sepolia. The
-// denomination indexes, grids, and composition ratios are identical between both ladders.
-import { LABELS } from "../canonical/ladders/mainnet";
+import { DENOMINATIONS, GRIDS, LABELS, unitsAt } from "../canonical/denominations";
 import { geneAtMint } from "../canonical/ink";
 import {
   buildCompleteShape,

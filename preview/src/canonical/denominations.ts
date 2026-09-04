@@ -3,21 +3,11 @@
  * These are permanent protocol rules, mirrored in src/lib/Denominations.sol and asserted equal
  * by the parity suite.
  *
- * The amounts, their unit, and their labels come from one of two ladder tables, selected at build
- * time by SHAPES_LADDER: "testnet" picks the 100x-smaller table, anything else picks mainnet. It
- * pairs with the foundry profile of the same name, so a testnet site is built against the same
- * ladder as the testnet contracts. Everything else in this file is unit-relative and identical
- * under both.
+ * The amounts, their unit and their labels come from the ladder table in ./ladders/mainnet, which
+ * mirrors ladders/mainnet/Ladder.sol. Everything else in this file is unit-relative.
  */
 
-import * as mainnet from "./ladders/mainnet";
-import * as testnet from "./ladders/testnet";
-
-/** Reading process.env directly keeps this inlinable by every bundler that defines it. */
-const ladder =
-  typeof process !== "undefined" && process.env?.SHAPES_LADDER === "testnet" ? testnet : mainnet;
-
-export const LADDER_NAME: "mainnet" | "testnet" = ladder === testnet ? "testnet" : "mainnet";
+import * as ladder from "./ladders/mainnet";
 
 export const DENOMINATIONS: readonly bigint[] = ladder.AMOUNTS;
 

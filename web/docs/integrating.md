@@ -26,7 +26,7 @@ function onERC721Received(address operator, address from, uint256 tokenId, bytes
 
 ## Pick a denomination
 
-Convert user amounts with the ladder reads rather than a local table, so the same code runs on Sepolia's scaled ladder:
+Convert user amounts with the ladder reads rather than a local table:
 
 ```solidity
 uint8 n = SHAPES.denominationCount();          // 9

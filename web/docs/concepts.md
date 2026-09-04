@@ -8,7 +8,7 @@ A Shape's backing is one of nine fixed amounts. The contract stores a **denomina
 
 | Function | Purpose |
 | --- | --- |
-| `unit()` | Wei in one unit (`1e16` on mainnet, `1e14` on Sepolia) |
+| `unit()` | Wei in one unit (`1e16`) |
 | `denominationCount()` | 9 |
 | `denominationAt(uint8 index)` | Wei at a ladder index; reverts above 8 |
 | `isSupportedDenomination(uint256 amountWei)` | Whether an amount is on the ladder |

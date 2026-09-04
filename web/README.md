@@ -9,31 +9,15 @@ Chain target comes from `web/public/deployment.json`, with env overrides `SHAPES
 
 `SHAPES_DEPLOYMENT_FILE` names a deployment record anywhere on disk and points the whole site at
 it: the browser receives it as a prop from the root layout (`ShapesProviders`) instead of fetching
-`/deployment.local.json`, the server routes read it through `serverDeployment()`, and
-`next.config.ts` picks the denomination ladder from its chain id. It wins over both
-`public/deployment.local.json` and the bundled `public/deployment.json`, so a run can target a
+`/deployment.local.json`, and the server routes read it through `serverDeployment()`. It wins over
+both `public/deployment.local.json` and the bundled `public/deployment.json`, so a run can target a
 chain without writing either file. This is how `npm run e2e:browser` points the site at the chain
 it deploys.
 
-### Per-site deployment record
-
-Two Netlify sites build this same `web/` from `main`: a Sepolia app and the mainnet launch app.
-Both read a bundled `public/<name>.json` record, selected at build time by
-`NEXT_PUBLIC_SHAPES_DEPLOYMENT` (default `deployment`, i.e. `public/deployment.json`, the mainnet
-record). The Sepolia site sets `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia` to read
-`public/deployment.sepolia.json` instead, so writing the mainnet record into `deployment.json`
-during cutover cannot also flip the Sepolia site. `next.config.ts` fails the build if the selected
-record's chain id does not match `SHAPES_LADDER`. Netlify env per site:
-
-- Sepolia app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`, `SHAPES_LADDER=testnet`,
-  `SHAPES_SITE_MODE=app`.
-- Mainnet launch app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT` unset (or `deployment`),
-  `SHAPES_LADDER` unset (mainnet default), `SHAPES_SITE_MODE=app`.
-
-For Sepolia, reads use the configured RPC first and then PublicNode, 1RPC, and Tenderly's public
-endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHAPES_RPC_URL` for
-browser reads when a paid/provider RPC is available. Requests are unbatched because shared site
-reads already use Multicall3 and local seed demos can exceed Anvil's batch-size limit.
+Reads use the configured RPC first and then PublicNode, dRPC, and Tenderly's public endpoint. Set
+`SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHAPES_RPC_URL` for browser reads
+when a paid/provider RPC is available. Requests are unbatched because shared site reads already use
+Multicall3 and local seed demos can exceed Anvil's batch-size limit.
 
 ### Indexer proxy
 
@@ -61,9 +45,8 @@ so the CDN absorbs the site's polling; POST is `no-store`.
 The wallet config uses RainbowKit's standard `getDefaultConfig` (see
 `preview/src/chain/wagmi.ts`), built with `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` and the deployment
 chain. `getDefaultConfig` provides the maintained wallet inventory; each wallet decides which chains
-it supports. Rainbow does not support testnets and is not used for Sepolia acceptance. Without a
-project id (local dev), the config falls back to injected wallets only, so no relay identity is
-created.
+it supports. Without a project id (local dev), the config falls back to injected wallets only, so no
+relay identity is created.
 
 ## Contracts page
 
@@ -76,13 +59,9 @@ forge. After any ABI or NatSpec change run `forge build` and then `npm run contr
 in CI. Library addresses come from the deployment record's `libraries` key; a library with no
 recorded address shows as not recorded. The page reads nothing until a Call button is pressed.
 
-Deployed as two isolated Netlify projects (`../netlify.toml`):
-
-- Mainnet application: `shapes.ripe.wtf`, branch `main`, `SHAPES_SITE_MODE=app`. Builds the
-  default `public/deployment.json` record against the mainnet ladder, so the mint panel, gallery,
-  auction, and manage routes are all live at their normal paths.
-- Sepolia application: `shapes-sepolia.netlify.app`, branch `main`, `SHAPES_SITE_MODE=app`,
-  `SHAPES_LADDER=testnet`, `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`.
+Deployed as a Netlify project (`../netlify.toml`): `shapes.ripe.wtf`, branch `main`,
+`SHAPES_SITE_MODE=app`. It builds the `public/deployment.json` record, so the mint panel, gallery,
+auction, and manage routes are all live at their normal paths.
 
 The `launch` branch and `landing` mode carried the pre-mainnet countdown site and are retired from
 production; `landing` still exists as a build mode. Netlify builds use `npm run build:netlify`,

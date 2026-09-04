@@ -33,7 +33,6 @@ const KIND_LABEL: Record<ContractDoc["kind"], string> = {
 
 export function networkName(chainId: number): string {
   if (chainId === 1) return "Mainnet";
-  if (chainId === 11155111) return "Sepolia";
   if (chainId === 31337) return "Local";
   return `Chain ${chainId}`;
 }

@@ -2,7 +2,7 @@ import {getDefaultConfig} from "@rainbow-me/rainbowkit";
 import {createConfig, createStorage, cookieStorage, cookieToInitialState, type Config} from "wagmi";
 import {injected} from "@wagmi/core";
 import {defineChain, type Transport} from "viem";
-import {sepolia} from "viem/chains";
+import {mainnet} from "viem/chains";
 import type {Deployment} from "./abi";
 import {rpcUrlsForChain, shapesTransport} from "./rpc";
 
@@ -10,7 +10,8 @@ export interface WalletOptions {
   /** WalletConnect Cloud project id. Present enables the full RainbowKit wallet inventory
    *  (Rainbow, MetaMask, Coinbase, WalletConnect, ...); absent falls back to injected only. */
   walletConnectProjectId?: string;
-  /** Optional paid/provider URL, ahead of deployment and public Sepolia fallbacks. */
+  /** Optional paid/provider URL, ahead of the deployment record's RPC and the public
+   *  fallbacks. */
   primaryRpcUrl?: string;
   /** Test-only override for exercising the client without live RPC requests. */
   transport?: Transport;
@@ -40,12 +41,12 @@ export function initialWalletState(cookieHeader?: string | null) {
 }
 
 /**
- * The viem chain for the deployment. Sepolia uses viem's canonical `sepolia` object; custom RPC
- * endpoints are applied through the transport rather than by redefining the chain. Only a
+ * The viem chain for the deployment. Mainnet uses viem's canonical `mainnet` object; custom RPC
+ * endpoints are applied through the transport rather than by redefining the chain. A
  * non-canonical dev chain (local anvil) is defined by hand.
  */
 function deploymentChain(dep: Deployment, primaryRpcUrl?: string) {
-  if (dep.chainId === sepolia.id) return sepolia;
+  if (dep.chainId === mainnet.id) return mainnet;
   const rpcUrls = rpcUrlsForChain(dep.chainId, dep.rpc, primaryRpcUrl);
   return defineChain({
     id: dep.chainId,
@@ -74,9 +75,8 @@ function cacheKey(dep: Deployment, ssr: boolean, walletConnectProjectId: string 
  * Builds the wagmi config for a single deployment chain.
  *
  * With a WalletConnect project id this is RainbowKit's standard `getDefaultConfig` scoped to the
- * deployment chain. Wallet support for that chain is wallet-specific; Rainbow does not support
- * testnets and is therefore not a Sepolia acceptance target. Without a project id (local anvil dev,
- * unit tests) this is a plain injected-only config, so no relay identity is created.
+ * deployment chain. Wallet support for that chain is wallet-specific. Without a project id (local
+ * anvil dev, unit tests) this is a plain injected-only config, so no relay identity is created.
  *
  * Memoized (see `configCache`): the same deployment and wallet surface always resolve to the same
  * Config object for the life of the app.
