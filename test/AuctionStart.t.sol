@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {AuctionBase} from "./AuctionHouse.t.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
 
-/// @dev Scheduled-start behavior: bids open at `startTime` rather than at creation.
+/// @dev Bids open at `startTime`; before it, bid reverts `NotStarted`.
 contract AuctionStartTest is AuctionBase {
     function _openAt(uint64 startTime) internal returns (uint256 auctionId) {
         vm.prank(seller);

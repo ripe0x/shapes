@@ -47,11 +47,11 @@ FOUNDRY_PROFILE=testnet forge script "$SCRIPT" \
   --account feerecip
 
 AUCTION=$(cast call "$HOUSE" \
-  "auctions(uint256)((address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool))" \
+  "auctions(uint256)((address,address,uint256,uint64,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool))" \
   0 --rpc-url "$RPC_URL" --json)
 END_TIME=$(jq -r '.[0][3]' <<<"$AUCTION")
-UNITS=$(jq -r '.[0][8]' <<<"$AUCTION")
-WINNER=$(jq -r '.[0][9]' <<<"$AUCTION")
+UNITS=$(jq -r '.[0][9]' <<<"$AUCTION")
+WINNER=$(jq -r '.[0][10]' <<<"$AUCTION")
 
 [[ $END_TIME =~ ^[0-9]+$ && $END_TIME -gt 0 ]] || {
   echo "Auction did not start." >&2
@@ -82,7 +82,7 @@ FOUNDRY_PROFILE=testnet forge script "$SCRIPT" \
   --account feerecip
 
 cast call "$HOUSE" \
-  "auctions(uint256)((address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool))" \
+  "auctions(uint256)((address,address,uint256,uint64,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool))" \
   0 --rpc-url "$RPC_URL" --json | jq .
 
 echo "Sepolia auction evidence complete."

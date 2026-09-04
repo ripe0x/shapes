@@ -31,7 +31,8 @@ import {IShapeAuctionHouse} from "./interfaces/IShapeAuctionHouse.sol";
 ///      unrepresentable: a bid is a set of indivisible cards and a percentage of a lattice amount
 ///      need not land on the lattice.
 ///
-///      Bids open at `startTime`. The clock that ends the auction still starts at the first bid.
+///      Bids open at `startTime`. The clock that ends the auction starts at the first bid, not at
+///      `startTime`.
 contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
     constructor(address shapes_) ShapeCardEscrow(shapes_) {}
 

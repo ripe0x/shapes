@@ -82,9 +82,8 @@ interface IShapeAuctionHouse is IShapeCardEscrow {
     /// @notice Number of auctions ever created. Ids are issued from 0.
     function auctionCount() external view returns (uint256);
 
-    /// @notice Escrow an ERC721 and open an auction on it, priced in Shapes. Bids open at
-    ///         `startTime`; the clock that ends the auction starts at the first bid, so an
-    ///         auction cannot expire unsold because nobody was watching on day one.
+    /// @notice Escrows an ERC721 and opens an auction on it, priced in Shapes, that accepts bids
+    ///         from `startTime`.
     /// @dev `nft` is any ERC721. The house verifies it holds the lot after the transfer, which
     ///      binds an honest implementation but not a contract that also lies about `ownerOf`: no
     ///      on-chain check distinguishes a collection that reports state truthfully from one
