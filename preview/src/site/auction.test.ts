@@ -19,6 +19,7 @@ function mockAuction(overrides: Partial<AuctionState> = {}): AuctionState {
     reserveUnits: 1n,
     highestUnits: 0n,
     highestBidder: ZERO_ADDR,
+    highestCards: [],
     settled: false,
     lotClaimed: false,
     minimumUnits: 1n,

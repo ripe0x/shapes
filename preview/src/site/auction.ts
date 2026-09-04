@@ -42,6 +42,9 @@ export interface AuctionState {
   reserveUnits: bigint;
   highestUnits: bigint;
   highestBidder: `0x${string}`;
+  /** Cards the standing bidder has in escrow: the bid itself, across every top-up. Empty before
+   *  the first bid and again once the seller claims the proceeds. */
+  highestCards: bigint[];
   settled: boolean;
   /** True once claimLot delivered the token to the winner. */
   lotClaimed: boolean;
@@ -228,8 +231,11 @@ export async function loadAuction(
   const raw = await publicClient.readContract({...house, functionName: "auctions", args: [auctionId]});
   if (raw.seller === ZERO) return null;
 
-  const [minimumUnits, yourUnits, yourCards, block] = await Promise.all([
+  const [minimumUnits, highestCards, yourUnits, yourCards, block] = await Promise.all([
     publicClient.readContract({...house, functionName: "minimumBid", args: [auctionId]}),
+    raw.highestBidder === ZERO
+      ? Promise.resolve([] as readonly bigint[])
+      : publicClient.readContract({...house, functionName: "escrowedCards", args: [auctionId, raw.highestBidder]}),
     viewer
       ? publicClient.readContract({...house, functionName: "bidUnits", args: [auctionId, viewer]})
       : Promise.resolve(0n),
@@ -251,6 +257,7 @@ export async function loadAuction(
     reserveUnits: raw.reserveUnits,
     highestUnits: raw.highestUnits,
     highestBidder: raw.highestBidder,
+    highestCards: [...highestCards],
     settled: raw.settled,
     lotClaimed: raw.lotClaimed,
     minimumUnits: BigInt(minimumUnits),
