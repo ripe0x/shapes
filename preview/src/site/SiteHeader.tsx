@@ -1,6 +1,7 @@
 import React from "react";
 import {C, FONT} from "./theme";
 import {SyncStatus} from "./ui";
+import {MobileNav} from "./MobileNav";
 import type {View} from "./SiteApp";
 
 /** The site-wide header: wordmark, view nav, and the connect / account control. Rendered by
@@ -53,7 +54,7 @@ export function SiteHeader({
         ) : (
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")}>SHAPES</button>
         )}
-        <nav className="site-nav" style={{display: "flex", gap: "clamp(20px, 4vw, 40px)"}}>
+        <nav className="site-nav">
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
             MINT
           </button>
@@ -62,64 +63,129 @@ export function SiteHeader({
           </button>
         </nav>
         <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={onRetryRefresh} />
-        <div className="site-account" ref={accountMenuRef} style={{position: "relative"}}>
-          <button
-            type="button"
-            className="site-connect-btn"
-            aria-haspopup={isConnected ? "menu" : undefined}
-            aria-expanded={isConnected ? accountMenuOpen : undefined}
-            onClick={() =>
-              wrongChain
-                ? onSwitchChain()
-                : isConnected
-                  ? setAccountMenuOpen((open) => !open)
-                  : onConnect()
-            }
-          >
-            <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
-              {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
-            </span>
-            {isConnected && <span aria-hidden="true">▾</span>}
-          </button>
-          {isConnected && accountMenuOpen && (
-            <div
-              role="menu"
-              aria-label="Wallet account"
-              style={{
-                position: "absolute",
-                top: "calc(100% + 8px)",
-                right: 0,
-                minWidth: 180,
-                border: `1px solid ${C.border}`,
-                background: C.page,
-                boxShadow: "0 12px 30px rgba(0, 0, 0, 0.12)",
-                zIndex: 30,
-              }}
+        {/* Wraps both the desktop account control and the mobile nav's account row so the
+            outside-click handler below (keyed on this one ref) treats either as "inside" no
+            matter which layout is visible. display: contents keeps it out of the flex layout. */}
+        <div ref={accountMenuRef} style={{display: "contents"}}>
+          <div className="site-account" style={{position: "relative"}}>
+            <button
+              type="button"
+              className="site-connect-btn"
+              aria-haspopup={isConnected ? "menu" : undefined}
+              aria-expanded={isConnected ? accountMenuOpen : undefined}
+              onClick={() =>
+                wrongChain
+                  ? onSwitchChain()
+                  : isConnected
+                    ? setAccountMenuOpen((open) => !open)
+                    : onConnect()
+              }
             >
-              <button
-                type="button"
-                role="menuitem"
-                className="account-menu-item"
-                onClick={() => {
-                  setAccountMenuOpen(false);
-                  go("collection");
+              <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
+                {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
+              </span>
+              {isConnected && <span aria-hidden="true">▾</span>}
+            </button>
+            {isConnected && accountMenuOpen && (
+              <div
+                role="menu"
+                aria-label="Wallet account"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  minWidth: 180,
+                  border: `1px solid ${C.border}`,
+                  background: C.page,
+                  boxShadow: "0 12px 30px rgba(0, 0, 0, 0.12)",
+                  zIndex: 30,
                 }}
               >
-                MY SHAPES
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="account-menu-item"
-                onClick={() => {
-                  setAccountMenuOpen(false);
-                  onDisconnect();
-                }}
-              >
-                DISCONNECT
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    go("collection");
+                  }}
+                >
+                  MY SHAPES
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="account-menu-item"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    onDisconnect();
+                  }}
+                >
+                  DISCONNECT
+                </button>
+              </div>
+            )}
+          </div>
+          <MobileNav
+            items={[
+              {label: "MINT", active: active === "mint", onClick: () => go("mint")},
+              {label: "GALLERY", active: active === "gallery", onClick: () => go("gallery")},
+              ...(isConnected
+                ? [{label: "MY SHAPES", active: active === "collection", onClick: () => go("collection")}]
+                : []),
+            ]}
+            accountSlot={(closeNav) => (
+              <div className="site-mobile-nav-account">
+                <button
+                  type="button"
+                  className="btn-ghost site-mobile-nav-row"
+                  aria-haspopup={isConnected ? "menu" : undefined}
+                  aria-expanded={isConnected ? accountMenuOpen : undefined}
+                  onClick={() => {
+                    if (wrongChain) {
+                      closeNav();
+                      onSwitchChain();
+                    } else if (isConnected) {
+                      setAccountMenuOpen((o) => !o);
+                    } else {
+                      closeNav();
+                      onConnect();
+                    }
+                  }}
+                >
+                  {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
+                </button>
+                {isConnected && accountMenuOpen && (
+                  <div role="menu" aria-label="Wallet account">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="btn-ghost site-mobile-nav-row"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        closeNav();
+                        go("collection");
+                      }}
+                    >
+                      MY SHAPES
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="btn-ghost site-mobile-nav-row"
+                      onClick={() => {
+                        setAccountMenuOpen(false);
+                        closeNav();
+                        onDisconnect();
+                      }}
+                    >
+                      DISCONNECT
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          />
         </div>
       </div>
     </header>

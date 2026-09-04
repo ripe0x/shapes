@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import { SiteFooter } from "@shared/site/SiteFooter";
+import { MobileNav } from "@shared/site/MobileNav";
 import { DOCS_NAV, DOCS_PAGES, docsNeighbors, pageBySlug, type DocsPage } from "../nav";
 import { renderDoc } from "../render";
 
@@ -55,10 +56,16 @@ export default async function DocsPage({ params }: { params: Promise<Params> }) 
       <header className="site-header">
         <div className="site-header-inner">
           <Link href="/" className="site-nav-link">SHAPES</Link>
-          <nav className="site-nav" style={{ display: "flex", gap: "clamp(20px, 4vw, 40px)" }}>
+          <nav className="site-nav">
             <Link href="/mint" className="site-nav-link" style={{ color: "var(--muted)" }}>MINT</Link>
             <Link href="/gallery" className="site-nav-link" style={{ color: "var(--muted)" }}>GALLERY</Link>
           </nav>
+          <MobileNav
+            items={[
+              { label: "MINT", href: "/mint" },
+              { label: "GALLERY", href: "/gallery" },
+            ]}
+          />
         </div>
       </header>
 
