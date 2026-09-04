@@ -82,8 +82,11 @@ interface IShapeAuctionHouse is IShapeCardEscrow {
     /// @notice Number of auctions ever created. Ids are issued from 0.
     function auctionCount() external view returns (uint256);
 
-    /// @notice Escrows an ERC721 and opens an auction on it, priced in Shapes, that accepts bids
-    ///         from `startTime`.
+    /// @notice Escrows an ERC721 and opens an auction on it, priced in Shapes, that opens for
+    ///         bids at creation. The clock that ends the auction starts at the first bid, so an
+    ///         auction cannot expire unsold because nobody was watching on day one.
+    ///         `IShapeAuctionHouseStartTime.createAuction` is the overload that accepts a
+    ///         scheduled `startTime` instead.
     /// @dev `nft` is any ERC721. The house verifies it holds the lot after the transfer, which
     ///      binds an honest implementation but not a contract that also lies about `ownerOf`: no
     ///      on-chain check distinguishes a collection that reports state truthfully from one
@@ -107,16 +110,13 @@ interface IShapeAuctionHouse is IShapeCardEscrow {
     /// @param minIncrementBps How far a bid must clear the standing one, in basis points.
     /// @param extensionWindow A bid inside this many seconds of the end pushes the end out by it.
     ///        At most `duration`.
-    /// @param startTime Unix time bids open. Zero or a past time opens the listing at creation.
-    ///        At most `MAX_DURATION` after the current block time.
     function createAuction(
         address nft,
         uint256 tokenId,
         uint64 duration,
         uint64 reserveUnits,
         uint16 minIncrementBps,
-        uint32 extensionWindow,
-        uint64 startTime
+        uint32 extensionWindow
     ) external returns (uint256 auctionId);
 
     /// @notice Close an auction that never received a bid. Seller only. Records the outcome and

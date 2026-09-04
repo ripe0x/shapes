@@ -267,6 +267,7 @@ export const auctionHouseAbi = parseAbi([
   "function mintCostFor(uint256 backingWei) view returns (uint256)",
   "function getAuctionFor(address nft, uint256 tokenId) view returns (bool exists, uint256 auctionId)",
   "function hasAuctionFor(address nft, uint256 tokenId) view returns (bool)",
+  "function createAuction(address nft, uint256 tokenId, uint64 duration, uint64 reserveUnits, uint16 minIncrementBps, uint32 extensionWindow) returns (uint256 auctionId)",
   "function createAuction(address nft, uint256 tokenId, uint64 duration, uint64 reserveUnits, uint16 minIncrementBps, uint32 extensionWindow, uint64 startTime) returns (uint256 auctionId)",
   "function cancelAuction(uint256 auctionId)",
   "function bid(uint256 auctionId, uint256[] cardIds, uint256 ethBackingWei) payable",

@@ -111,7 +111,7 @@ contract ReentrantCancelSeller is IERC721Receiver {
     function list(uint256 amount, uint64 duration) external returns (uint256) {
         uint256 lot = shapes.mint{value: amount + shapes.mintFee()}(amount);
         shapes.setApprovalForAll(address(house), true);
-        auctionId = house.createAuction(address(shapes), lot, duration, 0, 0, 0, 0);
+        auctionId = house.createAuction(address(shapes), lot, duration, 0, 0, 0);
         return auctionId;
     }
 
@@ -174,7 +174,7 @@ contract AuctionSecurityTest is Test {
 
         vm.prank(seller);
         vm.expectRevert();
-        house.createAuction(address(fake), 1, 1 days, 100, 0, 0, 0);
+        house.createAuction(address(fake), 1, 1 days, 100, 0, 0);
 
         assertEq(house.auctionCount(), 0, "no auction was opened over a non-conforming contract");
     }
@@ -189,7 +189,7 @@ contract AuctionSecurityTest is Test {
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
-        uint256 a = house.createAuction(address(shapes), lot, 1, 100, 0, 0, 0);
+        uint256 a = house.createAuction(address(shapes), lot, 1, 100, 0, 0);
 
         vm.prank(alice);
         uint256 card = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
@@ -219,7 +219,7 @@ contract AuctionSecurityTest is Test {
         vm.prank(seller);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(seller);
-        uint256 a = house.createAuction(address(shapes), lot, 1 days, 1, 0, 0, 0);
+        uint256 a = house.createAuction(address(shapes), lot, 1 days, 1, 0, 0);
 
         vm.prank(seller);
         uint256 card = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
@@ -244,15 +244,15 @@ contract AuctionSecurityTest is Test {
 
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.DurationOutOfRange.selector);
-        house.createAuction(address(shapes), lot, max + 1, 1, 0, 0, 0);
+        house.createAuction(address(shapes), lot, max + 1, 1, 0, 0);
 
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.ExtensionWindowTooLong.selector);
-        house.createAuction(address(shapes), lot, 1 days, 1, 0, uint32(1 days + 1), 0);
+        house.createAuction(address(shapes), lot, 1 days, 1, 0, uint32(1 days + 1));
 
         // The boundaries themselves are accepted.
         vm.prank(seller);
-        uint256 a = house.createAuction(address(shapes), lot, max, 1, 0, uint32(max), 0);
+        uint256 a = house.createAuction(address(shapes), lot, max, 1, 0, uint32(max));
         assertEq(shapes.ownerOf(lot), address(house), "lot escrowed at the boundary");
         a;
     }
@@ -266,7 +266,7 @@ contract AuctionSecurityTest is Test {
 
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.LotNotReceived.selector);
-        fakeHouse.createAuction(address(fake), 1, 1 days, 1, 0, 0, 0);
+        fakeHouse.createAuction(address(fake), 1, 1 days, 1, 0, 0);
 
         assertEq(fakeHouse.auctionCount(), 0, "no auction over a lot the house never received");
     }
@@ -300,7 +300,7 @@ contract AuctionSecurityTest is Test {
         vm.prank(seller2);
         shapes2.setApprovalForAll(address(house2), true);
         vm.prank(seller2);
-        uint256 a = house2.createAuction(address(shapes2), lot, 1 days, 1, 0, 0, 0);
+        uint256 a = house2.createAuction(address(shapes2), lot, 1 days, 1, 0, 0);
 
         // A bidder takes the ETH path. The escrow mint pays nobody, so `mal`'s callback never runs.
         address carol = makeAddr("carol");

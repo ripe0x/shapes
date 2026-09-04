@@ -168,7 +168,7 @@ contract V9RecordsAndAuctionTest is AuditBase {
 
         vm.startPrank(alice);
         shapes.setApprovalForAll(address(house), true);
-        uint256 auctionId = house.createAuction(address(shapes), 0, 1 days, 1, 500, 1 hours, 0);
+        uint256 auctionId = house.createAuction(address(shapes), 0, 1 days, 1, 500, 1 hours);
         vm.stopPrank();
 
         assertEq(shapes.ownerOf(0), address(house), "the house holds the lot");
@@ -244,7 +244,7 @@ contract V9RecordsAndAuctionTest is AuditBase {
 
         vm.startPrank(alice);
         shapes.setApprovalForAll(address(house), true);
-        uint256 auctionId = house.createAuction(address(shapes), 0, 1 days, 1, 500, 0, 0);
+        uint256 auctionId = house.createAuction(address(shapes), 0, 1 days, 1, 500, 0);
         vm.stopPrank();
 
         // The same token cannot be listed twice while the house still holds it.
@@ -254,7 +254,7 @@ contract V9RecordsAndAuctionTest is AuditBase {
                 IShapeAuctionHouse.AuctionAlreadyExistsForToken.selector, address(shapes), uint256(0)
             )
         );
-        house.createAuction(address(shapes), 0, 1 days, 1, 500, 0, 0);
+        house.createAuction(address(shapes), 0, 1 days, 1, 500, 0);
 
         // A bid of no cards and no ETH is refused.
         vm.prank(bob);

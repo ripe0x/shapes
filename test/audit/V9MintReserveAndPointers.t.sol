@@ -164,7 +164,7 @@ contract V9MintReserveAndPointersTest is AuditBase {
         lot.mintTo(alice, 1);
         vm.startPrank(alice);
         lot.setApprovalForAll(address(house), true);
-        uint256 auctionId = house.createAuction(address(lot), 1, 1 days, 1, 500, 0, 0);
+        uint256 auctionId = house.createAuction(address(lot), 1, 1 days, 1, 500, 0);
         vm.stopPrank();
 
         vm.warp(start - 1);

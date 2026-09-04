@@ -872,8 +872,8 @@ DURATION=3600
 tx 1 "$SHAPES" 'setApprovalForAll(address,bool)' "$HOUSE" true >/dev/null
 LOT=$OWNER_TOKEN
 AUCTION=$(rc "$HOUSE" 'auctionCount()(uint256)')
-GAS=2000000 tx 1 "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32,uint64)' \
-  "$SHAPES" "$LOT" "$DURATION" 1 500 60 0 >/dev/null
+GAS=2000000 tx 1 "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32)' \
+  "$SHAPES" "$LOT" "$DURATION" 1 500 60 >/dev/null
 assert_eq "lot escrowed" "$(rc "$SHAPES" 'ownerOf(uint256)(address)' "$LOT")" "$HOUSE"
 assert_eq "the house owns the collection while it holds the owner token" \
   "$(rc "$SHAPES" 'owner()(address)')" "$HOUSE"
@@ -917,8 +917,8 @@ GAS=3000000 tx 1 "$HOUSE" 'claimProceeds(uint256)' "$AUCTION" >/dev/null
 # An auction nobody bid on: cancelled by its seller, then pulled back.
 CANCELLED=$(rc "$HOUSE" 'auctionCount()(uint256)')
 tx 0 "$SHAPES" 'setApprovalForAll(address,bool)' "$HOUSE" true >/dev/null
-GAS=2000000 tx 0 "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32,uint64)' \
-  "$SHAPES" "$SPARE" "$DURATION" 1 500 60 0 >/dev/null
+GAS=2000000 tx 0 "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32)' \
+  "$SHAPES" "$SPARE" "$DURATION" 1 500 60 >/dev/null
 GAS=2000000 tx 0 "$HOUSE" 'cancelAuction(uint256)' "$CANCELLED" >/dev/null
 GAS=2000000 tx 0 "$HOUSE" 'claimLot(uint256)' "$CANCELLED" >/dev/null
 assert_eq "the cancelled lot came home" "$(rc "$SHAPES" 'ownerOf(uint256)(address)' "$SPARE")" "$W0"

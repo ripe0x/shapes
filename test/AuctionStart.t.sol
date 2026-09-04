@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {AuctionBase} from "./AuctionHouse.t.sol";
 import {IShapeAuctionHouse} from "../src/interfaces/IShapeAuctionHouse.sol";
+import {IShapeAuctionHouseStartTime} from "../src/interfaces/IShapeAuctionHouseStartTime.sol";
 
 /// @dev Bids open at `startTime`; before it, bid reverts `NotStarted`.
 contract AuctionStartTest is AuctionBase {
@@ -11,6 +12,27 @@ contract AuctionStartTest is AuctionBase {
         auctionId = house.createAuction(
             address(shapes), lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION, startTime
         );
+    }
+
+    /// @dev The live mainnet and Sepolia `AdminOps` libraries check this exact id in
+    ///      `Shapes.setPointer`. A change to the `IShapeAuctionHouse` function set makes every
+    ///      live token refuse a new house.
+    function test_PointerInterfaceIdIsFrozen() public view {
+        assertEq(type(IShapeAuctionHouse).interfaceId, bytes4(0xaa0978b5));
+        assertTrue(house.supportsInterface(type(IShapeAuctionHouse).interfaceId));
+        assertTrue(house.supportsInterface(type(IShapeAuctionHouseStartTime).interfaceId));
+    }
+
+    function test_SixParameterCreateAuctionOpensImmediatelyAndAcceptsABid() public {
+        vm.prank(seller);
+        uint256 id =
+            house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        assertEq(house.auctions(id).startTime, 0);
+
+        uint256 card = _mintCard(alice, DENOMS[4]);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+        assertEq(house.auctions(id).highestBidder, alice);
     }
 
     function test_BidBeforeStartTimeReverts() public {

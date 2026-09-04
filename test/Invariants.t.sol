@@ -1089,7 +1089,7 @@ contract AuctionHandler is Test, IERC721Receiver {
         vm.prank(seller);
         try shapes.mint{value: cost}(DENOMS[2]) returns (uint256 lot) {
             vm.prank(seller);
-            try house.createAuction(address(shapes), lot, duration, reserve, 500, extensionWindow, 0) returns (
+            try house.createAuction(address(shapes), lot, duration, reserve, 500, extensionWindow) returns (
                 uint256 id
             ) {
                 auctionIds.push(id);

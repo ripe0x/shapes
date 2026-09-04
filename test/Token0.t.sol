@@ -55,7 +55,7 @@ contract Token0Test is Test {
     /// ERC721 owner, and therefore `Shapes.owner()`, is the house; admin remains independent.
     function test_DeployerCanAuctionShapeZeroLater() public {
         shapes.approve(address(house), 0);
-        uint256 auctionId = house.createAuction(address(shapes), 0, 24 hours, 0, 500, 15 minutes, 0);
+        uint256 auctionId = house.createAuction(address(shapes), 0, 24 hours, 0, 500, 15 minutes);
 
         assertEq(shapes.owner(), address(house));
         assertEq(shapes.admin(), address(this));
@@ -83,7 +83,7 @@ contract Token0Test is Test {
         vm.prank(artist);
         shapes.setApprovalForAll(address(house), true);
         vm.prank(artist);
-        uint256 a = house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes, 0);
+        uint256 a = house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes);
 
         assertEq(shapes.ownerOf(id), address(house), "house escrows it");
         assertEq(house.auctions(a).seller, artist, "artist is the seller");
@@ -139,6 +139,6 @@ contract Token0Test is Test {
         uint256 id = shapes.mint{value: DENOMS[0] + MINT_FEE}(DENOMS[0]);
         vm.prank(stranger);
         vm.expectRevert();
-        house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes, 0);
+        house.createAuction(address(shapes), id, 24 hours, 1, 500, 15 minutes);
     }
 }

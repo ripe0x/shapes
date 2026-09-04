@@ -134,7 +134,7 @@ contract MintStartBoundaryTest is Test {
         uint256 lot = _lotFor(alice);
 
         vm.prank(alice);
-        uint256 auctionId = house.createAuction(_lotNft, lot, 1 days, 1, 500, 300, 0);
+        uint256 auctionId = house.createAuction(_lotNft, lot, 1 days, 1, 500, 300);
 
         uint256[] memory none = new uint256[](0);
         uint256 backing = Denominations.amountAt(1);
@@ -165,7 +165,7 @@ contract MintStartBoundaryTest is Test {
         uint256 lot = _lotFor(alice);
 
         vm.prank(alice);
-        uint256 auctionId = house.createAuction(_lotNft, lot, 1 days, 1, 500, 300, 0);
+        uint256 auctionId = house.createAuction(_lotNft, lot, 1 days, 1, 500, 300);
 
         // Shape #0 is the only card in existence; hand it to bob and let him bid it.
         shapes.transferFrom(address(this), bob, 0);

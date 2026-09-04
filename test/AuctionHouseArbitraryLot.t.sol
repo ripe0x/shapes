@@ -82,7 +82,7 @@ contract AuctionHouseArbitraryLotTest is Test {
 
     function test_SellsAPlainERC721EndToEnd() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 500, 15 minutes, 0);
+        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 500, 15 minutes);
         assertEq(nft.ownerOf(1), address(house), "lot escrowed");
 
         uint256 card = _cardFor(alice, DENOMS[4]);
@@ -110,7 +110,7 @@ contract AuctionHouseArbitraryLotTest is Test {
         address nobody = address(0xdeaddead);
         vm.prank(seller);
         vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.LotHasNoCode.selector, nobody));
-        house.createAuction(nobody, 1, DURATION, 0, 0, 0, 0);
+        house.createAuction(nobody, 1, DURATION, 0, 0, 0);
     }
 
     function test_LotNotERC721IsRejected() public {
@@ -120,7 +120,7 @@ contract AuctionHouseArbitraryLotTest is Test {
         // renderer (has code, does not claim ERC721) to hit LotNotERC721 specifically.
         vm.prank(seller);
         vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.LotNotERC721.selector, address(renderer)));
-        house.createAuction(address(renderer), 1, DURATION, 0, 0, 0, 0);
+        house.createAuction(address(renderer), 1, DURATION, 0, 0, 0);
     }
 
     function test_NotTokenOwnerOrApprovedIsRejected() public {
@@ -130,7 +130,7 @@ contract AuctionHouseArbitraryLotTest is Test {
                 IShapeAuctionHouse.NotTokenOwnerOrApproved.selector, address(nft), 1, alice
             )
         );
-        house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
     }
 
     /// @notice An approved operator, not just the owner, may list.
@@ -138,7 +138,7 @@ contract AuctionHouseArbitraryLotTest is Test {
         vm.prank(seller);
         nft.approve(alice, 1);
         vm.prank(alice);
-        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
         assertEq(house.auctions(id).seller, alice, "the approved caller is the seller of record");
         assertEq(nft.ownerOf(1), address(house), "lot escrowed via the approved caller");
     }
@@ -146,7 +146,7 @@ contract AuctionHouseArbitraryLotTest is Test {
     function test_AuctionAlreadyExistsForTokenIsRejected() public {
         nft.mint(seller, 2);
         vm.prank(seller);
-        house.createAuction(address(nft), 2, DURATION, 0, 0, 0, 0);
+        house.createAuction(address(nft), 2, DURATION, 0, 0, 0);
 
         // The house still holds token 2 (unsettled), so a second listing for the same token
         // reverts even though the seller is unchanged and would otherwise be authorized.
@@ -154,14 +154,14 @@ contract AuctionHouseArbitraryLotTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IShapeAuctionHouse.AuctionAlreadyExistsForToken.selector, address(nft), 2)
         );
-        house.createAuction(address(nft), 2, DURATION, 0, 0, 0, 0);
+        house.createAuction(address(nft), 2, DURATION, 0, 0, 0);
     }
 
     /* ------------------------------ claimLot ------------------------------ */
 
     function test_ClaimLotTwiceIsRejected() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
         uint256 card = _cardFor(alice, DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
@@ -179,7 +179,7 @@ contract AuctionHouseArbitraryLotTest is Test {
 
     function test_ClaimLotByAnyoneElseIsRejected() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
         uint256 card = _cardFor(alice, DENOMS[4]);
         uint256[] memory ids = new uint256[](1);
         ids[0] = card;
@@ -196,7 +196,7 @@ contract AuctionHouseArbitraryLotTest is Test {
 
     function test_ClaimLotRoutesToSellerWhenCancelledUnsold() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
         vm.prank(seller);
         house.cancelAuction(id);
 
@@ -213,7 +213,7 @@ contract AuctionHouseArbitraryLotTest is Test {
     ///         settlement or cancellation.
     function test_TokenIsRelistableOnlyAfterClaimLot() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
         vm.prank(seller);
         house.cancelAuction(id);
 
@@ -221,13 +221,13 @@ contract AuctionHouseArbitraryLotTest is Test {
         vm.expectRevert(
             abi.encodeWithSelector(IShapeAuctionHouse.AuctionAlreadyExistsForToken.selector, address(nft), 1)
         );
-        house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
 
         vm.prank(seller);
         house.claimLot(id);
 
         vm.prank(seller);
-        uint256 second = house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        uint256 second = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
         assertTrue(second != id, "a fresh auction id was issued");
     }
 
@@ -239,7 +239,7 @@ contract AuctionHouseArbitraryLotTest is Test {
         assertFalse(house.hasAuctionFor(address(nft), 1));
 
         vm.prank(seller);
-        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0, 0);
+        uint256 id = house.createAuction(address(nft), 1, DURATION, 0, 0, 0);
 
         (bool exists, uint256 auctionId) = house.getAuctionFor(address(nft), 1);
         assertTrue(exists);
