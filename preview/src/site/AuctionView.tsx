@@ -22,12 +22,30 @@ import {
 } from "./auction";
 import type {SiteData, SiteToken} from "./data";
 import {shapeTitle} from "./shapeTitle";
+import {TokenSummary} from "./TokenView";
 
 /** Font size for the token name, the panel's dominant element. */
 const HERO_SIZE = 40;
 
-/** Font size for the current-bid amount and the countdown, which share one row at equal size. */
+/** Font size for the countdown and the current-bid amount, stacked at equal size. */
 const PRICE_SIZE = 22;
+
+/** Escrowed cards drawn beside the current bid before the rest collapse to a "+N" count. A
+ *  card-mode bid can escrow any number of cards, so the hero row needs a bound. */
+const HERO_CARD_LIMIT = 5;
+
+/** Escrowed cards ordered for display: largest denomination first, then by id. Cards missing from
+ *  the live set (data not loaded yet) sort last. */
+function orderCards(ids: bigint[], data: SiteData | null): {id: bigint; token: SiteToken | undefined}[] {
+  return ids
+    .map((id) => ({id, token: data?.tokens.find((t) => t.id === id)}))
+    .sort((a, b) => {
+      const da = a.token?.di ?? -1;
+      const db = b.token?.di ?? -1;
+      if (da !== db) return db - da;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+}
 
 /** Top padding of the hero row, in px. Reused as the target bottom margin below the artwork so
  *  the image sits with matching space above and below within the viewport. */
@@ -116,6 +134,11 @@ export function AuctionView({
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [ethAmount, setEthAmount] = React.useState("");
   const [asking, setAsking] = React.useState(false);
+  // A card thumbnail opened for a closer look: the ids of the set it was clicked from (the
+  // standing bid, an escrow, or one bid's cards) and the position within it, so the modal can
+  // step through the set.
+  const [detail, setDetail] = React.useState<{ids: bigint[]; index: number} | null>(null);
+  const openCard = (ids: bigint[], id: bigint) => setDetail({ids, index: ids.findIndex((x) => x === id)});
   // The confirm modal stays open while the bid is in flight so its stage line and the wallet
   // prompt are seen together. It closes when the op settles; the picks are cleared only on
   // success so a failed bid can be retried as it was.
@@ -215,6 +238,9 @@ export function AuctionView({
   const lotDenomLabel = lotToken ? DENOMINATIONS[lotToken.di]!.label : null;
   const lotIsOwnerToken = data?.ownerToken != null && data.ownerToken === auction.tokenId;
   const tokenName = lotToken?.meta.name || shapeTitle(auction.tokenId, lotIsOwnerToken);
+
+  // The standing bid as cards, shown beside its amount.
+  const heroCards = orderCards(auction.highestCards, data);
 
   // Cards the connected wallet holds, offered as bid material.
   const owned: SiteToken[] = (data?.tokens ?? []).filter(
@@ -343,32 +369,41 @@ export function AuctionView({
             )}
           </div>
 
-          <div>
-            <div style={{display: "flex"}}>
-              <div style={{flex: 1, minWidth: 0}}>
-                <div style={label}>
-                  {phase === "pre-bid" ? "RESERVE" : phase === "live" ? "CURRENT BID" : "FINAL BID"}
-                </div>
-                <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
-                  {phase === "pre-bid" ? unitsToEth(auction.reserveUnits) : unitsToEth(auction.highestUnits)}{" "}
-                  <span style={{fontSize: 12, color: C.muted}}>ETH</span>
-                </div>
+          {phase === "live" && left !== null && (
+            <div>
+              <div style={label}>ENDS IN</div>
+              <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
+                {formatCountdown(left)}
               </div>
-              {phase === "live" && left !== null && (
-                <>
-                  <div style={{width: 1, alignSelf: "stretch", backgroundColor: C.rule, margin: "0 20px"}} />
-                  <div style={{flex: 1, minWidth: 0}}>
-                    <div style={label}>ENDS IN</div>
-                    <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
-                      {formatCountdown(left)}
-                    </div>
-                  </div>
-                </>
+            </div>
+          )}
+
+          {/* The bid block, then its cards across the rest of the row, wrapping as needed. */}
+          <div style={{display: "flex"}}>
+            <div style={{flex: "0 0 auto"}}>
+              <div style={label}>
+                {phase === "pre-bid" ? "RESERVE" : phase === "live" ? "CURRENT BID" : "FINAL BID"}
+              </div>
+              <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
+                {phase === "pre-bid" ? unitsToEth(auction.reserveUnits) : unitsToEth(auction.highestUnits)}{" "}
+                <span style={{fontSize: 12, color: C.muted}}>ETH</span>
+              </div>
+              {phase !== "pre-bid" && (
+                <div style={{marginTop: 8, fontSize: 11, color: C.muted, overflowWrap: "anywhere"}}>
+                  {phase === "live" ? bidderIdentity : `Won by ${bidderIdentity}`}
+                </div>
               )}
             </div>
-            {phase !== "pre-bid" && (
-              <div style={{marginTop: 8, fontSize: 11, color: C.muted}}>
-                {phase === "live" ? bidderIdentity : `Won by ${bidderIdentity}`}
+            {heroCards.length > 0 && (
+              <div style={{flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 6, marginLeft: 16}}>
+                {heroCards.slice(0, HERO_CARD_LIMIT).map((c) => (
+                  <CardThumb key={c.id.toString()} id={c.id} token={c.token} size={44} onClick={() => openCard(heroCards.map((x) => x.id), c.id)} />
+                ))}
+                {heroCards.length > HERO_CARD_LIMIT && (
+                  <div style={{alignSelf: "center", fontSize: 11, color: C.muted, whiteSpace: "nowrap"}}>
+                    +{heroCards.length - HERO_CARD_LIMIT}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -476,31 +511,17 @@ export function AuctionView({
                     <div style={{fontSize: 12, color: C.muted}}>This wallet holds no Shapes.</div>
                   ) : (
                     <div style={{display: "flex", flexWrap: "wrap", gap: 12}}>
-                      {owned.map((t) => {
-                        const on = picked.has(t.id.toString());
-                        return (
-                          <button
-                            key={t.id.toString()}
-                            type="button"
-                            className="btn-ghost"
-                            onClick={() => toggle(t.id)}
-                            style={{width: 72, textAlign: "left"}}
-                          >
-                            <div style={{outline: on ? `2px solid ${C.ink}` : "none", outlineOffset: 2}}>
-                              <div style={{width: "100%", aspectRatio: "250 / 350", backgroundColor: C.art}}>
-                                <img
-                                  src={localArt(t.seed, t.backing, t.inkGene)}
-                                  alt=""
-                                  style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
-                                />
-                              </div>
-                            </div>
-                            <div style={{marginTop: 6, fontSize: 10, color: on ? C.ink : C.muted}}>
-                              #{t.id.toString()} · {DENOMINATIONS[t.di]!.label} ETH
-                            </div>
-                          </button>
-                        );
-                      })}
+                      {owned.map((t) => (
+                        <CardThumb
+                          key={t.id.toString()}
+                          id={t.id}
+                          token={t}
+                          size={72}
+                          caption={`#${t.id.toString()} · ${DENOMINATIONS[t.di]!.label} ETH`}
+                          selected={picked.has(t.id.toString())}
+                          onClick={() => toggle(t.id)}
+                        />
+                      ))}
                     </div>
                   )}
                   <div
@@ -648,64 +669,42 @@ export function AuctionView({
                 chainId={dep.chainId}
                 data={data}
                 now={now}
-                onOpenToken={onOpenToken}
+                onOpenCard={openCard}
               />
             ))
           )}
         </Section>
       )}
 
-      {auction.yourCards.length > 0 && (
+      {/* An outbid bidder's cards, with the withdrawal. The leader's cards are the standing bid,
+          already drawn beside its amount in the hero row. */}
+      {auction.yourCards.length > 0 && !yours && (
         <Section title="YOUR ESCROW" pad="26px 48px 36px 32px">
           <p style={{margin: "0 0 22px", fontSize: 13, lineHeight: 1.75, maxWidth: "60ch"}}>
-            {yours && !auction.settled
-              ? "These are the standing bid. They stay here until someone outbids you."
-              : yours
-                ? "You won. These go to the seller when they claim them."
-                : "Yours to take back."}
+            Yours to take back.
           </p>
           <div style={{display: "flex", flexWrap: "wrap", gap: 14}}>
-            {auction.yourCards.map((id) => {
-              const t = data?.tokens.find((x) => x.id === id);
-              return (
-                <button
-                  key={id.toString()}
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => onOpenToken(id)}
-                  style={{width: 72, textAlign: "left"}}
-                >
-                  {t && (
-                    <div style={{width: "100%", aspectRatio: "250 / 350", backgroundColor: C.art}}>
-                      <img
-                        src={localArt(t.seed, t.backing, t.inkGene)}
-                        alt=""
-                        style={{display: "block", width: "100%", height: "100%", objectFit: "cover"}}
-                      />
-                    </div>
-                  )}
-                  <div style={{marginTop: 6, fontSize: 10, color: C.bodyDim}}>
-                    #{id.toString()}
-                    {t ? ` · ${DENOMINATIONS[t.di]!.label} ETH` : ""}
-                  </div>
-                </button>
-              );
-            })}
+            {orderCards(auction.yourCards, data).map((c, _, all) => (
+              <CardThumb
+                key={c.id.toString()}
+                id={c.id}
+                token={c.token}
+                size={72}
+                caption={`#${c.id.toString()}${c.token ? ` · ${DENOMINATIONS[c.token.di]!.label} ETH` : ""}`}
+                onClick={() => openCard(all.map((x) => x.id), c.id)}
+              />
+            ))}
           </div>
-          {!yours && (
-            <>
-              <button
-                type="button"
-                className="btn-outline"
-                onClick={onWithdraw}
-                disabled={!!busy}
-                style={{marginTop: 24, padding: "10px 20px"}}
-              >
-                {txStageLabel("withdraw", "Take them back", busy, pendingTx)}
-              </button>
-              {errLine("withdraw")}
-            </>
-          )}
+          <button
+            type="button"
+            className="btn-outline"
+            onClick={onWithdraw}
+            disabled={!!busy}
+            style={{marginTop: 24, padding: "10px 20px"}}
+          >
+            {txStageLabel("withdraw", "Take them back", busy, pendingTx)}
+          </button>
+          {errLine("withdraw")}
         </Section>
       )}
 
@@ -759,6 +758,21 @@ export function AuctionView({
         </Section>
       )}
 
+      {detail !== null && (
+        <CardDetailModal
+          ids={detail.ids}
+          index={detail.index}
+          data={data}
+          address={address}
+          onStep={(index) => setDetail({...detail, index})}
+          onClose={() => setDetail(null)}
+          onOpenPage={() => {
+            setDetail(null);
+            onOpenToken(detail.ids[detail.index]!);
+          }}
+        />
+      )}
+
       <Section title="TERMS" last pad="26px 48px 34px 32px">
         <div style={{fontSize: 13, lineHeight: 1.9, color: C.bodyDim}}>
           <div>Reserve {unitsToEth(auction.reserveUnits)} ETH</div>
@@ -777,6 +791,124 @@ export function AuctionView({
   );
 }
 
+/** A card's details in a modal: the token page's summary for a live Shape, else a note that the
+ *  card is no longer live. Left and right arrow keys (and the ‹ › controls) step through `ids`,
+ *  the set the card was clicked from. Links out to the full token page. */
+function CardDetailModal({
+  ids,
+  index,
+  data,
+  address,
+  onStep,
+  onClose,
+  onOpenPage,
+}: {
+  ids: bigint[];
+  index: number;
+  data: SiteData | null;
+  address: `0x${string}` | undefined;
+  onStep: (index: number) => void;
+  onClose: () => void;
+  onOpenPage: () => void;
+}) {
+  const id = ids[index]!;
+  const token = data?.tokens.find((t) => t.id === id);
+  const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
+  const isOwnerToken = !!token && data?.ownerToken === token.id;
+  const hasPrev = index > 0;
+  const hasNext = index < ids.length - 1;
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" && hasPrev) onStep(index - 1);
+      else if (e.key === "ArrowRight" && hasNext) onStep(index + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, hasPrev, hasNext, onStep]);
+  return (
+    <Modal title={ids.length > 1 ? `SHAPE ${index + 1} OF ${ids.length}` : "SHAPE"} onCancel={onClose} maxWidth={860}>
+      {token && token.di >= 0 ? (
+        <TokenSummary token={token} isOwnerToken={isOwnerToken} owned={owned} />
+      ) : (
+        <div style={{fontSize: 13, lineHeight: 1.7, color: C.bodyDim}}>
+          {data ? `Shape ${id.toString()} is no longer live.` : "Reading the chain…"}
+        </div>
+      )}
+      <div style={{marginTop: 24, display: "flex", alignItems: "center", gap: 18, fontSize: 11, color: C.muted}}>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onOpenPage}
+          style={{fontSize: 11, color: C.muted, textDecoration: "underline", textUnderlineOffset: 3}}
+        >
+          Open Shape {id.toString()}
+        </button>
+        {ids.length > 1 && (
+          <span style={{marginLeft: "auto", display: "flex", gap: 14}}>
+            <button type="button" className="btn-ghost" onClick={() => onStep(index - 1)} disabled={!hasPrev} aria-label="Previous Shape" style={{fontSize: 14, color: hasPrev ? C.ink : C.muted}}>
+              ‹
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => onStep(index + 1)} disabled={!hasNext} aria-label="Next Shape" style={{fontSize: 14, color: hasNext ? C.ink : C.muted}}>
+              ›
+            </button>
+          </span>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/** One escrowed card as a clickable thumbnail. Renders the artwork from the live token when the
+ *  card is still live, else an id-only chip since its seed is no longer available to draw. */
+function CardThumb({
+  id,
+  token,
+  size,
+  caption,
+  selected = false,
+  onClick,
+}: {
+  id: bigint;
+  token: SiteToken | undefined;
+  size: number;
+  /** Text under the thumbnail. Omitted for the compact hero row, where the id and denomination
+   *  ride on the tooltip. */
+  caption?: string;
+  selected?: boolean;
+  onClick: () => void;
+}) {
+  const title = `#${id.toString()}${token ? ` · ${DENOMINATIONS[token.di]!.label} ETH` : ""}`;
+  return (
+    <button type="button" className="btn-ghost" onClick={onClick} title={title} aria-label={title} style={{width: size, textAlign: "left"}}>
+      <div style={{outline: selected ? `2px solid ${C.ink}` : "none", outlineOffset: 2}}>
+        {token ? (
+          <Art src={localArt(token.seed, token.backing, token.inkGene)} />
+        ) : (
+          <div
+            style={{
+              width: "100%",
+              aspectRatio: "250 / 350",
+              backgroundColor: C.art,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 9,
+              color: C.muted,
+            }}
+          >
+            #{id.toString()}
+          </div>
+        )}
+      </div>
+      {caption && (
+        <div style={{marginTop: size > 40 ? 6 : 4, fontSize: size > 40 ? 10 : 9, color: selected ? C.ink : C.muted}}>
+          {caption}
+        </div>
+      )}
+    </button>
+  );
+}
+
 /** One bid history row: the bidder, by name where they have one, the bidder's running total
  *  after this bid,
  *  thumbnails (each labeled with its denomination) of the cards this bid's transaction moved
@@ -786,13 +918,14 @@ function BidHistoryRow({
   chainId,
   data,
   now,
-  onOpenToken,
+  onOpenCard,
 }: {
   entry: BidHistoryEntry;
   chainId: number;
   data: SiteData | null;
   now: number;
-  onOpenToken: (id: bigint) => void;
+  /** Opens the card's details. */
+  onOpenCard: (ids: bigint[], id: bigint) => void;
 }) {
   const identity = useDisplayName(entry.bidder);
 
@@ -814,44 +947,18 @@ function BidHistoryRow({
         {entry.cards.length === 0 ? (
           <span style={{fontSize: 12, color: C.muted}}>—</span>
         ) : (
-          entry.cards.map((c) => {
-            // The card's own seed, from the live token list when it is still live; a card since
-            // composed, split, or redeemed falls back to an id-only chip since its seed is no
-            // longer available to render. The denomination label comes from the bid history
-            // entry itself, resolved at load time, so it still shows even for a card since gone.
-            const token = data?.tokens.find((t) => t.id === c.id);
-            const denomLabel = c.di >= 0 ? `${DENOMINATIONS[c.di]!.label} ETH` : "—";
-            return (
-              <button
-                key={c.id.toString()}
-                type="button"
-                className="btn-ghost"
-                onClick={() => onOpenToken(c.id)}
-                title={`#${c.id.toString()}${c.di >= 0 ? ` · ${denomLabel}` : ""}`}
-                style={{width: 36, textAlign: "center"}}
-              >
-                {token ? (
-                  <Art src={localArt(token.seed, token.backing, token.inkGene)} />
-                ) : (
-                  <div
-                    style={{
-                      width: 36,
-                      aspectRatio: "250 / 350",
-                      backgroundColor: C.art,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: 9,
-                      color: C.muted,
-                    }}
-                  >
-                    #{c.id.toString()}
-                  </div>
-                )}
-                <div style={{marginTop: 4, fontSize: 9, color: C.muted}}>{denomLabel}</div>
-              </button>
-            );
-          })
+          // The denomination label comes from the bid history entry itself, resolved at load
+          // time, so it still shows for a card since composed, split, or redeemed.
+          entry.cards.map((c) => (
+            <CardThumb
+              key={c.id.toString()}
+              id={c.id}
+              token={data?.tokens.find((t) => t.id === c.id)}
+              size={36}
+              caption={c.di >= 0 ? `${DENOMINATIONS[c.di]!.label} ETH` : "—"}
+              onClick={() => onOpenCard(entry.cards.map((x) => x.id), c.id)}
+            />
+          ))
         )}
       </div>
       <a
