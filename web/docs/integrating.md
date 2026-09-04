@@ -65,6 +65,14 @@ interface IShapePositionResolver {
 
 `renderer()` and `collection()` are readable by anyone. A contract can render any card from raw inputs through `IShapeRenderer` and `IShapeGeometry`, and `IShapeCollection.cardFor(seed, denomIndex)` previews a card no token exists for. See [Geometry and rendering](/docs/geometry).
 
+## Before you rely on it
+
+- **Approval is trust.** An approved operator can transfer a Shape to itself and redeem it, so approving a contract for a Shape hands over that Shape's full ETH value. Ask for the minimum approval a flow needs, and expect users to be asked the same.
+- **Price by value, not traits.** Artwork, ink gene and provenance carry no redemption value. `redeemableValueWei` is the number.
+- **Give value-moving calls gas headroom.** Every state-changing entrypoint runs behind a reentrancy guard whose slot is reset at the end of the call, earning a refund. `eth_estimateGas` reports the amount net of that refund, slightly below what the execution needs mid-flight, so a contract or script that forwards a hard gas limit must add a margin over the bare estimate. Wallets add one automatically.
+- **Never accept a Black Shape as payment.** `valueOf` is zero and `isBlack` is true.
+- **Artist status is not authority.** `artist()`, `artistSignature()` and `artistReleaseHash()` are attribution. An ERC-1271 attestation was valid when `attestArtist` ran; a later wallet change can make a fresh check fail.
+
 ## Things Shapes will not do
 
 - Hold a Shape itself. Minting or transferring to the Shapes address reverts.
