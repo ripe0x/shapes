@@ -134,8 +134,11 @@ export function AuctionView({
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [ethAmount, setEthAmount] = React.useState("");
   const [asking, setAsking] = React.useState(false);
-  // A card thumbnail opened for a closer look: the token shown in the details modal.
-  const [detailId, setDetailId] = React.useState<bigint | null>(null);
+  // A card thumbnail opened for a closer look: the ids of the set it was clicked from (the
+  // standing bid, an escrow, or one bid's cards) and the position within it, so the modal can
+  // step through the set.
+  const [detail, setDetail] = React.useState<{ids: bigint[]; index: number} | null>(null);
+  const openCard = (ids: bigint[], id: bigint) => setDetail({ids, index: ids.findIndex((x) => x === id)});
   // The confirm modal stays open while the bid is in flight so its stage line and the wallet
   // prompt are seen together. It closes when the op settles; the picks are cleared only on
   // success so a failed bid can be retried as it was.
@@ -394,7 +397,7 @@ export function AuctionView({
             {heroCards.length > 0 && (
               <div style={{flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 6, marginLeft: 16}}>
                 {heroCards.slice(0, HERO_CARD_LIMIT).map((c) => (
-                  <CardThumb key={c.id.toString()} id={c.id} token={c.token} size={44} onClick={() => setDetailId(c.id)} />
+                  <CardThumb key={c.id.toString()} id={c.id} token={c.token} size={44} onClick={() => openCard(heroCards.map((x) => x.id), c.id)} />
                 ))}
                 {heroCards.length > HERO_CARD_LIMIT && (
                   <div style={{alignSelf: "center", fontSize: 11, color: C.muted, whiteSpace: "nowrap"}}>
@@ -666,7 +669,7 @@ export function AuctionView({
                 chainId={dep.chainId}
                 data={data}
                 now={now}
-                onOpenCard={setDetailId}
+                onOpenCard={openCard}
               />
             ))
           )}
@@ -681,14 +684,14 @@ export function AuctionView({
             Yours to take back.
           </p>
           <div style={{display: "flex", flexWrap: "wrap", gap: 14}}>
-            {orderCards(auction.yourCards, data).map((c) => (
+            {orderCards(auction.yourCards, data).map((c, _, all) => (
               <CardThumb
                 key={c.id.toString()}
                 id={c.id}
                 token={c.token}
                 size={72}
                 caption={`#${c.id.toString()}${c.token ? ` · ${DENOMINATIONS[c.token.di]!.label} ETH` : ""}`}
-                onClick={() => setDetailId(c.id)}
+                onClick={() => openCard(all.map((x) => x.id), c.id)}
               />
             ))}
           </div>
@@ -755,15 +758,17 @@ export function AuctionView({
         </Section>
       )}
 
-      {detailId !== null && (
+      {detail !== null && (
         <CardDetailModal
-          id={detailId}
+          ids={detail.ids}
+          index={detail.index}
           data={data}
           address={address}
-          onClose={() => setDetailId(null)}
+          onStep={(index) => setDetail({...detail, index})}
+          onClose={() => setDetail(null)}
           onOpenPage={() => {
-            setDetailId(null);
-            onOpenToken(detailId);
+            setDetail(null);
+            onOpenToken(detail.ids[detail.index]!);
           }}
         />
       )}
@@ -787,25 +792,41 @@ export function AuctionView({
 }
 
 /** A card's details in a modal: the token page's summary for a live Shape, else a note that the
- *  card is no longer live. Links out to the full token page. */
+ *  card is no longer live. Left and right arrow keys (and the ‹ › controls) step through `ids`,
+ *  the set the card was clicked from. Links out to the full token page. */
 function CardDetailModal({
-  id,
+  ids,
+  index,
   data,
   address,
+  onStep,
   onClose,
   onOpenPage,
 }: {
-  id: bigint;
+  ids: bigint[];
+  index: number;
   data: SiteData | null;
   address: `0x${string}` | undefined;
+  onStep: (index: number) => void;
   onClose: () => void;
   onOpenPage: () => void;
 }) {
+  const id = ids[index]!;
   const token = data?.tokens.find((t) => t.id === id);
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
   const isOwnerToken = !!token && data?.ownerToken === token.id;
+  const hasPrev = index > 0;
+  const hasNext = index < ids.length - 1;
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft" && hasPrev) onStep(index - 1);
+      else if (e.key === "ArrowRight" && hasNext) onStep(index + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [index, hasPrev, hasNext, onStep]);
   return (
-    <Modal title="SHAPE" onCancel={onClose} maxWidth={860}>
+    <Modal title={ids.length > 1 ? `SHAPE ${index + 1} OF ${ids.length}` : "SHAPE"} onCancel={onClose} maxWidth={860}>
       {token && token.di >= 0 ? (
         <TokenSummary token={token} isOwnerToken={isOwnerToken} owned={owned} />
       ) : (
@@ -813,14 +834,26 @@ function CardDetailModal({
           {data ? `Shape ${id.toString()} is no longer live.` : "Reading the chain…"}
         </div>
       )}
-      <button
-        type="button"
-        className="btn-ghost"
-        onClick={onOpenPage}
-        style={{marginTop: 24, fontSize: 11, color: C.muted, textDecoration: "underline", textUnderlineOffset: 3}}
-      >
-        Open Shape {id.toString()}
-      </button>
+      <div style={{marginTop: 24, display: "flex", alignItems: "center", gap: 18, fontSize: 11, color: C.muted}}>
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onOpenPage}
+          style={{fontSize: 11, color: C.muted, textDecoration: "underline", textUnderlineOffset: 3}}
+        >
+          Open Shape {id.toString()}
+        </button>
+        {ids.length > 1 && (
+          <span style={{marginLeft: "auto", display: "flex", gap: 14}}>
+            <button type="button" className="btn-ghost" onClick={() => onStep(index - 1)} disabled={!hasPrev} aria-label="Previous Shape" style={{fontSize: 14, color: hasPrev ? C.ink : C.muted}}>
+              ‹
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => onStep(index + 1)} disabled={!hasNext} aria-label="Next Shape" style={{fontSize: 14, color: hasNext ? C.ink : C.muted}}>
+              ›
+            </button>
+          </span>
+        )}
+      </div>
     </Modal>
   );
 }
@@ -892,7 +925,7 @@ function BidHistoryRow({
   data: SiteData | null;
   now: number;
   /** Opens the card's details. */
-  onOpenCard: (id: bigint) => void;
+  onOpenCard: (ids: bigint[], id: bigint) => void;
 }) {
   const identity = useDisplayName(entry.bidder);
 
@@ -923,7 +956,7 @@ function BidHistoryRow({
               token={data?.tokens.find((t) => t.id === c.id)}
               size={36}
               caption={c.di >= 0 ? `${DENOMINATIONS[c.di]!.label} ETH` : "—"}
-              onClick={() => onOpenCard(c.id)}
+              onClick={() => onOpenCard(entry.cards.map((x) => x.id), c.id)}
             />
           ))
         )}
