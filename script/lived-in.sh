@@ -77,7 +77,7 @@ echo "    cd web && npm run dev            # http://localhost:3000"
 echo
 echo "  Start the indexer (optional):"
 echo "    cd indexer && PONDER_RPC_URL=$RPC PONDER_CHAIN_ID=$CHAIN_ID \\"
-echo "      SHAPES_ADDRESS=$SHAPES SHAPES_START_BLOCK=$FROM_BLOCK SHAPES_LADDER=mainnet npm run dev"
+echo "      SHAPES_ADDRESS=$SHAPES SHAPES_START_BLOCK=$FROM_BLOCK npm run dev"
 
 if [ -n "$FORK_PID" ]; then
   say "Chain running (PID $FORK_PID). Ctrl-C to stop it."
