@@ -623,22 +623,24 @@ else
   # An apex Complete carries one origin per unit of the top denomination, so it can only be built
   # from that many separate mints. Minted in batches, folded to the second-from-top denomination in
   # groups, then folded once more.
-  GROUPS=10
-  PER_GROUP=$(big "$APEX_UNITS // $GROUPS")
+  # Named APEX_GROUPS because bash reserves GROUPS as a dynamic array of the caller's OS group
+  # ids: an assignment to it is silently ignored and the count would follow the machine.
+  APEX_GROUPS=10
+  PER_GROUP=$(big "$APEX_UNITS // $APEX_GROUPS")
   APEX_ID=$(rc "$SHAPES" 'totalMinted()(uint256)')
-  for g in $(seq 0 $((GROUPS - 1))); do
+  for g in $(seq 0 $((APEX_GROUPS - 1))); do
     GAS=1000000000 VALUE=$(big "$PER_GROUP * (${DENOM[0]} + $MINT_FEE)") \
       tx 0 "$SHAPES" 'mintBatch(uint256,uint256)' "${DENOM[0]}" "$PER_GROUP" >/dev/null
   done
-  for g in $(seq 0 $((GROUPS - 1))); do
+  for g in $(seq 0 $((APEX_GROUPS - 1))); do
     HEAD=$((APEX_ID + g * PER_GROUP))
     IDS="[$(python3 -c "import sys;h=int(sys.argv[1]);n=int(sys.argv[2]);print(','.join(str(i) for i in range(h+1,h+n)))" "$HEAD" "$PER_GROUP")]"
     GAS=2000000000 tx 0 "$SHAPES" 'compose(uint256,uint256[])' "$HEAD" "$IDS" >/dev/null
     EDGES_CONTINUATION=$((EDGES_CONTINUATION + PER_GROUP - 1))
   done
-  HEADS="[$(python3 -c "import sys;a=int(sys.argv[1]);p=int(sys.argv[2]);g=int(sys.argv[3]);print(','.join(str(a+i*p) for i in range(1,g)))" "$APEX_ID" "$PER_GROUP" "$GROUPS")]"
+  HEADS="[$(python3 -c "import sys;a=int(sys.argv[1]);p=int(sys.argv[2]);g=int(sys.argv[3]);print(','.join(str(a+i*p) for i in range(1,g)))" "$APEX_ID" "$PER_GROUP" "$APEX_GROUPS")]"
   GAS=200000000 tx 0 "$SHAPES" 'compose(uint256,uint256[])' "$APEX_ID" "$HEADS" >/dev/null
-  EDGES_CONTINUATION=$((EDGES_CONTINUATION + GROUPS - 1))
+  EDGES_CONTINUATION=$((EDGES_CONTINUATION + APEX_GROUPS - 1))
 
   assert_eq "apex denomination" "$(rc "$SHAPES" 'denomIndexOf(uint256)(uint8)' "$APEX_ID")" "8"
   assert_eq "apex origins" "$(rc "$SHAPES" 'originCountOf(uint256)(uint256)' "$APEX_ID")" "$APEX_UNITS"
@@ -981,7 +983,7 @@ else
   (
     cd indexer
     PONDER_RPC_URL="$RPC" PONDER_CHAIN_ID="$CHAIN_ID" \
-      SHAPES_ADDRESS="$SHAPES" SHAPES_START_BLOCK="$FROM_BLOCK" \
+      SHAPES_ADDRESS="$SHAPES" SHAPES_START_BLOCK="$FROM_BLOCK" AUCTION_HOUSE_ADDRESS="$HOUSE" \
       PONDER_DATABASE_DIR="$INDEXER_DIR/pglite" \
       npm run start -- --port "$INDEXER_PORT" --schema public >"$INDEXER_DIR/log" 2>&1
   ) &
