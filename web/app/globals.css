@@ -865,6 +865,15 @@ button {
   gap: 5px;
 }
 
+/* Wraps the detail text and the actor name below the kind label. Its own column layout keeps
+   both on separate lines here, matching the previous flat two-span markup; the narrow-width
+   block below switches it to a row so the two sit on one line instead. */
+.activity-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
 .activity-kind {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 19px;
@@ -872,6 +881,7 @@ button {
 }
 
 .activity-detail,
+.activity-actor,
 .activity-more,
 .activity-note,
 .activity-row-foot {
@@ -971,6 +981,70 @@ button {
   .activity-row-foot {
     flex: 0 0 auto;
     text-align: left;
+  }
+}
+
+/* Compact phone layout, one grid per row instead of the stacked column above: kind and the
+   timestamp share a line, detail and actor share the next, thumbnails run last. `.activity-row-head`
+   unwraps via `display: contents` so its own children (kind, meta) become direct grid items of
+   `.activity-row` alongside thumbs and foot; `.activity-meta` keeps wrapping detail and actor but
+   switches from a stacked column to a wrapping row. */
+@media (max-width: 620px) {
+  .activity-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "kind foot"
+      "meta meta"
+      "thumbs thumbs";
+    align-items: baseline;
+    column-gap: 12px;
+    row-gap: 8px;
+    padding: 16px 0;
+  }
+
+  .activity-row-head {
+    display: contents;
+  }
+
+  .activity-kind {
+    grid-area: kind;
+    align-self: start;
+    font-size: 15px;
+  }
+
+  .activity-meta {
+    grid-area: meta;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    align-self: start;
+  }
+
+  /* Detail reads as the primary fact on this line; the shared muted style above still covers the
+     actor name next to it. */
+  .activity-detail {
+    color: var(--ink);
+  }
+
+  .activity-detail + .activity-actor::before {
+    content: "\00b7";
+    margin-right: 8px;
+    color: var(--muted);
+  }
+
+  .activity-thumbs {
+    grid-area: thumbs;
+    gap: 8px;
+  }
+
+  .activity-thumb-art {
+    width: 56px;
+  }
+
+  .activity-row-foot {
+    grid-area: foot;
+    align-self: start;
   }
 }
 
