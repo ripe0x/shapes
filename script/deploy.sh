@@ -98,6 +98,8 @@
 #                                                  is skipped rather than refused, so RESUME can
 #                                                  revisit an already-attested chain. DRY_RUN=1
 #                                                  prints what would be signed and submits nothing.
+#                                                  Refused in existing-token mode: that mode
+#                                                  deploys only the house, not a fresh core.
 #   ALLOW_BRANCH_DEPLOY=1                         opt in to deploying from a feature branch
 #                                                  instead of main, for a target whose env file
 #                                                  sets BRANCH_DEPLOY_ALLOWED=true (anvil and
@@ -179,6 +181,22 @@ export SHAPES_ADDRESS
 # pointer. Empty deploys a fresh core, same as before this mode existed.
 EXISTING_TOKEN_MODE=0
 [ -z "$SHAPES_ADDRESS" ] || EXISTING_TOKEN_MODE=1
+
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# Existing-token mode extends a token already on record; refuse before any RPC, git, wallet or
+# broadcast step if that record is missing or names a different token. ATTEST_ARTIST signs an
+# attestation for a freshly deployed core, which this mode never deploys.
+if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
+  EXISTING_RECORD="deployments/${CHAIN_ID}.json"
+  [ -f "$EXISTING_RECORD" ] \
+    || { echo "refusing: $EXISTING_RECORD is missing; existing-token mode needs the record of the token it extends" >&2; exit 1; }
+  RECORD_SHAPES=$(lower "$(jq -r '.shapes' "$EXISTING_RECORD")")
+  [ "$RECORD_SHAPES" = "$(lower "$SHAPES_ADDRESS")" ] \
+    || { echo "refusing: $EXISTING_RECORD names $RECORD_SHAPES, SHAPES_ADDRESS is $(lower "$SHAPES_ADDRESS")" >&2; exit 1; }
+  [ "$ATTEST_ARTIST" != "1" ] \
+    || { echo "refusing: ATTEST_ARTIST applies to a fresh core; existing-token mode deploys only the house" >&2; exit 1; }
+fi
 
 # Mainnet's env file ships with the deployer, fee recipient and fee left blank until D-05
 # (project/DECISIONS.md) is resolved. Refuse before touching any RPC, dry run included.
@@ -422,8 +440,6 @@ fi
 
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
 
-lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
-
 # Mirrors e2e-anvil.sh's send_wait: cast send returns before the transaction is reliably mined on
 # this toolchain, so poll for the receipt before the next sequenced send races it. --gas-limit
 # sidesteps the estimator's under-estimate on a nonReentrant-guarded function (its gas refund is
@@ -465,17 +481,10 @@ require_uint_read() {
     || { echo "$label mismatch: expected $expected, got $actual" >&2; exit 1; }
 }
 
-EXISTING_RECORD="deployments/${CHAIN_ID}.json"
-
 if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
   # This broadcast deploys only the house: renderer/collection/Shapes are not in it. They come
-  # from the deployment already on record, checked against SHAPES_ADDRESS and, below, against the
-  # live token's own pointers.
-  [ -f "$EXISTING_RECORD" ] \
-    || { echo "refusing: SHAPES_ADDRESS set but no $EXISTING_RECORD to read renderer/collection from" >&2; exit 1; }
-  RECORD_SHAPES=$(lower "$(jq -r '.shapes' "$EXISTING_RECORD")")
-  [ "$RECORD_SHAPES" = "$(lower "$SHAPES_ADDRESS")" ] \
-    || { echo "refusing: $EXISTING_RECORD .shapes ($RECORD_SHAPES) does not match SHAPES_ADDRESS ($SHAPES_ADDRESS)" >&2; exit 1; }
+  # from the deployment already on record, guarded up front against SHAPES_ADDRESS and, below,
+  # against the live token's own pointers.
   SHAPES="$RECORD_SHAPES"
   RENDERER=$(lower "$(jq -r '.renderer' "$EXISTING_RECORD")")
   COLLECTION=$(lower "$(jq -r '.collection' "$EXISTING_RECORD")")
