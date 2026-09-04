@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import { SiteFooter } from "@shared/site/SiteFooter";
+import { ChainFreeHeader } from "../../ChainFreeHeader";
 import { DOCS_NAV, DOCS_PAGES, docsNeighbors, pageBySlug, type DocsPage } from "../nav";
 import { renderDoc } from "../render";
 
@@ -52,15 +53,7 @@ export default async function DocsPage({ params }: { params: Promise<Params> }) 
 
   return (
     <>
-      <header className="site-header">
-        <div className="site-header-inner">
-          <Link href="/" className="site-nav-link">SHAPES</Link>
-          <nav className="site-nav" style={{ display: "flex", gap: "clamp(20px, 4vw, 40px)" }}>
-            <Link href="/mint" className="site-nav-link" style={{ color: "var(--muted)" }}>MINT</Link>
-            <Link href="/gallery" className="site-nav-link" style={{ color: "var(--muted)" }}>GALLERY</Link>
-          </nav>
-        </div>
-      </header>
+      <ChainFreeHeader />
 
       <div className="docs-layout">
         <details className="docs-nav-mobile">

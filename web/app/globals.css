@@ -1488,6 +1488,23 @@ button {
   line-height: 1.55;
 }
 
+/* Sits in the .faq-list rhythm as a last row, in the same mono label voice as .faq-list h3. */
+.faq-more {
+  display: block;
+  padding: 19px 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.55;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.faq-more:hover {
+  opacity: 0.55;
+}
+
 @media (max-width: 900px) {
   .launch-hero {
     grid-template-columns: 1fr;
@@ -1870,5 +1887,48 @@ button {
 @media (max-width: 620px) {
   .docs-layout {
     width: min(100% - 36px, 1360px);
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * /faq — one markdown file (web/content/faq.md) through the docs renderer and the .docs-*
+ * typography, in a single centred column with no sidebar. h2 is a question group, h3 a question,
+ * so the docs h3 rule (small uppercase label) is replaced here.
+ * ------------------------------------------------------------------------------------------- */
+.faq-layout {
+  width: min(100% - 64px, 72ch);
+  margin-inline: auto;
+  padding-block: 40px 96px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+.faq-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.faq-jump a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.faq-jump a:hover {
+  color: var(--ink);
+}
+.faq-prose h3 {
+  margin: 28px 0 10px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+@media (max-width: 620px) {
+  .faq-layout {
+    width: min(100% - 36px, 72ch);
   }
 }
