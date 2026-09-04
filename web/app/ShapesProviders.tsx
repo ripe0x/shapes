@@ -37,18 +37,15 @@ const centered: React.CSSProperties = {
 
 /**
  * Keeps the wallet stack above routed pages so client navigation cannot replace it. The playground
- * and the docs are wallet-free and do not wait for deployment metadata or an RPC. "/" needs
- * no chain either, except in app mode (`chainOnIndex`), where it hosts the mint panel inline and
- * so waits for the same deployment load as every other routed page.
+ * and the docs are wallet-free and do not wait for deployment metadata or an RPC. "/" hosts the
+ * mint panel inline and so waits for the same deployment load as every other routed page.
  */
 export function ShapesProviders({
   children,
-  chainOnIndex,
   walletInitialState,
   deployment,
 }: {
   children: React.ReactNode;
-  chainOnIndex: boolean;
   /** Connection state decoded server-side from the request's cookies (see layout.tsx), so the
    *  first client render already reflects a previously connected wallet. */
   walletInitialState?: State;
@@ -60,7 +57,7 @@ export function ShapesProviders({
   const pathname = usePathname();
   const isIndex = pathname === "/";
   const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
-  const skipsChain = pathname === "/play" || isDocs || (isIndex && !chainOnIndex);
+  const skipsChain = pathname === "/play" || isDocs;
   const [state, setState] = React.useState<WalletState | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
@@ -122,10 +119,10 @@ export function ShapesProviders({
   }, [deployment, err, skipsChain, state]);
 
   if (skipsChain) return children;
-  // The index route in app mode hosts the mint panel inline: the hero renders immediately
+  // The index route hosts the mint panel inline: the hero renders immediately
   // rather than sitting behind "Connecting…", and a load failure surfaces inside the mint
   // section rather than replacing the whole page.
-  if (isIndex && chainOnIndex) {
+  if (isIndex) {
     // mintStartSeconds={0n} shows this transient placeholder as open immediately; the real gate
     // (dep.mintStart, once state resolves) takes over on the very next render.
     if (err) return <LaunchLanding mintStartSeconds={0n} mintSlot={<p className="launch-mint-unavailable">{err}</p>} />;

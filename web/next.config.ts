@@ -41,8 +41,8 @@ function targetDeployment(): { chainId?: number } {
 const targetChainId = targetDeployment().chainId;
 
 // Selects the denomination ladder at build time, pairing with the foundry profile of the same
-// name (see preview/src/canonical/denominations.ts). An explicit SHAPES_LADDER always wins;
-// production builds must set it (scripts/verify-netlify-mode.mjs). Unset, the default follows
+// name (see preview/src/canonical/denominations.ts). An explicit SHAPES_LADDER always wins.
+// Unset, the default follows
 // targetDeployment(): a Sepolia target takes the testnet ladder, anything else mainnet, so a
 // plain `next dev` cannot show one ladder against a contract using the other.
 const resolvedLadder =

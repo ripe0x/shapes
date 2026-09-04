@@ -401,7 +401,6 @@ script/
   lived-in.sh                 fork-dev plus six weeks of simulated activity
   medusa.sh                   the Medusa reserve and lifecycle campaign
   check-docs.sh               fails if a document names a selector Shapes does not have
-  rehearse-auction-sepolia.sh the Sepolia live-auction rehearsal (with SepoliaAuctionEvidence.s.sol)
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
   ShapeRenderer.t.sol         stream, formatter, geometry, metadata validity
@@ -413,7 +412,6 @@ test/
   *.t.sol                     one file per feature: Decompose, Sampling, InkGenes, OwnerToken,
                               AuctionHouse, Provenance, Composability, GasCeilings, ...
   audit/                      proof-of-concept tests retained from the audits
-  legacy/                     the pre-refactor renderer that RendererDiff.t.sol compares against
   fixtures/                   generated parity corpora per ladder, do not hand-edit
 medusa/                       the Medusa fuzz harness (bounded lifecycle, reserve properties)
 preview/                      the canonical TypeScript renderer, preview harness, chain tester,
@@ -449,12 +447,9 @@ FOUNDRY_PROFILE=ci forge test # heavier fuzzing
 # Line and branch coverage. --ir-minimum is required because coverage builds without the
 # optimizer and the renderer's string assembly exceeds the stack limit otherwise; --skip script
 # excludes the deploy scripts, which are tooling rather than audited contracts and carry the
-# same stack pressure. test/legacy/ holds the pre-refactor renderer that RendererDiff.t.sol
-# compares against: it is deliberately the flat form, which is exactly what cannot survive
-# coverage's codegen, so it is excluded too. --no-match-test Gas drops the two gas-ceiling
-# assertions, which measure the optimized build and trip under coverage's unoptimized one.
-forge coverage --ir-minimum --skip script \
-  --skip 'test/legacy/*' --skip 'test/RendererDiff.t.sol' --no-match-test Gas --report summary
+# same stack pressure. --no-match-test Gas drops the two gas-ceiling assertions, which measure
+# the optimized build and trip under coverage's unoptimized one.
+forge coverage --ir-minimum --skip script --no-match-test Gas --report summary
 ```
 
 ### Against a live chain

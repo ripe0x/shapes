@@ -35,8 +35,8 @@ The Director delegates:
 - Implementation never outruns architecture: no phase-N+1 implementation before phase N's evidence gate (ROADMAP.md) passes.
 - Never optimize for speed at the expense of long-term coherence; the target is the best long-term solution, not the smallest diff.
 - Verify before claiming done: type checks are not verification; exercising the change is.
-- Report faithfully: failures, skipped steps, and self-caused incidents are stated plainly and recorded (see HANDOFF.md incident notes), never buried.
+- Report faithfully: failures, skipped steps, and self-caused incidents are stated plainly and recorded in STATE.md, never buried.
 - Mainnet safety: no broadcast, deploy, or value transfer without explicit per-transaction user approval, with pre-flight and post-flight reads.
 - Commit author is ripe0x <109935398+ripe0x@users.noreply.github.com>; verify in every fresh clone before the first commit.
 - The pre-scrub repo (shapes-archive) stays private forever; nothing is pushed to or from it.
-- Update STATE.md and HANDOFF.md before ending every session; the project must remain understandable and internally consistent across months and across sessions.
+- Update STATE.md before ending every session; the project must remain understandable and internally consistent across months and across sessions.

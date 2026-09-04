@@ -3,7 +3,6 @@ import { shapesAbi } from "@shared/chain/abi";
 import { createShapesPublicClient } from "@shared/chain/rpc";
 import { safeImageFromTokenURI } from "@shared/site/ogArtwork";
 import { serverDeployment } from "../../../lib/deployment";
-import { landingOnly } from "../../../lib/siteMode";
 
 // The token share image: the on-chain artwork as a card centred on white, with a subtle drop
 // shadow and rounded corners. The card art is the exact SVG the contract returns from tokenURI,
@@ -63,8 +62,6 @@ function card(children: React.ReactNode) {
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  if (landingOnly()) return new Response("Not found", { status: 404 });
-
   const { id } = await params;
   let art: string | null = null;
   if (/^\d+$/.test(id)) {
