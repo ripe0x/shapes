@@ -1488,6 +1488,23 @@ button {
   line-height: 1.55;
 }
 
+/* Sits in the .faq-list rhythm as a last row, in the same mono label voice as .faq-list h3. */
+.faq-more {
+  display: block;
+  padding: 19px 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.55;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.faq-more:hover {
+  opacity: 0.55;
+}
+
 @media (max-width: 900px) {
   .launch-hero {
     grid-template-columns: 1fr;
@@ -1627,5 +1644,291 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .launch-page {
     scroll-behavior: auto;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * /docs — GitBook-style rendering of markdown from the repo-root docs/ directory. Three columns
+ * on desktop (sidebar, prose, on-this-page); the sidebar collapses into a <details> menu and the
+ * on-this-page column disappears on narrower viewports. Uses the same paper-palette tokens and
+ * mono font as the rest of the site.
+ * ------------------------------------------------------------------------------------------- */
+.docs-layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 72ch) 200px;
+  gap: 48px;
+  justify-content: center;
+  width: min(100% - 64px, 1360px);
+  margin-inline: auto;
+  padding-block: 40px 96px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+.docs-sidebar,
+.docs-toc {
+  font-size: 12px;
+}
+.docs-nav-mobile {
+  display: none;
+}
+.docs-nav-section {
+  margin-bottom: 28px;
+}
+.docs-nav-label {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.docs-nav-section ul,
+.docs-toc ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.docs-nav-section li {
+  margin: 0;
+}
+.docs-nav-section a {
+  display: block;
+  padding: 4px 0 4px 10px;
+  border-left: 2px solid transparent;
+  color: var(--body);
+  text-decoration: none;
+}
+.docs-nav-section a:hover {
+  color: var(--ink);
+}
+.docs-nav-section a.docs-nav-current {
+  color: var(--ink);
+  border-left-color: var(--ink);
+}
+.docs-toc-label {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.docs-toc li {
+  margin: 0;
+}
+.docs-toc a {
+  display: block;
+  padding: 3px 0;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.docs-toc a:hover {
+  color: var(--ink);
+}
+.docs-main {
+  min-width: 0;
+}
+.docs-main > h1 {
+  margin: 0 0 24px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 26px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.docs-prose {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--body);
+}
+.docs-prose h2 {
+  margin: 40px 0 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.docs-prose h2:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.docs-prose h3 {
+  margin: 28px 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.docs-prose p,
+.docs-prose ul,
+.docs-prose ol {
+  margin: 0 0 16px;
+}
+.docs-prose ul,
+.docs-prose ol {
+  padding-left: 22px;
+}
+.docs-prose li {
+  margin-bottom: 6px;
+}
+.docs-prose a {
+  color: var(--ink);
+}
+.docs-prose code {
+  background: var(--row);
+  border: 1px solid var(--rule);
+  padding: 1px 5px;
+  font-size: 12.5px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+.docs-prose pre {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  background: var(--row);
+  border: 1px solid var(--rule);
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.docs-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+}
+.docs-prose blockquote {
+  margin: 0 0 16px;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--ink);
+  color: var(--body-dim);
+}
+.docs-prose hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 32px 0;
+}
+.docs-table {
+  overflow-x: auto;
+  margin: 0 0 16px;
+}
+.docs-prose table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+.docs-prose th,
+.docs-prose td {
+  border: 1px solid var(--rule);
+  padding: 7px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.docs-prose thead th {
+  background: var(--row);
+  font-weight: 500;
+  color: var(--ink);
+}
+.docs-prevnext {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+  font-size: 12px;
+}
+.docs-prevnext a {
+  color: var(--body);
+  text-decoration: none;
+}
+.docs-prevnext a:hover {
+  color: var(--ink);
+}
+.docs-next {
+  margin-left: auto;
+  text-align: right;
+}
+@media (max-width: 1100px) {
+  .docs-layout {
+    grid-template-columns: 200px minmax(0, 72ch);
+  }
+  .docs-toc {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .docs-layout {
+    grid-template-columns: minmax(0, 72ch);
+  }
+  .docs-sidebar {
+    display: none;
+  }
+  .docs-nav-mobile {
+    display: block;
+    margin-bottom: 28px;
+    border: 1px solid var(--rule);
+  }
+  .docs-nav-mobile summary {
+    padding: 10px 14px;
+    cursor: pointer;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .docs-nav-mobile[open] summary {
+    border-bottom: 1px solid var(--rule);
+  }
+  .docs-nav-mobile nav {
+    padding: 14px;
+  }
+}
+@media (max-width: 620px) {
+  .docs-layout {
+    width: min(100% - 36px, 1360px);
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * /faq — one markdown file (web/content/faq.md) through the docs renderer and the .docs-*
+ * typography, in a single centred column with no sidebar. h2 is a question group, h3 a question,
+ * so the docs h3 rule (small uppercase label) is replaced here.
+ * ------------------------------------------------------------------------------------------- */
+.faq-layout {
+  width: min(100% - 64px, 72ch);
+  margin-inline: auto;
+  padding-block: 40px 96px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+}
+.faq-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--rule);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.faq-jump a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.faq-jump a:hover {
+  color: var(--ink);
+}
+.faq-prose h3 {
+  margin: 28px 0 10px;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+@media (max-width: 620px) {
+  .faq-layout {
+    width: min(100% - 36px, 72ch);
   }
 }

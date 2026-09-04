@@ -372,6 +372,9 @@ export function LaunchLanding({
             <h3>What is stored onchain?</h3>
             <p>The value, artwork, metadata, and composition history. No external image host is required.</p>
           </article>
+          <Link className="faq-more" href="/faq">
+            More questions
+          </Link>
         </div>
       </section>
 
