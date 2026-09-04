@@ -14,7 +14,9 @@ import {Denominations} from "../src/lib/Denominations.sol";
 import {Script} from "forge-std/Script.sol";
 
 /// @notice Deploys the renderer, token, collection metadata and auction house, points the token at
-///         the collection, and registers the auction house as the token's `market` pointer.
+///         the collection, and registers the auction house as the token's `market` pointer. With
+///         `SHAPES_ADDRESS` set, deploys only a new auction house against that already-deployed
+///         token and moves its `market` pointer, touching no other contract.
 ///
 /// @dev One script for every chain. Chain id selects the required ladder and the fee-recipient
 ///      default; every other input is a value passed in by the caller (see script/deploy.sh and
@@ -24,6 +26,10 @@ import {Script} from "forge-std/Script.sol";
 ///      denomination unit. The initial admin is the deployer and may redirect where future fees
 ///      accrue or change the fee amount, so the initial recipient must be chosen here.
 ///
+///        SHAPES_ADDRESS        deploy only a new auction house against this already-deployed
+///                               token, instead of a fresh core. SHAPES_MINT_FEE_WEI,
+///                               SHAPES_FEE_RECIPIENT and SHAPES_MINT_START are ignored in this
+///                               mode: they are immutable facts of the existing token.
 ///        SHAPES_MINT_FEE_WEI   flat fee per Shape in wei. Defaults to one tenth of a
 ///                              denomination unit.
 ///        SHAPES_FEE_RECIPIENT  where fees accrue and, by default, are sent by `withdrawFees`.
@@ -38,7 +44,9 @@ import {Script} from "forge-std/Script.sol";
 ///
 ///      The auction house holds no privileged position over the token. Registering it as the
 ///      `market` pointer is discovery only: no token or reserve operation reads that pointer, and
-///      a broken house costs an auction rather than the collection.
+///      a broken house costs an auction rather than the collection. Moving the pointer to a
+///      replacement house requires the token's admin, checked against the broadcast sender before
+///      the replacement house is deployed.
 ///
 ///      Deployment sends the minimum denomination to `Shapes`, which atomically mints backed
 ///      Shape #0 to the deployer. Its holder is returned by `owner()` and `ownerToken()` but
@@ -73,15 +81,18 @@ contract Deploy is Script {
     error WrongLadder(string compiled, string expected);
     error UnsupportedChain(uint256 chainid);
 
-    /// @dev The market pointer names the auction house deployed above; positions starts empty
-    ///      because no positions contract exists yet. Neither is locked, so the admin can still
-    ///      replace either one.
-    function _requirePointers(Shapes shapes, address house) private view {
+    /// @dev The market pointer must name the deployed auction house and stay unlocked in every
+    ///      mode. A fresh core also starts with positions empty and unlocked; an existing token
+    ///      may already carry a positions pointer this deploy does not touch, so only its lock
+    ///      state is checked there.
+    function _requirePointers(Shapes shapes, address house, bool freshCore) private view {
         (address positions, bool positionsLocked) = shapes.positions();
         (address market, bool marketLocked) = shapes.market();
-        require(positions == address(0), "positions should start empty");
+        if (freshCore) {
+            require(positions == address(0), "positions should start empty");
+        }
+        require(!positionsLocked, "positions should be unlocked");
         require(market == house, "market should name the deployed auction house");
-        require(!positionsLocked, "positions should start unlocked");
         require(!marketLocked, "market should start unlocked");
     }
 
@@ -107,10 +118,10 @@ contract Deploy is Script {
         }
     }
 
-    function run()
-        external
-        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
-    {
+    /// @dev Deploys the renderer, token and collection, wires the token's collection pointer, and
+    ///      proves every fresh-core invariant. Reads SHAPES_MINT_FEE_WEI, SHAPES_FEE_RECIPIENT,
+    ///      SHAPES_RENDERER and SHAPES_MINT_START; none of these apply once a token already exists.
+    function _deployCore() private returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes) {
         _requireLadderForChain();
 
         uint256 mintFee = vm.envOr("SHAPES_MINT_FEE_WEI", DEFAULT_MINT_FEE);
@@ -160,15 +171,22 @@ contract Deploy is Script {
         collection = new ShapeCollection(renderer, shapes);
         shapes.setCollection(address(collection));
 
-        house = new ShapeAuctionHouse(address(shapes));
-
-        // Discovery only. `setPointer` requires the target to answer ERC-165 for
-        // `IShapeAuctionHouse`, and no token or reserve operation ever reads the pointer.
-        shapes.setPointer(uint8(IShapes.Pointer.Market), address(house));
-
         vm.stopBroadcast();
 
-        // Prove the constructor configuration and pointer defaults landed as intended.
+        _requireFreshCoreInvariants(shapes, renderer, collection, mintFee, feeRecipient, mintStart);
+    }
+
+    /// @dev Proves the constructor configuration, role defaults and metadata plumbing landed as
+    ///      intended. None of this holds any opinion about an already-deployed token, so it never
+    ///      runs against one.
+    function _requireFreshCoreInvariants(
+        Shapes shapes,
+        ShapeRenderer renderer,
+        ShapeCollection collection,
+        uint256 mintFee,
+        address feeRecipient,
+        uint64 mintStart
+    ) private {
         require(shapes.mintFee() == mintFee, "mint fee mismatch");
         require(shapes.mintStart() == mintStart, "mint start mismatch");
 
@@ -181,7 +199,6 @@ contract Deploy is Script {
 
         require(shapes.feeRecipient() == feeRecipient, "fee recipient mismatch");
         require(shapes.renderer() == address(renderer), "renderer mismatch");
-        _requirePointers(shapes, address(house));
         require(shapes.supportsInterface(type(IERC721Value).interfaceId), "draft ERC-8060 interface missing");
         require(address(renderer).code.length != 0, "renderer missing code");
         require(shapes.collection() == address(collection), "collection mismatch");
@@ -246,9 +263,51 @@ contract Deploy is Script {
 
         // Contract-level metadata is what a marketplace reads for the collection itself.
         require(bytes(shapes.contractURI()).length > 500, "collection produced no metadata");
+    }
+
+    /// @dev Deploys the auction house and moves the token's market pointer to it. The admin check
+    ///      runs before anything is created: on a fresh core the deployer is always admin;
+    ///      against an existing token the broadcast sender must already hold that role.
+    ///
+    ///      Checked against `tx.origin`, not `msg.sender`: `vm.startBroadcast()` attributes
+    ///      subsequent calls to the resolved broadcaster only from the callee's side, so
+    ///      `msg.sender` read here (the caller of `run()`) is unchanged by it. `tx.origin` carries
+    ///      the resolved broadcaster from the start of execution, whether invoked through
+    ///      `forge script --sender`/a wallet or, as `test/Fork.t.sol` does, directly.
+    function _deployHouse(Shapes shapes) private returns (ShapeAuctionHouse house) {
+        require(shapes.admin() == tx.origin, "SHAPES_ADDRESS admin is not the broadcast sender");
+
+        vm.startBroadcast();
+
+        house = new ShapeAuctionHouse(address(shapes));
+
+        // Discovery only. `setPointer` requires the target to answer ERC-165 for
+        // `IShapeAuctionHouse`, and no token or reserve operation ever reads the pointer.
+        shapes.setPointer(uint8(IShapes.Pointer.Market), address(house));
+
+        vm.stopBroadcast();
+    }
+
+    function run()
+        external
+        returns (ShapeRenderer renderer, ShapeCollection collection, Shapes shapes, ShapeAuctionHouse house)
+    {
+        address payable existingShapes = payable(vm.envOr("SHAPES_ADDRESS", address(0)));
+        bool freshCore = existingShapes == address(0);
+
+        if (freshCore) {
+            (renderer, collection, shapes) = _deployCore();
+        } else {
+            shapes = Shapes(existingShapes);
+            renderer = ShapeRenderer(shapes.renderer());
+            collection = ShapeCollection(shapes.collection());
+        }
+
+        house = _deployHouse(shapes);
 
         // The house is wired to the token and to nothing else. It holds no role on the token, so
         // this is the whole of the relationship.
+        _requirePointers(shapes, address(house), freshCore);
         require(house.shapes() == address(shapes), "auction house points at another token");
         require(house.auctionCount() == 0, "auction house is not fresh");
 
@@ -257,9 +316,9 @@ contract Deploy is Script {
         console.log("collection=%s", address(collection));
         console.log("shapes=%s", address(shapes));
         console.log("auctionHouse=%s", address(house));
-        console.log("mintFeeWei=%s", mintFee);
-        console.log("mintStart=%s", mintStart);
-        console.log("feeRecipient=%s", feeRecipient);
+        console.log("mintFeeWei=%s", shapes.mintFee());
+        console.log("mintStart=%s", shapes.mintStart());
+        console.log("feeRecipient=%s", shapes.feeRecipient());
         console.log("admin=%s", shapes.admin());
         console.log("tokenNamePrefix=%s", collection.tokenNamePrefix());
         console.log("description=%s", collection.description());
