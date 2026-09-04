@@ -231,9 +231,11 @@ export async function loadAuction(
   const raw = await publicClient.readContract({...house, functionName: "auctions", args: [auctionId]});
   if (raw.seller === ZERO) return null;
 
-  const [minimumUnits, highestCards, yourUnits, yourCards, block] = await Promise.all([
+  // The leader's escrow is the viewer's own read when the viewer leads, so it is not read twice.
+  const viewerLeads = !!viewer && viewer.toLowerCase() === raw.highestBidder.toLowerCase();
+  const [minimumUnits, leaderCards, yourUnits, yourCards, block] = await Promise.all([
     publicClient.readContract({...house, functionName: "minimumBid", args: [auctionId]}),
-    raw.highestBidder === ZERO
+    raw.highestBidder === ZERO || viewerLeads
       ? Promise.resolve([] as readonly bigint[])
       : publicClient.readContract({...house, functionName: "escrowedCards", args: [auctionId, raw.highestBidder]}),
     viewer
@@ -257,7 +259,7 @@ export async function loadAuction(
     reserveUnits: raw.reserveUnits,
     highestUnits: raw.highestUnits,
     highestBidder: raw.highestBidder,
-    highestCards: [...highestCards],
+    highestCards: [...(viewerLeads ? yourCards : leaderCards)],
     settled: raw.settled,
     lotClaimed: raw.lotClaimed,
     minimumUnits: BigInt(minimumUnits),

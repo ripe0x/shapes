@@ -879,7 +879,7 @@ function CardThumb({
 }) {
   const title = `#${id.toString()}${token ? ` · ${DENOMINATIONS[token.di]!.label} ETH` : ""}`;
   return (
-    <button type="button" className="btn-ghost" onClick={onClick} title={title} style={{width: size, textAlign: "left"}}>
+    <button type="button" className="btn-ghost" onClick={onClick} title={title} aria-label={title} style={{width: size, textAlign: "left"}}>
       <div style={{outline: selected ? `2px solid ${C.ink}` : "none", outlineOffset: 2}}>
         {token ? (
           <Art src={localArt(token.seed, token.backing, token.inkGene)} />
