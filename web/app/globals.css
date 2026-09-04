@@ -249,6 +249,23 @@ button {
     transition: none;
   }
 }
+/* Reveal cascade (site/GalleryView.tsx, ShapeGrid): see the shared comment above `rise-in`.
+   Faster and subtler than the activity feed's rise, and capped at GALLERY_CASCADE_CAP items so a
+   long grid does not keep its last row waiting. */
+.gallery-grid.is-armed .gallery-card {
+  opacity: 0;
+}
+.gallery-grid.is-revealed .gallery-card {
+  --rise-y: 7px;
+  animation: rise-in 360ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gallery-grid.is-armed .gallery-card,
+  .gallery-grid.is-revealed .gallery-card {
+    opacity: 1;
+    animation: none;
+  }
+}
 /* Empty state for a token grid: no Shapes owned, or no Shapes eligible to compose. */
 .shape-grid-empty {
   padding: 48px;
@@ -708,21 +725,23 @@ button {
   }
 }
 
-/* Reveal cascade (site/ActivityFeed.tsx): rows are hidden only once the list is armed by script,
-   then rise in sequence when it scrolls into view. Delay per row is set inline. A row a live poll
-   prepends after that gets `.is-new` instead, playing the same rise on its own, once, with no
-   delay and no effect on the rows around it. */
+/* Reveal cascade (site/ActivityFeed.tsx, site/GalleryView.tsx): items are hidden only once their
+   list/grid is armed by script, then rise in sequence when it scrolls into view. Delay per item
+   is set inline. An item added after the reveal (a live poll prepend, a filter change, a new
+   mint) is a fresh DOM node under the same `.is-revealed`/`.is-new` selector, so it rises on its
+   own with no effect on the items already shown. `rise-in` is shared; `--rise-y` sets the travel
+   distance per caller (defaults to the feed's 10px). */
 .activity-list.is-armed .activity-row {
   opacity: 0;
 }
 .activity-list.is-revealed .activity-row,
 .activity-row.is-new {
-  animation: activity-rise 460ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: rise-in 460ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
-@keyframes activity-rise {
+@keyframes rise-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(var(--rise-y, 10px));
   }
   to {
     opacity: 1;
