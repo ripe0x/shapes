@@ -173,7 +173,3 @@ The ABI is in `deployments/1.json` in the repository and on the [Contracts](/con
 ### Does Shapes implement ERC-8060?
 
 It implements the current draft `IERC721Value` interface, `valueOf` plus `burn`, and advertises it through ERC-165. The proposal is a draft and may still change, and an immutable deployment cannot follow later changes.
-
-### Is there a testnet deployment?
-
-Yes, on Sepolia, at `0x6c2f9c00f44fbbf141dd166979903004b80d5f99`. It runs the same nine indices at 1/100 scale, so index 0 is 0.0001 ETH and index 8 is 1 ETH. Code that hardcodes mainnet amounts fails there; read `denominationAt(index)` instead.
