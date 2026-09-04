@@ -28,9 +28,8 @@ Shapes is an ERC-721 whose every token holds an exact, fixed amount of ETH. Thes
 | Network | Shapes |
 | --- | --- |
 | Ethereum mainnet | `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0` |
-| Sepolia | `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` |
 
-The full record for each network, including the renderer, the collection, the auction house, the linked libraries and the deployment block, is on the [Deployments](/docs/deployments) page. The [Contracts](/contracts) page on this site lists every function, event and error of every deployed contract with its NatSpec, and can call the read functions against the live chain.
+The full record, including the renderer, the collection, the auction house, the linked libraries and the deployment block, is on the [Deployments](/docs/deployments) page. The [Contracts](/contracts) page on this site lists every function, event and error of every deployed contract with its NatSpec, and can call the read functions against the live chain.
 
 ## Source
 

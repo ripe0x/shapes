@@ -5,15 +5,15 @@
 # `indexer/deploy.sh <name>`. Never touches an existing Fly app or volume.
 #
 # Usage:
-#   indexer/bootstrap.sh <sepolia|mainnet>
+#   indexer/bootstrap.sh <mainnet>
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ENV_NAME="${1:-}"
 case "$ENV_NAME" in
-  sepolia|mainnet) ;;
+  mainnet) ;;
   *)
-    echo "usage: indexer/bootstrap.sh <sepolia|mainnet>" >&2
+    echo "usage: indexer/bootstrap.sh <mainnet>" >&2
     exit 1
     ;;
 esac

@@ -34,22 +34,6 @@ Linked libraries, deployed once and bound into Shapes bytecode at deploy time wi
 
 `RecompositionOps` and `AdminOps` run by `DELEGATECALL` in Shapes storage and are part of the trusted implementation. The others are pure. None is callable on its own as part of the protocol; every entrypoint is on the Shapes address.
 
-## Sepolia (chain id 11155111)
-
-| Contract | Address |
-| --- | --- |
-| Shapes | `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` |
-| ShapeRenderer | `0x7025fc7e13ca24505d471e193e2e2a54e960a1b2` |
-| ShapeCollection | `0x9f08626a5ae483b498ea81800f395222639334e7` |
-| ShapeAuctionHouse | `0xf3f72672330f827549e57f71520b9de145c86435` |
-
-| Parameter | Value |
-| --- | --- |
-| Deployment block | `11628203` |
-| Mint fee at deploy | `10000000000000` wei (0.00001 ETH) |
-
-The Sepolia build uses the testnet ladder: the same nine indices at 1/100 scale, so index 0 is 0.0001 ETH and index 8 is 1 ETH. `unit()` returns `1e14` there and `1e16` on mainnet. Code that hardcodes mainnet amounts fails on Sepolia; read `denominationAt(index)` instead.
-
 ## Discovering addresses onchain
 
 Read the live pointers from Shapes rather than hardcoding the periphery:

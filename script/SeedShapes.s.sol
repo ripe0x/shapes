@@ -6,13 +6,13 @@ import {Script} from "forge-std/Script.sol";
 import {Shapes} from "../src/Shapes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
-/// @notice Mints a small spread into an already-deployed Shapes so a testnet gallery has content.
+/// @notice Mints a small spread into an already-deployed Shapes so a gallery has content.
 ///
 /// @dev Run with a fixed --gas-limit so forge does not over-reserve gas on the guarded mint (its
 ///      SSTORE refund inflates eth_estimateGas, which otherwise trips OutOfFunds in the dry run):
 ///
 ///        SHAPES_ADDRESS=0x... forge script script/SeedShapes.s.sol \
-///          --rpc-url $SEPOLIA_RPC_URL --account ripe0x --sender 0x<you> \
+///          --rpc-url $RPC --account ripe0x --sender 0x<you> \
 ///          --gas-limit 800000 --broadcast
 contract SeedShapes is Script {
     function run() external {

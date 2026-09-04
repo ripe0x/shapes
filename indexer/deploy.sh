@@ -5,7 +5,7 @@
 # it reads its contract address and start block from.
 #
 # Usage:
-#   indexer/deploy.sh <sepolia|mainnet>
+#   indexer/deploy.sh <mainnet>
 #
 # What it does:
 #   1. Reads deployments/<chainId>.json at the repo root (chain id taken from the
@@ -18,9 +18,8 @@
 #      instead of overwriting another one's data.
 #   3. Runs `fly deploy --config indexer/fly.<name>.toml -a <app> -e SHAPES_ADDRESS=...
 #      -e SHAPES_START_BLOCK=...`. The `-e` overrides are release-scoped env vars, not
-#      secrets, so they never touch the toml file (which stays values-only and
-#      deployment-address-agnostic for mainnet, and already-correct for the live
-#      sepolia deployment).
+#      secrets, so they never touch the toml file, which stays values-only and
+#      deployment-address-agnostic.
 #   4. On success, records {schema: shapesAddress} into indexer/deployments.json and
 #      probes the deployed app's /health and /graphql.
 #
@@ -32,9 +31,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 ENV_NAME="${1:-}"
 case "$ENV_NAME" in
-  sepolia|mainnet) ;;
+  mainnet) ;;
   *)
-    echo "usage: indexer/deploy.sh <sepolia|mainnet>" >&2
+    echo "usage: indexer/deploy.sh <mainnet>" >&2
     exit 1
     ;;
 esac

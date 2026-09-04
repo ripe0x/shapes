@@ -14,15 +14,10 @@ shapes-demo.gif
 *.tar.gz
 preview/public/ink-demo.html
 
-# Testnet-profile build artifacts (foundry.toml [profile.testnet]).
-out-testnet/
-cache-testnet/
-
 # Local Netlify folder
 .netlify
 
-# Local anvil deploy record (deployments/<chainId>.json). Sepolia and mainnet records are
-# committed by the cutover PR.
+# Local anvil deploy record (deployments/<chainId>.json). The mainnet record is committed.
 deployments/31337.json
 
 # ephemeral root config written by script/medusa.sh

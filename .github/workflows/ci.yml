@@ -241,8 +241,7 @@ jobs:
         working-directory: preview
         run: |
           npm run fixtures
-          SHAPES_LADDER=testnet npm run fixtures
-          git diff --exit-code -- ../test/fixtures/fixtures.mainnet.json ../test/fixtures/fixtures.testnet.json
+          git diff --exit-code -- ../test/fixtures/fixtures.mainnet.json
 
       # The /contracts page is generated from the artifacts. Regenerating must be a no-op; a
       # non-empty diff means an ABI or NatSpec change landed without the committed docs.
@@ -252,9 +251,7 @@ jobs:
 
       # and the Solidity port must still match them byte for byte
       - name: byte parity
-        run: |
-          forge test --mc ParityTest -vv
-          FOUNDRY_PROFILE=testnet forge test --mc ParityTest -vv
+        run: forge test --mc ParityTest -vv
 
   indexer:
     name: indexer

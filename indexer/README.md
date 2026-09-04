@@ -27,7 +27,6 @@ cp .env.example .env.local   # then fill in the values below
 | --- | --- | --- |
 | `PONDER_RPC_URL` | `http://127.0.0.1:8547` (from `preview/public/deployment.json`) | an archive-capable mainnet RPC |
 | `PONDER_CHAIN_ID` | `31347` (from `preview/public/deployment.json`, currently) | `1` |
-| `SHAPES_LADDER` | `mainnet` locally unless running the testnet profile | `mainnet` |
 | `SHAPES_ADDRESS` | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` (from `preview/public/deployment.json`, currently) | not deployed yet — placeholder in `.env.example` |
 | `AUCTION_HOUSE_ADDRESS` | the deployment record's `auctionHouse` | the deployed auction house |
 | `SHAPES_START_BLOCK` | `0` is fine for a fresh local anvil chain | the Shapes deployment block |
@@ -362,10 +361,9 @@ reconstructable from Ethereum, and the site rejects unavailable or stale indexer
 favor of its raw-RPC path, so the single-machine availability tradeoff is bounded and explicit.
 
 One Fly app per chain, each pinned to a `fly.<env>.toml` with a 12-second poll, one indexing
-thread, a 1 GB shared-CPU Machine, and `/data/pglite` on its own volume:
-`fly.sepolia.toml` (app `shapes-indexer`, `testnet` ladder) and `fly.mainnet.toml` (app
-`shapes-indexer-mainnet`, `mainnet` ladder). Both leave the primary RPC public and archive-capable
-with two more public RPCs as `PONDER_RPC_FALLBACKS`; neither toml is deployed directly.
+thread, a 1 GB shared-CPU Machine, and `/data/pglite` on its own volume: `fly.mainnet.toml` (app
+`shapes-indexer-mainnet`). It leaves the primary RPC public and archive-capable with two more
+public RPCs as `PONDER_RPC_FALLBACKS`; the toml is not deployed directly.
 
 ### Environments
 
@@ -376,11 +374,11 @@ never pointed at a stale or wrong contract by hand.
 
 ```bash
 # once per environment, before its first deploy
-indexer/bootstrap.sh sepolia   # or mainnet — prints the fly apps/volumes create commands
+indexer/bootstrap.sh mainnet   # prints the fly apps/volumes create commands
 # <run the printed commands yourself>
 
 # every time the contracts redeploy to that chain
-indexer/deploy.sh sepolia      # or mainnet — reads deployments/<chainId>.json, deploys, records
+indexer/deploy.sh mainnet      # reads deployments/<chainId>.json, deploys, records
 ```
 
 `DRY_RUN=1 indexer/deploy.sh <env>` resolves the contract address/start block, validates the toml,

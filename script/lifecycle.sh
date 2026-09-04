@@ -6,14 +6,14 @@
 #   script/lifecycle.sh <env>
 #
 # The environment is the same values file deploy.sh reads (script/env/<name>.env), so chain id,
-# RPC default and wallet kind come from one place and the same code runs on anvil and on a public
-# testnet. Addresses come from deployments/<chainId>.json, written by deploy.sh.
+# RPC default and wallet kind come from one place. Addresses come from
+# deployments/<chainId>.json, written by deploy.sh.
 #
 # The run requires a freshly deployed system: it asserts `totalMinted() == 1` before it starts,
 # because every later assertion is written against that starting state.
 #
 # Overrides:
-#   RPC_URL / SEPOLIA_RPC_URL      RPC endpoint, overriding the env file default.
+#   RPC_URL                        RPC endpoint, overriding the env file default.
 #   FOUNDRY_PROFILE                forge profile for the one contract this script deploys
 #                                   (the positions resolver mock), overriding the env file default.
 #   KEYSTORE_PASSWORD_FILE         keystore password file (chmod 600) instead of a prompt.
@@ -27,13 +27,13 @@ set -euo pipefail
 
 ENV_NAME="${1:-}"
 case "$ENV_NAME" in
-  anvil | sepolia) ;;
+  anvil) ;;
   mainnet)
     echo "refusing: lifecycle.sh mints, composes, splits, redeems and burns. It is not a mainnet tool." >&2
     exit 1
     ;;
   *)
-    echo "usage: script/lifecycle.sh <anvil|sepolia>" >&2
+    echo "usage: script/lifecycle.sh <anvil>" >&2
     exit 1
     ;;
 esac
@@ -48,10 +48,7 @@ set -a
 source "$ENV_FILE"
 set +a
 
-case "$ENV_NAME" in
-  sepolia) RPC="${SEPOLIA_RPC_URL:-${RPC_URL:-$RPC_DEFAULT}}" ;;
-  anvil) RPC="${RPC_URL:-$RPC_DEFAULT}" ;;
-esac
+RPC="${RPC_URL:-$RPC_DEFAULT}"
 FOUNDRY_PROFILE="${FOUNDRY_PROFILE:-$FOUNDRY_PROFILE_DEFAULT}"
 export FOUNDRY_PROFILE
 
@@ -981,11 +978,9 @@ else
   fi
   TIP=$(cast block-number --rpc-url "$RPC")
   INDEXER_DIR=$(mktemp -d)
-  LADDER=mainnet
-  [ "$UNIT" = "10000000000000000" ] || LADDER=testnet
   (
     cd indexer
-    PONDER_RPC_URL="$RPC" PONDER_CHAIN_ID="$CHAIN_ID" SHAPES_LADDER="$LADDER" \
+    PONDER_RPC_URL="$RPC" PONDER_CHAIN_ID="$CHAIN_ID" \
       SHAPES_ADDRESS="$SHAPES" SHAPES_START_BLOCK="$FROM_BLOCK" \
       PONDER_DATABASE_DIR="$INDEXER_DIR/pglite" \
       npm run start -- --port "$INDEXER_PORT" --schema public >"$INDEXER_DIR/log" 2>&1

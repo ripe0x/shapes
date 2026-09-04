@@ -8,8 +8,7 @@ import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @notice Seeds a deployed Shapes with the token shapes the provenance view is built to show:
 ///         a multi donor compose, a stacked compose whose donors include the survivor's own
-///         earlier state, and split children. Sized for a public testnet, so every call stays
-///         well inside one block.
+///         earlier state, and split children. Every call stays well inside one block.
 ///
 /// @dev    SHAPES_ADDRESS=0x... forge script script/SeedExamples.s.sol \
 ///           --rpc-url $RPC --account <account> --sender 0x<you> --broadcast

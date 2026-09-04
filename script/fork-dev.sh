@@ -27,7 +27,7 @@ cd "$REPO_ROOT"
 # Empty by default: a plain local chain. Set FORK_URL to a mainnet RPC to fork instead.
 FORK_URL=${FORK_URL:-}
 PORT=${PORT:-8545}
-# Fixed at Anvil's default chain id: Deploy.s.sol only accepts chain id 1, 11155111 or 31337
+# Fixed at Anvil's default chain id: Deploy.s.sol only accepts chain id 1 or 31337
 # (script/Deploy.s.sol), and script/env/anvil.env pins script/deploy.sh anvil to 31337, so no
 # other chain id would deploy successfully here.
 CHAIN_ID=31337

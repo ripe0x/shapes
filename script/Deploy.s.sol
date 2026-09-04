@@ -61,7 +61,6 @@ import {Script} from "forge-std/Script.sol";
 contract Deploy is Script {
     uint256 internal constant DEFAULT_MINT_FEE = Denominations.UNIT / 10;
     uint256 internal constant ANVIL_CHAIN_ID = 31337;
-    uint256 internal constant SEPOLIA_CHAIN_ID = 11155111;
     uint256 internal constant MAINNET_CHAIN_ID = 1;
 
     /// @dev Mirrors the on-chain cap (one denomination unit) the constructor enforces
@@ -86,22 +85,15 @@ contract Deploy is Script {
     }
 
     /// @dev The ladder is compiled in and the amounts it names are permanent once deployed.
-    ///      Mainnet requires the mainnet ladder, Sepolia requires the testnet ladder, and anvil
-    ///      accepts either since a local chain funds any rung. Any other chain id is refused
-    ///      outright: nothing here knows what ladder a chain nobody named should carry.
+    ///      Mainnet requires the mainnet ladder; anvil accepts whatever is compiled in, since a
+    ///      local chain funds any rung. Any other chain id is refused outright: nothing here knows
+    ///      what ladder a chain nobody named should carry.
     function _requireLadderForChain() internal view {
         uint256 id = block.chainid;
         if (id == ANVIL_CHAIN_ID) return;
+        if (id != MAINNET_CHAIN_ID) revert UnsupportedChain(id);
 
-        string memory expected;
-        if (id == MAINNET_CHAIN_ID) {
-            expected = "mainnet";
-        } else if (id == SEPOLIA_CHAIN_ID) {
-            expected = "testnet";
-        } else {
-            revert UnsupportedChain(id);
-        }
-
+        string memory expected = "mainnet";
         if (keccak256(bytes(Denominations.LADDER_NAME)) != keccak256(bytes(expected))) {
             revert WrongLadder(Denominations.LADDER_NAME, expected);
         }

@@ -70,7 +70,6 @@ function makeClient(opts: {
   multicall3: boolean;
   supply?: bigint;
   attribution?: boolean;
-  legacyFee?: boolean;
   headBlock?: bigint;
   ownerToken?: bigint | null;
   /** A non-revert failure on the ownerToken read, distinct from a decoded NoOwnerToken revert. */
@@ -111,10 +110,7 @@ function makeClient(opts: {
         }
         return opts.ownerToken ?? 0n;
       case "mintFee":
-        if (opts.legacyFee) throw new Error("function selector was not recognized");
         return 1_000_000_000_000_000n;
-      case "mintFeeFor":
-        return (id as bigint) / 100n;
       case "mintStart":
         return opts.mintStart ?? 0n;
       case "ownerOf":
@@ -454,19 +450,14 @@ test("loadSite: a differing genesis block hash (same chainId/address) falls back
   assert.equal(counts.calls.get("ownerOf"), 2); // full scan, not an incremental no-op
 });
 
-test("loadSite: superseded percentage-fee Sepolia remains readable until redeployment", async () => {
-  const {client} = makeClient({
-    minted: 0n,
-    live: new Map(),
-    multicall3: false,
-    legacyFee: true,
-  });
+test("loadSite: the flat mint fee is reported once per denomination", async () => {
+  const {client} = makeClient({minted: 0n, live: new Map(), multicall3: false});
 
   const site = await loadSite(client, dep);
 
   assert.deepEqual(
     site.fees,
-    DENOMINATIONS.map((denomination) => denomination.wei / 100n),
+    DENOMINATIONS.map(() => 1_000_000_000_000_000n),
   );
 });
 

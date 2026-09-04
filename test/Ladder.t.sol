@@ -6,10 +6,10 @@ import {Test} from "forge-std/Test.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
 
 /// @notice Pins the compiled denomination ladder.
-/// @dev Two jobs. The invariant tests hold under either ladder and cover the properties the rest
-///      of the protocol assumes: nine amounts, strictly increasing, every one a whole multiple of
-///      UNIT. The pinning test asserts the table matches the ladder it claims to be, so a testnet
-///      table left in `ladders/mainnet/Ladder.sol` fails the suite instead of reaching a deploy.
+/// @dev Two jobs. The invariant tests cover the properties the rest of the protocol assumes: nine
+///      amounts, strictly increasing, every one a whole multiple of UNIT. The pinning test asserts
+///      the table matches the ladder it claims to be, so an edited table in
+///      `ladders/mainnet/Ladder.sol` fails the suite instead of reaching a deploy.
 contract LadderTest is Test {
     function test_LadderHasNineStrictlyIncreasingAmounts() public pure {
         assertEq(Denominations.COUNT, 9);
@@ -74,38 +74,21 @@ contract LadderTest is Test {
         return Denominations.gridAt(i);
     }
 
-    /// @dev The guard. Each ladder names itself, and this asserts the table matches that name.
+    /// @dev The guard. The ladder names itself, and this asserts the table matches that name.
     function test_CompiledLadderMatchesItsName() public pure {
-        bytes32 name = keccak256(bytes(Denominations.LADDER_NAME));
-
-        if (name == keccak256("mainnet")) {
-            assertEq(Denominations.UNIT, 0.01 ether);
-            assertEq(Denominations.amountAt(0), 0.01 ether);
-            assertEq(Denominations.amountAt(4), 1 ether);
-            assertEq(Denominations.amountAt(8), 100 ether);
-            assertEq(Denominations.labelAt(8), "100");
-        } else if (name == keccak256("testnet")) {
-            assertEq(Denominations.UNIT, 0.0001 ether);
-            assertEq(Denominations.amountAt(0), 0.0001 ether);
-            assertEq(Denominations.amountAt(4), 0.01 ether);
-            assertEq(Denominations.amountAt(8), 1 ether);
-            assertEq(Denominations.labelAt(8), "1");
-        } else {
-            revert("unknown ladder name");
-        }
+        assertEq(Denominations.LADDER_NAME, "mainnet");
+        assertEq(Denominations.UNIT, 0.01 ether);
+        assertEq(Denominations.amountAt(0), 0.01 ether);
+        assertEq(Denominations.amountAt(4), 1 ether);
+        assertEq(Denominations.amountAt(8), 100 ether);
+        assertEq(Denominations.labelAt(8), "100");
     }
 
-    /// @dev The testnet ladder is the mainnet one scaled by exactly 100, nothing else.
-    function test_TestnetLadderIsTheMainnetLadderScaled() public pure {
-        if (keccak256(bytes(Denominations.LADDER_NAME)) != keccak256("testnet")) return;
-        for (uint256 i = 0; i < Denominations.COUNT; i++) {
-            assertEq(Denominations.unitsAt(i), _mainnetUnitsAt(i));
-        }
-    }
-
-    /// @dev Unit counts of the mainnet ladder, which both ladders share by construction.
-    function _mainnetUnitsAt(uint256 i) private pure returns (uint256) {
+    /// @dev Unit counts of the compiled ladder.
+    function test_UnitCountsArePinned() public pure {
         uint16[9] memory units = [1, 5, 10, 50, 100, 500, 1000, 5000, 10000];
-        return units[i];
+        for (uint256 i = 0; i < Denominations.COUNT; i++) {
+            assertEq(Denominations.unitsAt(i), units[i]);
+        }
     }
 }

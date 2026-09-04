@@ -74,9 +74,6 @@ export const shapesAbi = parseAbi([
   "function totalSupply() view returns (uint256)",
   "function totalMinted() view returns (uint256)",
   "function mintFee() view returns (uint256)",
-  // Temporary read fallback for the superseded percentage-fee Sepolia deployment. New Shapes
-  // contracts do not implement this selector.
-  "function mintFeeFor(uint256 amountWei) view returns (uint256)",
   // Unix seconds before which mintBatch/mintBatchTo revert MintNotOpen(); 0 means open at deploy.
   "function mintStart() view returns (uint64)",
   "event ShapeMinted(uint256 indexed tokenId, address indexed to, uint256 amountWei, bytes32 seed, uint256 originCount)",

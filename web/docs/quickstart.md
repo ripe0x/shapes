@@ -84,7 +84,7 @@ The survivor keeps its id and seed and becomes the summed denomination. The sum 
 | 7 | 50 | 5000 | 1 × 2 |
 | 8 | 100 | 10000 | 1 × 1 |
 
-Mint and redeem work in wei amounts. `split` and the state views work in ladder indices. `denominationAt(index)` and `isSupportedDenomination(amountWei)` convert between them onchain. Sepolia runs the same ladder at 1/100 scale (0.0001 ETH to 1 ETH); see [Deployments](/docs/deployments).
+Mint and redeem work in wei amounts. `split` and the state views work in ladder indices. `denominationAt(index)` and `isSupportedDenomination(amountWei)` convert between them onchain.
 
 ## The ABI
 

@@ -38,7 +38,7 @@ test("TxStage: shows 'Confirm in wallet' before the wallet returns a hash", () =
 
 test("TxStage: shows the pending line and evm.now link once a hash lands", () => {
   const hash = "0xabc123" as const;
-  const chainId = 11155111;
+  const chainId = 1;
   const el = TxStage({op: "redeem", busy: "redeem", pendingTx: {op: "redeem", hash}, chainId});
   assert.ok(el);
   const parts: unknown[] = el.props.children.props.children;

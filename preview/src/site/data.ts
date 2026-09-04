@@ -171,24 +171,14 @@ interface IndexerPage {
   pageInfo: {hasNextPage: boolean; endCursor: string | null};
 }
 
-/** Reads the flat fee from the current ABI. The fallback keeps the site usable against the
- *  superseded Sepolia deployment until the fresh flat-fee release is live. */
+/** The flat per-Shape mint fee, repeated per denomination so callers index it like the ladder. */
 async function loadMintFees(publicClient: PublicClient, dep: Deployment): Promise<bigint[]> {
-  const shapes = {address: dep.shapes, abi: shapesAbi} as const;
-  try {
-    const fee = await publicClient.readContract({...shapes, functionName: "mintFee"});
-    return DENOMINATIONS.map(() => fee);
-  } catch {
-    return Promise.all(
-      DENOMINATIONS.map((denomination) =>
-        publicClient.readContract({
-          ...shapes,
-          functionName: "mintFeeFor",
-          args: [denomination.wei],
-        }),
-      ),
-    );
-  }
+  const fee = await publicClient.readContract({
+    address: dep.shapes,
+    abi: shapesAbi,
+    functionName: "mintFee",
+  });
+  return DENOMINATIONS.map(() => fee);
 }
 
 /** Reads the current owner-token id once per site load (alongside `artist`/`reserve`/`supply`,
