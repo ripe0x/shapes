@@ -16,6 +16,12 @@ const UPSTREAM_TIMEOUT_MS = 10_000;
  *  polls the same handful of queries. */
 const GET_CACHE = "public, s-maxage=10, stale-while-revalidate=30";
 
+/** Netlify's cache key ignores the query string unless the response says otherwise, so without
+ *  this every GET to the proxy shares one cached body and a gallery query is answered with the
+ *  activity feed. `query` alone varies on the whole query string. The Next runtime appends this
+ *  directive to the `netlify-vary` header it sets on every response. */
+const NETLIFY_VARY = "query";
+
 function error(message: string, status: number, cacheControl: string): Response {
   return Response.json({ errors: [{ message }] }, { status, headers: { "cache-control": cacheControl } });
 }
@@ -67,7 +73,11 @@ async function forward(
   }
   return new Response(body, {
     status: response.status,
-    headers: { "content-type": "application/json", "cache-control": cacheControl },
+    headers: {
+      "content-type": "application/json",
+      "cache-control": cacheControl,
+      "netlify-vary": NETLIFY_VARY,
+    },
   });
 }
 

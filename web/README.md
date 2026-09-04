@@ -56,7 +56,10 @@ raw-RPC loader. `deployments/1.json` keeps `indexerUrl` for `indexer/deploy.sh` 
 scripts.
 
 GET requests to the proxy carry `Cache-Control: public, s-maxage=10, stale-while-revalidate=30`,
-so the CDN absorbs the site's polling; POST is `no-store`.
+so the CDN absorbs the site's polling; POST is `no-store`. The response also carries
+`Netlify-Vary: query`: Netlify's cache key ignores the query string by default, and without the
+directive every GET to `/api/indexer` shares one cached body for the cache window, so a gallery
+query is answered with whichever query was cached first.
 
 The wallet config uses RainbowKit's standard `getDefaultConfig` (see
 `preview/src/chain/wagmi.ts`), built with `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` and the deployment
