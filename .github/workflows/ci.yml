@@ -245,7 +245,11 @@ jobs:
           git diff --exit-code -- ../test/fixtures/fixtures.mainnet.json ../test/fixtures/fixtures.testnet.json
 
       # The /contracts page is generated from the artifacts. Regenerating must be a no-op; a
-      # non-empty diff means an ABI or NatSpec change landed without the committed docs.
+      # non-empty diff means an ABI or NatSpec change landed without the committed docs. The
+      # build cache's restore-keys fallback can hand back artifacts from another commit, so the
+      # artifacts are rebuilt from this checkout first.
+      - name: build the artifacts the docs are generated from
+        run: forge build
       - name: contract docs are current
         working-directory: preview
         run: npm run contracts:docs:check
