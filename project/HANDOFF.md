@@ -12,7 +12,7 @@ Deployed source: exact clean `origin/main` at `eb9e8834553f199a4c94e7ba307686c8b
 - Fly version 3 is live on isolated schema `shapes_sepolia_v3`. Health/ready are 200; status was one block behind Sepolia at 11619404 and GraphQL reported exactly backed Shape #0 with the correct owner.
 - PR #48 merged current deployment metadata into `main`. PR #49 synchronized `main` into production branch `launch`; PR #50 fixed the explicit hybrid build mode. Netlify deploy `6a980da5e9b3a10007115012` serves the launch page at `/` and the Sepolia app at `/mint`; deployment metadata, token, management, My Shapes, auction, OG and playground routes all return 200.
 - Default, testnet and deeper CI Foundry profiles each have 462 passing tests plus 4 expected fork skips; all 4 fork tests pass against live Ethereum; Medusa passes 10/10 properties across 44,411 calls; the full Anvil lifecycle passes; 128 preview tests and preview/web builds pass. Shapes is 24,362/24,341 bytes with 214/235 bytes of margin; ShapeLens is 9,885/9,867; ShapeRenderer is 23,331/23,330; ShapeAuctionHouse is 7,939/7,930. `IShapes` is `0x86cf5406`.
-- P1 PASSED 2026-08-31. `AUDIT_PROMPT_v6.md` is the authoritative flat-fee audit brief, pinned to `1054db2455f7d6d3542a422130262bc872c34464`. Independent audit, qualified legal review, R25 product signoff and D-05 mainnet ceremony decisions remain open. No mainnet broadcast is authorized.
+- P1 PASSED 2026-08-31. `audits/AUDIT_PROMPT_v6.md` is the authoritative flat-fee audit brief, pinned to `1054db2455f7d6d3542a422130262bc872c34464`. Independent audit, qualified legal review, R25 product signoff and D-05 mainnet ceremony decisions remain open. No mainnet broadcast is authorized.
 
 ### Superseded 2026-09-01 snapshot
 
@@ -31,7 +31,7 @@ The entries below are retained as historical continuity and do not describe the 
 - Codex Security scan `af61993b-3d85-4142-984b-19343d4697ae` sealed against exact range `7f92f1b..5d1c37e`: three low findings, all outside core. The final packet fixes each with tested indexer timeout/resource bounds and passive embedded-only OG artwork. It also fixes the fetched-main deploy gate, RPC credential redaction, both-ladder fixture/parity CI, collision-free Medusa extraction, root-lock renderer triggers and an isolated indexer CI job.
 - PR #8's hosted `changed paths`, contracts, renderer parity, indexer, site and Medusa jobs all pass. The contract job completed its deeper CI profile in 12m12s.
 - D-32's GitHub issue #7 implementation merged through PR #36 as `1d6e4b0`. The behavior-only `_moduleSvg` extraction is byte-identical against unchanged TypeScript fixtures and the frozen Solidity oracle; normalized dispatch/helper complexity is 10/3 maximum; ShapeRenderer runtime is 23,138/23,137 bytes default/testnet, 47 bytes below baseline; and worst pinned gas growth is 0.0104%. `_glyph` remains unchanged as the documented lookup-table exception. Evidence: `project/experiments/EXP-004-renderer-module-refactor.md`.
-- `AUDIT_PROMPT_v5.md` is historical. `AUDIT_PROMPT_v6.md` is the authoritative flat-fee brief, pinned to exact merged commit `1054db2455f7d6d3542a422130262bc872c34464`. The independent audit itself remains open.
+- `audits/AUDIT_PROMPT_v5.md` is historical. `audits/AUDIT_PROMPT_v6.md` is the authoritative flat-fee brief, pinned to exact merged commit `1054db2455f7d6d3542a422130262bc872c34464`. The independent audit itself remains open.
 - Issue #6 is deferred under D-33 to P4 and a real consumer. Do not add `decomposeInto`, a generic registry, more core pointers or application logic without separate product decisions.
 - PR #20 merged as `f92d019`. The Sepolia indexer is live at `https://shapes-indexer.fly.dev` on one IAD Fly machine with embedded PGlite and encrypted 1 GB volume `vol_vz8xke1po70oz5qv`. Health, readiness, status and GraphQL readback passed; Shape #0 indexed with exact testnet backing and the checkpoint was one block behind Sepolia.
 - PR #22 merged as `769efe0`; production serves `indexerUrl: https://shapes-indexer.fly.dev`. PR #23 (`99b79eb`) added the guarded D-13 path; PR #34 (`6bf5164`) made its close step resumable after the bidder exhausted Sepolia gas. Both PR #34 CI gates passed.
@@ -57,7 +57,7 @@ The entries below are retained as historical continuity and do not describe the 
 
 ## Remaining gates, in order
 
-1. Send `AUDIT_PROMPT_v6.md` to an independent auditor, close or explicitly accept every finding, and obtain explicit R25 product signoff.
+1. Send `audits/AUDIT_PROMPT_v6.md` to an independent auditor, close or explicitly accept every finding, and obtain explicit R25 product signoff.
 2. Obtain D-15 qualified legal review and record the result.
 3. Resolve D-05's mainnet admin, fee-recipient, Shape #0 custody, artist-signing and per-pointer lock/renounce decisions. No mainnet broadcast is authorized.
 

@@ -15,7 +15,7 @@ How this project is run. The operating structure, the document map, and the sess
 
 ## Document map
 
-All canonical docs live in `project/`. Legacy spec docs at repo root keep design rationale but their status lines are superseded by STATE.md.
+All canonical docs live in `project/`. Design specs and drafts in `docs/` keep design rationale but their status lines are superseded by STATE.md.
 
 - DIRECTOR.md: the Director role prompt — mandate, division of labor, decision discipline, non-negotiables. A new session assumes the role by reading it.
 - CHARTER.md: what the product is, fixed principles, non-goals, success definition. Changes rarely; amendments are logged decisions.
@@ -28,6 +28,8 @@ All canonical docs live in `project/`. Legacy spec docs at repo root keep design
 - templates/EXPERIMENT.md: hypothesis, method, evidence, conclusion format for simulations and research.
 - templates/REVIEW.md: reviewer output format.
 - templates/MERGE_CHECKLIST.md: per-merge gate.
+- ../audits/: every audit brief and report, and the pre-audit x-ray.
+- ../docs/: design specs and drafts behind each feature; status lines there are superseded by STATE.md.
 
 ## Session protocol (Director)
 

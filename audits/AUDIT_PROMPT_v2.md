@@ -159,9 +159,9 @@ Secondary (TypeScript, lower value-at-risk but in scope for parity/provenance/pr
 - `preview/src/decomposeSeed.ts` — the child-seed derivation the frontend previews with.
 - `preview/src/chain/ChainApp.tsx`, `preview/src/chain/abi.ts` — the chain tester UI.
 
-Docs: `SHAPES_V2_SPEC.md` (authoritative v2 design, incl. §17 locked decisions),
-`SPEC.md` (rendering decisions; D17 is the ink-gene spec), `INK_GENES_IMPL_SPEC.md` and
-`INK_GENES_DRAFT.md` (ink formulas + rationale), `METADATA.md` (every tokenURI trait),
+Docs: `docs/SHAPES_V2_SPEC.md` (authoritative v2 design, incl. §17 locked decisions),
+`SPEC.md` (rendering decisions; D17 is the ink-gene spec), `docs/INK_GENES_IMPL_SPEC.md` and
+`docs/INK_GENES_DRAFT.md` (ink formulas + rationale), `METADATA.md` (every tokenURI trait),
 `BUILDING.md` (the composability surface for integrators), `SECURITY.md`, `README.md`.
 
 Toolchain: Solidity 0.8.28, Foundry, `via_ir = true`, OpenZeppelin v5.

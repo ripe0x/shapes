@@ -16,6 +16,38 @@ anything. It holds it.
 
 ---
 
+## Live on Ethereum mainnet
+
+Deployed 2026-09-03 from `main` commit `a0a180b`. The site is [shapes.ripe.wtf](https://shapes.ripe.wtf).
+
+| Contract | Mainnet address |
+|---|---|
+| Shapes | [`0x6fe9193276bf7abcbee44ab7afd717d637d6faf0`](https://evm.now/address/0x6fe9193276bf7abcbee44ab7afd717d637d6faf0?chainId=1) |
+| ShapeRenderer | [`0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295`](https://evm.now/address/0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295?chainId=1) |
+| ShapeCollection | [`0x9d1bd0c348900d5c6bce28148f2adc68f73c8af3`](https://evm.now/address/0x9d1bd0c348900d5c6bce28148f2adc68f73c8af3?chainId=1) |
+| ShapeAuctionHouse | [`0x90b79dbf4f301c239983ee37e6a466132e1532df`](https://evm.now/address/0x90b79dbf4f301c239983ee37e6a466132e1532df?chainId=1) |
+
+Mint fee is a flat 0.001 ETH per Shape; `mintStart` is `1788462000` (2026-09-03, 15:00 ET). Fees
+route to the 0xSplits wallet `0xD4ba7cA95f3983514DDa317C4428CDb8F59c7e72`. Owner token #0 is listed
+in auction `0`; the artist attestation is recorded onchain. The seven linked libraries, the deploy
+block and the release hash are in `deployments/1.json`, the machine-readable record the site and
+indexer read. The Sepolia deployment (`deployments/11155111.json`, Shapes
+`0x6c2f9c00f44fbbf141dd166979903004b80d5f99`) runs at 1/100 testnet scale, see
+`src/lib/Denominations.sol`, not the mainnet ladder.
+
+## Reading this repository
+
+- This file: the protocol, then how to build, test, run and deploy it.
+- [SPEC.md](SPEC.md): every rendering decision, and the two places the design reference and the protocol disagreed.
+- [SECURITY.md](SECURITY.md): the threat model and the adversarial review.
+- [BUILDING.md](BUILDING.md): integrating Shapes from another contract.
+- [METADATA.md](METADATA.md): the `tokenURI` trait reference.
+- [docs/](docs/README.md): the design specs and drafts behind each feature. Source comments cite them by filename.
+- [audits/](audits/README.md): every audit brief and report, and the pre-audit x-ray.
+- [project/](project/SYSTEM.md): how the project was run: charter, architecture, decision log, risks, roadmap, reviews, experiments.
+
+---
+
 ## The nine denominations
 
 Shapes does not accept arbitrary amounts. There are exactly nine, and they are permanent:
@@ -337,20 +369,14 @@ src/
   ShapeCollection.sol    collection-level presentation, seeded previews of unminted cards
   ShapeAuctionHouse.sol  English auction for any ERC721, bids denominated in Shape cards
   ShapeCardEscrow.sol    custody and valuation for bids made of Shape cards
-  interfaces/
-    IShapes.sol
-    IERC721Value.sol
-    IShapeRenderer.sol
-    IShapePositionResolver.sol
-    IShapeCollection.sol
-    IShapeAuctionHouse.sol
-    IShapeCardEscrow.sol
-    IShapeGeometry.sol
-    IAdminControl.sol
+  interfaces/            IShapes, IERC721Value, IShapeRenderer, IShapeCollection,
+                         IShapeAuctionHouse, IShapeCardEscrow, IShapeGeometry,
+                         IShapePositionResolver, IAdminControl
   lib/
     Denominations.sol         the nine amounts and their grids
     FixedPoint.sol            WAD arithmetic + the canonical decimal formatter
     Round03Rand.sol           the deterministic random stream
+    ShapeMath.sol             pure recomposition arithmetic shared by the mutators and their previews
     ComposeCompute.sol        module sampling and ink gene assignment in one call
     RecompositionOps.sol      the compose, decompose and split state machine, and the previews
     AdminOps.sol              every configuration write on Shapes: fee, presentation, pointers, artist
@@ -360,23 +386,44 @@ src/
     GrammarV1Modules.sol      module-identity byte sequence for an original token under grammar v1
     InkGenes.sol              the seven-state ink gene: assignment, inheritance, pool statistic
     ModuleCodec.sol           one-byte encoding for a module's kind, solid, and rotation
+ladders/
+  mainnet/Ladder.sol          the mainnet denomination ladder, selected by the default profile
+  testnet/Ladder.sol          the 1/100 testnet ladder, selected by the testnet profile
 script/
   Deploy.s.sol                the one deploy script, run for anvil, Sepolia, and mainnet alike
   deploy.sh                   the one wrapper: script/deploy.sh <anvil|sepolia|mainnet>
   env/                        anvil.env, sepolia.env, mainnet.env, values only, no secrets
   SeedShapes.s.sol            seeds an already-deployed Shapes; no seeding inside Deploy.s.sol
+  SeedDemo.s.sol              seeds a local chain with composed, split and apex tokens
+  SeedExamples.s.sol          seeds a public testnet with the shapes the provenance view shows
   lifecycle.sh                every entrypoint walked against a deployed system, plus an indexer diff
   fork-dev.sh                 local Anvil + deploy + funded wallet, for the frontends
+  lived-in.sh                 fork-dev plus six weeks of simulated activity
+  medusa.sh                   the Medusa reserve and lifecycle campaign
+  check-docs.sh               fails if a document names a selector Shapes does not have
+  rehearse-auction-sepolia.sh the Sepolia live-auction rehearsal (with SepoliaAuctionEvidence.s.sol)
 test/
   Shapes.t.sol                minting, fees, redemption, reserve security
   ShapeRenderer.t.sol         stream, formatter, geometry, metadata validity
   Parity.t.sol                byte-identical output vs the TypeScript fixtures
   Hardening.t.sol             regressions for the adversarial review findings
+  ExploitAttempts.t.sol       every attack the reviews tried, kept as failing-to-exploit tests
   Invariants.t.sol            stateful solvency invariants
   Fork.t.sol                  full lifecycle against a mainnet fork (env-gated)
-  fixtures/fixtures.mainnet.json  generated default-ladder corpus, do not hand-edit
-  fixtures/fixtures.testnet.json  generated testnet-ladder corpus, do not hand-edit
-preview/                      the generative preview harness + chain tester
+  *.t.sol                     one file per feature: Decompose, Sampling, InkGenes, OwnerToken,
+                              AuctionHouse, Provenance, Composability, GasCeilings, ...
+  audit/                      proof-of-concept tests retained from the audits
+  legacy/                     the pre-refactor renderer that RendererDiff.t.sol compares against
+  fixtures/                   generated parity corpora per ladder, do not hand-edit
+medusa/                       the Medusa fuzz harness (bounded lifecycle, reserve properties)
+preview/                      the canonical TypeScript renderer, preview harness, chain tester,
+                              and the site UI the web workspace imports
+web/                          the Next.js site at shapes.ripe.wtf; imports preview/src
+indexer/                      the Ponder indexer for Shapes and the auction house
+deployments/                  deployment records per chain id, written by deploy.sh
+docs/                         design specs and drafts behind each feature
+audits/                       audit briefs, reports, and the pre-audit x-ray
+project/                      charter, architecture, decision log, risks, roadmap, reviews, experiments
 netlify.toml                  repository-root Netlify config; builds the web workspace
 SPEC.md                       implementation plan and every rendering decision
 SECURITY.md                   adversarial review
@@ -701,8 +748,8 @@ script/deploy.sh sepolia             # broadcasts, verifies on Etherscan, record
 
 `script/env/mainnet.env` ships with `DEPLOYER`, `FEE_RECIPIENT`, and `MINT_FEE_WEI` empty until D-05
 (`project/DECISIONS.md`) fills them in; the wrapper refuses to run, `DRY_RUN` included, while any
-of them are unset. D-05 is resolved and the mainnet Shapes deployed 2026-09-03 (see "Deployed
-addresses" above). Mainnet deploys the same way any other target does:
+of them are unset. D-05 is resolved and the mainnet Shapes deployed 2026-09-03 (see "Live on Ethereum
+mainnet" above). Mainnet deploys the same way any other target does:
 
 ```bash
 DRY_RUN=1 script/deploy.sh mainnet
@@ -744,23 +791,6 @@ already nonzero the step is skipped rather than refused, so `RESUME=1` can revis
 already-attested chain. `DRY_RUN=1` prints what would be signed and submits nothing. Never issue
 multiple valid signatures for competing hashes because any relayer holding one can submit it
 first.
-
-## Deployed addresses
-
-| Network | Shapes | ShapeRenderer |
-|---|---|---|
-| Mainnet | `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0` | `0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295` |
-| Sepolia | `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` | `0x7025fc7e13ca24505d471e193e2e2a54e960a1b2` |
-
-Mainnet deployed 2026-09-03 from `main` commit `a0a180b`. Mint fee is a flat 0.001 ETH per Shape;
-`mintStart` is `1788462000` (2026-09-03, 15:00 ET). Fees route to the 0xSplits wallet
-`0xD4ba7cA95f3983514DDa317C4428CDb8F59c7e72`. Owner token #0 is listed in auction `0`; the artist
-attestation is recorded onchain.
-
-The Sepolia deployment runs at 1/100 testnet scale (see `src/lib/Denominations.sol`), not the
-mainnet ladder. Full addresses, ABI-relevant metadata, and fee/block info are in
-`deployments/1.json` and `deployments/11155111.json`, the machine-readable records the site and
-indexer read from.
 
 ---
 

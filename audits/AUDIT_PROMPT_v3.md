@@ -46,11 +46,11 @@ Four things, in descending order of how much they can cost if wrong.
 ## Where the v2 brief is now stale
 
 - It describes `restore` and `splitRecordOf`. Both are gone. If you find a reference to them
-  anywhere in the tree outside `INK_GENES_DRAFT.md` and `REVIEW_PROMPT_INK_GENES.md`, which are
+  anywhere in the tree outside `docs/INK_GENES_DRAFT.md` and `docs/REVIEW_PROMPT_INK_GENES.md`, which are
   historical records, that is a finding.
 - It describes `blacken`. That is now `sacrifice`.
 - It describes `mint(amountWei, to)`. That signature no longer exists.
-- Its id-collision argument was rewritten for 0-based ids. `DECOMPOSE_SPEC.md` carries the
+- Its id-collision argument was rewritten for 0-based ids. `docs/DECOMPOSE_SPEC.md` carries the
   current version.
 
 ## The invariants

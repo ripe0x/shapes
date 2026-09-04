@@ -2,11 +2,11 @@
 
 Target: branch `claude/contracts-page`. Contracts audited at `7f6ccb5`; fixes at `887497c`; harness
 additions at `eedbed0`; per-recipient fee accrual (audit S-1) follows. An independent Codex audit of
-`AUDIT_PROMPT_v8.md` runs in parallel and is reported separately.
+`audits/AUDIT_PROMPT_v8.md` runs in parallel and is reported separately.
 
-## 1. Adversarial audit against `AUDIT_PROMPT_v8.md` (opus)
+## 1. Adversarial audit against `audits/AUDIT_PROMPT_v8.md` (opus)
 
-Full report: `AUDIT_REPORT_v8_claude.md`. Tests: `test/audit/` (62 tests, all nine required
+Full report: `audits/AUDIT_REPORT_v8_claude.md`. Tests: `test/audit/` (62 tests, all nine required
 attempts, none exploited). Reproduced baseline: 532 tests both profiles, 4 fork tests, Medusa
 11/11, Anvil deploy plus e2e.
 
@@ -63,9 +63,9 @@ is never hashed; `incorrect-equality` on `_previousBlockHash` guards block zero 
 intentional stream draw; the rest are standard patterns covered by `nonReentrant` entrypoints and
 pull-based settlement.
 
-## 5. Independent Codex audit of `AUDIT_PROMPT_v8.md`
+## 5. Independent Codex audit of `audits/AUDIT_PROMPT_v8.md`
 
-Recorded in `AUDIT_REPORT_v8_codex.md`: no Critical, High, Medium or Low finding; nine adversarial
+Recorded in `audits/AUDIT_REPORT_v8_codex.md`: no Critical, High, Medium or Low finding; nine adversarial
 attempts retained and passing; every property in the brief verified with test and source evidence.
 Codex did not raise S-1 to S-3 or the two copy-move Mediums that the in-house reviews found; those
 are fixed on the branch regardless.
@@ -113,9 +113,9 @@ and asserts `effectiveModulesOf` length equals the grid cell count, the deployme
 script trusting a foreign indexer already bound to port 42069. The script now refuses an occupied
 port and requires its own indexer process to be alive (`#85`). Indexer handlers are correct.
 
-## 9. Independent Codex audit of `AUDIT_PROMPT_v9.md` at `34d2c3b`
+## 9. Independent Codex audit of `audits/AUDIT_PROMPT_v9.md` at `34d2c3b`
 
-Recorded in `AUDIT_REPORT_v9_codex.md`. No Critical, High or Medium finding. Baseline reproduced: 669
+Recorded in `audits/AUDIT_REPORT_v9_codex.md`. No Critical, High or Medium finding. Baseline reproduced: 669
 tests in both profiles, 4 fork tests, Medusa 14 properties, Anvil deploy and lifecycle (the indexer
 step needed a free port, which `#85` now enforces). Two Low findings, both already known:
 

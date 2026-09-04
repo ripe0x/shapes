@@ -4,7 +4,6 @@ broadcast/
 node_modules/
 preview/dist/
 preview/shapes-preview.html
-docs/
 .env
 
 # local scratch, not part of the project

@@ -130,7 +130,7 @@ go:
 
 1. All of Task 1 green locally + CI green on push.
 2. Fork tests: run `forge test` with `MAINNET_RPC_URL` set so the 4 skipped tests execute.
-3. Refresh `AUDIT_PROMPT_v2.md` to cover ink genes (new attack surface: gene walk,
+3. Refresh `audits/AUDIT_PROMPT_v2.md` to cover ink genes (new attack surface: gene walk,
    simulate views, InkGene event) and run a full audit pass against it — at minimum a
    thorough self-audit; recommend an external reviewer before mainnet given immutability.
 4. Constructor arguments decided and double-checked: immutable `mintFee` (currently committed to
