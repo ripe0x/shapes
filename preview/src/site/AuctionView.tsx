@@ -22,6 +22,7 @@ import {
 } from "./auction";
 import type {SiteData, SiteToken} from "./data";
 import {shapeTitle} from "./shapeTitle";
+import {TokenSummary} from "./TokenView";
 
 /** Font size for the token name, the panel's dominant element. */
 const HERO_SIZE = 40;
@@ -133,6 +134,8 @@ export function AuctionView({
   const [picked, setPicked] = React.useState<Set<string>>(new Set());
   const [ethAmount, setEthAmount] = React.useState("");
   const [asking, setAsking] = React.useState(false);
+  // A card thumbnail opened for a closer look: the token shown in the details modal.
+  const [detailId, setDetailId] = React.useState<bigint | null>(null);
   // The confirm modal stays open while the bid is in flight so its stage line and the wallet
   // prompt are seen together. It closes when the op settles; the picks are cleared only on
   // success so a failed bid can be retried as it was.
@@ -391,7 +394,7 @@ export function AuctionView({
             {heroCards.length > 0 && (
               <div style={{flex: 1, minWidth: 0, display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: 6, marginLeft: 16}}>
                 {heroCards.slice(0, HERO_CARD_LIMIT).map((c) => (
-                  <CardThumb key={c.id.toString()} id={c.id} token={c.token} size={44} onClick={() => onOpenToken(c.id)} />
+                  <CardThumb key={c.id.toString()} id={c.id} token={c.token} size={44} onClick={() => setDetailId(c.id)} />
                 ))}
                 {heroCards.length > HERO_CARD_LIMIT && (
                   <div style={{alignSelf: "center", fontSize: 11, color: C.muted, whiteSpace: "nowrap"}}>
@@ -663,7 +666,7 @@ export function AuctionView({
                 chainId={dep.chainId}
                 data={data}
                 now={now}
-                onOpenToken={onOpenToken}
+                onOpenCard={setDetailId}
               />
             ))
           )}
@@ -685,7 +688,7 @@ export function AuctionView({
                 token={c.token}
                 size={72}
                 caption={`#${c.id.toString()}${c.token ? ` · ${DENOMINATIONS[c.token.di]!.label} ETH` : ""}`}
-                onClick={() => onOpenToken(c.id)}
+                onClick={() => setDetailId(c.id)}
               />
             ))}
           </div>
@@ -752,6 +755,19 @@ export function AuctionView({
         </Section>
       )}
 
+      {detailId !== null && (
+        <CardDetailModal
+          id={detailId}
+          data={data}
+          address={address}
+          onClose={() => setDetailId(null)}
+          onOpenPage={() => {
+            setDetailId(null);
+            onOpenToken(detailId);
+          }}
+        />
+      )}
+
       <Section title="TERMS" last pad="26px 48px 34px 32px">
         <div style={{fontSize: 13, lineHeight: 1.9, color: C.bodyDim}}>
           <div>Reserve {unitsToEth(auction.reserveUnits)} ETH</div>
@@ -767,6 +783,45 @@ export function AuctionView({
         </div>
       </Section>
     </>
+  );
+}
+
+/** A card's details in a modal: the token page's summary for a live Shape, else a note that the
+ *  card is no longer live. Links out to the full token page. */
+function CardDetailModal({
+  id,
+  data,
+  address,
+  onClose,
+  onOpenPage,
+}: {
+  id: bigint;
+  data: SiteData | null;
+  address: `0x${string}` | undefined;
+  onClose: () => void;
+  onOpenPage: () => void;
+}) {
+  const token = data?.tokens.find((t) => t.id === id);
+  const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
+  const isOwnerToken = !!token && data?.ownerToken === token.id;
+  return (
+    <Modal title="SHAPE" onCancel={onClose} maxWidth={860}>
+      {token && token.di >= 0 ? (
+        <TokenSummary token={token} isOwnerToken={isOwnerToken} owned={owned} />
+      ) : (
+        <div style={{fontSize: 13, lineHeight: 1.7, color: C.bodyDim}}>
+          {data ? `Shape ${id.toString()} is no longer live.` : "Reading the chain…"}
+        </div>
+      )}
+      <button
+        type="button"
+        className="btn-ghost"
+        onClick={onOpenPage}
+        style={{marginTop: 24, fontSize: 11, color: C.muted, textDecoration: "underline", textUnderlineOffset: 3}}
+      >
+        Open Shape {id.toString()}
+      </button>
+    </Modal>
   );
 }
 
@@ -830,13 +885,14 @@ function BidHistoryRow({
   chainId,
   data,
   now,
-  onOpenToken,
+  onOpenCard,
 }: {
   entry: BidHistoryEntry;
   chainId: number;
   data: SiteData | null;
   now: number;
-  onOpenToken: (id: bigint) => void;
+  /** Opens the card's details. */
+  onOpenCard: (id: bigint) => void;
 }) {
   const identity = useDisplayName(entry.bidder);
 
@@ -867,7 +923,7 @@ function BidHistoryRow({
               token={data?.tokens.find((t) => t.id === c.id)}
               size={36}
               caption={c.di >= 0 ? `${DENOMINATIONS[c.di]!.label} ETH` : "—"}
-              onClick={() => onOpenToken(c.id)}
+              onClick={() => onOpenCard(c.id)}
             />
           ))
         )}

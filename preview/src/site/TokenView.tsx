@@ -319,81 +319,12 @@ export function TokenView({
     );
   }
 
-  const di = token.di;
-  const lbl = DENOMINATIONS[di].label;
-
-  const tokRows: {
-    k: string;
-    v: React.ReactNode;
-    description?: string;
-    size?: number;
-    wrap?: "anywhere" | "normal";
-  }[] = [
-    {
-      k: "owner",
-      v: (
-        <>
-          <AddressName address={token.owner} />
-          {owned ? " (you)" : null}
-        </>
-      ),
-      wrap: "anywhere",
-    },
-    ...(isOwnerToken
-      ? [{
-          k: "collection owner",
-          v: "true",
-          description: "Holding this Shape represents collection ownership and grants no administrative authority.",
-          wrap: "anywhere" as const,
-        }]
-      : []),
-    ...displayTraits(token.meta.attributes).map((trait) => ({
-      k: trait.label,
-      v: trait.value,
-      description: trait.description,
-      wrap: "anywhere" as const,
-    })),
-  ];
-
   return (
     <main className="token-detail-page">
       {back}
 
       <Section title="SHAPE" pad="36px 48px 44px 32px">
-        <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
-          <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
-          <div style={{flex: "1 1 320px", minWidth: 0}}>
-            <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id, isOwnerToken)}</div>
-            <div style={{marginTop: 16, fontSize: 18, lineHeight: 1.4, color: C.bodyDim}}>{lbl} ETH</div>
-            <div style={{margin: "32px 0 0"}}>
-              {tokRows.map((r) => (
-                <div
-                  key={r.k}
-                  className="token-trait-row"
-                  style={{
-                    padding: "12px 0",
-                    borderBottom: `1px solid ${C.ruleInner}`,
-                  }}
-                >
-                  <div>
-                    <div className="token-trait-label">{r.k}</div>
-                    {r.description && (
-                      <div className="token-trait-description">
-                        {r.description}
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    className="token-trait-value"
-                    style={{fontSize: r.size, overflowWrap: r.wrap ?? "normal"}}
-                  >
-                    {r.v}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        <TokenSummary token={token} isOwnerToken={isOwnerToken} owned={owned} />
       </Section>
 
       {owned && (
@@ -464,6 +395,91 @@ const PROV_RELATION_LABEL: Partial<Record<ProvNode["rel"], string>> = {
 };
 
 /// A rollup placeholder (`more` set) carries no real token: `id: 0n` is not a token reference.
+/** A live Shape's artwork beside its title, denomination, and trait rows. The token page's
+ *  SHAPE section and the auction page's card modal share it. Not for a Black Shape (di < 0). */
+export function TokenSummary({
+  token,
+  isOwnerToken,
+  owned,
+}: {
+  token: SiteToken;
+  isOwnerToken: boolean;
+  /** The connected wallet holds the token; marks the owner row "(you)". */
+  owned: boolean;
+}) {
+  const lbl = DENOMINATIONS[token.di].label;
+
+  const tokRows: {
+    k: string;
+    v: React.ReactNode;
+    description?: string;
+    size?: number;
+    wrap?: "anywhere" | "normal";
+  }[] = [
+    {
+      k: "owner",
+      v: (
+        <>
+          <AddressName address={token.owner} />
+          {owned ? " (you)" : null}
+        </>
+      ),
+      wrap: "anywhere",
+    },
+    ...(isOwnerToken
+      ? [{
+          k: "collection owner",
+          v: "true",
+          description: "Holding this Shape represents collection ownership and grants no administrative authority.",
+          wrap: "anywhere" as const,
+        }]
+      : []),
+    ...displayTraits(token.meta.attributes).map((trait) => ({
+      k: trait.label,
+      v: trait.value,
+      description: trait.description,
+      wrap: "anywhere" as const,
+    })),
+  ];
+
+  return (
+    <div className="token-detail-hero" style={{display: "flex", flexWrap: "wrap", gap: 48, alignItems: "flex-start"}}>
+      <Art src={token.image} alt={`Shape ${token.id}`} width={340} />
+      <div style={{flex: "1 1 320px", minWidth: 0}}>
+        <div style={{fontSize: 40, lineHeight: 1}}>{shapeTitle(token.id, isOwnerToken)}</div>
+        <div style={{marginTop: 16, fontSize: 18, lineHeight: 1.4, color: C.bodyDim}}>{lbl} ETH</div>
+        <div style={{margin: "32px 0 0"}}>
+          {tokRows.map((r) => (
+            <div
+              key={r.k}
+              className="token-trait-row"
+              style={{
+                padding: "12px 0",
+                borderBottom: `1px solid ${C.ruleInner}`,
+              }}
+            >
+              <div>
+                <div className="token-trait-label">{r.k}</div>
+                {r.description && (
+                  <div className="token-trait-description">
+                    {r.description}
+                  </div>
+                )}
+              </div>
+              <div
+                className="token-trait-value"
+                style={{fontSize: r.size, overflowWrap: r.wrap ?? "normal"}}
+              >
+                {r.v}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function isProvenanceRollup(node: ProvNode): node is ProvNode & {more: number} {
   return typeof node.more === "number" && node.more > 0;
 }
