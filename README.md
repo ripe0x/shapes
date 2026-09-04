@@ -419,6 +419,7 @@ medusa/                       the Medusa fuzz harness (bounded lifecycle, reserv
 preview/                      the canonical TypeScript renderer, preview harness, chain tester,
                               and the site UI the web workspace imports
 web/                          the Next.js site at shapes.ripe.wtf; imports preview/src
+  docs/                       developer docs served at shapes.ripe.wtf/docs
 indexer/                      the Ponder indexer for Shapes and the auction house
 deployments/                  deployment records per chain id, written by deploy.sh
 docs/                         design specs and drafts behind each feature

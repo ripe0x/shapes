@@ -1,3 +1,4 @@
+import React from "react";
 import {DENOMINATIONS} from "../chain/abi";
 import {C} from "./theme";
 import {Section, Art} from "./ui";
@@ -6,6 +7,11 @@ import {compactShapeTitle} from "./shapeTitle";
 import {filterOwnedTokens} from "./MyShapesView";
 
 export const BLACK_FILTER = -2;
+
+/** Delay step between consecutive gallery cards in the reveal cascade, and the index cap it
+ *  wraps at so a long grid's last row does not wait on its position. */
+export const GALLERY_CASCADE_STEP_MS = 26;
+export const GALLERY_CASCADE_CAP = 24;
 
 /** Kept pure so the gallery's Black-Shape visibility is regression-testable without a DOM. */
 export function filterGalleryTokens<T extends {di: number}>(tokens: T[], filter: number): T[] {
@@ -121,15 +127,43 @@ export function ShapeGrid({
   ownerTokenId: bigint | null;
   onOpenToken: (id: bigint) => void;
 }) {
+  // Cascade runs once per mount: armed before paint (useLayoutEffect, so there is no flash of the
+  // plain grid on this above-the-fold view), then revealed once the grid enters the viewport. A
+  // card that mounts afterward (a filter change, an owner-only toggle, a live refresh) is a fresh
+  // DOM node and matches the same `.is-revealed .gallery-card` rule on its own first paint; a card
+  // that stays mounted across such a change is not remounted and does not replay.
+  const gridRef = React.useRef<HTMLDivElement>(null);
+  const [revealed, setRevealed] = React.useState(false);
+  React.useLayoutEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || revealed || typeof IntersectionObserver === "undefined") return;
+    grid.classList.add("is-armed");
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setRevealed(true);
+          observer.disconnect();
+        }
+      },
+      {rootMargin: "0px 0px -10% 0px"},
+    );
+    observer.observe(grid);
+    return () => observer.disconnect();
+  }, [revealed, tokens.length > 0]);
+
   return (
-    <div className="shape-token-grid">
-      {tokens.map((t) => (
+    <div ref={gridRef} className={`shape-token-grid gallery-grid${revealed ? " is-revealed" : ""}`}>
+      {tokens.map((t, index) => (
         <button
           key={t.id.toString()}
           type="button"
           className="btn-ghost gallery-card"
           onClick={() => onOpenToken(t.id)}
-          style={{display: "block", textAlign: "left"}}
+          style={{
+            display: "block",
+            textAlign: "left",
+            animationDelay: `${(index % GALLERY_CASCADE_CAP) * GALLERY_CASCADE_STEP_MS}ms`,
+          }}
         >
           <Art src={t.image} alt={`Shape ${t.id}`} />
           <div

@@ -549,9 +549,11 @@ function ActivityRow({
     >
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
-        {row.detail && <span className="activity-detail">{row.detail}</span>}
-        <span className="activity-detail">
-          <AddressName address={event.actor} />
+        <span className="activity-meta">
+          {row.detail && <span className="activity-detail">{row.detail}</span>}
+          <span className="activity-actor">
+            <AddressName address={event.actor} />
+          </span>
         </span>
       </div>
 
