@@ -23,7 +23,11 @@ async function paginate<T>(
   fetch: (fromBlock: bigint, toBlock: bigint) => Promise<T[]>,
 ): Promise<T[]> {
   const out: T[] = [];
-  for (let from = BigInt(dep.fromBlock ?? 0); from <= latest; from += MAX_RANGE + 1n) {
+  for (
+    let from = BigInt(dep.auctionHouseFromBlock ?? dep.fromBlock ?? 0);
+    from <= latest;
+    from += MAX_RANGE + 1n
+  ) {
     const to = from + MAX_RANGE < latest ? from + MAX_RANGE : latest;
     out.push(...(await fetch(from, to)));
   }
@@ -36,6 +40,8 @@ export interface AuctionState {
   tokenId: bigint;
   /** Zero until the first bid lands: the clock starts then, not at creation. */
   endTime: bigint;
+  /** Unix time bids open. Zero or past means open since creation. */
+  startTime: bigint;
   duration: bigint;
   extensionWindow: number;
   minIncrementBps: number;
@@ -78,11 +84,12 @@ export function chainNowFor(a: AuctionState): number {
  */
 export type AuctionSlot = AuctionState | null | "loading" | "error";
 
-export type Phase = "pre-bid" | "live" | "ended-unsettled" | "settled";
+export type Phase = "scheduled" | "pre-bid" | "live" | "ended-unsettled" | "settled";
 
 /** Lifecycle phase from auction state and chain time. */
 export function getPhase(a: AuctionState, now: number): Phase {
   if (a.settled) return "settled";
+  if (a.endTime === 0n && Number(a.startTime) > now) return "scheduled";
   const left = secondsLeft(a, now);
   if (left === null) return "pre-bid";
   if (left === 0) return "ended-unsettled";
@@ -120,6 +127,12 @@ export function secondsLeft(a: AuctionState, now: number): number | null {
   // `now` (chainNowFor) is fractional, extrapolated between block reads; floored to whole
   // seconds so the countdown display doesn't render a fractional second.
   return Math.max(0, Math.floor(Number(a.endTime) - now));
+}
+
+/** Seconds until bidding opens, or null when the auction is not `"scheduled"`. */
+export function secondsUntilStart(a: AuctionState, now: number): number | null {
+  if (getPhase(a, now) !== "scheduled") return null;
+  return Math.floor(Number(a.startTime) - now);
 }
 
 /** Formats seconds as "Hh MMm SSs", dropping units that are always zero at this magnitude
@@ -253,6 +266,7 @@ export async function loadAuction(
     seller: raw.seller,
     tokenId: raw.tokenId,
     endTime: raw.endTime,
+    startTime: raw.startTime,
     duration: raw.duration,
     extensionWindow: raw.extensionWindow,
     minIncrementBps: raw.minIncrementBps,

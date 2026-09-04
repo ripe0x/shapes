@@ -17,6 +17,10 @@
  * (`endTime` is 0 until then; see `bid` in ShapeAuctionHouse.sol). So a reserve-level bid from a
  * second actor follows every creation immediately, in the same run, to open the countdown before
  * the standalone process exits.
+ *
+ * START_DELAY (seconds, default 0) creates the auction with a future `startTime`: latest block
+ * timestamp plus the delay. `bid` reverts `NotStarted` before that time, so the opening bid is
+ * skipped when START_DELAY is set; the script logs the resolved start time instead.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -34,6 +38,10 @@ const AUCTION_DURATION_SECONDS = 600;
 const RESERVE_UNITS = 1n;
 const MIN_INCREMENT_BPS = 500;
 const EXTENSION_WINDOW_SECONDS = 300;
+
+/** Seconds to schedule the auction's start after now, from the environment. 0 opens it
+ *  immediately (the current behavior: create then place the opening bid). */
+const START_DELAY = Number(process.env.START_DELAY ?? "0");
 
 /** Impersonates `address` via anvil so it can sign without a private key: tops its balance up to
  *  10 ETH if under 1 (gas only, the calls that follow carry no value), and pushes a
@@ -103,6 +111,10 @@ async function createAndOpenAuction(sim: Sim, dep: Deployment, ownerIdx: number,
   })) as boolean;
   if (!approved) await sim.setApprovalForAll(ownerIdx, dep.auctionHouse!, true);
 
+  // Resolved right before creation, off the latest block's own timestamp, not process start time.
+  const startTime =
+    START_DELAY > 0 ? BigInt((await sim.pub.getBlock()).timestamp) + BigInt(START_DELAY) : 0n;
+
   const auctionId = await sim.createAuction(
     ownerIdx,
     OWNER_TOKEN_ID,
@@ -110,7 +122,14 @@ async function createAndOpenAuction(sim: Sim, dep: Deployment, ownerIdx: number,
     RESERVE_UNITS,
     MIN_INCREMENT_BPS,
     EXTENSION_WINDOW_SECONDS,
+    startTime,
   );
+
+  if (startTime > 0n) {
+    console.log(`\nowner auction: created auction #${auctionId} for token #0, scheduled`);
+    console.log(`  starts: ${new Date(Number(startTime) * 1000).toISOString()} (unix ${startTime})`);
+    return;
+  }
 
   // Reserve-level bid from a different actor: starts the auction's clock (endTime is 0, and the
   // seller cannot bid its own lot) so the auction is genuinely live, not merely created.
