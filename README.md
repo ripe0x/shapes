@@ -377,6 +377,7 @@ test/
   fixtures/fixtures.mainnet.json  generated default-ladder corpus, do not hand-edit
   fixtures/fixtures.testnet.json  generated testnet-ladder corpus, do not hand-edit
 preview/                      the generative preview harness + chain tester
+web/docs/                     developer docs served at shapes.ripe.wtf/docs
 netlify.toml                  repository-root Netlify config; builds the web workspace
 SPEC.md                       implementation plan and every rendering decision
 SECURITY.md                   adversarial review
