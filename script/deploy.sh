@@ -21,6 +21,14 @@
 #                                                 mint start; resolved after forge build.
 #   MINT_START                                     overrides the env file's MINT_START (a
 #                                                  rehearsal sets this a few minutes ahead).
+#   SHAPES_ADDRESS                                 overrides the env file's SHAPES_ADDRESS,
+#                                                  including to empty. Set (the sepolia and
+#                                                  mainnet env files default it to their live
+#                                                  Shapes) to deploy only a new auction house
+#                                                  against that token and move its market pointer;
+#                                                  empty deploys a fresh core. A full Sepolia
+#                                                  redeploy: SHAPES_ADDRESS= script/deploy.sh
+#                                                  sepolia.
 #   DRY_RUN=1                                     simulate only: the REQUIRE_MAIN git guards
 #                                                  (branch, fetched origin/main, clean tree, no
 #                                                  untracked files) still run, but a failure only
@@ -59,9 +67,14 @@
 #   LIST_OWNER_TOKEN=1                            opt in to listing the owner token (#0) in the
 #                                                  auction house right after the readback, using
 #                                                  AUCTION_DURATION, AUCTION_RESERVE_UNITS,
-#                                                  AUCTION_MIN_INCREMENT_BPS and
-#                                                  AUCTION_EXTENSION_WINDOW from the env file
-#                                                  (86400s, 0, 500bps, 900s by default).
+#                                                  AUCTION_MIN_INCREMENT_BPS,
+#                                                  AUCTION_EXTENSION_WINDOW and AUCTION_START_TIME
+#                                                  from the env file (86400s, 0, 500bps, 900s, open
+#                                                  at listing, by default). AUCTION_START_TIME is
+#                                                  an absolute unix time; empty or 0 opens bidding
+#                                                  at listing, otherwise bids revert NotStarted
+#                                                  until then. Refused if more than 30 days after
+#                                                  the RPC's latest block timestamp.
 #                                                  createAuction only escrows the lot and opens the
 #                                                  listing; the clock starts on the first bid.
 #                                                  Allowed under RESUME too, and skips rather than
@@ -85,6 +98,8 @@
 #                                                  is skipped rather than refused, so RESUME can
 #                                                  revisit an already-attested chain. DRY_RUN=1
 #                                                  prints what would be signed and submits nothing.
+#                                                  Refused in existing-token mode: that mode
+#                                                  deploys only the house, not a fresh core.
 #   ALLOW_BRANCH_DEPLOY=1                         opt in to deploying from a feature branch
 #                                                  instead of main, for a target whose env file
 #                                                  sets BRANCH_DEPLOY_ALLOWED=true (anvil and
@@ -127,8 +142,17 @@ VERIFY_OVERRIDE="${VERIFY-}"
 MINT_START_OVERRIDE="${MINT_START:-}"
 # Same pattern for LIST_OWNER_TOKEN: a shell export wins over whatever the env file sets.
 LIST_OWNER_TOKEN_OVERRIDE="${LIST_OWNER_TOKEN-}"
+# Same pattern for AUCTION_START_TIME: a rehearsal sets this a few minutes ahead the same way a
+# MINT_START rehearsal does.
+AUCTION_START_TIME_OVERRIDE="${AUCTION_START_TIME:-}"
 # Same pattern for ALLOW_BRANCH_DEPLOY: it is a shell opt-in, not something the env file sets.
 ALLOW_BRANCH_DEPLOY_OVERRIDE="${ALLOW_BRANCH_DEPLOY-}"
+# Same pattern for SHAPES_ADDRESS, except the override must win even when set to empty (a full
+# Sepolia redeploy passes SHAPES_ADDRESS= to fall back to a fresh core), so presence is captured
+# with `+` rather than the value with `:-`.
+SHAPES_ADDRESS_WAS_SET=0
+[ -z "${SHAPES_ADDRESS+x}" ] || SHAPES_ADDRESS_WAS_SET=1
+SHAPES_ADDRESS_OVERRIDE="${SHAPES_ADDRESS-}"
 
 set -a
 # shellcheck source=/dev/null
@@ -145,9 +169,34 @@ AUCTION_DURATION="${AUCTION_DURATION:-86400}"
 AUCTION_RESERVE_UNITS="${AUCTION_RESERVE_UNITS:-0}"
 AUCTION_MIN_INCREMENT_BPS="${AUCTION_MIN_INCREMENT_BPS:-500}"
 AUCTION_EXTENSION_WINDOW="${AUCTION_EXTENSION_WINDOW:-900}"
+[ -z "$AUCTION_START_TIME_OVERRIDE" ] || AUCTION_START_TIME="$AUCTION_START_TIME_OVERRIDE"
+AUCTION_START_TIME="${AUCTION_START_TIME:-0}"
 [ -z "$ALLOW_BRANCH_DEPLOY_OVERRIDE" ] || ALLOW_BRANCH_DEPLOY="$ALLOW_BRANCH_DEPLOY_OVERRIDE"
 ALLOW_BRANCH_DEPLOY="${ALLOW_BRANCH_DEPLOY:-0}"
 BRANCH_DEPLOY_ALLOWED="${BRANCH_DEPLOY_ALLOWED:-false}"
+[ "$SHAPES_ADDRESS_WAS_SET" = "0" ] || SHAPES_ADDRESS="$SHAPES_ADDRESS_OVERRIDE"
+SHAPES_ADDRESS="${SHAPES_ADDRESS:-}"
+export SHAPES_ADDRESS
+# Existing-token mode: deploy only a new auction house against SHAPES_ADDRESS and move its market
+# pointer. Empty deploys a fresh core, same as before this mode existed.
+EXISTING_TOKEN_MODE=0
+[ -z "$SHAPES_ADDRESS" ] || EXISTING_TOKEN_MODE=1
+
+lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# Existing-token mode extends a token already on record; refuse before any RPC, git, wallet or
+# broadcast step if that record is missing or names a different token. ATTEST_ARTIST signs an
+# attestation for a freshly deployed core, which this mode never deploys.
+if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
+  EXISTING_RECORD="deployments/${CHAIN_ID}.json"
+  [ -f "$EXISTING_RECORD" ] \
+    || { echo "refusing: $EXISTING_RECORD is missing; existing-token mode needs the record of the token it extends" >&2; exit 1; }
+  RECORD_SHAPES=$(lower "$(jq -r '.shapes' "$EXISTING_RECORD")")
+  [ "$RECORD_SHAPES" = "$(lower "$SHAPES_ADDRESS")" ] \
+    || { echo "refusing: $EXISTING_RECORD names $RECORD_SHAPES, SHAPES_ADDRESS is $(lower "$SHAPES_ADDRESS")" >&2; exit 1; }
+  [ "$ATTEST_ARTIST" != "1" ] \
+    || { echo "refusing: ATTEST_ARTIST applies to a fresh core; existing-token mode deploys only the house" >&2; exit 1; }
+fi
 
 # Mainnet's env file ships with the deployer, fee recipient and fee left blank until D-05
 # (project/DECISIONS.md) is resolved. Refuse before touching any RPC, dry run included.
@@ -177,6 +226,11 @@ echo "  rpc      $RPC"
 echo "  profile  $FOUNDRY_PROFILE"
 echo "  dry run  $DRY_RUN"
 echo "  resume   $RESUME"
+if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
+  echo "  mode     existing token ($SHAPES_ADDRESS): deploy only a new auction house"
+else
+  echo "  mode     fresh core"
+fi
 echo "  list owner token  $LIST_OWNER_TOKEN"
 echo "  attest artist     $ATTEST_ARTIST"
 echo "  allow branch deploy  $ALLOW_BRANCH_DEPLOY"
@@ -345,12 +399,23 @@ fi
 if [ "$DRY_RUN" = "1" ]; then
   echo "DRY_RUN=1: simulating only, nothing will be broadcast or written"
   if [ "$LIST_OWNER_TOKEN" = "1" ]; then
-    echo "  would list: owner token (#0), duration ${AUCTION_DURATION}s, reserve $AUCTION_RESERVE_UNITS units, min increment ${AUCTION_MIN_INCREMENT_BPS}bps, extension window ${AUCTION_EXTENSION_WINDOW}s"
+    echo "  would list: owner token (#0), duration ${AUCTION_DURATION}s, reserve $AUCTION_RESERVE_UNITS units, min increment ${AUCTION_MIN_INCREMENT_BPS}bps, extension window ${AUCTION_EXTENSION_WINDOW}s, start time $AUCTION_START_TIME"
   fi
   if [ "$ATTEST_ARTIST" = "1" ]; then
     echo "  would attest: sign and submit the artist attestation once broadcast, release hash defaulting to the Shapes creation tx (override with SHAPES_RELEASE_HASH)"
   fi
-  forge script script/Deploy.s.sol --tc Deploy --rpc-url "$RPC"
+  # --sender resolves Deploy.s.sol's admin check (and, on anvil, the fee-recipient-accepts-ETH
+  # probe) to the real deployer even without a wallet: no private key is needed to simulate as a
+  # given address. Left unset, forge simulates as its own default sender, which forge-std presets
+  # with a balance large enough that even a 1-wei transfer into it can overflow.
+  DRY_RUN_SENDER_ARGS=()
+  if [ -n "${DEPLOYER:-}" ]; then
+    DRY_RUN_SENDER_ARGS=(--sender "$DEPLOYER")
+  elif [ "$WALLET" = "anvil" ]; then
+    DRY_RUN_PK="${DEPLOYER_PRIVATE_KEY:-0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80}"
+    DRY_RUN_SENDER_ARGS=(--sender "$(cast wallet address --private-key "$DRY_RUN_PK")")
+  fi
+  forge script script/Deploy.s.sol --tc Deploy --rpc-url "$RPC" "${DRY_RUN_SENDER_ARGS[@]}"
   echo "dry run complete for $ENV_NAME"
   exit 0
 fi
@@ -374,8 +439,6 @@ fi
 # --- postflight: resolve what actually got deployed, read it back on chain ---------------------
 
 [ -f "$BROADCAST_FILE" ] || { echo "no broadcast file at $BROADCAST_FILE" >&2; exit 1; }
-
-lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
 
 # Mirrors e2e-anvil.sh's send_wait: cast send returns before the transaction is reliably mined on
 # this toolchain, so poll for the receipt before the next sequenced send races it. --gas-limit
@@ -418,9 +481,18 @@ require_uint_read() {
     || { echo "$label mismatch: expected $expected, got $actual" >&2; exit 1; }
 }
 
-RENDERER=$(contract_address ShapeRenderer)
-COLLECTION=$(contract_address ShapeCollection)
-SHAPES=$(contract_address Shapes)
+if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
+  # This broadcast deploys only the house: renderer/collection/Shapes are not in it. They come
+  # from the deployment already on record, guarded up front against SHAPES_ADDRESS and, below,
+  # against the live token's own pointers.
+  SHAPES="$RECORD_SHAPES"
+  RENDERER=$(lower "$(jq -r '.renderer' "$EXISTING_RECORD")")
+  COLLECTION=$(lower "$(jq -r '.collection' "$EXISTING_RECORD")")
+else
+  RENDERER=$(contract_address ShapeRenderer)
+  COLLECTION=$(contract_address ShapeCollection)
+  SHAPES=$(contract_address Shapes)
+fi
 HOUSE=$(contract_address ShapeAuctionHouse)
 
 require_address ShapeRenderer "$RENDERER"
@@ -428,7 +500,8 @@ require_address ShapeCollection "$COLLECTION"
 require_address Shapes "$SHAPES"
 require_address ShapeAuctionHouse "$HOUSE"
 
-# Linked libraries are deployed before the script run and recorded separately by Foundry.
+# Linked libraries are deployed before the script run and recorded separately by Foundry. Empty in
+# existing-token mode: this run links no library, since it deploys no library-using contract.
 while IFS=: read -r source contract address; do
   [ -n "$address" ] || continue
   require_address "$contract" "$address"
@@ -474,9 +547,13 @@ if [ "$VERIFY" = "true" ]; then
     fi
   }
 
-  verify_one src/ShapeRenderer.sol:ShapeRenderer ShapeRenderer "$RENDERER"
-  verify_one src/ShapeCollection.sol:ShapeCollection ShapeCollection "$COLLECTION"
-  verify_one src/Shapes.sol:Shapes Shapes "$SHAPES"
+  # Renderer/collection/Shapes are already verified from their own deploy in existing-token mode:
+  # this broadcast doesn't recreate them, so there is nothing new for those three to verify here.
+  if [ "$EXISTING_TOKEN_MODE" != "1" ]; then
+    verify_one src/ShapeRenderer.sol:ShapeRenderer ShapeRenderer "$RENDERER"
+    verify_one src/ShapeCollection.sol:ShapeCollection ShapeCollection "$COLLECTION"
+    verify_one src/Shapes.sol:Shapes Shapes "$SHAPES"
+  fi
   verify_one src/ShapeAuctionHouse.sol:ShapeAuctionHouse ShapeAuctionHouse "$HOUSE"
 
   while IFS=: read -r source contract address; do
@@ -487,28 +564,54 @@ fi
 
 # --- readback: always runs, verification failures above notwithstanding -------------------------
 
-# Foundry may broadcast independent CREATE transactions in a different order from the simulated
-# `transactions` array. Resolve the creation hash from the mined receipt whose contract address
-# is the actual Shapes address; pairing `contractName` with `.hash` can select another deployment.
-SHAPES_TX=$(jq -r --arg shapes "$SHAPES" \
-  '.receipts[] | select(.contractAddress != null) | select((.contractAddress | ascii_downcase) == ($shapes | ascii_downcase)) | .transactionHash' \
+SHAPES_TX=""
+if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
+  # The core predates this run: fromBlock keeps tracking the token's own creation, not the house's.
+  FROM_BLOCK=$(jq -r '.fromBlock' "$EXISTING_RECORD")
+else
+  # Foundry may broadcast independent CREATE transactions in a different order from the simulated
+  # `transactions` array. Resolve the creation hash from the mined receipt whose contract address
+  # is the actual Shapes address; pairing `contractName` with `.hash` can select another deployment.
+  SHAPES_TX=$(jq -r --arg shapes "$SHAPES" \
+    '.receipts[] | select(.contractAddress != null) | select((.contractAddress | ascii_downcase) == ($shapes | ascii_downcase)) | .transactionHash' \
+    "$BROADCAST_FILE" | tail -1)
+  [[ "$SHAPES_TX" =~ ^0x[0-9a-fA-F]{64}$ ]] || { echo "could not resolve Shapes transaction" >&2; exit 1; }
+  SHAPES_RECEIPT=$(cast receipt "$SHAPES_TX" --rpc-url "$RPC" --json)
+  [ "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.status')" = "0x1" ] \
+    || { echo "Shapes creation transaction did not succeed" >&2; exit 1; }
+  [ "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.contractAddress' | tr '[:upper:]' '[:lower:]')" \
+      = "$(lower "$SHAPES")" ] \
+    || { echo "Shapes creation transaction created another address" >&2; exit 1; }
+  FROM_BLOCK=$(cast to-dec "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.blockNumber')")
+fi
+
+# The house's own creation block, resolved the same way (by receipt, not simulated order) since
+# this run always deploys a house. Equal to FROM_BLOCK in fresh-core mode, where both land in the
+# same run; tracked separately because existing-token mode's FROM_BLOCK predates this run.
+HOUSE_TX=$(jq -r --arg house "$HOUSE" \
+  '.receipts[] | select(.contractAddress != null) | select((.contractAddress | ascii_downcase) == ($house | ascii_downcase)) | .transactionHash' \
   "$BROADCAST_FILE" | tail -1)
-[[ "$SHAPES_TX" =~ ^0x[0-9a-fA-F]{64}$ ]] || { echo "could not resolve Shapes transaction" >&2; exit 1; }
-SHAPES_RECEIPT=$(cast receipt "$SHAPES_TX" --rpc-url "$RPC" --json)
-[ "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.status')" = "0x1" ] \
-  || { echo "Shapes creation transaction did not succeed" >&2; exit 1; }
-[ "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.contractAddress' | tr '[:upper:]' '[:lower:]')" \
-    = "$(lower "$SHAPES")" ] \
-  || { echo "Shapes creation transaction created another address" >&2; exit 1; }
-FROM_BLOCK=$(cast to-dec "$(printf '%s' "$SHAPES_RECEIPT" | jq -r '.blockNumber')")
+[[ "$HOUSE_TX" =~ ^0x[0-9a-fA-F]{64}$ ]] || { echo "could not resolve ShapeAuctionHouse transaction" >&2; exit 1; }
+HOUSE_RECEIPT=$(cast receipt "$HOUSE_TX" --rpc-url "$RPC" --json)
+[ "$(printf '%s' "$HOUSE_RECEIPT" | jq -r '.status')" = "0x1" ] \
+  || { echo "ShapeAuctionHouse creation transaction did not succeed" >&2; exit 1; }
+AUCTION_HOUSE_FROM_BLOCK=$(cast to-dec "$(printf '%s' "$HOUSE_RECEIPT" | jq -r '.blockNumber')")
 
 require_address_read admin "$(cast call "$SHAPES" 'admin()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
-require_address_read artist "$(cast call "$SHAPES" 'artist()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+# artist() is set once in the constructor and never reassignable, so it only proves anything about
+# who deployed the core: skipped in existing-token mode, where this run's signer need only be
+# admin, not the original artist.
+if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
+  echo "  artist          $(cast call "$SHAPES" 'artist()(address)' --rpc-url "$RPC")"
+else
+  require_address_read artist "$(cast call "$SHAPES" 'artist()(address)' --rpc-url "$RPC")" "$EFFECTIVE_DEPLOYER"
+fi
 # Shapes.owner() and ownerOf(0) both track whoever holds the owner token, which a fresh broadcast
 # always mints to the deployer. RESUME may be revisiting a chain where a previous RESUME +
-# LIST_OWNER_TOKEN=1 run already escrowed it into the auction house, moving both, so it only logs;
-# the owner-token listing step below does its own ownership checks.
-if [ "$RESUME" = "1" ]; then
+# LIST_OWNER_TOKEN=1 run already escrowed it into the auction house, moving both, and an existing
+# token may have listed or transferred it long before this run, so both only log; the owner-token
+# listing step below does its own ownership checks.
+if [ "$RESUME" = "1" ] || [ "$EXISTING_TOKEN_MODE" = "1" ]; then
   echo "  owner           $(cast call "$SHAPES" 'owner()(address)' --rpc-url "$RPC")"
   echo "  Shape #0 owner  $(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")"
 else
@@ -541,10 +644,14 @@ echo "  owner descr  ${OWNER_TOKEN_DESCRIPTION:0:72}..."
 require_address_read 'auction-house target' "$(cast call "$HOUSE" 'shapes()(address)' --rpc-url "$RPC")" "$SHAPES"
 
 MINT_FEE_ONCHAIN=$(cast call "$SHAPES" 'mintFee()(uint256)' --rpc-url "$RPC" | awk '{print $1}')
-[ -z "${MINT_FEE_WEI:-}" ] || require_uint_read 'mint fee' "$MINT_FEE_ONCHAIN" "$MINT_FEE_WEI"
 MINT_START_ONCHAIN=$(cast call "$SHAPES" 'mintStart()(uint64)' --rpc-url "$RPC" | awk '{print $1}')
 echo "  mint start   $MINT_START_ONCHAIN"
-[ -z "${MINT_START:-}" ] || require_uint_read 'mint start' "$MINT_START_ONCHAIN" "$MINT_START"
+# The env file's MINT_FEE_WEI/MINT_START are inputs to Deploy.s.sol's fresh-core constructor;
+# an existing token's values are whatever admin has set since, not something this run applied.
+if [ "$EXISTING_TOKEN_MODE" != "1" ]; then
+  [ -z "${MINT_FEE_WEI:-}" ] || require_uint_read 'mint fee' "$MINT_FEE_ONCHAIN" "$MINT_FEE_WEI"
+  [ -z "${MINT_START:-}" ] || require_uint_read 'mint start' "$MINT_START_ONCHAIN" "$MINT_START"
+fi
 require_uint_read 'denomination count' "$(cast call "$SHAPES" 'denominationCount()(uint8)' --rpc-url "$RPC")" 9
 require_uint_read 'Shape #0 denomination' \
   "$(cast call "$SHAPES" 'denomIndexOf(uint256)(uint8)' 0 --rpc-url "$RPC")" 0
@@ -560,9 +667,10 @@ fi
 ZERO_HASH="0x0000000000000000000000000000000000000000000000000000000000000000"
 ARTIST_RELEASE_HASH_ONCHAIN=$(cast call "$SHAPES" 'artistReleaseHash()(bytes32)' --rpc-url "$RPC")
 # A fresh broadcast has attested nothing yet, so this must read zero. RESUME may be revisiting a
-# chain where a previous RESUME + ATTEST_ARTIST=1 run already signed it, so it only logs; the
-# attestation step below does its own zero check before signing anything.
-if [ "$RESUME" = "1" ]; then
+# chain where a previous RESUME + ATTEST_ARTIST=1 run already signed it, and an existing token may
+# already carry a permanent attestation from its own deploy, so both only log; the attestation
+# step below does its own zero check before signing anything.
+if [ "$RESUME" = "1" ] || [ "$EXISTING_TOKEN_MODE" = "1" ]; then
   echo "  artist release hash  $ARTIST_RELEASE_HASH_ONCHAIN"
 else
   [ "$ARTIST_RELEASE_HASH_ONCHAIN" = "$ZERO_HASH" ] \
@@ -572,14 +680,18 @@ else
 fi
 [ "$(cast call "$SHAPES" 'exists(uint256)(bool)' 0 --rpc-url "$RPC")" = "true" ] \
   || { echo "Shape #0 is not live" >&2; exit 1; }
-# The two discovery pointers. The market names the auction house the deploy just registered;
-# positions starts empty because no positions contract exists. Neither is locked.
+# The two discovery pointers. The market names the auction house this run deployed; positions is
+# whatever the token already carries (empty and unlocked on a fresh core), never touched here.
 POSITIONS=$(cast call "$SHAPES" 'positions()(address,bool)' --rpc-url "$RPC")
 MARKET=$(cast call "$SHAPES" 'market()(address,bool)' --rpc-url "$RPC")
 echo "  positions    $POSITIONS" | tr '\n' ' '; echo
 echo "  market       $MARKET" | tr '\n' ' '; echo
-[ "$POSITIONS" = $'0x0000000000000000000000000000000000000000\nfalse' ] \
-  || { echo "positions pointer did not start empty and unlocked" >&2; exit 1; }
+[ "$(echo "$POSITIONS" | tail -1)" = "false" ] \
+  || { echo "positions pointer unexpectedly locked" >&2; exit 1; }
+if [ "$EXISTING_TOKEN_MODE" != "1" ]; then
+  [ "$POSITIONS" = $'0x0000000000000000000000000000000000000000\nfalse' ] \
+    || { echo "positions pointer did not start empty and unlocked" >&2; exit 1; }
+fi
 # `cast call` returns a checksummed address; `contract_address` lowercases. Compare on one case.
 [ "$(echo "$MARKET" | tr '[:upper:]' '[:lower:]')" = "$HOUSE"$'\nfalse' ] \
   || { echo "market pointer does not name the deployed auction house, unlocked" >&2; exit 1; }
@@ -593,7 +705,18 @@ echo "  ok: onchain readback matches the deploy"
 # broadcast.
 
 AUCTION_ID=""
+JUST_LISTED=0
 if [ "$LIST_OWNER_TOKEN" = "1" ]; then
+  [[ "$AUCTION_START_TIME" =~ ^[0-9]+$ ]] \
+    || { echo "refusing: AUCTION_START_TIME must be a positive integer (unix seconds) or empty/0" >&2; exit 1; }
+  # Mirrors ShapeAuctionHouse.createAuction's own StartTooFar check against MAX_DURATION.
+  if [ "$AUCTION_START_TIME" != "0" ]; then
+    LATEST_BLOCK_TIME=$(cast block latest --field timestamp --rpc-url "$RPC")
+    MAX_START_TIME=$(( LATEST_BLOCK_TIME + 30 * 24 * 60 * 60 ))
+    [ "$AUCTION_START_TIME" -le "$MAX_START_TIME" ] \
+      || { echo "refusing: AUCTION_START_TIME ($AUCTION_START_TIME) is more than 30 days after the current block time ($LATEST_BLOCK_TIME)" >&2; exit 1; }
+  fi
+
   HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
   OWNER_TOKEN_HOLDER=$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")
 
@@ -613,14 +736,23 @@ if [ "$LIST_OWNER_TOKEN" = "1" ]; then
     echo "  reserve units       $AUCTION_RESERVE_UNITS"
     echo "  min increment bps   $AUCTION_MIN_INCREMENT_BPS"
     echo "  extension window    ${AUCTION_EXTENSION_WINDOW}s"
+    if [ "$AUCTION_START_TIME" = "0" ]; then
+      echo "  start time          open at listing"
+    else
+      # -r reads an epoch on macOS/BSD date; -d reads one on GNU date.
+      START_TIME_ISO=$(date -u -r "$AUCTION_START_TIME" +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null \
+        || date -u -d "@$AUCTION_START_TIME" +"%Y-%m-%dT%H:%M:%SZ")
+      echo "  start time          $AUCTION_START_TIME ($START_TIME_ISO)"
+    fi
 
     send_wait "$SHAPES" 'approve(address,uint256)' "$HOUSE" 0 >/dev/null
-    send_wait "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32)' \
+    send_wait "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32,uint64)' \
       "$SHAPES" 0 "$AUCTION_DURATION" "$AUCTION_RESERVE_UNITS" "$AUCTION_MIN_INCREMENT_BPS" \
-      "$AUCTION_EXTENSION_WINDOW" >/dev/null
+      "$AUCTION_EXTENSION_WINDOW" "$AUCTION_START_TIME" >/dev/null
 
     HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
     [ "$HAS_AUCTION" = "true" ] || { echo "owner token listing did not take effect" >&2; exit 1; }
+    JUST_LISTED=1
   fi
 
   if [ "$HAS_AUCTION" = "true" ]; then
@@ -628,11 +760,18 @@ if [ "$LIST_OWNER_TOKEN" = "1" ]; then
     AUCTION_ID=$(printf '%s' "$AUCTION_INFO" | tail -1 | awk '{print $1}')
     require_address_read 'Shape #0 owner' "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$HOUSE"
     AUCTION_STRUCT=$(cast call "$HOUSE" \
-      "auctions(uint256)(address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)" \
+      "auctions(uint256)(address,address,uint256,uint64,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)" \
       "$AUCTION_ID" --rpc-url "$RPC")
     AUCTION_END_TIME=$(printf '%s' "$AUCTION_STRUCT" | sed -n '4p' | awk '{print $1}')
     [ "$AUCTION_END_TIME" = "0" ] \
       || { echo "auction $AUCTION_ID has a nonzero endTime ($AUCTION_END_TIME)" >&2; exit 1; }
+    # Only checked against what this run requested: a resumed run that skipped listing may be
+    # reading back a startTime a prior, differently-configured run chose.
+    if [ "$JUST_LISTED" = "1" ]; then
+      AUCTION_START_TIME_ONCHAIN=$(printf '%s' "$AUCTION_STRUCT" | sed -n '5p' | awk '{print $1}')
+      [ "$AUCTION_START_TIME_ONCHAIN" = "$AUCTION_START_TIME" ] \
+        || { echo "auction $AUCTION_ID has startTime $AUCTION_START_TIME_ONCHAIN, expected $AUCTION_START_TIME" >&2; exit 1; }
+    fi
     echo "  ok: owner token listed as auction $AUCTION_ID (endTime $AUCTION_END_TIME, still waiting on a first bid)"
   fi
 fi
@@ -705,47 +844,71 @@ fi
 mkdir -p deployments
 DEPLOYMENT_FILE="deployments/${CHAIN_ID}.json"
 
-# The linked libraries, keyed by contract name. The broadcast records each as
-# "<source>:<Contract>:<address>"; the site's /contracts page reads this map to place an address
-# beside each library, and shows a missing one as not recorded.
-LIBRARIES_JSON=$(jq -r '[.libraries[]? // empty] | map(split(":")) | map({key: .[1], value: (.[2] | ascii_downcase)}) | from_entries' \
-  "$BROADCAST_FILE")
-
 ARTIST_RELEASE_HASH_RECORD=""
 [ "$ARTIST_RELEASE_HASH_ONCHAIN" = "$ZERO_HASH" ] || ARTIST_RELEASE_HASH_RECORD="$ARTIST_RELEASE_HASH_ONCHAIN"
-jq -n \
-  --arg rpc "$RPC" \
-  --arg indexerUrl "${INDEXER_URL:-}" \
-  --argjson chainId "$CHAIN_ID" \
-  --arg shapes "$SHAPES" \
-  --arg renderer "$RENDERER" \
-  --arg collection "$COLLECTION" \
-  --arg auctionHouse "$HOUSE" \
-  --arg mintFeeWei "$MINT_FEE_ONCHAIN" \
-  --arg mintStart "$MINT_START_ONCHAIN" \
-  --argjson libraries "$LIBRARIES_JSON" \
-  --argjson fromBlock "$FROM_BLOCK" \
-  --arg auctionId "$AUCTION_ID" \
-  --arg artistReleaseHash "$ARTIST_RELEASE_HASH_RECORD" \
-  --arg commit "$DEPLOY_COMMIT" \
-  --arg branch "$DEPLOY_BRANCH" \
-  '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,libraries:$libraries,fromBlock:$fromBlock,auctionId:(if $auctionId == "" then null else $auctionId end),artistReleaseHash:(if $artistReleaseHash == "" then null else $artistReleaseHash end),commit:$commit,branch:$branch}' \
-  >"$DEPLOYMENT_FILE"
+
+if [ "$EXISTING_TOKEN_MODE" = "1" ]; then
+  # This run touched only the house: rpc, indexerUrl, shapes, renderer, collection, mintFeeWei,
+  # mintStart, libraries, fromBlock and artistReleaseHash carry forward from the token's own
+  # deployment record untouched, rather than re-derived from a broadcast that never redeployed it.
+  jq \
+    --arg auctionHouse "$HOUSE" \
+    --argjson auctionHouseFromBlock "$AUCTION_HOUSE_FROM_BLOCK" \
+    --arg auctionId "$AUCTION_ID" \
+    --arg commit "$DEPLOY_COMMIT" \
+    --arg branch "$DEPLOY_BRANCH" \
+    '.auctionHouse = $auctionHouse
+     | .auctionHouseFromBlock = $auctionHouseFromBlock
+     | .auctionId = (if $auctionId == "" then null else $auctionId end)
+     | .commit = $commit
+     | .branch = $branch' \
+    "$EXISTING_RECORD" >"$DEPLOYMENT_FILE.tmp"
+  mv "$DEPLOYMENT_FILE.tmp" "$DEPLOYMENT_FILE"
+else
+  # The linked libraries, keyed by contract name. The broadcast records each as
+  # "<source>:<Contract>:<address>"; the site's /contracts page reads this map to place an address
+  # beside each library, and shows a missing one as not recorded.
+  LIBRARIES_JSON=$(jq -r '[.libraries[]? // empty] | map(split(":")) | map({key: .[1], value: (.[2] | ascii_downcase)}) | from_entries' \
+    "$BROADCAST_FILE")
+  jq -n \
+    --arg rpc "$RPC" \
+    --arg indexerUrl "${INDEXER_URL:-}" \
+    --argjson chainId "$CHAIN_ID" \
+    --arg shapes "$SHAPES" \
+    --arg renderer "$RENDERER" \
+    --arg collection "$COLLECTION" \
+    --arg auctionHouse "$HOUSE" \
+    --arg mintFeeWei "$MINT_FEE_ONCHAIN" \
+    --arg mintStart "$MINT_START_ONCHAIN" \
+    --argjson libraries "$LIBRARIES_JSON" \
+    --argjson fromBlock "$FROM_BLOCK" \
+    --argjson auctionHouseFromBlock "$AUCTION_HOUSE_FROM_BLOCK" \
+    --arg auctionId "$AUCTION_ID" \
+    --arg artistReleaseHash "$ARTIST_RELEASE_HASH_RECORD" \
+    --arg commit "$DEPLOY_COMMIT" \
+    --arg branch "$DEPLOY_BRANCH" \
+    '{rpc:$rpc,indexerUrl:$indexerUrl,chainId:$chainId,shapes:$shapes,renderer:$renderer,collection:$collection,auctionHouse:$auctionHouse,mintFeeWei:$mintFeeWei,mintStart:$mintStart,libraries:$libraries,fromBlock:$fromBlock,auctionHouseFromBlock:$auctionHouseFromBlock,auctionId:(if $auctionId == "" then null else $auctionId end),artistReleaseHash:(if $artistReleaseHash == "" then null else $artistReleaseHash end),commit:$commit,branch:$branch}' \
+    >"$DEPLOYMENT_FILE"
+fi
 
 echo
 echo "Deployed to $ENV_NAME (chain $CHAIN_ID)"
-echo "  Shapes          $SHAPES"
-echo "  ShapeRenderer   $RENDERER"
-echo "  ShapeCollection $COLLECTION"
-echo "  AuctionHouse    $HOUSE"
-echo "  deployment tx   $SHAPES_TX"
-echo "  from block      $FROM_BLOCK"
-echo "  auction id      ${AUCTION_ID:-none}"
-echo "  artist attest   ${ARTIST_RELEASE_HASH_RECORD:-none}"
-echo "  admin           $EFFECTIVE_DEPLOYER"
-echo "  commit          $DEPLOY_COMMIT"
-echo "  branch          $DEPLOY_BRANCH"
-echo "  wrote           $DEPLOYMENT_FILE"
+echo "  Shapes            $SHAPES"
+echo "  ShapeRenderer     $RENDERER"
+echo "  ShapeCollection   $COLLECTION"
+echo "  AuctionHouse      $HOUSE"
+if [ "$EXISTING_TOKEN_MODE" != "1" ]; then
+  echo "  deployment tx     $SHAPES_TX"
+fi
+echo "  house tx          $HOUSE_TX"
+echo "  from block        $FROM_BLOCK"
+echo "  house from block  $AUCTION_HOUSE_FROM_BLOCK"
+echo "  auction id        ${AUCTION_ID:-none}"
+echo "  artist attest     ${ARTIST_RELEASE_HASH_RECORD:-none}"
+echo "  admin             $EFFECTIVE_DEPLOYER"
+echo "  commit            $DEPLOY_COMMIT"
+echo "  branch            $DEPLOY_BRANCH"
+echo "  wrote             $DEPLOYMENT_FILE"
 
 if [ "${#VERIFY_FAILURES[@]}" -gt 0 ]; then
   echo

@@ -9,18 +9,20 @@
 #
 # What it does:
 #   1. Reads deployments/<chainId>.json at the repo root (chain id taken from the
-#      target's fly.<name>.toml) for `.shapes` (contract address) and `.fromBlock`
-#      (deploy block). Refuses if that file is missing or `.shapes` is empty — the
-#      indexer must never deploy pointed at nothing.
+#      target's fly.<name>.toml) for `.shapes` (contract address), `.fromBlock`
+#      (deploy block), and `.auctionHouseFromBlock // .fromBlock` (auction house
+#      deploy block, falling back to the collection's when the record predates that
+#      key). Refuses if that file is missing or `.shapes` is empty — the indexer
+#      must never deploy pointed at nothing.
 #   2. Refuses if the toml's DATABASE_SCHEMA was already used, per
 #      indexer/deployments.json, for a different Shapes address. A schema holds one
 #      contract's history; bump DATABASE_SCHEMA in the toml for a new deployment
 #      instead of overwriting another one's data.
 #   3. Runs `fly deploy --config indexer/fly.<name>.toml -a <app> -e SHAPES_ADDRESS=...
-#      -e SHAPES_START_BLOCK=...`. The `-e` overrides are release-scoped env vars, not
-#      secrets, so they never touch the toml file (which stays values-only and
-#      deployment-address-agnostic for mainnet, and already-correct for the live
-#      sepolia deployment).
+#      -e SHAPES_START_BLOCK=... -e AUCTION_HOUSE_START_BLOCK=...`. The `-e` overrides
+#      are release-scoped env vars, not secrets, so they never touch the toml file
+#      (which stays values-only and deployment-address-agnostic for mainnet, and
+#      already-correct for the live sepolia deployment).
 #   4. On success, records {schema: shapesAddress} into indexer/deployments.json and
 #      probes the deployed app's /health and /graphql.
 #
@@ -64,6 +66,7 @@ DEPLOYMENT_RECORD="deployments/${CHAIN_ID}.json"
 SHAPES_ADDRESS=$(jq -r '.shapes // empty' "$DEPLOYMENT_RECORD")
 FROM_BLOCK=$(jq -r '.fromBlock // empty' "$DEPLOYMENT_RECORD")
 AUCTION_HOUSE=$(jq -r '.auctionHouse // empty' "$DEPLOYMENT_RECORD")
+AUCTION_HOUSE_START_BLOCK=$(jq -r '.auctionHouseFromBlock // .fromBlock // empty' "$DEPLOYMENT_RECORD")
 [[ -n "$AUCTION_HOUSE" ]] || { echo "refusing: $DEPLOYMENT_RECORD has no auctionHouse" >&2; exit 1; }
 [[ -n "$SHAPES_ADDRESS" ]] || {
   echo "refusing: $DEPLOYMENT_RECORD has no .shapes address" >&2
@@ -95,6 +98,7 @@ echo "schema:          $SCHEMA"
 echo "shapes address:  $SHAPES_ADDRESS"
 echo "from block:      $FROM_BLOCK"
 echo "auction house:   $AUCTION_HOUSE"
+echo "house from block: $AUCTION_HOUSE_START_BLOCK"
 
 if command -v fly >/dev/null 2>&1; then
   fly config validate --config "$TOML"
@@ -107,7 +111,8 @@ fi
 DEPLOY_CMD=(fly deploy --config "$(basename "$TOML")" -a "$APP"
   -e "SHAPES_ADDRESS=$SHAPES_ADDRESS"
   -e "SHAPES_START_BLOCK=$FROM_BLOCK"
-  -e "AUCTION_HOUSE_ADDRESS=$AUCTION_HOUSE")
+  -e "AUCTION_HOUSE_ADDRESS=$AUCTION_HOUSE"
+  -e "AUCTION_HOUSE_START_BLOCK=$AUCTION_HOUSE_START_BLOCK")
 
 if [[ "${DRY_RUN:-}" == "1" ]]; then
   echo "DRY_RUN: would run:"

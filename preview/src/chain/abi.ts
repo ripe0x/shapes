@@ -208,6 +208,9 @@ export interface Deployment {
   /** Block the contract was deployed at. Log scans start here; a public RPC rejects a scan from
    *  block 0 as too wide. Omitted on a local dev chain, where the whole range is tiny. */
   fromBlock?: number;
+  /** Block the auction house was deployed at, when later than `fromBlock`. Falls back to
+   *  `fromBlock` when absent. */
+  auctionHouseFromBlock?: number;
   /** Git commit and branch `script/deploy.sh` was run from. Absent on a record written before
    *  these keys existed. */
   commit?: string;
@@ -259,7 +262,7 @@ export function denomLabel(wei: bigint): string {
 // callable by the winner once settled or by the seller once cancelled unsold.
 export const auctionHouseAbi = parseAbi([
   "function auctionCount() view returns (uint256)",
-  "function auctions(uint256 auctionId) view returns ((address seller, address nft, uint256 tokenId, uint64 endTime, uint64 duration, uint32 extensionWindow, uint16 minIncrementBps, uint64 reserveUnits, uint64 highestUnits, address highestBidder, bool settled, bool lotClaimed))",
+  "function auctions(uint256 auctionId) view returns ((address seller, address nft, uint256 tokenId, uint64 endTime, uint64 startTime, uint64 duration, uint32 extensionWindow, uint16 minIncrementBps, uint64 reserveUnits, uint64 highestUnits, address highestBidder, bool settled, bool lotClaimed))",
   "function bidUnits(uint256 auctionId, address bidder) view returns (uint64)",
   "function escrowedCards(uint256 auctionId, address bidder) view returns (uint256[])",
   "function minimumBid(uint256 auctionId) view returns (uint64)",
@@ -268,13 +271,14 @@ export const auctionHouseAbi = parseAbi([
   "function getAuctionFor(address nft, uint256 tokenId) view returns (bool exists, uint256 auctionId)",
   "function hasAuctionFor(address nft, uint256 tokenId) view returns (bool)",
   "function createAuction(address nft, uint256 tokenId, uint64 duration, uint64 reserveUnits, uint16 minIncrementBps, uint32 extensionWindow) returns (uint256 auctionId)",
+  "function createAuction(address nft, uint256 tokenId, uint64 duration, uint64 reserveUnits, uint16 minIncrementBps, uint32 extensionWindow, uint64 startTime) returns (uint256 auctionId)",
   "function cancelAuction(uint256 auctionId)",
   "function bid(uint256 auctionId, uint256[] cardIds, uint256 ethBackingWei) payable",
   "function settle(uint256 auctionId)",
   "function claimLot(uint256 auctionId)",
   "function withdraw(uint256 auctionId)",
   "function claimProceeds(uint256 auctionId)",
-  "event AuctionCreated(uint256 indexed auctionId, address indexed seller, address indexed nft, uint256 tokenId, uint64 duration, uint64 reserveUnits)",
+  "event AuctionCreated(uint256 indexed auctionId, address indexed seller, address indexed nft, uint256 tokenId, uint64 duration, uint64 reserveUnits, uint64 startTime)",
   "event BidPlaced(uint256 indexed auctionId, address indexed bidder, uint64 units, uint64 endTime)",
   "event BidCardsMinted(uint256 indexed auctionId, address indexed bidder, uint256 backingWei)",
   "event AuctionSettled(uint256 indexed auctionId, address indexed winner, uint64 units)",

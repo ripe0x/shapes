@@ -1,6 +1,13 @@
 import {strict as assert} from "node:assert";
 import {test} from "node:test";
-import {isAuctionActive, parseBidEth, unitsToEth, type AuctionState} from "./auction";
+import {
+  getPhase,
+  isAuctionActive,
+  parseBidEth,
+  secondsUntilStart,
+  unitsToEth,
+  type AuctionState,
+} from "./auction";
 import {DENOMINATIONS, UNIT} from "../canonical/denominations";
 
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
@@ -13,6 +20,7 @@ function mockAuction(overrides: Partial<AuctionState> = {}): AuctionState {
     seller: ZERO_ADDR,
     tokenId: 0n,
     endTime: 0n,
+    startTime: 0n,
     duration: 86_400n,
     extensionWindow: 300,
     minIncrementBps: 500,
@@ -80,4 +88,30 @@ test("isAuctionActive: true pre-bid, live, and ended-but-unsettled; false once s
 test("isAuctionActive: the value SiteApp forwards to SiteHeader's AUCTION link", () => {
   assert.equal(isAuctionActive(mockAuction({endTime: 1_500n, chainNow: 1_000})), true); // live
   assert.equal(isAuctionActive(mockAuction({endTime: 500n, chainNow: 1_000, settled: true})), false);
+});
+
+test("getPhase: scheduled while startTime is ahead of now, pre-bid once it lands", () => {
+  const a = mockAuction({endTime: 0n, startTime: 1_500n});
+  assert.equal(getPhase(a, 1_000), "scheduled");
+  // startTime == now is pre-bid, not scheduled: bidding is open the instant it's reached.
+  assert.equal(getPhase(mockAuction({endTime: 0n, startTime: 1_000n}), 1_000), "pre-bid");
+  assert.equal(getPhase(mockAuction({endTime: 0n, startTime: 500n}), 1_000), "pre-bid");
+});
+
+test("getPhase: settled overrides a startTime still in the future", () => {
+  assert.equal(getPhase(mockAuction({endTime: 500n, startTime: 2_000n, settled: true}), 1_000), "settled");
+});
+
+test("secondsUntilStart: floored seconds while scheduled, null otherwise", () => {
+  assert.equal(secondsUntilStart(mockAuction({endTime: 0n, startTime: 1_500n}), 1_000.4), 499);
+  assert.equal(secondsUntilStart(mockAuction({endTime: 0n, startTime: 1_000n}), 1_000), null); // pre-bid
+  assert.equal(secondsUntilStart(mockAuction({endTime: 1_500n, startTime: 2_000n}), 1_000), null); // live
+  assert.equal(
+    secondsUntilStart(mockAuction({endTime: 500n, startTime: 2_000n, settled: true}), 1_000),
+    null,
+  );
+});
+
+test("isAuctionActive: true while scheduled", () => {
+  assert.equal(isAuctionActive(mockAuction({endTime: 0n, startTime: 1_500n, chainNow: 1_000})), true);
 });

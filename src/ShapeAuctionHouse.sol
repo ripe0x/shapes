@@ -6,6 +6,7 @@ import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 
 import {ShapeCardEscrow} from "./ShapeCardEscrow.sol";
 import {IShapeAuctionHouse} from "./interfaces/IShapeAuctionHouse.sol";
+import {IShapeAuctionHouseStartTime} from "./interfaces/IShapeAuctionHouseStartTime.sol";
 
 /// @title ShapeAuctionHouse
 /// @notice An English auction for any ERC721, with bids denominated in Shape cards.
@@ -30,7 +31,13 @@ import {IShapeAuctionHouse} from "./interfaces/IShapeAuctionHouse.sol";
 ///      The house takes no fee and has no owner. A percentage fee is not merely declined but
 ///      unrepresentable: a bid is a set of indivisible cards and a percentage of a lattice amount
 ///      need not land on the lattice.
-contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
+///
+///      Bids open at `startTime`. The clock that ends the auction starts at the first bid, not at
+///      `startTime`.
+///
+///      The house reports both `IShapeAuctionHouse` and `IShapeAuctionHouseStartTime` under
+///      ERC-165. The `IShapeAuctionHouse` function set is what `Shapes.setPointer` requires.
+contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse, IShapeAuctionHouseStartTime {
     constructor(address shapes_) ShapeCardEscrow(shapes_) {}
 
     struct Auction {
@@ -38,6 +45,7 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         address nft;
         uint256 tokenId;
         uint64 endTime;
+        uint64 startTime;
         uint64 duration;
         uint32 extensionWindow;
         uint16 minIncrementBps;
@@ -68,15 +76,6 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
     /* ---------------------------- creating ---------------------------- */
 
     /// @inheritdoc IShapeAuctionHouse
-    /// @dev The lot is escrowed with `transferFrom` rather than `safeTransferFrom`, so the house
-    ///      takes no receiver callback for it.
-    ///
-    ///      The ownership check after the transfer binds an honest collection: a `transferFrom`
-    ///      that returns without moving anything is caught, as is a token the seller did not own.
-    ///      It does not bind a collection that also reports `ownerOf` falsely, and nothing on
-    ///      chain does. What bounds that case is the shape of the contract rather than a check
-    ///      inside it: `nft` is called here and in `claimLot`, and nowhere those calls can reach
-    ///      does anyone but the seller and the winner have something at stake.
     function createAuction(
         address nft,
         uint256 tokenId,
@@ -85,6 +84,41 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         uint16 minIncrementBps,
         uint32 extensionWindow
     ) external nonReentrant returns (uint256 auctionId) {
+        return _createAuction(nft, tokenId, duration, reserveUnits, minIncrementBps, extensionWindow, 0);
+    }
+
+    /// @inheritdoc IShapeAuctionHouseStartTime
+    function createAuction(
+        address nft,
+        uint256 tokenId,
+        uint64 duration,
+        uint64 reserveUnits,
+        uint16 minIncrementBps,
+        uint32 extensionWindow,
+        uint64 startTime
+    ) external nonReentrant returns (uint256 auctionId) {
+        return _createAuction(nft, tokenId, duration, reserveUnits, minIncrementBps, extensionWindow, startTime);
+    }
+
+    /// @dev Shared by both `createAuction` overloads; `startTime` is zero for the immediate-start
+    ///      one. The lot is escrowed with `transferFrom` rather than `safeTransferFrom`, so the
+    ///      house takes no receiver callback for it.
+    ///
+    ///      The ownership check after the transfer binds an honest collection: a `transferFrom`
+    ///      that returns without moving anything is caught, as is a token the seller did not own.
+    ///      It does not bind a collection that also reports `ownerOf` falsely, and nothing on
+    ///      chain does. What bounds that case is the shape of the contract rather than a check
+    ///      inside it: `nft` is called here and in `claimLot`, and nowhere those calls can reach
+    ///      does anyone but the seller and the winner have something at stake.
+    function _createAuction(
+        address nft,
+        uint256 tokenId,
+        uint64 duration,
+        uint64 reserveUnits,
+        uint16 minIncrementBps,
+        uint32 extensionWindow,
+        uint64 startTime
+    ) private returns (uint256 auctionId) {
         // An address with no code accepts a void call silently, so `transferFrom` on one would
         // appear to succeed. `ownerOf` below would revert on it regardless; this names the reason.
         if (nft.code.length == 0) revert LotHasNoCode(nft);
@@ -107,6 +141,7 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         // the seller chose; extensionWindow may not exceed the duration it extends.
         if (duration == 0 || duration > MAX_DURATION) revert DurationOutOfRange();
         if (extensionWindow > duration) revert ExtensionWindowTooLong();
+        if (startTime > block.timestamp + MAX_DURATION) revert StartTooFar();
 
         auctionId = auctionCount++;
         _auctions[auctionId] = Auction({
@@ -114,6 +149,7 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
             nft: nft,
             tokenId: tokenId,
             endTime: 0, // set by the first bid
+            startTime: startTime,
             duration: duration,
             extensionWindow: extensionWindow,
             minIncrementBps: minIncrementBps,
@@ -126,7 +162,7 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
 
         _auctionIdByToken[nft][tokenId] = auctionId + 1;
 
-        emit AuctionCreated(auctionId, msg.sender, nft, tokenId, duration, reserveUnits);
+        emit AuctionCreated(auctionId, msg.sender, nft, tokenId, duration, reserveUnits, startTime);
         IERC721(nft).transferFrom(tokenOwner, address(this), tokenId);
         if (IERC721(nft).ownerOf(tokenId) != address(this)) revert LotNotReceived();
     }
@@ -163,6 +199,7 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         // the free, on-chain-obvious form is closed.
         if (msg.sender == a.seller) revert SellerCannotBid();
         if (a.settled) revert AuctionAlreadySettled(auctionId);
+        if (block.timestamp < a.startTime) revert NotStarted(auctionId, a.startTime);
         if (a.endTime != 0 && block.timestamp >= a.endTime) revert AuctionOver(auctionId);
         uint64 newUnits = _takeBid(auctionId, cardIds, ethBackingWei);
         // `_takeBid`'s escrow mint accrues the Shapes fee to `pendingFees` rather than calling the
@@ -287,10 +324,12 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse {
         if (a.seller == address(0)) revert AuctionNotFound(auctionId);
     }
 
-    /// @notice ERC-165. Answers for `IShapeAuctionHouse` and `IERC165`.
+    /// @notice ERC-165. Answers for `IShapeAuctionHouse`, `IShapeAuctionHouseStartTime`, and `IERC165`.
     /// @dev `Shapes.setPointer` requires the market pointer's target to answer for
     ///      `IShapeAuctionHouse` before it will store the address.
     function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
-        return interfaceId == type(IShapeAuctionHouse).interfaceId || interfaceId == type(IERC165).interfaceId;
+        return interfaceId == type(IShapeAuctionHouse).interfaceId
+            || interfaceId == type(IShapeAuctionHouseStartTime).interfaceId
+            || interfaceId == type(IERC165).interfaceId;
     }
 }

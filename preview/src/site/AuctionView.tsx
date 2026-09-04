@@ -14,6 +14,7 @@ import {
   getPhase,
   loadBidHistory,
   secondsLeft,
+  secondsUntilStart,
   unitsToEth,
   parseBidEth,
   UNIT,
@@ -87,6 +88,13 @@ function formatDuration(seconds: number): string {
   if (seconds % 3600 === 0) return `${seconds / 3600} hour${seconds === 3600 ? "" : "s"}`;
   if (seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? "" : "s"}`;
   return `${seconds} second${seconds === 1 ? "" : "s"}`;
+}
+
+/** A unix timestamp as a local date and time, e.g. "Sep 4, 2026, 2:30 PM". */
+function formatStartTime(startTime: bigint): string {
+  return new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"}).format(
+    new Date(Number(startTime) * 1000),
+  );
 }
 
 export function AuctionView({
@@ -225,6 +233,7 @@ export function AuctionView({
 
   const phase = getPhase(auction, now);
   const left = secondsLeft(auction, now);
+  const untilStart = secondsUntilStart(auction, now);
   const yours = address && auction.highestBidder.toLowerCase() === address.toLowerCase();
   const isSeller = address && auction.seller.toLowerCase() === address.toLowerCase();
   const isWinner = address && auction.highestBidder.toLowerCase() === address.toLowerCase();
@@ -378,17 +387,32 @@ export function AuctionView({
             </div>
           )}
 
+          {phase === "scheduled" && untilStart !== null && (
+            <div>
+              <div style={label}>STARTS IN</div>
+              <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
+                {formatCountdown(untilStart)}
+              </div>
+            </div>
+          )}
+
           {/* The bid block, then its cards across the rest of the row, wrapping as needed. */}
           <div style={{display: "flex"}}>
             <div style={{flex: "0 0 auto"}}>
               <div style={label}>
-                {phase === "pre-bid" ? "RESERVE" : phase === "live" ? "CURRENT BID" : "FINAL BID"}
+                {phase === "pre-bid" || phase === "scheduled"
+                  ? "RESERVE"
+                  : phase === "live"
+                    ? "CURRENT BID"
+                    : "FINAL BID"}
               </div>
               <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
-                {phase === "pre-bid" ? unitsToEth(auction.reserveUnits) : unitsToEth(auction.highestUnits)}{" "}
+                {phase === "pre-bid" || phase === "scheduled"
+                  ? unitsToEth(auction.reserveUnits)
+                  : unitsToEth(auction.highestUnits)}{" "}
                 <span style={{fontSize: 12, color: C.muted}}>ETH</span>
               </div>
-              {phase !== "pre-bid" && (
+              {phase !== "pre-bid" && phase !== "scheduled" && (
                 <div style={{marginTop: 8, fontSize: 11, color: C.muted, overflowWrap: "anywhere"}}>
                   {phase === "live" ? bidderIdentity : `Won by ${bidderIdentity}`}
                 </div>
@@ -408,9 +432,14 @@ export function AuctionView({
             )}
           </div>
 
-          {(phase === "pre-bid" || (phase === "live" && nearExtension)) && (
+          {(phase === "pre-bid" || phase === "scheduled" || (phase === "live" && nearExtension)) && (
             <div style={{fontSize: 12, lineHeight: 1.7, color: C.bodyDim}}>
               {phase === "pre-bid" && <div>The clock starts at the first bid.</div>}
+              {phase === "scheduled" && (
+                <div>
+                  Bidding opens {formatStartTime(auction.startTime)}. The clock starts at the first bid.
+                </div>
+              )}
               {phase === "live" && nearExtension && (
                 <div>A bid now pushes the end out by {auction.extensionWindow / 60} more minutes.</div>
               )}

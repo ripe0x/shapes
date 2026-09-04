@@ -17,6 +17,10 @@
  * (`endTime` is 0 until then; see `bid` in ShapeAuctionHouse.sol). So a reserve-level bid from a
  * second actor follows every creation immediately, in the same run, to open the countdown before
  * the standalone process exits.
+ *
+ * START_DELAY (seconds, default 0) creates the auction with a future `startTime`: latest block
+ * timestamp plus the delay. `bid` reverts `NotStarted` before that time, so the opening bid is
+ * skipped when START_DELAY is set; the script logs the resolved start time instead.
  */
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
@@ -34,6 +38,15 @@ const AUCTION_DURATION_SECONDS = 600;
 const RESERVE_UNITS = 1n;
 const MIN_INCREMENT_BPS = 500;
 const EXTENSION_WINDOW_SECONDS = 300;
+
+/** START_DELAY seconds from the latest block timestamp, read right before createAuction. 0 opens
+ *  the listing at creation and places the opening bid; a positive value schedules the start and
+ *  places no bid. */
+const START_DELAY_RAW = process.env.START_DELAY ?? "0";
+if (!/^\d+$/.test(START_DELAY_RAW)) {
+  throw new Error(`START_DELAY must be a non-negative integer number of seconds, got "${START_DELAY_RAW}"`);
+}
+const START_DELAY = Number(START_DELAY_RAW);
 
 /** Impersonates `address` via anvil so it can sign without a private key: tops its balance up to
  *  10 ETH if under 1 (gas only, the calls that follow carry no value), and pushes a
@@ -103,6 +116,10 @@ async function createAndOpenAuction(sim: Sim, dep: Deployment, ownerIdx: number,
   })) as boolean;
   if (!approved) await sim.setApprovalForAll(ownerIdx, dep.auctionHouse!, true);
 
+  // Resolved right before creation, off the latest block's own timestamp, not process start time.
+  const startTime =
+    START_DELAY > 0 ? BigInt((await sim.pub.getBlock()).timestamp) + BigInt(START_DELAY) : 0n;
+
   const auctionId = await sim.createAuction(
     ownerIdx,
     OWNER_TOKEN_ID,
@@ -110,7 +127,14 @@ async function createAndOpenAuction(sim: Sim, dep: Deployment, ownerIdx: number,
     RESERVE_UNITS,
     MIN_INCREMENT_BPS,
     EXTENSION_WINDOW_SECONDS,
+    startTime,
   );
+
+  if (startTime > 0n) {
+    console.log(`\nowner auction: created auction #${auctionId} for token #0, scheduled`);
+    console.log(`  starts: ${new Date(Number(startTime) * 1000).toISOString()} (unix ${startTime})`);
+    return;
+  }
 
   // Reserve-level bid from a different actor: starts the auction's clock (endTime is 0, and the
   // seller cannot bid its own lot) so the auction is genuinely live, not merely created.

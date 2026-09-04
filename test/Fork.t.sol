@@ -138,6 +138,44 @@ contract ForkTest is Test {
         );
     }
 
+    /// @notice Running the deploy script with SHAPES_ADDRESS set deploys only a new auction
+    ///         house against the existing token and moves its market pointer, leaving the core
+    ///         untouched. Runs on the default local chain; no fork needed.
+    function test_DeployScriptAddsHouseToExistingToken() external {
+        // The script requires an explicit recipient off anvil, and the test contract itself
+        // cannot receive plain ETH.
+        vm.setEnv("SHAPES_FEE_RECIPIENT", vm.toString(feeRecipient));
+
+        Deploy deployer = new Deploy();
+        (,, Shapes s, ShapeAuctionHouse h1) = deployer.run();
+
+        address adminBefore = s.admin();
+        uint256 mintedBefore = s.totalMinted();
+        uint256 backingBefore = s.backingOf(0);
+        address ownerBefore = s.ownerOf(0);
+
+        vm.setEnv("SHAPES_ADDRESS", vm.toString(address(s)));
+        Deploy deployer2 = new Deploy();
+        (ShapeRenderer r2, ShapeCollection c2, Shapes s2, ShapeAuctionHouse h2) = deployer2.run();
+        vm.setEnv("SHAPES_ADDRESS", "0x0000000000000000000000000000000000000000");
+
+        assertEq(address(s2), address(s), "second run deployed another token");
+        assertEq(address(r2), s.renderer(), "second run deployed another renderer");
+        assertEq(address(c2), s.collection(), "second run deployed another collection");
+        assertTrue(address(h2) != address(h1), "expected a new auction house");
+        assertEq(h2.shapes(), address(s), "new house points at another token");
+        assertEq(h2.auctionCount(), 0, "new house is not fresh");
+
+        (address market, bool marketLocked) = s.market();
+        assertEq(market, address(h2), "market pointer did not move to the new house");
+        assertFalse(marketLocked, "market pointer unexpectedly locked");
+
+        assertEq(s.admin(), adminBefore, "admin changed");
+        assertEq(s.totalMinted(), mintedBefore, "core minted a new Shape");
+        assertEq(s.backingOf(0), backingBefore, "Shape #0 backing changed");
+        assertEq(s.ownerOf(0), ownerBefore, "Shape #0 owner changed");
+    }
+
     /// @notice Mint every denomination, prove solvency at each step, redeem it all back out.
     function test_FullLifecycleUnderRealBlockEnv() external onlyFork {
         vm.deal(alice, 1_000 ether);
