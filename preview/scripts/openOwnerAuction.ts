@@ -39,9 +39,14 @@ const RESERVE_UNITS = 1n;
 const MIN_INCREMENT_BPS = 500;
 const EXTENSION_WINDOW_SECONDS = 300;
 
-/** Seconds to schedule the auction's start after now, from the environment. 0 opens it
- *  immediately (the current behavior: create then place the opening bid). */
-const START_DELAY = Number(process.env.START_DELAY ?? "0");
+/** START_DELAY seconds from the latest block timestamp, read right before createAuction. 0 opens
+ *  the listing at creation and places the opening bid; a positive value schedules the start and
+ *  places no bid. */
+const START_DELAY_RAW = process.env.START_DELAY ?? "0";
+if (!/^\d+$/.test(START_DELAY_RAW)) {
+  throw new Error(`START_DELAY must be a non-negative integer number of seconds, got "${START_DELAY_RAW}"`);
+}
+const START_DELAY = Number(START_DELAY_RAW);
 
 /** Impersonates `address` via anvil so it can sign without a private key: tops its balance up to
  *  10 ETH if under 1 (gas only, the calls that follow carry no value), and pushes a
