@@ -19,6 +19,11 @@ import { LaunchLanding } from "./LaunchLanding";
 // the same file on the server.
 const DEPLOYMENT_RECORD_NAME = deploymentRecordName(process.env.NEXT_PUBLIC_SHAPES_DEPLOYMENT);
 
+// Every indexer read from the browser goes through the site's own origin. `app/api/indexer`
+// holds the upstream Ponder URL and its bearer token server-side, so the record's own
+// `indexerUrl` is the proxy's upstream fallback and never a browser target.
+const INDEXER_PROXY_PATH = "/api/indexer";
+
 type WalletState = {
   dep: Deployment;
   config: ReturnType<typeof buildConfig>;
@@ -90,7 +95,8 @@ export function ShapesProviders({
           return response.json();
         });
     load
-      .then(async (dep: Deployment) => {
+      .then(async (loaded: Deployment) => {
+        const dep: Deployment = {...loaded, indexerUrl: INDEXER_PROXY_PATH};
         const config = buildConfig(dep, {
           primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
           walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
