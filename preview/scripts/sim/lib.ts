@@ -284,6 +284,7 @@ export async function createSim(dep: Deployment, keys: readonly Hex[]) {
     reserveUnits: bigint,
     minIncrementBps: number,
     extensionWindow: number,
+    startTime: bigint = 0n,
   ): Promise<bigint> {
     const receipt = await hSend(actor, "createAuction", [
       dep.shapes,
@@ -292,6 +293,7 @@ export async function createSim(dep: Deployment, keys: readonly Hex[]) {
       reserveUnits,
       minIncrementBps,
       extensionWindow,
+      startTime,
     ]);
     return parseEventLogs({abi: auctionHouseAbi, eventName: "AuctionCreated", logs: receipt.logs})[0]!.args
       .auctionId as bigint;

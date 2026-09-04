@@ -615,9 +615,9 @@ if [ "$LIST_OWNER_TOKEN" = "1" ]; then
     echo "  extension window    ${AUCTION_EXTENSION_WINDOW}s"
 
     send_wait "$SHAPES" 'approve(address,uint256)' "$HOUSE" 0 >/dev/null
-    send_wait "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32)' \
+    send_wait "$HOUSE" 'createAuction(address,uint256,uint64,uint64,uint16,uint32,uint64)' \
       "$SHAPES" 0 "$AUCTION_DURATION" "$AUCTION_RESERVE_UNITS" "$AUCTION_MIN_INCREMENT_BPS" \
-      "$AUCTION_EXTENSION_WINDOW" >/dev/null
+      "$AUCTION_EXTENSION_WINDOW" 0 >/dev/null
 
     HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
     [ "$HAS_AUCTION" = "true" ] || { echo "owner token listing did not take effect" >&2; exit 1; }
@@ -628,7 +628,7 @@ if [ "$LIST_OWNER_TOKEN" = "1" ]; then
     AUCTION_ID=$(printf '%s' "$AUCTION_INFO" | tail -1 | awk '{print $1}')
     require_address_read 'Shape #0 owner' "$(cast call "$SHAPES" 'ownerOf(uint256)(address)' 0 --rpc-url "$RPC")" "$HOUSE"
     AUCTION_STRUCT=$(cast call "$HOUSE" \
-      "auctions(uint256)(address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)" \
+      "auctions(uint256)(address,address,uint256,uint64,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)" \
       "$AUCTION_ID" --rpc-url "$RPC")
     AUCTION_END_TIME=$(printf '%s' "$AUCTION_STRUCT" | sed -n '4p' | awk '{print $1}')
     [ "$AUCTION_END_TIME" = "0" ] \

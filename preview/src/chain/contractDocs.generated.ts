@@ -7093,7 +7093,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
     "name": "ShapeAuctionHouse",
     "kind": "application",
     "description": "An English auction for any ERC721, with bids denominated in Shape cards.",
-    "dev": "A bid is a set of Shapes whose summed backing is the bid amount. Bidders who hold no Shapes can bid ETH, which the house mints into the minimal card set for that amount, so every bid ends up expressed as cards either way. Amounts are carried in `UNIT` (0.01 ETH) multiples. That is exact rather than lossy: the smallest denomination is 0.01 ETH and every other is a whole multiple of it, so no sum of cards can land between two units. Card custody is `ShapeCardEscrow`, which never pushes a card. The lot is pulled on the same terms, which is what lets the house sell a collection it knows nothing about. `settle` and `cancelAuction` record an outcome and move nothing; `claimLot` is the single path by which the lot leaves. A lot whose transfer reverts therefore blocks its own delivery and nothing else: the seller still claims the winning cards and every outbid bidder still withdraws, because those paths move Shapes alone. The lot's collection is called from exactly two functions, `createAuction` and `claimLot`, whose callers are the seller and the winner. The house takes no fee and has no owner. A percentage fee is not merely declined but unrepresentable: a bid is a set of indivisible cards and a percentage of a lattice amount need not land on the lattice.",
+    "dev": "A bid is a set of Shapes whose summed backing is the bid amount. Bidders who hold no Shapes can bid ETH, which the house mints into the minimal card set for that amount, so every bid ends up expressed as cards either way. Amounts are carried in `UNIT` (0.01 ETH) multiples. That is exact rather than lossy: the smallest denomination is 0.01 ETH and every other is a whole multiple of it, so no sum of cards can land between two units. Card custody is `ShapeCardEscrow`, which never pushes a card. The lot is pulled on the same terms, which is what lets the house sell a collection it knows nothing about. `settle` and `cancelAuction` record an outcome and move nothing; `claimLot` is the single path by which the lot leaves. A lot whose transfer reverts therefore blocks its own delivery and nothing else: the seller still claims the winning cards and every outbid bidder still withdraws, because those paths move Shapes alone. The lot's collection is called from exactly two functions, `createAuction` and `claimLot`, whose callers are the seller and the winner. The house takes no fee and has no owner. A percentage fee is not merely declined but unrepresentable: a bid is a set of indivisible cards and a percentage of a lattice amount need not land on the lattice. Bids open at `startTime`. The clock that ends the auction still starts at the first bid.",
     "functions": [
       {
         "name": "MAX_CARDS_PER_BID",
@@ -7192,7 +7192,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "outputs": [
           {
             "name": "",
-            "type": "(address,address,uint256,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)"
+            "type": "(address,address,uint256,uint64,uint64,uint64,uint32,uint16,uint64,uint64,address,bool,bool)"
           }
         ],
         "notice": "",
@@ -7227,6 +7227,10 @@ export const CONTRACT_DOCS: ContractDoc[] = [
                 },
                 {
                   "name": "endTime",
+                  "type": "uint64"
+                },
+                {
+                  "name": "startTime",
                   "type": "uint64"
                 },
                 {
@@ -7286,7 +7290,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "outputs": [],
-        "notice": "Bid with Shapes, with ETH, or with both.",
+        "notice": "Bid with Shapes, with ETH, or with both. Reverts `NotStarted` before the auction's `startTime`.",
         "dev": "`cardIds` are transferred in and valued at `backingOf`, which is zero for a Black Shape and so rejects one. `ethBackingWei` is minted into the minimal card set for that amount, which costs one flat Shapes mint fee per generated card; send exactly `mintCostFor(ethBackingWei)`. A bidder already holding the standing bid adds to it rather than replacing it.",
         "params": {},
         "returns": {},
@@ -7481,7 +7485,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "createAuction",
-        "signature": "createAuction(address,uint256,uint64,uint64,uint16,uint32)",
+        "signature": "createAuction(address,uint256,uint64,uint64,uint16,uint32,uint64)",
         "stateMutability": "nonpayable",
         "inputs": [
           {
@@ -7507,6 +7511,10 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           {
             "name": "extensionWindow",
             "type": "uint32"
+          },
+          {
+            "name": "startTime",
+            "type": "uint64"
           }
         ],
         "outputs": [
@@ -7515,14 +7523,15 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             "type": "uint256"
           }
         ],
-        "notice": "Escrow an ERC721 and open an auction on it, priced in Shapes. The clock starts at the first bid, so an auction cannot expire unsold because nobody was watching on day one.",
+        "notice": "Escrow an ERC721 and open an auction on it, priced in Shapes. Bids open at `startTime`; the clock that ends the auction starts at the first bid, so an auction cannot expire unsold because nobody was watching on day one.",
         "dev": "The lot is escrowed with `transferFrom` rather than `safeTransferFrom`, so the house takes no receiver callback for it. The ownership check after the transfer binds an honest collection: a `transferFrom` that returns without moving anything is caught, as is a token the seller did not own. It does not bind a collection that also reports `ownerOf` falsely, and nothing on chain does. What bounds that case is the shape of the contract rather than a check inside it: `nft` is called here and in `claimLot`, and nowhere those calls can reach does anyone but the seller and the winner have something at stake.",
         "params": {
           "duration": "Seconds the auction runs for once the first bid lands. At most `MAX_DURATION`.",
           "extensionWindow": "A bid inside this many seconds of the end pushes the end out by it. At most `duration`.",
           "minIncrementBps": "How far a bid must clear the standing one, in basis points.",
           "nft": "The collection the lot belongs to. Must have code and report the ERC721 interface under ERC165. That check rejects a wrong address, which is the common mistake; it does not bind a contract written to answer it falsely.",
-          "reserveUnits": "Smallest winning bid, in `UNIT` multiples."
+          "reserveUnits": "Smallest winning bid, in `UNIT` multiples.",
+          "startTime": "Unix time bids open. Zero or a past time opens the listing at creation. At most `MAX_DURATION` after the current block time."
         },
         "returns": {},
         "abi": {
@@ -7552,6 +7561,10 @@ export const CONTRACT_DOCS: ContractDoc[] = [
             {
               "name": "extensionWindow",
               "type": "uint32"
+            },
+            {
+              "name": "startTime",
+              "type": "uint64"
             }
           ],
           "outputs": [
@@ -7986,7 +7999,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
       },
       {
         "name": "AuctionCreated",
-        "signature": "AuctionCreated(uint256,address,address,uint256,uint64,uint64)",
+        "signature": "AuctionCreated(uint256,address,address,uint256,uint64,uint64,uint64)",
         "inputs": [
           {
             "name": "auctionId",
@@ -8015,6 +8028,11 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           },
           {
             "name": "reserveUnits",
+            "type": "uint64",
+            "indexed": false
+          },
+          {
+            "name": "startTime",
             "type": "uint64",
             "indexed": false
           }
@@ -8370,6 +8388,22 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "dev": "`claimLot` was called by someone other than the winner, or the seller of an auction that was cancelled unsold."
       },
       {
+        "name": "NotStarted",
+        "signature": "NotStarted(uint256,uint64)",
+        "inputs": [
+          {
+            "name": "auctionId",
+            "type": "uint256"
+          },
+          {
+            "name": "startTime",
+            "type": "uint64"
+          }
+        ],
+        "notice": "",
+        "dev": "`bid` was called before the auction's `startTime`."
+      },
+      {
         "name": "NotTokenOwnerOrApproved",
         "signature": "NotTokenOwnerOrApproved(address,uint256,address)",
         "inputs": [
@@ -8418,6 +8452,13 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "inputs": [],
         "notice": "",
         "dev": "The seller bid its own auction."
+      },
+      {
+        "name": "StartTooFar",
+        "signature": "StartTooFar()",
+        "inputs": [],
+        "notice": "",
+        "dev": "`createAuction` was given a `startTime` more than `MAX_DURATION` past the current block time."
       },
       {
         "name": "TooManyCards",

@@ -27,7 +27,7 @@ contract AuctionPathsTest is AuditBase {
         vm.prank(seller);
         shapes.approve(address(house), tokenId);
         vm.prank(seller);
-        auctionId = house.createAuction(address(shapes), tokenId, 1 days, reserveUnits, 500, 300);
+        auctionId = house.createAuction(address(shapes), tokenId, 1 days, reserveUnits, 500, 300, 0);
     }
 
     /// @dev A cards-only bid of `k` freshly minted dust from `who`.
@@ -279,7 +279,7 @@ contract AuctionPathsTest is AuditBase {
         vm.prank(alice);
         nft.setApprovalForAll(address(house), true);
         vm.prank(alice);
-        uint256 auctionId = house.createAuction(address(nft), lotId, 1 days, 1, 500, 300);
+        uint256 auctionId = house.createAuction(address(nft), lotId, 1 days, 1, 500, 300, 0);
 
         _cardBid(bob, auctionId, 2);
         _cardBid(carol, auctionId, 4);
@@ -324,7 +324,7 @@ contract AuctionPathsTest is AuditBase {
                 IShapeAuctionHouse.AuctionAlreadyExistsForToken.selector, address(shapes), lot
             )
         );
-        house.createAuction(address(shapes), lot, 1 days, 1, 500, 300);
+        house.createAuction(address(shapes), lot, 1 days, 1, 500, 300, 0);
         auctionId;
     }
 

@@ -47,7 +47,7 @@ contract SepoliaAuctionEvidence is Script {
         require(lot == LOT_ID, "unexpected lot id");
         SHAPES_TOKEN.approve(HOUSE_ADDRESS, lot);
         uint256 auctionId = AUCTION_HOUSE.createAuction(
-            SHAPES_ADDRESS, lot, DURATION, 1, MIN_INCREMENT_BPS, EXTENSION_WINDOW
+            SHAPES_ADDRESS, lot, DURATION, 1, MIN_INCREMENT_BPS, EXTENSION_WINDOW, 0
         );
         require(auctionId == AUCTION_ID, "unexpected auction id");
 

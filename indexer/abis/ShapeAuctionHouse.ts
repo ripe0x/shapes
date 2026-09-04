@@ -16,6 +16,7 @@ export const shapeAuctionHouseAbi = [
       { name: "tokenId", type: "uint256", indexed: false, internalType: "uint256" },
       { name: "duration", type: "uint64", indexed: false, internalType: "uint64" },
       { name: "reserveUnits", type: "uint64", indexed: false, internalType: "uint64" },
+      { name: "startTime", type: "uint64", indexed: false, internalType: "uint64" },
     ],
     anonymous: false,
   },

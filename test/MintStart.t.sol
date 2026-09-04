@@ -67,7 +67,7 @@ contract MintStartTest is Test {
         Shapes shapes = _deploy(uint64(block.timestamp + 1 days));
         ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
         shapes.approve(address(house), 0);
-        uint256 auctionId = house.createAuction(address(shapes), 0, 24 hours, 1, 500, 15 minutes);
+        uint256 auctionId = house.createAuction(address(shapes), 0, 24 hours, 1, 500, 15 minutes, 0);
         assertEq(shapes.ownerOf(0), address(house));
         assertEq(house.auctions(auctionId).seller, deployer);
     }
@@ -117,7 +117,7 @@ contract MintStartTest is Test {
         ShapeAuctionHouse house = new ShapeAuctionHouse(address(shapes));
 
         shapes.approve(address(house), 0);
-        uint256 auctionId = house.createAuction(address(shapes), 0, 24 hours, 1, 500, 15 minutes);
+        uint256 auctionId = house.createAuction(address(shapes), 0, 24 hours, 1, 500, 15 minutes, 0);
 
         uint256 ethBacking = Denominations.amountAt(0);
         uint256 cost = ethBacking + MINT_FEE; // one card at the minimum denomination

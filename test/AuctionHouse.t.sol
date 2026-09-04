@@ -99,7 +99,7 @@ abstract contract AuctionBase is Test {
     function _open() internal returns (uint256 auctionId) {
         vm.prank(seller);
         auctionId =
-            house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+            house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION, 0);
     }
 
     function _one(uint256 id) internal pure returns (uint256[] memory ids) {
@@ -141,7 +141,7 @@ contract AuctionHouseTest is AuctionBase {
     function test_CreateRejectsZeroDuration() public {
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.DurationOutOfRange.selector);
-        house.createAuction(address(shapes), lotId, 0, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+        house.createAuction(address(shapes), lotId, 0, RESERVE_UNITS, INCREMENT_BPS, EXTENSION, 0);
     }
 
     function test_SellerCancelsBeforeAnyBidAndNotAfter() public {
@@ -159,7 +159,7 @@ contract AuctionHouseTest is AuctionBase {
         uint256 second = shapes.mint{value: DENOMS[2] + feeOf(DENOMS[2])}(DENOMS[2]);
         vm.prank(seller);
         uint256 fresh =
-            house.createAuction(address(shapes), second, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION);
+            house.createAuction(address(shapes), second, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION, 0);
         vm.prank(seller);
         house.cancelAuction(fresh);
         assertEq(shapes.ownerOf(second), address(house), "cancelAuction moves nothing");
@@ -343,7 +343,7 @@ contract AuctionHouseTest is AuctionBase {
 
     function test_BidMustClearTheReserve() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(shapes), lotId, DURATION, 100, INCREMENT_BPS, EXTENSION);
+        uint256 id = house.createAuction(address(shapes), lotId, DURATION, 100, INCREMENT_BPS, EXTENSION, 0);
         uint256 card = _mintCard(alice, DENOMS[3]); // 50 units, under a 100 unit reserve
 
         vm.prank(alice);
@@ -681,7 +681,7 @@ contract AuctionHouseTest is AuctionBase {
     ///         standing bid can only be displaced by a strictly larger one.
     function test_AZeroIncrementStillDemandsOneMoreUnit() public {
         vm.prank(seller);
-        uint256 id = house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, 0, EXTENSION);
+        uint256 id = house.createAuction(address(shapes), lotId, DURATION, RESERVE_UNITS, 0, EXTENSION, 0);
 
         uint256 a = _mintCard(alice, DENOMS[4]); // 100 units
         vm.prank(alice);
