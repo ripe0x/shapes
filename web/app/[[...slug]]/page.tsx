@@ -5,9 +5,7 @@ import type { View } from "@shared/site/SiteApp";
 import { shapesAbi } from "@shared/chain/abi";
 import { createShapesPublicClient } from "@shared/chain/rpc";
 import { SiteRoot } from "../SiteRoot";
-import { LaunchLanding } from "../LaunchLanding";
 import { PlayRoot } from "../play/PlayRoot";
-import { appOnly, landingOnly } from "../lib/siteMode";
 import { serverDeployment } from "../lib/deployment";
 
 type Params = { slug?: string[] };
@@ -71,10 +69,7 @@ export async function generateMetadata({
   searchParams: Promise<SearchParams>;
 }): Promise<Metadata> {
   const slug = (await params).slug ?? [];
-  const isPlay = slug.length === 1 && slug[0] === "play";
-  if (landingOnly() && slug.length > 0 && !isPlay) return { title: "Not found" };
-
-  if (appOnly() && slug.length === 0) {
+  if (slug.length === 0) {
     return {
       title: "Shapes",
       description: "ETH in, Shape out. Shape burned, the same ETH out.",
@@ -181,14 +176,8 @@ export async function generateMetadata({
 
 export default async function Page({ params }: { params: Promise<Params> }) {
   const slug = (await params).slug ?? [];
-  if (landingOnly()) {
-    if (slug.length === 0) return <LaunchLanding />;
-    if (slug.length === 1 && slug[0] === "play") return <PlayRoot />;
-    notFound();
-  }
-
   if (slug.length === 0) {
-    // Outside landing-only mode the root is the app home: the landing with the live mint panel.
+    // The root is the app home: the landing shell with the live mint panel.
     return <SiteRoot initialView="home" initialTokenId={null} />;
   }
 

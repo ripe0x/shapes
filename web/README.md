@@ -25,10 +25,9 @@ record). The Sepolia site sets `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia
 during cutover cannot also flip the Sepolia site. `next.config.ts` fails the build if the selected
 record's chain id does not match `SHAPES_LADDER`. Netlify env per site:
 
-- Sepolia app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`, `SHAPES_LADDER=testnet`,
-  `SHAPES_SITE_MODE=app`.
-- Mainnet launch app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT` unset (or `deployment`),
-  `SHAPES_LADDER` unset (mainnet default), `SHAPES_SITE_MODE=app`.
+- Sepolia app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`, `SHAPES_LADDER=testnet`.
+- Mainnet app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT` unset (or `deployment`), `SHAPES_LADDER` unset
+  (mainnet default).
 
 For Sepolia, reads use the configured RPC first and then PublicNode, 1RPC, and Tenderly's public
 endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHAPES_RPC_URL` for
@@ -55,18 +54,15 @@ recorded address shows as not recorded. The page reads nothing until a Call butt
 
 Deployed as two isolated Netlify projects (`../netlify.toml`):
 
-- Mainnet application: `shapes.ripe.wtf`, branch `main`, `SHAPES_SITE_MODE=app`. Builds the
+- Mainnet application: `shapes.ripe.wtf`, branch `main`. Builds the
   default `public/deployment.json` record against the mainnet ladder, so the mint panel, gallery,
   auction, and manage routes are all live at their normal paths.
-- Sepolia application: `shapes-sepolia.netlify.app`, branch `main`, `SHAPES_SITE_MODE=app`,
-  `SHAPES_LADDER=testnet`, `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`.
+- Sepolia application: `shapes-sepolia.netlify.app`, branch `main`, `SHAPES_LADDER=testnet`, `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`.
 
-The `launch` branch and `landing` mode carried the pre-mainnet countdown site and are retired from
-production; `landing` still exists as a build mode. Netlify builds use `npm run build:netlify`,
-which refuses an unsafe mode. `SHAPES_SITE_MODE`
-defaults to `app` when unset, including local development, so the app home with the full mint
-panel is at `/`. The root Netlify configuration explicitly includes `preview/` in its change
-detection because the playground and canonical renderer are shared from that workspace.
+The pre-mainnet countdown site (the `launch` branch and a `landing` build mode) is retired; every
+build serves the app home with the full mint panel at `/`. The root Netlify configuration
+explicitly includes `preview/` in its change detection because the playground and canonical
+renderer are shared from that workspace.
 
 ## Development
 

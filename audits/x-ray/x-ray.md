@@ -239,7 +239,7 @@ See [entry-points.md](entry-points.md) for the full permissionless entry point m
 |--------|--------|-------|
 | README | Present | `README.md` (560 lines) — protocol mechanics, repo map, full local dev/deploy flow |
 | NatSpec | ~459 tags | Extensive; nearly every `@dev` block explains *why*, not only *what* |
-| Spec/Whitepaper | Present | `SPEC.md` (717 lines, D1–D18 decision log) and `SECURITY.md` (adversarial review), plus `DECOMPOSE_SPEC.md`, `SAMPLING_SPEC.md`, `INK_GENES_IMPL_SPEC.md`, `TRAIT_SPEC.md`, `METADATA.md` |
+| Spec/Whitepaper | Present | `SPEC.md` (717 lines, D1–D18 decision log) and `SECURITY.md` (adversarial review), plus `docs/DECOMPOSE_SPEC.md`, `docs/SAMPLING_SPEC.md`, `docs/INK_GENES_IMPL_SPEC.md`, `docs/TRAIT_SPEC.md`, `METADATA.md` |
 | Inline Comments | Thorough | Guard predicates are consistently annotated with the invariant or trust boundary they enforce, not restated |
 
 `SECURITY.md` documents an earlier adversarial/AI-audit round (its "Finding 10" — no Critical/High, three Low fixed) *(per spec)*. A further internal audit fixed three additional findings in the commit this tree is built from (`2167dc7`: split-child geometry aliasing, the `bid`/fee-recipient reentrancy gap, and stale `_sampledModules` on redeem) and likewise found no Critical/High — all three fixes were independently confirmed present in the code during this pass.

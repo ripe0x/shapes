@@ -2,8 +2,8 @@
 
 Scope: `git diff 7f6ccb5..2bc389a -- src/ script/Deploy.s.sol script/deploy.sh`, read-only, against
 `origin/claude/contracts-page` at `2bc389a`. Reference model: `project/ARCHITECTURE.md`,
-`AUDIT_PROMPT_v8.md`. Prior results: `project/reviews/architecture-security-2026-09-03.md`,
-`AUDIT_REPORT_v8_claude.md`.
+`audits/AUDIT_PROMPT_v8.md`. Prior results: `project/reviews/architecture-security-2026-09-03.md`,
+`audits/AUDIT_REPORT_v8_claude.md`.
 
 Baseline reproduced at `2bc389a`: `forge build --sizes` clean, `forge test` 615 passed, 0 failed,
 4 skipped (619 total). Two attempts added under `test/audit/DiffReview7f6ccb5.t.sol`, both pass and

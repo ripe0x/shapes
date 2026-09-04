@@ -233,7 +233,7 @@ downward reshape like `split`. It pops the survivor's most-recent compose record
 burned input under its **original id and its original stored seed** (the record captured them at
 compose time), so no seed is derived and no block value enters. The survivor keeps its own id and
 seed unchanged, as it did through the compose. Where `split` fixes a deterministic tree of *new*
-child seeds, `decompose` simply restores seeds that already existed. See DECOMPOSE_SPEC.md.
+child seeds, `decompose` simply restores seeds that already existed. See docs/DECOMPOSE_SPEC.md.
 
 ### D4. Inset of outlined primitives — **specifications disagree**
 
@@ -378,7 +378,7 @@ bands the seven-state ink gene to `Mythic` (Void/Solid), `Rare` (Faint/Rich) or 
 `Compose Depth` surfaces `Shapes.composeDepth(id)`, the reversible-compose stack depth (`0` at mint,
 +1 per `compose`, −1 per matching `decompose`). `Compose Depth` is the one mutable-state input, the
 last argument to `metadataJSON`/`tokenURI`; the other three derive from the card the renderer already
-builds. The renderer stays byte-parity with the canonical TypeScript renderer. See TRAIT_SPEC.md.
+builds. The renderer stays byte-parity with the canonical TypeScript renderer. See docs/TRAIT_SPEC.md.
 
 Every string in the SVG, and every string in the JSON other than the token `name` prefix and shared
 `description`, comes from a fixed table or from `fmt`. Those two are admin-set copy, stored on
@@ -665,8 +665,8 @@ solid shapes reach. Both become filled bands of one weight spanning the full foo
 
 ### D17. Ink Genes
 
-Full design rationale in `INK_GENES_DRAFT.md`; formulas, file-by-file changes and tests are
-pinned in `INK_GENES_IMPL_SPEC.md`. This entry records the load-bearing invariants for anyone
+Full design rationale in `docs/INK_GENES_DRAFT.md`; formulas, file-by-file changes and tests are
+pinned in `docs/INK_GENES_IMPL_SPEC.md`. This entry records the load-bearing invariants for anyone
 reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
 
 - **Entropy only at mint.** A Shape's ink gene (`VOID`..`SOLID`, seven states) is drawn once,
@@ -695,7 +695,7 @@ reading `Shapes.sol`/`InkGenes.sol` without the implementation spec open.
   gene and each input's gene in the compose record; `decompose` writes them back verbatim (survivor
   reverts to its snapshot gene, each revived input regains its own), so an `InkGene` event fires for
   the survivor and every revived id but no roll occurs. A compose then a decompose leave the gene
-  exactly where it started (DECOMPOSE_SPEC.md).
+  exactly where it started (docs/DECOMPOSE_SPEC.md).
 - **`previewCompose`/`previewSplit`** report the exact gene a real `compose`/`split` would
   produce. Both are `view`, write nothing, and take no account: ownership is not checked, and
   every structural gate is shared with the mutators, so a repeated burn id is rejected on both

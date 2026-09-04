@@ -8,14 +8,14 @@ How this project is run. The operating structure, the document map, and the sess
 - One Director session. The Director owns architecture, strategy, decomposition, integration, decision tracking, risk, and acceptance. The Director does not implement routine work inline; implementation, research sweeps, doc elaboration, and test-writing go to lower-cost worker agents with precise briefs and acceptance commands. Worker briefs open with a role override (hands-on implementer, no sub-delegation), name exact paths, and forbid scope creep.
 - Specialist workers, task-scoped, not standing: contract implementer, renderer/parity worker, site worker, indexer worker, docs worker. One worker per repo area at a time; never two workers on the same files.
 - Independent review: every non-trivial diff gets a reviewer pass separate from its implementer (in-repo review agent or /code-review). Contract changes additionally get the solidity-auditor pass. Mainnet is gated on an external human audit (D-16); in-repo x-ray and self-audits do not substitute.
-- Simulations: preview harness (`simulate.ts`, `inkTuning.ts`, collision sweep), Foundry fuzz/invariant profiles, fork tests, and the bounded Medusa reserve/lifecycle campaign are the standing simulation layer. Decisions tagged "requires simulation" in DECISIONS.md must cite a run before resolution. D-09 adopted Medusa as an additional stateful property tool and deferred Halmos on measured resource cost; neither is represented as a formal proof.
+- Simulations: preview harness (`simulate.ts`, collision sweep), Foundry fuzz/invariant profiles, fork tests, and the bounded Medusa reserve/lifecycle campaign are the standing simulation layer. Decisions tagged "requires simulation" in DECISIONS.md must cite a run before resolution. D-09 adopted Medusa as an additional stateful property tool and deferred Halmos on measured resource cost; neither is represented as a formal proof.
 - Security review: continuous via reviewer passes; formal via the P2 external audit. D-02's historical audit artifacts are preserved and fully triaged; any new contract architecture delta receives an independent review and a pre-implementation decision gate before merge.
 - Research workflow: read-only Explore scouts for repo/system questions; web research delegated; findings land as EXPERIMENT records or DECISIONS entries, never as chat-only knowledge.
 - Evidence gates: each roadmap phase ends in a gate (ROADMAP.md). No implementation for phase N+1 starts before phase N's gate passes. The merge checklist (templates/MERGE_CHECKLIST.md) is the per-change gate.
 
 ## Document map
 
-All canonical docs live in `project/`. Legacy spec docs at repo root keep design rationale but their status lines are superseded by STATE.md.
+All canonical docs live in `project/`. Design specs and drafts in `docs/` keep design rationale but their status lines are superseded by STATE.md.
 
 - DIRECTOR.md: the Director role prompt — mandate, division of labor, decision discipline, non-negotiables. A new session assumes the role by reading it.
 - CHARTER.md: what the product is, fixed principles, non-goals, success definition. Changes rarely; amendments are logged decisions.
@@ -28,6 +28,8 @@ All canonical docs live in `project/`. Legacy spec docs at repo root keep design
 - templates/EXPERIMENT.md: hypothesis, method, evidence, conclusion format for simulations and research.
 - templates/REVIEW.md: reviewer output format.
 - templates/MERGE_CHECKLIST.md: per-merge gate.
+- ../audits/: every audit brief and report, and the pre-audit x-ray.
+- ../docs/: design specs and drafts behind each feature; status lines there are superseded by STATE.md.
 
 ## Session protocol (Director)
 

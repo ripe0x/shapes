@@ -178,7 +178,7 @@ read-based indexer is unaffected. Kept as-is (the effects-before-interaction ord
 
 ### 10. External audit — no Critical/High; three low findings fixed
 
-An independent AI auditor ran the refreshed `AUDIT_PROMPT_v2.md` against `main`. No Critical or High
+An independent AI auditor ran the refreshed `audits/AUDIT_PROMPT_v2.md` against `main`. No Critical or High
 was found; no path removes ETH without the corresponding burn, forges origins, forges Complete, or
 bypasses Black terminality. Three low findings were fixed and pinned with regression tests:
 

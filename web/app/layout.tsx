@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import Script from "next/script";
 import { initialWalletState } from "@shared/chain/wagmi";
 import { ShapesProviders } from "./ShapesProviders";
-import { appOnly } from "./lib/siteMode";
 import { overrideDeployment } from "./lib/deployment";
 import "./globals.css";
 
@@ -56,7 +55,6 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </Script>
         )}
         <ShapesProviders
-          chainOnIndex={appOnly()}
           walletInitialState={walletInitialState}
           deployment={overrideDeployment()}
         >

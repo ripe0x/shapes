@@ -13,7 +13,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 forge build --skip test >/dev/null 2>&1
 
-DOCS=(README.md BUILDING.md SPEC.md SECURITY.md METADATA.md SHAPES_V2_SPEC.md DECOMPOSE_SPEC.md
+DOCS=(README.md BUILDING.md SPEC.md SECURITY.md METADATA.md docs/SHAPES_V2_SPEC.md docs/DECOMPOSE_SPEC.md
       project/ARCHITECTURE.md indexer/README.md)
 
 SHAPES_ABI="$(mktemp)"
