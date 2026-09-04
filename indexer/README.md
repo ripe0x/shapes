@@ -59,17 +59,35 @@ assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 backing burn, and
 20k+ transfers — every `token` row carried its assigned `inkGene` and every
 `lineage_edge` its derived `childSeed`, queryable over GraphQL.
 
+## Access
+
+`/graphql` and `/sql/*` require `Authorization: Bearer <INDEXER_TOKEN>` when the `INDEXER_TOKEN`
+environment variable is set, and are open when it is unset — local dev and the lifecycle script
+run tokenless. The gate is `src/api/auth.ts`; Ponder serves `/health`, `/ready` and `/status` from
+its own app, outside the gate, so Fly's health check keeps working.
+
+On a deployed app the token is a Fly secret, never a file:
+
+```
+fly secrets set INDEXER_TOKEN=<token> -a shapes-indexer-mainnet
+```
+
+The site holds the same value as `SHAPES_INDEXER_TOKEN` and presents it from its own
+`/api/indexer` proxy, so a browser never carries the token (see `web/README.md`).
+
 ## Site data path and freshness
 
 The shared site loader (`preview/src/site/data.ts`) treats this service as an optional,
-advisory source. Add its public origin to runtime `deployment.json` only after the service is
+advisory source. Add its public origin to `deployments/<chainId>.json` only after the service is
 live and read back:
 
 ```json
 { "indexerUrl": "https://your-shapes-indexer.example" }
 ```
 
-It POSTs the gallery query below to `/graphql`, reads Ponder's built-in `_meta.status`
+The Next site does not send that origin to the browser: it queries its own `/api/indexer`, which
+forwards to `SHAPES_INDEXER_URL`. The loader POSTs the gallery query below to `/graphql`, reads
+Ponder's built-in `_meta.status`
 checkpoint, and compares the matching chain's indexed block to `eth_blockNumber`. The source is
 accepted only when it is at most **2 blocks behind**. A missing URL, HTTP or GraphQL failure,
 malformed/wrong-chain response, changing paginated checkpoint, an indexer ahead of the selected

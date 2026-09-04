@@ -58,8 +58,12 @@ async function readJsonBounded<T>(response: Response): Promise<IndexerEnvelope<T
   return JSON.parse(text) as IndexerEnvelope<T>;
 }
 
-/** POSTs one query and returns the envelope. Throws on a transport error, an HTTP error, a GraphQL
- *  error, an oversized body, or a response that outlives `timeoutMs`. */
+/** Sends one query and returns the envelope. Throws on a transport error, an HTTP error, a GraphQL
+ *  error, an oversized body, or a response that outlives `timeoutMs`.
+ *
+ *  `url` is either a same-origin path, which is the site's own `/api/indexer` proxy, or a Ponder
+ *  origin, whose GraphQL endpoint is `/graphql`. The proxy is queried with GET so its responses
+ *  are cacheable at the CDN edge; a Ponder origin takes the POST the GraphQL server expects. */
 export async function indexerQuery<T>(
   url: string,
   fetcher: typeof fetch,
@@ -70,17 +74,25 @@ export async function indexerQuery<T>(
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("Shapes indexer timeout must be positive");
   }
-  const endpoint = `${url.replace(/\/$/, "")}/graphql`;
+  const proxied = url.startsWith("/");
+  const endpoint = proxied
+    ? `${url}?query=${encodeURIComponent(query)}&variables=${encodeURIComponent(JSON.stringify(variables))}`
+    : `${url.replace(/\/$/, "")}/graphql`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   requestCount++;
   try {
-    const response = await fetcher(endpoint, {
-      method: "POST",
-      headers: {"content-type": "application/json"},
-      body: JSON.stringify({query, variables}),
-      signal: controller.signal,
-    });
+    const response = await fetcher(
+      endpoint,
+      proxied
+        ? {method: "GET", headers: {accept: "application/json"}, signal: controller.signal}
+        : {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({query, variables}),
+            signal: controller.signal,
+          },
+    );
     if (!response.ok) throw new Error(`Shapes indexer returned HTTP ${response.status}`);
     const payload = await readJsonBounded<T>(response);
     if (payload.errors?.length) {

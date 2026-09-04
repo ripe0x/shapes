@@ -123,5 +123,13 @@ mv "$SCHEMA_LEDGER.tmp" "$SCHEMA_LEDGER"
 APP_URL="https://${APP}.fly.dev"
 echo "app url: $APP_URL"
 curl -sf "$APP_URL/health" >/dev/null && echo "/health: ok" || echo "/health: FAILED"
-curl -sf -X POST "$APP_URL/graphql" -H 'content-type: application/json' \
-  --data '{"query":"{ _meta { status } }"}' && echo || echo "/graphql: FAILED"
+# 401 is the expected answer once the app carries an INDEXER_TOKEN secret
+# (`fly secrets set INDEXER_TOKEN=... -a $APP`); both statuses mean the route is live. The token
+# is a Fly secret only, never read from or written to a file here.
+GRAPHQL_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$APP_URL/graphql" \
+  -H 'content-type: application/json' --data '{"query":"{ _meta { status } }"}')
+case "$GRAPHQL_STATUS" in
+  200) echo "/graphql: ok" ;;
+  401) echo "/graphql: ok, token-gated (HTTP 401)" ;;
+  *) echo "/graphql: FAILED (HTTP $GRAPHQL_STATUS)" ;;
+esac

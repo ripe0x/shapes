@@ -10,6 +10,13 @@ import { type Deployment } from "@shared/chain/abi";
 import { buildConfig } from "@shared/chain/wagmi";
 import { LaunchLanding } from "./LaunchLanding";
 
+// Every indexer read from the browser goes through the site's own origin. `app/api/indexer`
+// holds the upstream Ponder URL and its bearer token server-side, so the record's own
+// `indexerUrl` is the proxy's upstream fallback and never a browser target. The path is set only
+// when the server has an upstream (`indexerConfigured`); otherwise the site skips the indexer
+// instead of collecting 503s from its own proxy.
+const INDEXER_PROXY_PATH = "/api/indexer";
+
 type WalletState = {
   dep: Deployment;
   config: ReturnType<typeof buildConfig>;
@@ -35,11 +42,14 @@ const centered: React.CSSProperties = {
 export function ShapesProviders({
   children,
   chainOnIndex,
+  indexerConfigured,
   walletInitialState,
   deployment,
 }: {
   children: React.ReactNode;
   chainOnIndex: boolean;
+  /** Whether `app/api/indexer` has an upstream to forward to (see `indexerUpstream`). */
+  indexerConfigured: boolean;
   /** Connection state decoded server-side from the request's cookies (see layout.tsx), so the
    *  first client render already reflects a previously connected wallet. */
   walletInitialState?: State;
@@ -81,7 +91,8 @@ export function ShapesProviders({
           return response.json();
         });
     load
-      .then((dep: Deployment) => {
+      .then((loaded: Deployment) => {
+        const dep: Deployment = {...loaded, indexerUrl: indexerConfigured ? INDEXER_PROXY_PATH : undefined};
         const config = buildConfig(dep, {
           primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
           walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
@@ -97,7 +108,7 @@ export function ShapesProviders({
     return () => {
       active = false;
     };
-  }, [deployment, err, skipsChain, state]);
+  }, [deployment, err, indexerConfigured, skipsChain, state]);
 
   if (skipsChain) return children;
   // The index route in app mode hosts the mint panel inline: the hero renders immediately

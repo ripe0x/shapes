@@ -17,7 +17,6 @@ Each network has one machine-readable record in the repository, `deployments/<ch
 | Mint fee at deploy | `1000000000000000` wei (0.001 ETH) |
 | `mintStart` | `1788462000` (2026-09-03 15:00 ET) |
 | Fee recipient | `0xD4ba7cA95f3983514DDa317C4428CDb8F59c7e72` (a Splits wallet) |
-| Indexer | `https://shapes-indexer-mainnet.fly.dev/graphql` |
 | Source commit | `a0a180bb5ae13bf5178c3f1f6deff32cc911f54f` |
 
 Linked libraries, deployed once and bound into Shapes bytecode at deploy time with no setter:

@@ -18,6 +18,9 @@ interface DeploymentFile {
   chainId: number;
   shapes: string;
   mintStart?: string;
+  /** Ponder origin, present on a local or Sepolia record. The mainnet record leaves it out; a
+   *  production deploy names the upstream through SHAPES_INDEXER_URL instead. */
+  indexerUrl?: string;
 }
 
 /** Parses a deployment record off disk. Read at call time rather than imported: the file is a dev
@@ -49,6 +52,17 @@ function localDeployment(): DeploymentFile | null {
   return readDeploymentFile(
     process.env.SHAPES_DEPLOYMENT_FILE || join(process.cwd(), "public", "deployment.local.json"),
   );
+}
+
+/** The Ponder GraphQL endpoint `/api/indexer` forwards to, and the bearer token it presents.
+ *  `SHAPES_INDEXER_URL` is what a deployed site sets; without it the deployment record's own
+ *  `indexerUrl` is used, so a local anvil run reaches its local indexer with no env var. Returns
+ *  null when neither names an upstream, which the route answers as 503. */
+export function indexerUpstream(): {url: string; token?: string} | null {
+  const record: DeploymentFile = localDeployment() ?? (deploymentRecord as DeploymentFile);
+  const fromRecord = record.indexerUrl ? `${record.indexerUrl.replace(/\/$/, "")}/graphql` : "";
+  const url = process.env.SHAPES_INDEXER_URL || fromRecord;
+  return url ? {url, token: process.env.SHAPES_INDEXER_TOKEN || undefined} : null;
 }
 
 export function serverDeployment(): ServerDeployment {

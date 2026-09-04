@@ -19,6 +19,29 @@ Reads use the configured RPC first and then PublicNode, dRPC, and Tenderly's pub
 when a paid/provider RPC is available. Requests are unbatched because shared site reads already use
 Multicall3 and local seed demos can exceed Anvil's batch-size limit.
 
+### Indexer proxy
+
+The browser never queries the Ponder indexer directly. Every indexer read goes to `/api/indexer`
+on the site's own origin (`app/api/indexer/route.ts`), which forwards the GraphQL query to the
+upstream server and returns its JSON. `ShapesProviders` sets `dep.indexerUrl` to that path, so the
+upstream origin is not part of any client bundle or fetched record.
+
+- `SHAPES_INDEXER_URL` — the upstream Ponder GraphQL endpoint, including `/graphql`
+  (`https://shapes-indexer-mainnet.fly.dev/graphql`). Server-only, never `NEXT_PUBLIC_`.
+- `SHAPES_INDEXER_TOKEN` — the bearer token the proxy presents, matching the indexer's
+  `INDEXER_TOKEN` secret. Optional while the indexer is open.
+
+With `SHAPES_INDEXER_URL` unset the proxy falls back to `indexerUrl` in the deployment record it
+resolves (`SHAPES_DEPLOYMENT_FILE`, then `public/deployment.local.json`, then the bundled record),
+so a local anvil run reaches its local indexer with no env var. `public/deployment.json`, the
+mainnet record, carries no `indexerUrl`: a production deploy must name the upstream through
+`SHAPES_INDEXER_URL`, and without it `/api/indexer` answers 503 and the site falls back to its
+raw-RPC loader. `deployments/1.json` keeps `indexerUrl` for `indexer/deploy.sh` and the deploy
+scripts.
+
+GET requests to the proxy carry `Cache-Control: public, s-maxage=10, stale-while-revalidate=30`,
+so the CDN absorbs the site's polling; POST is `no-store`.
+
 The wallet config uses RainbowKit's standard `getDefaultConfig` (see
 `preview/src/chain/wagmi.ts`), built with `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` and the deployment
 chain. `getDefaultConfig` provides the maintained wallet inventory; each wallet decides which chains
