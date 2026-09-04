@@ -37,7 +37,8 @@ second address to configure: the token address is the whole integration surface.
 
 The interfaces are declared under [src/interfaces](src/interfaces), including the segmented
 Shape capabilities, admin control, and renderer geometry surfaces. `owner()` reports the holder of
-Shape #0 and is part of `IShapes`; it carries no administrative authority.
+the owner token (initially Shape #0, moved by compose, decompose and split) and is part of
+`IShapes`; it carries no administrative authority.
 
 `artist()` is permanent creator attribution and likewise carries no authority. Its paired
 attestation is stored directly in Shapes through `artistSignature()` and `artistReleaseHash()`.
@@ -154,8 +155,8 @@ gate the mutator applies runs here, with the same error and in the same order.
   value. Do not price a Shape by its traits; price it by `redeemableValueWei`.
 - **Redemption is owner-only, and pays out with a real call.** A recipient that reverts on ETH
   receipt reverts the redemption; it cannot corrupt anyone else's balance. Reentrancy is guarded.
-- **Backing economics are immutable.** No admin can move the reserve, change denominations, alter
-  redemption, or change the flat `mintFee`. The separate admin may redirect future mint fees, replace the
+- **Backing economics are immutable.** No admin can move the reserve, change denominations or alter
+  redemption. The separate admin may set the flat `mintFee` up to `unit()`, redirect future mint fees, replace the
   renderer and collection metadata (locked together), edit copy, and configure the independently
   lockable positions and market pointers. Shape #0's holder has no permissions. Renouncing admin
   freezes the final fee recipient and every unlocked configuration at its last value.

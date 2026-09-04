@@ -37,7 +37,7 @@ const centered: React.CSSProperties = {
 
 /**
  * Keeps the wallet stack above routed pages so client navigation cannot replace it. The playground
- * remains deliberately wallet-free and does not wait for deployment metadata or an RPC. "/" needs
+ * and the docs are wallet-free and do not wait for deployment metadata or an RPC. "/" needs
  * no chain either, except in app mode (`chainOnIndex`), where it hosts the mint panel inline and
  * so waits for the same deployment load as every other routed page.
  */
@@ -59,7 +59,8 @@ export function ShapesProviders({
 }) {
   const pathname = usePathname();
   const isIndex = pathname === "/";
-  const skipsChain = pathname === "/play" || (isIndex && !chainOnIndex);
+  const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
+  const skipsChain = pathname === "/play" || isDocs || (isIndex && !chainOnIndex);
   const [state, setState] = React.useState<WalletState | null>(null);
   const [err, setErr] = React.useState<string | null>(null);
 
