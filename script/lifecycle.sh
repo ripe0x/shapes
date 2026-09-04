@@ -626,12 +626,8 @@ else
   # An apex Complete carries one origin per unit of the top denomination, so it can only be built
   # from that many separate mints. Minted in batches, folded to the second-from-top denomination in
   # groups, then folded once more.
-  #
-  # Named APEX_GROUPS, not GROUPS: bash reserves GROUPS as a special dynamic array (the caller's
-  # OS group ids). A plain assignment to it is silently ignored, so the loop below would run over
-  # the real OS group list instead of 0..9 -- a different, environment-dependent count on every
-  # machine. That is what caused the apex compose to revert in CI: PER_GROUP no longer divided
-  # APEX_UNITS into a supported denomination.
+  # Named APEX_GROUPS because bash reserves GROUPS as a dynamic array of the caller's OS group
+  # ids: an assignment to it is silently ignored and the count would follow the machine.
   APEX_GROUPS=10
   PER_GROUP=$(big "$APEX_UNITS // $APEX_GROUPS")
   APEX_ID=$(rc "$SHAPES" 'totalMinted()(uint256)')
