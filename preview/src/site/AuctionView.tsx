@@ -395,7 +395,7 @@ export function AuctionView({
             <div>
               <div style={label}>{AUCTION_START_HIDDEN ? "BIDDING" : "STARTS IN"}</div>
               <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
-                {AUCTION_START_HIDDEN ? "Not open yet" : formatCountdown(untilStart)}
+                {AUCTION_START_HIDDEN ? "Not open" : formatCountdown(untilStart)}
               </div>
             </div>
           )}
@@ -442,7 +442,7 @@ export function AuctionView({
               {phase === "scheduled" && (
                 <div>
                   {AUCTION_START_HIDDEN
-                    ? "Bidding is not open yet. The clock starts at the first bid."
+                    ? "Bidding is not open."
                     : `Bidding opens ${formatStartTime(auction.startTime)}. The clock starts at the first bid.`}
                 </div>
               )}

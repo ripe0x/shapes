@@ -36,7 +36,7 @@ browser reads when a paid/provider RPC is available. Requests are unbatched beca
 reads already use Multicall3 and local seed demos can exceed Anvil's batch-size limit.
 
 `NEXT_PUBLIC_AUCTION_START_HIDDEN=1` hides a scheduled auction's start date and countdown in
-`AuctionView`, showing only that bidding is not open yet. Unset leaves the date and countdown
+`AuctionView`, showing only "Not open". Unset leaves the date and countdown
 visible.
 
 ### Indexer proxy
