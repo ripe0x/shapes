@@ -336,6 +336,9 @@ export function AuctionView({
               width: "100%",
               aspectRatio: "250 / 350",
               backgroundColor: C.art,
+              borderRadius: 8,
+              overflow: "hidden",
+              boxShadow: "0 0 24px rgba(0,0,0,0.22)",
               ...(artMaxHeight != null
                 ? {maxHeight: artMaxHeight, maxWidth: (artMaxHeight * 250) / 350}
                 : null),
