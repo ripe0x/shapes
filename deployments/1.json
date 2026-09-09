@@ -5,7 +5,7 @@
   "shapes": "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0",
   "renderer": "0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295",
   "collection": "0x9d1bd0c348900d5c6bce28148f2adc68f73c8af3",
-  "auctionHouse": "0x90b79dbf4f301c239983ee37e6a466132e1532df",
+  "auctionHouse": "0xe123d75956cb2c487251593e1be50985b23f427d",
   "mintFeeWei": "1000000000000000",
   "mintStart": "1788462000",
   "libraries": {
@@ -20,6 +20,7 @@
   "fromBlock": 25898721,
   "auctionId": "0",
   "artistReleaseHash": "0xca51273fc507fd7c2ff85d5813660b59de876c714a866a5a229079a5e7ca24dc",
-  "commit": "a0a180bb5ae13bf5178c3f1f6deff32cc911f54f",
-  "branch": "main"
+  "commit": "1b84c102a6603ca9751d863ff259b08870d22a6b",
+  "branch": "main",
+  "auctionHouseFromBlock": 25941422
 }
