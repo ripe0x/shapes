@@ -18,13 +18,13 @@ kill_timeout = "30s"
   PONDER_DATABASE_DIR = "/data/pglite"
   DATABASE_SCHEMA = "shapes_mainnet_v4"
   SHAPES_LADDER = "mainnet"
-  # Left empty on purpose: indexer/deploy.sh fills these in at deploy time from
-  # deployments/1.json (`.shapes` and `.fromBlock`), via `fly deploy -e`. A bare
-  # `fly deploy --config fly.mainnet.toml` without going through deploy.sh starts
-  # the container with no contract address, which ponder.config.ts refuses to run.
-  SHAPES_ADDRESS = ""
-  AUCTION_HOUSE_ADDRESS = ""
-  SHAPES_START_BLOCK = ""
+  # Mirror of deployments/1.json. indexer/deploy.sh overrides these from the record
+  # at deploy time via `fly deploy -e`; the values here keep a bare
+  # `fly deploy --config fly.mainnet.toml` on the live contracts.
+  SHAPES_ADDRESS = "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0"
+  SHAPES_START_BLOCK = "25898721"
+  AUCTION_HOUSE_ADDRESS = "0xe123d75956cb2c487251593e1be50985b23f427d"
+  AUCTION_HOUSE_START_BLOCK = "25941422"
 
 [[mounts]]
   source = "shapes_indexer_mainnet_data"
