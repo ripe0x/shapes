@@ -73,8 +73,9 @@
 #                                                  at listing, by default). AUCTION_START_TIME is
 #                                                  an absolute unix time; empty or 0 opens bidding
 #                                                  at listing, otherwise bids revert NotStarted
-#                                                  until then. Refused if more than 30 days after
-#                                                  the RPC's latest block timestamp.
+#                                                  until then. Refused if more than the house's
+#                                                  MAX_START_LEAD after the RPC's latest block
+#                                                  timestamp.
 #                                                  createAuction only escrows the lot and opens the
 #                                                  listing; the clock starts on the first bid.
 #                                                  Allowed under RESUME too, and skips rather than
@@ -709,12 +710,13 @@ JUST_LISTED=0
 if [ "$LIST_OWNER_TOKEN" = "1" ]; then
   [[ "$AUCTION_START_TIME" =~ ^[0-9]+$ ]] \
     || { echo "refusing: AUCTION_START_TIME must be a positive integer (unix seconds) or empty/0" >&2; exit 1; }
-  # Mirrors ShapeAuctionHouse.createAuction's own StartTooFar check against MAX_DURATION.
+  # Mirrors ShapeAuctionHouse.createAuction's own StartTooFar check against MAX_START_LEAD.
   if [ "$AUCTION_START_TIME" != "0" ]; then
     LATEST_BLOCK_TIME=$(cast block latest --field timestamp --rpc-url "$RPC")
-    MAX_START_TIME=$(( LATEST_BLOCK_TIME + 30 * 24 * 60 * 60 ))
+    MAX_START_LEAD=$(cast call "$HOUSE" 'MAX_START_LEAD()(uint64)' --rpc-url "$RPC" | awk '{print $1}')
+    MAX_START_TIME=$(( LATEST_BLOCK_TIME + MAX_START_LEAD ))
     [ "$AUCTION_START_TIME" -le "$MAX_START_TIME" ] \
-      || { echo "refusing: AUCTION_START_TIME ($AUCTION_START_TIME) is more than 30 days after the current block time ($LATEST_BLOCK_TIME)" >&2; exit 1; }
+      || { echo "refusing: AUCTION_START_TIME ($AUCTION_START_TIME) is more than MAX_START_LEAD (${MAX_START_LEAD}s) after the current block time ($LATEST_BLOCK_TIME)" >&2; exit 1; }
   fi
 
   HAS_AUCTION=$(cast call "$HOUSE" 'hasAuctionFor(address,uint256)(bool)' "$SHAPES" 0 --rpc-url "$RPC")
