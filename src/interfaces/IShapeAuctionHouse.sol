@@ -40,6 +40,9 @@ interface IShapeAuctionHouse is IShapeCardEscrow {
     /// @notice Emitted when a losing bidder pulls their escrowed cards back.
     event BidWithdrawn(uint256 indexed auctionId, address indexed bidder, uint256 cardCount);
 
+    /// @notice Emitted when the seller moves the time bids open on an auction with no bid yet.
+    event AuctionStartTimeChanged(uint256 indexed auctionId, uint64 startTime);
+
     /// @notice Emitted when the seller pulls the winning bid.
     event ProceedsClaimed(uint256 indexed auctionId, address indexed seller, uint256 cardCount);
 
@@ -53,7 +56,8 @@ interface IShapeAuctionHouse is IShapeCardEscrow {
     error DurationOutOfRange();
     /// @dev `createAuction` extension window exceeded the duration.
     error ExtensionWindowTooLong();
-    /// @dev `createAuction` was given a `startTime` more than `MAX_DURATION` past the current block time.
+    /// @dev `createAuction` or `setStartTime` was given a `startTime` more than `MAX_START_LEAD`
+    ///      past the current block time.
     error StartTooFar();
     /// @dev `createAuction`'s transfer left the lot unheld by the house.
     error LotNotReceived();

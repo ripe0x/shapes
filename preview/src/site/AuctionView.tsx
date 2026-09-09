@@ -25,6 +25,10 @@ import type {SiteData, SiteToken} from "./data";
 import {shapeTitle} from "./shapeTitle";
 import {TokenSummary} from "./TokenView";
 
+/** True when `NEXT_PUBLIC_AUCTION_START_HIDDEN` hides the scheduled auction's start date and
+ *  countdown, leaving only that bidding is not open yet. */
+const AUCTION_START_HIDDEN = process.env.NEXT_PUBLIC_AUCTION_START_HIDDEN === "1";
+
 /** Font size for the token name, the panel's dominant element. */
 const HERO_SIZE = 40;
 
@@ -389,9 +393,9 @@ export function AuctionView({
 
           {phase === "scheduled" && untilStart !== null && (
             <div>
-              <div style={label}>STARTS IN</div>
+              <div style={label}>{AUCTION_START_HIDDEN ? "BIDDING" : "STARTS IN"}</div>
               <div style={{fontSize: PRICE_SIZE, lineHeight: 1, marginTop: 6, whiteSpace: "nowrap"}}>
-                {formatCountdown(untilStart)}
+                {AUCTION_START_HIDDEN ? "Not open yet" : formatCountdown(untilStart)}
               </div>
             </div>
           )}
@@ -437,7 +441,9 @@ export function AuctionView({
               {phase === "pre-bid" && <div>The clock starts at the first bid.</div>}
               {phase === "scheduled" && (
                 <div>
-                  Bidding opens {formatStartTime(auction.startTime)}. The clock starts at the first bid.
+                  {AUCTION_START_HIDDEN
+                    ? "Bidding is not open yet. The clock starts at the first bid."
+                    : `Bidding opens ${formatStartTime(auction.startTime)}. The clock starts at the first bid.`}
                 </div>
               )}
               {phase === "live" && nearExtension && (

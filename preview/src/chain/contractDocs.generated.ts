@@ -7152,6 +7152,34 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "MAX_START_LEAD",
+        "signature": "MAX_START_LEAD()",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [
+          {
+            "name": "",
+            "type": "uint64"
+          }
+        ],
+        "notice": "The furthest into the future `startTime` may be set, in `createAuction` or `setStartTime`, from the current block time.",
+        "dev": "",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "MAX_START_LEAD",
+          "inputs": [],
+          "outputs": [
+            {
+              "name": "",
+              "type": "uint64"
+            }
+          ],
+          "stateMutability": "view"
+        }
+      },
+      {
         "name": "auctionCount",
         "signature": "auctionCount()",
         "stateMutability": "view",
@@ -7615,7 +7643,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           "minIncrementBps": "How far a bid must clear the standing one, in basis points.",
           "nft": "The collection the lot belongs to. Must have code and report the ERC721 interface under ERC165.",
           "reserveUnits": "Smallest winning bid, in `UNIT` multiples.",
-          "startTime": "Unix time bids open. Zero or a past time opens the listing at creation. At most `MAX_DURATION` after the current block time."
+          "startTime": "Unix time bids open. Zero or a past time opens the listing at creation. At most `MAX_START_LEAD` after the current block time."
         },
         "returns": {},
         "abi": {
@@ -7945,6 +7973,42 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         }
       },
       {
+        "name": "setStartTime",
+        "signature": "setStartTime(uint256,uint64)",
+        "stateMutability": "nonpayable",
+        "inputs": [
+          {
+            "name": "auctionId",
+            "type": "uint256"
+          },
+          {
+            "name": "startTime",
+            "type": "uint64"
+          }
+        ],
+        "outputs": [],
+        "notice": "Moves the time bids open on an auction that has no bid yet.",
+        "dev": "Seller only. Reverts `InvalidAuction` when the caller is not the seller, a bid exists, or the auction is settled. Zero or a past time opens bidding now. At most `MAX_START_LEAD` after the current block time.",
+        "params": {},
+        "returns": {},
+        "abi": {
+          "type": "function",
+          "name": "setStartTime",
+          "inputs": [
+            {
+              "name": "auctionId",
+              "type": "uint256"
+            },
+            {
+              "name": "startTime",
+              "type": "uint64"
+            }
+          ],
+          "outputs": [],
+          "stateMutability": "nonpayable"
+        }
+      },
+      {
         "name": "settle",
         "signature": "settle(uint256)",
         "stateMutability": "nonpayable",
@@ -8145,6 +8209,24 @@ export const CONTRACT_DOCS: ContractDoc[] = [
           }
         ],
         "notice": "Emitted when the outcome is recorded. Moves nothing: the lot and the winning cards are both pulled afterwards, by the winner and the seller respectively.",
+        "dev": ""
+      },
+      {
+        "name": "AuctionStartTimeChanged",
+        "signature": "AuctionStartTimeChanged(uint256,uint64)",
+        "inputs": [
+          {
+            "name": "auctionId",
+            "type": "uint256",
+            "indexed": true
+          },
+          {
+            "name": "startTime",
+            "type": "uint64",
+            "indexed": false
+          }
+        ],
+        "notice": "Emitted when the seller moves the time bids open on an auction with no bid yet.",
         "dev": ""
       },
       {
@@ -8542,7 +8624,7 @@ export const CONTRACT_DOCS: ContractDoc[] = [
         "signature": "StartTooFar()",
         "inputs": [],
         "notice": "",
-        "dev": "`createAuction` was given a `startTime` more than `MAX_DURATION` past the current block time."
+        "dev": "`createAuction` or `setStartTime` was given a `startTime` more than `MAX_START_LEAD` past the current block time."
       },
       {
         "name": "TooManyCards",

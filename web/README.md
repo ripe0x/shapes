@@ -35,6 +35,10 @@ endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHA
 browser reads when a paid/provider RPC is available. Requests are unbatched because shared site
 reads already use Multicall3 and local seed demos can exceed Anvil's batch-size limit.
 
+`NEXT_PUBLIC_AUCTION_START_HIDDEN=1` hides a scheduled auction's start date and countdown in
+`AuctionView`, showing only that bidding is not open yet. Unset leaves the date and countdown
+visible.
+
 ### Indexer proxy
 
 The browser never queries the Ponder indexer directly. Every indexer read goes to `/api/indexer`
