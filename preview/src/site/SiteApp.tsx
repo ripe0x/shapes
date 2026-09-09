@@ -599,6 +599,7 @@ export function SiteApp({
       {shownView === "mint" && (
         <MintView
           data={data}
+          dep={dep}
           chainId={dep.chainId}
           connected={isConnected}
           sel={sel}
@@ -611,6 +612,7 @@ export function SiteApp({
           mint={mint}
           onMint={() => void doMint()}
           onOpenToken={openToken}
+          onOpenMyShapes={() => go("collection")}
           onConnect={() => openConnectModal?.()}
         />
       )}

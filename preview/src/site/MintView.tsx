@@ -1,9 +1,13 @@
-import {MintPanel} from "./MintPanel";
+import {MintPage} from "./MintPage";
+import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import type {MintState} from "./SiteApp";
 
+/** The /mint route. The landing page embeds `MintPanel` instead; this route renders the full-page
+ *  mint experience. */
 export function MintView({
   data,
+  dep,
   chainId,
   connected,
   sel,
@@ -13,9 +17,11 @@ export function MintView({
   mint,
   onMint,
   onOpenToken,
+  onOpenMyShapes,
   onConnect,
 }: {
   data: SiteData | null;
+  dep?: Deployment;
   chainId: number;
   connected: boolean;
   sel: number;
@@ -25,26 +31,24 @@ export function MintView({
   mint: MintState;
   onMint: () => void;
   onOpenToken: (id: bigint) => void;
+  onOpenMyShapes: () => void;
   onConnect: () => void;
 }) {
   return (
-    <main className="mint-page">
-      <section className="launch-section">
-        <p className="launch-kicker">Mint</p>
-        <MintPanel
-          data={data}
-          chainId={chainId}
-          connected={connected}
-          sel={sel}
-          setSel={setSel}
-          qty={qty}
-          setQty={setQty}
-          mint={mint}
-          onMint={onMint}
-          onOpenToken={onOpenToken}
-          onConnect={onConnect}
-        />
-      </section>
-    </main>
+    <MintPage
+      data={data}
+      dep={dep}
+      chainId={chainId}
+      connected={connected}
+      sel={sel}
+      setSel={setSel}
+      qty={qty}
+      setQty={setQty}
+      mint={mint}
+      onMint={onMint}
+      onOpenToken={onOpenToken}
+      onOpenMyShapes={onOpenMyShapes}
+      onConnect={onConnect}
+    />
   );
 }
