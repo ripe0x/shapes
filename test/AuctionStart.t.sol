@@ -76,19 +76,30 @@ contract AuctionStartTest is AuctionBase {
         assertEq(house.auctions(id).highestBidder, alice);
     }
 
-    function test_StartTimeAtTheMaxDurationBoundaryIsAccepted() public {
-        uint64 startTime = uint64(block.timestamp) + house.MAX_DURATION();
+    function test_StartTimeAtTheMaxStartLeadBoundaryIsAccepted() public {
+        uint64 startTime = uint64(block.timestamp) + house.MAX_START_LEAD();
         uint256 id = _openAt(startTime);
         assertEq(house.auctions(id).startTime, startTime);
     }
 
-    function test_StartTimePastTheMaxDurationBoundaryReverts() public {
-        uint64 startTime = uint64(block.timestamp) + house.MAX_DURATION() + 1;
+    function test_StartTimePastTheMaxStartLeadBoundaryReverts() public {
+        uint64 startTime = uint64(block.timestamp) + house.MAX_START_LEAD() + 1;
         vm.prank(seller);
         vm.expectRevert(IShapeAuctionHouse.StartTooFar.selector);
         house.createAuction(
             address(shapes), lotId, DURATION, RESERVE_UNITS, INCREMENT_BPS, EXTENSION, startTime
         );
+    }
+
+    function test_StartTimeOneYearOutSucceedsAndBidBeforeItReverts() public {
+        uint64 startTime = uint64(block.timestamp) + 365 days;
+        uint256 id = _openAt(startTime);
+        assertEq(house.auctions(id).startTime, startTime);
+
+        uint256 card = _mintCard(alice, DENOMS[4]);
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(IShapeAuctionHouse.NotStarted.selector, id, startTime));
+        house.bid(id, _one(card), 0);
     }
 
     function test_CancelBeforeStartSucceeds() public {
@@ -133,5 +144,93 @@ contract AuctionStartTest is AuctionBase {
         uint256 id = _openAt(startTime);
 
         assertEq(house.auctions(id).startTime, startTime);
+    }
+
+    /* ------------------------------ setStartTime ----------------------------- */
+
+    function test_SellerMovesStartTimeEarlierAndLater() public {
+        uint64 startTime = uint64(block.timestamp) + 1 hours;
+        uint256 id = _openAt(startTime);
+
+        uint64 earlier = startTime - 30 minutes;
+        vm.prank(seller);
+        house.setStartTime(id, earlier);
+        assertEq(house.auctions(id).startTime, earlier);
+
+        uint64 later = startTime + 30 minutes;
+        vm.prank(seller);
+        house.setStartTime(id, later);
+        assertEq(house.auctions(id).startTime, later);
+    }
+
+    function test_SetStartTimeByNonSellerReverts() public {
+        uint256 id = _openAt(uint64(block.timestamp) + 1 hours);
+
+        vm.prank(alice);
+        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        house.setStartTime(id, uint64(block.timestamp) + 2 hours);
+    }
+
+    function test_SetStartTimeAfterABidReverts() public {
+        uint256 id = _open();
+        uint256 card = _mintCard(alice, DENOMS[4]);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+
+        vm.prank(seller);
+        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        house.setStartTime(id, uint64(block.timestamp) + 1 hours);
+    }
+
+    function test_SetStartTimeAfterCancelReverts() public {
+        uint64 startTime = uint64(block.timestamp) + 1 hours;
+        uint256 id = _openAt(startTime);
+        vm.prank(seller);
+        house.cancelAuction(id);
+
+        vm.prank(seller);
+        vm.expectRevert(IShapeAuctionHouse.InvalidAuction.selector);
+        house.setStartTime(id, startTime);
+    }
+
+    function test_SetStartTimeAtTheMaxStartLeadBoundaryIsAccepted() public {
+        uint256 id = _open();
+        uint64 startTime = uint64(block.timestamp) + house.MAX_START_LEAD();
+
+        vm.prank(seller);
+        house.setStartTime(id, startTime);
+        assertEq(house.auctions(id).startTime, startTime);
+    }
+
+    function test_SetStartTimePastTheMaxStartLeadBoundaryReverts() public {
+        uint256 id = _open();
+        uint64 startTime = uint64(block.timestamp) + house.MAX_START_LEAD() + 1;
+
+        vm.prank(seller);
+        vm.expectRevert(IShapeAuctionHouse.StartTooFar.selector);
+        house.setStartTime(id, startTime);
+    }
+
+    function test_SetStartTimeToZeroOpensBiddingNow() public {
+        uint256 id = _openAt(uint64(block.timestamp) + 1 hours);
+
+        vm.prank(seller);
+        house.setStartTime(id, 0);
+        assertEq(house.auctions(id).startTime, 0);
+
+        uint256 card = _mintCard(alice, DENOMS[4]);
+        vm.prank(alice);
+        house.bid(id, _one(card), 0);
+        assertEq(house.auctions(id).highestBidder, alice);
+    }
+
+    function test_SetStartTimeEmitsAuctionStartTimeChanged() public {
+        uint256 id = _open();
+        uint64 startTime = uint64(block.timestamp) + 1 hours;
+
+        vm.expectEmit(true, true, true, true, address(house));
+        emit IShapeAuctionHouse.AuctionStartTimeChanged(id, startTime);
+        vm.prank(seller);
+        house.setStartTime(id, startTime);
     }
 }

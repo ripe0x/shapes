@@ -59,6 +59,9 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse, IShapeAuction
     /// @inheritdoc IShapeAuctionHouse
     uint64 public constant MAX_DURATION = 30 days;
 
+    /// @inheritdoc IShapeAuctionHouseStartTime
+    uint64 public constant MAX_START_LEAD = 365 days;
+
     /// @dev EIP-721's ERC165 interface id.
     bytes4 private constant ERC721_INTERFACE_ID = 0x80ac58cd;
 
@@ -141,7 +144,7 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse, IShapeAuction
         // the seller chose; extensionWindow may not exceed the duration it extends.
         if (duration == 0 || duration > MAX_DURATION) revert DurationOutOfRange();
         if (extensionWindow > duration) revert ExtensionWindowTooLong();
-        if (startTime > block.timestamp + MAX_DURATION) revert StartTooFar();
+        if (startTime > block.timestamp + MAX_START_LEAD) revert StartTooFar();
 
         auctionId = auctionCount++;
         _auctions[auctionId] = Auction({
@@ -183,6 +186,18 @@ contract ShapeAuctionHouse is ShapeCardEscrow, IShapeAuctionHouse, IShapeAuction
 
         a.settled = true;
         emit AuctionCancelled(auctionId);
+    }
+
+    /// @inheritdoc IShapeAuctionHouseStartTime
+    function setStartTime(uint256 auctionId, uint64 startTime) external {
+        Auction storage a = _requireAuction(auctionId);
+        if (msg.sender != a.seller || a.highestBidder != address(0) || a.settled) {
+            revert InvalidAuction();
+        }
+        if (startTime > block.timestamp + MAX_START_LEAD) revert StartTooFar();
+
+        a.startTime = startTime;
+        emit AuctionStartTimeChanged(auctionId, startTime);
     }
 
     /* ----------------------------- bidding ---------------------------- */

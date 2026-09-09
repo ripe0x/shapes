@@ -7,6 +7,11 @@ export default defineConfig({
   // name. Unset means mainnet; see src/canonical/denominations.ts.
   define: {
     "process.env.SHAPES_LADDER": JSON.stringify(process.env.SHAPES_LADDER ?? ""),
+    // Read directly in AuctionView.tsx; Next.js inlines NEXT_PUBLIC_ vars on its own, so this
+    // entry only covers the site.html build below.
+    "process.env.NEXT_PUBLIC_AUCTION_START_HIDDEN": JSON.stringify(
+      process.env.NEXT_PUBLIC_AUCTION_START_HIDDEN ?? "",
+    ),
   },
   // 5173 is the preferred port; strictPort: false lets Vite fall through to the next free
   // port when it is already taken (a second harness, a stale server) rather than failing.
