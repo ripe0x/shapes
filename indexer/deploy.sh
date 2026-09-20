@@ -106,13 +106,18 @@ else
   echo "fly CLI not found; skipping config validate" >&2
 fi
 
-# fly deploy uses the current directory as the Docker build context, so it must run from
-# indexer/: the Dockerfile copies this package's package.json, not the workspace root's.
-DEPLOY_CMD=(fly deploy --config "$(basename "$TOML")" -a "$APP"
+# fly deploy uses its build-context argument as the Docker build context. That context is the
+# repo root (.), not indexer/: indexer/Dockerfile copies packages/shapes-sdk (the render module
+# indexer/src/api/routes.ts imports as the `shapes-sdk` package) and deployments/*.json
+# alongside indexer/ itself, none of which a context scoped to indexer/ alone could see. This
+# script already runs from the repo root (see the `cd` at the top), so $TOML and the Dockerfile
+# path are both given relative to it.
+DEPLOY_CMD=(fly deploy --config "$TOML" --dockerfile indexer/Dockerfile -a "$APP"
   -e "SHAPES_ADDRESS=$SHAPES_ADDRESS"
   -e "SHAPES_START_BLOCK=$FROM_BLOCK"
   -e "AUCTION_HOUSE_ADDRESS=$AUCTION_HOUSE"
-  -e "AUCTION_HOUSE_START_BLOCK=$AUCTION_HOUSE_START_BLOCK")
+  -e "AUCTION_HOUSE_START_BLOCK=$AUCTION_HOUSE_START_BLOCK"
+  .)
 
 if [[ "${DRY_RUN:-}" == "1" ]]; then
   echo "DRY_RUN: would run:"
@@ -120,7 +125,7 @@ if [[ "${DRY_RUN:-}" == "1" ]]; then
   exit 0
 fi
 
-(cd indexer && "${DEPLOY_CMD[@]}")
+"${DEPLOY_CMD[@]}"
 
 [[ -f "$SCHEMA_LEDGER" ]] || echo '{}' > "$SCHEMA_LEDGER"
 jq --arg s "$SCHEMA" --arg a "$SHAPES_ADDRESS" '.[$s] = $a' "$SCHEMA_LEDGER" > "$SCHEMA_LEDGER.tmp"

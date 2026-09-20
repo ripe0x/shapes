@@ -8,7 +8,7 @@
 
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { renderShapeSvg, denominationLabel } from "../../../packages/shapes-sdk/src/render/index.ts";
+import { renderShapeSvg, denominationLabel } from "shapes-sdk/render";
 import type { ShapeDataSource, ShapeRow } from "./shapeData.ts";
 import { createRateLimiter } from "../lib/rateLimit.ts";
 

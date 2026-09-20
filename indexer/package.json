@@ -14,6 +14,7 @@
     "drizzle-orm": "0.45.2",
     "hono": "^4.6.0",
     "ponder": "0.17.8",
+    "shapes-sdk": "file:../packages/shapes-sdk",
     "viem": "^2.21.0"
   },
   "devDependencies": {

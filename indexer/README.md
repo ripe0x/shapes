@@ -9,9 +9,10 @@ scanning is fatal on mainnet and for any token with a deep composition /
 decomposition history, since a single Shape can have thousands of ancestor
 edges.
 
-This is a self-contained subproject. It does not import or depend on
-anything in `../src`, `../preview`, `../test`, or `../script`; it only reads
-the deployed contract's events over RPC.
+This is a self-contained subproject with its own `npm install`, apart from one dependency:
+`packages/shapes-sdk`, the canonical renderer the public v1 routes render art from (see "Public
+v1 routes" below). It imports nothing else from `../src`, `../preview`, `../test`, or `../script`;
+event indexing only reads the deployed contract's events over RPC.
 
 ## Setup
 
@@ -423,6 +424,13 @@ thread, a 1 GB shared-CPU Machine, and `/data/pglite` on its own volume:
 `fly.sepolia.toml` (app `shapes-indexer`, `testnet` ladder) and `fly.mainnet.toml` (app
 `shapes-indexer-mainnet`, `mainnet` ladder). Both leave the primary RPC public and archive-capable
 with two more public RPCs as `PONDER_RPC_FALLBACKS`; neither toml is deployed directly.
+
+The Docker build context is the repo root, not `indexer/`: `Dockerfile` installs
+`packages/shapes-sdk` (the render module the public v1 routes import as the `shapes-sdk`
+package) and copies `deployments/*.json` before installing and copying `indexer/` itself. Both
+tomls' `[build] dockerfile` path and `deploy.sh`'s `fly deploy` call are root-relative for the
+same reason; a bare `fly deploy --config indexer/fly.<env>.toml` must also run from the repo
+root, not from `indexer/`.
 
 ### Environments
 

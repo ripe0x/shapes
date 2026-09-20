@@ -67,7 +67,11 @@ npm --workspace packages/shapes-sdk test
 
 `src/render/*.test.ts` is the moved canonical renderer's own unit suite (module codec, sampling,
 metadata). `src/client.test.ts` and `src/deployments.test.ts` cover the client and address book.
-`src/parity.test.ts` renders ten live Sepolia tokens from the deployed indexer's own rows and
-compares them to `Shapes.svg(tokenId)` on chain; it skips (rather than fails) when the Sepolia
-indexer or an RPC is unreachable from the current environment, since it is the one test in this
-package that depends on live infrastructure this package does not control.
+`src/parity.test.ts` renders ten live tokens from the deployed indexer's own rows and compares
+them to `Shapes.svg(tokenId)` on chain; it skips (rather than fails) when the indexer or an RPC is
+unreachable from the current environment, since it is the one test in this package that depends
+on live infrastructure this package does not control. Defaults to mainnet
+(`shapes-indexer-mainnet.fly.dev`, `ethereum-rpc.publicnode.com`); override with
+`SHAPES_PARITY_INDEXER_URL`, `SHAPES_PARITY_RPC_URL` and `SHAPES_PARITY_CHAIN_ID` to run it
+against Sepolia instead, and `SHAPES_INDEXER_TOKEN`/`INDEXER_TOKEN` if the target's `/graphql` is
+bearer-gated.

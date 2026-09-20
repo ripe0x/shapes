@@ -3,8 +3,12 @@ primary_region = "iad"
 kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
+# indexer/deploy.sh runs `fly deploy` from the repo root with this Dockerfile path and `.`
+# as the build context, so it can COPY packages/shapes-sdk and deployments/*.json alongside
+# indexer/ (see indexer/Dockerfile). A bare `fly deploy --config` of this file must also run
+# from the repo root for the same reason.
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "indexer/Dockerfile"
 
 [env]
   NODE_ENV = "production"
