@@ -8,7 +8,7 @@ kill_timeout = "30s"
 # indexer/ (see indexer/Dockerfile). A bare `fly deploy --config` of this file must also run
 # from the repo root for the same reason.
 [build]
-  dockerfile = "indexer/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
   NODE_ENV = "production"
