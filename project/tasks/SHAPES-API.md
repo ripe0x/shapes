@@ -91,3 +91,10 @@ DECISIONS.md for the full record, including two known follow-ups outside this ta
 files: the indexer's Fly Docker build context does not yet reach `packages/shapes-sdk`, and
 `web/tsconfig.json`/`preview/tsconfig.json` needed one additive compiler flag each
 (`allowImportingTsExtensions`) to keep typechecking after the move.
+
+Deployed 2026-09-20: Sepolia on Fly app `shapes-indexer` (Tenderly public RPC, recovery rows
+read from latest state, commit 2796acf), mainnet on Fly app `shapes-indexer-mainnet-b` (schema
+per deploy), both behind the Netlify edge site `api-shapes-ripe` at api.shapes.ripe.wtf.
+shapes.ripe.wtf reads `shapes-indexer-mainnet-b` through `SHAPES_INDEXER_URL` (full `/graphql`
+URL) and a rotated `SHAPES_INDEXER_TOKEN`. The old app `shapes-indexer-mainnet` is stopped and
+kept one week as rollback. Netlify edge rate limiting is a paid switch the owner turns on.
