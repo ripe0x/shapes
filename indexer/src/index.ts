@@ -329,45 +329,86 @@ ponder.on("Shapes:Transfer", async ({ event, context }) => {
   // token whose provenance the same gap already lost. `mintDenomIndex`/`mintedAtBlock`/
   // `mintedAt`/`mintTxHash` are approximated from this transfer since the true mint record is
   // exactly what the gap lost; every other field is the token's real current on-chain state.
+  //
+  // Read at latest, not at this event's block: neither configured Sepolia RPC serves archive
+  // state that far behind chain tip, and a pinned-block read fails outright there. `cache:
+  // "immutable"` is what tells `context.client` to use `latest` instead of the event's block.
+  // Latest is also the right value regardless of archive support — seed, denomination index,
+  // modules and ink gene change only through events this indexer already processes, so any
+  // compose or split between this gap and chain tip lands its own event and overwrites this row
+  // in order; there is nothing this read could learn from the historical block that the normal
+  // event stream will not also apply.
   if (!(await context.db.find(token, { id: tokenId }))) {
     const shapesAddress = context.contracts.Shapes.address;
-    const [state, composeDepth] = await Promise.all([
-      context.client.readContract({
-        abi: shapesAbi,
-        address: shapesAddress,
-        functionName: "shapeState",
-        args: [tokenId],
-      }),
-      context.client.readContract({
-        abi: shapesAbi,
-        address: shapesAddress,
-        functionName: "composeDepth",
-        args: [tokenId],
-      }),
-    ]);
+    const gapNote =
+      `token ${tokenId} had no row when Transfer (tx ${event.transaction.hash}, ` +
+      `block ${event.block.number}) referenced it — gap of unknown size, since the token's ` +
+      `true mint block is exactly what went unsynced`;
+    try {
+      const [state, composeDepth] = await Promise.all([
+        context.client.readContract({
+          abi: shapesAbi,
+          address: shapesAddress,
+          functionName: "shapeState",
+          args: [tokenId],
+          cache: "immutable",
+        }),
+        context.client.readContract({
+          abi: shapesAbi,
+          address: shapesAddress,
+          functionName: "composeDepth",
+          args: [tokenId],
+          cache: "immutable",
+        }),
+      ]);
 
-    console.warn(
-      `Shapes indexer: token ${tokenId} had no row when Transfer (tx ${event.transaction.hash}, ` +
-        `block ${event.block.number}) referenced it; recovering from a live chain read.`,
-    );
+      console.warn(`Shapes indexer: ${gapNote}; recovered from a live read of its latest state.`);
 
-    await context.db.insert(token).values({
-      id: tokenId,
-      seed: state.seed,
-      denomIndex: state.denominationIndex,
-      backingWei: state.redeemableValueWei,
-      originCount: Number(state.originCount),
-      composeDepth: Number(composeDepth),
-      inkGene: state.inkGene,
-      modules: state.modules === "0x" ? null : state.modules,
-      isBlack: state.isBlack,
-      live: true,
-      owner: from,
-      mintDenomIndex: state.denominationIndex,
-      mintedAtBlock: event.block.number,
-      mintedAt: event.block.timestamp,
-      mintTxHash: event.transaction.hash,
-    });
+      await context.db.insert(token).values({
+        id: tokenId,
+        seed: state.seed,
+        denomIndex: state.denominationIndex,
+        backingWei: state.redeemableValueWei,
+        originCount: Number(state.originCount),
+        composeDepth: Number(composeDepth),
+        inkGene: state.inkGene,
+        modules: state.modules === "0x" ? null : state.modules,
+        isBlack: state.isBlack,
+        live: true,
+        owner: from,
+        mintDenomIndex: state.denominationIndex,
+        mintedAtBlock: event.block.number,
+        mintedAt: event.block.timestamp,
+        mintTxHash: event.transaction.hash,
+      });
+    } catch (err) {
+      // The token no longer exists at latest (redeemed or burned since this transfer), so
+      // `shapeState` reverts and there is no live state left to recover. Insert it dead, with
+      // only what this Transfer itself carries — every other field is genuinely unknown, not
+      // approximated, because the token's whole history is the gap that went unsynced.
+      console.warn(
+        `Shapes indexer: ${gapNote}; the token no longer exists at latest (${(err as Error).message}), ` +
+          "inserting it live: false from the transfer alone.",
+      );
+
+      await context.db.insert(token).values({
+        id: tokenId,
+        seed: `0x${"0".repeat(64)}`,
+        denomIndex: 0,
+        backingWei: 0n,
+        originCount: 1,
+        composeDepth: 0,
+        inkGene: 0,
+        modules: null,
+        isBlack: false,
+        live: false,
+        owner: from,
+        mintDenomIndex: 0,
+        mintedAtBlock: event.block.number,
+        mintedAt: event.block.timestamp,
+        mintTxHash: event.transaction.hash,
+      });
+    }
   }
 
   const row = await context.db.update(token, { id: tokenId }).set({ owner: to });
