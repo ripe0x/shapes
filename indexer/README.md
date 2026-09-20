@@ -401,6 +401,12 @@ and `ModulesSampled` also writes one `activity` row; see the kind table above fo
   transfer carries it exactly. Burn transfers are ignored because a dead row's
   owner is no longer meaningful. Also checks the `collection_owner` singleton:
   if `tokenId` is the current owner token, updates its `ownerAddress` to `to`.
+  If no `token` row exists yet for `tokenId` — a historical log-fetch gap can drop one
+  token's `ShapeMinted`/`Split` while its neighbors sync fine, observed on a from-scratch
+  Sepolia backfill against a rate-limited public RPC — the row is recovered from one live
+  `shapeState`/`composeDepth` read and a warning is logged, rather than crashing the whole
+  backfill. `mintDenomIndex`/`mintedAtBlock`/`mintedAt`/`mintTxHash` on a recovered row are
+  approximated from this transfer, since the true mint record is exactly what the gap lost.
 
 ## ABI
 

@@ -2,6 +2,7 @@ import { zeroAddress } from "viem";
 
 import { ponder } from "ponder:registry";
 
+import { shapesAbi } from "../abis/Shapes";
 import { AUCTION_HOUSE } from "../ponder.config";
 import { activity, auctionLot, collectionOwner, escrowedCard, lineageEdge, token } from "../ponder.schema";
 import { activityRow, mintActivityId, type ActivityAt } from "./lib/activity";
@@ -309,12 +310,64 @@ ponder.on("Shapes:OwnerTokenMoved", async ({ event, context }) => {
 // Every non-burn transfer establishes the canonical owner. This deliberately includes mint
 // transfers: splitTo/decomposeTo only expose the recipient in ERC721 Transfer, not in their
 // aggregate structural event, so transaction.from is insufficient for contracts and delegated
-// recipients. The matching row has been inserted/revived before _safeMint emits this event.
+// recipients. The matching row is normally already inserted or revived before _safeMint emits
+// this event; recoverMissingToken below is the guard for when it is not.
 ponder.on("Shapes:Transfer", async ({ event, context }) => {
   const { from, to, tokenId } = event.args;
 
   if (to === zeroAddress) {
     return;
+  }
+
+  // Observed on a from-scratch Sepolia backfill: a historical log-fetch gap against a
+  // rate-limited public RPC can silently drop one token's ShapeMinted/Split (or child-mint
+  // Transfer) while everything around it syncs fine, so a later Transfer reaches this handler
+  // with no row to update. The gap is in what got synced, not in these handlers or the
+  // configured start block: BUILDING.md's own event ordering holds on chain, and repeated local
+  // reproductions surfaced a different token id missing each run. Recover once, from a live read
+  // of the token's current state, log it, and continue — never crash the whole backfill over one
+  // token whose provenance the same gap already lost. `mintDenomIndex`/`mintedAtBlock`/
+  // `mintedAt`/`mintTxHash` are approximated from this transfer since the true mint record is
+  // exactly what the gap lost; every other field is the token's real current on-chain state.
+  if (!(await context.db.find(token, { id: tokenId }))) {
+    const shapesAddress = context.contracts.Shapes.address;
+    const [state, composeDepth] = await Promise.all([
+      context.client.readContract({
+        abi: shapesAbi,
+        address: shapesAddress,
+        functionName: "shapeState",
+        args: [tokenId],
+      }),
+      context.client.readContract({
+        abi: shapesAbi,
+        address: shapesAddress,
+        functionName: "composeDepth",
+        args: [tokenId],
+      }),
+    ]);
+
+    console.warn(
+      `Shapes indexer: token ${tokenId} had no row when Transfer (tx ${event.transaction.hash}, ` +
+        `block ${event.block.number}) referenced it; recovering from a live chain read.`,
+    );
+
+    await context.db.insert(token).values({
+      id: tokenId,
+      seed: state.seed,
+      denomIndex: state.denominationIndex,
+      backingWei: state.redeemableValueWei,
+      originCount: Number(state.originCount),
+      composeDepth: Number(composeDepth),
+      inkGene: state.inkGene,
+      modules: state.modules === "0x" ? null : state.modules,
+      isBlack: state.isBlack,
+      live: true,
+      owner: from,
+      mintDenomIndex: state.denominationIndex,
+      mintedAtBlock: event.block.number,
+      mintedAt: event.block.timestamp,
+      mintTxHash: event.transaction.hash,
+    });
   }
 
   const row = await context.db.update(token, { id: tokenId }).set({ owner: to });
