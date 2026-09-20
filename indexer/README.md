@@ -455,19 +455,36 @@ indexer/deploy.sh sepolia      # or mainnet — reads deployments/<chainId>.json
 ```
 
 `DRY_RUN=1 indexer/deploy.sh <env>` resolves the contract address/start block, validates the toml,
-and prints the `fly deploy` command without calling Fly. A real run reads back `/health` and
-`/graphql` after deploying and records `{DATABASE_SCHEMA: shapesAddress}` in
-`indexer/deployments.json`, refusing a schema reused for a different address on a later run — bump
-`DATABASE_SCHEMA` in the toml for a new deployment on the same chain rather than mixing two
-contracts' history into one schema. A replaced auction house needs the same bump: the schema
-ledger keys on the Shapes address alone, but a new house is a new event source, and its retired
-predecessor's events are not re-indexed into the new schema. Then read back `/health`, `/ready`,
-`/status`, and the gallery GraphQL query before adding the app's URL as `indexerUrl` in
-deployment metadata (mainnet:
+and prints the `fly deploy` command without calling Fly. A real run refuses on a dirty working
+tree, reads back `/health` and `/graphql` after deploying, and records
+`{DATABASE_VIEWS_SCHEMA: shapesAddress}` in `indexer/deployments.json`, refusing a views schema
+reused for a different address — bump `DATABASE_VIEWS_SCHEMA` in the toml for a new contract
+deployment on the same chain rather than mixing two contracts' history. A replaced auction house
+needs the same bump: the ledger keys on the Shapes address alone, but a new house is a new event
+source, and its retired predecessor's events are not re-indexed into the new schema. Then read
+back `/health`, `/ready`, `/status`, and the gallery GraphQL query before adding the app's URL as
+`indexerUrl` in deployment metadata (mainnet:
 `INDEXER_URL` in `script/env/mainnet.env`, already set to `https://shapes-indexer-mainnet.fly.dev`
 and written into `deployments/1.json` by `script/deploy.sh`). Do not scale either app beyond one
 Machine while using PGlite; a future multi-Machine or sustained-load requirement is the trigger to
 migrate to Postgres.
+
+**Schema per build, stable name per contract.** Ponder ties a database schema to the build that
+created it and refuses to let a different build reuse it (`MigrationError: Schema "..." was
+previously used by a different Ponder app`), so a schema shared across code-only redeploys breaks
+every one after the first. `deploy.sh` derives `DATABASE_SCHEMA` as `<DATABASE_VIEWS_SCHEMA>_<short
+git sha>` and passes both it and the toml's stable `DATABASE_VIEWS_SCHEMA` (`shapes_sepolia`,
+`shapes_mainnet`) to `fly deploy -e`; `ponder start --schema ... --views-schema ...`
+(`package.json`'s `start` script, mirrored in `Dockerfile`'s `CMD`) then points Ponder's own
+managed views at the new build's tables under that stable name, atomically, once it is ready. Every
+consumer — this app's own `/graphql`, `/sql/*` and `/v1/*` routes, since `ponder start` serves both
+the indexer and its API from one process bound to whichever schema it is currently the writer for
+— reads through that same process, so it always sees the current build with no separate views-schema
+wiring needed on the consumer side. The views schema matters on its own only for a client that
+connects to the underlying Postgres/PGlite database directly, bypassing this app's HTTP API
+entirely; nothing in this repo does that today. `DATABASE_SCHEMA` in the toml is a fallback for a
+bare `ponder start`/`dev` outside `deploy.sh` only. Bump `DATABASE_VIEWS_SCHEMA` for a new contract
+deployment; a code-only redeploy needs no manual bump at all.
 
 ### Dependency security
 

@@ -14,21 +14,34 @@
 #      deploy block, falling back to the collection's when the record predates that
 #      key). Refuses if that file is missing or `.shapes` is empty — the indexer
 #      must never deploy pointed at nothing.
-#   2. Refuses if the toml's DATABASE_SCHEMA was already used, per
-#      indexer/deployments.json, for a different Shapes address. A schema holds one
-#      contract's history; bump DATABASE_SCHEMA in the toml for a new deployment
-#      instead of overwriting another one's data.
-#   3. Runs `fly deploy --config indexer/fly.<name>.toml -a <app> -e SHAPES_ADDRESS=...
-#      -e SHAPES_START_BLOCK=... -e AUCTION_HOUSE_START_BLOCK=...`. The `-e` overrides
-#      are release-scoped env vars, not secrets, so they never touch the toml file
-#      (which stays values-only and deployment-address-agnostic for mainnet, and
-#      already-correct for the live sepolia deployment).
-#   4. On success, records {schema: shapesAddress} into indexer/deployments.json and
-#      probes the deployed app's /health and /graphql.
+#   2. Derives DATABASE_SCHEMA as `<DATABASE_VIEWS_SCHEMA>_<short git sha>`: Ponder
+#      ties a schema name to the exact build that created it and refuses to let a
+#      different build reuse it ("MigrationError: Schema ... was previously used by
+#      a different Ponder app"), so a schema shared across code-only redeploys breaks
+#      every one of them. The toml's own DATABASE_VIEWS_SCHEMA (`shapes_<env>`) is the
+#      stable name Ponder's `--views-schema` points at the live tables of whichever
+#      unique schema is current, atomically, once the new build is ready — that stable
+#      name is what every consumer targets, so it changes only for a real contract
+#      redeploy, never for a code change. Refuses on a dirty working tree, since the
+#      sha would then name a build that isn't what actually deploys.
+#   3. Refuses if DATABASE_VIEWS_SCHEMA was already used, per indexer/deployments.json,
+#      for a different Shapes address. A views schema holds one contract's history;
+#      bump DATABASE_VIEWS_SCHEMA in the toml for a new contract deployment instead of
+#      overwriting another one's data. A code-only redeploy keeps the same views schema
+#      and is always allowed — only the derived per-build DATABASE_SCHEMA changes.
+#   4. Runs `fly deploy --config indexer/fly.<name>.toml -a <app> -e SHAPES_ADDRESS=...
+#      -e SHAPES_START_BLOCK=... -e AUCTION_HOUSE_START_BLOCK=... -e DATABASE_SCHEMA=...
+#      -e DATABASE_VIEWS_SCHEMA=...`. The `-e` overrides are release-scoped env vars,
+#      not secrets, so they never touch the toml file (which stays values-only and
+#      deployment-address-agnostic for mainnet, and already-correct for the live
+#      sepolia deployment).
+#   5. On success, records {viewsSchema: shapesAddress} into indexer/deployments.json
+#      and probes the deployed app's /health and /graphql.
 #
-# DRY_RUN=1   simulate only: still refuses on a missing deployment record or a schema
-#             collision, still runs `fly config validate` if the fly CLI is present,
-#             prints the resolved `fly deploy` command and env, but never calls fly.
+# DRY_RUN=1   simulate only: still refuses on a missing deployment record, a dirty
+#             working tree, or a schema collision, still runs `fly config validate` if
+#             the fly CLI is present, prints the resolved `fly deploy` command and env,
+#             but never calls fly.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -51,11 +64,17 @@ toml_env() {
 }
 APP=$(awk -F'"' '/^app[[:space:]]*=/ {print $2; exit}' "$TOML")
 CHAIN_ID=$(toml_env PONDER_CHAIN_ID)
-SCHEMA=$(toml_env DATABASE_SCHEMA)
-[[ -n "$APP" && -n "$CHAIN_ID" && -n "$SCHEMA" ]] || {
-  echo "could not read app/PONDER_CHAIN_ID/DATABASE_SCHEMA from $TOML" >&2
+VIEWS_SCHEMA=$(toml_env DATABASE_VIEWS_SCHEMA)
+[[ -n "$APP" && -n "$CHAIN_ID" && -n "$VIEWS_SCHEMA" ]] || {
+  echo "could not read app/PONDER_CHAIN_ID/DATABASE_VIEWS_SCHEMA from $TOML" >&2
   exit 1
 }
+
+git diff --quiet && git diff --quiet --cached || {
+  echo "refusing: uncommitted changes — the derived schema names the exact git sha being deployed" >&2
+  exit 1
+}
+SCHEMA="${VIEWS_SCHEMA}_$(git rev-parse --short HEAD)"
 
 DEPLOYMENT_RECORD="deployments/${CHAIN_ID}.json"
 [[ -f "$DEPLOYMENT_RECORD" ]] || {
@@ -77,24 +96,27 @@ AUCTION_HOUSE_START_BLOCK=$(jq -r '.auctionHouseFromBlock // .fromBlock // empty
   exit 1
 }
 
-# Schema -> address ledger, so a DATABASE_SCHEMA bump is required for a new contract
-# address instead of silently mixing two deployments' history in one schema.
+# Views schema -> address ledger, so a DATABASE_VIEWS_SCHEMA bump is required for a new
+# contract address instead of silently mixing two deployments' history. Keyed on the
+# stable views schema, not the per-build DATABASE_SCHEMA, so a code-only redeploy (new
+# sha, same contract) is always allowed.
 SCHEMA_LEDGER="indexer/deployments.json"
 if [[ -f "$SCHEMA_LEDGER" ]]; then
-  PRIOR_ADDRESS=$(jq -r --arg s "$SCHEMA" '.[$s] // empty' "$SCHEMA_LEDGER")
+  PRIOR_ADDRESS=$(jq -r --arg s "$VIEWS_SCHEMA" '.[$s] // empty' "$SCHEMA_LEDGER")
 else
   PRIOR_ADDRESS=""
 fi
 if [[ -n "$PRIOR_ADDRESS" && "$PRIOR_ADDRESS" != "$SHAPES_ADDRESS" ]]; then
-  echo "refusing: schema '$SCHEMA' in $TOML was already used for $PRIOR_ADDRESS, not $SHAPES_ADDRESS" >&2
-  echo "bump DATABASE_SCHEMA in $TOML for a new deployment" >&2
+  echo "refusing: views schema '$VIEWS_SCHEMA' in $TOML was already used for $PRIOR_ADDRESS, not $SHAPES_ADDRESS" >&2
+  echo "bump DATABASE_VIEWS_SCHEMA in $TOML for a new contract deployment" >&2
   exit 1
 fi
 
 echo "app:             $APP"
 echo "config:          $TOML"
 echo "chain id:        $CHAIN_ID"
-echo "schema:          $SCHEMA"
+echo "views schema:    $VIEWS_SCHEMA"
+echo "build schema:    $SCHEMA"
 echo "shapes address:  $SHAPES_ADDRESS"
 echo "from block:      $FROM_BLOCK"
 echo "auction house:   $AUCTION_HOUSE"
@@ -117,6 +139,8 @@ DEPLOY_CMD=(fly deploy --config "$TOML" --dockerfile indexer/Dockerfile -a "$APP
   -e "SHAPES_START_BLOCK=$FROM_BLOCK"
   -e "AUCTION_HOUSE_ADDRESS=$AUCTION_HOUSE"
   -e "AUCTION_HOUSE_START_BLOCK=$AUCTION_HOUSE_START_BLOCK"
+  -e "DATABASE_SCHEMA=$SCHEMA"
+  -e "DATABASE_VIEWS_SCHEMA=$VIEWS_SCHEMA"
   .)
 
 if [[ "${DRY_RUN:-}" == "1" ]]; then
@@ -128,7 +152,7 @@ fi
 "${DEPLOY_CMD[@]}"
 
 [[ -f "$SCHEMA_LEDGER" ]] || echo '{}' > "$SCHEMA_LEDGER"
-jq --arg s "$SCHEMA" --arg a "$SHAPES_ADDRESS" '.[$s] = $a' "$SCHEMA_LEDGER" > "$SCHEMA_LEDGER.tmp"
+jq --arg s "$VIEWS_SCHEMA" --arg a "$SHAPES_ADDRESS" '.[$s] = $a' "$SCHEMA_LEDGER" > "$SCHEMA_LEDGER.tmp"
 mv "$SCHEMA_LEDGER.tmp" "$SCHEMA_LEDGER"
 
 APP_URL="https://${APP}.fly.dev"

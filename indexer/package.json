@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "ponder dev",
-    "start": "ponder start",
+    "start": "ponder start --schema \"$DATABASE_SCHEMA\" --views-schema \"$DATABASE_VIEWS_SCHEMA\" --port \"${PORT:-42069}\"",
     "codegen": "ponder codegen",
     "typecheck": "tsc --noEmit",
     "test": "node --test src/**/*.test.ts",

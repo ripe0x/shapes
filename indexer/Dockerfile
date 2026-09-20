@@ -31,4 +31,6 @@ ENV PONDER_TELEMETRY_DISABLED=true
 
 EXPOSE 42069
 
-CMD ["sh", "-c", "exec ./node_modules/.bin/ponder start --schema \"$DATABASE_SCHEMA\" --port \"${PORT:-42069}\""]
+# Runs the flags directly (not `npm start`) so `exec` replaces this shell with the ponder
+# process itself, and Fly's SIGTERM (kill_signal) reaches it straight, for a graceful shutdown.
+CMD ["sh", "-c", "exec ./node_modules/.bin/ponder start --schema \"$DATABASE_SCHEMA\" --views-schema \"$DATABASE_VIEWS_SCHEMA\" --port \"${PORT:-42069}\""]

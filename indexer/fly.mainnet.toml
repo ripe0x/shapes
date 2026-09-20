@@ -20,7 +20,13 @@ kill_timeout = "30s"
   PONDER_RPC_FALLBACKS = "https://ethereum-rpc.publicnode.com,https://eth.llamarpc.com"
   PONDER_POLL_INTERVAL_MS = "12000"
   PONDER_DATABASE_DIR = "/data/pglite"
-  DATABASE_SCHEMA = "shapes_mainnet_v4"
+  # DATABASE_VIEWS_SCHEMA is the stable name every consumer (this app's own /graphql,
+  # /sql/*, /v1/* — see indexer/README.md "Public v1 routes" — and any direct Postgres
+  # client) targets; deploy.sh derives DATABASE_SCHEMA per build from it and overrides
+  # both via `-e`, so DATABASE_SCHEMA here only matters for a bare `ponder start`/`dev`
+  # run outside deploy.sh. Bump DATABASE_VIEWS_SCHEMA only for a new contract deployment.
+  DATABASE_VIEWS_SCHEMA = "shapes_mainnet"
+  DATABASE_SCHEMA = "shapes_mainnet_local"
   SHAPES_LADDER = "mainnet"
   # Mirror of deployments/1.json. indexer/deploy.sh overrides these from the record
   # at deploy time via `fly deploy -e`; the values here keep a bare
