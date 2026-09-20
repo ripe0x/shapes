@@ -76,6 +76,45 @@ fly secrets set INDEXER_TOKEN=<token> -a shapes-indexer-mainnet
 The site holds the same value as `SHAPES_INDEXER_TOKEN` and presents it from its own
 `/api/indexer` proxy, so a browser never carries the token (see `web/README.md`).
 
+## Public v1 routes
+
+Art, metadata and value for any Shape, derived entirely from the indexed `token` and `activity`
+rows. Public GET, CORS open, rate limited per IP (120 requests/minute), no bearer token — separate
+from the `INDEXER_TOKEN` gate above. Rendering runs `packages/shapes-sdk`'s `renderShapeSvg`
+against the row alone; nothing in this path reads the chain. `src/api/routes.ts` implements every
+route below; `src/api/shapeData.ts` is the interface routes.ts reads through, so `routes.test.ts`
+seeds a fake in place of the real database.
+
+| Route | Returns |
+| --- | --- |
+| `GET /v1/:chainId/shape/:id.json` | The token row plus `version`, `denomination`, `artUrl`. `backingWei` and `version` are strings (wei and an activity `orderKey` do not fit a JSON number). Headers: `Cache-Control: public, max-age=5`, `Netlify-CDN-Cache-Control: public, max-age=30, stale-while-revalidate=300`. |
+| `GET /v1/:chainId/shape/:id.svg` | 302 to the current versioned SVG URL. Same short cache as `.json`. |
+| `GET /v1/:chainId/shape/:id/:version.svg` | The SVG, rendered from the row. If `:version` matches the token's current version: `Content-Type: image/svg+xml`, `Cache-Control: public, max-age=31536000, immutable` (and the matching `Netlify-CDN-Cache-Control`), `ETag`. If `:version` is stale (the token composed, split, decomposed, or transferred since): a 302 to the current version, never mismatched content under an immutable URL. |
+| `GET /v1/:chainId/shapes?owner=0x..` or `?ids=1,2,3` | `{ chainId, shapes: [...] }`, each entry shaped like the `.json` route. `ids` takes priority when both are given. `limit` bounds an `owner` query (default 50, max 100). |
+| `GET /v1/:chainId/health` | `{ chainId, latestIndexedBlock }`, uncached. Chain-scoped because Ponder's own `/health`/`/ready`/`/status` (above) are reserved paths outside this app, and the public edge only path-routes `/v1/*` (see "Public hostname" below). |
+
+`version` is the `orderKey` of the token's most recent `activity` row (any kind: mint, compose,
+decompose, split, redeem, burnBacking, a transfer, an owner-token move). A state change always
+produces a new version, which is what makes the versioned SVG URL safe to cache forever: stale art
+can never be served as current, because a stale version number 302s forward instead of rendering.
+
+A `:chainId` that does not match this indexer's own configured chain (`PONDER_CHAIN_ID`) is a 404
+naming the chain it actually serves, never a silent wrong-chain answer.
+
+### Public hostname
+
+`https://api.shapes.ripe.wtf` is a Netlify edge proxy in front of both indexer apps: it
+path-routes `/v1/1/*` to `shapes-indexer-mainnet.fly.dev` and `/v1/11155111/*` to
+`shapes-indexer.fly.dev`, and caches responses at the edge using the `Netlify-CDN-Cache-Control`
+header each route sets alongside `Cache-Control`. `packages/shapes-sdk`'s `ShapesApi` client
+defaults to this hostname; point it at a Fly app's own origin directly (`baseUrl` option) for
+local development or to bypass the edge cache.
+
+`artUrl` in a JSON response is built from `SHAPES_API_PUBLIC_URL` when that env var is set on the
+Fly app (so it can name the edge hostname rather than the app's own origin), and from the
+request's own origin otherwise — which is what a direct request to the Fly app, or a local
+`ponder dev`, sees.
+
 ## Site data path and freshness
 
 The shared site loader (`preview/src/site/data.ts`) treats this service as an optional,

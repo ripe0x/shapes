@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {tokenMetadataJson} from "./render";
-import {DENOMINATIONS} from "./denominations";
+import {tokenMetadataJson} from "./render.ts";
+import {DENOMINATIONS} from "./denominations.ts";
 
 test("token zero has the contract-owner title and value-only attribute", () => {
   const owner = JSON.parse(tokenMetadataJson(1n, DENOMINATIONS[0], 0n, 1n, false, 0, 0n));

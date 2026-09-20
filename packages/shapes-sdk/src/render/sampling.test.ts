@@ -1,9 +1,9 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 
-import {CANONICAL, composeShape, KIND_ORDER} from "./render";
-import {DENOMINATIONS, cellCountAt} from "./denominations";
-import {encodeModuleByte, kindIndexOf} from "./moduleCodec";
+import {CANONICAL, composeShape, KIND_ORDER} from "./render.ts";
+import {DENOMINATIONS, cellCountAt} from "./denominations.ts";
+import {encodeModuleByte, kindIndexOf} from "./moduleCodec.ts";
 import {
   composeSampledShape,
   composeSampleSeedInputs,
@@ -18,7 +18,7 @@ import {
   type LastMergeDonors,
   type SampleBurn,
   type SampleDonor,
-} from "./sampling";
+} from "./sampling.ts";
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;

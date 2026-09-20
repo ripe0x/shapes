@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 
-import {KIND_ORDER, ROT_COUNT} from "./render";
+import {KIND_ORDER, ROT_COUNT} from "./render.ts";
 import {
   KIND_COUNT,
   decodeModuleByte,
@@ -9,7 +9,7 @@ import {
   isValidModuleByte,
   isValidModuleArray,
   kindIndexOf,
-} from "./moduleCodec";
+} from "./moduleCodec.ts";
 
 test("KIND_COUNT matches KIND_ORDER length", () => {
   assert.equal(KIND_COUNT, 10);

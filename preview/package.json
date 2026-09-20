@@ -20,7 +20,7 @@
     "contracts:docs": "tsx scripts/genContractDocs.ts",
     "contracts:docs:check": "tsx scripts/genContractDocs.ts --check",
     "gif:e2e": "node scripts/e2eGif.mjs",
-    "test": "tsx --test src/canonical/*.test.ts src/chain/*.test.ts src/site/*.test.ts src/play/*.test.ts"
+    "test": "tsx --test src/chain/*.test.ts src/site/*.test.ts src/play/*.test.ts"
   },
   "dependencies": {
     "@1001-digital/ethereum-names": "^0.6.0",
@@ -30,6 +30,7 @@
     "@tanstack/react-query": "^5.101.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "shapes-sdk": "*",
     "viem": "^2.55.11",
     "wagmi": "^2.19.5"
   },

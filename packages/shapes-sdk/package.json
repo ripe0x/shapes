@@ -1,0 +1,26 @@
+{
+  "name": "shapes-sdk",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Canonical Shapes renderer and a typed client for the Shapes indexer API.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./render": "./src/render/index.ts",
+    "./render/*": "./src/render/*.ts",
+    "./client": "./src/client.ts",
+    "./deployments": "./src/deployments.ts"
+  },
+  "scripts": {
+    "test": "node --test src/*.test.ts src/render/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "hono": "^4.6.0",
+    "typescript": "^5.6.0"
+  }
+}

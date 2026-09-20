@@ -79,3 +79,15 @@ Every test green; a local indexer run (`cd indexer && npm run dev` against the S
 headers; the SDK renders a token identical to the chain. Commit on branch `claude/shapes-api`,
 files added explicitly, message `feat: Shapes API routes and the shapes-sdk package
 (SHAPES-API)` with the Claude co-author line. Do not push.
+
+## Status
+
+Done. `packages/shapes-sdk` holds the moved canonical renderer plus `ShapesApi` and the
+deployment/ABI lookup; `indexer/src/api/routes.ts` serves the public `/v1/:chainId/...` routes
+(README.md "Public v1 routes") including the mid-task Netlify-edge addition (public hostname,
+CDN cache headers, `GET /v1/:chainId/health`). All tests green per workspace (shapes-sdk 44,
+1 network-dependent parity test skipped in this sandbox; indexer 28; preview 243). See D-46 in
+DECISIONS.md for the full record, including two known follow-ups outside this task's allowed
+files: the indexer's Fly Docker build context does not yet reach `packages/shapes-sdk`, and
+`web/tsconfig.json`/`preview/tsconfig.json` needed one additive compiler flag each
+(`allowImportingTsExtensions`) to keep typechecking after the move.
