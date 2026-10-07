@@ -199,8 +199,15 @@ function claimantOf(uint256 packId) external view returns (address);        // z
 left. The pack is no longer an NFT and cannot be sold half-drained; what remains is a claim.
 `claim` pops up to `maxCount` Shapes from the end of the remaining list and transfers them to the
 claimant. `claimEth` pops up to `maxCount` and redeems them to `recipient` in one
-`redeemBatchTo`. The two may be mixed freely across transactions. When the list is empty the
-claimant entry is cleared. `maxCount == 0` reverts `ZeroQuantity()`.
+`redeemBatchTo`. The two may be mixed freely across transactions. Because every drain pops from
+the end, `contentsOf` of a partly drained pack is always a prefix of the pack's insertion order,
+and a single-transaction `open` hands the Shapes back in reverse insertion order. When the list is
+empty the claimant entry is cleared. `maxCount == 0` reverts `ZeroQuantity()`.
+
+A zero `claimant` or recipient reverts `InvalidRecipient`, and so does the pack contract itself as
+claimant, since Shapes transferred to it would belong to no pack. The zero address as `to` on
+creation reverts the same way; the pack contract as `to` reverts `SelfCustodyRejected`, as a
+transfer of a pack token to the pack contract does: a pack it held could never be opened.
 
 The single-transaction functions are the same code path: `open` is `unseal(msg.sender)` followed
 by `claim(all)`; `redeem` is `unseal(msg.sender)` followed by `claimEth(all, recipient)`. They
@@ -308,10 +315,12 @@ to anyone else; it is a convenience the UI should use rather than asking for one
 Shape. For the pack token itself, an approved operator can transfer it to itself and then open
 it, exactly as with a Shape.
 
-**Reentrancy.** Every state-changing entrypoint is `nonReentrant` and follows
-checks-effects-interactions. The only external calls are to Shapes (trusted, itself guarded) and
-the two the owner directs: the pack token's `_safeMint` receiver hook on creation, and the ETH
-payout on `redeem`/`claimEth`, both after state is final.
+**Reentrancy.** Every entrypoint that creates, extends or exits a pack is `nonReentrant` and
+follows checks-effects-interactions. The inherited ERC-721 transfer and approval functions are not
+guarded, as on Shapes: they move the pack token only, and state is final before any receiver hook
+runs. The only external calls are to Shapes (trusted, itself guarded) and the two the owner
+directs: the pack token's `_safeMint` receiver hook on creation, and the ETH payout on
+`redeem`/`claimEth`, both after state is final.
 
 **Owner token.** If the Shape carrying collection ownership is packed, `Shapes.owner()` returns
 the pack contract until the pack is opened. Ownership is attribution only, but marketplaces read
@@ -382,7 +391,8 @@ numbers print the way Shapes prints them.
 | `Source` | `Minted` / `Packed` / `Mixed` | all minted by the pack, all pulled from a wallet, or both |
 | `Creator` | checksummed address | who created the pack |
 
-`contractURI` is the collection name, the shared description and a seeded stack image.
+`contractURI` is the collection name, the shared description and a seeded stack image: three
+cards from Shapes' collection previews over two backs.
 
 ---
 
@@ -466,7 +476,8 @@ and out of the pack contract; `packOf` makes the join exact.
 ## Appendix: `IShapePacks`
 
 The authoritative interface lives in the new repository at `src/interfaces/IShapePacks.sol`; this
-is its surface.
+is its surface. `UnsupportedShapes(address)`, raised by the constructor for a token that does not
+answer ERC-165 for `IShapes`, is declared on the contract rather than the interface.
 
 ```solidity
 interface IShapePacks is IERC721, IERC721Value {
@@ -505,6 +516,7 @@ interface IShapePacks is IERC721, IERC721Value {
     error InvalidCopy(uint8 field);
     error AdminUnauthorizedAccount(address account);
     error AdminInvalidAdmin(address admin);
+    error SelfCustodyRejected(uint256 packId);
 
     // create and extend
     function createPack(uint256[] calldata shapeIds, uint32[] calldata mintCounts) external payable returns (uint256);
