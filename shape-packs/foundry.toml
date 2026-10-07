@@ -1,0 +1,75 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+test = "test"
+script = "script"
+solc_version = "0.8.28"
+evm_version = "cancun"
+optimizer = true
+# Matches the Shapes build, which the tests compile from the submodule. `ShapePacks` itself is
+# small; the setting is for the Shapes tree.
+optimizer_runs = 20
+via_ir = true
+bytecode_hash = "none"
+cbor_metadata = false
+auto_detect_remappings = false
+# One copy of every dependency: the ones vendored inside the Shapes submodule, so the pack is
+# built against exactly the OpenZeppelin and forge-std Shapes was built with. `ladder/` selects
+# the mainnet denomination table for the Shapes compile used by the local tests; the pack
+# contract itself reads the ladder from Shapes live and never imports it.
+remappings = [
+    "shapes/=lib/shapes/src/",
+    "ladder/=lib/shapes/ladders/mainnet/",
+    "@openzeppelin/contracts/=lib/shapes/lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/shapes/lib/forge-std/src/",
+]
+fs_permissions = [
+    { access = "read-write", path = "./deployments" },
+    { access = "read-write", path = "./preview" },
+]
+gas_reports = ["ShapePacks", "ShapePackRenderer"]
+# Building a Shapes apex in a test can exceed forge's default; mirror Shapes' settings.
+gas_limit = "18446744073709551615"
+block_gas_limit = 30_000_000_000
+
+# Tests against the 100x-smaller ladder public testnets use. Only the locally deployed Shapes
+# changes; the pack contract is the same bytecode.
+[profile.testnet]
+remappings = [
+    "shapes/=lib/shapes/src/",
+    "ladder/=lib/shapes/ladders/testnet/",
+    "@openzeppelin/contracts/=lib/shapes/lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/shapes/lib/forge-std/src/",
+]
+out = "out-testnet"
+cache_path = "cache-testnet"
+
+[profile.default.fuzz]
+runs = 256
+
+[profile.default.invariant]
+runs = 64
+depth = 48
+fail_on_revert = false
+
+[profile.ci.fuzz]
+runs = 1024
+
+[profile.ci.invariant]
+runs = 256
+depth = 96
+
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+sepolia = "${SEPOLIA_RPC_URL}"
+
+[etherscan]
+mainnet = { key = "${ETHERSCAN_API_KEY}", chain = 1 }
+sepolia = { key = "${ETHERSCAN_API_KEY}", chain = 11155111 }
+
+[fmt]
+line_length = 110
+tab_width = 4
+bracket_spacing = false
+int_types = "long"
