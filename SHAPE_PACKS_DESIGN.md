@@ -100,6 +100,7 @@ function defaultMakeup(uint256 backingWei) external view returns (uint32[] memor
 
 ### Rules, checked in this order
 
+0. `to` is nonzero, else `InvalidRecipient(0)`; on `createPack` it is the caller.
 1. `mintCounts.length == shapes.denominationCount()`, else `MakeupLengthMismatch()`.
 2. `shapeIds.length + Σ mintCounts >= 1`, else `NoShapes()`.
 3. Payment is exact for the makeup, else `IncorrectPayment`. With no mints, `msg.value` must be 0.
@@ -377,8 +378,8 @@ rounded and shadowed, matching `ShapeCollection.imageFor`. Drawing every card is
 the three-card cap keeps `tokenURI` cheap for marketplaces and the indexer whatever the pack size.
 
 **Name and description.** `Shape Pack 12`. Description: the shared editable copy, then the makeup
-in words: `3 × 0.01 ETH, 1 × 0.05 ETH. 0.08 ETH total.` using `FixedPoint.fmt` from Shapes so
-numbers print the way Shapes prints them.
+in words: `3 x 0.01 ETH, 1 x 0.05 ETH. 0.08 ETH total.`, with an ASCII `x` so the JSON stays
+byte-safe, using `FixedPoint.fmt` from Shapes so numbers print the way Shapes prints them.
 
 **Attributes.**
 
