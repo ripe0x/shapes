@@ -14,6 +14,7 @@ function pathFor(view: View, tokenId: bigint | null): string {
   if (view === "home") return "/";
   if (view === "auction") return "/auction";
   if (view === "gallery") return "/gallery";
+  if (view === "packs") return "/packs";
   if (view === "contracts") return "/contracts";
   if (view === "collection") return "/my-shapes";
   if (view === "token" && tokenId !== null) return `/shape/${tokenId.toString()}`;

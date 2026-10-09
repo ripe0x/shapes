@@ -61,6 +61,9 @@ export function SiteHeader({
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
             GALLERY
           </button>
+          <button type="button" className="btn-ghost site-nav-link" onClick={() => go("packs")} style={{color: navColor("packs")}}>
+            PACKS
+          </button>
         </nav>
         <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={onRetryRefresh} />
         {/* Wraps both the desktop account control and the mobile nav's account row so the
@@ -130,6 +133,7 @@ export function SiteHeader({
             items={[
               {label: "MINT", active: active === "mint", onClick: () => go("mint")},
               {label: "GALLERY", active: active === "gallery", onClick: () => go("gallery")},
+              {label: "PACKS", active: active === "packs", onClick: () => go("packs")},
               ...(isConnected
                 ? [{label: "MY SHAPES", active: active === "collection", onClick: () => go("collection")}]
                 : []),

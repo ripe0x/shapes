@@ -1,5 +1,28 @@
 Next.js site for Shapes.
 
+## Shape Packs
+
+`/packs` is in the shared site navigation. On the Sepolia build it uses ShapePacks
+`0x5ee5186c1f66b03ba1d675ac60668e168f5306d8` with Shapes
+`0x6c2f9c00f44fbbf141dd166979903004b80d5f99` and Tenderly's public Sepolia RPC.
+The page reads the creation floor, denomination table, mint fee and exact mint quote from the
+contracts. It lets a wallet create from owned Shapes, newly minted Shapes or both; add to a live
+pack; inspect contents and backing; and open for Shapes or redeem for ETH. Large packs can be
+unsealed and claimed in chunks. On mainnet it shows a Sepolia-only message because ShapePacks is
+not deployed there.
+
+Read-only checks (no wallet signature or transaction):
+
+```sh
+node web/e2e/packsLiveReadOnly.mjs
+NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia SHAPES_LADDER=testnet npm run build --workspace web
+NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia SHAPES_LADDER=testnet npm run start --workspace web -- --port 3191
+E2E_BASE_URL=http://127.0.0.1:3191 node web/e2e/packsBrowserReadOnly.mjs
+```
+
+The browser check uses a wallet stub that rejects every signing and transaction request. Set
+`PLAYWRIGHT_CHROME_PATH` to an installed Chrome executable if Playwright's browser is unavailable.
+
 It imports all UI and chain logic from `../preview/src` via the `@shared` alias (see
 `next.config.ts`), so the site cannot drift from the parity-tested canonical renderer.
 

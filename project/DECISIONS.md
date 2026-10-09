@@ -121,3 +121,7 @@ Append-only. Two sections: decided (never silently revived if rejected) and open
 - D-21 `@x402/*` dependencies. Unused in code. Remove in a hygiene pass unless the user names a purpose.
 - D-22 Black-record gene lore (does a Black record the gene it died with). Zero protocol cost, pure lore; decide whenever.
 - 2026-09-03: D-05 RESOLVED. Mainnet deploy values in `script/env/mainnet.env`: DEPLOYER 0xCB43078C32423F5348Cab5885911C3B5faE217F9 (ripe0x keystore), FEE_RECIPIENT 0xD4ba7cA95f3983514DDa317C4428CDb8F59c7e72 (0xSplits wallet, accepts plain ETH, proven by the deploy guard and the mainnet fork test), MINT_FEE_WEI 1000000000000000 (0.001 ETH, the fee the site copy states), RPC_DEFAULT Tenderly public gateway, MINT_START 1788462000 (2026-09-03 15:00 ET).
+
+# Packs website integration
+
+- 2026-10-09: D-46. Add `/packs` to the shared Shapes site shell. The Sepolia contract at `0x5ee5186c1f66b03ba1d675ac60668e168f5306d8` wraps Shapes `0x6c2f9c00f44fbbf141dd166979903004b80d5f99`; its interface and design in `shape-packs` govern the UI. The page reads backing floor, denominations and mint fees onchain, uses `quoteMint` for exact payment, and keeps open, redeem and chunked unseal/claim as separate choices. Mainnet states plainly that ShapePacks is not deployed there. The site change stops before website publication or any signed Sepolia transaction.

@@ -24,6 +24,7 @@ import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./aucti
 import {useDisplayName} from "./useDisplayName";
 import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
+import {PacksView} from "./PacksView";
 
 // The generated contract documentation is large and only this view reads it, so it loads on
 // demand rather than riding in the main bundle.
@@ -37,7 +38,8 @@ export type View =
   | "collection"
   | "token"
   | "manage"
-  | "contracts";
+  | "contracts"
+  | "packs";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -651,6 +653,14 @@ export function SiteApp({
         <React.Suspense fallback={<div style={{padding: 48, fontSize: 13, color: C.muted}}>Loading contracts…</div>}>
           <ContractsView dep={dep} />
         </React.Suspense>
+      )}
+      {view === "packs" && (
+        <PacksView
+          dep={dep}
+          data={data}
+          onConnect={() => openConnectModal?.()}
+          onShapesChanged={refresh}
+        />
       )}
       {view === "collection" && !composeMode && (
         <MyShapesView
