@@ -56,8 +56,26 @@ try {
   await page.getByRole("heading", {name: "Shape Pack 3"}).waitFor();
   assert.equal(await page.locator(".packs-detail-heading .packs-art img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
   await page.getByText(/backing/i).first().waitFor();
+  const chunkedExit = page.getByRole("button", {name: "UNSEAL FOR CHUNKED EXIT"});
+  assert.equal(await chunkedExit.count(), 0);
+  const failLargeExitEstimate = async (route) => {
+    const request = route.request().postDataJSON();
+    if (request?.method !== "eth_estimateGas") return route.continue();
+    return route.fulfill({status: 200, contentType: "application/json", body: JSON.stringify({
+      jsonrpc: "2.0", id: request.id, error: {code: -32000, message: "gas required exceeds allowance"},
+    })});
+  };
+  await page.route("https://gateway.tenderly.co/public/sepolia", failLargeExitEstimate);
+  await page.getByRole("button", {name: "OPEN PACK"}).click();
+  await chunkedExit.waitFor();
+  assert.equal(await page.getByRole("button", {name: "OPEN PACK"}).count(), 0);
+  await page.getByRole("button", {name: "OPEN · SHAPES"}).click();
+  assert.equal(await chunkedExit.count(), 1);
+  await page.unroute("https://gateway.tenderly.co/public/sepolia", failLargeExitEstimate);
   await page.getByRole("button", {name: "REDEEM · ETH"}).click();
   await page.getByText("Redeem burns every Shape and pays its backing in ETH to your wallet.").waitFor();
+  assert.equal(await chunkedExit.count(), 0);
+  await page.getByRole("button", {name: "REDEEM PACK"}).waitFor();
   await page.getByRole("button", {name: "CREATE", exact: true}).click();
   const denominationInputs = page.locator(".packs-denominations input");
   assert.equal(await denominationInputs.count(), 9);
@@ -90,7 +108,7 @@ try {
   // Public Tenderly can rate-limit a retried read; the checks above require recovered data.
   assert.deepEqual(errors.filter((error) => !error.includes("429 https://gateway.tenderly.co/public/sepolia") &&
     !error.includes("server responded with a status of 429")), []);
-  console.log("PASS Sepolia browser: navigation, wallet, pack artwork, selection, steppers, exit modes, exact quote, mobile layout");
+  console.log("PASS Sepolia browser: navigation, wallet, pack artwork, selection, conditional chunked exit, steppers, exact quote, mobile layout");
 } finally {
   await browser.close();
 }

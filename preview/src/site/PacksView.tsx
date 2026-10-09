@@ -43,7 +43,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const [status, setStatus] = React.useState<Status>(idle);
   const [exitKind, setExitKind] = React.useState<"open" | "redeem">("open");
   const [chunkSize, setChunkSize] = React.useState(10);
-  const [singleExitUnavailable, setSingleExitUnavailable] = React.useState(false);
+  const [unavailableExit, setUnavailableExit] = React.useState<{packId: bigint; kind: "open" | "redeem"} | null>(null);
   const walletRef = React.useRef({address, chainId});
   walletRef.current = {address, chainId};
   const walletStillReady = (expected: string) =>
@@ -53,6 +53,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const supported = dep.chainId === PACKS_CHAIN_ID && same(dep.shapes, PACKS_SHAPES);
   const wrongChain = isConnected && chainId !== PACKS_CHAIN_ID;
   const selectedPack = packs.find((pack) => pack.id === selectedPackId) ?? null;
+  const singleExitUnavailable = unavailableExit?.packId === selectedPack?.id && unavailableExit?.kind === exitKind;
   const shapesById = new Map((data?.tokens ?? []).map((token) => [token.id, token]));
   const owned = address ? (data?.tokens ?? []).filter((token) =>
     same(token.owner, address) && token.backing > 0n,
@@ -76,7 +77,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     setCounts((current) => current.map(() => 0));
     setMode("create");
     setStatus(idle);
-    setSingleExitUnavailable(false);
+    setUnavailableExit(null);
   }, [address, chainId]);
 
   React.useEffect(() => {
@@ -228,13 +229,15 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
         ? `${count} Shape${count === 1 ? "" : "s"} claimed ${exitKind === "open" ? "as Shapes" : "as ETH"}.`
         : chunked ? "Pack unsealed. Claim its Shapes in chunks below."
           : exitKind === "open" ? "Pack opened. Shapes returned to your wallet." : "Pack redeemed. ETH returned to your wallet.", hash});
-      setSingleExitUnavailable(false);
+      setUnavailableExit(null);
       setReload((n) => n + 1);
       await onShapesChanged(selectedPack.shapeIds);
     } catch (error) {
       if (!walletStillReady(address)) return;
       const message = describeTxError(error);
-      if (!chunked && selectedPack.kind === "live" && /gas|block|estimate/i.test(message)) setSingleExitUnavailable(true);
+      if (!chunked && selectedPack.kind === "live" && /gas|block|estimate/i.test(message)) {
+        setUnavailableExit({packId: selectedPack.id, kind: exitKind});
+      }
       setStatus({kind: "error", message});
     }
   };
@@ -268,7 +271,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             <div className="packs-list">{packs.map((pack) => <button key={pack.id.toString()} type="button"
               className={selectedPackId === pack.id ? "packs-card is-selected" : "packs-card"}
               aria-pressed={selectedPackId === pack.id}
-              onClick={() => {setSelectedPackId(pack.id); setSingleExitUnavailable(false); setStatus(idle);}}>
+              onClick={() => {setSelectedPackId(pack.id); setUnavailableExit(null); setStatus(idle);}}>
               <span className="packs-art">{pack.image ? <img src={pack.image} alt="" /> : <span>{pack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
               <span className="packs-card-title"><strong>{pack.name}</strong><small>PACK #{pack.id.toString()}</small></span>
               <span>{pack.kind === "live" ? "LIVE" : "UNSEALED CLAIM"} · {pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? pack.backings.reduce((a, b) => a + b, 0n))}</span>
@@ -298,17 +301,22 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
           })}</div>
           <div className="packs-exits">
             <div className="shape-mode-toggle" role="group" aria-label="Exit type">
-              <button type="button" aria-pressed={exitKind === "open"} onClick={() => setExitKind("open")}>OPEN · SHAPES</button>
-              <button type="button" aria-pressed={exitKind === "redeem"} onClick={() => setExitKind("redeem")}>REDEEM · ETH</button>
+              <button type="button" aria-pressed={exitKind === "open"} onClick={() => {
+                if (exitKind !== "open") {setExitKind("open"); setUnavailableExit(null); setStatus(idle);}
+              }}>OPEN · SHAPES</button>
+              <button type="button" aria-pressed={exitKind === "redeem"} onClick={() => {
+                if (exitKind !== "redeem") {setExitKind("redeem"); setUnavailableExit(null); setStatus(idle);}
+              }}>REDEEM · ETH</button>
             </div>
             <p>{exitKind === "open" ? "Open returns the individual Shapes to your wallet." : "Redeem burns every Shape and pays its backing in ETH to your wallet."}</p>
             {selectedPack.kind === "live" ? <>
-              <button type="button" className="btn-filled packs-action" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(false)}>
+              {singleExitUnavailable ? <>
+                <p className="packs-alert">Single transaction exit could not fit or be estimated. Unseal and claim in smaller chunks.</p>
+                <p className="packs-small">Unsealing burns the pack token and gives only this wallet the right to claim the contents in chunks.</p>
+                <button type="button" className="btn-outline packs-action" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(true)}>UNSEAL FOR CHUNKED EXIT</button>
+              </> : <button type="button" className="btn-filled packs-action" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(false)}>
                 {exitKind === "open" ? "OPEN PACK" : "REDEEM PACK"}
-              </button>
-              <p className="packs-small">For a pack too large for one transaction, unseal it first. Unsealing burns the pack token and gives only this wallet the right to claim the contents in chunks.</p>
-              {singleExitUnavailable && <p className="packs-alert">Single transaction exit could not fit or be estimated. Unseal and claim in smaller chunks.</p>}
-              <button type="button" className="btn-outline packs-action" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(true)}>UNSEAL FOR CHUNKED EXIT</button>
+              </button>}
             </> : <>
               <label className="packs-small" htmlFor="packs-chunk">Shapes per claim</label>
               <div className="packs-stepper packs-claim-stepper">

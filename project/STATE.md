@@ -2,7 +2,7 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-09 (P4 Sepolia Packs exit gas guard; P3 Shapes mainnet launch remains complete).
+Last updated: 2026-10-09 (P4 Sepolia Packs conditional chunked exit; P3 Shapes mainnet launch remains complete).
 
 ## Current website change
 
@@ -21,7 +21,9 @@ artwork, labels and mobile layout.
 Pack actions now use the site's filled and outline button treatments, selectable pack and Shape
 cards follow the gallery/compose selection style, and quantities use the Mint stepper pattern.
 The Packs preflight limits buffered gas to Sepolia's EIP-7825 per-transaction cap as well as the
-site's block-budget margin; oversized direct exits steer users to unseal and claim in chunks.
+site's block-budget margin; oversized direct exits steer users to unseal and claim in chunks. The
+unseal action appears only after the selected direct exit fails its gas check, and choosing another
+exit type resets that decision.
 Next gate: user-controlled Sepolia signing if a real onchain smoke test is wanted; website
 deployment and any mainnet contract work require separate instructions.
 
