@@ -53,20 +53,34 @@ try {
   assert.equal(await denominationInputs.count(), 9);
   await denominationInputs.first().fill("3");
   await page.getByText("0.00033 ETH").waitFor({timeout: 30_000});
+  await page.locator(".packs-denomination .btn-outline").nth(1).click();
+  assert.equal(await denominationInputs.first().inputValue(), "4");
+  await page.locator(".packs-denomination .btn-outline").first().click();
+  assert.equal(await denominationInputs.first().inputValue(), "3");
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) =>
+    button.textContent?.trim() === "CREATE PACK" && !button.disabled), undefined, {timeout: 30_000});
   assert.equal(await page.getByRole("button", {name: "CREATE PACK"}).isEnabled(), true);
   await page.getByRole("group", {name: "Pack action"}).getByRole("button", {name: "ADD TO PACK"}).click();
   await page.getByText("Adding to pack #3.").waitFor();
   assert.equal(await page.getByRole("button", {name: "ADD TO PACK"}).last().isEnabled(), true);
   await page.waitForFunction(() => !document.body.innerText.includes("Reading your Shapes…"), undefined, {timeout: 90_000});
+  const shapePick = page.locator(".packs-picks .compose-select-card").first();
+  await shapePick.click();
+  assert.equal(await shapePick.getAttribute("aria-pressed"), "true");
+  await shapePick.click();
+  assert.equal(await shapePick.getAttribute("aria-pressed"), "false");
+  if (process.env.E2E_SCREENSHOT_DESKTOP) await page.screenshot({path: process.env.E2E_SCREENSHOT_DESKTOP, fullPage: true});
   await page.setViewportSize({width: 390, height: 844});
   await page.getByRole("button", {name: "Menu"}).click();
   await page.locator(".site-mobile-nav-panel").getByRole("button", {name: "PACKS"}).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.E2E_SCREENSHOT) await page.screenshot({path: process.env.E2E_SCREENSHOT, fullPage: true});
+  await page.setViewportSize({width: 320, height: 700});
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   // Public Tenderly can rate-limit a retried read; the checks above require recovered data.
   assert.deepEqual(errors.filter((error) => !error.includes("429 https://gateway.tenderly.co/public/sepolia") &&
     !error.includes("server responded with a status of 429")), []);
-  console.log("PASS Sepolia browser: navigation, wallet, pack metadata/artwork, exit modes, create/add, exact quote, mobile layout");
+  console.log("PASS Sepolia browser: navigation, wallet, pack artwork, selection, steppers, exit modes, exact quote, mobile layout");
 } finally {
   await browser.close();
 }

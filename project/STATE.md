@@ -2,7 +2,7 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-09 (P4 Sepolia Packs metadata display; P3 Shapes mainnet launch remains complete).
+Last updated: 2026-10-09 (P4 Sepolia Packs UI alignment; P3 Shapes mainnet launch remains complete).
 
 ## Current website change
 
@@ -18,6 +18,8 @@ Pack cards and details read the live pack NFT name and passive SVG artwork from 
 contents use existing Shape metadata for thumbnails and names. Unsealed claims retain an explicit
 placeholder because their pack NFT has been burned. A read-only Sepolia browser check covers the
 artwork, labels and mobile layout.
+Pack actions now use the site's filled and outline button treatments, selectable pack and Shape
+cards follow the gallery/compose selection style, and quantities use the Mint stepper pattern.
 Next gate: user-controlled Sepolia signing if a real onchain smoke test is wanted; website
 deployment and any mainnet contract work require separate instructions.
 

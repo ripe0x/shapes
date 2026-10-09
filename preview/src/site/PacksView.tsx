@@ -17,6 +17,8 @@ type Status = {kind: "idle" | "working" | "done" | "error"; message: string; has
 const idle: Status = {kind: "idle", message: ""};
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const eth = (value: bigint) => `${formatEther(value)} ETH`;
+const step = (value: number, delta: number, min: number, max: number) =>
+  Math.min(max, Math.max(min, (Number.isFinite(value) ? Math.trunc(value) : min) + delta));
 
 export function PacksView({dep, data, onConnect, onShapesChanged}: {
   dep: Deployment;
@@ -248,11 +250,11 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
         <h1>Keep Shapes together.</h1>
         <p>Bundle Shapes you own, mint new ones into a pack, or combine both. Open to get the Shapes back; redeem to receive their ETH backing.</p>
         <p className="packs-small">Testnet only · ShapePacks <a href={`https://sepolia.etherscan.io/address/${PACKS_ADDRESS}`} target="_blank" rel="noreferrer">{PACKS_ADDRESS} ↗</a></p>
-        {!isConnected && <button type="button" className="btn-filled" onClick={onConnect}>CONNECT WALLET</button>}
+        {!isConnected && <button type="button" className="btn-filled packs-action" onClick={onConnect}>CONNECT WALLET</button>}
         {wrongChain && <div className="packs-alert">Switch your wallet to Sepolia to use Packs. <button type="button" onClick={() =>
-          void switchChainAsync({chainId: PACKS_CHAIN_ID}).catch((error) => setStatus({kind: "error", message: describeTxError(error)}))}>SWITCH NETWORK</button></div>}
+          void switchChainAsync({chainId: PACKS_CHAIN_ID}).catch((error) => setStatus({kind: "error", message: describeTxError(error)}))} className="btn-ghost packs-text-action">SWITCH NETWORK</button></div>}
         {loading && <p role="status">Reading Packs on Sepolia…</p>}
-        {loadError && <div className="packs-alert" role="alert">{loadError} <button type="button" onClick={() => setReload((n) => n + 1)}>RETRY</button></div>}
+        {loadError && <div className="packs-alert" role="alert">{loadError} <button type="button" className="btn-ghost packs-text-action" onClick={() => setReload((n) => n + 1)}>RETRY</button></div>}
         {settings && <p className="packs-small">Minimum new pack backing: {eth(settings.minimum)} · Shapes mint fee: {eth(settings.mintFee)} per new Shape · {settings.totalMinted.toString()} packs created</p>}
       </Section>
 
@@ -261,6 +263,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
           {packs.length === 0 ? <p>This wallet has no live packs or unfinished pack claims.</p> : (
             <div className="packs-list">{packs.map((pack) => <button key={pack.id.toString()} type="button"
               className={selectedPackId === pack.id ? "packs-card is-selected" : "packs-card"}
+              aria-pressed={selectedPackId === pack.id}
               onClick={() => {setSelectedPackId(pack.id); setSingleExitUnavailable(false); setStatus(idle);}}>
               <span className="packs-art">{pack.image ? <img src={pack.image} alt="" /> : <span>{pack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
               <span className="packs-card-title"><strong>{pack.name}</strong><small>PACK #{pack.id.toString()}</small></span>
@@ -296,17 +299,23 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             </div>
             <p>{exitKind === "open" ? "Open returns the individual Shapes to your wallet." : "Redeem burns every Shape and pays its backing in ETH to your wallet."}</p>
             {selectedPack.kind === "live" ? <>
-              <button type="button" className="btn-filled" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(false)}>
+              <button type="button" className="btn-filled packs-action" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(false)}>
                 {exitKind === "open" ? "OPEN PACK" : "REDEEM PACK"}
               </button>
               <p className="packs-small">For a pack too large for one transaction, unseal it first. Unsealing burns the pack token and gives only this wallet the right to claim the contents in chunks.</p>
               {singleExitUnavailable && <p className="packs-alert">Single transaction exit could not fit or be estimated. Unseal and claim in smaller chunks.</p>}
-              <button type="button" className="btn-ghost packs-outline" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(true)}>UNSEAL FOR CHUNKED EXIT</button>
+              <button type="button" className="btn-outline packs-action" disabled={wrongChain || status.kind === "working"} onClick={() => void exit(true)}>UNSEAL FOR CHUNKED EXIT</button>
             </> : <>
               <label className="packs-small" htmlFor="packs-chunk">Shapes per claim</label>
-              <input id="packs-chunk" type="number" min="1" max={selectedPack.shapeIds.length} value={chunkSize}
-                onChange={(event) => setChunkSize(Number(event.target.value))} />
-              <button type="button" className="btn-filled" disabled={wrongChain || status.kind === "working" || !Number.isInteger(chunkSize) || chunkSize < 1}
+              <div className="packs-stepper packs-claim-stepper">
+                <button type="button" className="btn-outline" aria-label="Decrease Shapes per claim" disabled={chunkSize <= 1}
+                  onClick={() => setChunkSize((count) => step(count, -1, 1, selectedPack.shapeIds.length))}>−</button>
+                <input id="packs-chunk" className="qty-input" type="number" min="1" max={selectedPack.shapeIds.length} value={chunkSize}
+                  onChange={(event) => setChunkSize(Number(event.target.value))} />
+                <button type="button" className="btn-outline" aria-label="Increase Shapes per claim" disabled={chunkSize >= selectedPack.shapeIds.length}
+                  onClick={() => setChunkSize((count) => step(count, 1, 1, selectedPack.shapeIds.length))}>+</button>
+              </div>
+              <button type="button" className="btn-filled packs-action" disabled={wrongChain || status.kind === "working" || !Number.isInteger(chunkSize) || chunkSize < 1}
                 onClick={() => void exit(false)}>{exitKind === "open" ? "CLAIM SHAPES" : "CLAIM ETH"}</button>
               <p className="packs-small">Repeat until all {selectedPack.shapeIds.length} remaining Shapes are claimed. If a claim is too large for a block, lower the count.</p>
             </>}
@@ -322,17 +331,30 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
           {mode === "add" && <p className="packs-small">Adding to pack #{selectedPack?.id.toString() ?? "—"}. Select a live pack above to change the target.</p>}
           <h2>Shapes you own</h2>
           {!data ? <p>Reading your Shapes…</p> : owned.length === 0 ? <p>No eligible Shapes in this wallet. Mint new Shapes below.</p> : (
-            <div className="packs-picks">{owned.map((token) => <label key={token.id.toString()}>
-              <input type="checkbox" checked={selectedShapes.includes(token.id)} onChange={() =>
-                setSelectedShapes((ids) => ids.includes(token.id) ? ids.filter((id) => id !== token.id) : [...ids, token.id])} />
-              Shape #{token.id.toString()} <span>{eth(token.backing)}</span>
-            </label>)}</div>
+            <div className="packs-picks">{owned.map((token) => {
+              const selected = selectedShapes.includes(token.id);
+              return <button key={token.id.toString()} type="button" aria-pressed={selected}
+                className={`compose-select-card${selected ? " selected" : ""}`}
+                onClick={() => setSelectedShapes((ids) => ids.includes(token.id) ? ids.filter((id) => id !== token.id) : [...ids, token.id])}>
+                <div className="packs-pick-art"><Art src={token.image} alt="" />
+                  {selected && <span className="compose-selection-badge">SELECTED</span>}
+                </div>
+                <span className="packs-pick-meta"><strong>{token.meta.name}</strong><small>{eth(token.backing)}</small></span>
+              </button>;
+            })}</div>
           )}
           <h2>Mint new Shapes into the pack</h2>
-          <div className="packs-denominations">{settings.denominations.map((amount, i) => <label key={i}>
-            <span>{eth(amount)}</span><input type="number" min="0" max="4294967295" step="1" value={counts[i] ?? 0}
-              onChange={(event) => setCounts((old) => old.map((value, index) => index === i ? Number(event.target.value) : value))} />
-          </label>)}</div>
+          <div className="packs-denominations">{settings.denominations.map((amount, i) => <div className="packs-denomination" key={i}>
+            <label htmlFor={`packs-denom-${i}`}>{eth(amount)}</label>
+            <div className="packs-stepper">
+              <button type="button" className="btn-outline" aria-label={`Decrease ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) <= 0}
+                onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, -1, 0, 0xffffffff) : value))}>−</button>
+              <input id={`packs-denom-${i}`} className="qty-input" type="number" min="0" max="4294967295" step="1" value={counts[i] ?? 0}
+                onChange={(event) => setCounts((old) => old.map((value, index) => index === i ? Number(event.target.value) : value))} />
+              <button type="button" className="btn-outline" aria-label={`Increase ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) >= 0xffffffff}
+                onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, 1, 0, 0xffffffff) : value))}>+</button>
+            </div>
+          </div>)}</div>
           {quote && <div className="packs-facts">
             <span><strong>{eth(selectedBacking + quote.backingWei)}</strong> total backing</span>
             <span><strong>{eth(quote.feeWei)}</strong> mint fees</span>
@@ -341,7 +363,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
           {quoteError && <p className="packs-alert" role="alert">{quoteError}</p>}
           {mode === "create" && hasInputs && quote && !meetsFloor && <p className="packs-alert">A new pack needs at least {eth(settings.minimum)} of backing.</p>}
           <p className="packs-small">Owned Shapes require approval before packing. The first action may ask your wallet to approve ShapePacks on the Shapes collection; then press the pack action again.</p>
-          <button type="button" className="btn-filled" disabled={!canSubmit} onClick={() => void submit()}>
+          <button type="button" className="btn-filled packs-action" disabled={!canSubmit} onClick={() => void submit()}>
             {mode === "create" ? "CREATE PACK" : "ADD TO PACK"}
           </button>
         </Section>
