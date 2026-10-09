@@ -1,5 +1,6 @@
 import {createPublicClient, http, parseAbi, type Address, type PublicClient} from "viem";
 import {sepolia} from "viem/chains";
+import {safeMetadataFromTokenURI} from "./ogArtwork";
 
 // The Sepolia deployment is intentionally separate from Shapes' mainnet deployment record.
 export const PACKS_CHAIN_ID = 11155111;
@@ -13,6 +14,7 @@ export const packsAbi = [
     "function MIN_PACK_VALUE() view returns (uint256)",
     "function totalMinted() view returns (uint256)",
     "function ownerOf(uint256 packId) view returns (address)",
+    "function tokenURI(uint256 packId) view returns (string)",
     "function claimantOf(uint256 packId) view returns (address)",
     "function contentsOf(uint256 packId) view returns (uint256[])",
     "function quoteMint(uint32[] mintCounts) view returns (uint256 backingWei,uint256 feeWei,uint256 totalWei,uint256 shapeCount)",
@@ -64,6 +66,8 @@ export type MintQuote = {backingWei: bigint; feeWei: bigint; totalWei: bigint; s
 export type OwnedPack = {
   id: bigint;
   kind: "live" | "claim";
+  name: string;
+  image: string | null;
   shapeIds: readonly bigint[];
   valueWei: bigint | null;
   mintedCount: bigint | null;
@@ -98,13 +102,19 @@ export async function loadOwnedPacks(client: PublicClient, account: Address, tot
   const liveStates = liveIds.length ? await client.multicall({contracts: liveIds.map((id) => ({
     address: PACKS_ADDRESS, abi: packsAbi, functionName: "packState", args: [id],
   } as const)), allowFailure: false}) as unknown as readonly ChainPackState[] : [];
+  const liveMetadata = liveIds.length ? await client.multicall({contracts: liveIds.map((id) => ({
+    address: PACKS_ADDRESS, abi: packsAbi, functionName: "tokenURI", args: [id],
+  } as const)), allowFailure: true}) : [];
   const claimContents = claimIds.length ? await client.multicall({contracts: claimIds.map((id) => ({
     address: PACKS_ADDRESS, abi: packsAbi, functionName: "contentsOf", args: [id],
   } as const)), allowFailure: false}) as unknown as readonly (readonly bigint[])[] : [];
   const rows = found.map(({id, kind}) => {
     const state = kind === "live" ? liveStates[liveIds.indexOf(id)] : null;
+    const metadataResult = kind === "live" ? liveMetadata[liveIds.indexOf(id)] : null;
+    const metadata = metadataResult?.status === "success" ? safeMetadataFromTokenURI(metadataResult.result) : null;
     const shapeIds = state?.shapeIds ?? claimContents[claimIds.indexOf(id)];
-    return {id, kind, shapeIds, valueWei: state?.valueWei ?? null,
+    return {id, kind, name: metadata?.name ?? `Pack #${id}`, image: metadata?.image ?? null,
+      shapeIds, valueWei: state?.valueWei ?? null,
       mintedCount: state?.mintedCount ?? null, creator: state?.creator ?? null};
   });
   const allShapeIds = rows.flatMap((row) => row.shapeIds);

@@ -1,7 +1,7 @@
 import React from "react";
 import {formatEther, type Hash} from "viem";
 import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
-import {Section, txUrl} from "./ui";
+import {Art, Section, txUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import type {Deployment} from "../chain/abi";
@@ -51,6 +51,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const supported = dep.chainId === PACKS_CHAIN_ID && same(dep.shapes, PACKS_SHAPES);
   const wrongChain = isConnected && chainId !== PACKS_CHAIN_ID;
   const selectedPack = packs.find((pack) => pack.id === selectedPackId) ?? null;
+  const shapesById = new Map((data?.tokens ?? []).map((token) => [token.id, token]));
   const owned = address ? (data?.tokens ?? []).filter((token) =>
     same(token.owner, address) && token.backing > 0n,
   ) : [];
@@ -261,22 +262,33 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             <div className="packs-list">{packs.map((pack) => <button key={pack.id.toString()} type="button"
               className={selectedPackId === pack.id ? "packs-card is-selected" : "packs-card"}
               onClick={() => {setSelectedPackId(pack.id); setSingleExitUnavailable(false); setStatus(idle);}}>
-              <strong>PACK #{pack.id.toString()}</strong><span>{pack.kind === "live" ? "LIVE" : "UNSEALED CLAIM"}</span>
-              <span>{pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? pack.backings.reduce((a, b) => a + b, 0n))}</span>
+              <span className="packs-art">{pack.image ? <img src={pack.image} alt="" /> : <span>{pack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
+              <span className="packs-card-title"><strong>{pack.name}</strong><small>PACK #{pack.id.toString()}</small></span>
+              <span>{pack.kind === "live" ? "LIVE" : "UNSEALED CLAIM"} · {pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? pack.backings.reduce((a, b) => a + b, 0n))}</span>
             </button>)}</div>
           )}
         </Section>
 
         {selectedPack && <Section title={`PACK #${selectedPack.id.toString()}`}>
+          <div className="packs-detail-heading">
+            <span className="packs-art">{selectedPack.image ? <img src={selectedPack.image} alt={`${selectedPack.name} artwork`} /> : <span>{selectedPack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
+            <div><p className="launch-kicker">{selectedPack.kind === "live" ? "Shape Pack token" : "Unsealed claim"} · #{selectedPack.id.toString()}</p>
+              <h2>{selectedPack.name}</h2></div>
+          </div>
           <div className="packs-facts">
             <span><strong>{selectedPack.shapeIds.length}</strong> Shapes</span>
             <span><strong>{eth(selectedPack.valueWei ?? selectedPack.backings.reduce((a, b) => a + b, 0n))}</strong> backing</span>
             {selectedPack.kind === "live" && <span><strong>{selectedPack.mintedCount?.toString()}</strong> minted inside</span>}
           </div>
           {selectedPack.creator && <p className="packs-small">Created by {selectedPack.creator}</p>}
-          <div className="packs-contents">{selectedPack.shapeIds.map((id, i) => <a href={`/shape/${id}`} key={id.toString()}>
-            Shape #{id.toString()} <span>{eth(selectedPack.backings[i] ?? 0n)}</span>
-          </a>)}</div>
+          <div className="packs-contents">{selectedPack.shapeIds.map((id, i) => {
+            const shape = shapesById.get(id);
+            return <a href={`/shape/${id}`} key={id.toString()}>
+              {shape && <Art src={shape.image} alt="" width={52} />}
+              <span className="packs-shape-name"><strong>{shape?.meta.name ?? `Shape #${id}`}</strong><small>Shape #{id.toString()}</small></span>
+              <span className="packs-shape-backing">{eth(selectedPack.backings[i] ?? 0n)}</span>
+            </a>;
+          })}</div>
           <div className="packs-exits">
             <div className="shape-mode-toggle" role="group" aria-label="Exit type">
               <button type="button" aria-pressed={exitKind === "open"} onClick={() => setExitKind("open")}>OPEN · SHAPES</button>

@@ -40,7 +40,11 @@ try {
   await page.getByText(/minimum new pack backing: 0\.0003 ETH/i).waitFor({timeout: 60_000});
   assert.equal(await page.title(), "Shape Packs · Shapes");
   await page.getByText("YOUR PACKS").waitFor({timeout: 60_000});
-  await page.getByRole("button", {name: /PACK #3/}).waitFor({timeout: 60_000});
+  const packCard = page.getByRole("button", {name: /Shape Pack 3.*PACK #3/});
+  await packCard.waitFor({timeout: 60_000});
+  assert.equal(await packCard.locator(".packs-art img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
+  await page.getByRole("heading", {name: "Shape Pack 3"}).waitFor();
+  assert.equal(await page.locator(".packs-detail-heading .packs-art img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
   await page.getByText(/backing/i).first().waitFor();
   await page.getByRole("button", {name: "REDEEM · ETH"}).click();
   await page.getByText("Redeem burns every Shape and pays its backing in ETH to your wallet.").waitFor();
@@ -59,8 +63,10 @@ try {
   await page.locator(".site-mobile-nav-panel").getByRole("button", {name: "PACKS"}).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.E2E_SCREENSHOT) await page.screenshot({path: process.env.E2E_SCREENSHOT, fullPage: true});
-  assert.deepEqual(errors, []);
-  console.log("PASS Sepolia browser: navigation, wallet, owned packs, exit modes, create/add, exact quote, mobile layout");
+  // Public Tenderly can rate-limit a retried read; the checks above require recovered data.
+  assert.deepEqual(errors.filter((error) => !error.includes("429 https://gateway.tenderly.co/public/sepolia") &&
+    !error.includes("server responded with a status of 429")), []);
+  console.log("PASS Sepolia browser: navigation, wallet, pack metadata/artwork, exit modes, create/add, exact quote, mobile layout");
 } finally {
   await browser.close();
 }

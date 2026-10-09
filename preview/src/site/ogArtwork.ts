@@ -21,10 +21,13 @@ function decodeBase64(value: string, maximumBytes: number): string | null {
 
 function isPassiveSvg(svg: string): boolean {
   if (!/^\s*<svg\b/i.test(svg)) return false;
-  const allowedElements = new Set(["svg", "g", "rect", "path", "polygon", "polyline", "line", "circle", "ellipse", "text"]);
+  const allowedElements = new Set(["svg", "g", "rect", "path", "polygon", "polyline", "line", "circle", "ellipse", "text",
+    "defs", "filter", "fedropshadow", "clippath"]);
   for (const match of svg.matchAll(/<\s*\/?\s*([a-z][a-z0-9:-]*)\b/gi)) {
     if (!allowedElements.has(match[1]!.toLowerCase())) return false;
   }
+  // Pack artwork uses local filter and clip-path ids; strip only that exact reference form.
+  const withoutLocalEffects = svg.replace(/\b(?:filter|clip-path)\s*=\s*(["'])url\(#[A-Za-z][A-Za-z0-9_-]*\)\1/gi, "");
   return ![
     /<\s*(?:script|image|foreignobject|iframe|object|embed|use|a|style)\b/i,
     /<!\s*(?:doctype|entity)\b/i,
@@ -32,21 +35,28 @@ function isPassiveSvg(svg: string): boolean {
     /\bon[a-z]+\s*=/i,
     /url\s*\(/i,
     /@import\b/i,
-  ].some((pattern) => pattern.test(svg));
+  ].some((pattern) => pattern.test(withoutLocalEffects));
 }
 
-/** Accept only the bounded, self-contained metadata/artwork format emitted by Shapes. */
-export function safeImageFromTokenURI(uri: string): string | null {
+/** Parse bounded metadata while allowing only self-contained, passive SVG artwork. */
+export function safeMetadataFromTokenURI(uri: string): {name: string | null; image: string | null} | null {
   if (!uri.startsWith(JSON_PREFIX) || uri.length > MAX_OG_TOKEN_URI_LENGTH) return null;
   const jsonText = decodeBase64(uri.slice(JSON_PREFIX.length), MAX_OG_TOKEN_URI_LENGTH);
   if (jsonText === null) return null;
 
   try {
-    const metadata = JSON.parse(jsonText) as {image?: unknown};
-    if (typeof metadata.image !== "string" || !metadata.image.startsWith(SVG_PREFIX)) return null;
+    const metadata = JSON.parse(jsonText) as {name?: unknown; image?: unknown};
+    const name = typeof metadata.name === "string" && metadata.name.length <= 128 &&
+      metadata.name.trim() && !/[\u0000-\u001f\u007f]/.test(metadata.name) ? metadata.name.trim() : null;
+    if (typeof metadata.image !== "string" || !metadata.image.startsWith(SVG_PREFIX)) return {name, image: null};
     const svg = decodeBase64(metadata.image.slice(SVG_PREFIX.length), MAX_OG_SVG_BYTES);
-    return svg !== null && isPassiveSvg(svg) ? metadata.image : null;
+    return {name, image: svg !== null && isPassiveSvg(svg) ? metadata.image : null};
   } catch {
     return null;
   }
+}
+
+/** Accept only the bounded, self-contained artwork format emitted by Shapes. */
+export function safeImageFromTokenURI(uri: string): string | null {
+  return safeMetadataFromTokenURI(uri)?.image ?? null;
 }

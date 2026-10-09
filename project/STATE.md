@@ -2,7 +2,7 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-09 (P4 Sepolia Packs website integration; P3 Shapes mainnet launch remains complete).
+Last updated: 2026-10-09 (P4 Sepolia Packs metadata display; P3 Shapes mainnet launch remains complete).
 
 ## Current website change
 
@@ -14,6 +14,10 @@ state reads and six `eth_call` write simulations, plus desktop/mobile Sepolia an
 checks. No unsealed pack exists yet, so a successful live `claim` or `claimEth` simulation remains
 untested; the pre-unseal `NothingToClaim` branch was verified. No contract was deployed or
 transaction sent. The website is not published from this change.
+Pack cards and details read the live pack NFT name and passive SVG artwork from `tokenURI`;
+contents use existing Shape metadata for thumbnails and names. Unsealed claims retain an explicit
+placeholder because their pack NFT has been burned. A read-only Sepolia browser check covers the
+artwork, labels and mobile layout.
 Next gate: user-controlled Sepolia signing if a real onchain smoke test is wanted; website
 deployment and any mainnet contract work require separate instructions.
 
