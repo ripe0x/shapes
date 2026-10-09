@@ -36,6 +36,15 @@ await page.addInitScript(({address}) => {
 }, {address: owner});
 
 try {
+  const guest = await browser.newPage({viewport: {width: 1280, height: 800}});
+  await guest.goto(`${baseUrl}/packs`, {waitUntil: "domcontentloaded"});
+  await guest.locator("button.site-connect-btn").getByText("CONNECT WALLET", {exact: true}).waitFor();
+  await guest.locator(".packs-page").getByRole("button", {name: "CONNECT WALLET", exact: true}).waitFor();
+  await guest.setViewportSize({width: 390, height: 844});
+  await guest.getByRole("button", {name: "Menu"}).click();
+  await guest.locator(".site-mobile-nav-panel").getByRole("button", {name: "CONNECT WALLET", exact: true}).waitFor();
+  await guest.close();
+
   await page.goto(`${baseUrl}/packs`, {waitUntil: "domcontentloaded"});
   await page.getByText(/minimum new pack backing: 0\.0003 ETH/i).waitFor({timeout: 60_000});
   assert.equal(await page.title(), "Shape Packs · Shapes");

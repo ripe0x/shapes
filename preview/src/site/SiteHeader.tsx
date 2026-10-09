@@ -85,7 +85,7 @@ export function SiteHeader({
               }
             >
               <span style={{overflow: "hidden", textOverflow: "ellipsis"}}>
-                {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
+                {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT WALLET"}
               </span>
               {isConnected && <span aria-hidden="true">▾</span>}
             </button>
@@ -157,7 +157,7 @@ export function SiteHeader({
                     }
                   }}
                 >
-                  {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT"}
+                  {wrongChain ? "SWITCH NETWORK" : isConnected ? accountLabel : "CONNECT WALLET"}
                 </button>
                 {isConnected && accountMenuOpen && (
                   <div role="menu" aria-label="Wallet account">
