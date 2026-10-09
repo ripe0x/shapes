@@ -52,6 +52,7 @@ try {
   const packCard = page.getByRole("button", {name: /Shape Pack 3.*PACK #3/});
   await packCard.waitFor({timeout: 60_000});
   assert.equal(await packCard.locator(".packs-art img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
+  await packCard.click();
   await page.getByRole("heading", {name: "Shape Pack 3"}).waitFor();
   assert.equal(await page.locator(".packs-detail-heading .packs-art img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
   await page.getByText(/backing/i).first().waitFor();
