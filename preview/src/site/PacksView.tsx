@@ -8,7 +8,7 @@ import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import {
   PACKS_ADDRESS, PACKS_CHAIN_ID, PACKS_SHAPES, creationMeetsMinimum,
-  loadOwnedPacks, mintCountsValid, packsAbi, packsClient, packsShapesAbi,
+  loadOwnedPacks, mintCountsValid, packsAbi, packsClient, packsGasBudget, packsShapesAbi,
   type MintQuote, type OwnedPack,
 } from "./packs";
 
@@ -136,11 +136,15 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     await packsClient.simulateContract(request as Parameters<typeof packsClient.simulateContract>[0]);
     const estimate = await packsClient.estimateContractGas(request as Parameters<typeof packsClient.estimateContractGas>[0]);
     const block = await packsClient.getBlock();
-    if (bufferGas(estimate) > block.gasLimit * 8n / 10n) {
-      throw new Error("This call is too large for one block. Use a smaller claim or unseal the pack first.");
+    const gas = bufferGas(estimate);
+    if (gas > packsGasBudget(block.gasLimit)) {
+      const next = name === "open" || name === "redeem" ? "Unseal and claim in chunks."
+        : name === "claim" || name === "claimEth" ? "Use a smaller claim."
+          : name === "createPack" || name === "addToPack" ? "Use fewer Shapes in this transaction." : "";
+      throw new Error(`The buffered gas estimate exceeds the safe Sepolia transaction budget. ${next}`.trim());
     }
     if (!walletStillReady(address)) throw new Error("The connected wallet or network changed. Review this action again.");
-    const hash = await writeContractAsync({...request, gas: bufferGas(estimate), chainId: PACKS_CHAIN_ID} as Parameters<typeof writeContractAsync>[0]);
+    const hash = await writeContractAsync({...request, gas, chainId: PACKS_CHAIN_ID} as Parameters<typeof writeContractAsync>[0]);
     if (walletStillReady(address)) setStatus({kind: "working", message: "Waiting for Sepolia confirmation…", hash});
     await awaitSuccessfulReceipt(packsClient, hash, {address: target, abi, functionName: name, args, value});
     return hash;

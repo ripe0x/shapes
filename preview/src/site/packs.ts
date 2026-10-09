@@ -7,6 +7,13 @@ export const PACKS_CHAIN_ID = 11155111;
 export const PACKS_SHAPES = "0x6c2f9c00f44fbbf141dd166979903004b80d5f99" as const;
 export const PACKS_ADDRESS = "0x5ee5186c1f66b03ba1d675ac60668e168f5306d8" as const;
 export const PACKS_RPC = "https://gateway.tenderly.co/public/sepolia";
+// EIP-7825 caps one Sepolia transaction at 2^24 gas, regardless of the block gas limit.
+export const SEPOLIA_TX_GAS_CAP = 1n << 24n;
+
+export function packsGasBudget(blockGasLimit: bigint): bigint {
+  const blockBudget = blockGasLimit * 8n / 10n;
+  return blockBudget < SEPOLIA_TX_GAS_CAP ? blockBudget : SEPOLIA_TX_GAS_CAP;
+}
 
 export const packsAbi = [
   ...parseAbi([
