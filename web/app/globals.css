@@ -2078,7 +2078,7 @@ button {
 .packs-facts span { display: flex; flex: 1 1 145px; flex-direction: column; gap: 6px; min-width: 0; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--rule-inner); color: var(--muted); font-size: 11px; }
 .packs-facts strong { color: #11110f; font-size: 14px; font-weight: 500; }
 .packs-contents { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; margin: 18px 0; }
-.packs-contents a { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--rule); font-size: 11px; }
+.packs-contents a { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--rule); font-size: 11px; text-decoration: none; }
 .packs-contents a:hover, .packs-contents a:focus-visible { border-color: var(--ink); }
 .packs-contents span { color: var(--muted); }
 .packs-contents .packs-shape-name { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin-right: auto; }
