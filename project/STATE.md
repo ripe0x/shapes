@@ -2,18 +2,21 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-09 (P4 Sepolia Packs conditional chunked exit; P3 Shapes mainnet launch remains complete).
+Last updated: 2026-10-10 (P4 Sepolia Packs v3 deployment target; P3 Shapes mainnet launch remains complete).
 
 ## Current website change
 
 Phase: P4 Sepolia Packs website integration, locally verified. Candidate: the commit carrying this
-entry. The `/packs` route uses the live Sepolia ShapePacks deployment and the shared site wallet;
-mainnet shows a Sepolia-only state because no mainnet ShapePacks contract exists. Verification:
-web and preview type checks, web lint, mainnet and Sepolia production builds, read-only Tenderly
-state reads and six `eth_call` write simulations, plus desktop/mobile Sepolia and mainnet browser
-checks. No unsealed pack exists yet, so a successful live `claim` or `claimEth` simulation remains
-untested; the pre-unseal `NothingToClaim` branch was verified. No contract was deployed or
-transaction sent. The website is not published from this change.
+entry. The `/packs` route uses the v3 Sepolia ShapePacks deployment
+`0xd1cfc13abcbb370d381ac192aeb6f2e1b414022a` and the shared site wallet;
+mainnet shows a Sepolia-only state because no mainnet ShapePacks contract exists. The v3 switch
+passed 279 preview tests, web lint, the Sepolia production build, live Tenderly reads for six
+packs and the 0.0003 ETH minimum, six `eth_call` write simulations, and the local desktop/mobile
+Sepolia browser walkthrough. Earlier mainnet build and browser evidence covers the unchanged
+Sepolia-only state. No unsealed pack exists yet, so a successful live `claim` or `claimEth`
+simulation remains untested; the pre-unseal `NothingToClaim` branch was verified. No contract was
+deployed or transaction sent. The website is not published from this change. The previously
+requested v2 deployment has no minted packs; D-47 records the owner's choice of v3.
 Pack cards and details read the live pack NFT name and passive SVG artwork from `tokenURI`;
 contents use existing Shape metadata for thumbnails and names. Unsealed claims retain an explicit
 placeholder because their pack NFT has been burned. A read-only Sepolia browser check covers the

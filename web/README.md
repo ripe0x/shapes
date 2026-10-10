@@ -3,8 +3,11 @@ Next.js site for Shapes.
 ## Shape Packs
 
 `/packs` is in the shared site navigation. On the Sepolia build it uses ShapePacks
-`0x5ee5186c1f66b03ba1d675ac60668e168f5306d8` with Shapes
+`0xd1cfc13abcbb370d381ac192aeb6f2e1b414022a` (the v3 deployment in
+`shape-packs/deployments/11155111-v3.json`) with Shapes
 `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` and Tenderly's public Sepolia RPC.
+The pack contract uses renderer `0xfef50a388bde6b222c6f5fecafe590bf561c8bda` for its
+onchain token artwork; the site reads that artwork through `tokenURI`.
 The page reads the creation floor, denomination table, mint fee and exact mint quote from the
 contracts. It lets a wallet create from owned Shapes, newly minted Shapes or both; add to a live
 pack; inspect contents and backing; and open for Shapes or redeem for ETH. Large packs can be
