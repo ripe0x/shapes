@@ -10,8 +10,8 @@ import {PACK_PREVIEW_CANVAS, PACK_PREVIEW_MAX_CARDS, packPreviewSlot} from "./pa
 import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import {
-  PACKS_ADDRESS, PACKS_CHAIN_ID, PACKS_RENDERER, PACKS_SHAPES, creationMeetsMinimum,
-  loadOwnedPacks, mintCountsValid, packsAbi, packsClient, packsGasBudget, packsShapesAbi,
+  PACKS_DEPLOYMENTS, creationMeetsMinimum, loadOwnedPacks, mintCountsValid, packsAbi,
+  packsClientFor, packsDeploymentFor, packsGasBudget, packsShapesAbi,
   type MintQuote, type OwnedPack,
 } from "./packs";
 
@@ -34,6 +34,11 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   onConnect: () => void;
   onShapesChanged: (ids: readonly bigint[]) => Promise<void>;
 }) {
+  const deployment = packsDeploymentFor(dep.chainId);
+  const packConfig = deployment ?? PACKS_DEPLOYMENTS[11155111];
+  const {chainId: PACKS_CHAIN_ID, shapes: PACKS_SHAPES, packs: PACKS_ADDRESS, renderer: PACKS_RENDERER} = packConfig;
+  const packsClient = packsClientFor(PACKS_CHAIN_ID);
+  const networkName = packConfig.name;
   const {address, isConnected, chainId} = useAccount();
   const {switchChainAsync} = useSwitchChain();
   const {writeContractAsync} = useWriteContract();
@@ -62,7 +67,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     walletRef.current.chainId === PACKS_CHAIN_ID &&
     !!walletRef.current.address && same(walletRef.current.address, expected);
 
-  const supported = dep.chainId === PACKS_CHAIN_ID && same(dep.shapes, PACKS_SHAPES);
+  const supported = !!deployment && same(dep.shapes, PACKS_SHAPES);
   const wrongChain = isConnected && chainId !== PACKS_CHAIN_ID;
   const selectedPack = packs.find((pack) => pack.id === selectedPackId) ?? null;
   const mergeCandidates = packs.filter((pack) => pack.kind === "live" && pack.id !== selectedPackId);
@@ -137,7 +142,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     setMode("create");
     setStatus(idle);
     setUnavailableExit(null);
-  }, [address, chainId]);
+  }, [address, chainId, dep.chainId]);
 
   React.useEffect(() => {
     if (selectedPack) setChunkSize(Math.min(10, selectedPack.shapeIds.length));
@@ -152,7 +157,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       const [packCode, rendererCode] = await Promise.all([
         packsClient.getCode({address: PACKS_ADDRESS}), packsClient.getCode({address: PACKS_RENDERER}),
       ]);
-      if (!packCode || packCode === "0x" || !rendererCode || rendererCode === "0x") throw new Error("The new Sepolia Packs deployment is not visible at the supplied contract addresses yet. Retry after deployment confirmation.");
+      if (!packCode || packCode === "0x" || !rendererCode || rendererCode === "0x") throw new Error(`The ${networkName} Packs deployment is not visible at the supplied contract addresses yet. Retry after deployment confirmation.`);
       const [linkedShapes, linkedRenderer, minimum, totalMinted, denominationCount, mintFee, previewCardLimit] = await packsClient.multicall({contracts: [
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "shapes"},
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "renderer"},
@@ -167,7 +172,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       const denominations = await packsClient.multicall({contracts: Array.from({length: denominationCount}, (_, i) => ({
         address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "denominationAt", args: [i],
       } as const)), allowFailure: false});
-      const found = address ? await loadOwnedPacks(packsClient, address, totalMinted) : [];
+      const found = address ? await loadOwnedPacks(packsClient, address, totalMinted, PACKS_ADDRESS, PACKS_SHAPES) : [];
       if (!active) return;
       setSettings({minimum, totalMinted, denominations, mintFee, previewCardLimit});
       setPacks(found);
@@ -184,7 +189,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       setLoading(false);
     });
     return () => { active = false; };
-  }, [supported, address, reload]);
+  }, [supported, address, reload, PACKS_CHAIN_ID, PACKS_ADDRESS, PACKS_SHAPES, PACKS_RENDERER, networkName, packsClient]);
 
   React.useEffect(() => {
     if (!supported || !validCounts) { setQuote(null); return; }
@@ -197,10 +202,10 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       })
       .catch((error) => { if (active) setQuoteError(describeTxError(error)); }), 250);
     return () => { active = false; window.clearTimeout(timer); };
-  }, [supported, validCounts, counts]);
+  }, [supported, validCounts, counts, PACKS_ADDRESS, packsClient]);
 
   const send = async (name: string, contract: "packs" | "shapes", args: readonly unknown[], value?: bigint) => {
-    if (!address || chainId !== PACKS_CHAIN_ID) throw new Error("Switch your wallet to Sepolia first.");
+    if (!address || chainId !== PACKS_CHAIN_ID) throw new Error(`Switch your wallet to ${networkName} first.`);
     const target = contract === "packs" ? PACKS_ADDRESS : PACKS_SHAPES;
     const abi = contract === "packs" ? packsAbi : packsShapesAbi;
     const request = {address: target, abi, functionName: name, args, value, account: address} as const;
@@ -213,11 +218,11 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
         : name === "claim" || name === "claimEth" ? "Use a smaller claim."
           : name === "mergePacks" ? "Merge fewer source packs, or unseal and claim a source in chunks before adding its Shapes."
           : name === "createPack" || name === "addToPack" ? "Use fewer Shapes in this transaction." : "";
-      throw new Error(`The buffered gas estimate exceeds the safe Sepolia transaction budget. ${next}`.trim());
+      throw new Error(`The buffered gas estimate exceeds the safe ${networkName} transaction budget. ${next}`.trim());
     }
     if (!walletStillReady(address)) throw new Error("The connected wallet or network changed. Review this action again.");
     const hash = await writeContractAsync({...request, gas, chainId: PACKS_CHAIN_ID} as Parameters<typeof writeContractAsync>[0]);
-    if (walletStillReady(address)) setStatus({kind: "working", message: "Waiting for Sepolia confirmation…", hash});
+    if (walletStillReady(address)) setStatus({kind: "working", message: `Waiting for ${networkName} confirmation…`, hash});
     await awaitSuccessfulReceipt(packsClient, hash, {address: target, abi, functionName: name, args, value});
     return hash;
   };
@@ -276,7 +281,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
 
   const exit = async (chunked: boolean) => {
     if (!selectedPack || !address || wrongChain || status.kind === "working") return;
-    setStatus({kind: "working", message: "Checking the exit on Sepolia…"});
+    setStatus({kind: "working", message: `Checking the exit on ${networkName}…`});
     try {
       const id = selectedPack.id;
       const name = selectedPack.kind === "claim"
@@ -317,7 +322,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     if (!canMerge || !address || !selectedPack) return;
     const targetId = selectedPack.id;
     const sourceIds = mergeSources.map((pack) => pack.id);
-    setStatus({kind: "working", message: "Checking pack ownership and merge gas on Sepolia…"});
+    setStatus({kind: "working", message: `Checking pack ownership and merge gas on ${networkName}…`});
     try {
       const owners = await packsClient.multicall({contracts: [targetId, ...sourceIds].map((id) => ({
         address: PACKS_ADDRESS, abi: packsAbi, functionName: "ownerOf", args: [id],
@@ -335,8 +340,9 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
 
   if (!supported) return (
     <main className="packs-page">
-      <Section title="PACKS"><h1>Shape Packs</h1><p>Packs are available on Sepolia only. No ShapePacks contract is deployed on mainnet.</p>
-        <a href="https://shapes-sepolia.netlify.app/packs">Open the Sepolia Packs site ↗</a>
+      <Section title="PACKS"><h1>Shape Packs</h1><p>Packs are available on Ethereum Mainnet and Sepolia. Open the site for either network to use its deployment.</p>
+        <a href="https://shapes.ripe.wtf/packs">Open Mainnet Packs ↗</a>{" · "}
+        <a href="https://shapes-sepolia.netlify.app/packs">Open Sepolia Packs ↗</a>
       </Section>
     </main>
   );
@@ -344,14 +350,14 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   return (
     <main className="packs-page">
       <Section title="PACKS">
-        <p className="launch-kicker">Sepolia · Shape Packs</p>
+        <p className="launch-kicker">{networkName} · Shape Packs</p>
         <h1>Keep Shapes together.</h1>
         <p>Bundle Shapes you own, mint new ones, or merge packs you own. Open to get the Shapes back; redeem to receive their ETH backing.</p>
-        <p className="packs-small">Testnet only · ShapePacks <a href={`https://sepolia.etherscan.io/address/${PACKS_ADDRESS}`} target="_blank" rel="noreferrer">{PACKS_ADDRESS} ↗</a></p>
+        <p className="packs-small">ShapePacks <a href={`${packConfig.explorer}/address/${PACKS_ADDRESS}`} target="_blank" rel="noreferrer">{PACKS_ADDRESS} ↗</a></p>
         {!isConnected && <button type="button" className="btn-filled packs-action" onClick={onConnect}>CONNECT WALLET</button>}
-        {wrongChain && <div className="packs-alert">Switch your wallet to Sepolia to use Packs. <button type="button" onClick={() =>
+        {wrongChain && <div className="packs-alert">Switch your wallet to {networkName} to use Packs. <button type="button" onClick={() =>
           void switchChainAsync({chainId: PACKS_CHAIN_ID}).catch((error) => setStatus({kind: "error", message: describeTxError(error)}))} className="btn-ghost packs-text-action">SWITCH NETWORK</button></div>}
-        {loading && <p role="status">Reading Packs on Sepolia…</p>}
+        {loading && <p role="status">Reading Packs on {networkName}…</p>}
         {loadError && <div className="packs-alert" role="alert">{loadError} <button type="button" className="btn-ghost packs-text-action" onClick={() => setReload((n) => n + 1)}>RETRY</button></div>}
         {settings && <p className="packs-small">Minimum new pack backing: {eth(settings.minimum)} · Shapes mint fee: {eth(settings.mintFee)} per new Shape · {settings.totalMinted.toString()} packs created</p>}
       </Section>

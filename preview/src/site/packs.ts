@@ -1,19 +1,36 @@
-import {createPublicClient, http, parseAbi, type Address, type PublicClient} from "viem";
-import {sepolia} from "viem/chains";
+import {createPublicClient, parseAbi, type Address, type PublicClient} from "viem";
+import {mainnet, sepolia} from "viem/chains";
+import {shapesTransport} from "../chain/rpc";
 import {safeMetadataFromTokenURI} from "./ogArtwork";
 
-// The Sepolia deployment is intentionally separate from Shapes' mainnet deployment record.
-export const PACKS_CHAIN_ID = 11155111;
-export const PACKS_SHAPES = "0x6c2f9c00f44fbbf141dd166979903004b80d5f99" as const;
-export const PACKS_ADDRESS = "0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45" as const;
-export const PACKS_RENDERER = "0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60" as const;
-export const PACKS_RPC = "https://gateway.tenderly.co/public/sepolia";
-// EIP-7825 caps one Sepolia transaction at 2^24 gas, regardless of the block gas limit.
-export const SEPOLIA_TX_GAS_CAP = 1n << 24n;
+export const PACKS_DEPLOYMENTS = {
+  1: {
+    chainId: 1, name: "Mainnet", shapes: "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0",
+    packs: "0xf21514b090da7df4390803497d6ae673801e5ca7",
+    renderer: "0xaf1c899baacc0fe8cfba0c6cf2624a018a393def",
+    rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io",
+  },
+  11155111: {
+    chainId: 11155111, name: "Sepolia", shapes: "0x6c2f9c00f44fbbf141dd166979903004b80d5f99",
+    packs: "0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45",
+    renderer: "0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60",
+    rpc: "https://gateway.tenderly.co/public/sepolia", explorer: "https://sepolia.etherscan.io",
+  },
+} as const;
+
+export type PacksDeployment = (typeof PACKS_DEPLOYMENTS)[keyof typeof PACKS_DEPLOYMENTS];
+export function packsDeploymentFor(chainId: number): PacksDeployment | null {
+  if (chainId === 1) return PACKS_DEPLOYMENTS[1];
+  if (chainId === 11155111) return PACKS_DEPLOYMENTS[11155111];
+  return null;
+}
+
+// EIP-7825 caps one Ethereum transaction at 2^24 gas, regardless of the block gas limit.
+export const PACKS_TX_GAS_CAP = 1n << 24n;
 
 export function packsGasBudget(blockGasLimit: bigint): bigint {
   const blockBudget = blockGasLimit * 8n / 10n;
-  return blockBudget < SEPOLIA_TX_GAS_CAP ? blockBudget : SEPOLIA_TX_GAS_CAP;
+  return blockBudget < PACKS_TX_GAS_CAP ? blockBudget : PACKS_TX_GAS_CAP;
 }
 
 export const packsAbi = [
@@ -73,7 +90,14 @@ export const packsShapesAbi = parseAbi([
   "function setApprovalForAll(address operator,bool approved)",
 ]);
 
-export const packsClient = createPublicClient({chain: sepolia, transport: http(PACKS_RPC)});
+const packsClients = {
+  1: createPublicClient({chain: mainnet, transport: shapesTransport(1, PACKS_DEPLOYMENTS[1].rpc)}),
+  11155111: createPublicClient({chain: sepolia, transport: shapesTransport(11155111, PACKS_DEPLOYMENTS[11155111].rpc)}),
+};
+export function packsClientFor(chainId: number): PublicClient {
+  if (chainId === 1) return packsClients[1];
+  return packsClients[11155111];
+}
 
 export type MintQuote = {backingWei: bigint; feeWei: bigint; totalWei: bigint; shapeCount: bigint};
 export type OwnedPack = {
@@ -92,15 +116,16 @@ type ChainPackState = {shapeIds: readonly bigint[]; counts: readonly number[]; v
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 /** Scan pack ids in bounded Multicall batches. Burned ids can still belong to this claimant. */
-export async function loadOwnedPacks(client: PublicClient, account: Address, totalMinted: bigint): Promise<OwnedPack[]> {
+export async function loadOwnedPacks(client: PublicClient, account: Address, totalMinted: bigint,
+  packsAddress: Address, shapesAddress: Address): Promise<OwnedPack[]> {
   const ids: bigint[] = [];
   for (let id = 1n; id <= totalMinted; id++) ids.push(id);
   const found: {id: bigint; kind: "live" | "claim"}[] = [];
   for (let offset = 0; offset < ids.length; offset += 100) {
     const page = ids.slice(offset, offset + 100);
     const results = await client.multicall({contracts: page.flatMap((id) => [
-      {address: PACKS_ADDRESS, abi: packsAbi, functionName: "ownerOf", args: [id]} as const,
-      {address: PACKS_ADDRESS, abi: packsAbi, functionName: "claimantOf", args: [id]} as const,
+      {address: packsAddress, abi: packsAbi, functionName: "ownerOf", args: [id]} as const,
+      {address: packsAddress, abi: packsAbi, functionName: "claimantOf", args: [id]} as const,
     ]), allowFailure: true});
     page.forEach((id, i) => {
       const owner = results[i * 2];
@@ -113,13 +138,13 @@ export async function loadOwnedPacks(client: PublicClient, account: Address, tot
   const liveIds = found.filter((pack) => pack.kind === "live").map((pack) => pack.id);
   const claimIds = found.filter((pack) => pack.kind === "claim").map((pack) => pack.id);
   const liveStates = liveIds.length ? await client.multicall({contracts: liveIds.map((id) => ({
-    address: PACKS_ADDRESS, abi: packsAbi, functionName: "packState", args: [id],
+    address: packsAddress, abi: packsAbi, functionName: "packState", args: [id],
   } as const)), allowFailure: false}) as unknown as readonly ChainPackState[] : [];
   const liveMetadata = liveIds.length ? await client.multicall({contracts: liveIds.map((id) => ({
-    address: PACKS_ADDRESS, abi: packsAbi, functionName: "tokenURI", args: [id],
+    address: packsAddress, abi: packsAbi, functionName: "tokenURI", args: [id],
   } as const)), allowFailure: true}) : [];
   const claimContents = claimIds.length ? await client.multicall({contracts: claimIds.map((id) => ({
-    address: PACKS_ADDRESS, abi: packsAbi, functionName: "contentsOf", args: [id],
+    address: packsAddress, abi: packsAbi, functionName: "contentsOf", args: [id],
   } as const)), allowFailure: false}) as unknown as readonly (readonly bigint[])[] : [];
   const rows = found.map(({id, kind}) => {
     const state = kind === "live" ? liveStates[liveIds.indexOf(id)] : null;
@@ -134,7 +159,7 @@ export async function loadOwnedPacks(client: PublicClient, account: Address, tot
   const allBackings: bigint[] = [];
   for (let offset = 0; offset < allShapeIds.length; offset += 100) {
     const batch = await client.multicall({contracts: allShapeIds.slice(offset, offset + 100).map((shapeId) => ({
-      address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "backingOf", args: [shapeId],
+      address: shapesAddress, abi: packsShapesAbi, functionName: "backingOf", args: [shapeId],
     })), allowFailure: false});
     allBackings.push(...batch.map((value) => BigInt(value)));
   }

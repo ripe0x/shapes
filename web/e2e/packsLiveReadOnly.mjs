@@ -1,14 +1,16 @@
-/** Read-only Sepolia contract check. simulateContract uses eth_call and never broadcasts. */
+/** Read-only contract check. simulateContract uses eth_call and never broadcasts. */
 import assert from "node:assert/strict";
 import {createPublicClient, http, parseAbi} from "viem";
-import {sepolia} from "viem/chains";
+import {mainnet, sepolia} from "viem/chains";
 
-const rpc = "https://gateway.tenderly.co/public/sepolia";
-const shapes = "0x6c2f9c00f44fbbf141dd166979903004b80d5f99";
-const packs = "0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45";
-const renderer = "0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60";
-const owner = "0xCB43078C32423F5348Cab5885911C3B5faE217F9";
-const client = createPublicClient({chain: sepolia, transport: http(rpc)});
+const isMainnet = process.env.PACKS_TEST_CHAIN === "mainnet";
+const chain = isMainnet ? mainnet : sepolia;
+const rpc = isMainnet ? "https://ethereum-rpc.publicnode.com" : "https://gateway.tenderly.co/public/sepolia";
+const shapes = isMainnet ? "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0" : "0x6c2f9c00f44fbbf141dd166979903004b80d5f99";
+const packs = isMainnet ? "0xf21514b090da7df4390803497d6ae673801e5ca7" : "0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45";
+const renderer = isMainnet ? "0xaf1c899baacc0fe8cfba0c6cf2624a018a393def" : "0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60";
+const owner = isMainnet ? "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" : "0xCB43078C32423F5348Cab5885911C3B5faE217F9";
+const client = createPublicClient({chain, transport: http(rpc)});
 const packAbi = parseAbi([
   "function shapes() view returns (address)",
   "function renderer() view returns (address)",
@@ -45,10 +47,10 @@ const rendererAbi = parseAbi([
 const packRead = (functionName, args = []) => client.readContract({address: packs, abi: packAbi, functionName, args});
 const same = (a, b) => a.toLowerCase() === b.toLowerCase();
 
-assert.equal(await client.getChainId(), sepolia.id);
+assert.equal(await client.getChainId(), chain.id);
 for (const address of [packs, renderer]) {
   const code = await client.getCode({address});
-  assert.ok(code && code !== "0x", `${address} has no Sepolia bytecode`);
+  assert.ok(code && code !== "0x", `${address} has no ${chain.name} bytecode`);
 }
 assert.ok(same(await packRead("shapes"), shapes));
 assert.ok(same(await packRead("renderer"), renderer));
@@ -115,4 +117,4 @@ if (owned.length > 0) {
 } else {
   console.log("SKIP live pack exit and successful merge simulations: test account owns no live packs");
 }
-console.log(`PASS live reads: ${totalMinted} minted packs, ${denominationCount} denominations, minimum ${minimum} wei, preview limit ${previewCardLimit}`);
+console.log(`PASS ${chain.name} live reads: ${totalMinted} minted packs, ${denominationCount} denominations, minimum ${minimum} wei, preview limit ${previewCardLimit}`);

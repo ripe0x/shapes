@@ -2,35 +2,42 @@ Next.js site for Shapes.
 
 ## Shape Packs
 
-`/packs` is in the shared site navigation. On the Sepolia build it targets ShapePacks
-`0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45` with Shapes
-`0x6c2f9c00f44fbbf141dd166979903004b80d5f99` and Tenderly's public Sepolia RPC.
-The pack contract must point to renderer `0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60`;
-the site reads its token artwork through `tokenURI`. If either new address has no code yet,
-the page shows a deployment-pending message and retry control.
+`/packs` is in the shared site navigation. The production site uses mainnet Shapes
+`0x6fe9193276bf7abcbee44ab7afd717d637d6faf0`, ShapePacks
+`0xf21514b090da7df4390803497d6ae673801e5ca7`, and renderer
+`0xaf1c899baacc0fe8cfba0c6cf2624a018a393def`. The separate Sepolia site and local
+Sepolia preview use Shapes `0x6c2f9c00f44fbbf141dd166979903004b80d5f99`, ShapePacks
+`0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45`, renderer
+`0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60`, and Tenderly's public Sepolia RPC.
+The page verifies deployed bytecode and contract pointers before enabling actions, and reads
+pack artwork through `tokenURI`.
 The page reads the creation floor, denomination table, mint fee and exact mint quote from the
 contracts. It lets a wallet create from owned Shapes, newly minted Shapes or both; add to a live
 pack; merge other live packs owned by the wallet into a selected target; inspect contents and
 backing; and open for Shapes or redeem for ETH. A merge burns the source pack tokens while the
 target keeps its ID and receives their Shapes and backing, with no ETH payment. Large packs can be
-unsealed and claimed in chunks. On mainnet it shows a Sepolia-only message because ShapePacks is
-not deployed there.
+unsealed and claimed in chunks. Contract fees and limits are read on the selected chain.
 
 Read-only checks (no wallet signature or transaction):
 
 ```sh
 node web/e2e/packsLiveReadOnly.mjs
-NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia SHAPES_LADDER=testnet npm run build --workspace web
+PACKS_TEST_CHAIN=mainnet node web/e2e/packsLiveReadOnly.mjs
+CANDIDATE_RUN=1 NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia SHAPES_LADDER=testnet npm run build --workspace web
 NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia SHAPES_LADDER=testnet npm run start --workspace web -- --port 3191
 E2E_BASE_URL=http://127.0.0.1:3191 node web/e2e/packsBrowserReadOnly.mjs
 E2E_BASE_URL=http://127.0.0.1:3191 node web/e2e/packsMergeBrowserReadOnly.mjs
+CANDIDATE_RUN=1 NEXT_PUBLIC_SITE_URL=https://shapes.ripe.wtf SHAPES_LADDER=mainnet npm run build --workspace web
+NEXT_PUBLIC_SITE_URL=https://shapes.ripe.wtf SHAPES_LADDER=mainnet npm run start --workspace web -- --port 3192
+PACKS_TEST_CHAIN=mainnet PACKS_TEST_ALLOW_LOCAL_INDEXER_401=1 E2E_BASE_URL=http://127.0.0.1:3192 node web/e2e/packsBrowserReadOnly.mjs
 ```
 
 The browser check uses a wallet stub that rejects every signing and transaction request. Set
 `PLAYWRIGHT_CHROME_PATH` to an installed Chrome executable if Playwright's browser is unavailable.
-The merge browser fixture proxies existing read-only Sepolia pack data into the new address and
-stubs only the merge simulation and gas estimate. It checks merge selection and wallet calldata
-without submitting a transaction; a successful live merge simulation requires owned source packs.
+The merge browser fixture checks selection and wallet calldata without submitting a transaction.
+The live Sepolia read check now also simulates a successful merge using packs owned by the test
+account. For a local mainnet preview without the private indexer token, set
+`PACKS_TEST_ALLOW_LOCAL_INDEXER_401=1`; the browser check then verifies the raw-RPC fallback.
 
 It imports all UI and chain logic from `../preview/src` via the `@shared` alias (see
 `next.config.ts`), so the site cannot drift from the parity-tested canonical renderer.
@@ -59,8 +66,12 @@ record's chain id does not match `SHAPES_LADDER`. Netlify env per site:
 
 - Sepolia app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia`, `SHAPES_LADDER=testnet`,
   `SHAPES_SITE_MODE=app`.
-- Mainnet launch app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT` unset (or `deployment`),
-  `SHAPES_LADDER` unset (mainnet default), `SHAPES_SITE_MODE=app`.
+- Mainnet production app: `NEXT_PUBLIC_SHAPES_DEPLOYMENT` unset (or `deployment`),
+  `SHAPES_LADDER=mainnet`, `SHAPES_SITE_MODE=app`,
+  `NEXT_PUBLIC_SITE_URL=https://shapes.ripe.wtf`, and the existing indexer and wallet variables.
+  The production hostname fails its build if the selected deployment is not mainnet. Packs needs
+  no additional Netlify environment variable; its addresses are selected with the site's Shapes
+  deployment record.
 
 For Sepolia, reads use the configured RPC first and then PublicNode, 1RPC, and Tenderly's public
 endpoint. Set `SHAPES_RPC_URL` for the server-side OG route and `NEXT_PUBLIC_SHAPES_RPC_URL` for
@@ -79,7 +90,8 @@ upstream server and returns its JSON. `ShapesProviders` sets `dep.indexerUrl` to
 upstream origin is not part of any client bundle or fetched record.
 
 - `SHAPES_INDEXER_URL` — the upstream Ponder GraphQL endpoint, including `/graphql`
-  (`https://shapes-indexer-mainnet.fly.dev/graphql`). Server-only, never `NEXT_PUBLIC_`.
+  (currently `https://shapes-indexer-mainnet-b.fly.dev/graphql` in production Netlify).
+  Server-only, never `NEXT_PUBLIC_`.
 - `SHAPES_INDEXER_TOKEN` — the bearer token the proxy presents, matching the indexer's
   `INDEXER_TOKEN` secret. Optional while the indexer is open.
 

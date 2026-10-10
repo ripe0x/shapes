@@ -2,63 +2,43 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-10 (P4 Sepolia Packs new deployment and merge UI; P3 Shapes mainnet launch remains complete).
+Last updated: 2026-10-10 (P4 mainnet Packs website release in progress; P3 Shapes mainnet launch complete).
 
 ## Current website change
 
-Phase: P4 Sepolia Packs website integration. Candidate: the commit carrying this entry. The
-`/packs` route targets owner-supplied Sepolia ShapePacks
-`0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45` with renderer
-`0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60` and the shared site wallet; mainnet shows a
-Sepolia-only state. The new interface adds direct owner-only merging of live source packs into a
-selected live target. The UI selects one or more sources, shows the resulting Shape count and
-backing, rechecks ownership, and simulates and estimates gas before signing. Source tokens burn;
-the target token remains. The new renderer's card-slot formulas match the previous preview.
-At block 11886564, both supplied addresses returned no bytecode on Tenderly and PublicNode;
-both were live by block 11886608. The page has a deployment-pending state with retry for any
-future no-code interval. Tenderly reads confirmed the pack's Shapes and renderer pointers,
-0 minted packs, 0.0003 ETH floor, 9 denominations and a 12-card preview limit. Read-only
-`eth_call` succeeded for exact-quote creation and Shape approval, and decoded the empty-source
-merge rejection. A successful live merge simulation needs at least two packs owned by one
-account; none exist yet. The browser fixture checks source selection, burn summary, merge calldata,
-wallet error handling and mobile layout without signing. The current zero-pack Sepolia browser
-walkthrough, 279 preview tests, web lint and the Sepolia production build pass.
-No contract was deployed or transaction sent by this site work. The website is not published.
+Objective: release ShapePacks on `shapes.ripe.wtf/packs` using mainnet Shapes
+`0x6fe9193276bf7abcbee44ab7afd717d637d6faf0`, ShapePacks
+`0xf21514b090da7df4390803497d6ae673801e5ca7`, and renderer
+`0xaf1c899baacc0fe8cfba0c6cf2624a018a393def`. The production build must be mainnet only.
+The separate `shapes-sepolia.netlify.app` and local Sepolia preview retain D-52's Sepolia
+contracts. The prior Sepolia-only UI and no-publication rule are superseded by D-53.
 
-The prior v3 target `0xd1cfc13abcbb370d381ac192aeb6f2e1b414022a` passed 279 preview
-tests, web lint, the Sepolia production build, live Tenderly reads for six packs and the 0.0003
-ETH minimum, six `eth_call` write simulations, and the local desktop/mobile browser walkthrough.
-That evidence is historical for the new deployment. No unsealed pack exists in that prior state,
-so a successful live `claim` or `claimEth` simulation remains untested.
-Pack cards and details read the live pack NFT name and passive SVG artwork from `tokenURI`;
-contents use existing Shape metadata for thumbnails and names. Unsealed claims retain an explicit
-placeholder because their pack NFT has been burned. A read-only Sepolia browser check covers the
-artwork, labels and mobile layout.
-The Packs page now leads with Build a Pack, nests the selected pack detail under Your Packs, and
-lists eligible unpacked Shapes in Your Shapes. Create mints into a new pack; Add to Pack can target
-an existing pack or a new one, combining owned and newly minted Shapes. The builder groups onchain
-denominations, shows an illustrative live fan (known Shape art or marked sample art for unminted
-Shapes), and keeps itemized backing, fees, and exact wallet payment in one vertical summary.
-Pack and Shape labels no longer repeat their token numbers. The read-only browser walkthrough
-covers this hierarchy, draft changes, existing and new targets, and mobile layout.
-The mint denomination chooser now has a locally generated canonical Shape sample beside each
-amount and quantity control, with no size-group headings. Samples change on page load and when
-that denomination's quantity changes. Its grid is width-limited on wide screens; the browser
-check verifies all nine SVGs load and the 3015px layout.
-The pack preview sits left of the denomination choices, with the cost summary below those
-choices. Its one-through-twelve-card positions, sizes, tilt and front order follow the v3
-ShapePackRenderer; the prior v3 browser check compared the draft slots with six onchain packs
-(1, 2, 3, 6, 9 and 12 cards). Each newly minted Shape gets its own illustrative sample face,
-refreshed with its denomination's quantity; actual art remains unknown until mint.
-Pack actions now use the site's filled and outline button treatments, selectable pack and Shape
-cards follow the gallery/compose selection style, and quantities use the Mint stepper pattern.
-The Packs preflight limits buffered gas to Sepolia's EIP-7825 per-transaction cap as well as the
-site's block-budget margin; oversized direct exits steer users to unseal and claim in chunks. The
-unseal action appears only after the selected direct exit fails its gas check, and choosing another
-exit type resets that decision.
-Next gate: read-only successful merge simulation when two live packs share an owner. A real
-onchain smoke test requires user-controlled signing;
-website deployment and any mainnet contract work require separate instructions.
+Phase: P4 integration. Candidate: not frozen; current edits select Packs contracts from the site's
+Shapes chain, use the matching public RPC fallback and wallet chain, and guard the production
+hostname against a Sepolia build. No additional Packs-specific Netlify variable is required.
+The production Netlify site currently has `SHAPES_LADDER=mainnet`, `SHAPES_SITE_MODE=app`,
+`NEXT_PUBLIC_SITE_URL=https://shapes.ripe.wtf`, the mainnet deployment record by default,
+indexer URL/token, and a WalletConnect project ID in the relevant contexts. The separate
+Sepolia site's production context selects `deployment.sepolia` and `SHAPES_LADDER=testnet`.
+The configured mainnet indexer is `shapes-indexer-mainnet-b.fly.dev/graphql`; its health endpoint
+answered 200 on 2026-10-10. The previous documented `shapes-indexer-mainnet.fly.dev` endpoint
+also answered 200, but is not the current Netlify upstream.
+
+At Ethereum block 26164549, read-only PublicNode calls found code at all three supplied
+mainnet addresses, confirmed both Pack pointers, 0 minted packs, the 0.03 ETH creation floor,
+9 denominations, 0.001 ETH Shapes mint fee, and a 12-card preview limit. `eth_call` succeeded
+for exact-quote creation and approval, and rejected empty-source merging as specified. No
+signed transaction was sent. Successful mainnet merge or exit simulation needs live packs.
+The prior Sepolia deployment and merge UI passed read-only tests; its historical evidence and
+product decisions remain in D-46 through D-52. Sepolia now has 6 minted packs, including 3
+live packs held by the test account. Read-only `eth_call` passed open, redeem, unseal, and a
+successful merge; its browser check exercised live merge preflight with signing blocked. The
+mainnet local browser check passed with raw-RPC fallback because the private indexer token is
+absent locally. Neither check sent a transaction.
+
+Next gate: focused mainnet and Sepolia UI checks, one frozen production-profile build, candidate
+review, PR merge, then Netlify production readback and Packs smoke test. Preserve the unrelated
+untracked `indexer/deployments.json` in the primary checkout.
 
 ## Phase
 

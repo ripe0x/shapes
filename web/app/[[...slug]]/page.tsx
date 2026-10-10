@@ -134,7 +134,7 @@ export async function generateMetadata({
   if (r.view === "packs") {
     return {
       title: "Shape Packs",
-      description: "Bundle Shapes on Sepolia, then open for Shapes or redeem for ETH.",
+      description: "Bundle Shapes in packs, then open for Shapes or redeem for ETH.",
       openGraph: { title: "Shape Packs · Shapes", url: "/packs" },
     };
   }

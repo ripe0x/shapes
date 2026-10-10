@@ -1,8 +1,15 @@
-/** Read-only browser check against a local Sepolia site build. Wallet signing is disabled. */
+/** Read-only browser check against a local Packs site build. Wallet signing is disabled. */
 import assert from "node:assert/strict";
 import {chromium} from "playwright";
 
 const baseUrl = process.env.E2E_BASE_URL ?? "http://127.0.0.1:3191";
+const isMainnet = process.env.PACKS_TEST_CHAIN === "mainnet";
+const chainId = isMainnet ? 1 : 11155111;
+const networkName = isMainnet ? "Mainnet" : "Sepolia";
+const packsAddress = isMainnet ? "0xf21514b090da7df4390803497d6ae673801e5ca7" :
+  "0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45";
+const explorer = isMainnet ? "https://etherscan.io" : "https://sepolia.etherscan.io";
+const allowLocalIndexer401 = process.env.PACKS_TEST_ALLOW_LOCAL_INDEXER_401 === "1";
 const owner = "0xCB43078C32423F5348Cab5885911C3B5faE217F9";
 const browser = await chromium.launch({headless: true,
   ...(process.env.PLAYWRIGHT_CHROME_PATH ? {executablePath: process.env.PLAYWRIGHT_CHROME_PATH} : {})});
@@ -12,13 +19,15 @@ page.on("pageerror", (error) => errors.push(error.message));
 page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
 page.on("response", (response) => {if (response.status() >= 400) errors.push(`${response.status()} ${response.url()}`);});
 
-await page.addInitScript(({address}) => {
+await page.addInitScript(({address, chainId}) => {
   const listeners = new Map();
+  window.__walletMethods = [];
   const provider = {
     request: async ({method}) => {
+      window.__walletMethods.push(method);
       if (method === "eth_accounts" || method === "eth_requestAccounts") return [address];
-      if (method === "eth_chainId") return "0xaa36a7";
-      if (method === "net_version") return "11155111";
+      if (method === "eth_chainId") return `0x${chainId.toString(16)}`;
+      if (method === "net_version") return String(chainId);
       if (method === "eth_sendTransaction" || method.startsWith("personal_sign") || method.startsWith("eth_sign")) {
         throw new Error("This browser check cannot sign or send transactions.");
       }
@@ -33,7 +42,7 @@ await page.addInitScript(({address}) => {
   const announce = () => window.dispatchEvent(new CustomEvent("eip6963:announceProvider", {detail: Object.freeze({info, provider})}));
   window.addEventListener("eip6963:requestProvider", announce);
   announce();
-}, {address: owner});
+}, {address: owner, chainId});
 
 try {
   const guest = await browser.newPage({viewport: {width: 1280, height: 800}});
@@ -46,20 +55,25 @@ try {
   await guest.close();
 
   await page.goto(`${baseUrl}/packs`, {waitUntil: "domcontentloaded"});
-  await page.waitForFunction(() => /Minimum new pack backing:|new Sepolia Packs deployment is not visible/.test(document.body.innerText),
+  await page.waitForFunction(() => /Minimum new pack backing:|Packs deployment is not visible/.test(document.body.innerText),
     undefined, {timeout: 60_000});
   assert.equal(await page.title(), "Shape Packs · Shapes");
-  const pending = await page.getByText(/new Sepolia Packs deployment is not visible/).count() > 0;
+  await page.getByText(`${networkName} · Shape Packs`).waitFor();
+  assert.equal(await page.locator(`.packs-page a[href="${explorer}/address/${packsAddress}"]`).count(), 1);
+  const pending = await page.getByText(/Packs deployment is not visible/).count() > 0;
   if (pending) {
     await page.getByRole("button", {name: "RETRY"}).waitFor();
     assert.equal(await page.getByRole("button", {name: "MERGE PACKS"}).count(), 0);
     assert.equal(await page.locator(".packs-builder-grid").count(), 0);
-    console.log("PASS Sepolia browser: supplied deployment has no bytecode; pending state and retry are visible");
+    console.log(`PASS ${networkName} browser: supplied deployment has no bytecode; pending state and retry are visible`);
   } else {
+    await page.getByText(isMainnet ? /Minimum new pack backing: 0\.03 ETH/ : /Minimum new pack backing: 0\.0003 ETH/).waitFor();
     await page.waitForFunction(() => {
       const images = [...document.querySelectorAll(".packs-denomination-thumb img")];
       return images.length === 9 && images.every((image) => image.complete && image.naturalWidth > 0);
     }, undefined, {timeout: 60_000});
+    await page.waitForFunction(() => !document.body.innerText.includes("Reading your Shapes…"),
+      undefined, {timeout: 60_000});
     assert.deepEqual((await page.locator(".site-section-label").allTextContents()).filter((label) =>
       ["BUILD A PACK", "YOUR PACKS", "YOUR SHAPES"].includes(label)), ["BUILD A PACK", "YOUR PACKS", "YOUR SHAPES"]);
     await page.setViewportSize({width: 3015, height: 900});
@@ -83,7 +97,14 @@ try {
         const source = sourceGroup.getByRole("button").first();
         await source.click();
         assert.equal(await source.getAttribute("aria-pressed"), "true");
-        assert.equal(await page.getByRole("button", {name: "MERGE PACKS"}).isEnabled(), true);
+        const mergeButton = page.getByRole("button", {name: "MERGE PACKS"});
+        assert.equal(await mergeButton.isEnabled(), true);
+        if (process.env.PACKS_TEST_MERGE_PREFLIGHT === "1") {
+          await mergeButton.click();
+          await page.locator(".packs-status.is-error").waitFor({timeout: 30_000});
+          assert.ok((await page.evaluate(() => window.__walletMethods)).includes("eth_sendTransaction"),
+            `Merge stopped before wallet signing: ${await page.locator(".packs-status.is-error").innerText()}`);
+        }
         await source.click();
       }
     } else {
@@ -104,7 +125,7 @@ try {
     assert.equal(await input.inputValue(), "4");
     assert.equal(await page.locator(".packs-preview-card").count(), 4);
     if (process.env.E2E_SCREENSHOT_DESKTOP) await page.screenshot({path: process.env.E2E_SCREENSHOT_DESKTOP, fullPage: true});
-    console.log(`PASS Sepolia browser: ${liveCount} owned live packs, samples, preview, available merge choices, desktop layout`);
+    console.log(`PASS ${networkName} browser: ${liveCount} owned live packs, samples, preview, available merge choices, desktop layout`);
   }
   await page.setViewportSize({width: 390, height: 844});
   await page.getByRole("button", {name: "Menu"}).click();
@@ -112,7 +133,9 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.E2E_SCREENSHOT) await page.screenshot({path: process.env.E2E_SCREENSHOT, fullPage: true});
   assert.deepEqual(errors.filter((error) => !error.includes("429 https://gateway.tenderly.co/public/sepolia") &&
-    !error.includes("server responded with a status of 429")), []);
+    !error.includes("server responded with a status of 429") &&
+    !(allowLocalIndexer401 && (error.includes(`401 ${baseUrl}/api/indexer?`) ||
+      error.includes("server responded with a status of 401")))), []);
 } finally {
   await browser.close();
 }
