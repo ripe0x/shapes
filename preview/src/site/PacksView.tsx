@@ -4,6 +4,7 @@ import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
 import {Art, Section, txUrl} from "./ui";
 import {describeTxError} from "./errors";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
+import {PACK_PREVIEW_CANVAS, PACK_PREVIEW_MAX_CARDS, packPreviewSlot} from "./packPreviewLayout";
 import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import {
@@ -75,16 +76,21 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     !loading && !!settings && !!quote && validCounts && hasInputs &&
     (willCreate ? meetsFloor : !!addTarget) &&
     activeShapes.every((id) => owned.some((token) => token.id === id));
-  const previewLimit = settings ? Math.min(Number(settings.previewCardLimit), 12) : 12;
+  const previewLimit = settings ? Math.min(Number(settings.previewCardLimit), PACK_PREVIEW_MAX_CARDS) : PACK_PREVIEW_MAX_CARDS;
   const previewCards = [
     ...(!willCreate && addTarget ? addTarget.shapeIds.map((id, i) => ({key: `pack-${id}`, image: shapesById.get(id)?.image,
-      backing: addTarget.backings[i] ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false})) : []),
+      backing: addTarget.backings[i] ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false, tokenId: id})) : []),
     ...activeShapes.map((id) => ({key: `owned-${id}`, image: shapesById.get(id)?.image,
-      backing: shapesById.get(id)?.backing ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false})),
+      backing: shapesById.get(id)?.backing ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false, tokenId: id})),
     ...(settings?.denominations ?? []).flatMap((amount, i) => Array.from({length: Math.max(0, Math.min(counts[i] ?? 0, previewLimit))}, (_, j) =>
       ({key: `new-${i}-${j}`, image: denominationArt[i] ?? data?.tokens.find((token) => token.di === i)?.image,
-        backing: amount, label: `${eth(amount)} Shape`, isNew: true}))),
-  ].sort((a, b) => a.backing === b.backing ? 0 : a.backing > b.backing ? -1 : 1).slice(0, previewLimit);
+        backing: amount, label: `${eth(amount)} Shape`, isNew: true, tokenId: null}))),
+  ].sort((a, b) => {
+    if (a.backing !== b.backing) return a.backing > b.backing ? -1 : 1;
+    if (a.tokenId === null) return b.tokenId === null ? 0 : 1;
+    if (b.tokenId === null) return -1;
+    return a.tokenId === b.tokenId ? 0 : a.tokenId < b.tokenId ? -1 : 1;
+  }).slice(0, previewLimit);
   const draftCount = (addTarget && !willCreate ? addTarget.shapeIds.length : 0) + activeShapes.length +
     counts.reduce((sum, count) => sum + (Number.isInteger(count) && count > 0 ? count : 0), 0);
 
@@ -319,66 +325,69 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             </div>
           </div>}
           <div className="packs-builder-grid">
-            <div className="packs-builder-form">
-              <h2>Mint new Shapes</h2>
-              <p className="packs-small">Choose a denomination, then set how many Shapes to mint into {willCreate ? "the new pack" : addTarget?.name ?? "the pack"}.</p>
-              <div className="packs-denomination-groups">{settings.denominations.map((amount, i) => {
-                const artwork = denominationArt[i] || data?.tokens.find((token) => token.di === i)?.image;
-                return <div className="packs-denomination" key={i}>
-                  <div className="packs-denomination-thumb" aria-hidden="true">
-                    {artwork ? <img src={artwork} alt="" /> : <span>SHAPE</span>}
-                  </div>
-                  <div className="packs-denomination-control">
-                    <label htmlFor={`packs-denom-${i}`}>{eth(amount)}</label>
-                    <div className="packs-stepper">
-                      <button type="button" className="btn-outline" aria-label={`Decrease ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) <= 0}
-                        onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, -1, 0, 0xffffffff) : value))}>−</button>
-                      <input id={`packs-denom-${i}`} className="qty-input" type="number" min="0" max="4294967295" step="1" value={counts[i] ?? 0}
-                        onChange={(event) => setCounts((old) => old.map((value, index) => index === i ? Number(event.target.value) : value))} />
-                      <button type="button" className="btn-outline" aria-label={`Increase ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) >= 0xffffffff}
-                        onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, 1, 0, 0xffffffff) : value))}>+</button>
-                    </div>
-                  </div>
-                </div>;
-              })}</div>
-              {artError && <p className="packs-small" role="status">Some artwork could not load. <button type="button" className="btn-ghost packs-text-action" onClick={() => setArtReload((n) => n + 1)}>RETRY ARTWORK</button></p>}
-              {mode === "add" && <p className="packs-small">Choose any Shapes you own in Your Shapes below. You can combine them with new Shapes here.</p>}
-            </div>
-            <aside className="packs-order" aria-label="Pack preview and order summary">
+            <div className="packs-preview-panel">
               <h2>Pack preview</h2>
               <div className={`packs-draft-art${previewCards.length === 0 ? " is-empty" : ""}`} aria-label={`${draftCount} Shape${draftCount === 1 ? "" : "s"} in draft pack`}>
                 {previewCards.length === 0 ? <span className="packs-preview-empty">YOUR PACK<br />TAKES SHAPE HERE</span> : previewCards.map((card, i) => {
-                  const slot = i === 0 ? 0 : (i % 2 ? -Math.ceil(i / 2) : Math.ceil(i / 2));
-                  return <div className="packs-preview-card" key={card.key} title={card.label} style={{
-                    left: `${50 + slot * (previewCards.length > 8 ? 8 : 11)}%`, top: `${50 + Math.abs(slot) * 1.5}%`,
-                    width: `${previewCards.length > 8 ? 25 : previewCards.length > 4 ? 30 : 35}%`,
-                    transform: `translate(-50%, -50%) rotate(${slot * 7}deg)`, zIndex: previewCards.length - i,
+                  const slot = packPreviewSlot(i, previewCards.length);
+                  return <div className="packs-preview-card" data-rank={i} key={card.key} title={card.label} style={{
+                    left: `${slot.x / PACK_PREVIEW_CANVAS * 100}%`, top: `${slot.y / PACK_PREVIEW_CANVAS * 100}%`,
+                    width: `${slot.width / PACK_PREVIEW_CANVAS * 100}%`, height: `${slot.height / PACK_PREVIEW_CANVAS * 100}%`,
+                    transform: `rotate(${slot.angle}deg)`, zIndex: previewCards.length - i,
                   }}>
                     {card.image ? <img src={card.image} alt="" /> : <span className="packs-preview-unminted"><small>{card.isNew ? "NEW SHAPE" : "SHAPE"}</small><strong>{eth(card.backing)}</strong></span>}
-                    {card.isNew && card.image && <span className="packs-preview-sample">SAMPLE ART</span>}
                   </div>;
                 })}
               </div>
               <p className="packs-small">{draftCount} Shape{draftCount === 1 ? "" : "s"} in {willCreate ? "a new pack" : addTarget?.name ?? "the pack"}{draftCount > previewCards.length ? ` · showing ${previewCards.length}` : ""}. New Shape artwork is revealed after mint; this preview is illustrative.</p>
-              <h2>Order summary</h2>
-              <div className="packs-summary">
-                {settings.denominations.map((amount, i) => (counts[i] ?? 0) > 0 && Number.isInteger(counts[i]) ?
-                  <div className="packs-summary-row" key={i}><span>{counts[i]} × {eth(amount)}</span><strong>{eth(amount * BigInt(counts[i]))}</strong></div> : null)}
-                {mode === "add" && selectedShapes.length > 0 && <div className="packs-summary-row"><span>{selectedShapes.length} owned Shape{selectedShapes.length === 1 ? "" : "s"} backing</span><strong>{eth(selectedBacking)}</strong></div>}
-                {quote && <>
-                  <div className="packs-summary-row"><span>New Shape backing</span><strong>{eth(quote.backingWei)}</strong></div>
-                  <div className="packs-summary-row"><span>Mint fees</span><strong>{eth(quote.feeWei)}</strong></div>
-                  <div className="packs-summary-row"><span>Pack backing after</span><strong>{eth((willCreate ? 0n : addTarget?.valueWei ?? 0n) + selectedBacking + quote.backingWei)}</strong></div>
-                  <div className="packs-summary-row is-total"><span>Wallet payment</span><strong>{eth(quote.totalWei)}</strong></div>
-                </>}
+            </div>
+            <div className="packs-builder-main">
+              <div className="packs-builder-form">
+                <h2>Mint new Shapes</h2>
+                <p className="packs-small">Choose a denomination, then set how many Shapes to mint into {willCreate ? "the new pack" : addTarget?.name ?? "the pack"}.</p>
+                <div className="packs-denomination-groups">{settings.denominations.map((amount, i) => {
+                  const artwork = denominationArt[i] || data?.tokens.find((token) => token.di === i)?.image;
+                  return <div className="packs-denomination" key={i}>
+                    <div className="packs-denomination-thumb" aria-hidden="true">
+                      {artwork ? <img src={artwork} alt="" /> : <span>SHAPE</span>}
+                    </div>
+                    <div className="packs-denomination-control">
+                      <label htmlFor={`packs-denom-${i}`}>{eth(amount)}</label>
+                      <div className="packs-stepper">
+                        <button type="button" className="btn-outline" aria-label={`Decrease ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) <= 0}
+                          onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, -1, 0, 0xffffffff) : value))}>−</button>
+                        <input id={`packs-denom-${i}`} className="qty-input" type="number" min="0" max="4294967295" step="1" value={counts[i] ?? 0}
+                          onChange={(event) => setCounts((old) => old.map((value, index) => index === i ? Number(event.target.value) : value))} />
+                        <button type="button" className="btn-outline" aria-label={`Increase ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) >= 0xffffffff}
+                          onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, 1, 0, 0xffffffff) : value))}>+</button>
+                      </div>
+                    </div>
+                  </div>;
+                })}</div>
+                {artError && <p className="packs-small" role="status">Some artwork could not load. <button type="button" className="btn-ghost packs-text-action" onClick={() => setArtReload((n) => n + 1)}>RETRY ARTWORK</button></p>}
+                {mode === "add" && <p className="packs-small">Choose any Shapes you own in Your Shapes below. You can combine them with new Shapes here.</p>}
               </div>
-              {quoteError && <p className="packs-alert" role="alert">{quoteError}</p>}
-              {willCreate && hasInputs && quote && !meetsFloor && <p className="packs-alert">A new pack needs at least {eth(settings.minimum)} of backing.</p>}
-              {activeShapes.length > 0 && <p className="packs-small">Owned Shapes require approval first. If your wallet asks for approval, press the pack action again afterward.</p>}
-              <button type="button" className="btn-filled packs-action" disabled={!canSubmit} onClick={() => void submit()}>
-                {willCreate ? "CREATE PACK" : "ADD TO PACK"}
-              </button>
-            </aside>
+              <aside className="packs-order" aria-label="Order summary">
+                <h2>Order summary</h2>
+                <div className="packs-summary">
+                  {settings.denominations.map((amount, i) => (counts[i] ?? 0) > 0 && Number.isInteger(counts[i]) ?
+                    <div className="packs-summary-row" key={i}><span>{counts[i]} × {eth(amount)}</span><strong>{eth(amount * BigInt(counts[i]))}</strong></div> : null)}
+                  {mode === "add" && selectedShapes.length > 0 && <div className="packs-summary-row"><span>{selectedShapes.length} owned Shape{selectedShapes.length === 1 ? "" : "s"} backing</span><strong>{eth(selectedBacking)}</strong></div>}
+                  {quote && <>
+                    <div className="packs-summary-row"><span>New Shape backing</span><strong>{eth(quote.backingWei)}</strong></div>
+                    <div className="packs-summary-row"><span>Mint fees</span><strong>{eth(quote.feeWei)}</strong></div>
+                    <div className="packs-summary-row"><span>Pack backing after</span><strong>{eth((willCreate ? 0n : addTarget?.valueWei ?? 0n) + selectedBacking + quote.backingWei)}</strong></div>
+                    <div className="packs-summary-row is-total"><span>Wallet payment</span><strong>{eth(quote.totalWei)}</strong></div>
+                  </>}
+                </div>
+                {quoteError && <p className="packs-alert" role="alert">{quoteError}</p>}
+                {willCreate && hasInputs && quote && !meetsFloor && <p className="packs-alert">A new pack needs at least {eth(settings.minimum)} of backing.</p>}
+                {activeShapes.length > 0 && <p className="packs-small">Owned Shapes require approval first. If your wallet asks for approval, press the pack action again afterward.</p>}
+                <button type="button" className="btn-filled packs-action" disabled={!canSubmit} onClick={() => void submit()}>
+                  {willCreate ? "CREATE PACK" : "ADD TO PACK"}
+                </button>
+              </aside>
+            </div>
           </div>
         </Section>
 

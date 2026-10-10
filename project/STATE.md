@@ -31,6 +31,10 @@ covers this hierarchy, draft changes, existing and new targets, and mobile layou
 The mint denomination chooser now has an onchain ShapeCollection card thumbnail beside each
 amount and quantity control, with no size-group headings. Its grid is width-limited on wide
 screens; the browser check verifies all nine Sepolia SVGs load and the 3015px layout.
+The pack preview sits left of the denomination choices, with the cost summary below those
+choices. Its one-through-twelve-card positions, sizes, tilt and front order follow the v3
+ShapePackRenderer; the live browser check compares the draft slots with all six onchain packs
+(1, 2, 3, 6, 9 and 12 cards). Newly minted Shape faces remain illustrative until mint.
 Pack actions now use the site's filled and outline button treatments, selectable pack and Shape
 cards follow the gallery/compose selection style, and quantities use the Mint stepper pattern.
 The Packs preflight limits buffered gas to Sepolia's EIP-7825 per-transaction cap as well as the

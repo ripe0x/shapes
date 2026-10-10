@@ -56,6 +56,9 @@ try {
   assert.equal(await page.locator(".packs-group-label").count(), 0);
   await page.setViewportSize({width: 3015, height: 900});
   assert.ok((await page.locator(".packs-builder-grid").boundingBox()).width <= 1221);
+  const previewBox = await page.locator(".packs-preview-panel").boundingBox();
+  const formBox = await page.locator(".packs-builder-form").boundingBox();
+  assert.ok(previewBox.x + previewBox.width < formBox.x);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.E2E_SCREENSHOT_WIDE) await page.screenshot({path: process.env.E2E_SCREENSHOT_WIDE, fullPage: true});
   await page.setViewportSize({width: 1280, height: 800});
@@ -67,6 +70,37 @@ try {
   await packCard.click();
   await page.getByRole("heading", {name: "Shape Pack 3"}).waitFor();
   assert.equal(await page.locator(".packs-detail-heading .packs-art img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
+  await page.waitForFunction(() => !document.body.innerText.includes("Reading your Shapes…"), undefined, {timeout: 90_000});
+  await page.getByRole("group", {name: "Pack action"}).getByRole("button", {name: "ADD TO PACK"}).click();
+  for (const id of [1, 2, 3, 4, 5, 6]) {
+    const onchainSlots = await page.evaluate((packId) => {
+      const card = [...document.querySelectorAll("button.packs-card")].find((button) =>
+        button.querySelector(".packs-card-title")?.textContent === `Shape Pack ${packId}`);
+      const src = card.querySelector(".packs-art img").getAttribute("src");
+      const svg = new DOMParser().parseFromString(atob(src.slice(src.indexOf(",") + 1)), "image/svg+xml");
+      return [...svg.documentElement.children].filter((node) => node.localName === "g").map((node) => {
+        const [, x, y, angle] = node.getAttribute("transform").match(/^translate\((\d+),(\d+)\) rotate\((-?\d+) /);
+        const rect = [...node.children].find((child) => child.localName === "rect");
+        return {x: Number(x), y: Number(y), width: Number(rect.getAttribute("width")),
+          height: Number(rect.getAttribute("height")), angle: Number(angle)};
+      }).reverse();
+    }, id);
+    await page.getByRole("group", {name: "Pack destination"}).getByRole("button", {name: `Shape Pack ${id}`, exact: true}).click();
+    await page.waitForFunction((count) => document.querySelectorAll(".packs-preview-card").length === count, onchainSlots.length);
+    const draftSlots = await page.locator(".packs-preview-card").evaluateAll((cards) => cards.map((card) => ({
+      x: Math.round(parseFloat(card.style.left) * 3840 / 100),
+      y: Math.round(parseFloat(card.style.top) * 3840 / 100),
+      width: Math.round(parseFloat(card.style.width) * 3840 / 100),
+      height: Math.round(parseFloat(card.style.height) * 3840 / 100),
+      angle: Number(card.style.transform.match(/rotate\((-?\d+)deg\)/)[1]),
+    })));
+    assert.deepEqual(draftSlots, onchainSlots, `Draft fan must match onchain layout for pack ${id}`);
+    assert.equal(await page.locator(".packs-preview-card img").count(), onchainSlots.length);
+    if (id === 6 && process.env.E2E_SCREENSHOT_MATCHED) {
+      await page.locator(".packs-builder-grid").screenshot({path: process.env.E2E_SCREENSHOT_MATCHED});
+    }
+  }
+  await page.getByRole("group", {name: "Pack action"}).getByRole("button", {name: "CREATE"}).click();
   await page.getByText(/backing/i).first().waitFor();
   const chunkedExit = page.getByRole("button", {name: "UNSEAL FOR CHUNKED EXIT"});
   assert.equal(await chunkedExit.count(), 0);
