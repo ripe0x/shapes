@@ -2,7 +2,53 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-09-03 (P3 mainnet launch: Shapes live on Ethereum mainnet).
+Last updated: 2026-10-10 (P4 mainnet Packs website release in progress; P3 Shapes mainnet launch complete).
+
+## Current website change
+
+Objective: release ShapePacks on `shapes.ripe.wtf/packs` using mainnet Shapes
+`0x6fe9193276bf7abcbee44ab7afd717d637d6faf0`, ShapePacks
+`0xf21514b090da7df4390803497d6ae673801e5ca7`, and renderer
+`0xaf1c899baacc0fe8cfba0c6cf2624a018a393def`. The production build must be mainnet only.
+The separate `shapes-sepolia.netlify.app` and local Sepolia preview retain D-52's Sepolia
+contracts. The prior Sepolia-only UI and no-publication rule are superseded by D-53.
+
+Phase: P4 release candidate `fcccca3ab7eaea13c34be3b6e3df551905b73f94`, code frozen.
+The site selects Packs contracts from the Shapes chain, uses the matching public RPC fallback
+and wallet chain, and guards the production
+hostname against a Sepolia build. No additional Packs-specific Netlify variable is required.
+The production Netlify site currently has `SHAPES_LADDER=mainnet`, `SHAPES_SITE_MODE=app`,
+`NEXT_PUBLIC_SITE_URL=https://shapes.ripe.wtf`, the mainnet deployment record by default,
+indexer URL/token, and a WalletConnect project ID in the relevant contexts. The separate
+Sepolia site's production context selects `deployment.sepolia` and `SHAPES_LADDER=testnet`.
+The configured mainnet indexer is `shapes-indexer-mainnet-b.fly.dev/graphql`; its health endpoint
+answered 200 on 2026-10-10. The previous documented `shapes-indexer-mainnet.fly.dev` endpoint
+also answered 200, but is not the current Netlify upstream.
+
+At Ethereum block 26164549, read-only PublicNode calls found code at all three supplied
+mainnet addresses, confirmed both Pack pointers, 0 minted packs, the 0.03 ETH creation floor,
+9 denominations, 0.001 ETH Shapes mint fee, and a 12-card preview limit. `eth_call` succeeded
+for exact-quote creation and approval, and rejected empty-source merging as specified. No
+signed transaction was sent. Successful mainnet merge or exit simulation needs live packs.
+The prior Sepolia deployment and merge UI passed read-only tests; its historical evidence and
+product decisions remain in D-46 through D-52. Sepolia now has 6 minted packs, including 3
+live packs held by the test account. Read-only `eth_call` passed open, redeem, unseal, and a
+successful merge; its browser check exercised live merge preflight with signing blocked. The
+mainnet local browser check passed with raw-RPC fallback because the private indexer token is
+absent locally. Neither check sent a transaction.
+Both Netlify PR previews passed read-only browser checks. Reown returns 403 for the temporary
+mainnet deploy-preview hostname because it is not on the WalletConnect origin allowlist; the
+production `shapes.ripe.wtf` hostname emitted no WalletConnect or allowlist errors in a separate
+read-only browser check. Preview tests ignore only this known external response.
+Focused preview tests, web/preview TypeScript checks, and changed-file lint passed. The single
+mainnet Netlify production-profile build and production-build browser rehearsal passed on the
+frozen candidate. Independent read-only review found no concrete defect; see
+`project/reviews/packs-mainnet-fcccca3.md`. The live production indexer proxy returned chain 1
+data through its configured server-side token on 2026-10-10.
+
+Next gate: update PR #140, verify its Netlify deploy preview and checks, merge to `main`, then
+perform Netlify production readback and Packs smoke test. Preserve the unrelated
+untracked `indexer/deployments.json` in the primary checkout.
 
 ## Phase
 

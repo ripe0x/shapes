@@ -40,6 +40,13 @@ function targetDeployment(): { chainId?: number } {
 
 const targetChainId = targetDeployment().chainId;
 
+// The production hostname must never compile the Sepolia record, even if both ladder and record
+// variables were accidentally changed together in Netlify.
+if (process.env.NEXT_PUBLIC_SITE_URL === "https://shapes.ripe.wtf" &&
+  (deploymentRecordName(process.env.NEXT_PUBLIC_SHAPES_DEPLOYMENT) !== "deployment" || targetChainId !== 1)) {
+  throw new Error("next.config.ts: shapes.ripe.wtf must build the mainnet deployment record.");
+}
+
 // Selects the denomination ladder at build time, pairing with the foundry profile of the same
 // name (see preview/src/canonical/denominations.ts). An explicit SHAPES_LADDER always wins;
 // production builds must set it (scripts/verify-netlify-mode.mjs). Unset, the default follows
