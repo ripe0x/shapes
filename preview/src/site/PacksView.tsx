@@ -12,7 +12,7 @@ import {
   type MintQuote, type OwnedPack,
 } from "./packs";
 
-type Settings = {minimum: bigint; denominations: bigint[]; mintFee: bigint; totalMinted: bigint};
+type Settings = {minimum: bigint; denominations: bigint[]; mintFee: bigint; totalMinted: bigint; previewCardLimit: bigint};
 type Status = {kind: "idle" | "working" | "done" | "error"; message: string; hash?: Hash};
 const idle: Status = {kind: "idle", message: ""};
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -36,6 +36,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [reload, setReload] = React.useState(0);
   const [mode, setMode] = React.useState<"create" | "add">("create");
+  const [addTargetId, setAddTargetId] = React.useState<bigint | null>(null);
   const [selectedShapes, setSelectedShapes] = React.useState<bigint[]>([]);
   const [counts, setCounts] = React.useState<number[]>([]);
   const [quote, setQuote] = React.useState<MintQuote | null>(null);
@@ -53,27 +54,43 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const supported = dep.chainId === PACKS_CHAIN_ID && same(dep.shapes, PACKS_SHAPES);
   const wrongChain = isConnected && chainId !== PACKS_CHAIN_ID;
   const selectedPack = packs.find((pack) => pack.id === selectedPackId) ?? null;
+  const addTarget = packs.find((pack) => pack.id === addTargetId && pack.kind === "live") ?? null;
+  const willCreate = mode === "create" || addTargetId === null;
   const singleExitUnavailable = unavailableExit?.packId === selectedPack?.id && unavailableExit?.kind === exitKind;
   const shapesById = new Map((data?.tokens ?? []).map((token) => [token.id, token]));
   const owned = address ? (data?.tokens ?? []).filter((token) =>
     same(token.owner, address) && token.backing > 0n,
   ) : [];
-  const selectedBacking = selectedShapes.reduce((sum, id) =>
+  const activeShapes = mode === "add" ? selectedShapes : [];
+  const selectedBacking = activeShapes.reduce((sum, id) =>
     sum + (owned.find((token) => token.id === id)?.backing ?? 0n), 0n);
-  const hasInputs = selectedShapes.length > 0 || counts.some((n) => n > 0);
+  const hasInputs = activeShapes.length > 0 || counts.some((n) => n > 0);
   const validCounts = settings !== null && mintCountsValid(counts, settings.denominations.length);
   const meetsFloor = settings !== null && quote !== null &&
     creationMeetsMinimum(selectedBacking, quote, settings.minimum);
   const canSubmit = supported && !!address && !wrongChain && !loadError && status.kind !== "working" &&
     !loading && !!settings && !!quote && validCounts && hasInputs &&
-    (mode === "add" ? selectedPack?.kind === "live" : meetsFloor) &&
-    selectedShapes.every((id) => owned.some((token) => token.id === id));
+    (willCreate ? meetsFloor : !!addTarget) &&
+    activeShapes.every((id) => owned.some((token) => token.id === id));
+  const previewLimit = settings ? Math.min(Number(settings.previewCardLimit), 12) : 12;
+  const previewCards = [
+    ...(!willCreate && addTarget ? addTarget.shapeIds.map((id, i) => ({key: `pack-${id}`, image: shapesById.get(id)?.image,
+      backing: addTarget.backings[i] ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false})) : []),
+    ...activeShapes.map((id) => ({key: `owned-${id}`, image: shapesById.get(id)?.image,
+      backing: shapesById.get(id)?.backing ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false})),
+    ...(settings?.denominations ?? []).flatMap((amount, i) => Array.from({length: Math.max(0, Math.min(counts[i] ?? 0, previewLimit))}, (_, j) =>
+      ({key: `new-${i}-${j}`, image: data?.tokens.find((token) => token.di === i)?.image,
+        backing: amount, label: `${eth(amount)} Shape`, isNew: true}))),
+  ].sort((a, b) => a.backing === b.backing ? 0 : a.backing > b.backing ? -1 : 1).slice(0, previewLimit);
+  const draftCount = (addTarget && !willCreate ? addTarget.shapeIds.length : 0) + activeShapes.length +
+    counts.reduce((sum, count) => sum + (Number.isInteger(count) && count > 0 ? count : 0), 0);
 
   // Account and chain changes invalidate selections and messages from the previous wallet.
   React.useEffect(() => {
     setPacks([]);
     setSelectedShapes([]);
     setSelectedPackId(null);
+    setAddTargetId(null);
     setCounts((current) => current.map(() => 0));
     setMode("create");
     setStatus(idle);
@@ -90,12 +107,13 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     setLoading(true);
     setLoadError(null);
     (async () => {
-      const [linkedShapes, minimum, totalMinted, denominationCount, mintFee] = await packsClient.multicall({contracts: [
+      const [linkedShapes, minimum, totalMinted, denominationCount, mintFee, previewCardLimit] = await packsClient.multicall({contracts: [
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "shapes"},
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "MIN_PACK_VALUE"},
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "totalMinted"},
         {address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "denominationCount"},
         {address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "mintFee"},
+        {address: PACKS_ADDRESS, abi: packsAbi, functionName: "previewCardLimit"},
       ], allowFailure: false});
       if (!same(linkedShapes, PACKS_SHAPES)) throw new Error("The Packs contract points to an unexpected Shapes contract.");
       const denominations = await packsClient.multicall({contracts: Array.from({length: denominationCount}, (_, i) => ({
@@ -103,9 +121,10 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       } as const)), allowFailure: false});
       const found = address ? await loadOwnedPacks(packsClient, address, totalMinted) : [];
       if (!active) return;
-      setSettings({minimum, totalMinted, denominations, mintFee});
+      setSettings({minimum, totalMinted, denominations, mintFee, previewCardLimit});
       setPacks(found);
       setSelectedPackId((current) => found.some((pack) => pack.id === current) ? current : found[0]?.id ?? null);
+      setAddTargetId((current) => found.some((pack) => pack.id === current && pack.kind === "live") ? current : found.find((pack) => pack.kind === "live")?.id ?? null);
       setCounts((current) => current.length === denominations.length ? current : denominations.map(() => 0));
       setLoading(false);
     })().catch((error) => {
@@ -153,9 +172,9 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
 
   const submit = async () => {
     if (!canSubmit || !address || !settings || !quote) return;
-    const ids = [...selectedShapes];
+    const ids = [...activeShapes];
     const mintCounts = [...counts];
-    const packId = selectedPack?.id;
+    const packId = addTarget?.id;
     setStatus({kind: "working", message: "Checking Shapes, approval, and the exact payment…"});
     try {
       const liveQuote = await packsClient.readContract({address: PACKS_ADDRESS, abi: packsAbi, functionName: "quoteMint", args: [mintCounts]});
@@ -168,10 +187,10 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
         if (!same(owner, address) || backing === 0n) throw new Error(`Shape #${id} is no longer an eligible Shape in this wallet.`);
         liveBacking += backing;
       }
-      if (mode === "create" && liveBacking + liveQuote[0] < settings.minimum) {
+      if (willCreate && liveBacking + liveQuote[0] < settings.minimum) {
         throw new Error(`A new pack needs at least ${eth(settings.minimum)} of backing.`);
       }
-      if (mode === "add") {
+      if (!willCreate) {
         if (packId === undefined) throw new Error("Choose a live pack to add to.");
         const owner = await packsClient.readContract({address: PACKS_ADDRESS, abi: packsAbi, functionName: "ownerOf", args: [packId]});
         if (!same(owner, address)) throw new Error("This wallet no longer owns that pack.");
@@ -189,13 +208,13 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
           }
         }
       }
-      const name = mode === "create" ? "createPack" : "addToPack";
-      const args = mode === "create" ? [ids, mintCounts] : [packId!, ids, mintCounts];
+      const name = willCreate ? "createPack" : "addToPack";
+      const args = willCreate ? [ids, mintCounts] : [packId!, ids, mintCounts];
       const hash = await send(name, "packs", args, liveQuote[2]);
       if (!walletStillReady(address)) return;
       setSelectedShapes([]);
       setCounts(settings.denominations.map(() => 0));
-      setStatus({kind: "done", message: mode === "create" ? "Pack created." : "Shapes added to pack.", hash});
+      setStatus({kind: "done", message: willCreate ? "Pack created." : "Shapes added to pack.", hash});
       setReload((n) => n + 1);
       await onShapesChanged(ids);
     } catch (error) {
@@ -266,6 +285,82 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       </Section>
 
       {isConnected && settings && <>
+        <Section title="BUILD A PACK">
+          <div id="packs-build-anchor" className="shape-mode-toggle" role="group" aria-label="Pack action">
+            <button type="button" aria-pressed={mode === "create"} onClick={() => {setMode("create"); setSelectedShapes([]);}}>CREATE</button>
+            <button type="button" aria-pressed={mode === "add"} onClick={() => setMode("add")}>ADD TO PACK</button>
+          </div>
+          {mode === "add" && <div className="packs-destinations" role="group" aria-label="Pack destination">
+            <p className="packs-small">Choose where the selected Shapes go.</p>
+            <div className="packs-destination-options">
+              <button type="button" className="btn-outline" aria-pressed={addTargetId === null} onClick={() => setAddTargetId(null)}>NEW PACK</button>
+              {packs.filter((pack) => pack.kind === "live").map((pack) => <button key={pack.id.toString()} type="button"
+                className="btn-outline" aria-pressed={addTargetId === pack.id} onClick={() => setAddTargetId(pack.id)}>{pack.name}</button>)}
+            </div>
+          </div>}
+          <div className="packs-builder-grid">
+            <div className="packs-builder-form">
+              <h2>Mint new Shapes</h2>
+              <p className="packs-small">Choose a denomination, then set how many Shapes to mint into {willCreate ? "the new pack" : addTarget?.name ?? "the pack"}.</p>
+              <div className="packs-denomination-groups">{Array.from({length: Math.ceil(settings.denominations.length / 3)}, (_, group) => (
+                <div className="packs-denomination-group" key={group}>
+                  <p className="packs-group-label">{group === 0 ? "SMALL" : group === 1 ? "MEDIUM" : group === 2 ? "LARGE" : `GROUP ${group + 1}`}</p>
+                  {settings.denominations.slice(group * 3, group * 3 + 3).map((amount, offset) => {
+                    const i = group * 3 + offset;
+                    return <div className="packs-denomination" key={i}>
+                      <label htmlFor={`packs-denom-${i}`}>{eth(amount)}</label>
+                      <div className="packs-stepper">
+                        <button type="button" className="btn-outline" aria-label={`Decrease ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) <= 0}
+                          onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, -1, 0, 0xffffffff) : value))}>−</button>
+                        <input id={`packs-denom-${i}`} className="qty-input" type="number" min="0" max="4294967295" step="1" value={counts[i] ?? 0}
+                          onChange={(event) => setCounts((old) => old.map((value, index) => index === i ? Number(event.target.value) : value))} />
+                        <button type="button" className="btn-outline" aria-label={`Increase ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) >= 0xffffffff}
+                          onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, 1, 0, 0xffffffff) : value))}>+</button>
+                      </div>
+                    </div>;
+                  })}
+                </div>
+              ))}</div>
+              {mode === "add" && <p className="packs-small">Choose any Shapes you own in Your Shapes below. You can combine them with new Shapes here.</p>}
+            </div>
+            <aside className="packs-order" aria-label="Pack preview and order summary">
+              <h2>Pack preview</h2>
+              <div className={`packs-draft-art${previewCards.length === 0 ? " is-empty" : ""}`} aria-label={`${draftCount} Shape${draftCount === 1 ? "" : "s"} in draft pack`}>
+                {previewCards.length === 0 ? <span className="packs-preview-empty">YOUR PACK<br />TAKES SHAPE HERE</span> : previewCards.map((card, i) => {
+                  const slot = i === 0 ? 0 : (i % 2 ? -Math.ceil(i / 2) : Math.ceil(i / 2));
+                  return <div className="packs-preview-card" key={card.key} title={card.label} style={{
+                    left: `${50 + slot * (previewCards.length > 8 ? 8 : 11)}%`, top: `${50 + Math.abs(slot) * 1.5}%`,
+                    width: `${previewCards.length > 8 ? 25 : previewCards.length > 4 ? 30 : 35}%`,
+                    transform: `translate(-50%, -50%) rotate(${slot * 7}deg)`, zIndex: previewCards.length - i,
+                  }}>
+                    {card.image ? <img src={card.image} alt="" /> : <span className="packs-preview-unminted"><small>{card.isNew ? "NEW SHAPE" : "SHAPE"}</small><strong>{eth(card.backing)}</strong></span>}
+                    {card.isNew && card.image && <span className="packs-preview-sample">SAMPLE ART</span>}
+                  </div>;
+                })}
+              </div>
+              <p className="packs-small">{draftCount} Shape{draftCount === 1 ? "" : "s"} in {willCreate ? "a new pack" : addTarget?.name ?? "the pack"}{draftCount > previewCards.length ? ` · showing ${previewCards.length}` : ""}. New Shape artwork is revealed after mint; this preview is illustrative.</p>
+              <h2>Order summary</h2>
+              <div className="packs-summary">
+                {settings.denominations.map((amount, i) => (counts[i] ?? 0) > 0 && Number.isInteger(counts[i]) ?
+                  <div className="packs-summary-row" key={i}><span>{counts[i]} × {eth(amount)}</span><strong>{eth(amount * BigInt(counts[i]))}</strong></div> : null)}
+                {mode === "add" && selectedShapes.length > 0 && <div className="packs-summary-row"><span>{selectedShapes.length} owned Shape{selectedShapes.length === 1 ? "" : "s"} backing</span><strong>{eth(selectedBacking)}</strong></div>}
+                {quote && <>
+                  <div className="packs-summary-row"><span>New Shape backing</span><strong>{eth(quote.backingWei)}</strong></div>
+                  <div className="packs-summary-row"><span>Mint fees</span><strong>{eth(quote.feeWei)}</strong></div>
+                  <div className="packs-summary-row"><span>Pack backing after</span><strong>{eth((willCreate ? 0n : addTarget?.valueWei ?? 0n) + selectedBacking + quote.backingWei)}</strong></div>
+                  <div className="packs-summary-row is-total"><span>Wallet payment</span><strong>{eth(quote.totalWei)}</strong></div>
+                </>}
+              </div>
+              {quoteError && <p className="packs-alert" role="alert">{quoteError}</p>}
+              {willCreate && hasInputs && quote && !meetsFloor && <p className="packs-alert">A new pack needs at least {eth(settings.minimum)} of backing.</p>}
+              {activeShapes.length > 0 && <p className="packs-small">Owned Shapes require approval first. If your wallet asks for approval, press the pack action again afterward.</p>}
+              <button type="button" className="btn-filled packs-action" disabled={!canSubmit} onClick={() => void submit()}>
+                {willCreate ? "CREATE PACK" : "ADD TO PACK"}
+              </button>
+            </aside>
+          </div>
+        </Section>
+
         <Section title="YOUR PACKS">
           {packs.length === 0 ? <p>This wallet has no live packs or unfinished pack claims.</p> : (
             <div className="packs-list">{packs.map((pack) => <button key={pack.id.toString()} type="button"
@@ -273,16 +368,15 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
               aria-pressed={selectedPackId === pack.id}
               onClick={() => {setSelectedPackId(pack.id); setUnavailableExit(null); setStatus(idle);}}>
               <span className="packs-art">{pack.image ? <img src={pack.image} alt="" /> : <span>{pack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
-              <span className="packs-card-title"><strong>{pack.name}</strong><small>PACK #{pack.id.toString()}</small></span>
+              <span className="packs-card-title"><strong>{pack.name}</strong></span>
               <span>{pack.kind === "live" ? "LIVE" : "UNSEALED CLAIM"} · {pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? pack.backings.reduce((a, b) => a + b, 0n))}</span>
             </button>)}</div>
           )}
-        </Section>
-
-        {selectedPack && <Section title={`PACK #${selectedPack.id.toString()}`}>
+          {selectedPack && <div className="packs-selected-detail">
+          <p className="launch-kicker">SELECTED PACK</p>
           <div className="packs-detail-heading">
             <span className="packs-art">{selectedPack.image ? <img src={selectedPack.image} alt={`${selectedPack.name} artwork`} /> : <span>{selectedPack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
-            <div><p className="launch-kicker">{selectedPack.kind === "live" ? "Shape Pack token" : "Unsealed claim"} · #{selectedPack.id.toString()}</p>
+            <div><p className="launch-kicker">{selectedPack.kind === "live" ? "Shape Pack token" : "Unsealed claim"}</p>
               <h2>{selectedPack.name}</h2></div>
           </div>
           <div className="packs-facts">
@@ -295,7 +389,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             const shape = shapesById.get(id);
             return <a href={`/shape/${id}`} key={id.toString()}>
               {shape && <Art src={shape.image} alt="" width={52} />}
-              <span className="packs-shape-name"><strong>{shape?.meta.name ?? `Shape #${id}`}</strong><small>Shape #{id.toString()}</small></span>
+              <span className="packs-shape-name"><strong>{shape?.meta.name ?? `Shape #${id}`}</strong></span>
               <span className="packs-shape-backing">{eth(selectedPack.backings[i] ?? 0n)}</span>
             </a>;
           })}</div>
@@ -332,22 +426,21 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
               <p className="packs-small">Repeat until all {selectedPack.shapeIds.length} remaining Shapes are claimed. If a claim is too large for a block, lower the count.</p>
             </>}
           </div>
-        </Section>}
+        </div>}
+        </Section>
 
-        <Section title="BUILD A PACK">
-          <div className="shape-mode-toggle" role="group" aria-label="Pack action">
-            <button type="button" aria-pressed={mode === "create"} onClick={() => setMode("create")}>CREATE</button>
-            <button type="button" aria-pressed={mode === "add"} disabled={!packs.some((pack) => pack.kind === "live")}
-              onClick={() => {setMode("add"); setSelectedPackId((id) => packs.find((pack) => pack.id === id && pack.kind === "live")?.id ?? packs.find((pack) => pack.kind === "live")?.id ?? null);}}>ADD TO PACK</button>
-          </div>
-          {mode === "add" && <p className="packs-small">Adding to pack #{selectedPack?.id.toString() ?? "—"}. Select a live pack above to change the target.</p>}
-          <h2>Shapes you own</h2>
-          {!data ? <p>Reading your Shapes…</p> : owned.length === 0 ? <p>No eligible Shapes in this wallet. Mint new Shapes below.</p> : (
+        <Section title="YOUR SHAPES">
+          <p className="packs-small">Shapes in your wallet that are not in packs. Select one to include it in Add to Pack.</p>
+          {!data ? <p>Reading your Shapes…</p> : owned.length === 0 ? <p>No eligible unpacked Shapes in this wallet.</p> : (
             <div className="packs-picks">{owned.map((token) => {
-              const selected = selectedShapes.includes(token.id);
+              const selected = selectedShapes.includes(token.id) && mode === "add";
               return <button key={token.id.toString()} type="button" aria-pressed={selected}
                 className={`compose-select-card${selected ? " selected" : ""}`}
-                onClick={() => setSelectedShapes((ids) => ids.includes(token.id) ? ids.filter((id) => id !== token.id) : [...ids, token.id])}>
+                onClick={() => {
+                  setMode("add");
+                  setSelectedShapes((ids) => selected ? ids.filter((id) => id !== token.id) : [...ids, token.id]);
+                  document.getElementById("packs-build-anchor")?.scrollIntoView({behavior: "smooth", block: "start"});
+                }}>
                 <div className="packs-pick-art"><Art src={token.image} alt="" />
                   {selected && <span className="compose-selection-badge">SELECTED</span>}
                 </div>
@@ -355,29 +448,6 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
               </button>;
             })}</div>
           )}
-          <h2>Mint new Shapes into the pack</h2>
-          <div className="packs-denominations">{settings.denominations.map((amount, i) => <div className="packs-denomination" key={i}>
-            <label htmlFor={`packs-denom-${i}`}>{eth(amount)}</label>
-            <div className="packs-stepper">
-              <button type="button" className="btn-outline" aria-label={`Decrease ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) <= 0}
-                onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, -1, 0, 0xffffffff) : value))}>−</button>
-              <input id={`packs-denom-${i}`} className="qty-input" type="number" min="0" max="4294967295" step="1" value={counts[i] ?? 0}
-                onChange={(event) => setCounts((old) => old.map((value, index) => index === i ? Number(event.target.value) : value))} />
-              <button type="button" className="btn-outline" aria-label={`Increase ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) >= 0xffffffff}
-                onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, 1, 0, 0xffffffff) : value))}>+</button>
-            </div>
-          </div>)}</div>
-          {quote && <div className="packs-facts">
-            <span><strong>{eth(selectedBacking + quote.backingWei)}</strong> total backing</span>
-            <span><strong>{eth(quote.feeWei)}</strong> mint fees</span>
-            <span><strong>{eth(quote.totalWei)}</strong> exact wallet payment</span>
-          </div>}
-          {quoteError && <p className="packs-alert" role="alert">{quoteError}</p>}
-          {mode === "create" && hasInputs && quote && !meetsFloor && <p className="packs-alert">A new pack needs at least {eth(settings.minimum)} of backing.</p>}
-          <p className="packs-small">Owned Shapes require approval before packing. The first action may ask your wallet to approve ShapePacks on the Shapes collection; then press the pack action again.</p>
-          <button type="button" className="btn-filled packs-action" disabled={!canSubmit} onClick={() => void submit()}>
-            {mode === "create" ? "CREATE PACK" : "ADD TO PACK"}
-          </button>
         </Section>
       </>}
 

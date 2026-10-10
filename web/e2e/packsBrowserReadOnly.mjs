@@ -49,7 +49,9 @@ try {
   await page.getByText(/minimum new pack backing: 0\.0003 ETH/i).waitFor({timeout: 60_000});
   assert.equal(await page.title(), "Shape Packs · Shapes");
   await page.getByText("YOUR PACKS").waitFor({timeout: 60_000});
-  const packCard = page.getByRole("button", {name: /Shape Pack 3.*PACK #3/});
+  assert.deepEqual((await page.locator(".site-section-label").allTextContents()).filter((label) =>
+    ["BUILD A PACK", "YOUR PACKS", "YOUR SHAPES"].includes(label)), ["BUILD A PACK", "YOUR PACKS", "YOUR SHAPES"]);
+  const packCard = page.getByRole("button", {name: /Shape Pack 3.*LIVE/});
   await packCard.waitFor({timeout: 60_000});
   assert.equal(await packCard.locator(".packs-art img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
   await packCard.click();
@@ -77,10 +79,12 @@ try {
   assert.equal(await chunkedExit.count(), 0);
   await page.getByRole("button", {name: "REDEEM PACK"}).waitFor();
   await page.getByRole("button", {name: "CREATE", exact: true}).click();
-  const denominationInputs = page.locator(".packs-denominations input");
+  const denominationInputs = page.locator(".packs-denomination-groups input");
   assert.equal(await denominationInputs.count(), 9);
   await denominationInputs.first().fill("3");
   await page.getByText("0.00033 ETH").waitFor({timeout: 30_000});
+  assert.equal(await page.locator(".packs-preview-card").count(), 3);
+  assert.equal(await page.locator(".packs-draft-art").getAttribute("aria-label"), "3 Shapes in draft pack");
   await page.locator(".packs-denomination .btn-outline").nth(1).click();
   assert.equal(await denominationInputs.first().inputValue(), "4");
   await page.locator(".packs-denomination .btn-outline").first().click();
@@ -89,12 +93,20 @@ try {
     button.textContent?.trim() === "CREATE PACK" && !button.disabled), undefined, {timeout: 30_000});
   assert.equal(await page.getByRole("button", {name: "CREATE PACK"}).isEnabled(), true);
   await page.getByRole("group", {name: "Pack action"}).getByRole("button", {name: "ADD TO PACK"}).click();
-  await page.getByText("Adding to pack #3.").waitFor();
+  await page.getByRole("group", {name: "Pack destination"}).getByRole("button", {name: "Shape Pack 3"}).click();
   assert.equal(await page.getByRole("button", {name: "ADD TO PACK"}).last().isEnabled(), true);
+  const draftBeforeOwned = Number((await page.locator(".packs-draft-art").getAttribute("aria-label")).split(" ")[0]);
   await page.waitForFunction(() => !document.body.innerText.includes("Reading your Shapes…"), undefined, {timeout: 90_000});
   const shapePick = page.locator(".packs-picks .compose-select-card").first();
   await shapePick.click();
   assert.equal(await shapePick.getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator(".packs-draft-art").getAttribute("aria-label"), `${draftBeforeOwned + 1} Shapes in draft pack`);
+  await page.getByRole("group", {name: "Pack destination"}).getByRole("button", {name: "NEW PACK"}).click();
+  await page.getByRole("button", {name: "CREATE PACK"}).waitFor();
+  await denominationInputs.first().fill("0");
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) =>
+    button.textContent?.trim() === "CREATE PACK" && !button.disabled), undefined, {timeout: 30_000});
+  assert.equal(await page.locator(".packs-draft-art").getAttribute("aria-label"), "1 Shape in draft pack");
   await shapePick.click();
   assert.equal(await shapePick.getAttribute("aria-pressed"), "false");
   if (process.env.E2E_SCREENSHOT_DESKTOP) await page.screenshot({path: process.env.E2E_SCREENSHOT_DESKTOP, fullPage: true});

@@ -20,6 +20,7 @@ export const packsAbi = [
     "function shapes() view returns (address)",
     "function MIN_PACK_VALUE() view returns (uint256)",
     "function totalMinted() view returns (uint256)",
+    "function previewCardLimit() view returns (uint256)",
     "function ownerOf(uint256 packId) view returns (address)",
     "function tokenURI(uint256 packId) view returns (string)",
     "function claimantOf(uint256 packId) view returns (address)",

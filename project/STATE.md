@@ -2,7 +2,7 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-10 (P4 Sepolia Packs v3 deployment target; P3 Shapes mainnet launch remains complete).
+Last updated: 2026-10-10 (P4 Sepolia Packs v3 site hierarchy and builder; P3 Shapes mainnet launch remains complete).
 
 ## Current website change
 
@@ -21,6 +21,13 @@ Pack cards and details read the live pack NFT name and passive SVG artwork from 
 contents use existing Shape metadata for thumbnails and names. Unsealed claims retain an explicit
 placeholder because their pack NFT has been burned. A read-only Sepolia browser check covers the
 artwork, labels and mobile layout.
+The Packs page now leads with Build a Pack, nests the selected pack detail under Your Packs, and
+lists eligible unpacked Shapes in Your Shapes. Create mints into a new pack; Add to Pack can target
+an existing pack or a new one, combining owned and newly minted Shapes. The builder groups onchain
+denominations, shows an illustrative live fan (known Shape art or marked sample art for unminted
+Shapes), and keeps itemized backing, fees, and exact wallet payment in one vertical summary.
+Pack and Shape labels no longer repeat their token numbers. The read-only browser walkthrough
+covers this hierarchy, draft changes, existing and new targets, and mobile layout.
 Pack actions now use the site's filled and outline button treatments, selectable pack and Shape
 cards follow the gallery/compose selection style, and quantities use the Mint stepper pattern.
 The Packs preflight limits buffered gas to Sepolia's EIP-7825 per-transaction cap as well as the
