@@ -49,6 +49,16 @@ try {
   await page.getByText(/minimum new pack backing: 0\.0003 ETH/i).waitFor({timeout: 60_000});
   assert.equal(await page.title(), "Shape Packs · Shapes");
   await page.getByText("YOUR PACKS").waitFor({timeout: 60_000});
+  await page.waitForFunction(() => {
+    const images = [...document.querySelectorAll(".packs-denomination-thumb img")];
+    return images.length === 9 && images.every((image) => image.complete && image.naturalWidth > 0);
+  }, undefined, {timeout: 60_000});
+  assert.equal(await page.locator(".packs-group-label").count(), 0);
+  await page.setViewportSize({width: 3015, height: 900});
+  assert.ok((await page.locator(".packs-builder-grid").boundingBox()).width <= 1221);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  if (process.env.E2E_SCREENSHOT_WIDE) await page.screenshot({path: process.env.E2E_SCREENSHOT_WIDE, fullPage: true});
+  await page.setViewportSize({width: 1280, height: 800});
   assert.deepEqual((await page.locator(".site-section-label").allTextContents()).filter((label) =>
     ["BUILD A PACK", "YOUR PACKS", "YOUR SHAPES"].includes(label)), ["BUILD A PACK", "YOUR PACKS", "YOUR SHAPES"]);
   const packCard = page.getByRole("button", {name: /Shape Pack 3.*LIVE/});

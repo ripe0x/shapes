@@ -58,6 +58,7 @@ export const packsAbi = [
 ] as const;
 
 export const packsShapesAbi = parseAbi([
+  "function collection() view returns (address)",
   "function denominationCount() view returns (uint8)",
   "function denominationAt(uint8 index) view returns (uint256)",
   "function mintFee() view returns (uint256)",
@@ -67,6 +68,8 @@ export const packsShapesAbi = parseAbi([
   "function getApproved(uint256 tokenId) view returns (address)",
   "function setApprovalForAll(address operator,bool approved)",
 ]);
+
+export const packsCollectionAbi = parseAbi(["function card(uint8 denomIndex) view returns (string)"]);
 
 export const packsClient = createPublicClient({chain: sepolia, transport: http(PACKS_RPC)});
 
