@@ -13,8 +13,9 @@ Objective: release ShapePacks on `shapes.ripe.wtf/packs` using mainnet Shapes
 The separate `shapes-sepolia.netlify.app` and local Sepolia preview retain D-52's Sepolia
 contracts. The prior Sepolia-only UI and no-publication rule are superseded by D-53.
 
-Phase: P4 integration. Candidate: not frozen; current edits select Packs contracts from the site's
-Shapes chain, use the matching public RPC fallback and wallet chain, and guard the production
+Phase: P4 release candidate `fcccca3ab7eaea13c34be3b6e3df551905b73f94`, code frozen.
+The site selects Packs contracts from the Shapes chain, uses the matching public RPC fallback
+and wallet chain, and guards the production
 hostname against a Sepolia build. No additional Packs-specific Netlify variable is required.
 The production Netlify site currently has `SHAPES_LADDER=mainnet`, `SHAPES_SITE_MODE=app`,
 `NEXT_PUBLIC_SITE_URL=https://shapes.ripe.wtf`, the mainnet deployment record by default,
@@ -35,9 +36,14 @@ live packs held by the test account. Read-only `eth_call` passed open, redeem, u
 successful merge; its browser check exercised live merge preflight with signing blocked. The
 mainnet local browser check passed with raw-RPC fallback because the private indexer token is
 absent locally. Neither check sent a transaction.
+Focused preview tests, web/preview TypeScript checks, and changed-file lint passed. The single
+mainnet Netlify production-profile build and production-build browser rehearsal passed on the
+frozen candidate. Independent read-only review found no concrete defect; see
+`project/reviews/packs-mainnet-fcccca3.md`. The live production indexer proxy returned chain 1
+data through its configured server-side token on 2026-10-10.
 
-Next gate: focused mainnet and Sepolia UI checks, one frozen production-profile build, candidate
-review, PR merge, then Netlify production readback and Packs smoke test. Preserve the unrelated
+Next gate: update PR #140, verify its Netlify deploy preview and checks, merge to `main`, then
+perform Netlify production readback and Packs smoke test. Preserve the unrelated
 untracked `indexer/deployments.json` in the primary checkout.
 
 ## Phase
