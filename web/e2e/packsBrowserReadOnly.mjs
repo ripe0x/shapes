@@ -132,8 +132,12 @@ try {
   await page.locator(".site-mobile-nav-panel").getByRole("button", {name: "PACKS"}).waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.E2E_SCREENSHOT) await page.screenshot({path: process.env.E2E_SCREENSHOT, fullPage: true});
+  const netlifyTelemetry428 = errors.some((error) => error.includes("428 https://app.netlify.com/access-control/"));
   assert.deepEqual(errors.filter((error) => !error.includes("429 https://gateway.tenderly.co/public/sepolia") &&
     !error.includes("server responded with a status of 429") &&
+    !(baseUrl.includes(".netlify.app") &&
+      (error.includes("428 https://app.netlify.com/access-control/") ||
+        (netlifyTelemetry428 && error.includes("server responded with a status of 428")))) &&
     !(allowLocalIndexer401 && (error.includes(`401 ${baseUrl}/api/indexer?`) ||
       error.includes("server responded with a status of 401")))), []);
 } finally {
