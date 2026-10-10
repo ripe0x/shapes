@@ -2089,6 +2089,15 @@ button {
 .packs-pick-meta { display: flex; flex-direction: column; gap: 4px; margin-top: 11px; font-size: 11px; }
 .packs-pick-meta strong { font-weight: 500; }
 .packs-pick-meta small { color: var(--muted); font-size: 11px; }
+.packs-merge { margin-top: 26px; padding-top: 20px; border-top: 1px solid #d8d8d1; }
+.packs-merge h2 { margin-top: 0; }
+.packs-merge-sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 240px)); gap: 20px 16px; margin: 22px 8px; }
+.packs-merge-source { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.packs-merge-art { display: grid; place-items: center; flex: 0 0 64px; width: 64px; height: 64px; overflow: hidden; color: var(--muted); font-size: 8px; text-align: center; }
+.packs-merge-art img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.packs-merge-meta { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 11px; }
+.packs-merge-meta strong { font-weight: 500; }
+.packs-merge-meta small { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .packs-exits { margin-top: 26px; padding-top: 20px; border-top: 1px solid #d8d8d1; }
 .packs-exits p { font-size: 12px; }
 .packs-claim-stepper { margin: 8px 0 14px; }

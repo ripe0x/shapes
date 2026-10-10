@@ -11,6 +11,8 @@ const ERROR_TEXT: Record<string, (args: readonly unknown[]) => string> = {
   EthTransferFailed: () => "The ETH transfer failed. Nothing was burned.",
   InvalidRecipient: () => "The recipient cannot be the zero address.",
   NoShapes: () => "Select at least one owned or newly minted Shape.",
+  NoSourcePacks: () => "Select at least one source pack to merge.",
+  CannotMergePackIntoItself: () => "A pack cannot be merged into itself.",
   MakeupLengthMismatch: () => "The mint makeup no longer matches the contract's denominations. Reload the page.",
   WorthlessShape: (a) => `Shape #${a[0]} has no backing and cannot be packed.`,
   PackBelowMinimum: (a) => `A new pack needs at least ${formatEther(a[1] as bigint)} ETH of backing.`,

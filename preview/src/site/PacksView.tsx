@@ -10,7 +10,7 @@ import {PACK_PREVIEW_CANVAS, PACK_PREVIEW_MAX_CARDS, packPreviewSlot} from "./pa
 import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import {
-  PACKS_ADDRESS, PACKS_CHAIN_ID, PACKS_SHAPES, creationMeetsMinimum,
+  PACKS_ADDRESS, PACKS_CHAIN_ID, PACKS_RENDERER, PACKS_SHAPES, creationMeetsMinimum,
   loadOwnedPacks, mintCountsValid, packsAbi, packsClient, packsGasBudget, packsShapesAbi,
   type MintQuote, type OwnedPack,
 } from "./packs";
@@ -40,6 +40,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const [settings, setSettings] = React.useState<Settings | null>(null);
   const [packs, setPacks] = React.useState<OwnedPack[]>([]);
   const [selectedPackId, setSelectedPackId] = React.useState<bigint | null>(null);
+  const [mergeSourceIds, setMergeSourceIds] = React.useState<bigint[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [reload, setReload] = React.useState(0);
@@ -64,6 +65,11 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const supported = dep.chainId === PACKS_CHAIN_ID && same(dep.shapes, PACKS_SHAPES);
   const wrongChain = isConnected && chainId !== PACKS_CHAIN_ID;
   const selectedPack = packs.find((pack) => pack.id === selectedPackId) ?? null;
+  const mergeCandidates = packs.filter((pack) => pack.kind === "live" && pack.id !== selectedPackId);
+  const mergeSources = mergeCandidates.filter((pack) => mergeSourceIds.includes(pack.id));
+  const canMerge = supported && !!address && !wrongChain && !loadError && !loading &&
+    status.kind !== "working" && selectedPack?.kind === "live" && mergeSources.length > 0 &&
+    mergeSources.length === mergeSourceIds.length;
   const addTarget = packs.find((pack) => pack.id === addTargetId && pack.kind === "live") ?? null;
   const willCreate = mode === "create" || addTargetId === null;
   const singleExitUnavailable = unavailableExit?.packId === selectedPack?.id && unavailableExit?.kind === exitKind;
@@ -125,6 +131,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     setPacks([]);
     setSelectedShapes([]);
     setSelectedPackId(null);
+    setMergeSourceIds([]);
     setAddTargetId(null);
     setCounts((current) => current.map(() => 0));
     setMode("create");
@@ -142,8 +149,13 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     setLoading(true);
     setLoadError(null);
     (async () => {
-      const [linkedShapes, minimum, totalMinted, denominationCount, mintFee, previewCardLimit] = await packsClient.multicall({contracts: [
+      const [packCode, rendererCode] = await Promise.all([
+        packsClient.getCode({address: PACKS_ADDRESS}), packsClient.getCode({address: PACKS_RENDERER}),
+      ]);
+      if (!packCode || packCode === "0x" || !rendererCode || rendererCode === "0x") throw new Error("The new Sepolia Packs deployment is not visible at the supplied contract addresses yet. Retry after deployment confirmation.");
+      const [linkedShapes, linkedRenderer, minimum, totalMinted, denominationCount, mintFee, previewCardLimit] = await packsClient.multicall({contracts: [
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "shapes"},
+        {address: PACKS_ADDRESS, abi: packsAbi, functionName: "renderer"},
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "MIN_PACK_VALUE"},
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "totalMinted"},
         {address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "denominationCount"},
@@ -151,6 +163,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
         {address: PACKS_ADDRESS, abi: packsAbi, functionName: "previewCardLimit"},
       ], allowFailure: false});
       if (!same(linkedShapes, PACKS_SHAPES)) throw new Error("The Packs contract points to an unexpected Shapes contract.");
+      if (!same(linkedRenderer, PACKS_RENDERER)) throw new Error("The Packs contract points to an unexpected pack renderer.");
       const denominations = await packsClient.multicall({contracts: Array.from({length: denominationCount}, (_, i) => ({
         address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "denominationAt", args: [i],
       } as const)), allowFailure: false});
@@ -158,12 +171,15 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       if (!active) return;
       setSettings({minimum, totalMinted, denominations, mintFee, previewCardLimit});
       setPacks(found);
+      setMergeSourceIds([]);
       setSelectedPackId((current) => found.some((pack) => pack.id === current) ? current : found[0]?.id ?? null);
       setAddTargetId((current) => found.some((pack) => pack.id === current && pack.kind === "live") ? current : found.find((pack) => pack.kind === "live")?.id ?? null);
       setCounts((current) => current.length === denominations.length ? current : denominations.map(() => 0));
       setLoading(false);
     })().catch((error) => {
       if (!active) return;
+      setSettings(null);
+      setPacks([]);
       setLoadError(describeTxError(error));
       setLoading(false);
     });
@@ -195,6 +211,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     if (gas > packsGasBudget(block.gasLimit)) {
       const next = name === "open" || name === "redeem" ? "Unseal and claim in chunks."
         : name === "claim" || name === "claimEth" ? "Use a smaller claim."
+          : name === "mergePacks" ? "Merge fewer source packs, or unseal and claim a source in chunks before adding its Shapes."
           : name === "createPack" || name === "addToPack" ? "Use fewer Shapes in this transaction." : "";
       throw new Error(`The buffered gas estimate exceeds the safe Sepolia transaction budget. ${next}`.trim());
     }
@@ -296,6 +313,26 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     }
   };
 
+  const merge = async () => {
+    if (!canMerge || !address || !selectedPack) return;
+    const targetId = selectedPack.id;
+    const sourceIds = mergeSources.map((pack) => pack.id);
+    setStatus({kind: "working", message: "Checking pack ownership and merge gas on Sepolia…"});
+    try {
+      const owners = await packsClient.multicall({contracts: [targetId, ...sourceIds].map((id) => ({
+        address: PACKS_ADDRESS, abi: packsAbi, functionName: "ownerOf", args: [id],
+      } as const)), allowFailure: false});
+      if (owners.some((owner) => !same(owner, address))) throw new Error("This wallet no longer owns every selected live pack. Reload and review the selection.");
+      const hash = await send("mergePacks", "packs", [targetId, sourceIds]);
+      if (!walletStillReady(address)) return;
+      setMergeSourceIds([]);
+      setStatus({kind: "done", message: `${sourceIds.length} pack${sourceIds.length === 1 ? "" : "s"} merged into the selected pack.`, hash});
+      setReload((n) => n + 1);
+    } catch (error) {
+      if (walletStillReady(address)) setStatus({kind: "error", message: describeTxError(error)});
+    }
+  };
+
   if (!supported) return (
     <main className="packs-page">
       <Section title="PACKS"><h1>Shape Packs</h1><p>Packs are available on Sepolia only. No ShapePacks contract is deployed on mainnet.</p>
@@ -309,7 +346,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
       <Section title="PACKS">
         <p className="launch-kicker">Sepolia · Shape Packs</p>
         <h1>Keep Shapes together.</h1>
-        <p>Bundle Shapes you own, mint new ones into a pack, or combine both. Open to get the Shapes back; redeem to receive their ETH backing.</p>
+        <p>Bundle Shapes you own, mint new ones, or merge packs you own. Open to get the Shapes back; redeem to receive their ETH backing.</p>
         <p className="packs-small">Testnet only · ShapePacks <a href={`https://sepolia.etherscan.io/address/${PACKS_ADDRESS}`} target="_blank" rel="noreferrer">{PACKS_ADDRESS} ↗</a></p>
         {!isConnected && <button type="button" className="btn-filled packs-action" onClick={onConnect}>CONNECT WALLET</button>}
         {wrongChain && <div className="packs-alert">Switch your wallet to Sepolia to use Packs. <button type="button" onClick={() =>
@@ -404,7 +441,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             <div className="packs-list">{packs.map((pack) => <button key={pack.id.toString()} type="button"
               className={selectedPackId === pack.id ? "packs-card is-selected" : "packs-card"}
               aria-pressed={selectedPackId === pack.id}
-              onClick={() => {setSelectedPackId(pack.id); setUnavailableExit(null); setStatus(idle);}}>
+              onClick={() => {setSelectedPackId(pack.id); setMergeSourceIds([]); setUnavailableExit(null); setStatus(idle);}}>
               <span className="packs-art">{pack.image ? <img src={pack.image} alt="" /> : <span>{pack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
               <span className="packs-card-title"><strong>{pack.name}</strong></span>
               <span>{pack.kind === "live" ? "LIVE" : "UNSEALED CLAIM"} · {pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? pack.backings.reduce((a, b) => a + b, 0n))}</span>
@@ -431,6 +468,23 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
               <span className="packs-shape-backing">{eth(selectedPack.backings[i] ?? 0n)}</span>
             </a>;
           })}</div>
+          {selectedPack.kind === "live" && mergeCandidates.length > 0 && <div className="packs-merge">
+            <h2>Merge packs</h2>
+            <p className="packs-small">Select packs to merge into {selectedPack.name}. This pack keeps its token; each selected source pack token is burned. Their Shapes and backing join this pack without leaving Packs custody.</p>
+            <div className="packs-merge-sources" role="group" aria-label="Source packs to merge">
+              {mergeCandidates.map((pack) => {
+                const selected = mergeSourceIds.includes(pack.id);
+                return <button key={pack.id.toString()} type="button" aria-pressed={selected}
+                  className={`compose-select-card packs-merge-source${selected ? " selected" : ""}`}
+                  onClick={() => setMergeSourceIds((ids) => selected ? ids.filter((id) => id !== pack.id) : [...ids, pack.id])}>
+                  <span className="packs-merge-art">{pack.image ? <img src={pack.image} alt="" /> : "ARTWORK UNAVAILABLE"}</span>
+                  <span className="packs-merge-meta"><strong>{pack.name}</strong><small>{pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? 0n)}</small></span>
+                </button>;
+              })}
+            </div>
+            {mergeSources.length > 0 && <p className="packs-small">After merge: {selectedPack.shapeIds.length + mergeSources.reduce((count, pack) => count + pack.shapeIds.length, 0)} Shapes · {eth((selectedPack.valueWei ?? 0n) + mergeSources.reduce((value, pack) => value + (pack.valueWei ?? 0n), 0n))} backing. {mergeSources.length} source pack token{mergeSources.length === 1 ? "" : "s"} will be burned.</p>}
+            <button type="button" className="btn-filled packs-action" disabled={!canMerge} onClick={() => void merge()}>MERGE PACKS</button>
+          </div>}
           <div className="packs-exits">
             <div className="shape-mode-toggle" role="group" aria-label="Exit type">
               <button type="button" aria-pressed={exitKind === "open"} onClick={() => {

@@ -5,7 +5,8 @@ import {safeMetadataFromTokenURI} from "./ogArtwork";
 // The Sepolia deployment is intentionally separate from Shapes' mainnet deployment record.
 export const PACKS_CHAIN_ID = 11155111;
 export const PACKS_SHAPES = "0x6c2f9c00f44fbbf141dd166979903004b80d5f99" as const;
-export const PACKS_ADDRESS = "0xd1cfc13abcbb370d381ac192aeb6f2e1b414022a" as const;
+export const PACKS_ADDRESS = "0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45" as const;
+export const PACKS_RENDERER = "0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60" as const;
 export const PACKS_RPC = "https://gateway.tenderly.co/public/sepolia";
 // EIP-7825 caps one Sepolia transaction at 2^24 gas, regardless of the block gas limit.
 export const SEPOLIA_TX_GAS_CAP = 1n << 24n;
@@ -18,6 +19,7 @@ export function packsGasBudget(blockGasLimit: bigint): bigint {
 export const packsAbi = [
   ...parseAbi([
     "function shapes() view returns (address)",
+    "function renderer() view returns (address)",
     "function MIN_PACK_VALUE() view returns (uint256)",
     "function totalMinted() view returns (uint256)",
     "function previewCardLimit() view returns (uint256)",
@@ -28,12 +30,15 @@ export const packsAbi = [
     "function quoteMint(uint32[] mintCounts) view returns (uint256 backingWei,uint256 feeWei,uint256 totalWei,uint256 shapeCount)",
     "function createPack(uint256[] shapeIds,uint32[] mintCounts) payable returns (uint256)",
     "function addToPack(uint256 packId,uint256[] shapeIds,uint32[] mintCounts) payable",
+    "function mergePacks(uint256 targetPackId,uint256[] sourcePackIds)",
     "function open(uint256 packId)",
     "function redeem(uint256 packId)",
     "function unseal(uint256 packId,address claimant)",
     "function claim(uint256 packId,uint256 maxCount)",
     "function claimEth(uint256 packId,uint256 maxCount,address recipient)",
     "error NoShapes()",
+    "error NoSourcePacks()",
+    "error CannotMergePackIntoItself(uint256 packId)",
     "error MakeupLengthMismatch()",
     "error IncorrectPayment(uint256 expected,uint256 provided)",
     "error WorthlessShape(uint256 shapeId)",

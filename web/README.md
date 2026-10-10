@@ -2,15 +2,17 @@ Next.js site for Shapes.
 
 ## Shape Packs
 
-`/packs` is in the shared site navigation. On the Sepolia build it uses ShapePacks
-`0xd1cfc13abcbb370d381ac192aeb6f2e1b414022a` (the v3 deployment in
-`shape-packs/deployments/11155111-v3.json`) with Shapes
+`/packs` is in the shared site navigation. On the Sepolia build it targets ShapePacks
+`0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45` with Shapes
 `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` and Tenderly's public Sepolia RPC.
-The pack contract uses renderer `0xfef50a388bde6b222c6f5fecafe590bf561c8bda` for its
-onchain token artwork; the site reads that artwork through `tokenURI`.
+The pack contract must point to renderer `0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60`;
+the site reads its token artwork through `tokenURI`. If either new address has no code yet,
+the page shows a deployment-pending message and retry control.
 The page reads the creation floor, denomination table, mint fee and exact mint quote from the
 contracts. It lets a wallet create from owned Shapes, newly minted Shapes or both; add to a live
-pack; inspect contents and backing; and open for Shapes or redeem for ETH. Large packs can be
+pack; merge other live packs owned by the wallet into a selected target; inspect contents and
+backing; and open for Shapes or redeem for ETH. A merge burns the source pack tokens while the
+target keeps its ID and receives their Shapes and backing, with no ETH payment. Large packs can be
 unsealed and claimed in chunks. On mainnet it shows a Sepolia-only message because ShapePacks is
 not deployed there.
 
@@ -21,10 +23,14 @@ node web/e2e/packsLiveReadOnly.mjs
 NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia SHAPES_LADDER=testnet npm run build --workspace web
 NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia SHAPES_LADDER=testnet npm run start --workspace web -- --port 3191
 E2E_BASE_URL=http://127.0.0.1:3191 node web/e2e/packsBrowserReadOnly.mjs
+E2E_BASE_URL=http://127.0.0.1:3191 node web/e2e/packsMergeBrowserReadOnly.mjs
 ```
 
 The browser check uses a wallet stub that rejects every signing and transaction request. Set
 `PLAYWRIGHT_CHROME_PATH` to an installed Chrome executable if Playwright's browser is unavailable.
+The merge browser fixture proxies existing read-only Sepolia pack data into the new address and
+stubs only the merge simulation and gas estimate. It checks merge selection and wallet calldata
+without submitting a transaction; a successful live merge simulation requires owned source packs.
 
 It imports all UI and chain logic from `../preview/src` via the `@shared` alias (see
 `next.config.ts`), so the site cannot drift from the parity-tested canonical renderer.

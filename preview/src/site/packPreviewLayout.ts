@@ -1,4 +1,4 @@
-// ShapePackRenderer v3 positions cards on a 3840-square canvas. Keep the draft fan
+// ShapePackRenderer positions cards on a 3840-square canvas. Keep the draft fan
 // in these same slots so an unchanged live pack has the same layout as its token image.
 export const PACK_PREVIEW_CANVAS = 3840;
 export const PACK_PREVIEW_MAX_CARDS = 12;

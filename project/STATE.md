@@ -2,21 +2,34 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-10 (P4 Sepolia Packs v3 site hierarchy and builder; P3 Shapes mainnet launch remains complete).
+Last updated: 2026-10-10 (P4 Sepolia Packs new deployment and merge UI; P3 Shapes mainnet launch remains complete).
 
 ## Current website change
 
-Phase: P4 Sepolia Packs website integration, locally verified. Candidate: the commit carrying this
-entry. The `/packs` route uses the v3 Sepolia ShapePacks deployment
-`0xd1cfc13abcbb370d381ac192aeb6f2e1b414022a` and the shared site wallet;
-mainnet shows a Sepolia-only state because no mainnet ShapePacks contract exists. The v3 switch
-passed 279 preview tests, web lint, the Sepolia production build, live Tenderly reads for six
-packs and the 0.0003 ETH minimum, six `eth_call` write simulations, and the local desktop/mobile
-Sepolia browser walkthrough. Earlier mainnet build and browser evidence covers the unchanged
-Sepolia-only state. No unsealed pack exists yet, so a successful live `claim` or `claimEth`
-simulation remains untested; the pre-unseal `NothingToClaim` branch was verified. No contract was
-deployed or transaction sent. The website is not published from this change. The previously
-requested v2 deployment has no minted packs; D-47 records the owner's choice of v3.
+Phase: P4 Sepolia Packs website integration. Candidate: the commit carrying this entry. The
+`/packs` route targets owner-supplied Sepolia ShapePacks
+`0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45` with renderer
+`0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60` and the shared site wallet; mainnet shows a
+Sepolia-only state. The new interface adds direct owner-only merging of live source packs into a
+selected live target. The UI selects one or more sources, shows the resulting Shape count and
+backing, rechecks ownership, and simulates and estimates gas before signing. Source tokens burn;
+the target token remains. The new renderer's card-slot formulas match the previous preview.
+At block 11886564, both supplied addresses returned no bytecode on Tenderly and PublicNode;
+both were live by block 11886608. The page has a deployment-pending state with retry for any
+future no-code interval. Tenderly reads confirmed the pack's Shapes and renderer pointers,
+0 minted packs, 0.0003 ETH floor, 9 denominations and a 12-card preview limit. Read-only
+`eth_call` succeeded for exact-quote creation and Shape approval, and decoded the empty-source
+merge rejection. A successful live merge simulation needs at least two packs owned by one
+account; none exist yet. The browser fixture checks source selection, burn summary, merge calldata,
+wallet error handling and mobile layout without signing. The current zero-pack Sepolia browser
+walkthrough, 279 preview tests, web lint and the Sepolia production build pass.
+No contract was deployed or transaction sent by this site work. The website is not published.
+
+The prior v3 target `0xd1cfc13abcbb370d381ac192aeb6f2e1b414022a` passed 279 preview
+tests, web lint, the Sepolia production build, live Tenderly reads for six packs and the 0.0003
+ETH minimum, six `eth_call` write simulations, and the local desktop/mobile browser walkthrough.
+That evidence is historical for the new deployment. No unsealed pack exists in that prior state,
+so a successful live `claim` or `claimEth` simulation remains untested.
 Pack cards and details read the live pack NFT name and passive SVG artwork from `tokenURI`;
 contents use existing Shape metadata for thumbnails and names. Unsealed claims retain an explicit
 placeholder because their pack NFT has been burned. A read-only Sepolia browser check covers the
@@ -34,7 +47,7 @@ that denomination's quantity changes. Its grid is width-limited on wide screens;
 check verifies all nine SVGs load and the 3015px layout.
 The pack preview sits left of the denomination choices, with the cost summary below those
 choices. Its one-through-twelve-card positions, sizes, tilt and front order follow the v3
-ShapePackRenderer; the live browser check compares the draft slots with all six onchain packs
+ShapePackRenderer; the prior v3 browser check compared the draft slots with six onchain packs
 (1, 2, 3, 6, 9 and 12 cards). Each newly minted Shape gets its own illustrative sample face,
 refreshed with its denomination's quantity; actual art remains unknown until mint.
 Pack actions now use the site's filled and outline button treatments, selectable pack and Shape
@@ -43,8 +56,9 @@ The Packs preflight limits buffered gas to Sepolia's EIP-7825 per-transaction ca
 site's block-budget margin; oversized direct exits steer users to unseal and claim in chunks. The
 unseal action appears only after the selected direct exit fails its gas check, and choosing another
 exit type resets that decision.
-Next gate: user-controlled Sepolia signing if a real onchain smoke test is wanted; website
-deployment and any mainnet contract work require separate instructions.
+Next gate: read-only successful merge simulation when two live packs share an owner. A real
+onchain smoke test requires user-controlled signing;
+website deployment and any mainnet contract work require separate instructions.
 
 ## Phase
 
