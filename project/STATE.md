@@ -2,7 +2,7 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-10 (P4 mainnet Packs website release in progress; P3 Shapes mainnet launch complete).
+Last updated: 2026-10-10 (P4 mainnet Packs website release complete; P3 Shapes mainnet launch complete).
 
 ## Current website change
 
@@ -13,11 +13,12 @@ Objective: release ShapePacks on `shapes.ripe.wtf/packs` using mainnet Shapes
 The separate `shapes-sepolia.netlify.app` and local Sepolia preview retain D-52's Sepolia
 contracts. The prior Sepolia-only UI and no-publication rule are superseded by D-53.
 
-Phase: P4 release candidate `fcccca3ab7eaea13c34be3b6e3df551905b73f94`, code frozen.
+Phase: P4 website release complete. PR #140 merged to `main` as
+`28a4c23a4cd4305f4661cc81e9ce8bef00845f1a` on 2026-10-10.
 The site selects Packs contracts from the Shapes chain, uses the matching public RPC fallback
 and wallet chain, and guards the production
 hostname against a Sepolia build. No additional Packs-specific Netlify variable is required.
-The production Netlify site currently has `SHAPES_LADDER=mainnet`, `SHAPES_SITE_MODE=app`,
+The production Netlify site has `SHAPES_LADDER=mainnet`, `SHAPES_SITE_MODE=app`,
 `NEXT_PUBLIC_SITE_URL=https://shapes.ripe.wtf`, the mainnet deployment record by default,
 indexer URL/token, and a WalletConnect project ID in the relevant contexts. The separate
 Sepolia site's production context selects `deployment.sepolia` and `SHAPES_LADDER=testnet`.
@@ -46,9 +47,18 @@ frozen candidate. Independent read-only review found no concrete defect; see
 `project/reviews/packs-mainnet-fcccca3.md`. The live production indexer proxy returned chain 1
 data through its configured server-side token on 2026-10-10.
 
-Next gate: update PR #140, verify its Netlify deploy preview and checks, merge to `main`, then
-perform Netlify production readback and Packs smoke test. Preserve the unrelated
-untracked `indexer/deployments.json` in the primary checkout.
+PR #140 passed its site, browser end-to-end, renderer parity, and changed-path CI checks.
+Netlify published production deploy `6acaac7567d508000818434f` from the merge commit on
+2026-10-10. The live `https://shapes.ripe.wtf/packs` page passed the read-only mainnet
+browser check, including contract reads, denomination images, desktop and mobile layout;
+it reported no wallet-origin errors. The live indexer proxy returned HTTP 200. No on-chain
+transaction was sent.
+Mainnet still has 0 minted packs, so a successful mainnet merge or exit remains untested
+until a user signs a real pack transaction.
+
+Next gate: monitor the first user-signed mainnet pack lifecycle and verify its indexer record,
+ownership, merge, and exit against transaction receipts. Preserve the unrelated untracked
+`indexer/deployments.json` in the primary checkout.
 
 ## Phase
 
