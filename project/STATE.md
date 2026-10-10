@@ -10,8 +10,11 @@ Objective: release ShapePacks on `shapes.ripe.wtf/packs` using mainnet Shapes
 `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0`, ShapePacks
 `0xf21514b090da7df4390803497d6ae673801e5ca7`, and renderer
 `0xaf1c899baacc0fe8cfba0c6cf2624a018a393def`. The production build must be mainnet only.
-The separate `shapes-sepolia.netlify.app` and local Sepolia preview retain D-52's Sepolia
-contracts. The prior Sepolia-only UI and no-publication rule are superseded by D-53.
+The local Sepolia preview retains D-52's Sepolia contracts. The separate
+`shapes-sepolia.netlify.app` environment still selects Sepolia, but its published commit
+`e5039c1` predates Packs and `/packs` returns 404. Its subsequent builds were skipped by
+Netlify as having no content change. D-53 authorizes mainnet publication; the earlier
+Sepolia no-publication rule was not changed for that separate site.
 
 Phase: P4 website release complete. PR #140 merged to `main` as
 `28a4c23a4cd4305f4661cc81e9ce8bef00845f1a` on 2026-10-10.
