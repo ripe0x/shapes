@@ -133,13 +133,19 @@ try {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
   if (process.env.E2E_SCREENSHOT) await page.screenshot({path: process.env.E2E_SCREENSHOT, fullPage: true});
   const netlifyTelemetry428 = errors.some((error) => error.includes("428 https://app.netlify.com/access-control/"));
+  // Reown allows the production origin but rejects Netlify's temporary PR hostname.
+  const reownPreview403 = baseUrl.startsWith("https://deploy-preview-") &&
+    errors.some((error) => error.includes("403 https://pulse.walletconnect.org/e?"));
   assert.deepEqual(errors.filter((error) => !error.includes("429 https://gateway.tenderly.co/public/sepolia") &&
     !error.includes("server responded with a status of 429") &&
     !(baseUrl.includes(".netlify.app") &&
       (error.includes("428 https://app.netlify.com/access-control/") ||
         (netlifyTelemetry428 && error.includes("server responded with a status of 428")))) &&
     !(allowLocalIndexer401 && (error.includes(`401 ${baseUrl}/api/indexer?`) ||
-      error.includes("server responded with a status of 401")))), []);
+      error.includes("server responded with a status of 401"))) &&
+    !(reownPreview403 && (error.includes("403 https://pulse.walletconnect.org/e?") ||
+      error.includes("server responded with a status of 403") ||
+      error.includes(`Origin ${baseUrl} not found on Allowlist`)))), []);
 } finally {
   await browser.close();
 }

@@ -36,6 +36,10 @@ live packs held by the test account. Read-only `eth_call` passed open, redeem, u
 successful merge; its browser check exercised live merge preflight with signing blocked. The
 mainnet local browser check passed with raw-RPC fallback because the private indexer token is
 absent locally. Neither check sent a transaction.
+Both Netlify PR previews passed read-only browser checks. Reown returns 403 for the temporary
+mainnet deploy-preview hostname because it is not on the WalletConnect origin allowlist; the
+production `shapes.ripe.wtf` hostname emitted no WalletConnect or allowlist errors in a separate
+read-only browser check. Preview tests ignore only this known external response.
 Focused preview tests, web/preview TypeScript checks, and changed-file lint passed. The single
 mainnet Netlify production-profile build and production-build browser rehearsal passed on the
 frozen candidate. Independent read-only review found no concrete defect; see
