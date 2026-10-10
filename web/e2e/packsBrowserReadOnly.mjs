@@ -53,6 +53,12 @@ try {
     const images = [...document.querySelectorAll(".packs-denomination-thumb img")];
     return images.length === 9 && images.every((image) => image.complete && image.naturalWidth > 0);
   }, undefined, {timeout: 60_000});
+  const firstLoadSample = await page.locator(".packs-denomination-thumb img").first().getAttribute("src");
+  await page.reload({waitUntil: "domcontentloaded"});
+  await page.waitForFunction((old) => {
+    const images = [...document.querySelectorAll(".packs-denomination-thumb img")];
+    return images.length === 9 && images.every((image) => image.complete && image.naturalWidth > 0) && images[0].src !== old;
+  }, firstLoadSample, {timeout: 60_000});
   assert.equal(await page.locator(".packs-group-label").count(), 0);
   await page.setViewportSize({width: 3015, height: 900});
   assert.ok((await page.locator(".packs-builder-grid").boundingBox()).width <= 1221);
@@ -125,14 +131,31 @@ try {
   await page.getByRole("button", {name: "CREATE", exact: true}).click();
   const denominationInputs = page.locator(".packs-denomination-groups input");
   assert.equal(await denominationInputs.count(), 9);
+  const beforeQuantitySample = await page.locator(".packs-denomination-thumb img").first().getAttribute("src");
+  const untouchedSample = await page.locator(".packs-denomination-thumb img").nth(1).getAttribute("src");
   await denominationInputs.first().fill("3");
   await page.getByText("0.00033 ETH").waitFor({timeout: 30_000});
   assert.equal(await page.locator(".packs-preview-card").count(), 3);
+  const threeSamples = await page.locator(".packs-preview-card img").evaluateAll((images) => images.map((image) => image.src));
+  assert.equal(new Set(threeSamples).size, 3, "Each new Shape in the preview needs its own sample artwork");
+  assert.notEqual(threeSamples[0], beforeQuantitySample);
+  const afterTypingSample = await page.locator(".packs-denomination-thumb img").first().getAttribute("src");
+  assert.notEqual(afterTypingSample, beforeQuantitySample);
+  assert.equal(threeSamples.includes(afterTypingSample), false, "The option and draft cards need separate samples");
+  assert.equal(await page.locator(".packs-denomination-thumb img").nth(1).getAttribute("src"), untouchedSample);
   assert.equal(await page.locator(".packs-draft-art").getAttribute("aria-label"), "3 Shapes in draft pack");
   await page.locator(".packs-denomination .btn-outline").nth(1).click();
   assert.equal(await denominationInputs.first().inputValue(), "4");
+  assert.notEqual(await page.locator(".packs-denomination-thumb img").first().getAttribute("src"), afterTypingSample);
+  assert.equal(new Set(await page.locator(".packs-preview-card img").evaluateAll((images) => images.map((image) => image.src))).size, 4);
   await page.locator(".packs-denomination .btn-outline").first().click();
   assert.equal(await denominationInputs.first().inputValue(), "3");
+  const firstAfterStepper = await page.locator(".packs-denomination-thumb img").first().getAttribute("src");
+  await page.locator(".packs-denomination .btn-outline").nth(3).click();
+  assert.equal(await denominationInputs.nth(1).inputValue(), "1");
+  assert.notEqual(await page.locator(".packs-denomination-thumb img").nth(1).getAttribute("src"), untouchedSample);
+  assert.equal(await page.locator(".packs-denomination-thumb img").first().getAttribute("src"), firstAfterStepper);
+  await denominationInputs.nth(1).fill("0");
   await page.waitForFunction(() => [...document.querySelectorAll("button")].some((button) =>
     button.textContent?.trim() === "CREATE PACK" && !button.disabled), undefined, {timeout: 30_000});
   assert.equal(await page.getByRole("button", {name: "CREATE PACK"}).isEnabled(), true);

@@ -2,6 +2,8 @@ import React from "react";
 import {formatEther, type Hash} from "viem";
 import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
 import {Art, Section, txUrl} from "./ui";
+import {localArt, sampleSeed} from "./art";
+import {mintGene} from "../previewGene";
 import {describeTxError} from "./errors";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import {PACK_PREVIEW_CANVAS, PACK_PREVIEW_MAX_CARDS, packPreviewSlot} from "./packPreviewLayout";
@@ -9,7 +11,7 @@ import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import {
   PACKS_ADDRESS, PACKS_CHAIN_ID, PACKS_SHAPES, creationMeetsMinimum,
-  loadOwnedPacks, mintCountsValid, packsAbi, packsClient, packsCollectionAbi, packsGasBudget, packsShapesAbi,
+  loadOwnedPacks, mintCountsValid, packsAbi, packsClient, packsGasBudget, packsShapesAbi,
   type MintQuote, type OwnedPack,
 } from "./packs";
 
@@ -20,6 +22,11 @@ const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const eth = (value: bigint) => `${formatEther(value)} ETH`;
 const step = (value: number, delta: number, min: number, max: number) =>
   Math.min(max, Math.max(min, (Number.isFinite(value) ? Math.trunc(value) : min) + delta));
+const packSampleArtwork = (nonce: bigint, di: number, epoch: number, serial: number, amount: bigint) => {
+  const n = (nonce << 64n) | (BigInt(di) << 56n) | (BigInt(epoch) << 16n) | BigInt(serial);
+  const seed = sampleSeed(n);
+  return localArt(seed, amount, mintGene(seed, amount));
+};
 
 export function PacksView({dep, data, onConnect, onShapesChanged}: {
   dep: Deployment;
@@ -42,9 +49,8 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const [counts, setCounts] = React.useState<number[]>([]);
   const [quote, setQuote] = React.useState<MintQuote | null>(null);
   const [quoteError, setQuoteError] = React.useState<string | null>(null);
-  const [denominationArt, setDenominationArt] = React.useState<string[]>([]);
-  const [artError, setArtError] = React.useState(false);
-  const [artReload, setArtReload] = React.useState(0);
+  const [sampleNonce, setSampleNonce] = React.useState<bigint | null>(null);
+  const [sampleEpochs, setSampleEpochs] = React.useState<Record<number, number>>({});
   const [status, setStatus] = React.useState<Status>(idle);
   const [exitKind, setExitKind] = React.useState<"open" | "redeem">("open");
   const [chunkSize, setChunkSize] = React.useState(10);
@@ -77,22 +83,42 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     (willCreate ? meetsFloor : !!addTarget) &&
     activeShapes.every((id) => owned.some((token) => token.id === id));
   const previewLimit = settings ? Math.min(Number(settings.previewCardLimit), PACK_PREVIEW_MAX_CARDS) : PACK_PREVIEW_MAX_CARDS;
+  const sampleArtwork = (di: number, serial: number): string | undefined => {
+    if (sampleNonce === null || !settings) return undefined;
+    return packSampleArtwork(sampleNonce, di, sampleEpochs[di] ?? 0, serial, settings.denominations[di]);
+  };
+  const denominationArt = React.useMemo(() =>
+    sampleNonce === null ? [] : (settings?.denominations ?? []).map((amount, i) =>
+      packSampleArtwork(sampleNonce, i, sampleEpochs[i] ?? 0, 0, amount)),
+  [settings, sampleNonce, sampleEpochs]);
   const previewCards = [
     ...(!willCreate && addTarget ? addTarget.shapeIds.map((id, i) => ({key: `pack-${id}`, image: shapesById.get(id)?.image,
       backing: addTarget.backings[i] ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false, tokenId: id})) : []),
     ...activeShapes.map((id) => ({key: `owned-${id}`, image: shapesById.get(id)?.image,
       backing: shapesById.get(id)?.backing ?? 0n, label: shapesById.get(id)?.meta.name ?? `Shape #${id}`, isNew: false, tokenId: id})),
     ...(settings?.denominations ?? []).flatMap((amount, i) => Array.from({length: Math.max(0, Math.min(counts[i] ?? 0, previewLimit))}, (_, j) =>
-      ({key: `new-${i}-${j}`, image: denominationArt[i] ?? data?.tokens.find((token) => token.di === i)?.image,
-        backing: amount, label: `${eth(amount)} Shape`, isNew: true, tokenId: null}))),
+      ({key: `new-${i}-${j}`, image: undefined as string | undefined,
+        backing: amount, label: `${eth(amount)} Shape`, isNew: true, tokenId: null, di: i, serial: j + 1}))),
   ].sort((a, b) => {
     if (a.backing !== b.backing) return a.backing > b.backing ? -1 : 1;
     if (a.tokenId === null) return b.tokenId === null ? 0 : 1;
     if (b.tokenId === null) return -1;
     return a.tokenId === b.tokenId ? 0 : a.tokenId < b.tokenId ? -1 : 1;
-  }).slice(0, previewLimit);
+  }).slice(0, previewLimit).map((card) => "di" in card ? {...card, image: sampleArtwork(card.di, card.serial)} : card);
   const draftCount = (addTarget && !willCreate ? addTarget.shapeIds.length : 0) + activeShapes.length +
     counts.reduce((sum, count) => sum + (Number.isInteger(count) && count > 0 ? count : 0), 0);
+
+  React.useEffect(() => {
+    const random = new Uint32Array(2);
+    crypto.getRandomValues(random);
+    setSampleNonce((BigInt(random[0]) << 32n) | BigInt(random[1]));
+  }, []);
+
+  const changeCount = (i: number, next: number) => {
+    if (next === counts[i]) return;
+    setCounts((old) => old.map((value, index) => index === i ? next : value));
+    setSampleEpochs((old) => ({...old, [i]: (old[i] ?? 0) + 1}));
+  };
 
   // Account and chain changes invalidate selections and messages from the previous wallet.
   React.useEffect(() => {
@@ -143,23 +169,6 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     });
     return () => { active = false; };
   }, [supported, address, reload]);
-
-  const denominationCount = settings?.denominations.length ?? 0;
-  React.useEffect(() => {
-    if (!supported || denominationCount === 0) return;
-    let active = true;
-    setArtError(false);
-    (async () => {
-      const collection = await packsClient.readContract({address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "collection"});
-      const cards = await packsClient.multicall({contracts: Array.from({length: denominationCount}, (_, i) => ({
-        address: collection, abi: packsCollectionAbi, functionName: "card", args: [i],
-      } as const)), allowFailure: true});
-      if (!active) return;
-      setDenominationArt(cards.map((card) => card.status === "success" ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(card.result)}` : ""));
-      setArtError(cards.some((card) => card.status !== "success"));
-    })().catch(() => { if (active) setArtError(true); });
-    return () => { active = false; };
-  }, [supported, denominationCount, artReload]);
 
   React.useEffect(() => {
     if (!supported || !validCounts) { setQuote(null); return; }
@@ -346,7 +355,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
                 <h2>Mint new Shapes</h2>
                 <p className="packs-small">Choose a denomination, then set how many Shapes to mint into {willCreate ? "the new pack" : addTarget?.name ?? "the pack"}.</p>
                 <div className="packs-denomination-groups">{settings.denominations.map((amount, i) => {
-                  const artwork = denominationArt[i] || data?.tokens.find((token) => token.di === i)?.image;
+                  const artwork = denominationArt[i];
                   return <div className="packs-denomination" key={i}>
                     <div className="packs-denomination-thumb" aria-hidden="true">
                       {artwork ? <img src={artwork} alt="" /> : <span>SHAPE</span>}
@@ -355,16 +364,15 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
                       <label htmlFor={`packs-denom-${i}`}>{eth(amount)}</label>
                       <div className="packs-stepper">
                         <button type="button" className="btn-outline" aria-label={`Decrease ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) <= 0}
-                          onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, -1, 0, 0xffffffff) : value))}>−</button>
+                          onClick={() => changeCount(i, step(counts[i] ?? 0, -1, 0, 0xffffffff))}>−</button>
                         <input id={`packs-denom-${i}`} className="qty-input" type="number" min="0" max="4294967295" step="1" value={counts[i] ?? 0}
-                          onChange={(event) => setCounts((old) => old.map((value, index) => index === i ? Number(event.target.value) : value))} />
+                          onChange={(event) => changeCount(i, Number(event.target.value))} />
                         <button type="button" className="btn-outline" aria-label={`Increase ${eth(amount)} Shapes`} disabled={(counts[i] ?? 0) >= 0xffffffff}
-                          onClick={() => setCounts((old) => old.map((value, index) => index === i ? step(value, 1, 0, 0xffffffff) : value))}>+</button>
+                          onClick={() => changeCount(i, step(counts[i] ?? 0, 1, 0, 0xffffffff))}>+</button>
                       </div>
                     </div>
                   </div>;
                 })}</div>
-                {artError && <p className="packs-small" role="status">Some artwork could not load. <button type="button" className="btn-ghost packs-text-action" onClick={() => setArtReload((n) => n + 1)}>RETRY ARTWORK</button></p>}
                 {mode === "add" && <p className="packs-small">Choose any Shapes you own in Your Shapes below. You can combine them with new Shapes here.</p>}
               </div>
               <aside className="packs-order" aria-label="Order summary">

@@ -42,7 +42,7 @@ export function tokenArt(t: ArtToken): string {
  * Deterministic seed stream for the sample previews on the mint screen. Not the chain's seed
  * derivation — real seeds are assigned at mint. splitmix64-style mix over a 256-bit lane.
  */
-export function sampleSeed(n: number): bigint {
+export function sampleSeed(n: number | bigint): bigint {
   const MASK = (1n << 256n) - 1n;
   let x = (BigInt(n) * 0x9e3779b97f4a7c15n + 0x243f6a8885a308d3n) & MASK;
   x ^= x >> 29n;
