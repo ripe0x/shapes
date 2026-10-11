@@ -59,6 +59,20 @@ transaction was sent.
 Mainnet still has 0 minted packs, so a successful mainnet merge or exit remains untested
 until a user signs a real pack transaction.
 
+On 2026-10-10, a user reported “Transaction creation failed” while creating a mainnet pack.
+The public admin address `0xcb43078c32423f5348cab5885911c3b5fae217f9` held
+0.016307083507946864 ETH at read time, below the smallest pack's exact 0.033 ETH payment
+before gas. A read-only create simulation from that address reproduced the text and exposed
+`OutOfFunds` in the nested RPC error; a funded account's simulation succeeded. This proves
+the failure for that public address, not which wallet the user connected. PR #143 merged the
+payment balance check, the `OutOfFunds` explanation, and canonical mainnet wallet metadata
+as `c284c4f913cf382dc4c810214b14a78b98a9d8aa`. Focused tests, the mainnet production
+build, read-only browser checks, independent review, and all required PR checks passed.
+Netlify published deploy `6acb001b5b5dbd00089cf030` from that merge. On the live site, a
+read-only browser using the underfunded admin address showed the exact balance shortfall
+before any wallet send; the general Packs browser smoke test also passed. No transaction
+was signed or sent.
+
 Next gate: monitor the first user-signed mainnet pack lifecycle and verify its indexer record,
 ownership, merge, and exit against transaction receipts. Preserve the unrelated untracked
 `indexer/deployments.json` in the primary checkout.
