@@ -4,7 +4,7 @@ import {createServer} from "node:http";
 import {create as createQrCode} from "cuer/QrCode";
 import {connect, createConfig, writeContract, mock} from "@wagmi/core";
 import {decodeFunctionData, http} from "viem";
-import {sepolia} from "viem/chains";
+import {mainnet, sepolia} from "viem/chains";
 
 import {buildConfig} from "../chain/wagmi";
 import {mintRequest} from "./mint";
@@ -26,6 +26,12 @@ const sepoliaDep: Deployment = {
   mintFeeWei: "10000000000000",
 };
 
+const mainnetDep: Deployment = {
+  ...sepoliaDep,
+  chainId: mainnet.id,
+  rpc: "https://ethereum-rpc.publicnode.com",
+};
+
 const PROJECT_ID = "60af16a1be7c0077e8df5570cbed082f";
 
 test("without a WalletConnect project id the config is injected-only", () => {
@@ -43,7 +49,7 @@ test("server-rendered hosts can defer wallet hydration until React mounts", () =
   );
 });
 
-test("a project id activates RainbowKit's standard wallet inventory on Sepolia only", () => {
+test("a project id activates RainbowKit's standard wallet inventory on Sepolia", () => {
   const config = buildConfig(sepoliaDep, {walletConnectProjectId: PROJECT_ID});
 
   // The site declares exactly the deployment chain. Individual wallets may choose not to support
@@ -70,6 +76,14 @@ test("the Sepolia config uses viem's canonical chain (Multicall3 + explorer)", (
     "0xca11bde05977b3631167028862be2a173976ca11",
   );
   assert.match(chain.blockExplorers?.default.url ?? "", /sepolia\.etherscan\.io/);
+});
+
+test("the production wallet config identifies Ethereum mainnet to connectors", () => {
+  const chain = buildConfig(mainnetDep, {walletConnectProjectId: PROJECT_ID}).chains[0];
+  assert.equal(chain.id, mainnet.id);
+  assert.equal(chain.name, mainnet.name);
+  assert.equal(chain.blockExplorers?.default.url, mainnet.blockExplorers.default.url);
+  assert.equal(chain.nativeCurrency.symbol, "ETH");
 });
 
 // A minimal JSON-RPC endpoint that answers the read calls viem makes while preparing a send and
