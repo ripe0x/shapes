@@ -57,6 +57,9 @@ export function describeTxError(e: unknown): string {
   if (e instanceof BaseError) {
     const rejected = e.walk((err) => err instanceof UserRejectedRequestError);
     if (rejected) return "The transaction was rejected in the wallet.";
+    const outOfFunds = e.walk((err) => err instanceof BaseError &&
+      /outoffunds|insufficient funds/i.test(err.details ?? ""));
+    if (outOfFunds) return "This wallet does not have enough ETH for the payment and network gas.";
     const reverted = e.walk((err) => err instanceof ContractFunctionRevertedError);
     if (reverted instanceof ContractFunctionRevertedError) {
       const name = reverted.data?.errorName ?? reverted.reason;
