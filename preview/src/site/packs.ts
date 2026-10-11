@@ -1,4 +1,4 @@
-import {createPublicClient, parseAbi, type Address, type PublicClient} from "viem";
+import {createPublicClient, formatEther, parseAbi, type Address, type PublicClient} from "viem";
 import {mainnet, sepolia} from "viem/chains";
 import {shapesTransport} from "../chain/rpc";
 import {safeMetadataFromTokenURI} from "./ogArtwork";
@@ -177,4 +177,9 @@ export function mintCountsValid(counts: readonly number[], denominationCount: nu
 
 export function creationMeetsMinimum(ownedBacking: bigint, quote: MintQuote, minimum: bigint): boolean {
   return ownedBacking + quote.backingWei >= minimum;
+}
+
+export function packPaymentBalanceError(balance: bigint, payment: bigint): string | null {
+  if (balance > payment) return null;
+  return `This wallet has ${formatEther(balance)} ETH. The pack needs ${formatEther(payment)} ETH plus ETH for network gas.`;
 }

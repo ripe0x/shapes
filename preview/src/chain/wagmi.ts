@@ -2,7 +2,7 @@ import {getDefaultConfig} from "@rainbow-me/rainbowkit";
 import {createConfig, createStorage, cookieStorage, cookieToInitialState, type Config} from "wagmi";
 import {injected} from "@wagmi/core";
 import {defineChain, type Transport} from "viem";
-import {sepolia} from "viem/chains";
+import {mainnet, sepolia} from "viem/chains";
 import type {Deployment} from "./abi";
 import {rpcUrlsForChain, shapesTransport} from "./rpc";
 
@@ -45,6 +45,7 @@ export function initialWalletState(cookieHeader?: string | null) {
  * non-canonical dev chain (local anvil) is defined by hand.
  */
 function deploymentChain(dep: Deployment, primaryRpcUrl?: string) {
+  if (dep.chainId === mainnet.id) return mainnet;
   if (dep.chainId === sepolia.id) return sepolia;
   const rpcUrls = rpcUrlsForChain(dep.chainId, dep.rpc, primaryRpcUrl);
   return defineChain({

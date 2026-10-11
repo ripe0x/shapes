@@ -10,7 +10,7 @@ import {PACK_PREVIEW_CANVAS, PACK_PREVIEW_MAX_CARDS, packPreviewSlot} from "./pa
 import type {Deployment} from "../chain/abi";
 import type {SiteData} from "./data";
 import {
-  PACKS_DEPLOYMENTS, creationMeetsMinimum, loadOwnedPacks, mintCountsValid, packsAbi,
+  PACKS_DEPLOYMENTS, creationMeetsMinimum, loadOwnedPacks, mintCountsValid, packPaymentBalanceError, packsAbi,
   packsClientFor, packsDeploymentFor, packsGasBudget, packsShapesAbi,
   type MintQuote, type OwnedPack,
 } from "./packs";
@@ -206,6 +206,11 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
 
   const send = async (name: string, contract: "packs" | "shapes", args: readonly unknown[], value?: bigint) => {
     if (!address || chainId !== PACKS_CHAIN_ID) throw new Error(`Switch your wallet to ${networkName} first.`);
+    if (value !== undefined && value > 0n) {
+      const balance = await packsClient.getBalance({address});
+      const shortfall = packPaymentBalanceError(balance, value);
+      if (shortfall) throw new Error(shortfall);
+    }
     const target = contract === "packs" ? PACKS_ADDRESS : PACKS_SHAPES;
     const abi = contract === "packs" ? packsAbi : packsShapesAbi;
     const request = {address: target, abi, functionName: name, args, value, account: address} as const;
