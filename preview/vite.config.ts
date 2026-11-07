@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   // Selects the denomination ladder at build time, pairing with the foundry profile of the same
-  // name. Unset means mainnet; see src/canonical/denominations.ts.
+  // name. Unset means mainnet; see packages/render/src/denominations.ts.
   define: {
     "process.env.SHAPES_LADDER": JSON.stringify(process.env.SHAPES_LADDER ?? ""),
     // Read directly in AuctionView.tsx; Next.js inlines NEXT_PUBLIC_ vars on its own, so this

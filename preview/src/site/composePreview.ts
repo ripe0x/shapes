@@ -1,6 +1,6 @@
 import {hexToBytes, type Hex} from "viem";
-import {effectiveModuleBytes, renderSampledShape} from "../canonical/sampling";
-import {moduleBytesToHex} from "../canonical/moduleCodec";
+import {effectiveModuleBytes, renderSampledShape} from "shapes-render/sampling";
+import {moduleBytesToHex} from "shapes-render/moduleCodec";
 
 export interface ComposePreviewState {
   denominationIndex: number;

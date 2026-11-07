@@ -38,8 +38,8 @@
 
 import {hexToBytes, type PublicClient} from "viem";
 import {shapesAbi, type Deployment} from "../chain/abi";
-import {geometryAt, WAD, type CardGeometry, type Kind, type Params} from "../canonical/render";
-import {decodeModuleByte, decodeModules} from "../canonical/moduleCodec";
+import {geometryAt, WAD, type CardGeometry, type Kind, type Params} from "shapes-render/render";
+import {decodeModuleByte, decodeModules} from "shapes-render/moduleCodec";
 import {
   effectiveModuleBytes,
   grammarSplitPoolBytes,
@@ -50,7 +50,7 @@ import {
   type SampleBurn,
   type SampleDonor,
   type SplitTraceCell,
-} from "../canonical/sampling";
+} from "shapes-render/sampling";
 
 /* ------------------------------------------------------------------ *
  * Plain fetched inputs (no viem/chain types), fabricable in tests

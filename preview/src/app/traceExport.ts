@@ -10,7 +10,7 @@
  * cols/rows/cell/x0/y0, so this module imports neither and takes no page-specific type.
  */
 
-import { WAD } from "../canonical/wad";
+import { WAD } from "shapes-render/wad";
 import { downloadBlob, downloadSvg, rasterizeSvgToPng } from "./exporters";
 
 export interface TraceGeometry {

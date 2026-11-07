@@ -7,7 +7,7 @@
  * is bit-identical to `CANONICAL`.
  */
 
-import { CANONICAL, KIND_ORDER, type Kind, type Params } from "../canonical/params";
+import { CANONICAL, KIND_ORDER, type Kind, type Params } from "shapes-render/params";
 
 export interface NumParams {
   /** Fraction of the half-cell the ink reaches. Constant across the collection. */

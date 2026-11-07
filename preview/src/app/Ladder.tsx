@@ -1,9 +1,9 @@
 import React from "react";
 import { Card, C, Section, Button, NumberField, mono } from "./ui";
-import { composeShape, renderShape } from "../canonical/render";
-import { fmt } from "../canonical/wad";
-import { DENOMINATIONS, GRIDS, LABELS } from "../canonical/denominations";
-import type { Params } from "../canonical/params";
+import { composeShape, renderShape } from "shapes-render/render";
+import { fmt } from "shapes-render/wad";
+import { DENOMINATIONS, GRIDS, LABELS } from "shapes-render/denominations";
+import type { Params } from "shapes-render/params";
 import { designPageSeeds, seedAt, type SeedMode } from "../seeds";
 import { analyseBatch, buildBatch, type CollisionPair } from "../analysis";
 import { withGridOverlay } from "./gridOverlay";

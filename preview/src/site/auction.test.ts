@@ -8,7 +8,7 @@ import {
   unitsToEth,
   type AuctionState,
 } from "./auction";
-import {DENOMINATIONS, UNIT} from "../canonical/denominations";
+import {DENOMINATIONS, UNIT} from "shapes-render/denominations";
 
 const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as const;
 

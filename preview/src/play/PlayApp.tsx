@@ -2,14 +2,14 @@ import React from "react";
 import { C, FONT, SANS } from "../site/theme";
 import { forDisplay, C as PROV_C } from "../app/ui";
 import { donorColor, GridOverlayCells, useActiveCell, DetailPanel } from "../app/provenance";
-import { CANONICAL } from "../canonical/params";
-import { composeShape, svgFromComposition } from "../canonical/render";
-import { composeSampledShape, grammarSplitPoolBytes } from "../canonical/sampling";
-import { DENOMINATIONS, GRIDS, unitsAt } from "../canonical/denominations";
+import { CANONICAL } from "shapes-render/params";
+import { composeShape, svgFromComposition } from "shapes-render/render";
+import { composeSampledShape, grammarSplitPoolBytes } from "shapes-render/sampling";
+import { DENOMINATIONS, GRIDS, unitsAt } from "shapes-render/denominations";
 // The playground presents mainnet values even when the adjacent app is built for Sepolia. The
 // denomination indexes, grids, and composition ratios are identical between both ladders.
-import { LABELS } from "../canonical/ladders/mainnet";
-import { geneAtMint } from "../canonical/ink";
+import { LABELS } from "shapes-render/ladders/mainnet";
+import { geneAtMint } from "shapes-render/ink";
 import {
   buildCompleteShape,
   decomposeNode,

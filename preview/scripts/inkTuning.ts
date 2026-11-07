@@ -30,7 +30,7 @@ import {
   geneAtCompose as committedGeneAtCompose,
   GENE_NAMES,
   SOLID,
-} from "../src/canonical/ink";
+} from "shapes-render/ink";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";

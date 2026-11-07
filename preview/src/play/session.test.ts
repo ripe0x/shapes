@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { encodePacked, keccak256 } from "viem";
 
-import { centerGene, geneAtCompose, geneAtMint } from "../canonical/ink";
-import { DENOMINATIONS, unitsAt } from "../canonical/denominations";
-import { sampleComposeTraced, sampleSplitChildTraced, type SampleBurn, type SampleDonor } from "../canonical/sampling";
+import { centerGene, geneAtCompose, geneAtMint } from "shapes-render/ink";
+import { DENOMINATIONS, unitsAt } from "shapes-render/denominations";
+import { sampleComposeTraced, sampleSplitChildTraced, type SampleBurn, type SampleDonor } from "shapes-render/sampling";
 import {
   buildCompleteShape,
   composeNodes,

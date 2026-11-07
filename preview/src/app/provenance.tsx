@@ -1,10 +1,10 @@
 import React from "react";
 import { C, mono, forDisplay } from "./ui";
-import { WAD } from "../canonical/wad";
-import { svgFromComposition, type Composition } from "../canonical/render";
-import type { Params } from "../canonical/params";
-import { decodeModuleByte } from "../canonical/moduleCodec";
-import type { ComposeTraceCell, SplitTraceCell } from "../canonical/sampling";
+import { WAD } from "shapes-render/wad";
+import { svgFromComposition, type Composition } from "shapes-render/render";
+import type { Params } from "shapes-render/params";
+import { decodeModuleByte } from "shapes-render/moduleCodec";
+import type { ComposeTraceCell, SplitTraceCell } from "shapes-render/sampling";
 
 /**
  * Shared per-cell provenance UI: the cell-overlay grid, the per-cell detail panel, donor color

@@ -9,9 +9,9 @@
  * screen display only and is absent from fixtures, exports and anything the chain sees.
  */
 
-import { composeShape } from "../canonical/render";
-import { fmt } from "../canonical/wad";
-import { CANONICAL, FIELD, type Params } from "../canonical/params";
+import { composeShape } from "shapes-render/render";
+import { fmt } from "shapes-render/wad";
+import { CANONICAL, FIELD, type Params } from "shapes-render/params";
 import { moduleExtent } from "./containment";
 import { mintGene } from "../previewGene";
 

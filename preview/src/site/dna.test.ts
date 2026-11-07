@@ -7,7 +7,7 @@ import {
   type LastMergeDonors,
   type SampleBurn,
   type SampleDonor,
-} from "../canonical/sampling";
+} from "shapes-render/sampling";
 import {
   classifyDna,
   deriveComposeDna,

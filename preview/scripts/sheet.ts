@@ -9,12 +9,12 @@
 
 import { chromium } from "playwright";
 import { writeFileSync } from "node:fs";
-import { renderShape } from "../src/canonical/render";
-import { DENOMINATIONS, GRIDS, LABELS } from "../src/canonical/denominations";
-import { CANONICAL, type Params } from "../src/canonical/params";
-import { WAD } from "../src/canonical/wad";
+import { renderShape } from "shapes-render/render";
+import { DENOMINATIONS, GRIDS, LABELS } from "shapes-render/denominations";
+import { CANONICAL, type Params } from "shapes-render/params";
+import { WAD } from "shapes-render/wad";
 import { productionSeed } from "../src/seeds";
-import { geneAtMint } from "../src/canonical/ink";
+import { geneAtMint } from "shapes-render/ink";
 
 const CARD_W = 210;
 

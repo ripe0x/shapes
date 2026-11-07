@@ -2,7 +2,7 @@ import React from "react";
 import {formatEther} from "viem";
 import {useAccount, useBalance} from "wagmi";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
-import {GRIDS} from "../canonical/denominations";
+import {GRIDS} from "shapes-render/denominations";
 import {C, FONT, SANS} from "./theme";
 import {Art, txUrl} from "./ui";
 import {localArt, sampleSeed} from "./art";

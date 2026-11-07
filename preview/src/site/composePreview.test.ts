@@ -1,8 +1,8 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 
-import {effectiveModuleBytes} from "../canonical/sampling";
-import {moduleBytesToHex} from "../canonical/moduleCodec";
+import {effectiveModuleBytes} from "shapes-render/sampling";
+import {moduleBytesToHex} from "shapes-render/moduleCodec";
 import {DENOMINATIONS} from "../chain/abi";
 import {buildComposeResultPreview, effectiveRecordModules} from "./composePreview";
 

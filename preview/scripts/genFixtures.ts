@@ -19,10 +19,10 @@ import {
   renderShape,
   tokenMetadataJson,
   vocabulary,
-} from "../src/canonical/render";
-import { fmt } from "../src/canonical/wad";
-import { DENOMINATIONS, LABELS, LADDER_NAME, UNIT, cellCountAt, denominationIndex } from "../src/canonical/denominations";
-import { CANONICAL, paramsEqualCanonical } from "../src/canonical/params";
+} from "shapes-render/render";
+import { fmt } from "shapes-render/wad";
+import { DENOMINATIONS, LABELS, LADDER_NAME, UNIT, cellCountAt, denominationIndex } from "shapes-render/denominations";
+import { CANONICAL, paramsEqualCanonical } from "shapes-render/params";
 import { productionSeed } from "../src/seeds";
 import { splitChildSeed } from "../src/splitSeed";
 import {
@@ -32,8 +32,8 @@ import {
   geneAtCompose,
   geneAtMint,
   centerGene,
-} from "../src/canonical/ink";
-import { encodeModuleByte, encodeModules, kindIndexOf, moduleBytesToHex } from "../src/canonical/moduleCodec";
+} from "shapes-render/ink";
+import { encodeModuleByte, encodeModules, kindIndexOf, moduleBytesToHex } from "shapes-render/moduleCodec";
 import {
   composeSampledShape,
   renderSampledShape,
@@ -43,7 +43,7 @@ import {
   type LastMergeDonors,
   type SampleBurn,
   type SampleDonor,
-} from "../src/canonical/sampling";
+} from "shapes-render/sampling";
 
 if (!paramsEqualCanonical(CANONICAL)) {
   throw new Error("refusing to generate fixtures from non-canonical params");

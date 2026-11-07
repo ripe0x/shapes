@@ -6,10 +6,10 @@
  * by hashing, so there are no false positives. The short hash is display only.
  */
 
-import { composeShape, fillClass, renderGeometry } from "./canonical/render";
-import { CANONICAL, KIND_ORDER, type Kind, type Params } from "./canonical/params";
-import { denominationIndex } from "./canonical/denominations";
-import { geneAtMint } from "./canonical/ink";
+import { composeShape, fillClass, renderGeometry } from "shapes-render/render";
+import { CANONICAL, KIND_ORDER, type Kind, type Params } from "shapes-render/params";
+import { denominationIndex } from "shapes-render/denominations";
+import { geneAtMint } from "shapes-render/ink";
 import { seedAt, type SeedMode } from "./seeds";
 
 export interface CardRecord {

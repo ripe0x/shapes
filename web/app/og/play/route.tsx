@@ -1,9 +1,9 @@
 import { ImageResponse } from "next/og";
-import { CANONICAL } from "@shared/canonical/params";
-import { composeShape, svgFromComposition } from "@shared/canonical/render";
-import { composeSampledShape } from "@shared/canonical/sampling";
-import { DENOMINATIONS } from "@shared/canonical/denominations";
-import { geneAtMint } from "@shared/canonical/ink";
+import { CANONICAL } from "shapes-render/params";
+import { composeShape, svgFromComposition } from "shapes-render/render";
+import { composeSampledShape } from "shapes-render/sampling";
+import { DENOMINATIONS } from "shapes-render/denominations";
+import { geneAtMint } from "shapes-render/ink";
 import { liveNodes, textSeed, type PlayNode, type PlaySession } from "@shared/play/session";
 import { decodeSession } from "@shared/play/urlCodec";
 
