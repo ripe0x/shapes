@@ -252,7 +252,7 @@ Shape: it can be transferred, redeemed, composed, decomposed, or split. A compos
 moves it to the survivor, the matching decompose restores it to that input, and splitting it gives
 it to the first output. Redeeming or burning the owner token ends collection ownership
 permanently: `owner()` returns zero and no other token inherits. Its metadata name is the ordinary
-token name suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), with the exclusive
+token name suffixed with `, Contract Owner` (e.g. `0.01 ETH · Shape #5, Contract Owner`), with the exclusive
 value-only attribute `"Contract Owner"` (no `trait_type`). Holding it grants no administrative
 rights. Permissionless artwork minting starts at #1 and opens at the immutable `mintStart`
 timestamp; no admin path can move it.

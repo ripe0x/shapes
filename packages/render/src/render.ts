@@ -853,6 +853,12 @@ export interface SplitFrom {
   originDenomIndex: number;
 }
 
+/** The `#` between the name prefix and the id, omitted when the prefix already ends in one
+ *  (`ShapeRenderer._idMark`), so a `Shape #` prefix never renders `##`. */
+export function idMark(namePrefix: string): string {
+  return namePrefix.endsWith("#") ? "" : "#";
+}
+
 /**
  * Metadata JSON attributes block, built from a composition and its already-rendered SVG. Shared
  * by the seed-drawn path (`tokenMetadataJson`) and the sampled path (`sampledTokenMetadataJson`
@@ -883,9 +889,8 @@ export function metadataJsonFromComposition(
     ? `,{"trait_type":"Split From","value":"${LABELS[splitFrom.parentDenomIndex]} ETH"},` +
       `{"trait_type":"Split Origin","value":"${LABELS[splitFrom.originDenomIndex]} ETH"}`
     : "";
-  const name = isOwnerToken
-    ? `${namePrefix}${tokenId.toString()}, Contract Owner`
-    : `${namePrefix}${tokenId.toString()}`;
+  const baseName = `${c.label} ETH · ${namePrefix}${idMark(namePrefix)}${tokenId.toString()}`;
+  const name = isOwnerToken ? `${baseName}, Contract Owner` : baseName;
   const contractOwnerTrait = isOwnerToken
     ? `,{"value":"Contract Owner"}`
     : "";

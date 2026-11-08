@@ -11,8 +11,10 @@ admin-set copy, stored on `ShapeCollection` and read back by `Shapes.tokenURI` a
 `Shapes.contractURI`. `ShapeCollection.setMetadataCopy` sets all three together;
 `Shapes.refreshMetadata` then emits the ERC-4906 and ERC-7572 refresh signals. Two fields track the
 owner token, the one live Shape that currently carries collection ownership (starts as #0, moves
-through `compose`, `decompose` and `split`). Its name is the ordinary `namePrefix` plus token id,
-suffixed with `, Contract Owner` (e.g. `Shape 5, Contract Owner`), and its description is the
+through `compose`, `decompose` and `split`). A token's name is its ETH value, ` · `, the
+`namePrefix`, `#` and the token id (e.g. `0.05 ETH · Shape #9`), so the value survives marketplace
+truncation. The owner token's name adds `, Contract Owner` (e.g. `0.01 ETH · Shape #5, Contract
+Owner`), and its description is the
 collection's owner-token description in place of the shared one; both track whichever token
 currently holds the role. `contractURI` uses the immutable ERC-721 name `Shapes` and the shared
 description. Copy defaults to the TypeScript canonical and is validated on set so it cannot break

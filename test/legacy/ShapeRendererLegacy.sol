@@ -1253,8 +1253,17 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
         return string(
             abi.encodePacked(
                 '{"name":"',
-                namePrefix,
-                FixedPoint.toString(tokenId),
+                // The value-led name (`0.01 ETH · Shape #9`) postdates this snapshot; carried here
+                // so the differential still compares every other metadata byte.
+                abi.encodePacked(
+                    Denominations.labelAt(card.denomIndex),
+                    unicode" ETH · ",
+                    namePrefix,
+                    bytes(namePrefix).length != 0 && bytes(namePrefix)[bytes(namePrefix).length - 1] == "#"
+                        ? bytes("")
+                        : bytes("#"),
+                    FixedPoint.toString(tokenId)
+                ),
                 '","description":"',
                 description,
                 '","image":"data:image/svg+xml;base64,',

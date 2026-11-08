@@ -744,7 +744,10 @@ token_json() {
     | sed -E 's#^data:application/json;base64,##' | base64 -d
 }
 ORDINARY_JSON=$(token_json "$ORDINARY")
-assert_eq "tokenURI name" "$(printf '%s' "$ORDINARY_JSON" | jq -r '.name')" "$NAME_PREFIX$ORDINARY"
+# The name leads with the token's ETH value: `<value> ETH · <prefix><id>`. The prefix already ends
+# in `#`, so the renderer adds no second one.
+ORDINARY_VALUE=$(printf '%s' "$ORDINARY_JSON" | jq -r '.attributes[] | select(.trait_type == "ETH Value") | .value')
+assert_eq "tokenURI name" "$(printf '%s' "$ORDINARY_JSON" | jq -r '.name')" "$ORDINARY_VALUE · $NAME_PREFIX$ORDINARY"
 assert_eq "tokenURI description" "$(printf '%s' "$ORDINARY_JSON" | jq -r '.description')" "$DESCRIPTION"
 if [ "$OWNER_COPY" = 1 ]; then
   assert_eq "owner token tokenURI description" \
