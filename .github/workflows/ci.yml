@@ -65,9 +65,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # forge is pinned in every job: gas figures (the gas-profile assertions in test/) move between
+      # releases, so `stable` can fail CI with no code change. Bump all pins together, on purpose.
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
           cache: true
 
       # compiled artifacts (out/, cache/), keyed on everything solc reads. A cache hit turns
@@ -100,7 +102,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
           cache: true
 
       - uses: actions/cache@v4
@@ -154,7 +156,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
           cache: true
 
       - uses: actions/cache@v4
@@ -206,7 +208,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
           cache: true
 
       - uses: actions/cache@v4
@@ -344,7 +346,7 @@ jobs:
 
       - uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: stable
+          version: v1.8.1
 
       - name: install bounded fuzzing toolchain
         run: |
