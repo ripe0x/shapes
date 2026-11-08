@@ -383,7 +383,10 @@ contract OwnerTokenTest is ShapesBase {
     /// @dev `<value> ETH · Shape #<id>, Contract Owner`, from the token's live backing.
     function _ownerName(uint256 id) internal view returns (string memory) {
         return string.concat(
-            FixedPoint.fmt(shapes.backingOf(id)), unicode" ETH · Shape #", vm.toString(id), ", Contract Owner"
+            FixedPoint.fmt(shapes.backingOf(id)),
+            unicode" ETH · Shape #",
+            vm.toString(id),
+            ", Contract Owner"
         );
     }
 

@@ -521,7 +521,10 @@ contract OutputTest is RendererTestBase {
         string memory json = renderer.metadataJSON(
             bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
-        assertEq(vm.parseJsonString(json, ".name"), string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · Shape #123"));
+        assertEq(
+            vm.parseJsonString(json, ".name"),
+            string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · Shape #123")
+        );
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), DENOMS[4], false, 0), "123"));
     }
 
@@ -540,7 +543,10 @@ contract OutputTest is RendererTestBase {
         string memory ordinaryJson = renderer.metadataJSON(
             bytes32(uint256(1)), DENOMS[0], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
-        assertEq(vm.parseJsonString(ordinaryJson, ".name"), string.concat(FixedPoint.fmt(DENOMS[0]), unicode" ETH · Shape #1"));
+        assertEq(
+            vm.parseJsonString(ordinaryJson, ".name"),
+            string.concat(FixedPoint.fmt(DENOMS[0]), unicode" ETH · Shape #1")
+        );
         assertFalse(_contains(ordinaryJson, '{"value":"Contract Owner"}'));
     }
 
@@ -983,7 +989,11 @@ contract TokenMetadataTest is RendererTestBase {
         uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         string memory idStr = vm.toString(id);
         string memory value = string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · ");
-        assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat(value, "Shape #", idStr), "default name");
+        assertEq(
+            vm.parseJsonString(_decodeJson(id), ".name"),
+            string.concat(value, "Shape #", idStr),
+            "default name"
+        );
 
         collection.setMetadataCopy("Form ", "A reshaped description of the object.", "An owner description.");
 
