@@ -10,9 +10,9 @@
  * the preview says so instead of quietly overflowing.
  */
 
-import { composeShape, type Module } from "../canonical/render";
-import { CANONICAL, type Params } from "../canonical/params";
-import { WAD } from "../canonical/wad";
+import { composeShape, type Module } from "shapes-render/render";
+import { CANONICAL, type Params } from "shapes-render/params";
+import { WAD } from "shapes-render/wad";
 import { mintGene } from "../previewGene";
 
 const num = (w: bigint) => Number(w) / Number(WAD);

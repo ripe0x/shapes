@@ -5,9 +5,9 @@ import { deploymentRecordName, ladderForChainId } from "../preview/src/site/depl
 import bundledDeployment from "./public/deployment.json";
 import bundledDeploymentSepolia from "./public/deployment.sepolia.json";
 
-// The canonical renderer, denomination table and chain ABI are the parity-tested source of truth
-// in `preview/src`. Import them here rather than copying, so this site can never drift from what
-// the contract renders. `externalDir` lets Next compile those files from outside the app root; the
+// The canonical renderer and denomination table are the parity-tested `shapes-render` package
+// (packages/render); the chain ABI and shared site code live in `preview/src`. Import them rather
+// than copying, so this site can never drift from what the contract renders. `externalDir` lets Next compile those files from outside the app root; the
 // `@shared/*` alias (mirrored in tsconfig) points at them.
 const shared = resolve(__dirname, "../preview/src");
 
@@ -48,7 +48,7 @@ if (process.env.NEXT_PUBLIC_SITE_URL === "https://shapes.ripe.wtf" &&
 }
 
 // Selects the denomination ladder at build time, pairing with the foundry profile of the same
-// name (see preview/src/canonical/denominations.ts). An explicit SHAPES_LADDER always wins;
+// name (see packages/render/src/denominations.ts). An explicit SHAPES_LADDER always wins;
 // production builds must set it (scripts/verify-netlify-mode.mjs). Unset, the default follows
 // targetDeployment(): a Sepolia target takes the testnet ladder, anything else mainnet, so a
 // plain `next dev` cannot show one ladder against a contract using the other.
@@ -71,6 +71,8 @@ if (targetChainId !== undefined) {
 }
 
 const nextConfig: NextConfig = {
+  // Ships TypeScript source, not built JS.
+  transpilePackages: ["shapes-render"],
   env: {
     SHAPES_LADDER: resolvedLadder,
   },

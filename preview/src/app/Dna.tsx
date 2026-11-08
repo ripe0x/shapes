@@ -1,10 +1,10 @@
 import React from "react";
 import { C, mono, Section, Button, Label, Toggle } from "./ui";
-import { CANONICAL, type Params } from "../canonical/params";
-import { DENOMINATIONS, LABELS, unitsAt } from "../canonical/denominations";
-import { composeShape } from "../canonical/render";
-import { GENE_NAMES, centerGene, geneAtCompose } from "../canonical/ink";
-import { encodeModules, moduleBytesToHex } from "../canonical/moduleCodec";
+import { CANONICAL, type Params } from "shapes-render/params";
+import { DENOMINATIONS, LABELS, unitsAt } from "shapes-render/denominations";
+import { composeShape } from "shapes-render/render";
+import { GENE_NAMES, centerGene, geneAtCompose } from "shapes-render/ink";
+import { encodeModules, moduleBytesToHex } from "shapes-render/moduleCodec";
 import {
   composeSampledShape,
   composeSampleSeedInputs,
@@ -18,7 +18,7 @@ import {
   type SampleBurn,
   type SampleDonor,
   type SplitTraceResult,
-} from "../canonical/sampling";
+} from "shapes-render/sampling";
 import { productionSeed } from "../seeds";
 import { Inspect } from "./Inspect";
 import { donorColor, Row, ProvenanceCard, DetailPanel } from "./provenance";

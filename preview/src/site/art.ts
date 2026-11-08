@@ -1,8 +1,8 @@
 import {hexToBytes} from "viem";
-import {CANONICAL} from "../canonical/params";
-import {DENOMINATIONS} from "../canonical/denominations";
-import {renderShape} from "../canonical/render";
-import {renderSampledShape} from "../canonical/sampling";
+import {CANONICAL} from "shapes-render/params";
+import {DENOMINATIONS} from "shapes-render/denominations";
+import {renderShape} from "shapes-render/render";
+import {renderSampledShape} from "shapes-render/sampling";
 
 /**
  * Render a Shape locally from the canonical renderer (the code the contract ports) as a data

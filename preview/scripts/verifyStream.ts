@@ -11,13 +11,13 @@
  *    forwards from the emitted geometry and checks the two agree.
  */
 
-import { Round03Rand, seed32Of } from "../src/canonical/rand";
-import { composeShape } from "../src/canonical/render";
+import { Round03Rand, seed32Of } from "shapes-render/rand";
+import { composeShape } from "shapes-render/render";
 import { moduleExtent } from "../src/app/containment";
-import { DENOMINATIONS } from "../src/canonical/denominations";
+import { DENOMINATIONS } from "shapes-render/denominations";
 import { productionSeed } from "../src/seeds";
-import { CANONICAL } from "../src/canonical/params";
-import { geneAtMint } from "../src/canonical/ink";
+import { CANONICAL } from "shapes-render/params";
+import { geneAtMint } from "shapes-render/ink";
 
 /* ---- the original, verbatim ---- */
 const originalRng = (seed: number) => {

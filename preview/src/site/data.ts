@@ -15,8 +15,8 @@ import {
   metadataJsonFromComposition,
   svgFromComposition,
   type Composition,
-} from "../canonical/render";
-import {composeSampledShape} from "../canonical/sampling";
+} from "shapes-render/render";
+import {composeSampledShape} from "shapes-render/sampling";
 import {geneIndexOfName} from "../previewGene";
 import {
   INDEXER_TIMEOUT_MS,

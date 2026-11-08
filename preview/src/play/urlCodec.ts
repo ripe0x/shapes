@@ -31,7 +31,7 @@
  * relabeling.
  */
 
-import { DENOMINATIONS, unitsAt } from "../canonical/denominations";
+import { DENOMINATIONS, unitsAt } from "shapes-render/denominations";
 import {
   composeNodes,
   decomposeNode,

@@ -6,10 +6,10 @@
  */
 
 import { keccak_256 } from "@noble/hashes/sha3";
-import { DENOMINATIONS, denominationIndex, unitsAt } from "../canonical/denominations";
-import { centerGene, geneAtCompose, geneAtMint } from "../canonical/ink";
-import { CANONICAL } from "../canonical/params";
-import { composeShape, type Composition } from "../canonical/render";
+import { DENOMINATIONS, denominationIndex, unitsAt } from "shapes-render/denominations";
+import { centerGene, geneAtCompose, geneAtMint } from "shapes-render/ink";
+import { CANONICAL } from "shapes-render/params";
+import { composeShape, type Composition } from "shapes-render/render";
 import {
   composeSampledShape,
   sampleComposeTraced,
@@ -19,7 +19,7 @@ import {
   type SampleBurn,
   type SampleDonor,
   type SplitTraceCell,
-} from "../canonical/sampling";
+} from "shapes-render/sampling";
 import { productionSeed } from "../seeds";
 import { splitChildSeed } from "../splitSeed";
 

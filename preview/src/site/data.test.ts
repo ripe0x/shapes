@@ -6,7 +6,7 @@ import {loadSite, seedFee, seedMintStart, type SiteData} from "./data";
 import {BLACK_FILTER, filterGalleryTokens, originsLabel} from "./GalleryView";
 import {filterOwnedTokens} from "./MyShapesView";
 import {DENOMINATIONS, shapesAbi, type Deployment} from "../chain/abi";
-import {GENE_NAMES} from "../canonical/ink";
+import {GENE_NAMES} from "shapes-render/ink";
 
 /** A real decodable `NoOwnerToken()` revert, as viem's readContract would throw it. */
 function noOwnerTokenRevert(): ContractFunctionRevertedError {

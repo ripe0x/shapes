@@ -3,8 +3,8 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { DENOMINATIONS as RENDER_DENOMINATIONS } from "@shared/canonical/denominations";
-import { renderSampledShape, sampleCompose, type SampleBurn } from "@shared/canonical/sampling";
+import { DENOMINATIONS as RENDER_DENOMINATIONS } from "shapes-render/denominations";
+import { renderSampledShape, sampleCompose, type SampleBurn } from "shapes-render/sampling";
 import { localArt, sampleSeed } from "@shared/site/art";
 import { formatMintDate } from "@shared/site/mintOpensIn";
 import { mintGene } from "@shared/previewGene";

@@ -9,18 +9,18 @@ import {
   tokenMetadataJson,
   tokenURI,
   type Composition,
-} from "../canonical/render";
-import { fmt } from "../canonical/wad";
-import { LABELS } from "../canonical/denominations";
-import type { Params } from "../canonical/params";
+} from "shapes-render/render";
+import { fmt } from "shapes-render/wad";
+import { LABELS } from "shapes-render/denominations";
+import type { Params } from "shapes-render/params";
 import { downloadText } from "./exporters";
 import { shortHash } from "../analysis";
-import { renderGeometry } from "../canonical/render";
+import { renderGeometry } from "shapes-render/render";
 import { withGridOverlay } from "./gridOverlay";
 import { moduleExtent } from "./containment";
 import { mintGene } from "../previewGene";
 import type { Selection } from "./App";
-import { encodeModules, moduleBytesToHex } from "../canonical/moduleCodec";
+import { encodeModules, moduleBytesToHex } from "shapes-render/moduleCodec";
 import {
   cellDetailAt,
   cellStyleAt,

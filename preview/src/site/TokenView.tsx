@@ -1,7 +1,7 @@
 import React from "react";
 import {type PublicClient} from "viem";
 import {DENOMINATIONS, type Deployment} from "../chain/abi";
-import {geometryAt, svgFromComposition, CANONICAL} from "../canonical/render";
+import {geometryAt, svgFromComposition, CANONICAL} from "shapes-render/render";
 import {loadProvenance, type ProvNode} from "./provenance";
 import {loadTokenHistory, type HistEvent} from "./tokenHistory";
 import {C, FONT, SANS, label} from "./theme";
@@ -23,9 +23,9 @@ import {
   type DnaSeedResult,
   type DnaSnapshot,
 } from "./dna";
-import {moduleBytesToHex} from "../canonical/moduleCodec";
-import type {CardGeometry} from "../canonical/render";
-import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "../canonical/sampling";
+import {moduleBytesToHex} from "shapes-render/moduleCodec";
+import type {CardGeometry} from "shapes-render/render";
+import {effectiveModuleBytes, composeSampledShape, type SampleDonor} from "shapes-render/sampling";
 import {ProvenanceTree, initialExpandedKeys, type TreeNode} from "./ProvenanceTree";
 import {C as PROV_C, forDisplay} from "../app/ui";
 import {DetailPanel, GridOverlayCells, donorColor, useActiveCell} from "../app/provenance";

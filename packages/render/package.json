@@ -1,0 +1,24 @@
+{
+  "name": "shapes-render",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "The canonical Shapes renderer in TypeScript: byte-identical to ShapeRenderer.sol and ShapePackRenderer.sol.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "test": "tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check:mainnet": "tsx scripts/checkMainnet.ts"
+  },
+  "dependencies": {
+    "viem": "^2.55.11"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

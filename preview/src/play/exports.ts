@@ -6,10 +6,10 @@
  * requested polarity rather than reusing a display SVG.
  */
 
-import { CANONICAL } from "../canonical/params";
-import { DENOMINATIONS } from "../canonical/denominations";
-import { geneAtMint } from "../canonical/ink";
-import { composeShape, svgFromComposition, type Composition } from "../canonical/render";
+import { CANONICAL } from "shapes-render/params";
+import { DENOMINATIONS } from "shapes-render/denominations";
+import { geneAtMint } from "shapes-render/ink";
+import { composeShape, svgFromComposition, type Composition } from "shapes-render/render";
 import { downloadBlob, svgToImage } from "../app/exporters";
 import { buildGif } from "../app/gif";
 import { nodeComposition, type PlayNode } from "./session";

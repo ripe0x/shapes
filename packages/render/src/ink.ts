@@ -16,6 +16,7 @@
  */
 
 import { encodePacked, keccak256 } from "viem";
+import { denominationIndex } from "./denominations";
 
 export const GENE_COUNT = 7;
 
@@ -102,6 +103,18 @@ export function geneAtMint(seed: bigint, denomIndex: number): number {
   if (r < 20n) return SPARSE;
   if (r < 80n) return MURK;
   return DENSE;
+}
+
+/**
+ * The gene `Shapes.sol` stores at mint, from a `ShapeMinted` event's `seed` and `amountWei`.
+ * Mint resolves the backing to its ladder index, then calls `InkGenes.geneAtMint`. This is the
+ * token's gene only until its first compose; read `inkGeneOf` (or the latest `InkGene` event)
+ * for a token that has composed since.
+ */
+export function inkGeneAtMint(seed: `0x${string}` | bigint, amountWei: bigint): number {
+  const denomIndex = denominationIndex(amountWei);
+  if (denomIndex < 0) throw new Error(`unsupported denomination: ${amountWei}`);
+  return geneAtMint(BigInt(seed), denomIndex);
 }
 
 /**

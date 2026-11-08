@@ -10,10 +10,10 @@ import {
   moduleSequence,
   renderGeometry,
   tokenMetadataJson,
-} from "../canonical/render";
-import { fmt } from "../canonical/wad";
-import { LABELS } from "../canonical/denominations";
-import type { Params } from "../canonical/params";
+} from "shapes-render/render";
+import { fmt } from "shapes-render/wad";
+import { LABELS } from "shapes-render/denominations";
+import type { Params } from "shapes-render/params";
 import { shortHash } from "../analysis";
 import { mintGene } from "../previewGene";
 

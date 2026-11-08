@@ -9,7 +9,7 @@ import { WagmiProvider, type State } from "wagmi";
 import { getPublicClient } from "@wagmi/core";
 import { shapesAbi, type Deployment } from "@shared/chain/abi";
 import { buildConfig } from "@shared/chain/wagmi";
-import { LADDER_NAME, UNIT } from "@shared/canonical/denominations";
+import { LADDER_NAME, UNIT } from "shapes-render/denominations";
 import { deploymentRecordName } from "@shared/site/deploymentRecord";
 import { LaunchLanding } from "./LaunchLanding";
 

@@ -13,8 +13,8 @@
  * These helpers cover the first and last cases. The middle two are computed at their call sites.
  */
 
-import { geneAtMint, GENE_NAMES } from "./canonical/ink";
-import { denominationIndex } from "./canonical/denominations";
+import { geneAtMint, GENE_NAMES } from "shapes-render/ink";
+import { denominationIndex } from "shapes-render/denominations";
 
 /** The gene the chain assigns a freshly minted card at (seed, denomination). */
 export function mintGene(seed: bigint, amountWei: bigint): number {

@@ -38,6 +38,7 @@ jobs:
               - 'src/**'
               - 'lib/**'
               - 'preview/**'
+              - 'packages/**'
               - 'test/fixtures/**'
               - 'package.json'
               - 'package-lock.json'
@@ -46,6 +47,7 @@ jobs:
               - '.github/workflows/ci.yml'
             site:
               - 'preview/**'
+              - 'packages/**'
               - 'web/**'
               - 'netlify.toml'
               - 'package.json'
@@ -216,13 +218,17 @@ jobs:
           restore-keys: |
             forge-build-${{ runner.os }}-
 
-      # The lockfile lives at the repo root (npm workspaces: web + preview), so
+      # The lockfile lives at the repo root (npm workspaces: packages/render, web, preview), so
       # install runs there; preview's deps hoist into the root node_modules.
       - name: install
         run: npm ci
 
       - name: typecheck
         working-directory: preview
+        run: npx tsc --noEmit
+
+      - name: typecheck renderer package
+        working-directory: packages/render
         run: npx tsc --noEmit
 
       # PRNG fidelity against the Round 03 source, and exact cell containment
@@ -311,6 +317,9 @@ jobs:
 
       - name: install
         run: npm ci
+
+      - name: test renderer package
+        run: npm run test --workspace shapes-render
 
       - name: test shared site logic
         run: npm run test --workspace preview

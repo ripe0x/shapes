@@ -1,13 +1,13 @@
 import React from "react";
 import {hexToBytes, maxUint256, type Hex, type PublicClient} from "viem";
 import {DENOMINATIONS, shapesAbi, type Deployment} from "../chain/abi";
-import {CANONICAL, renderShape} from "../canonical/render";
+import {CANONICAL, renderShape} from "shapes-render/render";
 import {
   renderSampledShape,
   sampleSplitChild,
   type LastMergeDonors,
   type SampleDonor,
-} from "../canonical/sampling";
+} from "shapes-render/sampling";
 import {C, SANS, label} from "./theme";
 import {Art, Modal, OwnerTokenBanner, PreviewBoundary, Section, TxStage, txStageLabel, type PendingTx} from "./ui";
 import {AddressName} from "./AddressName";

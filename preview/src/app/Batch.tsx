@@ -1,8 +1,8 @@
 import React from "react";
 import { Card, C, Section, Button, NumberField, mono, Label } from "./ui";
-import { renderShape } from "../canonical/render";
-import { DENOMINATIONS, GRIDS, LABELS } from "../canonical/denominations";
-import { KIND_ORDER, type Params } from "../canonical/params";
+import { renderShape } from "shapes-render/render";
+import { DENOMINATIONS, GRIDS, LABELS } from "shapes-render/denominations";
+import { KIND_ORDER, type Params } from "shapes-render/params";
 import type { SeedMode } from "../seeds";
 import { analyseBatch, buildBatch } from "../analysis";
 import {

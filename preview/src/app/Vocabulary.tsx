@@ -1,7 +1,7 @@
 import React from "react";
 import {C, mono} from "./ui";
-import {vocabulary, renderModuleSwatch, type Appearance} from "../canonical/render";
-import type {Kind, Params} from "../canonical/params";
+import {vocabulary, renderModuleSwatch, type Appearance} from "shapes-render/render";
+import type {Kind, Params} from "shapes-render/params";
 
 const KIND_LABEL: Record<Kind, string> = {
   circle: "circle",

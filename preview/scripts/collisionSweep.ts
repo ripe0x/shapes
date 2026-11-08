@@ -11,9 +11,9 @@ import {
   DENOMINATIONS,
   GRIDS,
   LABELS,
-} from "../src/canonical/denominations";
-import { CANONICAL } from "../src/canonical/params";
-import { ROT_COUNT } from "../src/canonical/render";
+} from "shapes-render/denominations";
+import { CANONICAL } from "shapes-render/params";
+import { ROT_COUNT } from "shapes-render/render";
 import { buildBatch, analyseBatch } from "../src/analysis";
 
 const N = Number(process.argv[2] ?? 500);

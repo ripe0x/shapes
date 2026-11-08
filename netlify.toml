@@ -1,4 +1,5 @@
-# The site lives in web/ but imports the parity-tested canonical renderer from preview/src.
+# The site lives in web/ but imports the parity-tested renderer from packages/render and shared
+# site code from preview/src.
 # Netlify reads this file from the repository root, then builds inside the web workspace.
 [build]
   base = "web"
@@ -7,10 +8,10 @@
   # the tree exact.
   command = "npm ci --prefix .. --no-audit --no-fund && npm run build:netlify"
   publish = ".next"
-  # The Next site imports its playground and renderer from ../preview. Netlify's default
+  # The Next site imports its playground from ../preview and its renderer from ../packages/render. Netlify's default
   # monorepo check only watches the base directory, so include every source/config path that can
   # change the deployed output. Exit 1 means build; exit 0 means skip.
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF . ../preview ../package.json ../package-lock.json ../netlify.toml"
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF . ../preview ../packages ../package.json ../package-lock.json ../netlify.toml"
 
 [build.environment]
   # Netlify defaults to Node 24/npm 11, which re-resolves optional RainbowKit peers differently

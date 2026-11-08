@@ -1,9 +1,9 @@
 import React from "react";
 import { C, Button, NumberField, mono, forDisplay } from "./ui";
-import { renderShape } from "../canonical/render";
-import { LABELS } from "../canonical/denominations";
-import { denominationIndex } from "../canonical/denominations";
-import type { Params } from "../canonical/params";
+import { renderShape } from "shapes-render/render";
+import { LABELS } from "shapes-render/denominations";
+import { denominationIndex } from "shapes-render/denominations";
+import type { Params } from "shapes-render/params";
 import { buildGif } from "./gif";
 import { downloadBlob } from "./exporters";
 import { mintGene } from "../previewGene";

@@ -1,6 +1,6 @@
 import {formatEther, parseEther, type PublicClient} from "viem";
 import {auctionHouseAbi, shapesAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
-import {UNIT} from "../canonical/denominations";
+import {UNIT} from "shapes-render/denominations";
 import {
   INDEXER_TIMEOUT_MS,
   MAX_INDEXER_LAG_BLOCKS,

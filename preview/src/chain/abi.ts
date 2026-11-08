@@ -1,5 +1,5 @@
 import {parseAbi} from "viem";
-import {DENOMINATIONS as CANONICAL_AMOUNTS, LABELS as CANONICAL_LABELS} from "../canonical/denominations";
+import {DENOMINATIONS as CANONICAL_AMOUNTS, LABELS as CANONICAL_LABELS} from "shapes-render/denominations";
 
 // The subset of the Shapes ERC721 the chain tester and the site call. Human-readable form; viem
 // parses it to the full ABI at import. Every protocol action, view and preview is on this one
