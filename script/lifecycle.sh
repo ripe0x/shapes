@@ -726,7 +726,7 @@ ok "redeem: redeem, redeemTo, redeemBatch, redeemBatchTo and burn each paid exac
 step "9. admin"
 
 ORDINARY=${DUST_POOL[1]}
-NAME_PREFIX="Lifecycle Shape #"  # no trailing space: cast trims one from a string argument
+NAME_PREFIX="Lifecycle"  # no trailing space: cast trims one from a string argument
 DESCRIPTION="A description written by the lifecycle walkthrough to prove the metadata copy reaches tokenURI."
 OWNER_DESCRIPTION="A separate description carried only by the owner token."
 if [ "$OWNER_COPY" = 1 ]; then
@@ -744,7 +744,9 @@ token_json() {
     | sed -E 's#^data:application/json;base64,##' | base64 -d
 }
 ORDINARY_JSON=$(token_json "$ORDINARY")
-assert_eq "tokenURI name" "$(printf '%s' "$ORDINARY_JSON" | jq -r '.name')" "$NAME_PREFIX$ORDINARY"
+# The name leads with the token's ETH value: `<value> ETH · <prefix>#<id>`.
+ORDINARY_VALUE=$(printf '%s' "$ORDINARY_JSON" | jq -r '.attributes[] | select(.trait_type == "ETH Value") | .value')
+assert_eq "tokenURI name" "$(printf '%s' "$ORDINARY_JSON" | jq -r '.name')" "$ORDINARY_VALUE · $NAME_PREFIX#$ORDINARY"
 assert_eq "tokenURI description" "$(printf '%s' "$ORDINARY_JSON" | jq -r '.description')" "$DESCRIPTION"
 if [ "$OWNER_COPY" = 1 ]; then
   assert_eq "owner token tokenURI description" \
