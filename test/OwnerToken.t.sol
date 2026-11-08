@@ -10,6 +10,7 @@ import {IShapes} from "../src/interfaces/IShapes.sol";
 import {IAdminControl} from "../src/interfaces/IAdminControl.sol";
 import {ComposeRecordView} from "../src/ShapeTypes.sol";
 import {Denominations} from "../src/lib/Denominations.sol";
+import {FixedPoint} from "../src/lib/FixedPoint.sol";
 import {BadReceiver, OwnerTokenConsistencyRecorder} from "./mocks/Mocks.sol";
 import {Base64Decode} from "./utils/Base64Decode.sol";
 
@@ -379,12 +380,19 @@ contract OwnerTokenTest is ShapesBase {
 
     /* ------------------------------ metadata ------------------------------ */
 
+    /// @dev `<value> ETH · Shape #<id>, Contract Owner`, from the token's live backing.
+    function _ownerName(uint256 id) internal view returns (string memory) {
+        return string.concat(
+            FixedPoint.fmt(shapes.backingOf(id)), unicode" ETH · Shape #", vm.toString(id), ", Contract Owner"
+        );
+    }
+
     function test_MetadataTracksOwnerTokenAfterAMove() public {
         shapes.transferFrom(address(this), alice, 0);
         _mintDust(alice, 4);
 
         string memory ownerBefore = _decodeTokenUri(shapes.tokenURI(0));
-        assertEq(vm.parseJsonString(ownerBefore, ".name"), "Shape 0, Contract Owner");
+        assertEq(vm.parseJsonString(ownerBefore, ".name"), _ownerName(0));
         assertTrue(_contains(ownerBefore, ',{"value":"Contract Owner"}'));
 
         string memory survivorBefore = _decodeTokenUri(shapes.tokenURI(1));
@@ -394,7 +402,7 @@ contract OwnerTokenTest is ShapesBase {
         shapes.compose(1, _ids4(0, 2, 3, 4));
 
         string memory survivorAfter = _decodeTokenUri(shapes.tokenURI(1));
-        assertEq(vm.parseJsonString(survivorAfter, ".name"), "Shape 1, Contract Owner");
+        assertEq(vm.parseJsonString(survivorAfter, ".name"), _ownerName(1));
         assertTrue(
             _contains(survivorAfter, ',{"value":"Contract Owner"}'), "new owner token carries the trait"
         );

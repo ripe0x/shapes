@@ -538,7 +538,7 @@ test("loadSite: a fresh indexer supplies every token field with no per-token cha
   assert.equal(apex.originCount, 4);
   assert.equal(apex.inkGene, 2);
   assert.equal(apex.owner, OWNER);
-  assert.equal(apex.meta.name, "Shape 1200");
+  assert.equal(apex.meta.name, "100 ETH · Shape #1200");
   assert.ok(apex.image.startsWith("data:image/svg+xml;base64,"));
   assert.equal(
     apex.meta.attributes.find((a) => a.trait_type === "Ink")?.value,
@@ -573,10 +573,10 @@ test("loadSite: the owner token's own name and description come from the header'
   });
 
   const ownerToken = site.tokens.find((t) => t.id === 2n)!;
-  assert.equal(ownerToken.meta.name, "Shape 2, Contract Owner");
+  assert.equal(ownerToken.meta.name, "0.01 ETH · Shape #2, Contract Owner");
   assert.ok(ownerToken.meta.attributes.some((a) => a.trait_type === undefined && a.value === "Contract Owner"));
   const ordinary = site.tokens.find((t) => t.id === 1n)!;
-  assert.equal(ordinary.meta.name, "Shape 1");
+  assert.equal(ordinary.meta.name, "0.01 ETH · Shape #1");
   assert.ok(!ordinary.meta.attributes.some((a) => a.value === "Contract Owner"));
 });
 

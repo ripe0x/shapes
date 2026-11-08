@@ -1238,7 +1238,7 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
             bytes.concat(
                 abi.encodePacked(
                     '{"name":"',
-                    _tokenName(namePrefix, tokenId, ownerToken),
+                    _tokenName(Denominations.labelAt(card.denomIndex), namePrefix, tokenId, ownerToken),
                     '","description":"',
                     description,
                     '","image":"data:image/svg+xml;base64,',
@@ -1273,18 +1273,19 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         );
     }
 
-    /// @dev The owner token is the transferable collection-ownership token. Its name is the
-    ///      ordinary `namePrefix` plus token id, suffixed with `, Contract Owner`, so the name
-    ///      tracks whichever token currently holds the role.
-    function _tokenName(string memory namePrefix, uint256 tokenId, bool ownerToken)
+    /// @dev `0.01 ETH · Shape #9`: the ETH value first, so it survives marketplace truncation, then
+    ///      `namePrefix`, `#` and the token id. The owner token is the transferable
+    ///      collection-ownership token; its name adds `, Contract Owner`, so the name tracks
+    ///      whichever token currently holds the role.
+    function _tokenName(string memory valueLabel, string memory namePrefix, uint256 tokenId, bool ownerToken)
         private
         pure
         returns (string memory)
     {
-        if (ownerToken) {
-            return string(abi.encodePacked(namePrefix, FixedPoint.toString(tokenId), ", Contract Owner"));
-        }
-        return string(abi.encodePacked(namePrefix, FixedPoint.toString(tokenId)));
+        bytes memory name =
+            abi.encodePacked(valueLabel, unicode" ETH · ", namePrefix, "#", FixedPoint.toString(tokenId));
+        if (ownerToken) return string(abi.encodePacked(name, ", Contract Owner"));
+        return string(name);
     }
 
     /// @dev Descriptive metadata only. Privileged Shapes operations use the separate `admin()`.

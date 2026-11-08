@@ -73,7 +73,7 @@ export function renderPack(cards: readonly PackCard[]): string {
 /** The raw metadata JSON `ShapePackRenderer.metadataJSON` returns. */
 export function packMetadataJson(input: PackRenderInput): string {
   return (
-    `{"name":"${input.tokenNamePrefix}${input.packId}",` +
+    `{"name":"${fmt(input.valueWei)} ETH · ${input.tokenNamePrefix}#${input.packId}",` +
     `"description":"${input.description} ${makeup(input)}",` +
     `"image":"data:image/svg+xml;base64,${base64Utf8(renderPack(input.topCards))}",` +
     `"attributes":[${attributes(input)}]}`

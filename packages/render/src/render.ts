@@ -883,9 +883,8 @@ export function metadataJsonFromComposition(
     ? `,{"trait_type":"Split From","value":"${LABELS[splitFrom.parentDenomIndex]} ETH"},` +
       `{"trait_type":"Split Origin","value":"${LABELS[splitFrom.originDenomIndex]} ETH"}`
     : "";
-  const name = isOwnerToken
-    ? `${namePrefix}${tokenId.toString()}, Contract Owner`
-    : `${namePrefix}${tokenId.toString()}`;
+  const baseName = `${c.label} ETH · ${namePrefix}#${tokenId.toString()}`;
+  const name = isOwnerToken ? `${baseName}, Contract Owner` : baseName;
   const contractOwnerTrait = isOwnerToken
     ? `,{"value":"Contract Owner"}`
     : "";

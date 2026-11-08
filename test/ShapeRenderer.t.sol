@@ -521,7 +521,7 @@ contract OutputTest is RendererTestBase {
         string memory json = renderer.metadataJSON(
             bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
-        assertEq(vm.parseJsonString(json, ".name"), "Shape 123");
+        assertEq(vm.parseJsonString(json, ".name"), string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · Shape #123"));
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), DENOMS[4], false, 0), "123"));
     }
 
@@ -530,14 +530,17 @@ contract OutputTest is RendererTestBase {
         string memory ownerJson = renderer.metadataJSON(
             bytes32(uint256(1)), DENOMS[0], 0, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, true
         );
-        assertEq(vm.parseJsonString(ownerJson, ".name"), "Shape 0, Contract Owner");
+        assertEq(
+            vm.parseJsonString(ownerJson, ".name"),
+            string.concat(FixedPoint.fmt(DENOMS[0]), unicode" ETH · Shape #0, Contract Owner")
+        );
         assertEq(vm.parseJsonString(ownerJson, ".attributes[15].value"), "Contract Owner");
         assertTrue(_contains(ownerJson, ',{"value":"Contract Owner"}'));
 
         string memory ordinaryJson = renderer.metadataJSON(
             bytes32(uint256(1)), DENOMS[0], 1, 1, false, 0, 0, NAME_PREFIX, DESCRIPTION, false
         );
-        assertEq(vm.parseJsonString(ordinaryJson, ".name"), "Shape 1");
+        assertEq(vm.parseJsonString(ordinaryJson, ".name"), string.concat(FixedPoint.fmt(DENOMS[0]), unicode" ETH · Shape #1"));
         assertFalse(_contains(ordinaryJson, '{"value":"Contract Owner"}'));
     }
 
@@ -552,9 +555,9 @@ contract OutputTest is RendererTestBase {
         string memory json = string(Base64Decode.decode(_after(uri, "data:application/json;base64,")));
 
         // real JSON, parseable field by field
-        string memory expectedName = tokenId == 0
-            ? "Shape 0, Contract Owner"
-            : string(abi.encodePacked("Shape ", vm.toString(uint256(tokenId))));
+        string memory expectedName =
+            string.concat(FixedPoint.fmt(amount), unicode" ETH · Shape #", vm.toString(uint256(tokenId)));
+        if (tokenId == 0) expectedName = string.concat(expectedName, ", Contract Owner");
         assertEq(vm.parseJsonString(json, ".name"), expectedName);
         assertGt(bytes(vm.parseJsonString(json, ".description")).length, 40);
 
@@ -757,12 +760,18 @@ contract TokenMetadataTest is RendererTestBase {
     ///         change to the ordinary token-name prefix.
     function test_CollectionOwnerIdentityFlowsThroughShapesTokenURI() public {
         string memory initial = _decodeJson(0);
-        assertEq(vm.parseJsonString(initial, ".name"), "Shape 0, Contract Owner");
+        assertEq(
+            vm.parseJsonString(initial, ".name"),
+            string.concat(FixedPoint.fmt(shapes.backingOf(0)), unicode" ETH · Shape #0, Contract Owner")
+        );
         assertEq(vm.parseJsonString(initial, ".attributes[15].value"), "Contract Owner");
         assertTrue(_contains(initial, ',{"value":"Contract Owner"}'));
 
         collection.setMetadataCopy("Form ", "A reshaped description of the object.", "An owner description.");
-        assertEq(vm.parseJsonString(_decodeJson(0), ".name"), "Form 0, Contract Owner");
+        assertEq(
+            vm.parseJsonString(_decodeJson(0), ".name"),
+            string.concat(FixedPoint.fmt(shapes.backingOf(0)), unicode" ETH · Form #0, Contract Owner")
+        );
     }
 
     /// @notice The on-chain token drives the provenance traits from its own (originCount, isBlack),
@@ -973,12 +982,13 @@ contract TokenMetadataTest is RendererTestBase {
         vm.prank(alice);
         uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         string memory idStr = vm.toString(id);
-        assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat("Shape ", idStr), "default name");
+        string memory value = string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · ");
+        assertEq(vm.parseJsonString(_decodeJson(id), ".name"), string.concat(value, "Shape #", idStr), "default name");
 
         collection.setMetadataCopy("Form ", "A reshaped description of the object.", "An owner description.");
 
         string memory j = _decodeJson(id);
-        assertEq(vm.parseJsonString(j, ".name"), string.concat("Form ", idStr), "name prefix updated");
+        assertEq(vm.parseJsonString(j, ".name"), string.concat(value, "Form #", idStr), "name prefix updated");
         assertEq(
             vm.parseJsonString(j, ".description"),
             "A reshaped description of the object.",
@@ -1134,7 +1144,11 @@ contract TokenMetadataTest is RendererTestBase {
         assertEq(collection.description(), desc, "description not stored byte-exact");
         string memory j = _decodeJson(id);
         assertEq(vm.parseJsonString(j, ".description"), desc, "description not preserved through JSON");
-        assertEq(vm.parseJsonString(j, ".name"), string.concat(prefix, vm.toString(id)), "name not preserved");
+        assertEq(
+            vm.parseJsonString(j, ".name"),
+            string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · ", prefix, "#", vm.toString(id)),
+            "name not preserved"
+        );
     }
 
     /// @notice The constructor's default copy satisfies the very rule the setters enforce, so the
@@ -1146,13 +1160,17 @@ contract TokenMetadataTest is RendererTestBase {
         );
     }
 
-    /// @notice Empty copy is allowed: the name is the bare token id, the description empty.
+    /// @notice Empty copy is allowed: the name is the value and the token id, the description empty.
     function test_EmptyCopyIsValidJson() public {
         vm.prank(alice);
         uint256 id = shapes.mint{value: DENOMS[4] + MINT_FEE}(DENOMS[4]);
         collection.setMetadataCopy("", "", "");
         string memory j = _decodeJson(id);
-        assertEq(vm.parseJsonString(j, ".name"), vm.toString(id), "name is the bare id");
+        assertEq(
+            vm.parseJsonString(j, ".name"),
+            string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · #", vm.toString(id)),
+            "name is the value and the id"
+        );
         assertEq(vm.parseJsonString(j, ".description"), "", "empty description");
     }
 
