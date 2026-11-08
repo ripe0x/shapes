@@ -13,6 +13,10 @@ test("names lead with the ETH value; token zero has the contract-owner title and
 
   const ordinary = JSON.parse(tokenMetadataJson(1n, DENOMINATIONS[0], 1n, 1n, false, 0, 0n));
   assert.equal(ordinary.name, `${LABELS[0]} ETH · Shape #1`);
+
+  // A prefix that already ends in `#` gets no second one.
+  const hashed = JSON.parse(tokenMetadataJson(1n, DENOMINATIONS[0], 1n, 1n, false, 0, 0n, "Shape #"));
+  assert.equal(hashed.name, `${LABELS[0]} ETH · Shape #1`);
   assert.equal(
     ordinary.attributes.some((trait: {value: string}) => trait.value === "Contract Owner"),
     false,

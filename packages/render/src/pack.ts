@@ -13,7 +13,7 @@
 
 import { getAddress } from "viem";
 import { denominationIndex } from "./denominations";
-import { base64Utf8, renderShape } from "./render";
+import { base64Utf8, idMark, renderShape } from "./render";
 import { renderSampledShape } from "./sampling";
 import { CANONICAL } from "./params";
 import { fmt } from "./wad";
@@ -73,7 +73,7 @@ export function renderPack(cards: readonly PackCard[]): string {
 /** The raw metadata JSON `ShapePackRenderer.metadataJSON` returns. */
 export function packMetadataJson(input: PackRenderInput): string {
   return (
-    `{"name":"${fmt(input.valueWei)} ETH · ${input.tokenNamePrefix}#${input.packId}",` +
+    `{"name":"${fmt(input.valueWei)} ETH · ${input.tokenNamePrefix}${idMark(input.tokenNamePrefix)}${input.packId}",` +
     `"description":"${input.description} ${makeup(input)}",` +
     `"image":"data:image/svg+xml;base64,${base64Utf8(renderPack(input.topCards))}",` +
     `"attributes":[${attributes(input)}]}`

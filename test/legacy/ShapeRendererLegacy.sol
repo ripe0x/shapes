@@ -1259,7 +1259,9 @@ contract ShapeRendererLegacy is IShapeRenderer, IShapeGeometry, IERC165 {
                     Denominations.labelAt(card.denomIndex),
                     unicode" ETH · ",
                     namePrefix,
-                    "#",
+                    bytes(namePrefix).length != 0 && bytes(namePrefix)[bytes(namePrefix).length - 1] == "#"
+                        ? bytes("")
+                        : bytes("#"),
                     FixedPoint.toString(tokenId)
                 ),
                 '","description":"',

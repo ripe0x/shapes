@@ -528,6 +528,23 @@ contract OutputTest is RendererTestBase {
         assertFalse(_contains(renderer.renderSVG(bytes32(uint256(1)), DENOMS[4], false, 0), "123"));
     }
 
+    /// @notice A prefix that already ends in `#` gets no second one.
+    function test_NameDoesNotDoubleTheHash() public view {
+        string memory json = renderer.metadataJSON(
+            bytes32(uint256(1)), DENOMS[4], 123, 1, false, 0, 0, "Shape #", DESCRIPTION, false
+        );
+        assertEq(
+            vm.parseJsonString(json, ".name"),
+            string.concat(FixedPoint.fmt(DENOMS[4]), unicode" ETH · Shape #123")
+        );
+        string memory owner =
+            renderer.metadataJSON(bytes32(uint256(1)), DENOMS[0], 0, 1, false, 0, 0, "#", DESCRIPTION, true);
+        assertEq(
+            vm.parseJsonString(owner, ".name"),
+            string.concat(FixedPoint.fmt(DENOMS[0]), unicode" ETH · #0, Contract Owner")
+        );
+    }
+
     /// @notice Shape #0 carries its collection role in both its name and one value-only attribute.
     function test_CollectionOwnerTokenHasDistinctMetadataIdentity() public view {
         string memory ownerJson = renderer.metadataJSON(

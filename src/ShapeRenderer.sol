@@ -1274,7 +1274,7 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
     }
 
     /// @dev `0.01 ETH · Shape #9`: the ETH value first, so it survives marketplace truncation, then
-    ///      `namePrefix`, `#` and the token id. The owner token is the transferable
+    ///      `namePrefix`, `#` (unless the prefix already ends in one) and the token id. The owner token is the transferable
     ///      collection-ownership token; its name adds `, Contract Owner`, so the name tracks
     ///      whichever token currently holds the role.
     function _tokenName(string memory valueLabel, string memory namePrefix, uint256 tokenId, bool ownerToken)
@@ -1282,10 +1282,22 @@ contract ShapeRenderer is IShapeRenderer, IShapeGeometry, IERC165 {
         pure
         returns (string memory)
     {
-        bytes memory name =
-            abi.encodePacked(valueLabel, unicode" ETH · ", namePrefix, "#", FixedPoint.toString(tokenId));
+        bytes memory name = abi.encodePacked(
+            valueLabel,
+            unicode" ETH · ",
+            namePrefix,
+            _idMark(bytes(namePrefix)),
+            FixedPoint.toString(tokenId)
+        );
         if (ownerToken) return string(abi.encodePacked(name, ", Contract Owner"));
         return string(name);
+    }
+
+    /// @dev The `#` that sits between the name prefix and the id, omitted when the admin-set prefix
+    ///      already ends in one, so a `Shape #` prefix never renders `##`.
+    function _idMark(bytes memory namePrefix) private pure returns (string memory) {
+        if (namePrefix.length != 0 && namePrefix[namePrefix.length - 1] == "#") return "";
+        return "#";
     }
 
     /// @dev Descriptive metadata only. Privileged Shapes operations use the separate `admin()`.
