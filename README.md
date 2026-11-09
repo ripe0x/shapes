@@ -750,7 +750,7 @@ first.
 
 | Network | Shapes | ShapeRenderer |
 |---|---|---|
-| Mainnet | `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0` | `0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295` |
+| Mainnet | `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0` | `0x47fef3acec6779ca32daf303467db4f0fddffa08` |
 | Sepolia | `0x6c2f9c00f44fbbf141dd166979903004b80d5f99` | `0x7025fc7e13ca24505d471e193e2e2a54e960a1b2` |
 
 Mainnet deployed 2026-09-03 from `main` commit `a0a180b`. Mint fee is a flat 0.001 ETH per Shape;

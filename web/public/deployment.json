@@ -3,7 +3,7 @@
   "indexerUrl": "https://shapes-indexer-mainnet.fly.dev",
   "chainId": 1,
   "shapes": "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0",
-  "renderer": "0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295",
+  "renderer": "0x47fef3acec6779ca32daf303467db4f0fddffa08",
   "collection": "0x9d1bd0c348900d5c6bce28148f2adc68f73c8af3",
   "auctionHouse": "0xe123d75956cb2c487251593e1be50985b23f427d",
   "mintFeeWei": "1000000000000000",
