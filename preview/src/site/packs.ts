@@ -7,7 +7,7 @@ export const PACKS_DEPLOYMENTS = {
   1: {
     chainId: 1, name: "Mainnet", shapes: "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0",
     packs: "0xf21514b090da7df4390803497d6ae673801e5ca7",
-    renderer: "0xaf1c899baacc0fe8cfba0c6cf2624a018a393def",
+    renderer: "0x934c491dda49c8058347c3fca191852d54705645",
     rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io",
   },
   11155111: {

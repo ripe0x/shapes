@@ -7,7 +7,7 @@ Each network has one machine-readable record in the repository, `deployments/<ch
 | Contract | Address |
 | --- | --- |
 | Shapes | `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0` |
-| ShapeRenderer | `0xe9ac8d910767d8efc71bf4f2cb5d7ef4c4f69295` |
+| ShapeRenderer | `0x47fef3acec6779ca32daf303467db4f0fddffa08` |
 | ShapeCollection | `0x9d1bd0c348900d5c6bce28148f2adc68f73c8af3` |
 | ShapeAuctionHouse | `0x90b79dbf4f301c239983ee37e6a466132e1532df` |
 

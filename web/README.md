@@ -5,7 +5,7 @@ Next.js site for Shapes.
 `/packs` is in the shared site navigation. The production site uses mainnet Shapes
 `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0`, ShapePacks
 `0xf21514b090da7df4390803497d6ae673801e5ca7`, and renderer
-`0xaf1c899baacc0fe8cfba0c6cf2624a018a393def`. The separate Sepolia site and local
+`0x934c491dda49c8058347c3fca191852d54705645`. The separate Sepolia site and local
 Sepolia preview use Shapes `0x6c2f9c00f44fbbf141dd166979903004b80d5f99`, ShapePacks
 `0x6DB763fB3FA5B988BEDa8E7a4288c79d7E1E6f45`, renderer
 `0xbFa47D2047D61AE8eAA685008e1272E4F9d6ea60`, and Tenderly's public Sepolia RPC.

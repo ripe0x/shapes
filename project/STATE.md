@@ -2,14 +2,14 @@
 
 Single source of truth for current project status. Status lines inside spec documents (SHAPES_V2_SPEC.md "pre-implementation", ZERO_AUCTION_DRAFT.md "no code written", README's "not deployed" table) are historical and superseded by this file.
 
-Last updated: 2026-10-10 (P4 mainnet Packs website release complete; P3 Shapes mainnet launch complete).
+Last updated: 2026-11-09 (D-54 value-name renderers live on mainnet; P4 mainnet Packs website release complete; P3 Shapes mainnet launch complete).
 
 ## Current website change
 
 Objective: release ShapePacks on `shapes.ripe.wtf/packs` using mainnet Shapes
 `0x6fe9193276bf7abcbee44ab7afd717d637d6faf0`, ShapePacks
 `0xf21514b090da7df4390803497d6ae673801e5ca7`, and renderer
-`0xaf1c899baacc0fe8cfba0c6cf2624a018a393def`. The production build must be mainnet only.
+`0x934c491dda49c8058347c3fca191852d54705645`. The production build must be mainnet only.
 The local Sepolia preview retains D-52's Sepolia contracts. The separate
 `shapes-sepolia.netlify.app` environment still selects Sepolia, but its published commit
 `e5039c1` predates Packs and `/packs` returns 404. Its subsequent builds were skipped by
