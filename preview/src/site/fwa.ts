@@ -1,4 +1,4 @@
-import {parseAbi, parseAbiItem, parseEventLogs, type Address, type Hash, type PublicClient, type TransactionReceipt} from "viem";
+import {formatEther, parseAbi, parseAbiItem, parseEventLogs, type Address, type Hash, type PublicClient, type TransactionReceipt} from "viem";
 import {PACKS_DEPLOYMENTS, packsAbi, packsShapesAbi} from "./packs";
 
 export const FWA_POOL = "0x958C41181182e76F221331b2755b77D9e1426A98" as const;
@@ -136,6 +136,33 @@ export function buildExplicitFwaPlan(choices: readonly PackChoice[], ratioBps: b
   const total = packValue + backing + fees;
   return {rows, packValue, backing, fees, total, remainder: cap === undefined ? 0n : cap - total};
 }
+/** Strict decimal input: viem's parseEther rounds excess precision, so reject it first. */
+export function parseFwaAmount(input: string): bigint {
+  if (!/^(?:\d+(?:\.\d{0,18})?|\.\d{1,18})$/.test(input.trim())) throw new Error("Enter an eth amount with up to 18 decimal places.");
+  const [whole, fraction = ""] = input.trim().split(".");
+  return BigInt(whole || "0") * 10n ** 18n + BigInt(fraction.padEnd(18, "0"));
+}
+/** Calculate the chosen flat list even when live minimums are unmet, so the UI can name each offending pack. */
+export function buildFwaContribution(packs: readonly {value: bigint; backing: bigint}[], settings: FwaSettings, budget: bigint): Plan {
+  if (packs.length > 24) throw new Error("Choose up to 24 packs.");
+  if (budget < 0n || packs.some(p => p.value <= 0n || p.backing < 0n)) throw new Error("Enter positive pack values and nonnegative FWA backing.");
+  const rows = packs.map(({value, backing}) => {
+    const counts = packMakeup(value, settings.denominations);
+    const fee = counts.reduce((s, n) => s + BigInt(n) * settings.mintFee, 0n);
+    return {value, backing, counts, fee, payment: value + fee};
+  });
+  const packValue = rows.reduce((s, r) => s + r.value, 0n);
+  const backing = rows.reduce((s, r) => s + r.backing, 0n);
+  const fees = rows.reduce((s, r) => s + r.fee, 0n);
+  const total = packValue + backing + fees;
+  return {rows, packValue, backing, fees, total, remainder: budget - total};
+}
+export function fwaPackRequirement(row: {value: bigint; backing: bigint}, settings: FwaSettings): string | null {
+  if (row.value < settings.minimumPack) return `Minimum pack value is ${formatEther(settings.minimumPack)} eth.`;
+  if (row.backing === 0n || row.backing < settings.minimumBacking) return `Minimum FWA backing is ${formatEther(settings.minimumBacking)} eth.`;
+  if (settings.admitted && !settings.exempt && settings.cap !== null && row.backing > settings.cap) return `FWA backing exceeds the ${formatEther(settings.cap)} eth oracle ceiling.`;
+  return null;
+}
 export function fwaExposure(rows: readonly {backing: bigint}[], settings: FwaSettings) {
   const weights = rows.map(r => 10n ** 36n / r.backing);
   const addedWeight = weights.reduce((s, w) => s + w, 0n);
@@ -150,7 +177,7 @@ export function fwaSettlement(row: {value: bigint; backing: bigint}, settings: F
 }
 export function depositBlocker(settings: FwaSettings, rows: readonly {backing: bigint}[]): string | null {
   if (settings.withdrawOnly) return "FWA is currently allowing withdrawals only.";
-  if (!settings.admitted) return "shape packs are awaiting admission to the FWA main pool. You can prepare your packs now and deposit once admission is live.";
+  if (!settings.admitted) return "shape packs are awaiting admission to the FWA main V2 pool.";
   if (settings.oracleError) return settings.oracleError;
   if (rows.some(r => r.backing === 0n || r.backing < settings.minimumBacking)) return "A pack's FWA backing is below the current pool minimum.";
   if (!settings.exempt && (settings.cap === null || rows.some(r => r.backing > settings.cap!))) return "The planned FWA backing exceeds the current oracle ceiling. Adjust the ratio or split.";
@@ -158,7 +185,7 @@ export function depositBlocker(settings: FwaSettings, rows: readonly {backing: b
 }
 
 export type FwaRow = {counts: number[]; value: string; backing: string; fee: string; packId?: string; mintHash?: Hash; depositHash?: Hash; listingId?: string; staged?: boolean};
-export type FwaSession = {version: 1; account: Address; rows: FwaRow[]; draft?: {budget: string; quantity: number; ratio: string; spread: boolean}; approvalHash?: Hash};
+export type FwaSession = {version: 1; account: Address; rows: FwaRow[]; draft?: {budget: string; quantity: number; ratio: string; spread: boolean}; approvalHash?: Hash; approvalReceipt?: Hash};
 export const sessionKey = (account: Address) => `shapes:fwa:1:${FWA_POOL}:${account.toLowerCase()}`;
 export function parseFwaSession(raw: string, account: Address): FwaSession | null {
   try {
@@ -167,7 +194,7 @@ export function parseFwaSession(raw: string, account: Address): FwaSession | nul
     for (const r of s.rows) {
       if (!Array.isArray(r.counts) || r.counts.length !== 9 || r.counts.some(n => !Number.isInteger(n) || n < 0 || n > 0xffffffff) || BigInt(r.value) <= 0n || BigInt(r.backing) <= 0n || BigInt(r.fee) < 0n) return null;
       for (const id of [r.packId, r.listingId]) if (id !== undefined && !/^\d+$/.test(id)) return null;
-      for (const hash of [r.mintHash, r.depositHash, s.approvalHash]) if (hash !== undefined && !/^0x[\da-f]{64}$/i.test(hash)) return null;
+      for (const hash of [r.mintHash, r.depositHash, s.approvalHash, s.approvalReceipt]) if (hash !== undefined && !/^0x[\da-f]{64}$/i.test(hash)) return null;
     }
     return s;
   } catch { return null; }
@@ -207,6 +234,10 @@ export async function reconcileFwaSession(client: PublicClient, saved: FwaSessio
       if (receipt?.status === "reverted") delete row.depositHash;
     }
   }
-  if (next.approvalHash && await receiptFor(next.approvalHash)) delete next.approvalHash;
+  if (next.approvalHash) {
+    const receipt = await receiptFor(next.approvalHash);
+    if (receipt?.status === "success") next.approvalReceipt = receipt.transactionHash;
+    if (receipt) delete next.approvalHash;
+  }
   return next;
 }

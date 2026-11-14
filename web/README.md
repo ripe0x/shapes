@@ -185,25 +185,27 @@ Playwright is already a devDependency of `preview/`; a fresh checkout needs
 
 ## FWA contribution page
 
-`/fwa` prepares mainnet **shape packs only** using explicit pack value and quantity
-rows. It calculates pack reserves, separate FWA backing, and per-shape mint fees.
-An optional budget cap reports shortfalls without resizing the chosen packs.
-Backing ratios are expressed as FWA backing divided by pack value. Pack values must match valid shapes denominations. All writes go directly from the
-connected wallet to the existing contracts; no adapter or custody contract is
-used. Minting and depositing are separate review steps.
+`/fwa` follows the supplied FWA design handoff with budget, pack table, backing,
+settlement outcomes, steps, and a sticky contribution summary. The table groups
+packs by value and accepts any valid sum of shapes denominations. A global ratio
+sets backing for all packs; per pack overrides let each position use its own
+backing. Choosing a global ratio again replaces those overrides. Pack artwork
+uses the canonical `shapes-render` pack renderer.
 
-The page verifies bytecode, the packs-to-shapes pointer, denominations, mint fees,
-pack minimum, FWA admission, oracle exemption or valid floor ceiling, cashout
-rates, and the minimum-backing/withdraw-only ConfigSet history. History reads use
-a block-hash-checked browser checkpoint. Missing checks fail closed for deposits.
-Minting can prepare packs while admission is pending, with that state disclosed.
-The preview reads total pool weight and active listing count at the same block
-as configuration. Draw exposure includes the added weight of every planned pack;
-fee share assumes all packs activate alongside the current active listings.
-Settlement outcomes distinguish backing returned when the buyer keeps the pack
-from the pack returning when the buyer accepts a bid. These are snapshots, not
-yield estimates. Every transaction is simulated and estimated with the existing
-gas buffer.
+All amounts use bigint wei. Pack composition uses the fewest shapes from the
+live denomination ladder, with one live mint fee per underlying shape. The total
+includes redeemable pack value, FWA backing, and mint fees. Budget and wallet
+shortfalls leave every chosen amount unchanged and disable the primary action.
+Pack minimums, FWA backing minimums, admission, oracle policy, and withdrawal
+status are checked against deployed contracts. Unmet requirements identify the
+pack in the table and contribution summary. The workflow is blocked while the
+collection is awaiting admission.
+
+Review and mint continues through minting each pack, approving FWA if necessary,
+and depositing each pack directly from the connected wallet. Every write is
+quoted, simulated, and estimated with the existing gas buffer. Step progress and
+transaction links use the site's evm.now URL helper. The summary stacks below the
+sections under 900px, and section labels stack under 700px.
 
 A wallet-scoped local checklist stores the frozen plan and each broadcast hash
 before awaiting confirmation. Reload recovery reads receipts, extracts the actual

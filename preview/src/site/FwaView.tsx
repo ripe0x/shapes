@@ -1,39 +1,51 @@
 import React from "react";
 import "./FwaView.css";
-import {formatEther, parseEther, type Abi, type Address, type Hash} from "viem";
+import {formatEther, type Abi, type Address, type Hash} from "viem";
 import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
+import {renderPack, type PackCard} from "shapes-render/pack";
 import type {Deployment} from "../chain/abi";
 import {packsAbi, packsClientFor, packsGasBudget} from "./packs";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import {describeTxError} from "./errors";
-import {localArt, sampleSeed} from "./art";
+import {Section, txUrl} from "./ui";
+import {sampleSeed} from "./art";
 import {mintGene} from "../previewGene";
 import {
-  FWA_POOL, PACKS, buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, loadFwaSettings,
-  mintedPackId, packTransferAbi, parseFwaSession, reconcileFwaSession, sessionKey,
-  type FwaSession, type FwaSettings, type Plan,
+  FWA_POOL, PACKS, SHAPES, buildFwaContribution, parseFwaAmount, fwaPackRequirement, packMakeup,
+  depositBlocker, depositedListing, fwaAbi, loadFwaSettings, mintedPackId, packTransferAbi,
+  parseFwaSession, reconcileFwaSession, sessionKey, type FwaSession, type FwaSettings, type Plan,
 } from "./fwa";
 
 const client = packsClientFor(1);
 const eth = (v: bigint | string) => formatEther(BigInt(v));
-const percent = (n: bigint, d: bigint) => d > 0n ? `${(Number(n * 100_000_000n / d) / 1_000_000).toFixed(6)}%` : "Unavailable";
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const DEFAULT_VALUES = ["0.01", "0.04", "0.05", "0.1", "0.15", "0.5"];
+const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
+const makeup = (counts: number[], denominations: bigint[]) => counts.flatMap((n, i) => n ? [`${words[n] ?? n} ${eth(denominations[i])}`] : []).reverse().join(" and ") + (counts.find(n => n > 0) === 1 ? " shape" : " shapes");
+type Choice = {value: string; quantity: number};
+type DraftPack = {key: string; value: bigint};
+const defaultChoices = (): Choice[] => DEFAULT_VALUES.map(value => ({value, quantity: value === "0.05" ? 3 : value === "0.1" ? 2 : 0}));
 
 export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => void}) {
   const {address, chainId} = useAccount();
   const {switchChainAsync} = useSwitchChain();
   const {writeContractAsync} = useWriteContract();
-  const [budget, setBudget] = React.useState("");
-  const [choices, setChoices] = React.useState([{value: "0.05", quantity: 1}]);
-  const [ratio, setRatio] = React.useState("100");
-  const quantity = choices.reduce((n, r) => n + r.quantity, 0);
-  const updateChoice = (index: number, change: Partial<{value: string; quantity: number}>) => setChoices(rows => rows.map((row, i) => i === index ? {...row, ...change} : row));
+  const [budget, setBudget] = React.useState("0.75");
+  const [choices, setChoices] = React.useState(defaultChoices);
+  const [ratio, setRatio] = React.useState(10_000n);
+  const [backings, setBackings] = React.useState<Record<string, string>>({});
+  const [perPackExpanded, setPerPackExpanded] = React.useState(true);
+  const [addingValue, setAddingValue] = React.useState(false);
+  const [newValue, setNewValue] = React.useState("");
+  const [addError, setAddError] = React.useState("");
   const [settings, setSettings] = React.useState<FwaSettings | null>(null);
   const [settingsError, setSettingsError] = React.useState("");
   const [checking, setChecking] = React.useState(false);
+  const [walletBalance, setWalletBalance] = React.useState<bigint | null>(null);
   const [session, setSession] = React.useState<FwaSession | null>(null);
   const [ready, setReady] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
+  const [step, setStep] = React.useState<"mint" | "approve" | "deposit">("mint");
   const [message, setMessage] = React.useState("");
   const [error, setError] = React.useState("");
   const [storageWarning, setStorageWarning] = React.useState(false);
@@ -45,80 +57,91 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const sessionRef = React.useRef(session);
   const running = React.useRef(false);
   const mounted = React.useRef(true);
-  React.useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const supported = dep.chainId === 1 && same(dep.shapes, "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0");
+  React.useEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
+  const supported = dep.chainId === 1 && same(dep.shapes, SHAPES);
+  const refreshBalance = React.useCallback(async () => {
+    const account = wallet.current.address;
+    if (!account) return;
+    try {const balance = await client.getBalance({address: account}); if (mounted.current && same(wallet.current.address ?? "", account)) setWalletBalance(balance);}
+    catch {if (mounted.current && same(wallet.current.address ?? "", account)) setWalletBalance(null);}
+  }, []);
   const refresh = React.useCallback(async () => {
-    setChecking(true);
-    setSettingsError("");
-    try { const value = await loadFwaSettings(client); if (mounted.current) setSettings(value); return value; }
-    catch (e) { if (mounted.current) {setSettings(null); setSettingsError(describeTxError(e));} throw e; }
-    finally { if (mounted.current) setChecking(false); }
+    setChecking(true); setSettingsError("");
+    try {const value = await loadFwaSettings(client); if (mounted.current) setSettings(value); return value;}
+    catch (e) {if (mounted.current) {setSettings(null); setSettingsError(describeTxError(e));} throw e;}
+    finally {if (mounted.current) setChecking(false);}
   }, []);
   React.useEffect(() => {
     if (!supported) return;
     void refresh().catch(() => {});
-    const timer = window.setInterval(() => { if (!running.current) void refresh().catch(() => {}); }, 60_000);
+    const timer = window.setInterval(() => {if (!running.current) {void refresh().catch(() => {}); void refreshBalance();}}, 60_000);
     return () => window.clearInterval(timer);
-  }, [refresh, supported]);
+  }, [refresh, refreshBalance, supported]);
   React.useEffect(() => {
     let active = true;
-    setReady(false); setRecoveryFailed(false);
-    setSession(null); sessionRef.current = null;
+    setWalletBalance(null); void refreshBalance();
+    setReady(false); setRecoveryFailed(false); setSession(null); sessionRef.current = null;
     setError(""); setMessage(""); setActiveHash(null); setResetConfirm(false);
     const restore = async () => {
       if (!address) return;
       let raw: string | null = null;
-      try { raw = localStorage.getItem(sessionKey(address)); } catch {setStorageWarning(true);}
+      try {raw = localStorage.getItem(sessionKey(address));} catch {setStorageWarning(true);}
       if (!raw) return;
       const saved = parseFwaSession(raw, address);
-      if (!saved) {if (active) {setRecoveryFailed(true); setError("Saved progress could not be read. Check your wallet and transaction history before starting a new plan.");} return;}
+      if (!saved) {if (active) {setRecoveryFailed(true); setError("Saved progress could not be read. Check your transaction history before starting a new plan.");} return;}
       if (active) {
         sessionRef.current = saved; setSession(saved);
-        setChoices(saved.rows.map(r => ({value: eth(r.value), quantity: 1})));
-        setBudget("");
-        if (saved.draft) setRatio(saved.draft.ratio);
+        const grouped = new Map(DEFAULT_VALUES.map(value => [value, {value, quantity: 0}]));
+        for (const row of saved.rows) {const value = eth(row.value); const group = grouped.get(value) ?? {value, quantity: 0}; group.quantity++; grouped.set(value, group);}
+        setChoices([...grouped.values()]);
+        setBudget(saved.draft?.budget || eth(saved.rows.reduce((s, r) => s + BigInt(r.value) + BigInt(r.backing) + BigInt(r.fee), 0n)));
       }
       try {
         const recovered = await reconcileFwaSession(client, saved);
         if (!active) return;
         try {localStorage.setItem(sessionKey(address), JSON.stringify(recovered));} catch {setStorageWarning(true);}
         sessionRef.current = recovered; setSession(recovered);
-      } catch (e) {if (active) {setRecoveryFailed(true); setError(`Could not check saved transactions. Reload to retry. ${describeTxError(e)}`);}}
+      } catch (e) {if (active) {setRecoveryFailed(true); setError(`Could not check saved transactions. ${describeTxError(e)}`);}}
     };
     void restore().finally(() => {if (active) setReady(true);});
     return () => {active = false;};
-  }, [address]);
+  }, [address, refreshBalance]);
   const save = (next: FwaSession) => {
-    // Persist broadcast hashes before waiting, even if the account changes or the page unmounts.
-    try { localStorage.setItem(sessionKey(next.account), JSON.stringify(next)); } catch {if (mounted.current) setStorageWarning(true);}
-    if (same(wallet.current.address ?? "", next.account)) {
-      sessionRef.current = next;
-      if (mounted.current) setSession({...next, rows: [...next.rows]});
-    }
+    try {localStorage.setItem(sessionKey(next.account), JSON.stringify(next));} catch {if (mounted.current) setStorageWarning(true);}
+    if (same(wallet.current.address ?? "", next.account)) {sessionRef.current = next; if (mounted.current) setSession({...next, rows: [...next.rows]});}
   };
+  const chooseRatio = (next: bigint) => {setRatio(next); setBackings({});};
+  const changeQuantity = (value: string, quantity: number) => {
+    if (!Number.isInteger(quantity) || quantity < 0 || quantity > 24) return;
+    setChoices(rows => rows.map(r => r.value === value ? {...r, quantity} : r));
+    setBackings(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${parseFwaAmount(value)}:`) || Number(key.split(":")[1]) < quantity)));
+  };
+  const draftPacks: DraftPack[] = choices.filter(r => r.quantity > 0).sort((a, b) => parseFwaAmount(a.value) > parseFwaAmount(b.value) ? -1 : 1).flatMap(r => Array.from({length: r.quantity}, (_, i) => ({key: `${parseFwaAmount(r.value)}:${i}`, value: parseFwaAmount(r.value)})));
+  const backingFor = (r: DraftPack) => backings[r.key] ?? eth(r.value * ratio / 10_000n);
   let plan: Plan | null = null;
   let planError = "";
-  if (settings) {
-    try {
-      if (!/^\d+(\.\d{0,2})?$/.test(ratio)) throw new Error("Enter a backing percentage with up to two decimal places.");
-      plan = buildExplicitFwaPlan(choices.map(r => ({value: parseEther(r.value), quantity: r.quantity})), BigInt(Math.round(Number(ratio) * 100)), settings, budget.trim() ? parseEther(budget) : undefined);
-    } catch (e) {planError = e instanceof Error ? e.message : "Enter a valid eth budget.";}
-  }
-  const visibleRows = session?.rows.map(r => ({...r, value: BigInt(r.value), backing: BigInt(r.backing)})) ?? plan?.rows ?? [];
-  const blocker = settings ? depositBlocker(settings, visibleRows) : null;
+  try {if (settings && !session) plan = buildFwaContribution(draftPacks.map(r => ({value: r.value, backing: parseFwaAmount(backingFor(r))})), settings, parseFwaAmount(budget));}
+  catch (e) {planError = e instanceof Error ? e.message : "Review your contribution.";}
+  const visibleRows = session?.rows.map(r => ({value: BigInt(r.value), backing: BigInt(r.backing), fee: BigInt(r.fee), counts: r.counts, payment: BigInt(r.value) + BigInt(r.fee)})) ?? plan?.rows ?? [];
+  const totalPackValue = visibleRows.reduce((s, r) => s + r.value, 0n);
+  const totalBacking = visibleRows.reduce((s, r) => s + r.backing, 0n);
+  const feeEstimate = visibleRows.reduce((s, r) => s + r.fee, 0n);
+  const total = totalPackValue + totalBacking + feeEstimate;
+  const shapeCount = visibleRows.reduce((s, r) => s + r.counts.reduce((n, v) => n + v, 0), 0);
   const minted = session?.rows.filter(r => r.packId !== undefined).length ?? 0;
   const deposited = session?.rows.filter(r => r.listingId !== undefined).length ?? 0;
   const complete = !!session && deposited === session.rows.length;
-  const allMinted = !!session && minted === session.rows.length;
-  const totalPackValue = visibleRows.reduce((s, r) => s + r.value, 0n);
-  const totalBacking = visibleRows.reduce((s, r) => s + r.backing, 0n);
-  const feeEstimate = visibleRows.reduce((s, r) => s + BigInt(r.fee), 0n);
-  const exposure = settings && visibleRows.length && !session ? fwaExposure(visibleRows, settings) : null;
-  const overBudget = !session && !!plan && plan.remainder < 0n;
+  let budgetWei = 0n;
+  try {budgetWei = parseFwaAmount(budget);} catch {/* The plan error names invalid input. */}
+  const overage = total > budgetWei ? total - budgetWei : 0n;
+  const remainingPayment = session ? session.rows.reduce((s, r) => s + (r.packId === undefined ? BigInt(r.value) + BigInt(r.fee) : 0n) + (r.listingId === undefined ? BigInt(r.backing) : 0n), 0n) : total;
+  const balanceShortfall = walletBalance !== null && remainingPayment > walletBalance ? remainingPayment - walletBalance : 0n;
+  const packIssues = settings ? visibleRows.map((row, i) => {const issue = session?.rows[i]?.listingId === undefined ? fwaPackRequirement(row, settings) : null; return issue ? `Pack ${i + 1}: ${issue}` : null;}).filter((v): v is string => !!v) : [];
+  const poolBlocker = settings && !complete ? depositBlocker(settings, visibleRows.filter((_, i) => session?.rows[i]?.listingId === undefined)) : null;
+  const requirement = !supported ? "This page requires the Ethereum mainnet shapes site." : recoveryFailed ? "Saved transactions must be checked before continuing." : settingsError || (!settings ? "Reading current requirements…" : planError || (!visibleRows.length ? "Choose at least one pack." : packIssues[0] || poolBlocker || (overage ? `This plan is ${eth(overage)} eth over budget.` : balanceShortfall ? `This plan is ${eth(balanceShortfall)} eth above your wallet balance.` : address && walletBalance === null ? "Reading wallet balance…" : null)));
   const walletReady = (account: Address) => {
     if (!mounted.current || !same(wallet.current.address ?? "", account) || wallet.current.chainId !== 1) throw new Error("Your wallet or network changed. Reconnect to Ethereum to continue.");
   };
-
   const run = async () => {
     if (running.current || !ready || !address || !supported) return;
     const account = address;
@@ -130,16 +153,22 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
       walletReady(account);
       work = sessionRef.current ? structuredClone(sessionRef.current) : null;
       if (!work) {
-        if (plan && plan.remainder < 0n) throw new Error("The plan exceeds your budget cap. Adjust your choices or raise the cap.");
+        if (requirement) throw new Error(requirement);
         if (!plan) throw new Error(planError || "Review the pack configuration first.");
         // Recompute using freshly read prices; never silently accept a changed plan.
-        const fresh = buildExplicitFwaPlan(choices.map(r => ({value: parseEther(r.value), quantity: r.quantity})), BigInt(Math.round(Number(ratio) * 100)), live, budget.trim() ? parseEther(budget) : undefined);
-        if (fresh.total !== plan.total || fresh.rows.some((r, i) => r.value !== plan!.rows[i].value || r.fee !== plan!.rows[i].fee)) throw new Error("The mint quote changed. Review the updated plan and try again.");
-        work = {version: 1, account, draft: {budget, quantity, ratio, spread: false}, rows: fresh.rows.map(r => ({counts: r.counts, value: String(r.value), backing: String(r.backing), fee: String(r.fee)}))};
+        const fresh = buildFwaContribution(draftPacks.map(r => ({value: r.value, backing: parseFwaAmount(backingFor(r))})), live, parseFwaAmount(budget));
+        if (fresh.total !== plan.total || fresh.rows.some((r, i) => r.value !== plan!.rows[i].value || r.fee !== plan!.rows[i].fee || r.backing !== plan!.rows[i].backing)) throw new Error("The mint quote changed. Review the updated plan and try again.");
+        const blocked = depositBlocker(live, fresh.rows) || fresh.rows.map(r => fwaPackRequirement(r, live)).find(Boolean);
+        if (blocked) throw new Error(blocked);
+        if (fresh.total > await client.getBalance({address: account})) throw new Error("This plan exceeds your wallet balance.");
+        work = {version: 1, account, draft: {budget, quantity: fresh.rows.length, ratio: String(ratio), spread: false}, rows: fresh.rows.map(r => ({counts: r.counts, value: String(r.value), backing: String(r.backing), fee: String(r.fee)}))};
         try {localStorage.setItem(sessionKey(account), JSON.stringify(work));} catch {setStorageWarning(true); throw new Error("Enable browser storage before minting so your transaction progress can be recovered.");}
         save(work);
       }
       const current = work;
+      const unlisted = current.rows.filter(r => r.listingId === undefined).map(r => ({value: BigInt(r.value), backing: BigInt(r.backing)}));
+      const blockedAtStart = depositBlocker(live, unlisted) || unlisted.map(r => fwaPackRequirement(r, live)).find(Boolean);
+      if (blockedAtStart) throw new Error(blockedAtStart);
       const send = async (target: Address, abi: Abi, functionName: string, args: readonly unknown[], value: bigint | undefined, record: (hash: Hash) => void) => {
         walletReady(account);
         const call = {address: target, abi, functionName, args, value, account} as const;
@@ -175,7 +204,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         const row = current.rows[i];
         if (row.packId !== undefined) continue;
         walletReady(account);
-        setMessage(`Minting pack ${i + 1} of ${current.rows.length}. Confirm each transaction in your wallet.`);
+        setStep("mint"); setMessage(`Minting pack ${i + 1} of ${current.rows.length}.`);
         const quote = await client.readContract({address: PACKS, abi: packsAbi, functionName: "quoteMint", args: [row.counts]});
         if (quote[0] !== BigInt(row.value)) throw new Error("The saved pack makeup does not match its value.");
         const plannedFee = BigInt(row.fee);
@@ -190,29 +219,29 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         row.packId = String(mintedPackId(receipt, account)); save(current);
       }
       walletReady(account);
-      // Mint and deposit are separate review steps, even when admission is already live.
-      if (!allMinted) {setMessage("Your packs are ready. Review the FWA backing, then continue to deposit."); return;}
       const depositSettings = await refresh();
       walletReady(account);
       const blocked = depositBlocker(depositSettings, current.rows.filter(r => r.listingId === undefined).map(r => ({backing: BigInt(r.backing)})));
       if (blocked) throw new Error(blocked);
+      setStep("approve");
       if (current.approvalHash) {
         setMessage("Checking your FWA approval transaction…");
-        await wait(current.approvalHash, {address: PACKS, abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]}, () => {delete current.approvalHash;});
-        delete current.approvalHash; save(current);
+        const receipt = await wait(current.approvalHash, {address: PACKS, abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]}, () => {delete current.approvalHash;});
+        current.approvalReceipt = receipt.transactionHash; delete current.approvalHash; save(current);
       }
       const approved = await client.readContract({address: PACKS, abi: packTransferAbi, functionName: "isApprovedForAll", args: [account, FWA_POOL]});
       if (!approved) {
-        setMessage("Approve FWA to transfer your shape packs. Deposits remain separate transactions.");
+        setMessage("Approving FWA.");
         const hash = await send(PACKS, packTransferAbi, "setApprovalForAll", [FWA_POOL, true], undefined, h => {current.approvalHash = h;});
-        await wait(hash, {address: PACKS, abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]}, () => {delete current.approvalHash;});
-        delete current.approvalHash; save(current);
+        const receipt = await wait(hash, {address: PACKS, abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]}, () => {delete current.approvalHash;});
+        current.approvalReceipt = receipt.transactionHash; delete current.approvalHash; save(current);
       }
+      setStep("deposit");
       for (let i = 0; i < current.rows.length; i++) {
         const row = current.rows[i];
         if (row.listingId !== undefined) continue;
         walletReady(account);
-        setMessage(`Depositing pack ${i + 1} of ${current.rows.length}. Confirm its FWA backing in your wallet.`);
+        setMessage(`Depositing pack ${i + 1} of ${current.rows.length}.`);
         const call = {address: FWA_POOL, abi: fwaAbi, functionName: "listNFT", args: [PACKS, BigInt(row.packId!)], value: BigInt(row.backing)} as const;
         if (!row.depositHash) {
           const owner = await client.readContract({address: PACKS, abi: packsAbi, functionName: "ownerOf", args: [BigInt(row.packId!)]});
@@ -222,10 +251,10 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         const receipt = await wait(hash, call, () => {delete row.depositHash;});
         Object.assign(row, depositedListing(receipt, account, BigInt(row.packId!))); save(current);
       }
-      setMessage("All packs deposited. Your wallet owns the FWA positions.");
+      setMessage("All packs deposited.");
     } catch (e) {
       if (mounted.current && same(wallet.current.address ?? "", account)) setError(describeTxError(e));
-    } finally {running.current = false; if (mounted.current) {setBusy(false); setActiveHash(null);}}
+    } finally {running.current = false; if (mounted.current) {setBusy(false); setActiveHash(null); void refreshBalance();}}
   };
   const reset = () => {
     if (busy || !address) return;
@@ -233,84 +262,83 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     try {localStorage.removeItem(sessionKey(address));} catch {setStorageWarning(true);}
     sessionRef.current = null; setSession(null); setRecoveryFailed(false); setMessage(""); setError(""); setResetConfirm(false);
   };
-  const actionLabel = complete ? "All packs deposited" : !address ? "Connect wallet" : chainId !== 1 ? "Switch to Ethereum" : busy ? "Waiting for confirmation…" : !session ? `Mint ${quantity === 1 ? "pack" : `${quantity} packs`}` : !allMinted ? "Continue minting" : "Approve and deposit";
-  const actionDisabled = recoveryFailed || !supported || busy || checking || !ready || complete || (!!address && chainId === 1 && (!settings || (!session && (!plan || overBudget)) || (allMinted && !!blocker)));
-
+  const addValue = (event: React.FormEvent) => {
+    event.preventDefault(); setAddError("");
+    try {
+      const value = parseFwaAmount(newValue);
+      if (!settings) throw new Error("Wait for current requirements.");
+      if (value <= 0n) throw new Error("Enter a pack value above 0 eth.");
+      packMakeup(value, settings.denominations);
+      if (choices.some(r => parseFwaAmount(r.value) === value)) throw new Error("That pack value is already in the table.");
+      setChoices(rows => [...rows, {value: eth(value), quantity: 0}].sort((a, b) => parseFwaAmount(a.value) < parseFwaAmount(b.value) ? -1 : 1));
+      setAddingValue(false); setNewValue("");
+    } catch (e) {setAddError(e instanceof Error ? e.message : "Enter a valid pack value.");}
+  };
+  const actionLabel = complete ? "DEPOSITED" : busy ? step === "mint" ? "MINTING" : step === "approve" ? "APPROVING" : "DEPOSITING" : address && chainId !== 1 ? "SWITCH TO ETHEREUM" : session ? "CONTINUE" : "REVIEW AND MINT";
+  const actionDisabled = busy || checking || !ready || complete || !!requirement;
+  const groups = choices.map(choice => {
+    const value = parseFwaAmount(choice.value);
+    const rows = visibleRows.filter(r => r.value === value);
+    let counts: number[] = []; let issue: string | null = null;
+    try {if (settings) counts = packMakeup(value, settings.denominations);} catch (e) {issue = (e as Error).message;}
+    if (settings && choice.quantity) issue = rows.map(r => fwaPackRequirement(r, settings)).find(Boolean) ?? (value < settings.minimumPack ? `Minimum pack value is ${eth(settings.minimumPack)} eth.` : issue);
+    return {...choice, valueWei: value, counts, issue, fee: settings ? counts.reduce((s, n) => s + BigInt(n) * settings.mintFee, 0n) : null, rows};
+  });
   return <main className="fwa-page">
-    <section className="fwa-intro">
-      <div><p className="fwa-eyebrow">shapes × FWA / Ethereum</p><h1>Put your eth<br/>in the pool.</h1>
-        <p className="fwa-lede">Create shape packs for the FWA main pool. Choose pack values, add eth backing, and deposit directly from your wallet.</p>
-        <a className="fwa-text-link" href="https://www.fwa.fun" target="_blank" rel="noreferrer">Explore FWA ↗</a></div>
-      <div className="fwa-explainer"><span>Two places for your eth</span><div><b>01</b><p><strong>Inside each pack</strong>Redeemable eth held by its underlying shapes.</p></div><div><b>02</b><p><strong>Alongside it in FWA</strong>Separate eth funding the pool’s standing bid.</p></div><small>The purchaser chooses the pack or FWA’s bid. They receive one.</small></div>
-    </section>
-    {!supported && <div className="fwa-notice" role="alert">This page is available on the Ethereum mainnet shapes site.</div>}
-    <div className="fwa-workspace">
-      <section className="fwa-config" aria-label="Configure shape packs">
-        <p className="fwa-eyebrow">01 / Configure</p><h2>Your pool contribution</h2>
-        <fieldset disabled={busy || !!session}>
-          <p className="fwa-hint">Choose the redeemable value and quantity of your packs. Each pack becomes a separate FWA position.</p>
-          <div className="fwa-choice-list">{choices.map((row, i) => <div className="fwa-choice" key={i}>
-            <label>Pack value <span>eth</span><input aria-label={`Pack value for group ${i + 1}`} inputMode="decimal" value={row.value} onChange={e => updateChoice(i, {value: e.target.value})}/></label>
-            <label>Quantity<input aria-label={`Quantity for group ${i + 1}`} type="number" min={1} max={24} value={row.quantity} onChange={e => updateChoice(i, {quantity: Number(e.target.value)})}/></label>
-            <button type="button" aria-label={`Remove pack group ${i + 1}`} disabled={choices.length === 1} onClick={() => setChoices(rows => rows.filter((_, n) => n !== i))}>×</button>
-          </div>)}</div>
-          <button className="fwa-add" type="button" disabled={quantity >= 24 || choices.length >= 24} onClick={() => setChoices(rows => [...rows, {value: "0.05", quantity: 1}])}>+ Add another pack size</button>
-          <p className="fwa-hint">Values use shapes denominations. A 0.05 eth pack uses one shape and one mint fee. A 0.04 eth pack uses four shapes and four fees.</p>
-          <label className="fwa-label" htmlFor="fwa-ratio">FWA backing as a percentage of pack value</label>
-          <div className="fwa-pills">{[50, 100, 200].map(n => <button key={n} type="button" aria-pressed={ratio === String(n)} onClick={() => setRatio(String(n))}>{n}%{n === 100 ? " · equal" : ""}</button>)}<div className="fwa-custom"><input aria-label="Custom backing percentage" id="fwa-ratio" inputMode="decimal" value={ratio} onChange={e => setRatio(e.target.value)}/><span>%</span></div></div>
-          <p className="fwa-hint">At 100%, each pack gets equal eth backing in FWA. More backing lowers its draw chance while its share of distributable eth fees stays the same.</p>
-          <label className="fwa-label" htmlFor="fwa-budget">Budget cap <span className="fwa-optional">optional</span></label>
-          <div className="fwa-cap"><input id="fwa-budget" inputMode="decimal" placeholder="No cap" value={budget} onChange={e => setBudget(e.target.value)} autoComplete="off"/><span>eth</span></div>
-          <p className="fwa-hint">Checks your total without changing pack values. Keep extra eth for gas.</p>
-        </fieldset>
-        {session && <p className="fwa-hint">Your plan is saved for this wallet. Finish it or start a new plan below.</p>}
-        <div className="fwa-pool-check"><div><span className={`fwa-dot ${settings && !blocker ? "fwa-dot-live" : ""}`}/><strong>{checking ? "Checking pool…" : settings ? "Pool checked onchain" : "Pool check unavailable"}</strong><button type="button" disabled={checking || busy || !supported} onClick={() => void refresh().catch(() => {})}>Refresh</button></div>
-          {settings && <p>Pack minimum {eth(settings.minimumPack)} eth · FWA minimum {eth(settings.minimumBacking)} eth</p>}
-          {blocker && <p>{blocker}</p>}{settingsError && <p role="alert">{settingsError}</p>}
-        </div>
-      </section>
-      <section className="fwa-preview" aria-label="Your pack plan">
-        <div className="fwa-preview-heading"><p className="fwa-eyebrow">02 / Review your packs</p><span>{visibleRows.length} {visibleRows.length === 1 ? "pack" : "packs"}</span></div>
-        <div className="fwa-pack-grid">{visibleRows.map((row, i) => <PackCard key={i} counts={row.counts} settings={settings} value={row.value} backing={row.backing} index={i} packId={session?.rows[i]?.packId} done={session?.rows[i]?.listingId !== undefined} drawWeight={exposure?.weights[i]} totalWeight={exposure?.totalWeight}/>)}</div>
-        {!visibleRows.length && <div className="fwa-empty">{checking ? "Reading mint fees and pool requirements…" : planError || "Your pack preview will appear once the contract checks complete."}</div>}
-        <dl className="fwa-totals"><div><dt>Redeemable value in packs</dt><dd>{eth(totalPackValue)} eth</dd></div><div><dt>Separate FWA backing</dt><dd>{eth(totalBacking)} eth</dd></div><div><dt>Mint fees</dt><dd>{eth(feeEstimate)} eth</dd></div><div className="fwa-total"><dt>Total before gas</dt><dd>{eth(totalPackValue + totalBacking + feeEstimate)} eth</dd></div></dl>
-        {!session && plan && budget.trim() && <p className={`fwa-hint ${overBudget ? "fwa-shortfall" : ""}`} role={overBudget ? "alert" : undefined}>{overBudget ? `${eth(-plan.remainder)} eth over your cap. Increase the cap or edit your choices to continue.` : `${eth(plan.remainder)} eth below your cap, before gas.`} Your pack values stay as entered.</p>}
-        {planError && <p className="fwa-hint" role="alert">{planError}</p>}
-        {exposure && settings && <div className="fwa-economics"><h3>Your positions in FWA</h3><dl className="fwa-totals">
-          <div><dt>Combined chance per draw</dt><dd>{percent(exposure.addedWeight, exposure.totalWeight)}</dd></div>
-          <div><dt>Share of distributable eth fees</dt><dd>{percent(exposure.positions, exposure.totalPositions)}</dd></div>
-          <div><dt>Active positions after your deposits</dt><dd>{String(exposure.totalPositions)}</dd></div>
-        </dl><p className="fwa-hint">Snapshot at block {String(settings.block)}, assuming all {visibleRows.length} packs activate together. Existing positions and weights change with pool activity. Queued packs earn nothing until active. This is a share of distributable fees, not a return on your deposit. FWA token rewards use separate rules.</p></div>}
-
-      </section>
+    <section className="fwa-hero"><h1>Back the FWA pool with shape packs.</h1><p>Mint eth backed shape packs, then deposit them into the FWA main V2 pool with separate eth backing. Each pack becomes its own position.</p></section>
+    <div className="fwa-body">
+      <div className="fwa-sections">
+        <Section title="01 BUDGET" pad="28px 40px 40px 32px">
+          <h2>How much eth will you commit?</h2><p className="fwa-help">Covers pack value, FWA backing and mint fees.</p>
+          <div className="fwa-budget-row"><label className="fwa-budget-input"><input style={{width: `${Math.max(1, budget.length)}ch`, maxWidth: "calc(100% - 36px)"}} aria-label="eth budget" inputMode="decimal" value={budget} disabled={busy || !!session} onChange={e => setBudget(e.target.value)} autoComplete="off"/><span>eth</span></label><div className="fwa-balance"><span>wallet balance</span><strong>{walletBalance !== null ? `${eth(walletBalance)} eth` : address ? "Reading…" : "Connect wallet"}</strong></div></div>
+        </Section>
+        <Section title="02 PACKS" pad="28px 40px 40px 32px">
+          <h2>Choose pack values and quantities.</h2><p className="fwa-help">Mint fees are charged per shape, so a pack's fee depends on the shapes it is made from.</p>
+          <div className="fwa-table-scroll"><table className="fwa-pack-table"><colgroup>{[52,104,0,112,128,88].map((width, i) => <col key={i} style={width ? {width} : undefined}/>)}</colgroup><thead><tr><th aria-label="Artwork"/><th>PACK VALUE</th><th>MADE FROM</th><th>FEE PER PACK</th><th>QUANTITY</th><th>SUBTOTAL</th></tr></thead><tbody>{groups.map(row => <tr key={row.value} className={`${row.quantity ? "is-selected" : ""} ${row.issue ? "is-invalid" : ""}`}>
+            <td><PackArt value={row.valueWei} settings={settings}/></td><td><span className="fwa-value-cell">{row.value} eth</span></td><td>{settings ? makeup(row.counts, settings.denominations) : "Reading…"}{row.issue && <span className="fwa-row-error">{row.issue}</span>}</td><td>{row.fee !== null ? `${eth(row.fee)} eth` : "Reading…"}</td>
+            <td><div className="packs-stepper"><button type="button" className="btn-outline" aria-label={`Decrease ${row.value} eth packs`} disabled={busy || !!session || row.quantity <= 0} onClick={() => changeQuantity(row.value, row.quantity - 1)}>−</button><input className="qty-input" aria-label={`Quantity of ${row.value} eth packs`} type="number" min={0} max={24} value={row.quantity} disabled={busy || !!session} onChange={e => changeQuantity(row.value, Number(e.target.value))}/><button type="button" className="btn-outline" aria-label={`Increase ${row.value} eth packs`} disabled={busy || !!session || draftPacks.length >= 24} onClick={() => changeQuantity(row.value, row.quantity + 1)}>+</button></div></td><td>{row.quantity ? `${eth(row.valueWei * BigInt(row.quantity))} eth` : "·"}</td>
+          </tr>)}</tbody></table></div>
+          <div className="fwa-table-footer"><button type="button" className="fwa-text-button" disabled={busy || !!session} onClick={() => setAddingValue(v => !v)}>Add another pack value</button><span>{visibleRows.length} packs · {shapeCount} shapes · {eth(totalPackValue)} eth</span></div>
+          {addingValue && <form className="fwa-add-value" onSubmit={addValue}><label>Pack value<input aria-label="New pack value" inputMode="decimal" value={newValue} onChange={e => setNewValue(e.target.value)} autoFocus/></label><button className="btn-outline" type="submit">ADD VALUE</button></form>}{addError && <p className="fwa-error" role="alert">{addError}</p>}
+        </Section>
+        <Section title="03 BACKING" pad="28px 40px 40px 32px">
+          <h2>Set FWA backing.</h2><p className="fwa-help">Separate eth deposited alongside each pack. It funds the pool's bid.</p>
+          <div className="fwa-backing-controls"><div className="shape-mode-toggle" role="group" aria-label="FWA backing ratio">{[5000n,10000n,15000n,20000n].map(n => <button key={String(n)} type="button" className={n === 10000n ? "fwa-caps" : ""} disabled={busy || !!session} aria-pressed={session ? session.rows.every(r => BigInt(r.backing) * 10_000n === BigInt(r.value) * n) : !Object.keys(backings).length && ratio === n} onClick={() => chooseRatio(n)}>{n === 10000n ? "EQUAL" : `${Number(n) / 10000}×`}</button>)}</div><button type="button" className="fwa-disclosure fwa-caps" aria-expanded={perPackExpanded} aria-controls="fwa-backing-list" onClick={() => setPerPackExpanded(v => !v)}>{perPackExpanded ? "HIDE PER PACK" : "SET PER PACK"}</button></div>
+          <div id="fwa-backing-list" className="fwa-backing-list">{perPackExpanded ? (session ? visibleRows.map((r, i) => <div className="fwa-backing-row" key={i}><PackArt value={r.value} settings={settings} nonce={i}/><span>{eth(r.value)} eth pack</span><span className="fwa-backing-ratio">{eth(r.backing * 10n ** 18n / r.value)}× value</span><label className="fwa-backing-input"><input aria-label={`FWA backing for pack ${i + 1}`} value={eth(r.backing)} disabled/><span>eth</span></label></div>) : draftPacks.map((r, i) => <div className="fwa-backing-row" key={r.key}><PackArt value={r.value} settings={settings} nonce={i}/><span>{eth(r.value)} eth pack</span><span className="fwa-backing-ratio">{visibleRows[i] ? eth(visibleRows[i].backing * 10n ** 18n / r.value) : "…"}× value</span><label className="fwa-backing-input"><input aria-label={`FWA backing for pack ${i + 1}`} inputMode="decimal" value={backingFor(r)} disabled={busy} aria-invalid={!!(settings && visibleRows[i] && fwaPackRequirement(visibleRows[i], settings))} onChange={e => setBackings(current => ({...current, [r.key]: e.target.value}))}/><span>eth</span></label></div>)) : groups.filter(g => g.quantity > 0).map(g => <div className="fwa-backing-group" key={g.value}><span>{g.quantity} packs of {g.value} eth</span><span>{g.rows.length && g.rows.every(r => r.backing === g.rows[0].backing) ? `${eth(g.rows[0].backing)} eth each` : "Custom backing"}</span></div>)}<div className="fwa-backing-total"><span>FWA backing · {visibleRows.length} positions</span><span>{eth(totalBacking)} eth</span></div></div>
+          <p className="fwa-backing-help">More backing lowers a position's chance of being drawn. Every active position receives an equal share of distributable eth fees.</p>
+        </Section>
+        <Section title="04 IF DRAWN" pad="28px 40px 40px 32px"><h2 className="fwa-spaced-heading">If a pack is drawn, the buyer chooses.</h2><div className="fwa-outcomes"><div><h3 className="fwa-caps">BUYER KEEPS THE PACK</h3><p>You receive the pack's FWA backing, less the settlement fee.</p></div><div><h3 className="fwa-caps">BUYER ACCEPTS FWA'S BID</h3><p>The pack returns to your wallet. The backing is consumed through settlement.</p></div></div></Section>
+        <Section title="05 STEPS" pad="28px 40px 48px 32px" last><h2 className="fwa-spaced-heading">Mint, approve, deposit.</h2><div className="mechanic-grid">
+          <article data-active={busy && step === "mint"}><span>01</span><h3>MINT</h3><div><p>Mint {visibleRows.length} shape packs into your wallet. <strong>{eth(totalPackValue + feeEstimate)} eth</strong></p>{session && <p className="fwa-step-status">{minted} of {session.rows.length} minted</p>}{session?.rows.map((r, i) => r.mintHash && <a key={i} className="fwa-step-tx" href={txUrl(r.mintHash, 1)} target="_blank" rel="noreferrer">pack {i + 1} · {r.packId ? "Minted" : "Pending"} ↗</a>)}</div></article>
+          <article data-active={busy && step === "approve"}><span>02</span><h3>APPROVE</h3><div><p>Allow FWA to transfer these packs.</p>{(session?.approvalReceipt || complete || (busy && step === "deposit")) && <p className="fwa-step-status">Approved</p>}{(session?.approvalHash || session?.approvalReceipt) && <a className="fwa-step-tx" href={txUrl((session.approvalHash || session.approvalReceipt)!, 1)} target="_blank" rel="noreferrer">Approval transaction ↗</a>}</div></article>
+          <article data-active={busy && step === "deposit"}><span>03</span><h3>DEPOSIT</h3><div><p>Deposit each pack with its backing into the FWA main V2 pool. <strong>{eth(totalBacking)} eth</strong></p>{session && <p className="fwa-step-status">{deposited} of {session.rows.length} deposited</p>}{session?.rows.map((r, i) => r.depositHash && <a key={i} className="fwa-step-tx" href={txUrl(r.depositHash, 1)} target="_blank" rel="noreferrer">pack {i + 1} · {r.listingId ? r.staged ? "Queued" : "Deposited" : "Pending"} ↗</a>)}</div></article>
+          </div><p className="fwa-positions-link"><a href="https://www.fwa.fun/manage" target="_blank" rel="noreferrer">View your positions on FWA ↗</a></p>
+        </Section>
+      </div>
+      <aside className="fwa-summary-column" aria-label="Your contribution"><div className="fwa-summary-sticky"><p className="launch-kicker fwa-caps">YOUR CONTRIBUTION</p><div className="fwa-summary-art">{visibleRows.map((row, i) => <figure key={i}><PackArt value={row.value} settings={settings} nonce={i}/><figcaption>{eth(row.value)} eth</figcaption></figure>)}</div>
+        <div className="fwa-contribution-total"><strong>{eth(total)}</strong><span>eth</span></div><p className="fwa-position-count">{visibleRows.length} FWA positions</p>
+        {!!overage && <p className="fwa-error">This plan is {eth(overage)} eth over budget.</p>}{!!balanceShortfall && <p className="fwa-error">This plan is {eth(balanceShortfall)} eth above your wallet balance.</p>}
+        <div className="packs-summary"><div className="packs-summary-row"><span>pack value</span><strong>{eth(totalPackValue)} eth</strong></div><div className="packs-summary-row"><span>FWA backing</span><strong>{eth(totalBacking)} eth</strong></div><div className="packs-summary-row"><span>mint fees · {shapeCount} shapes</span><strong>{eth(feeEstimate)} eth</strong></div><div className="packs-summary-row is-total"><span>total</span><strong>{eth(total)} eth</strong></div><div className={`packs-summary-row ${overage ? "fwa-over-budget" : ""}`}><span>{overage ? "over budget" : "remaining budget"}</span><strong>{eth(overage || budgetWei - total)} eth</strong></div></div>
+        <button type="button" className="btn-filled fwa-submit fwa-caps" disabled={actionDisabled} onClick={() => !address ? onConnect() : chainId !== 1 ? void switchChainAsync({chainId: 1}).catch(e => setError(describeTxError(e))) : void run()}>{actionLabel}</button>
+        <div className="fwa-requirements"><h3 className="fwa-caps">REQUIREMENTS</h3><div><span>eligible</span><strong>shape packs only</strong></div><div><span>minimum pack value</span><span>{settings ? `${eth(settings.minimumPack)} eth` : "Reading…"}</span></div><div><span>position minimums</span><span>{settings ? `${eth(settings.minimumBacking)} eth` : "Reading…"}</span></div><p role={requirement && !checking ? "alert" : "status"}>{complete ? "All packs deposited." : requirement || "This plan meets current requirements."}</p>{settingsError && <button className="fwa-disclosure fwa-caps" type="button" disabled={checking} onClick={() => void refresh().catch(() => {})}>RETRY</button>}</div>
+        <div className={`fwa-status ${error ? "is-error" : ""}`} role={error ? "alert" : "status"}>{message && <p>{message}</p>}{error && <p>{error}</p>}{activeHash && <a href={txUrl(activeHash, 1)} target="_blank" rel="noreferrer">View transaction ↗</a>}{storageWarning && <p>Progress could not be saved. Keep this page open.</p>}</div>
+        {(session || recoveryFailed) && <button className="fwa-disclosure fwa-caps" type="button" disabled={busy} onClick={reset}>{resetConfirm ? "CONFIRM NEW PLAN" : "START A NEW PLAN"}</button>}{resetConfirm && <button className="fwa-disclosure fwa-caps" type="button" onClick={() => setResetConfirm(false)}>KEEP THIS PLAN</button>}
+      </div></aside>
     </div>
-    <section className="fwa-execute" aria-label="Mint and deposit">
-      <div className="fwa-steps"><div className={allMinted || complete ? "fwa-step-done" : "fwa-step-current"}><span>01</span><strong>Mint packs</strong><small>{session ? `${minted} of ${session.rows.length} ready` : "Created in your wallet"}</small></div><div className={complete ? "fwa-step-done" : allMinted ? "fwa-step-current" : ""}><span>02</span><strong>Approve & deposit</strong><small>{session ? `${deposited} of ${session.rows.length} deposited` : "You own the FWA positions"}</small></div><div className={complete ? "fwa-step-current" : ""}><span>03</span><strong>Manage on FWA</strong><small>View positions and earnings</small></div></div>
-      {session && <div className="fwa-progress">{session.rows.map((row, i) => <div key={i}><span>{row.packId ? `pack #${row.packId}` : `pack ${i + 1}`}</span><span>{row.listingId ? `${row.staged ? "Queued" : "Deposited"} · position #${row.listingId}` : row.depositHash ? "Deposit awaiting confirmation" : row.packId ? "Ready to deposit" : row.mintHash ? "Mint awaiting confirmation" : "Not minted"}</span>{(row.depositHash || row.mintHash) && <a href={`https://etherscan.io/tx/${row.depositHash ?? row.mintHash}`} target="_blank" rel="noreferrer">Transaction ↗</a>}</div>)}</div>}
-      <div className="fwa-action-row"><div><p>Every action comes from your wallet.</p><small>Each pack needs a mint and deposit transaction. FWA approval is requested if needed.</small></div><button className="fwa-primary" type="button" disabled={actionDisabled} onClick={() => !address ? onConnect() : chainId !== 1 ? void switchChainAsync({chainId: 1}).catch(e => setError(describeTxError(e))) : void run()}>{actionLabel} <span aria-hidden="true">↗</span></button></div>
-      <div aria-live="polite" className="fwa-feedback">{message && <p>{message}</p>}{error && <p role="alert">{error}</p>}{activeHash && <a href={`https://etherscan.io/tx/${activeHash}`} target="_blank" rel="noreferrer">View pending transaction ↗</a>}{storageWarning && <p>Browser storage is unavailable. Keep this page open and save your transaction links to retain progress.</p>}</div>
-      <div className="fwa-bottom-links"><a href="https://www.fwa.fun/manage" target="_blank" rel="noreferrer">Manage positions on FWA ↗</a>{(session || recoveryFailed) && <button type="button" disabled={busy} onClick={reset}>{resetConfirm ? "Confirm new plan" : "Start a new plan"}</button>}</div>
-      {resetConfirm && <p className="fwa-hint">Starting a new plan clears this browser’s checklist. Existing packs and FWA positions remain in your wallet and on FWA. Save any pending transaction links first. <button type="button" onClick={() => setResetConfirm(false)}>Keep this plan</button></p>}
-    </section>
-    <section className="fwa-notes"><div><p className="fwa-eyebrow">About the split</p><p>Every active position receives an equal share of distributable eth purchase fees. More packs create more positions and change your total draw exposure. Earnings depend on pool activity and how long each position remains active.</p></div><div><p className="fwa-eyebrow">When a pack is drawn</p><p>{settings ? `FWA’s current eth cashout is ${Number(settings.cashoutBps) / 100}% of its backing. If the purchaser keeps the pack, FWA returns your separate backing less its ${Number(settings.settlementFeeBps) / 100}% settlement fee.` : "The purchaser can keep the pack or accept FWA’s bid. Settlement fees and payout rates are set by FWA."} Deposits can queue before activation. Withdrawal timing follows FWA’s pool and crown rules.</p><a href="https://www.fwa.fun/docs/fees" target="_blank" rel="noreferrer">Read FWA’s rules ↗</a></div></section>
   </main>;
 }
-function PackCard({counts, settings, value, backing, index, packId, done, drawWeight, totalWeight}: {drawWeight?: bigint; totalWeight?: bigint; counts: number[]; settings: FwaSettings | null; value: bigint; backing: bigint; index: number; packId?: string; done: boolean}) {
-  const images = React.useMemo(() => {
-    if (!settings) return [];
-    return counts.flatMap((n, di) => Array.from({length: Math.min(n, 3)}, (_, j) => {
-      const amount = settings.denominations[di];
-      const seed = sampleSeed(BigInt(index * 100 + di * 10 + j + 1));
-      return localArt(seed, amount, mintGene(seed, amount));
-    })).slice(0, 3);
-  }, [counts, settings, index]);
-  const settlement = settings ? fwaSettlement({value, backing}, settings) : null;
-  return <article className="fwa-pack-card"><div className="fwa-card-top"><span>{packId ? `pack #${packId}` : `pack ${String(index + 1).padStart(2, "0")}`}</span><span>{done ? "Deposited ✓" : "shape pack"}</span></div><div className="fwa-pack-art" aria-label="Illustrative shapes preview">{images.map((src, i) => <img key={i} src={src} alt="" style={{transform: `translate(${(i - 1) * 30}px, ${(i - 1) * -8}px) rotate(${(i - 1) * 9}deg)`}}/>)}</div><div className="fwa-card-value">{eth(value)} <span>eth</span></div><div className="fwa-card-backing">+ {eth(backing)} eth in FWA</div><small>{counts.reduce((s, n) => s + n, 0)} underlying shapes · artwork preview</small>{settlement && <div className="fwa-card-outcomes">
-    {drawWeight !== undefined && totalWeight !== undefined && <p>Chance per draw <strong>{percent(drawWeight, totalWeight)}</strong></p>}
-    <details><summary>When this pack is drawn</summary><p>If buyer keeps the pack<strong>{eth(settlement.returnedBacking)} eth returned to you</strong><span>{eth(settlement.packTakenLoss)} eth principal spent</span></p>
-    <p>If buyer accepts a bid<strong>Your pack returns to you</strong><span>{eth(settlement.packReturnedLoss)} eth backing spent</span></p>
-    <p>Buyer’s eth bid: {eth(settlement.cashBid)} eth. FWA token alternative: {eth(settlement.tokenBidBudget)} eth swap budget, with the token amount determined at settlement.</p>
-    <p>Principal spent excludes mint fees and gas. Fees earned while active are additional.</p>
-    </details>
-  </div>}</article>;
+function PackArt({value, settings, nonce = 0}: {value: bigint; settings: FwaSettings | null; nonce?: number}) {
+  const denominations = settings?.denominations;
+  const image = React.useMemo(() => {
+    if (!denominations) return null;
+    try {
+      const counts = packMakeup(value, denominations); const cards: PackCard[] = [];
+      for (let i = counts.length - 1; i >= 0 && cards.length < 12; i--) for (let n = 0; n < counts[i] && cards.length < 12; n++) {
+        const seed = sampleSeed(BigInt(nonce + 1) * 1000n + BigInt(i * 20 + n)); const amount = denominations[i];
+        cards.push({seed, faceValueWei: amount, isBlack: false, inkGene: mintGene(seed, amount), modules: new Uint8Array()});
+      }
+      return `data:image/svg+xml;base64,${btoa(renderPack(cards))}`;
+    } catch {return null;}
+  }, [value, denominations, nonce]);
+  return image ? <img className="fwa-pack-art" src={image} alt={`${eth(value)} eth shape pack`}/> : <span className="fwa-art-loading" aria-label="Reading artwork"/>;
 }

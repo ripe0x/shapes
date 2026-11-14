@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {createPublicClient,createWalletClient,http,parseAbi,parseEther} from "viem";
 import {mainnet} from "viem/chains";
-import {FWA_POOL,PACKS,SHAPES,fwaAbi,packTransferAbi,buildExplicitFwaPlan,loadFwaSettings,mintedPackId,depositedListing,reconcileFwaSession} from "../../preview/src/site/fwa.ts";
+import {FWA_POOL,PACKS,SHAPES,fwaAbi,packTransferAbi,buildFwaContribution,loadFwaSettings,mintedPackId,depositedListing,reconcileFwaSession} from "../../preview/src/site/fwa.ts";
 import {packsAbi} from "../../preview/src/site/packs.ts";
 const rpc = process.env.FWA_FORK_RPC ?? 'http://127.0.0.1:18546';
 const url = new URL(rpc);
@@ -28,9 +28,9 @@ try {
  };
  const settings=await loadFwaSettings(client);
  console.log('Verified live contracts',String(settings.block),'admitted',settings.admitted,'exempt',settings.exempt);
- const plan=buildExplicitFwaPlan([{value:parseEther('0.05'),quantity:1},{value:parseEther('0.1'),quantity:1}],10000n,settings,parseEther('0.1'));
- assert.equal(plan.total,parseEther('0.302'));
- assert.equal(plan.remainder,-parseEther('0.202')); // A cap never resizes the chosen packs.
+ const plan=buildFwaContribution([{value:parseEther('0.05'),backing:parseEther('0.075')},{value:parseEther('0.1'),backing:parseEther('0.1')}],settings,parseEther('0.1'));
+ assert.equal(plan.total,parseEther('0.327'));
+ assert.equal(plan.remainder,-parseEther('0.227')); // A cap never resizes the chosen packs.
  const ids=[];
  for(const row of plan.rows){
   const quote=await client.readContract({address:PACKS,abi:packsAbi,functionName:'quoteMint',args:[row.counts]});
