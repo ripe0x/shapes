@@ -108,3 +108,7 @@
 .fwa-page .packs-summary-row strong {text-align:right;}
 .fwa-page .packs-summary-row.is-total {padding:14px 0 10px;border-bottom-color:var(--ink);font-size:13px;}
 .fwa-page .packs-summary-row.is-total>span {color:var(--ink);}
+
+.fwa-page .fwa-suggestions {margin:0 0 24px;}
+.fwa-page .fwa-suggestions p {font:400 13px/1.55 Arial,Helvetica,sans-serif;color:var(--muted);margin-top:12px;}
+.fwa-page .fwa-suggestions .shape-mode-toggle button {letter-spacing:.08em;}

@@ -187,7 +187,17 @@ Playwright is already a devDependency of `preview/`; a fresh checkout needs
 
 `/fwa` follows the supplied FWA design handoff with budget, pack table, backing,
 settlement outcomes, steps, and a sticky contribution summary. The table groups
-packs by value and accepts any valid sum of shapes denominations. A global ratio
+packs by value and accepts any valid sum of shapes denominations. The initial
+allocation is calculated from the budget and current backing ratio. Equal packs
+prefer the smallest eligible single shape denomination; larger denominations
+are used when necessary to stay within the 24 pack workflow limit. Fewer positions
+uses the next larger affordable denomination and fills the remainder with the
+base size. Small budgets can use a compound pack fallback, with its additional
+shape fees disclosed. The remainder is always visible. Manual quantity or backing
+edits freeze the allocation across budget changes; selecting an allocation option
+explicitly rebuilds it. At the current example fee, 0.75 eth at equal matching
+suggests seven 0.05 eth packs totaling 0.707 eth, or four positions totaling
+0.704 eth with the fewer positions option. A global ratio
 sets backing for all packs; per pack overrides let each position use its own
 backing. Choosing a global ratio again replaces those overrides. Pack artwork
 uses the canonical `shapes-render` pack renderer.

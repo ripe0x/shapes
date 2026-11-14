@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {encodeEventTopics, encodeAbiParameters, parseAbiParameters, parseEther, type Address, type TransactionReceipt} from "viem";
-import {buildFwaContribution, parseFwaAmount, fwaPackRequirement, buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, type FwaSettings} from "./fwa";
+import {suggestFwaPlan, buildFwaContribution, parseFwaAmount, fwaPackRequirement, buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, type FwaSettings} from "./fwa";
 const E = parseEther;
 const settings: FwaSettings = {
   denominations: ["0.01","0.05","0.1","0.5","1","5","10","50","100"].map(v => E(v)),
@@ -67,7 +67,7 @@ test("settlement separates buyer bid from depositor recovery and principal spent
   assert.equal(x.packReturnedLoss,E("0.05")); assert.equal(x.cashBid,E("0.045")); assert.equal(x.tokenBidBudget,E("0.04575"));
 });
 
-test("handoff default mix totals five packs and five shape fees", () => {
+test("manual five pack mix totals five shape fees", () => {
   const packs = ["0.1","0.1","0.05","0.05","0.05"].map(v => ({value:E(v), backing:E(v)}));
   const p = buildFwaContribution(packs, settings, E("0.75"));
   assert.equal(p.packValue,E("0.35")); assert.equal(p.backing,E("0.35"));
@@ -89,4 +89,32 @@ test("decimal inputs preserve wei exactly and reject excess precision", () => {
   assert.equal(parseFwaAmount("0.100000000000000001"),100000000000000001n);
   assert.equal(parseFwaAmount(".5"),E("0.5"));
   for (const v of ["", "-1", "1e3", "0.0000000000000000001", "NaN"]) assert.throws(()=>parseFwaAmount(v),/18 decimal/);
+});
+
+test("default suggestions derive equal single shape packs from budget and live prices", () => {
+  const p = suggestFwaPlan(E("0.75"),10000n,settings);
+  assert.equal(p.rows.length,7); assert.ok(p.rows.every(r=>r.value===E("0.05")));
+  assert.equal(p.total,E("0.707")); assert.equal(p.remainder,E("0.043"));
+  const higherFee=suggestFwaPlan(E("0.75"),10000n,{...settings,mintFee:E("0.01")});
+  assert.equal(higherFee.rows.length,6);
+});
+test("fewer positions fills with the next affordable denomination and the base size", () => {
+  const p=suggestFwaPlan(E("0.75"),10000n,settings,"fewer");
+  assert.deepEqual(p.rows.map(r=>r.value),[E("0.1"),E("0.1"),E("0.1"),E("0.05")]);
+  assert.equal(p.total,E("0.704")); assert.equal(p.fees,E("0.004"));
+});
+test("suggestions respect ratio, current minimums, oracle caps and transaction count", () => {
+  for(const budget of ["0.1","0.75","2.6","10","100"]) for(const ratio of [5000n,10000n,15000n,20000n]) {
+    try {const p=suggestFwaPlan(E(budget),ratio,settings); assert.ok(p.rows.length<=24); assert.ok(p.total<=E(budget));
+      for(const r of p.rows) {assert.equal(r.backing,r.value*ratio/10000n); assert.equal(fwaPackRequirement(r,settings),null);}}
+    catch(e) {assert.match((e as Error).message,/cannot fund/);}
+  }
+  assert.equal(suggestFwaPlan(E("1"),10000n,{...settings,minimumPack:E("0.1"),minimumBacking:E("0.1")}).rows[0].value,E("0.1"));
+  const capped={...settings,exempt:false,cap:E("0.04")};
+  const p=suggestFwaPlan(E("0.75"),10000n,capped); assert.ok(p.rows.every(r=>r.backing<=E("0.04")));
+});
+test("small budgets disclose compound shape costs and never suggest an unaffordable clean pack", () => {
+  const p=suggestFwaPlan(E("0.1"),10000n,settings);
+  assert.equal(p.rows.length,1); assert.equal(p.rows[0].value,E("0.04")); assert.equal(p.fees,E("0.004")); assert.equal(p.total,E("0.084"));
+  assert.throws(()=>suggestFwaPlan(E("0.05"),10000n,settings),/cannot fund/);
 });

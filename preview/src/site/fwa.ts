@@ -163,6 +163,45 @@ export function fwaPackRequirement(row: {value: bigint; backing: bigint}, settin
   if (settings.admitted && !settings.exempt && settings.cap !== null && row.backing > settings.cap) return `FWA backing exceeds the ${formatEther(settings.cap)} eth oracle ceiling.`;
   return null;
 }
+export type FwaSuggestionMode = "equal" | "fewer";
+/** Prefer single-shape packs; promote the size only when the 24-pack workflow limit requires it. */
+export function suggestFwaPlan(budget: bigint, ratioBps: bigint, settings: FwaSettings, mode: FwaSuggestionMode = "equal"): Plan {
+  if (budget <= 0n) throw new Error("Enter a budget above 0 eth.");
+  if (ratioBps <= 0n || ratioBps > 100_000n) throw new Error("Choose a backing ratio above zero and up to 10×.");
+  const backing = (value: bigint) => value * ratioBps / 10_000n;
+  const eligible = (value: bigint) => value >= settings.minimumPack && backing(value) > 0n && backing(value) >= settings.minimumBacking &&
+    (!settings.admitted || settings.exempt || settings.cap === null || backing(value) <= settings.cap);
+  const cost = (value: bigint) => value + backing(value) + packMakeup(value, settings.denominations).reduce((sum, n) => sum + BigInt(n) * settings.mintFee, 0n);
+  const clean = settings.denominations.filter(eligible);
+  const affordable = clean.filter(value => cost(value) <= budget);
+  let base = affordable.find(value => budget / cost(value) <= 24n) ?? affordable.at(-1);
+  if (base === undefined) {
+    // Below the first single-shape pack, offer an honest compound-pack fallback.
+    // The canonical ladder has at most 10,000 base units before its largest denomination.
+    const unit = settings.denominations[0];
+    const minimum = settings.minimumPack > (settings.minimumBacking * 10_000n + ratioBps - 1n) / ratioBps
+      ? settings.minimumPack : (settings.minimumBacking * 10_000n + ratioBps - 1n) / ratioBps;
+    const start = (minimum + unit - 1n) / unit * unit;
+    const end = clean[0] ?? settings.denominations.at(-1)!;
+    for (let value = start; value < end && value <= budget * 10_000n / (10_000n + ratioBps); value += unit) {
+      if (eligible(value) && cost(value) <= budget) base = value;
+    }
+    if (base === undefined) throw new Error("This budget cannot fund an eligible pack at this backing ratio.");
+  }
+  const rows: {value: bigint; backing: bigint}[] = [];
+  let remaining = budget;
+  const add = (value: bigint) => {
+    const count = Number(remaining / cost(value) < BigInt(24 - rows.length) ? remaining / cost(value) : BigInt(24 - rows.length));
+    for (let i = 0; i < count; i++) rows.push({value, backing: backing(value)});
+    remaining -= BigInt(count) * cost(value);
+  };
+  if (mode === "fewer") {
+    const larger = affordable.find(value => value > base!);
+    if (larger !== undefined) add(larger);
+  }
+  add(base);
+  return buildFwaContribution(rows, settings, budget);
+}
 export function fwaExposure(rows: readonly {backing: bigint}[], settings: FwaSettings) {
   const weights = rows.map(r => 10n ** 36n / r.backing);
   const addedWeight = weights.reduce((s, w) => s + w, 0n);
