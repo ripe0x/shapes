@@ -52,6 +52,7 @@ function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | nu
   if (parts.length === 1 && parts[0] === "mint") return { view: "mint", tokenId: null };
   if (parts.length === 1 && parts[0] === "auction") return { view: "auction", tokenId: null };
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
+  if (parts.length === 1 && parts[0] === "fwa") return { view: "fwa", tokenId: null };
   if (parts.length === 1 && parts[0] === "packs") return { view: "packs", tokenId: null };
   if (parts.length === 1 && parts[0] === "contracts") return { view: "contracts", tokenId: null };
   if (parts.length === 1 && parts[0] === "my-shapes") return { view: "collection", tokenId: null };
@@ -131,6 +132,7 @@ export async function generateMetadata({
       openGraph: { title: "Gallery · Shapes", url: "/gallery" },
     };
   }
+  if (r.view === "fwa") return {title: "FWA", description: "Create shape packs, choose eth backing, and deposit directly into the FWA main pool.", openGraph: {title: "FWA · shapes", url: "/fwa"}};
   if (r.view === "packs") {
     return {
       title: "Shape Packs",

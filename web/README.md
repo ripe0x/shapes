@@ -182,3 +182,49 @@ control instead of being reconnected on load.
 
 Playwright is already a devDependency of `preview/`; a fresh checkout needs
 `npx playwright install chromium` once.
+
+## FWA contribution page
+
+`/fwa` prepares mainnet **shape packs only**, budgets pack reserves plus separate
+FWA backing and per-shape mint fees, and offers equal or ascending pack sizes.
+Backing ratios are expressed as FWA backing divided by pack value. Unused budget
+from denomination rounding stays visible. All writes go directly from the
+connected wallet to the existing contracts; no adapter or custody contract is
+used. Minting and depositing are separate review steps. The page leads with its FWA
+main pool purpose, defaults to one pack with equal eth matching, and keeps custom
+matching and size distribution behind an optional disclosure. A compact summary
+shows both eth commitments, mint fees, and the current action together. Saved
+deposits show their original quoted fees and the eth still needed to finish.
+
+The page verifies bytecode, the packs-to-shapes pointer, denominations, mint fees,
+pack minimum, FWA admission, oracle exemption or valid floor ceiling, cashout
+rates, and the minimum-backing/withdraw-only ConfigSet history. History reads use
+a block-hash-checked browser checkpoint. Missing checks fail closed for deposits.
+The calculator remains usable while admission is pending, but creating packs for
+FWA is disabled until the live deposit checks pass.
+Every transaction is simulated and estimated with the existing gas buffer.
+
+A wallet-scoped local checklist stores the frozen plan and each broadcast hash
+before awaiting confirmation. Reload recovery reads receipts, extracts the actual
+pack/listing IDs, and distinguishes staged deposits. The original wallet remains
+the FWA depositor. Do not clear browser storage during a workflow; packs and
+positions themselves remain onchain regardless of this checklist. Plans do not
+include gas, and bulk actions require a wallet confirmation per transaction.
+
+Validation:
+
+```sh
+node --import tsx --test preview/src/site/fwa.test.ts
+# Install Anvil through Foundry, then run against a disposable mainnet fork:
+node web/e2e/runFwaFork.mjs
+# Optional: ANVIL_BIN=/absolute/path/to/anvil FWA_FORK_SOURCE=https://your.rpc
+SHAPES_LADDER=mainnet npm run build --workspace web
+```
+
+The fork check uses the real deployed contracts, funds a disposable test wallet,
+mints packs, checks actual admission rejection when applicable, and enables the
+announced collection admission/exemption using owner impersonation **on the local
+fork only**. It verifies direct wallet depositor rights and reload recovery from
+actual receipts. The script refuses non-loopback RPCs and requires Anvil before
+any write. Its state is reverted and its node stopped after the run. No test
+transaction is submitted to Ethereum mainnet.

@@ -25,6 +25,7 @@ import {useDisplayName} from "./useDisplayName";
 import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
 import {PacksView} from "./PacksView";
+const FwaView = React.lazy(() => import("./FwaView").then(m => ({default: m.FwaView})));
 
 // The generated contract documentation is large and only this view reads it, so it loads on
 // demand rather than riding in the main bundle.
@@ -39,7 +40,8 @@ export type View =
   | "token"
   | "manage"
   | "contracts"
-  | "packs";
+  | "packs"
+  | "fwa";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -654,6 +656,7 @@ export function SiteApp({
           <ContractsView dep={dep} />
         </React.Suspense>
       )}
+      {view === "fwa" && <React.Suspense fallback={<div style={{padding: 48}}>Loading FWA…</div>}><FwaView dep={dep} onConnect={() => openConnectModal?.()} /></React.Suspense>}
       {view === "packs" && (
         <PacksView
           dep={dep}
