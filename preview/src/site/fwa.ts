@@ -138,7 +138,7 @@ export function buildFwaPlan(budget: bigint, quantity: number, ratioBps: bigint,
 }
 export function depositBlocker(settings: FwaSettings, rows: readonly {backing: bigint}[]): string | null {
   if (settings.withdrawOnly) return "FWA is currently allowing withdrawals only.";
-  if (!settings.admitted) return "shape packs are awaiting admission to the FWA main pool. You can prepare your packs now and deposit once admission is live.";
+  if (!settings.admitted) return "FWA admission for shape packs is pending. You can plan your deposit now and create the packs when deposits are available.";
   if (settings.oracleError) return settings.oracleError;
   if (rows.some(r => r.backing === 0n || r.backing < settings.minimumBacking)) return "A pack's FWA backing is below the current pool minimum.";
   if (!settings.exempt && (settings.cap === null || rows.some(r => r.backing > settings.cap!))) return "The planned FWA backing exceeds the current oracle ceiling. Adjust the ratio or split.";
@@ -197,4 +197,14 @@ export async function reconcileFwaSession(client: PublicClient, saved: FwaSessio
   }
   if (next.approvalHash && await receiptFor(next.approvalHash)) delete next.approvalHash;
   return next;
+}
+
+/** Keep quoted costs stable while tracking which payments have actually been completed. */
+export function fwaCosts(rows: readonly {value: string | bigint; backing: string | bigint; fee: string | bigint; packId?: string; listingId?: string}[]) {
+  const packValue = rows.reduce((sum, r) => sum + BigInt(r.value), 0n);
+  const backing = rows.reduce((sum, r) => sum + BigInt(r.backing), 0n);
+  const fees = rows.reduce((sum, r) => sum + BigInt(r.fee), 0n);
+  const remainingMintPayment = rows.filter(r => r.packId === undefined).reduce((sum, r) => sum + BigInt(r.value) + BigInt(r.fee), 0n);
+  const remainingBacking = rows.filter(r => r.listingId === undefined).reduce((sum, r) => sum + BigInt(r.backing), 0n);
+  return {packValue, backing, fees, mintPayment: packValue + fees, remainingMintPayment, remainingBacking};
 }

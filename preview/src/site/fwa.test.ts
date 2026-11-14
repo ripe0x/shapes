@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {encodeEventTopics, encodeAbiParameters, parseAbiParameters, parseEther, type Address, type TransactionReceipt} from "viem";
-import {buildFwaPlan, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, type FwaSettings} from "./fwa";
+import {buildFwaPlan, fwaCosts, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, type FwaSettings} from "./fwa";
 const E = parseEther;
 const settings: FwaSettings = {
   denominations: ["0.01","0.05","0.1","0.5","1","5","10","50","100"].map(v => E(v)),
@@ -72,4 +72,18 @@ test("decode both active and staged listing receipts with the deployed event sig
   const stagedTopics=encodeEventTopics({abi:fwaAbi,eventName:"ListingStaged",args:{listingId:53n,depositor:account}});
   const stagedData=encodeAbiParameters(parseAbiParameters("address,uint256,uint256,uint256"),[PACKS,41n,E("0.25"),10n]);
   assert.deepEqual(depositedListing(receipt(FWA_POOL,stagedTopics as string[],stagedData),account,41n),{listingId:"53",staged:true});
+});
+
+test("a partially finished FWA deposit keeps original fees and shows only unpaid commitments", () => {
+  const quoted = {value: E("0.25"), backing: E("0.5"), fee: E("0.003")};
+  const costs = fwaCosts([{...quoted, packId: "1", listingId: "10"}, {...quoted, packId: "2"}, quoted]);
+  assert.equal(costs.fees, E("0.009"));
+  assert.equal(costs.mintPayment, E("0.759"));
+  assert.equal(costs.remainingMintPayment, E("0.253"));
+  assert.equal(costs.remainingBacking, E("1"));
+});
+test("a completed deposit has no remaining mint or FWA payment", () => {
+  const costs = fwaCosts([{value: "250000000000000000", backing: "500000000000000000", fee: "3000000000000000", packId: "1", listingId: "10"}]);
+  assert.equal(costs.remainingMintPayment + costs.remainingBacking, 0n);
+  assert.equal(costs.packValue + costs.backing + costs.fees, E("0.753"));
 });

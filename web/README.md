@@ -190,13 +190,18 @@ FWA backing and per-shape mint fees, and offers equal or ascending pack sizes.
 Backing ratios are expressed as FWA backing divided by pack value. Unused budget
 from denomination rounding stays visible. All writes go directly from the
 connected wallet to the existing contracts; no adapter or custody contract is
-used. Minting and depositing are separate review steps.
+used. Minting and depositing are separate review steps. The page leads with its FWA
+main pool purpose, defaults to one pack with equal eth matching, and keeps custom
+matching and size distribution behind an optional disclosure. A compact summary
+shows both eth commitments, mint fees, and the current action together. Saved
+deposits show their original quoted fees and the eth still needed to finish.
 
 The page verifies bytecode, the packs-to-shapes pointer, denominations, mint fees,
 pack minimum, FWA admission, oracle exemption or valid floor ceiling, cashout
 rates, and the minimum-backing/withdraw-only ConfigSet history. History reads use
 a block-hash-checked browser checkpoint. Missing checks fail closed for deposits.
-Minting can prepare packs while admission is pending, with that state disclosed.
+The calculator remains usable while admission is pending, but creating packs for
+FWA is disabled until the live deposit checks pass.
 Every transaction is simulated and estimated with the existing gas buffer.
 
 A wallet-scoped local checklist stores the frozen plan and each broadcast hash
