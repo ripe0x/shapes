@@ -185,10 +185,10 @@ Playwright is already a devDependency of `preview/`; a fresh checkout needs
 
 ## FWA contribution page
 
-`/fwa` prepares mainnet **shape packs only**, budgets pack reserves plus separate
-FWA backing and per-shape mint fees, and offers equal or ascending pack sizes.
-Backing ratios are expressed as FWA backing divided by pack value. Unused budget
-from denomination rounding stays visible. All writes go directly from the
+`/fwa` prepares mainnet **shape packs only** using explicit pack value and quantity
+rows. It calculates pack reserves, separate FWA backing, and per-shape mint fees.
+An optional budget cap reports shortfalls without resizing the chosen packs.
+Backing ratios are expressed as FWA backing divided by pack value. Pack values must match valid shapes denominations. All writes go directly from the
 connected wallet to the existing contracts; no adapter or custody contract is
 used. Minting and depositing are separate review steps.
 
@@ -197,7 +197,13 @@ pack minimum, FWA admission, oracle exemption or valid floor ceiling, cashout
 rates, and the minimum-backing/withdraw-only ConfigSet history. History reads use
 a block-hash-checked browser checkpoint. Missing checks fail closed for deposits.
 Minting can prepare packs while admission is pending, with that state disclosed.
-Every transaction is simulated and estimated with the existing gas buffer.
+The preview reads total pool weight and active listing count at the same block
+as configuration. Draw exposure includes the added weight of every planned pack;
+fee share assumes all packs activate alongside the current active listings.
+Settlement outcomes distinguish backing returned when the buyer keeps the pack
+from the pack returning when the buyer accepts a bid. These are snapshots, not
+yield estimates. Every transaction is simulated and estimated with the existing
+gas buffer.
 
 A wallet-scoped local checklist stores the frozen plan and each broadcast hash
 before awaiting confirmation. Reload recovery reads receipts, extracts the actual

@@ -77,3 +77,18 @@
 .fwa-page button:not(:disabled) {cursor:pointer;}.fwa-page :is(input,button,a):focus-visible {outline:2px solid #41634a;outline-offset:4px;}
 @media(max-width:850px) {.fwa-page {padding:0 24px 35px;}.fwa-intro {gap:40px;padding:45px 0 35px;}.fwa-workspace {gap:30px;}.fwa-preview {padding-left:25px;}.fwa-pack-grid {grid-template-columns:1fr;}.fwa-action-row {align-items:flex-start;}.fwa-steps {gap:15px;}.fwa-primary {min-width:200px;}}
 @media(max-width:600px) {.fwa-intro,.fwa-workspace,.fwa-notes {grid-template-columns:1fr;gap:30px;}.fwa-intro h1 {font-size:48px;}.fwa-preview {padding-left:0;border-left:0;border-top:1px solid #d8d8d1;padding-top:28px;}.fwa-pack-grid {grid-template-columns:repeat(2,minmax(0,1fr));}.fwa-pack-card {padding:10px;}.fwa-pack-art {height:125px;}.fwa-pack-art img {width:77px;height:77px;}.fwa-card-top {font-size:8px;}.fwa-card-value {font-size:27px;}.fwa-card-backing {font-size:9px;}.fwa-execute {padding:18px;}.fwa-steps {grid-template-columns:1fr;gap:18px;}.fwa-steps>div {grid-template-columns:25px 1fr;}.fwa-steps small {margin-top:5px;}.fwa-action-row {flex-direction:column;}.fwa-primary {width:100%;}.fwa-progress>div {flex-wrap:wrap;}.fwa-notes {gap:15px;}.fwa-bottom-links {flex-wrap:wrap;}}
+
+.fwa-choice-list {display:grid;gap:12px;margin-top:22px;}
+.fwa-choice {display:grid;grid-template-columns:minmax(0,1fr) 90px 28px;gap:12px;align-items:end;}
+.fwa-choice label {font-size:10px;line-height:1.8;}.fwa-choice label span {float:right;color:#686862;}
+.fwa-choice input,.fwa-cap input {box-sizing:border-box;width:100%;min-width:0;border:1px solid #b9b9b1;background:transparent;padding:12px 9px;font:inherit;color:inherit;font-size:17px;}
+.fwa-choice button {height:45px;border:0;background:none;font-size:20px;color:inherit;}
+.fwa-add {margin-top:16px;padding:0;background:none;border:0;border-bottom:1px solid;font:inherit;font-size:11px;color:inherit;}
+.fwa-cap {display:flex;gap:12px;align-items:center;font-size:12px;}.fwa-cap input {max-width:180px;font-size:20px;}
+.fwa-optional {color:#686862;margin-left:8px;}.fwa-shortfall {color:#8b3b27;}
+.fwa-economics {border-top:1px solid #d8d8d1;margin-top:25px;padding-top:15px;}.fwa-economics h3 {font-size:13px;font-weight:400;}
+.fwa-card-outcomes {border-top:1px solid #d8d8d1;margin-top:15px;font-size:9px;line-height:1.7;}.fwa-card-outcomes strong,.fwa-card-outcomes span {display:block;font-weight:400;}.fwa-card-outcomes span,.fwa-card-outcomes p:last-child {color:#686862;}
+@media(max-width:600px) {.fwa-choice {grid-template-columns:minmax(0,1fr) 75px 24px;gap:8px;}.fwa-pack-grid {grid-template-columns:1fr;}}
+
+.fwa-pack-card:only-child {grid-column:1 / -1;}
+.fwa-card-outcomes summary {cursor:pointer;text-decoration:underline;text-underline-offset:3px;font-size:10px;}

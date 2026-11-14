@@ -14,6 +14,9 @@ export const fwaAbi = parseAbi([
   "function oracleCeilingPremiumBps() view returns (uint256)",
   "function settlementDiscountBps() view returns (uint256)",
   "function ownerSettlementFeeBps() view returns (uint256)",
+  "function totalWeight() view returns (uint256)",
+  "function activeListingCount() view returns (uint256)",
+  "function tokenSettlementDiscountBps() view returns (uint256)",
   "function listNFT(address collection,uint256 tokenId) payable returns (uint256 listingId)",
   "event ConfigSet(uint256 indexed key,uint256 value)",
   "event NFTListed(uint256 indexed listingId,uint256 indexed slot,address indexed depositor,address collection,uint256 tokenId,uint256 weight,uint256 value)",
@@ -33,7 +36,7 @@ const oracleAbi = parseAbi(["function getFloorRange(address collection) view ret
 export type FwaSettings = {
   denominations: bigint[]; mintFee: bigint; minimumPack: bigint; minimumBacking: bigint;
   admitted: boolean; exempt: boolean; withdrawOnly: boolean; cap: bigint | null; oracleError: string | null;
-  cashoutBps: bigint; settlementFeeBps: bigint; block: bigint;
+  cashoutBps: bigint; settlementFeeBps: bigint; tokenCashoutBps: bigint; poolWeight: bigint; activeListings: bigint; block: bigint;
 };
 
 /** Read internal configuration through its canonical ConfigSet history. Never substitute a source default. */
@@ -43,7 +46,7 @@ export async function loadFwaSettings(client: PublicClient): Promise<FwaSettings
   const blockNumber = block.number;
   const [packCode, poolCode, shapesCode] = await Promise.all([PACKS, FWA_POOL, SHAPES].map(address => client.getCode({address, blockNumber})));
   if (!packCode || !poolCode || !shapesCode) throw new Error("The required mainnet contracts could not be verified.");
-  const [linkedShapes, minimumPack, count, mintFee, admitted, exempt, oracle, maxAge, minPeriod, premium, cashoutBps, settlementFeeBps] = await client.multicall({blockNumber, allowFailure: false, contracts: [
+  const [linkedShapes, minimumPack, count, mintFee, admitted, exempt, oracle, maxAge, minPeriod, premium, cashoutBps, settlementFeeBps, tokenCashoutBps, poolWeight, activeListings] = await client.multicall({blockNumber, allowFailure: false, contracts: [
     {address: PACKS, abi: packsAbi, functionName: "shapes"},
     {address: PACKS, abi: packsAbi, functionName: "MIN_PACK_VALUE"},
     {address: SHAPES, abi: packsShapesAbi, functionName: "denominationCount"},
@@ -56,6 +59,9 @@ export async function loadFwaSettings(client: PublicClient): Promise<FwaSettings
     {address: FWA_POOL, abi: fwaAbi, functionName: "oracleCeilingPremiumBps"},
     {address: FWA_POOL, abi: fwaAbi, functionName: "settlementDiscountBps"},
     {address: FWA_POOL, abi: fwaAbi, functionName: "ownerSettlementFeeBps"},
+    {address: FWA_POOL, abi: fwaAbi, functionName: "tokenSettlementDiscountBps"},
+    {address: FWA_POOL, abi: fwaAbi, functionName: "totalWeight"},
+    {address: FWA_POOL, abi: fwaAbi, functionName: "activeListingCount"},
   ]});
   if (linkedShapes.toLowerCase() !== SHAPES.toLowerCase()) throw new Error("The pack contract references a different shapes collection.");
   const denominations = await client.multicall({blockNumber, allowFailure: false, contracts: Array.from({length: count}, (_, i) =>
@@ -93,7 +99,7 @@ export async function loadFwaSettings(client: PublicClient): Promise<FwaSettings
       } else cap = ask * (10_000n + premium) / 10_000n;
     } catch { oracleError = "The shape packs oracle quote could not be verified."; }
   }
-  return {denominations: [...denominations], mintFee, minimumPack, minimumBacking, admitted, exempt, withdrawOnly, cap, oracleError, cashoutBps, settlementFeeBps, block: blockNumber};
+  return {denominations: [...denominations], mintFee, minimumPack, minimumBacking, admitted, exempt, withdrawOnly, cap, oracleError, cashoutBps, settlementFeeBps, tokenCashoutBps, poolWeight, activeListings, block: blockNumber};
 }
 
 export type PackPlan = {value: bigint; backing: bigint; counts: number[]; fee: bigint; payment: bigint};
@@ -109,32 +115,38 @@ export function packMakeup(value: bigint, denominations: readonly bigint[]): num
   if (remaining !== 0n) throw new Error("Pack values must match the shapes denominations.");
   return counts;
 }
-/** Integer-only budget allocation; include every mint fee and keep any rounding remainder visible. */
-export function buildFwaPlan(budget: bigint, quantity: number, ratioBps: bigint, spread: boolean, settings: FwaSettings): Plan {
-  if (budget <= 0n || budget > 10_000n * 10n ** 18n) throw new Error("Enter a budget between 0 and 10,000 eth.");
-  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 24) throw new Error("Choose between 1 and 24 packs.");
+export type PackChoice = {value: bigint; quantity: number};
+/** Values are user choices. A cap reports a shortfall and never changes a pack. */
+export function buildExplicitFwaPlan(choices: readonly PackChoice[], ratioBps: bigint, settings: FwaSettings, cap?: bigint): Plan {
+  const quantity = choices.reduce((n, r) => n + r.quantity, 0);
+  if (!choices.length || choices.some(r => !Number.isInteger(r.quantity) || r.quantity < 1) || quantity > 24) throw new Error("Choose between 1 and 24 packs in total.");
   if (ratioBps < 1n || ratioBps > 100_000n) throw new Error("Choose FWA backing above 0% and up to 1000% of pack value.");
-  const unit = settings.denominations[0];
-  const weights = Array.from({length: quantity}, (_, i) => spread ? BigInt(i + 1) : 1n);
-  const sumWeights = weights.reduce((s, w) => s + w, 0n);
-  let scale = budget * 10_000n / ((10_000n + ratioBps) * sumWeights * unit);
-  const rowsFor = (scale: bigint): PackPlan[] => weights.map(weight => {
-    const value = weight * scale * unit;
+  if (cap !== undefined && cap <= 0n) throw new Error("Enter a budget cap above 0 eth or leave it empty.");
+  const rows = choices.flatMap(({value, quantity}) => {
+    if (value < settings.minimumPack || value > 10_000n * 10n ** 18n) throw new Error("Each pack must meet the pack minimum and be no larger than 10,000 eth.");
     const counts = packMakeup(value, settings.denominations);
-    const fee = counts.reduce((s, n) => s + BigInt(n) * settings.mintFee, 0n);
+    const fee = counts.reduce((sum, n) => sum + BigInt(n) * settings.mintFee, 0n);
     const backing = value * ratioBps / 10_000n;
-    return {value, backing, counts, fee, payment: value + fee};
+    if (backing === 0n || backing < settings.minimumBacking) throw new Error("Each pack needs at least the current FWA minimum backing. Increase its value or backing percentage.");
+    return Array.from({length: quantity}, () => ({value, counts: [...counts], fee, backing, payment: value + fee}));
   });
-  let rows = rowsFor(scale);
-  while (scale > 0n && rows.reduce((s, r) => s + r.payment + r.backing, 0n) > budget) rows = rowsFor(--scale);
-  if (rows.some(r => r.value < settings.minimumPack || r.backing === 0n || r.backing < settings.minimumBacking)) {
-    throw new Error("Increase your budget, use fewer packs, or adjust the backing ratio to meet both minimums.");
-  }
   const packValue = rows.reduce((s, r) => s + r.value, 0n);
   const backing = rows.reduce((s, r) => s + r.backing, 0n);
   const fees = rows.reduce((s, r) => s + r.fee, 0n);
   const total = packValue + backing + fees;
-  return {rows, packValue, backing, fees, total, remainder: budget - total};
+  return {rows, packValue, backing, fees, total, remainder: cap === undefined ? 0n : cap - total};
+}
+export function fwaExposure(rows: readonly {backing: bigint}[], settings: FwaSettings) {
+  const weights = rows.map(r => 10n ** 36n / r.backing);
+  const addedWeight = weights.reduce((s, w) => s + w, 0n);
+  return {weights, addedWeight, totalWeight: settings.poolWeight + addedWeight,
+    positions: BigInt(rows.length), totalPositions: settings.activeListings + BigInt(rows.length)};
+}
+export function fwaSettlement(row: {value: bigint; backing: bigint}, settings: FwaSettings) {
+  const returnedBacking = row.backing - row.backing * settings.settlementFeeBps / 10_000n;
+  return {returnedBacking, packTakenLoss: row.value + row.backing - returnedBacking,
+    packReturnedLoss: row.backing, cashBid: row.backing * settings.cashoutBps / 10_000n,
+    tokenBidBudget: row.backing * settings.tokenCashoutBps / 10_000n};
 }
 export function depositBlocker(settings: FwaSettings, rows: readonly {backing: bigint}[]): string | null {
   if (settings.withdrawOnly) return "FWA is currently allowing withdrawals only.";

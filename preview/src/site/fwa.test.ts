@@ -1,48 +1,15 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {encodeEventTopics, encodeAbiParameters, parseAbiParameters, parseEther, type Address, type TransactionReceipt} from "viem";
-import {buildFwaPlan, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, type FwaSettings} from "./fwa";
+import {buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, type FwaSettings} from "./fwa";
 const E = parseEther;
 const settings: FwaSettings = {
   denominations: ["0.01","0.05","0.1","0.5","1","5","10","50","100"].map(v => E(v)),
   mintFee: E("0.001"), minimumPack: E("0.03"), minimumBacking: E("0.025"),
   admitted: true, exempt: true, withdrawOnly: false, cap: null, oracleError: null,
-  cashoutBps: 9000n, settlementFeeBps: 100n, block: 1n,
+  tokenCashoutBps: 9150n, poolWeight: 10n ** 20n, activeListings: 100n, cashoutBps: 9000n, settlementFeeBps: 100n, block: 1n,
 };
 const account: Address = "0x1000000000000000000000000000000000000123";
-test("budget covers all underlying mint fees and both independent eth commitments", () => {
-  const p = buildFwaPlan(E("1"), 2, 10_000n, false, settings);
-  assert.equal(p.rows[0].value, E("0.24"));
-  assert.equal(p.rows[0].fee, E("0.006"));
-  assert.equal(p.total, E("0.972"));
-  assert.equal(p.remainder, E("0.028"));
-  assert.equal(p.total + p.remainder, E("1"));
-});
-test("varied packs preserve the ratio and respect both minimums", () => {
-  const p = buildFwaPlan(E("1"), 3, 5000n, true, settings);
-  assert.equal(p.rows[1].value, p.rows[0].value * 2n);
-  assert.equal(p.rows[2].value, p.rows[0].value * 3n);
-  for (const r of p.rows) {
-    assert.equal(r.backing, r.value / 2n);
-    assert.ok(r.value >= settings.minimumPack);
-    assert.ok(r.backing >= settings.minimumBacking);
-  }
-  assert.ok(p.total <= E("1"));
-});
-test("all supported splits stay within budget including fee jumps at denomination boundaries", () => {
-  for (const budget of ["0.1","0.51","1","3","10"]) for (const count of [1,2,5,12,24]) for (const ratio of [5000n,10000n,20000n]) {
-    try {
-      const p = buildFwaPlan(E(budget), count, ratio, true, settings);
-      assert.ok(p.total <= E(budget));
-      for (const r of p.rows) assert.equal(r.counts.reduce((s,n,i) => s + BigInt(n) * settings.denominations[i],0n),r.value);
-    } catch (e) {assert.match((e as Error).message,/Increase your budget/);}
-  }
-});
-test("reject invalid inputs and undersized backing", () => {
-  assert.throws(() => buildFwaPlan(E("0.05"),1,10000n,false,settings),/Increase/);
-  assert.throws(() => buildFwaPlan(E("1"),25,10000n,false,settings),/24/);
-  assert.throws(() => buildFwaPlan(E("1"),2,0n,false,settings),/percentage|backing/);
-});
 test("admission and oracle exemptions are separate, and no invalid deposit is enabled", () => {
   const rows=[{backing:E("0.25")}];
   assert.match(depositBlocker({...settings,admitted:false},rows)!,/admission/);
@@ -72,4 +39,30 @@ test("decode both active and staged listing receipts with the deployed event sig
   const stagedTopics=encodeEventTopics({abi:fwaAbi,eventName:"ListingStaged",args:{listingId:53n,depositor:account}});
   const stagedData=encodeAbiParameters(parseAbiParameters("address,uint256,uint256,uint256"),[PACKS,41n,E("0.25"),10n]);
   assert.deepEqual(depositedListing(receipt(FWA_POOL,stagedTopics as string[],stagedData),account,41n),{listingId:"53",staged:true});
+});
+
+test("explicit pack choices preserve values even when a budget cap is exceeded", () => {
+  const p = buildExplicitFwaPlan([{value:E("0.05"),quantity:1}],10000n,settings,E("0.1"));
+  assert.equal(p.rows[0].value,E("0.05")); assert.equal(p.fees,E("0.001"));
+  assert.equal(p.total,E("0.101")); assert.equal(p.remainder,-E("0.001"));
+  const smaller = buildExplicitFwaPlan([{value:E("0.04"),quantity:1}],10000n,settings);
+  assert.equal(smaller.fees,E("0.004")); assert.equal(smaller.total,E("0.084"));
+});
+test("explicit groups expand quantities and reject unsupported values and backing", () => {
+  const p = buildExplicitFwaPlan([{value:E("0.05"),quantity:2},{value:E("0.1"),quantity:1}],5000n,settings);
+  assert.deepEqual(p.rows.map(r=>r.value),[E("0.05"),E("0.05"),E("0.1")]);
+  assert.equal(p.backing,E("0.1")); assert.equal(p.total,E("0.303"));
+  assert.throws(()=>buildExplicitFwaPlan([{value:E("0.051"),quantity:1}],10000n,settings),/denominations/);
+  assert.throws(()=>buildExplicitFwaPlan([{value:E("0.03"),quantity:1}],5000n,settings),/minimum backing/);
+  assert.throws(()=>buildExplicitFwaPlan([{value:E("0.05"),quantity:25}],10000n,settings),/24/);
+});
+test("exposure includes every new position in the pool denominator", () => {
+  const rows=[{backing:E("0.05")},{backing:E("0.1")}]; const x=fwaExposure(rows,settings);
+  assert.equal(x.weights[0],2n*x.weights[1]); assert.equal(x.totalWeight,settings.poolWeight+x.addedWeight);
+  assert.equal(x.positions,2n); assert.equal(x.totalPositions,102n);
+});
+test("settlement separates buyer bid from depositor recovery and principal spent", () => {
+  const x=fwaSettlement({value:E("0.05"),backing:E("0.05")},settings);
+  assert.equal(x.returnedBacking,E("0.0495")); assert.equal(x.packTakenLoss,E("0.0505"));
+  assert.equal(x.packReturnedLoss,E("0.05")); assert.equal(x.cashBid,E("0.045")); assert.equal(x.tokenBidBudget,E("0.04575"));
 });

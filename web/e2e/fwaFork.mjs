@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {createPublicClient,createWalletClient,http,parseAbi,parseEther} from "viem";
 import {mainnet} from "viem/chains";
-import {FWA_POOL,PACKS,SHAPES,fwaAbi,packTransferAbi,buildFwaPlan,loadFwaSettings,mintedPackId,depositedListing,reconcileFwaSession} from "../../preview/src/site/fwa.ts";
+import {FWA_POOL,PACKS,SHAPES,fwaAbi,packTransferAbi,buildExplicitFwaPlan,loadFwaSettings,mintedPackId,depositedListing,reconcileFwaSession} from "../../preview/src/site/fwa.ts";
 import {packsAbi} from "../../preview/src/site/packs.ts";
 const rpc = process.env.FWA_FORK_RPC ?? 'http://127.0.0.1:18546';
 const url = new URL(rpc);
@@ -28,7 +28,9 @@ try {
  };
  const settings=await loadFwaSettings(client);
  console.log('Verified live contracts',String(settings.block),'admitted',settings.admitted,'exempt',settings.exempt);
- const plan=buildFwaPlan(parseEther('1'),2,10000n,false,settings);
+ const plan=buildExplicitFwaPlan([{value:parseEther('0.05'),quantity:1},{value:parseEther('0.1'),quantity:1}],10000n,settings,parseEther('0.1'));
+ assert.equal(plan.total,parseEther('0.302'));
+ assert.equal(plan.remainder,-parseEther('0.202')); // A cap never resizes the chosen packs.
  const ids=[];
  for(const row of plan.rows){
   const quote=await client.readContract({address:PACKS,abi:packsAbi,functionName:'quoteMint',args:[row.counts]});
@@ -56,6 +58,7 @@ try {
   const listing=depositedListing(receipt,account,ids[i]);
   const l=await client.readContract({address:FWA_POOL,abi:parseAbi(['function listings(uint256) view returns(address collection,address depositor,address purchaser,uint256 tokenId,uint256 weight,uint256 value,uint256 feeShare,uint256 feeDebt,uint256 slot,uint64 allocatedAt,uint8 status)']),functionName:'listings',args:[BigInt(listing.listingId)]});
   assert.equal(l[0].toLowerCase(),PACKS);assert.equal(l[1].toLowerCase(),account.toLowerCase());assert.equal(l[3],ids[i]);assert.equal(l[5],plan.rows[i].backing);
+  assert.equal(l[4],10n**36n/plan.rows[i].backing);
   assert.equal((await client.readContract({address:PACKS,abi:packsAbi,functionName:'ownerOf',args:[ids[i]]})).toLowerCase(),FWA_POOL.toLowerCase());
   const recovered=await reconcileFwaSession(client,{version:1,account,rows:[{value:String(plan.rows[i].value),backing:String(plan.rows[i].backing),fee:String(plan.rows[i].fee),counts:plan.rows[i].counts,packId:String(ids[i]),depositHash:receipt.transactionHash}]});
   assert.equal(recovered.rows[0].listingId,listing.listingId);
