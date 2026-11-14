@@ -223,3 +223,16 @@ fork only**. It verifies direct wallet depositor rights and reload recovery from
 actual receipts. The script refuses non-loopback RPCs and requires Anvil before
 any write. Its state is reverted and its node stopped after the run. No test
 transaction is submitted to Ethereum mainnet.
+
+### FWA preview branch
+
+`feat/fwa-packs` has a branch specific Netlify context in `netlify.toml`. It
+builds the real mainnet app on every update and uses `DEPLOY_PRIME_URL` for the
+preview's metadata origin. Production configuration is unchanged.
+
+In the mainnet Netlify project's **Branches and deploy contexts** settings,
+enable Deploy Previews for pull requests and add `feat/fwa-packs` to the specific
+branches allowed for branch deploys. Netlify then rebuilds its stable preview URL
+on pushes to this branch. PR #149 sets `@netlify /fwa` as its preview entry page.
+These account settings must be enabled in Netlify; the TOML context supplies build
+configuration but does not enable Git integration or branch deploys by itself.
