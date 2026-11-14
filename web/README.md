@@ -185,9 +185,12 @@ Playwright is already a devDependency of `preview/`; a fresh checkout needs
 
 ## FWA contribution page
 
-`/fwa` follows the supplied FWA design handoff with budget, pack table, backing,
-settlement outcomes, steps, and a sticky contribution summary. The table groups
-packs by value and accepts any valid sum of shapes denominations. The initial
+`/fwa` follows the supplied FWA design handoff with budget, editable pack groups, backing,
+settlement outcomes, steps, and a sticky contribution summary. Only selected pack groups are shown, with editable values and quantities.
+Adding a pack size creates an editable row directly. Composition and mint fees
+are available in a disclosure, and individual backing inputs start collapsed.
+The summary shows one artwork per group with its quantity. Pack values can be
+any valid sum of shapes denominations. The initial
 allocation is calculated from the budget and current backing ratio. Equal packs
 prefer the smallest eligible single shape denomination; larger denominations
 are used when necessary to stay within the 24 pack workflow limit. Fewer positions
@@ -208,7 +211,7 @@ includes redeemable pack value, FWA backing, and mint fees. Budget and wallet
 shortfalls leave every chosen amount unchanged and disable the primary action.
 Pack minimums, FWA backing minimums, admission, oracle policy, and withdrawal
 status are checked against deployed contracts. Unmet requirements identify the
-pack in the table and contribution summary. The workflow is blocked while the
+pack in the editor and contribution summary. The workflow is blocked while the
 collection is awaiting admission.
 
 Review and mint continues through minting each pack, approving FWA if necessary,

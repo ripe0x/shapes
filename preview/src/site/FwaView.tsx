@@ -19,14 +19,13 @@ import {
 const client = packsClientFor(1);
 const eth = (v: bigint | string) => formatEther(BigInt(v));
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-const DEFAULT_VALUES = ["0.01", "0.04", "0.05", "0.1", "0.15", "0.5"];
 const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 const makeup = (counts: number[], denominations: bigint[]) => counts.flatMap((n, i) => n ? [`${words[n] ?? n} ${eth(denominations[i])}`] : []).reverse().join(" and ") + (counts.find(n => n > 0) === 1 ? " shape" : " shapes");
-type Choice = {value: string; quantity: number};
+type Choice = {id: string; value: string; quantity: number};
 type DraftPack = {key: string; value: bigint};
 const choicesFor = (rows: readonly {value: bigint}[]): Choice[] => {
-  const groups = new Map(DEFAULT_VALUES.map(value => [value, {value, quantity: 0}]));
-  for (const row of rows) {const value = eth(row.value); const group = groups.get(value) ?? {value, quantity: 0}; group.quantity++; groups.set(value, group);}
+  const groups = new Map<string, Choice>();
+  for (const row of rows) {const value = eth(row.value); const group = groups.get(value) ?? {id: value, value, quantity: 0}; group.quantity++; groups.set(value, group);}
   return [...groups.values()].sort((a, b) => parseFwaAmount(a.value) < parseFwaAmount(b.value) ? -1 : 1);
 };
 
@@ -39,10 +38,8 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const [suggestionMode, setSuggestionMode] = React.useState<FwaSuggestionMode>("equal");
   const [ratio, setRatio] = React.useState(10_000n);
   const [backings, setBackings] = React.useState<Record<string, string>>({});
-  const [perPackExpanded, setPerPackExpanded] = React.useState(true);
-  const [addingValue, setAddingValue] = React.useState(false);
-  const [newValue, setNewValue] = React.useState("");
-  const [addError, setAddError] = React.useState("");
+  const [perPackExpanded, setPerPackExpanded] = React.useState(false);
+  const nextGroup = React.useRef(0);
   const [settings, setSettings] = React.useState<FwaSettings | null>(null);
   const [settingsError, setSettingsError] = React.useState("");
   const [checking, setChecking] = React.useState(false);
@@ -96,8 +93,8 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
       if (!saved) {if (active) {setRecoveryFailed(true); setError("Saved progress could not be read. Check your transaction history before starting a new plan.");} return;}
       if (active) {
         sessionRef.current = saved; setSession(saved);
-        const grouped = new Map(DEFAULT_VALUES.map(value => [value, {value, quantity: 0}]));
-        for (const row of saved.rows) {const value = eth(row.value); const group = grouped.get(value) ?? {value, quantity: 0}; group.quantity++; grouped.set(value, group);}
+        const grouped = new Map<string, Choice>();
+        for (const row of saved.rows) {const value = eth(row.value); const group = grouped.get(value) ?? {id: value, value, quantity: 0}; group.quantity++; grouped.set(value, group);}
         setChoices([...grouped.values()]);
         setBudget(saved.draft?.budget || eth(saved.rows.reduce((s, r) => s + BigInt(r.value) + BigInt(r.backing) + BigInt(r.fee), 0n)));
       }
@@ -122,13 +119,32 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     catch (e) {return {plan: null, error: e instanceof Error ? e.message : "Review your budget."};}
   }, [budget, ratio, settings, suggestionMode]);
   const choices = customChoices ?? choicesFor(suggestion.plan?.rows ?? []);
-  const useSuggestion = (mode: FwaSuggestionMode) => {setSuggestionMode(mode); setChoices(null); setBackings({}); setAddError("");};
-  const changeQuantity = (value: string, quantity: number) => {
-    if (!Number.isInteger(quantity) || quantity < 0 || quantity > 24) return;
-    setChoices(rows => (rows ?? choices).map(r => r.value === value ? {...r, quantity} : r));
-    setBackings(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${parseFwaAmount(value)}:`) || Number(key.split(":")[1]) < quantity)));
+  const useSuggestion = (mode: FwaSuggestionMode) => {setSuggestionMode(mode); setChoices(null); setBackings({});};
+  const removeGroup = (id: string) => {
+    setChoices(rows => (rows ?? choices).filter(r => r.id !== id));
+    setBackings(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${id}:`))));
   };
-  const draftPacks: DraftPack[] = choices.filter(r => r.quantity > 0).sort((a, b) => parseFwaAmount(a.value) > parseFwaAmount(b.value) ? -1 : 1).flatMap(r => Array.from({length: r.quantity}, (_, i) => ({key: `${parseFwaAmount(r.value)}:${i}`, value: parseFwaAmount(r.value)})));
+  const changeQuantity = (id: string, quantity: number) => {
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 24) return;
+    setChoices(rows => (rows ?? choices).map(r => r.id === id ? {...r, quantity} : r));
+    setBackings(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${id}:`) || Number(key.slice(id.length + 1)) < quantity)));
+  };
+  const changeValue = (id: string, value: string) => {
+    setChoices(rows => (rows ?? choices).map(r => r.id === id ? {...r, value} : r));
+    setBackings(current => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${id}:`))));
+  };
+  const parsedChoices = choices.map(choice => {
+    try {
+      if (!choice.value.trim()) throw new Error("Enter a pack value.");
+      const valueWei = parseFwaAmount(choice.value);
+      if (valueWei <= 0n) throw new Error("Enter a pack value above 0 eth.");
+      if (settings && valueWei % settings.denominations[0] !== 0n) throw new Error(`Use multiples of ${eth(settings.denominations[0])} eth.`);
+      if (settings) packMakeup(valueWei, settings.denominations);
+      return {...choice, valueWei, inputError: null};
+    } catch (e) {return {...choice, valueWei: null, inputError: e instanceof Error ? e.message : "Enter a valid pack value."};}
+  });
+  const choiceError = parsedChoices.find(r => r.inputError)?.inputError;
+  const draftPacks: DraftPack[] = parsedChoices.filter(r => r.quantity > 0 && r.valueWei !== null).sort((a, b) => a.valueWei! > b.valueWei! ? -1 : 1).flatMap(r => Array.from({length: r.quantity}, (_, i) => ({key: `${r.id}:${i}`, value: r.valueWei!})));
   const backingFor = (r: DraftPack) => backings[r.key] ?? eth(r.value * ratio / 10_000n);
   let plan: Plan | null = null;
   let planError = !customChoices && !session ? suggestion.error : "";
@@ -150,7 +166,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const balanceShortfall = walletBalance !== null && remainingPayment > walletBalance ? remainingPayment - walletBalance : 0n;
   const packIssues = settings ? visibleRows.map((row, i) => {const issue = session?.rows[i]?.listingId === undefined ? fwaPackRequirement(row, settings) : null; return issue ? `Pack ${i + 1}: ${issue}` : null;}).filter((v): v is string => !!v) : [];
   const poolBlocker = settings && !complete ? depositBlocker(settings, visibleRows.filter((_, i) => session?.rows[i]?.listingId === undefined)) : null;
-  const requirement = !supported ? "This page requires the Ethereum mainnet shapes site." : recoveryFailed ? "Saved transactions must be checked before continuing." : settingsError || (!settings ? "Reading current requirements…" : planError || (!visibleRows.length ? "Choose at least one pack." : packIssues[0] || poolBlocker || (overage ? `This plan is ${eth(overage)} eth over budget.` : balanceShortfall ? `This plan is ${eth(balanceShortfall)} eth above your wallet balance.` : address && walletBalance === null ? "Reading wallet balance…" : null)));
+  const requirement = !supported ? "This page requires the Ethereum mainnet shapes site." : recoveryFailed ? "Saved transactions must be checked before continuing." : choiceError || settingsError || (!settings ? "Reading current requirements…" : planError || (!visibleRows.length ? "Choose at least one pack." : packIssues[0] || poolBlocker || (overage ? `This plan is ${eth(overage)} eth over budget.` : balanceShortfall ? `This plan is ${eth(balanceShortfall)} eth above your wallet balance.` : address && walletBalance === null ? "Reading wallet balance…" : null)));
   const walletReady = (account: Address) => {
     if (!mounted.current || !same(wallet.current.address ?? "", account) || wallet.current.chainId !== 1) throw new Error("Your wallet or network changed. Reconnect to Ethereum to continue.");
   };
@@ -274,26 +290,15 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     try {localStorage.removeItem(sessionKey(address));} catch {setStorageWarning(true);}
     sessionRef.current = null; setSession(null); setRecoveryFailed(false); setMessage(""); setError(""); setResetConfirm(false);
   };
-  const addValue = (event: React.FormEvent) => {
-    event.preventDefault(); setAddError("");
-    try {
-      const value = parseFwaAmount(newValue);
-      if (!settings) throw new Error("Wait for current requirements.");
-      if (value <= 0n) throw new Error("Enter a pack value above 0 eth.");
-      packMakeup(value, settings.denominations);
-      if (choices.some(r => parseFwaAmount(r.value) === value)) throw new Error("That pack value is already in the table.");
-      setChoices(rows => [...(rows ?? choices), {value: eth(value), quantity: 0}].sort((a, b) => parseFwaAmount(a.value) < parseFwaAmount(b.value) ? -1 : 1));
-      setAddingValue(false); setNewValue("");
-    } catch (e) {setAddError(e instanceof Error ? e.message : "Enter a valid pack value.");}
-  };
+  const addValue = () => {const id = `new-${++nextGroup.current}`; setChoices(rows => [...(rows ?? choices), {id, value: "", quantity: 1}]);};
   const actionLabel = complete ? "DEPOSITED" : busy ? step === "mint" ? "MINTING" : step === "approve" ? "APPROVING" : "DEPOSITING" : address && chainId !== 1 ? "SWITCH TO ETHEREUM" : session ? "CONTINUE" : "REVIEW AND MINT";
   const actionDisabled = busy || checking || !ready || complete || !!requirement;
-  const groups = choices.map(choice => {
-    const value = parseFwaAmount(choice.value);
+  const groups = parsedChoices.map(choice => {
+    const value = choice.valueWei ?? 0n;
     const rows = visibleRows.filter(r => r.value === value);
-    let counts: number[] = []; let issue: string | null = null;
-    try {if (settings) counts = packMakeup(value, settings.denominations);} catch (e) {issue = (e as Error).message;}
-    if (settings && choice.quantity) issue = rows.map(r => fwaPackRequirement(r, settings)).find(Boolean) ?? (value < settings.minimumPack ? `Minimum pack value is ${eth(settings.minimumPack)} eth.` : issue);
+    let counts: number[] = []; let issue: string | null = choice.inputError;
+    try {if (settings && value > 0n) counts = packMakeup(value, settings.denominations);} catch (e) {issue = (e as Error).message;}
+    if (settings && choice.quantity && !issue) issue = rows.map(r => fwaPackRequirement(r, settings)).find(Boolean) ?? (value < settings.minimumPack ? `Minimum pack value is ${eth(settings.minimumPack)} eth.` : issue);
     return {...choice, valueWei: value, counts, issue, fee: settings ? counts.reduce((s, n) => s + BigInt(n) * settings.mintFee, 0n) : null, rows};
   });
   return <main className="fwa-page">
@@ -305,19 +310,23 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
           <div className="fwa-budget-row"><label className="fwa-budget-input"><input style={{width: `${Math.max(1, budget.length)}ch`, maxWidth: "calc(100% - 36px)"}} aria-label="eth budget" inputMode="decimal" value={budget} disabled={busy || !!session} onChange={e => setBudget(e.target.value)} autoComplete="off"/><span>eth</span></label><div className="fwa-balance"><span>wallet balance</span><strong>{walletBalance !== null ? `${eth(walletBalance)} eth` : address ? "Reading…" : "Connect wallet"}</strong></div></div>
         </Section>
         <Section title="02 PACKS" pad="28px 40px 40px 32px">
-          <h2>Choose pack values and quantities.</h2><p className="fwa-help">Mint fees are charged per shape, so a pack's fee depends on the shapes it is made from.</p>
-          <div className="fwa-suggestions"><div className="shape-mode-toggle" role="group" aria-label="Pack allocation">{(["equal", "fewer"] as const).map(mode => <button key={mode} type="button" className="fwa-caps" disabled={busy || !!session} aria-pressed={!customChoices && suggestionMode === mode} onClick={() => useSuggestion(mode)}>{mode === "equal" ? "EQUAL PACKS" : "FEWER POSITIONS"}</button>)}</div><p>{customChoices ? "Custom allocation. Choose an option to rebuild from your budget." : suggestionMode === "fewer" ? "Uses larger pack values where the budget allows, then fills with the default pack size." : "Uses equal packs with one underlying shape where the budget allows."}</p>{!customChoices && suggestion.plan?.rows.some(r => r.counts.reduce((n, v) => n + v, 0) > 1) && <p>Smaller packs fit this budget but require more shapes and mint fees.</p>}{!customChoices && suggestion.plan?.rows.length === 24 && <p>Up to 24 packs per plan. Any remaining budget stays uncommitted.</p>}</div>
-          <div className="fwa-table-scroll"><table className="fwa-pack-table"><colgroup>{[52,104,0,112,128,88].map((width, i) => <col key={i} style={width ? {width} : undefined}/>)}</colgroup><thead><tr><th aria-label="Artwork"/><th>PACK VALUE</th><th>MADE FROM</th><th>FEE PER PACK</th><th>QUANTITY</th><th>SUBTOTAL</th></tr></thead><tbody>{groups.map(row => <tr key={row.value} className={`${row.quantity ? "is-selected" : ""} ${row.issue ? "is-invalid" : ""}`}>
-            <td><PackArt value={row.valueWei} settings={settings}/></td><td><span className="fwa-value-cell">{row.value} eth</span></td><td>{settings ? makeup(row.counts, settings.denominations) : "Reading…"}{row.issue && <span className="fwa-row-error">{row.issue}</span>}</td><td>{row.fee !== null ? `${eth(row.fee)} eth` : "Reading…"}</td>
-            <td><div className="packs-stepper"><button type="button" className="btn-outline" aria-label={`Decrease ${row.value} eth packs`} disabled={busy || !!session || row.quantity <= 0} onClick={() => changeQuantity(row.value, row.quantity - 1)}>−</button><input className="qty-input" aria-label={`Quantity of ${row.value} eth packs`} type="number" min={0} max={24} value={row.quantity} disabled={busy || !!session} onChange={e => changeQuantity(row.value, Number(e.target.value))}/><button type="button" className="btn-outline" aria-label={`Increase ${row.value} eth packs`} disabled={busy || !!session || draftPacks.length >= 24} onClick={() => changeQuantity(row.value, row.quantity + 1)}>+</button></div></td><td>{row.quantity ? `${eth(row.valueWei * BigInt(row.quantity))} eth` : "·"}</td>
-          </tr>)}</tbody></table></div>
-          <div className="fwa-table-footer"><button type="button" className="fwa-text-button" disabled={busy || !!session} onClick={() => setAddingValue(v => !v)}>Add another pack value</button><span>{visibleRows.length} packs · {shapeCount} shapes · {eth(totalPackValue)} eth</span></div>
-          {addingValue && <form className="fwa-add-value" onSubmit={addValue}><label>Pack value<input aria-label="New pack value" inputMode="decimal" value={newValue} onChange={e => setNewValue(e.target.value)} autoFocus/></label><button className="btn-outline" type="submit">ADD VALUE</button></form>}{addError && <p className="fwa-error" role="alert">{addError}</p>}
+          <h2>Your shape packs.</h2><p className="fwa-help">Edit the value or number of packs.</p>
+          <div className="fwa-suggestions"><div className="shape-mode-toggle" role="group" aria-label="Pack allocation">{(["equal", "fewer"] as const).map(mode => <button key={mode} type="button" className="fwa-caps" disabled={busy || !!session} aria-pressed={!customChoices && suggestionMode === mode} onClick={() => useSuggestion(mode)}>{mode === "equal" ? "EQUAL PACKS" : "FEWER POSITIONS"}</button>)}</div><p>{customChoices ? "Your edits stay fixed when the budget changes." : suggestionMode === "fewer" ? "Larger packs, fewer positions." : "Suggested from your budget."}</p>{!customChoices && suggestion.plan?.rows.some(r => r.counts.reduce((n, v) => n + v, 0) > 1) && <p>Smaller packs fit this budget but require more shapes and mint fees.</p>}{!customChoices && suggestion.plan?.rows.length === 24 && <p>Up to 24 packs per plan. Any remaining budget stays uncommitted.</p>}</div>
+          <div className="fwa-pack-editor">{groups.map((row, i) => <div className="fwa-edit-row" key={row.id}>
+            <div className="fwa-edit-art">{row.valueWei > 0n && !row.inputError && <PackArt value={row.valueWei} settings={settings}/>}</div>
+            <label className="fwa-edit-value"><span className="fwa-caps">VALUE PER PACK</span><div><input aria-label={`Value per pack for group ${i + 1}`} inputMode="decimal" value={row.value} disabled={busy || !!session} aria-invalid={!!row.issue} autoFocus={row.id.startsWith("new-") && !row.value} onChange={e => changeValue(row.id, e.target.value)}/><span>eth</span></div></label>
+            <div className="fwa-edit-quantity"><label className="fwa-caps" htmlFor={`fwa-count-${row.id}`}>PACKS</label><div className="packs-stepper"><button type="button" className="btn-outline" aria-label={`Fewer packs in group ${i + 1}`} disabled={busy || !!session || row.quantity <= 1} onClick={() => changeQuantity(row.id, row.quantity - 1)}>−</button><input id={`fwa-count-${row.id}`} className="qty-input" aria-label={`Number of packs in group ${i + 1}`} type="number" min={1} max={24} value={row.quantity} disabled={busy || !!session} onChange={e => changeQuantity(row.id, Number(e.target.value))}/><button type="button" className="btn-outline" aria-label={`More packs in group ${i + 1}`} disabled={busy || !!session || draftPacks.length >= 24} onClick={() => changeQuantity(row.id, row.quantity + 1)}>+</button></div></div>
+            <button className="fwa-remove" type="button" aria-label={`Remove pack group ${i + 1}`} disabled={busy || !!session} onClick={() => removeGroup(row.id)}>×</button>
+            {row.issue && <p className="fwa-edit-error fwa-error" role="alert">{row.issue}</p>}
+          </div>)}</div>
+          <button type="button" className="fwa-text-button fwa-add-size" disabled={busy || !!session || draftPacks.length >= 24 || !!choiceError} onClick={addValue}>+ Add a pack size</button>
+          {groups.length > 0 && <details className="fwa-contents"><summary>Pack contents and mint fees</summary>{groups.filter(r => !r.inputError).map(row => <p key={row.id}>{row.quantity} × {eth(row.valueWei)} eth · {settings ? makeup(row.counts, settings.denominations) : "Reading…"} per pack · {row.fee !== null ? `${eth(row.fee)} eth mint fee each` : "Reading…"}</p>)}</details>}
+
         </Section>
         <Section title="03 BACKING" pad="28px 40px 40px 32px">
           <h2>Set FWA backing.</h2><p className="fwa-help">Separate eth deposited alongside each pack. It funds the pool's bid.</p>
           <div className="fwa-backing-controls"><div className="shape-mode-toggle" role="group" aria-label="FWA backing ratio">{[5000n,10000n,15000n,20000n].map(n => <button key={String(n)} type="button" className={n === 10000n ? "fwa-caps" : ""} disabled={busy || !!session} aria-pressed={session ? session.rows.every(r => BigInt(r.backing) * 10_000n === BigInt(r.value) * n) : !Object.keys(backings).length && ratio === n} onClick={() => chooseRatio(n)}>{n === 10000n ? "EQUAL" : `${Number(n) / 10000}×`}</button>)}</div><button type="button" className="fwa-disclosure fwa-caps" aria-expanded={perPackExpanded} aria-controls="fwa-backing-list" onClick={() => setPerPackExpanded(v => !v)}>{perPackExpanded ? "HIDE PER PACK" : "SET PER PACK"}</button></div>
-          <div id="fwa-backing-list" className="fwa-backing-list">{perPackExpanded ? (session ? visibleRows.map((r, i) => <div className="fwa-backing-row" key={i}><PackArt value={r.value} settings={settings} nonce={i}/><span>{eth(r.value)} eth pack</span><span className="fwa-backing-ratio">{eth(r.backing * 10n ** 18n / r.value)}× value</span><label className="fwa-backing-input"><input aria-label={`FWA backing for pack ${i + 1}`} value={eth(r.backing)} disabled/><span>eth</span></label></div>) : draftPacks.map((r, i) => <div className="fwa-backing-row" key={r.key}><PackArt value={r.value} settings={settings} nonce={i}/><span>{eth(r.value)} eth pack</span><span className="fwa-backing-ratio">{visibleRows[i] ? eth(visibleRows[i].backing * 10n ** 18n / r.value) : "…"}× value</span><label className="fwa-backing-input"><input aria-label={`FWA backing for pack ${i + 1}`} inputMode="decimal" value={backingFor(r)} disabled={busy} aria-invalid={!!(settings && visibleRows[i] && fwaPackRequirement(visibleRows[i], settings))} onChange={e => {setChoices(choices); setBackings(current => ({...current, [r.key]: e.target.value}));}}/><span>eth</span></label></div>)) : groups.filter(g => g.quantity > 0).map(g => <div className="fwa-backing-group" key={g.value}><span>{g.quantity} packs of {g.value} eth</span><span>{g.rows.length && g.rows.every(r => r.backing === g.rows[0].backing) ? `${eth(g.rows[0].backing)} eth each` : "Custom backing"}</span></div>)}<div className="fwa-backing-total"><span>FWA backing · {visibleRows.length} positions</span><span>{eth(totalBacking)} eth</span></div></div>
+          <div id="fwa-backing-list" className="fwa-backing-list">{perPackExpanded ? (session ? visibleRows.map((r, i) => <div className="fwa-backing-row" key={i}><PackArt value={r.value} settings={settings} nonce={i}/><span>{eth(r.value)} eth pack</span><span className="fwa-backing-ratio">{eth(r.backing * 10n ** 18n / r.value)}× value</span><label className="fwa-backing-input"><input aria-label={`FWA backing for pack ${i + 1}`} value={eth(r.backing)} disabled/><span>eth</span></label></div>) : draftPacks.map((r, i) => <div className="fwa-backing-row" key={r.key}><PackArt value={r.value} settings={settings} nonce={i}/><span>{eth(r.value)} eth pack</span><span className="fwa-backing-ratio">{visibleRows[i] ? eth(visibleRows[i].backing * 10n ** 18n / r.value) : "…"}× value</span><label className="fwa-backing-input"><input aria-label={`FWA backing for pack ${i + 1}`} inputMode="decimal" value={backingFor(r)} disabled={busy} aria-invalid={!!(settings && visibleRows[i] && fwaPackRequirement(visibleRows[i], settings))} onChange={e => {setChoices(choices); setBackings(current => ({...current, [r.key]: e.target.value}));}}/><span>eth</span></label></div>)) : groups.filter(g => g.quantity > 0 && !g.inputError).map(g => <div className="fwa-backing-group" key={g.value}><span>{g.quantity} packs of {g.value} eth</span><span>{g.rows.length && g.rows.every(r => r.backing === g.rows[0].backing) ? `${eth(g.rows[0].backing)} eth each` : "Custom backing"}</span></div>)}<div className="fwa-backing-total"><span>FWA backing · {visibleRows.length} positions</span><span>{eth(totalBacking)} eth</span></div></div>
           <p className="fwa-backing-help">More backing lowers a position's chance of being drawn. Every active position receives an equal share of distributable eth fees.</p>
         </Section>
         <Section title="04 IF DRAWN" pad="28px 40px 40px 32px"><h2 className="fwa-spaced-heading">If a pack is drawn, the buyer chooses.</h2><div className="fwa-outcomes"><div><h3 className="fwa-caps">BUYER KEEPS THE PACK</h3><p>You receive the pack's FWA backing, less the settlement fee.</p></div><div><h3 className="fwa-caps">BUYER ACCEPTS FWA'S BID</h3><p>The pack returns to your wallet. The backing is consumed through settlement.</p></div></div></Section>
@@ -328,7 +337,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
           </div><p className="fwa-positions-link"><a href="https://www.fwa.fun/manage" target="_blank" rel="noreferrer">View your positions on FWA ↗</a></p>
         </Section>
       </div>
-      <aside className="fwa-summary-column" aria-label="Your contribution"><div className="fwa-summary-sticky"><p className="launch-kicker fwa-caps">YOUR CONTRIBUTION</p><div className="fwa-summary-art">{visibleRows.map((row, i) => <figure key={i}><PackArt value={row.value} settings={settings} nonce={i}/><figcaption>{eth(row.value)} eth</figcaption></figure>)}</div>
+      <aside className="fwa-summary-column" aria-label="Your contribution"><div className="fwa-summary-sticky"><p className="launch-kicker fwa-caps">YOUR CONTRIBUTION</p><div className="fwa-summary-art">{groups.filter(r => !r.inputError).map((row, i) => <figure key={row.id}><PackArt value={row.valueWei} settings={settings} nonce={i}/><figcaption>{row.quantity} × {eth(row.valueWei)} eth</figcaption></figure>)}</div>
         <div className="fwa-contribution-total"><strong>{eth(total)}</strong><span>eth</span></div><p className="fwa-position-count">{visibleRows.length} FWA positions</p>
         {!!overage && <p className="fwa-error">This plan is {eth(overage)} eth over budget.</p>}{!!balanceShortfall && <p className="fwa-error">This plan is {eth(balanceShortfall)} eth above your wallet balance.</p>}
         <div className="packs-summary"><div className="packs-summary-row"><span>pack value</span><strong>{eth(totalPackValue)} eth</strong></div><div className="packs-summary-row"><span>FWA backing</span><strong>{eth(totalBacking)} eth</strong></div><div className="packs-summary-row"><span>mint fees · {shapeCount} shapes</span><strong>{eth(feeEstimate)} eth</strong></div><div className="packs-summary-row is-total"><span>total</span><strong>{eth(total)} eth</strong></div><div className={`packs-summary-row ${overage ? "fwa-over-budget" : ""}`}><span>{overage ? "over budget" : "remaining budget"}</span><strong>{eth(overage || budgetWei - total)} eth</strong></div></div>

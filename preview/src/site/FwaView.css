@@ -1,6 +1,6 @@
 .fwa-page {color:var(--ink);background:var(--page);font-family:Arial,Helvetica,sans-serif;}
 .fwa-page * {letter-spacing:normal;}
-.fwa-page .fwa-caps,.fwa-page .site-section-label,.fwa-page .fwa-pack-table th {font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:.08em;}
+.fwa-page .fwa-caps,.fwa-page .site-section-label {font-family:"IBM Plex Mono",ui-monospace,monospace;letter-spacing:.08em;}
 .fwa-page h1,.fwa-page h2,.fwa-page h3,.fwa-page p {margin:0;}
 .fwa-page h2 {font:500 28px/1.2 Arial,Helvetica,sans-serif;margin:0 0 8px;}
 .fwa-page .fwa-hero {display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:80px;align-items:end;padding:80px 40px 64px;border-bottom:1px solid var(--rule);}
@@ -20,30 +20,13 @@
 .fwa-page .fwa-balance {font-family:"IBM Plex Mono",ui-monospace,monospace;padding-bottom:2px;}
 .fwa-page .fwa-balance span {display:block;color:var(--muted);font-size:11px;margin-bottom:6px;}
 .fwa-page .fwa-balance strong {font-size:13px;font-weight:400;}
-.fwa-page .fwa-table-scroll {overflow-x:auto;}
-.fwa-page .fwa-pack-table {width:100%;min-width:664px;border-collapse:collapse;font:400 12px/1.45 "IBM Plex Mono",ui-monospace,monospace;text-align:left;}
-.fwa-page .fwa-pack-table colgroup {display:none;}
-.fwa-page .fwa-pack-table tr {display:grid;grid-template-columns:52px 104px minmax(100px,1fr) 112px 128px 88px;gap:16px;align-items:center;border-bottom:1px solid var(--rule-inner);padding:10px 0;color:var(--muted);}
-.fwa-page .fwa-pack-table thead tr {border-bottom:1px solid var(--ink);padding:0 0 12px;}
-.fwa-page .fwa-pack-table th {font-size:10px;font-weight:400;color:var(--muted);}
-.fwa-page .fwa-pack-table td,.fwa-page .fwa-pack-table th {padding:0;min-width:0;}
-.fwa-page .fwa-pack-table :is(td,th):last-child {text-align:right;}
-.fwa-page .fwa-pack-table tr.is-selected {background:var(--row);color:var(--ink);}
-.fwa-page .fwa-value-cell {display:block;padding:8px;border:1px solid transparent;white-space:nowrap;}
-.fwa-page .is-selected .fwa-value-cell {border-color:var(--ink);}
 .fwa-page .fwa-pack-art {width:100%;height:auto;display:block;}
-.fwa-page .fwa-pack-table .fwa-pack-art,.fwa-page .fwa-pack-table .fwa-art-loading {width:52px;height:52px;}
 .fwa-page .packs-stepper {display:inline-flex;align-items:stretch;gap:0;}
 .fwa-page .packs-stepper button {width:30px;min-width:30px;padding:6px 0;font:400 12px/1.4 "IBM Plex Mono",ui-monospace,monospace;border:1px solid var(--border);}
 .fwa-page .packs-stepper input {box-sizing:border-box;width:40px;min-width:0;padding:6px 0;text-align:center;font:400 12px/1.4 "IBM Plex Mono",ui-monospace,monospace;border:0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:transparent;appearance:textfield;}
 .fwa-page input::-webkit-inner-spin-button {appearance:none;}
-.fwa-page .fwa-table-footer {display:flex;justify-content:space-between;gap:16px;margin-top:18px;font:400 11px/1.6 "IBM Plex Mono",ui-monospace,monospace;color:var(--muted);}
 .fwa-page .fwa-text-button,.fwa-page .fwa-disclosure {background:transparent;border:0;padding:0;text-decoration:underline;text-underline-offset:3px;color:inherit;cursor:pointer;font:inherit;text-align:left;}
 .fwa-page .fwa-disclosure {font:400 10px/1.5 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.08em;}
-.fwa-page .fwa-add-value {display:flex;gap:12px;align-items:end;margin-top:18px;font:400 12px/1.5 "IBM Plex Mono",ui-monospace,monospace;}
-.fwa-page .fwa-add-value label {display:grid;gap:6px;max-width:200px;}
-.fwa-page .fwa-add-value input {background:transparent;border:1px solid var(--border);padding:9px 12px;width:100%;}
-.fwa-page .fwa-add-value button {letter-spacing:.08em;}
 .fwa-page .fwa-backing-controls {display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;}
 .fwa-page .shape-mode-toggle button {padding:10px 16px;font:400 11px/1.5 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:normal;}
 .fwa-page .shape-mode-toggle button.fwa-caps {letter-spacing:.08em;}
@@ -100,7 +83,7 @@
 .fwa-page :is(input,button,a):focus-visible {outline:1px solid var(--ink);outline-offset:3px;}
 @media(max-width:1100px) {.fwa-page .fwa-backing-row {grid-template-columns:40px minmax(0,1fr) 150px;}.fwa-page .fwa-backing-ratio {display:none;}}
 @media(max-width:899px) {.fwa-page .fwa-body {grid-template-columns:minmax(0,1fr);}.fwa-page .fwa-summary-column {border-left:0;border-top:1px solid var(--rule);}.fwa-page .fwa-summary-sticky {position:static;}.fwa-page .fwa-summary-art {max-width:420px;}.fwa-page .fwa-hero {gap:40px;}.fwa-page .fwa-hero h1 {font-size:60px;}}
-@media(max-width:699px) {.fwa-page .fwa-hero {grid-template-columns:1fr;gap:28px;padding:48px 20px 36px;}.fwa-page .fwa-hero h1 {font-size:54px;}.fwa-page .fwa-hero p {font-size:19px;}.fwa-page .site-section {display:block;}.fwa-page .site-section-label {border-right:0;padding:18px 20px 0;}.fwa-page .site-section-content {--section-pad:14px 20px 28px !important;}.fwa-page .fwa-summary-column {padding:28px 20px 36px;}.fwa-page .fwa-outcomes {grid-template-columns:1fr;}.fwa-page .fwa-budget-row {gap:20px;}.fwa-page .fwa-backing-row {grid-template-columns:40px minmax(0,1fr) 125px;gap:10px;}.fwa-page .fwa-table-footer {flex-wrap:wrap;}.fwa-page .mechanic-grid article {grid-template-columns:28px 75px minmax(0,1fr);gap:12px;}.fwa-page .fwa-backing-total {font-size:12px;}}
+@media(max-width:699px) {.fwa-page .fwa-hero {grid-template-columns:1fr;gap:28px;padding:48px 20px 36px;}.fwa-page .fwa-hero h1 {font-size:54px;}.fwa-page .fwa-hero p {font-size:19px;}.fwa-page .site-section {display:block;}.fwa-page .site-section-label {border-right:0;padding:18px 20px 0;}.fwa-page .site-section-content {--section-pad:14px 20px 28px !important;}.fwa-page .fwa-summary-column {padding:28px 20px 36px;}.fwa-page .fwa-outcomes {grid-template-columns:1fr;}.fwa-page .fwa-budget-row {gap:20px;}.fwa-page .fwa-backing-row {grid-template-columns:40px minmax(0,1fr) 125px;gap:10px;}.fwa-page .mechanic-grid article {grid-template-columns:28px 75px minmax(0,1fr);gap:12px;}.fwa-page .fwa-backing-total {font-size:12px;}}
 /* Keep the shared summary grammar identical in the Vite harness and Next host. */
 .fwa-page .packs-summary {border-top:1px solid var(--rule);font-size:11px;}
 .fwa-page .packs-summary-row {display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--rule-inner);font-size:11px;}
@@ -112,3 +95,21 @@
 .fwa-page .fwa-suggestions {margin:0 0 24px;}
 .fwa-page .fwa-suggestions p {font:400 13px/1.55 Arial,Helvetica,sans-serif;color:var(--muted);margin-top:12px;}
 .fwa-page .fwa-suggestions .shape-mode-toggle button {letter-spacing:.08em;}
+
+.fwa-page .fwa-pack-editor {border-top:1px solid var(--ink);}
+.fwa-page .fwa-edit-row {display:grid;grid-template-columns:52px minmax(0,1fr) 100px 24px;gap:16px;align-items:end;padding:20px 0;border-bottom:1px solid var(--rule);}
+.fwa-page .fwa-edit-art {width:52px;height:52px;align-self:center;}
+.fwa-page .fwa-edit-value,.fwa-page .fwa-edit-quantity {min-width:0;}
+.fwa-page .fwa-edit-value>.fwa-caps,.fwa-page .fwa-edit-quantity>label {display:block;color:var(--muted);font-size:10px;margin-bottom:10px;}
+.fwa-page .fwa-edit-value>div {display:flex;align-items:baseline;gap:10px;border:1px solid var(--border);padding:10px 12px;font:400 20px/1.2 "IBM Plex Mono",ui-monospace,monospace;}
+.fwa-page .fwa-edit-value input {width:100%;min-width:0;padding:0;background:transparent;border:0;outline:0;}
+.fwa-page .fwa-edit-value>div:focus-within {border-color:var(--ink);}
+.fwa-page .fwa-edit-value>div>span {font-size:12px;color:var(--muted);}
+.fwa-page .fwa-edit-quantity .packs-stepper {height:46px;}
+.fwa-page .fwa-remove {height:46px;background:none;border:0;padding:0;font:400 20px/1 Arial,sans-serif;color:var(--muted);cursor:pointer;}
+.fwa-page .fwa-edit-error {grid-column:2 / -1;margin:0;}
+.fwa-page .fwa-add-size {display:inline-block;margin-top:20px;font:400 12px/1.5 "IBM Plex Mono",ui-monospace,monospace;}
+.fwa-page .fwa-contents {margin-top:24px;color:var(--muted);font:400 12px/1.7 Arial,Helvetica,sans-serif;}
+.fwa-page .fwa-contents summary {cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
+.fwa-page .fwa-contents p {margin-top:12px;}
+@media(max-width:699px) {.fwa-page .fwa-edit-row {grid-template-columns:40px minmax(0,1fr) 100px 20px;gap:10px;}.fwa-page .fwa-edit-art {width:40px;height:40px;}.fwa-page .fwa-edit-value>div {padding:10px 8px;font-size:17px;}}
