@@ -242,7 +242,7 @@ async function main() {
       const headerText = await header.innerText();
       assert.ok(!/CONTRACTS/.test(headerText), "header still offers CONTRACTS");
       assert.ok(!/HOW IT WORKS/.test(headerText), "header still offers HOW IT WORKS");
-      await page.getByRole("button", {name: "Contracts"}).first().waitFor({timeout: 30_000});
+      await page.getByRole("link", {name: "Contracts"}).first().waitFor({timeout: 30_000});
       await connect(page);
       assert.equal(await read("balanceOf", [wallet.address]), 0n, "wallet already owns Shapes");
     });
