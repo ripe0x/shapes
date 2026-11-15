@@ -79,6 +79,11 @@ test("custom backing remains independent and the cap never changes chosen amount
   assert.equal(p.fees,E("0.006")); assert.equal(p.total,E("0.291")); assert.equal(p.remainder,-E("0.091"));
   assert.equal(p.rows[1].backing,E("0.025"));
 });
+test("custom contributions reject pack values beyond the existing mint limit", () => {
+  const oversized = {value: E("10000.01"), backing: E("0.025")};
+  assert.throws(() => buildFwaContribution([oversized], settings, E("20000")), /10,000/);
+  assert.match(fwaPackRequirement(oversized, settings)!, /10,000/);
+});
 test("below minimum plans retain their cost and identify the offending requirement", () => {
   const p = buildFwaContribution([{value:E("0.01"),backing:E("0.01")}],settings,E("1"));
   assert.equal(p.total,E("0.021")); assert.match(fwaPackRequirement(p.rows[0],settings)!,/Minimum pack value/);

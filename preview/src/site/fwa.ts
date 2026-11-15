@@ -119,6 +119,7 @@ export function packMakeup(value: bigint, denominations: readonly bigint[]): num
   return counts;
 }
 export type PackChoice = {value: bigint; quantity: number};
+const MAX_PACK_VALUE = 10_000n * 10n ** 18n;
 /** Values are user choices. A cap reports a shortfall and never changes a pack. */
 export function buildExplicitFwaPlan(choices: readonly PackChoice[], ratioBps: bigint, settings: FwaSettings, cap?: bigint): Plan {
   const quantity = choices.reduce((n, r) => n + r.quantity, 0);
@@ -126,7 +127,7 @@ export function buildExplicitFwaPlan(choices: readonly PackChoice[], ratioBps: b
   if (ratioBps < 1n || ratioBps > 100_000n) throw new Error("Choose FWA backing above 0% and up to 1000% of pack value.");
   if (cap !== undefined && cap <= 0n) throw new Error("Enter a budget cap above 0 eth or leave it empty.");
   const rows = choices.flatMap(({value, quantity}) => {
-    if (value < settings.minimumPack || value > 10_000n * 10n ** 18n) throw new Error("Each pack must meet the pack minimum and be no larger than 10,000 eth.");
+    if (value < settings.minimumPack || value > MAX_PACK_VALUE) throw new Error("Each pack must meet the pack minimum and be no larger than 10,000 eth.");
     const counts = packMakeup(value, settings.denominations);
     const fee = counts.reduce((sum, n) => sum + BigInt(n) * settings.mintFee, 0n);
     const backing = value * ratioBps / 10_000n;
@@ -149,6 +150,7 @@ export function parseFwaAmount(input: string): bigint {
 export function buildFwaContribution(packs: readonly {value: bigint; backing: bigint}[], settings: FwaSettings, budget: bigint): Plan {
   if (packs.length > 24) throw new Error("Choose up to 24 packs.");
   if (budget < 0n || packs.some(p => p.value <= 0n || p.backing < 0n)) throw new Error("Enter positive pack values and nonnegative FWA backing.");
+  if (packs.some(p => p.value > MAX_PACK_VALUE)) throw new Error("Each pack must be no larger than 10,000 eth.");
   const rows = packs.map(({value, backing}) => {
     const counts = packMakeup(value, settings.denominations);
     const fee = counts.reduce((s, n) => s + BigInt(n) * settings.mintFee, 0n);
@@ -162,6 +164,7 @@ export function buildFwaContribution(packs: readonly {value: bigint; backing: bi
 }
 export function fwaPackRequirement(row: {value: bigint; backing: bigint}, settings: FwaSettings): string | null {
   if (row.value < settings.minimumPack) return `Minimum pack value is ${formatEther(settings.minimumPack)} eth.`;
+  if (row.value > MAX_PACK_VALUE) return "Each pack must be no larger than 10,000 eth.";
   if (row.backing === 0n || row.backing < settings.minimumBacking) return `Minimum FWA backing is ${formatEther(settings.minimumBacking)} eth.`;
   if (settings.admitted && !settings.exempt && settings.cap !== null && row.backing > settings.cap) return `FWA backing exceeds the ${formatEther(settings.cap)} eth oracle ceiling.`;
   return null;
@@ -181,7 +184,7 @@ export function suggestFwaPlan(budget: bigint, settings: FwaSettings, mode: FwaS
     const affordable = budget - value - mintFee(value);
     return capped < affordable ? capped : affordable;
   };
-  const eligible = (value: bigint) => value >= settings.minimumPack && value <= 10_000n * 10n ** 18n &&
+  const eligible = (value: bigint) => value >= settings.minimumPack && value <= MAX_PACK_VALUE &&
     backing(value) > 0n && backing(value) >= settings.minimumBacking &&
     (settings.exempt || backing(value) <= settings.cap!);
   const cost = (value: bigint) => value + backing(value) + mintFee(value);

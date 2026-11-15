@@ -192,6 +192,8 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const minted = session?.rows.filter(r => r.packId !== undefined).length ?? 0;
   const deposited = session?.rows.filter(r => r.listingId !== undefined).length ?? 0;
   const complete = !!session && deposited === session.rows.length;
+  const stagedAtDeposit = session?.rows.filter(r => r.staged).length ?? 0;
+  const completionMessage = stagedAtDeposit ? "All packs deposited. Some were staged; check FWA for current activation status." : "All packs deposited.";
   let budgetWei = 0n;
   try {budgetWei = parseFwaAmount(budget);} catch {/* The plan error names invalid input. */}
   const overage = total > budgetWei ? total - budgetWei : 0n;
@@ -312,7 +314,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         const receipt = await wait(hash, call, () => {delete row.depositHash;});
         Object.assign(row, depositedListing(receipt, account, BigInt(row.packId!))); save(current);
       }
-      setMessage("All packs deposited.");
+      setMessage(current.rows.some(row => row.staged) ? "All packs deposited. Some were staged; check FWA for current activation status." : "All packs deposited.");
     } catch (e) {
       if (mounted.current && same(wallet.current.address ?? "", account)) setError(describeTxError(e));
     } finally {running.current = false; if (mounted.current) {setBusy(false); setActiveHash(null); void refreshBalance();}}
@@ -464,7 +466,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
               <div><span>03</span> DEPOSIT {session && <small>{deposited} of {session.rows.length} confirmed</small>}</div>
             </div>
             {session && <div className="fwa-progress-details">
-              {session.rows.map((row, index) => <div key={index}><span>Pack {index + 1}</span>{row.mintHash && <a href={txUrl(row.mintHash, 1)} target="_blank" rel="noreferrer">Mint {row.packId ? "confirmed" : "pending"} ↗</a>}{row.depositHash && <a href={txUrl(row.depositHash, 1)} target="_blank" rel="noreferrer">{row.listingId ? row.staged ? "Staged" : "Deposited" : "Deposit pending"} ↗</a>}</div>)}
+              {session.rows.map((row, index) => <div key={index}><span>Pack {index + 1}</span>{row.mintHash && <a href={txUrl(row.mintHash, 1)} target="_blank" rel="noreferrer">Mint {row.packId ? "confirmed" : "pending"} ↗</a>}{row.depositHash && <a href={txUrl(row.depositHash, 1)} target="_blank" rel="noreferrer">{row.listingId ? row.staged ? "Staged at deposit" : "Deposited" : "Deposit pending"} ↗</a>}</div>)}
               {(session.approvalHash || session.approvalReceipt) && <a href={txUrl((session.approvalHash || session.approvalReceipt)!, 1)} target="_blank" rel="noreferrer">Approval transaction ↗</a>}
             </div>}
             {message && <p className="fwa-action-message" role="status">{message}</p>}
@@ -489,7 +491,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
               <div className="is-total"><span>Total commitment</span><strong>{eth(total)} ETH</strong></div>
             </div>
             <button type="button" className="btn-filled fwa-submit" disabled={actionDisabled} onClick={() => session ? void run() : setReviewOpen(true)}>{actionLabel}</button>
-            <p className={requirement && !checking ? "fwa-requirement is-error" : "fwa-requirement"} role={requirement && !checking ? "alert" : "status"}>{complete ? "All packs deposited." : requirement || "This plan meets current requirements."}</p>
+            <p className={requirement && !checking ? "fwa-requirement is-error" : "fwa-requirement"} role={requirement && !checking ? "alert" : "status"}>{complete ? completionMessage : requirement || "This plan meets current requirements."}</p>
             {settingsError && <button type="button" className="fwa-retry" disabled={checking} onClick={() => void refresh().catch(() => {})}>Retry pool check</button>}
             {(session || recoveryFailed) && <button type="button" className="fwa-retry" disabled={busy} onClick={reset}>{resetConfirm ? "Confirm new plan" : "Start a new plan"}</button>}
             {resetConfirm && <button type="button" className="fwa-retry" onClick={() => setResetConfirm(false)}>Keep this plan</button>}
@@ -521,6 +523,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         <div className="is-total"><span>Total</span><strong>{eth(total)} ETH</strong></div>
       </div>
       <p>{visibleRows.length} pack mint {visibleRows.length === 1 ? "transaction" : "transactions"}, one approval if needed, and {visibleRows.length} separate FWA deposit {visibleRows.length === 1 ? "transaction" : "transactions"}. Each wallet transaction needs confirmation. Gas is extra.</p>
+      <p className="fwa-review-risk">Approval, if needed, lets FWA transfer any Shapes pack in your wallet. A deposit can be staged and begins earning fees only when active. Withdrawals wait for unresolved purchases to clear; withdrawing the crown during its first 12 hours can cost 1% of its backing.</p>
       <button type="button" className="btn-filled fwa-review-confirm" disabled={actionDisabled} onClick={() => {setReviewOpen(false); if (!address) onConnect(); else if (chainId !== 1) void switchChainAsync({chainId: 1}).catch(e => setError(describeTxError(e))); else void run();}}>{!address ? "CONNECT WALLET" : chainId !== 1 ? "SWITCH TO ETHEREUM" : "MINT, APPROVE & DEPOSIT"}</button>
     </dialog>
   </>;

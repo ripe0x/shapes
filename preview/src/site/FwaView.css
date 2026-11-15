@@ -153,6 +153,7 @@
 .fwa-review-totals strong {font-weight:400;text-align:right;}
 .fwa-review-totals .is-total {border-bottom-color:var(--ink);}
 .fwa-review-totals + p {margin-top:17px;}
+.fwa-review-risk {margin-top:12px!important;}
 .fwa-review-confirm {width:100%;margin-top:26px;padding:15px;font:12px "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.06em;}
 @media(max-width:1100px) {
   .fwa-page .site-section {grid-template-columns:100px minmax(0,1fr);}
