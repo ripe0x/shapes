@@ -211,8 +211,8 @@ export function SiteApp({
   }, [publicClient, dep]);
 
   React.useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (view !== "fwa") void refresh();
+  }, [refresh, view]);
 
   // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
   // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
@@ -475,8 +475,8 @@ export function SiteApp({
   }, [publicClient, dep, address]);
 
   React.useEffect(() => {
-    void refreshAuction();
-  }, [refreshAuction]);
+    if (view !== "fwa") void refreshAuction();
+  }, [refreshAuction, view]);
 
   const runHouse = async (op: string, fn: string, args: readonly unknown[], value?: bigint) => {
     if (!publicClient || !dep.auctionHouse) return;

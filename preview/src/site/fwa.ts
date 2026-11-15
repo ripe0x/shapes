@@ -81,10 +81,13 @@ export async function loadFwaSettings(client: PublicClient): Promise<FwaSettings
       withdrawOnly = cached.withdrawOnly === true;
     }
   } catch { /* A missing, malformed or reorganized cache requires a full scan. */ }
-  const logs = start > blockNumber ? [] : await client.getLogs({address: FWA_POOL, event, args: {key: [22n, 42n]}, fromBlock: start, toBlock: blockNumber, strict: true});
-  for (const log of logs) {
-    if (log.args.key === 22n) minimumBacking = log.args.value;
-    if (log.args.key === 42n) withdrawOnly = log.args.value !== 0n;
+  for (let fromBlock = start; fromBlock <= blockNumber; fromBlock += 100_000n) {
+    const toBlock = fromBlock + 99_999n < blockNumber ? fromBlock + 99_999n : blockNumber;
+    const logs = await client.getLogs({address: FWA_POOL, event, args: {key: [22n, 42n]}, fromBlock, toBlock, strict: true});
+    for (const log of logs) {
+      if (log.args.key === 22n) minimumBacking = log.args.value;
+      if (log.args.key === 42n) withdrawOnly = log.args.value !== 0n;
+    }
   }
   if (minimumBacking === null) throw new Error("FWA's current minimum backing could not be verified. Retry the pool check.");
   try { localStorage.setItem(cacheKey, JSON.stringify({block: String(blockNumber), hash: block.hash, minimumBacking: String(minimumBacking), withdrawOnly})); } catch { /* Reads remain valid without caching. */ }
