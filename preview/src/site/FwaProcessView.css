@@ -28,6 +28,14 @@ body:has(.fwa-run) .site-footer-outer {display:none;}
 .fwa-run-attempts {grid-column:2/-1;font-size:10px;}
 .fwa-run-attempts summary {cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
 .fwa-run-attempts a {display:inline-block;margin:7px 12px 0 0;}
+.fwa-run-deposits {margin-top:18px;}
+.fwa-run-deposits ol {list-style:none;margin:0;padding:0;border-top:1px solid var(--fwa-run-ink);}
+.fwa-run-deposits li {padding:10px 0;border-bottom:1px solid var(--fwa-run-inner);font:11px/1.5 "IBM Plex Mono",ui-monospace,monospace;}
+.fwa-run-deposits li>div {display:flex;flex-direction:column;gap:3px;}
+.fwa-run-deposits li>div:last-child {margin-top:5px;}
+.fwa-run-deposits li strong {font-weight:500;}
+.fwa-run-deposits li span {color:var(--fwa-run-muted);}
+.fwa-run-deposits li a {color:inherit;text-decoration:underline;text-underline-offset:3px;}
 .fwa-run-panel {position:sticky;top:84px;display:flex;flex-direction:column;align-self:start;height:calc(100dvh - 84px);min-height:500px;min-width:0;padding:56px 40px 40px;border-left:1px solid var(--fwa-run-rule);background:var(--fwa-run-paper);}
 .fwa-run-panel-main {min-height:0;overflow-y:auto;overscroll-behavior:contain;}
 .fwa-run-focus {display:block;}

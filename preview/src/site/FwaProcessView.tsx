@@ -50,6 +50,13 @@ function TxLink({hash, chainId, children}: {hash: Hash; chainId: number; childre
 export function FwaProcessView({packs, steps, chainId, actionLabel, actionDisabled, onAction, autoContinue, onAutoContinueChange, onRetryCheck, canBack, onBack, onNewPlan, renderPackArt, error, statusMessage}: FwaProcessViewProps) {
   const panelRef = React.useRef<HTMLElement>(null);
   const currentRowRef = React.useRef<HTMLLIElement>(null);
+  const depositsRef = React.useRef<HTMLElement>(null);
+  const [showDeposits, setShowDeposits] = React.useState(false);
+  React.useEffect(() => {
+    if (!showDeposits) return;
+    const frame = requestAnimationFrame(() => depositsRef.current?.scrollIntoView({block: "nearest", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth"}));
+    return () => cancelAnimationFrame(frame);
+  }, [showDeposits]);
   const currentIndex = steps.findIndex(step => step.status !== "confirmed");
   React.useEffect(() => {
     if (currentIndex < 0) return;
@@ -120,7 +127,7 @@ export function FwaProcessView({packs, steps, chainId, actionLabel, actionDisabl
         <h1>{complete ? `${packs.length} ${packs.length === 1 ? "position is" : "positions are"} in FWA.` : `Mint and deposit ${packs.length} ${packs.length === 1 ? "pack" : "packs"}.`}</h1>
         <p className="fwa-run-sub">{steps.length} {steps.length === 1 ? "transaction" : "transactions"} · {confirmed} confirmed</p>
         {stagedCount > 0 && complete && <p className="fwa-run-staged-note" role="status">{stagedCount} {stagedCount === 1 ? "deposit was" : "deposits were"} staged at deposit. Check FWA for current activation status.</p>}
-        <ol className="fwa-run-step-list" id="fwa-deposited">
+        <ol className="fwa-run-step-list">
           {steps.map((step, index) => <li className={`fwa-run-step is-${step.status}`} key={step.key} ref={index === currentIndex ? currentRowRef : undefined} aria-current={index === currentIndex ? "step" : undefined}>
             <span className="fwa-run-step-number">{String(index + 1).padStart(2, "0")}</span>
             <span className="fwa-run-step-label">{stepLabel(step)}</span>
@@ -143,8 +150,19 @@ export function FwaProcessView({packs, steps, chainId, actionLabel, actionDisabl
           <h2>{complete ? `${packs.length} ${packs.length === 1 ? "position" : "positions"} in FWA` : current ? stepLabel(current) : "Preparing contribution"}</h2>
         </div>
         {lineItems.length > 0 && <div className="fwa-run-lines">{lineItems.map(([label, value], index) => <div className={index === lineItems.length - 1 ? "is-total" : ""} key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>}
-        {complete ? <a className="fwa-run-primary" href={chainId === 31337 ? "#fwa-deposited" : "https://www.fwa.fun/manage"} target={chainId === 31337 ? undefined : "_blank"} rel={chainId === 31337 ? undefined : "noreferrer"}>{chainId === 31337 ? "VIEW DEPOSITED POSITIONS ↓" : "VIEW YOUR FWA DEPOSITS ↗"}</a>
+        {complete ? chainId === 31337
+          ? <button type="button" className="fwa-run-primary" aria-expanded={showDeposits} aria-controls="fwa-deposited" onClick={() => setShowDeposits(value => !value)}>{showDeposits ? "HIDE DEPOSITED POSITIONS ↑" : "VIEW DEPOSITED POSITIONS ↓"}</button>
+          : <a className="fwa-run-primary" href="https://www.fwa.fun/manage" target="_blank" rel="noreferrer">VIEW YOUR FWA DEPOSITS ↗</a>
           : <button type="button" className="fwa-run-primary" disabled={actionDisabled} onClick={onAction}>{actionLabel}</button>}
+        {complete && chainId === 31337 && showDeposits && <section className="fwa-run-deposits" id="fwa-deposited" ref={depositsRef} aria-label="Deposited positions">
+          <ol>{packs.map((pack, index) => {
+            const depositHash = steps.find(step => step.kind === "deposit" && step.packIndex === index)?.hash;
+            return <li key={index}>
+              <div><strong>Pack #{pack.packId ?? index + 1}</strong><span>FWA listing #{pack.listingId ?? "—"}</span></div>
+              <div><span>{eth(pack.value)} pack · {eth(pack.backing)} backing</span>{depositHash && <TxLink hash={depositHash} chainId={chainId}>Deposit receipt ↗</TxLink>}</div>
+            </li>;
+          })}</ol>
+        </section>}
         {!complete && <label className="fwa-run-auto"><input type="checkbox" checked={autoContinue} onChange={event => onAutoContinueChange(event.target.checked)}/><span>Continue after each confirmation</span></label>}
         {!complete && <p className="fwa-run-auto-hint">Each transaction still needs wallet confirmation.</p>}
         {(isError || current?.status === "pending") && currentHash && <p className="fwa-run-status-link"><TxLink hash={currentHash} chainId={chainId}>View transaction ↗</TxLink></p>}
