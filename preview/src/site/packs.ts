@@ -8,7 +8,7 @@ export const PACKS_DEPLOYMENTS = {
     chainId: 1, name: "Mainnet", shapes: "0x6fe9193276bf7abcbee44ab7afd717d637d6faf0",
     packs: "0xf21514b090da7df4390803497d6ae673801e5ca7",
     renderer: "0x934c491dda49c8058347c3fca191852d54705645",
-    rpc: "https://mainnet.gateway.tenderly.co", explorer: "https://etherscan.io",
+    rpc: "https://ethereum-rpc.publicnode.com", explorer: "https://etherscan.io",
   },
   11155111: {
     chainId: 11155111, name: "Sepolia", shapes: "0x6c2f9c00f44fbbf141dd166979903004b80d5f99",

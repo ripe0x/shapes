@@ -1,10 +1,11 @@
 import React from "react";
 import "./FwaView.css";
-import {formatEther, type Abi, type Address, type Hash} from "viem";
+import {createPublicClient, formatEther, http, type Abi, type Address, type Hash} from "viem";
+import {mainnet} from "viem/chains";
 import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
 import {renderPack, type PackCard} from "shapes-render/pack";
 import type {Deployment} from "../chain/abi";
-import {packsAbi, packsClientFor, packsGasBudget} from "./packs";
+import {packsAbi, packsGasBudget} from "./packs";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import {describeTxError} from "./errors";
 import {Section, txUrl} from "./ui";
@@ -16,7 +17,7 @@ import {
   parseFwaSession, reconcileFwaSession, sessionKey, type FwaSession, type FwaSettings, type Plan,
 } from "./fwa";
 
-const client = packsClientFor(1);
+const client = createPublicClient({chain: mainnet, transport: http("https://mainnet.gateway.tenderly.co", {retryCount: 3, retryDelay: 1_000})});
 const eth = (v: bigint | string) => formatEther(BigInt(v));
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
@@ -48,6 +49,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const [settings, setSettings] = React.useState<FwaSettings | null>(null);
   const [settingsError, setSettingsError] = React.useState("");
   const [checking, setChecking] = React.useState(false);
+  const settingsRead = React.useRef<Promise<FwaSettings> | null>(null);
   const [walletBalance, setWalletBalance] = React.useState<bigint | null>(null);
   const [session, setSession] = React.useState<FwaSession | null>(null);
   const [ready, setReady] = React.useState(false);
@@ -73,10 +75,13 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     catch {if (mounted.current && same(wallet.current.address ?? "", account)) setWalletBalance(null);}
   }, []);
   const refresh = React.useCallback(async () => {
+    if (settingsRead.current) return settingsRead.current;
     setChecking(true); setSettingsError("");
-    try {const value = await loadFwaSettings(client); if (mounted.current) setSettings(value); return value;}
+    const read = loadFwaSettings(client);
+    settingsRead.current = read;
+    try {const value = await read; if (mounted.current) setSettings(value); return value;}
     catch (e) {if (mounted.current) {setSettings(null); setSettingsError(describeTxError(e));} throw e;}
-    finally {if (mounted.current) setChecking(false);}
+    finally {settingsRead.current = null; if (mounted.current) setChecking(false);}
   }, []);
   React.useEffect(() => {
     if (!supported) return;
