@@ -17,9 +17,6 @@ export const ACTIVITY_LIVE_POLL_BACKOFF_THRESHOLD = 3;
 /** Thumbnails drawn per row before the rest collapse into a count. A compose can name thousands
  *  of inputs; the row still has to fit on a line. */
 export const ACTIVITY_MAX_THUMBS = 6;
-/** Default gap, in seconds, within which consecutive same-actor events of a groupable kind
- *  collapse into one row. */
-export const ACTIVITY_GROUP_WINDOW_SECONDS = 1_800;
 /** One bid or settlement unit, the finest amount the denomination ladder expresses. */
 const UNIT_WEI = 10n ** 16n;
 
@@ -35,6 +32,7 @@ export interface ActivityEvent {
   counterparty: `0x${string}` | null;
   amountWei: bigint | null;
   auctionId: bigint | null;
+  packId: bigint | null;
   units: bigint | null;
 }
 
@@ -60,6 +58,15 @@ const LABELS: Record<string, string> = {
   bid: "Bid",
   auctionSettled: "Settled",
   lotClaimed: "Claimed",
+  packCreated: "Pack created",
+  packExtended: "Pack expanded",
+  packMerged: "Packs merged",
+  packUnsealed: "Pack unsealed",
+  packOpened: "Pack opened",
+  packRedeemed: "Pack redeemed",
+  packShapesClaimed: "Shapes claimed from pack",
+  packEthClaimed: "ETH claimed from pack",
+  packTransferred: "Pack transferred",
 };
 
 export function activityLabel(kind: string): string {
@@ -112,69 +119,22 @@ export function activityDetail(event: ActivityEvent): string {
     case "auctionCreated":
     case "lotClaimed":
       return `Auction ${event.auctionId ?? "?"}`;
-    default:
-      return "";
-  }
-}
-
-/** Kinds where repeated same-actor events plausibly come from one intent (redeeming a batch,
- *  minting several, transferring to the same counterparty). Every other kind stays one row per
- *  event: compose/split/decompose change token structure per call, owner-token moves and auction
- *  events are singular by nature. */
-const GROUPABLE_KINDS = new Set(["mint", "redeem", "transfer", "burnBacking"]);
-
-/** Consecutive events (newest first) from the same actor, same kind, same transfer counterparty
- *  when applicable, each within `windowSeconds` of the previous event in its group. */
-export interface ActivityGroup {
-  /** Newest first; length 1 for an event that did not group. */
-  events: ActivityEvent[];
-}
-
-/** Pure transform run before `activityRowModel`/`activityGroupRowModel`: no data changes, only
- *  how already-loaded events are bucketed into rows. */
-export function groupActivityEvents(
-  events: ActivityEvent[],
-  opts: {windowSeconds?: number} = {},
-): ActivityGroup[] {
-  const windowSeconds = BigInt(opts.windowSeconds ?? ACTIVITY_GROUP_WINDOW_SECONDS);
-  const groups: ActivityGroup[] = [];
-  for (const event of events) {
-    const open = groups[groups.length - 1];
-    const prev = open?.events[open.events.length - 1];
-    const gap = prev ? prev.timestamp - event.timestamp : 0n;
-    const joins =
-      prev !== undefined &&
-      GROUPABLE_KINDS.has(event.kind) &&
-      event.kind === prev.kind &&
-      event.actor === prev.actor &&
-      (event.kind !== "transfer" || event.counterparty === prev.counterparty) &&
-      (gap < 0n ? -gap : gap) <= windowSeconds;
-    if (joins) open!.events.push(event);
-    else groups.push({events: [event]});
-  }
-  return groups;
-}
-
-/** Grouped detail for the kinds `groupActivityEvents` ever merges: same wording as the single-event
- *  case, with counts and amounts summed across the group. */
-function groupedDetail(kind: string, events: ActivityEvent[]): string {
-  const n = events.reduce((sum, e) => sum + e.tokenIds.length, 0);
-  const shapes = `${n} Shape${n === 1 ? "" : "s"}`;
-  const totalWei = events.reduce<bigint | null>(
-    (sum, e) => (e.amountWei === null ? sum : (sum ?? 0n) + e.amountWei),
-    null,
-  );
-  switch (kind) {
-    case "mint":
-      return totalWei === null ? shapes : `${shapes}, ${eth(totalWei)}`;
-    case "redeem":
-      return totalWei === null ? shapes : `${shapes}, ${eth(totalWei)} returned`;
-    case "burnBacking":
-      return totalWei === null ? shapes : `${shapes}, ${eth(totalWei)} burned`;
-    case "transfer": {
-      const counterparty = events[0].counterparty;
-      return counterparty === null ? shapes : `${shapes} to ${addressLabel(counterparty)}`;
-    }
+    case "packCreated":
+      return `Pack #${event.packId ?? "?"} · ${event.tokenIds.length} Shapes${event.amountWei === null ? "" : ` · ${eth(event.amountWei)}`}`;
+    case "packExtended":
+      return `Pack #${event.packId ?? "?"} · ${event.tokenIds.length} Shapes added${event.amountWei === null ? "" : ` · +${eth(event.amountWei)}`}`;
+    case "packMerged":
+      return `Into pack #${event.packId ?? "?"}${event.amountWei === null ? "" : ` · +${eth(event.amountWei)}`}`;
+    case "packUnsealed":
+      return `Pack #${event.packId ?? "?"}`;
+    case "packOpened":
+    case "packShapesClaimed":
+      return `Pack #${event.packId ?? "?"} · ${event.tokenIds.length} Shapes`;
+    case "packRedeemed":
+    case "packEthClaimed":
+      return `Pack #${event.packId ?? "?"}${event.amountWei === null ? "" : ` · ${eth(event.amountWei)} returned`}`;
+    case "packTransferred":
+      return `Pack #${event.packId ?? "?"}${event.counterparty === null ? "" : ` · to ${addressLabel(event.counterparty)}`}`;
     default:
       return "";
   }
@@ -224,49 +184,6 @@ export function activityRowModel(
   };
 }
 
-/** One feed row for a `groupActivityEvents` group: `activityRowModel` extended with every member
- *  event and the distinct transaction count. A group of one reuses `activityRowModel` verbatim, so
- *  an event that never grouped reads exactly as it did before grouping existed. */
-export interface ActivityGroupRowModel extends ActivityRowModel {
-  /** Every event this row represents, newest first. */
-  events: ActivityEvent[];
-  /** Distinct transactions among `events`. */
-  txCount: number;
-}
-
-export function activityGroupRowModel(
-  group: ActivityGroup,
-  tokensById: ReadonlyMap<string, ActivityToken>,
-  maxThumbs = ACTIVITY_MAX_THUMBS,
-): ActivityGroupRowModel {
-  if (group.events.length === 1) {
-    return {...activityRowModel(group.events[0], tokensById, maxThumbs), events: group.events, txCount: 1};
-  }
-
-  const newest = group.events[0];
-  const resolved: ActivityToken[] = [];
-  let missing = 0;
-  for (const event of group.events) {
-    for (const id of event.tokenIds) {
-      const row = tokensById.get(id.toString());
-      if (row) resolved.push(row);
-      else missing++;
-    }
-  }
-
-  const drawn = resolved.slice(0, maxThumbs);
-  return {
-    event: newest,
-    events: group.events,
-    txCount: new Set(group.events.map((e) => e.txHash)).size,
-    label: activityLabel(newest.kind),
-    detail: groupedDetail(newest.kind, group.events),
-    thumbs: drawn.map((row) => ({id: row.id, image: tokenArt(row), live: row.live})),
-    missing,
-    hidden: resolved.length - drawn.length,
-  };
-}
-
 /** Coarse age of an event, in the largest unit that reads as a whole number. */
 export function relativeTime(timestampSeconds: bigint, nowSeconds: bigint): string {
   const age = nowSeconds - timestampSeconds;
@@ -289,11 +206,13 @@ const ACTIVITY_QUERY = `query Activity($limit: Int!, $after: String) {
       counterparty
       amountWei
       auctionId
+      packId
       units
     }
     pageInfo { hasNextPage endCursor }
   }
 }`;
+const LEGACY_ACTIVITY_QUERY = ACTIVITY_QUERY.replace("      packId\n", "");
 
 const ACTIVITY_TOKENS_QUERY = `query ActivityTokens($ids: [BigInt!]!) {
   tokens(where: { id_in: $ids }, limit: 1000) {
@@ -320,6 +239,7 @@ interface RawActivity {
   counterparty: `0x${string}` | null;
   amountWei: string | null;
   auctionId: string | null;
+  packId?: string | null;
   units: string | null;
 }
 
@@ -372,13 +292,12 @@ export async function fetchActivityPage(
   limit = ACTIVITY_PAGE_SIZE,
   timeoutMs = INDEXER_TIMEOUT_MS,
 ): Promise<ActivityPage> {
-  const page = await indexerQuery<ActivityResponse["data"]>(
-    url,
-    fetcher,
-    ACTIVITY_QUERY,
-    {limit, after},
-    timeoutMs,
-  );
+  const page = await indexerQuery<ActivityResponse["data"]>(url, fetcher, ACTIVITY_QUERY, {limit, after}, timeoutMs)
+    .catch((error: unknown) => {
+      // During the indexer rollout, the old schema lacks packId. Keep the existing feed readable.
+      if (!(error instanceof Error) || !error.message.includes("packId")) throw error;
+      return indexerQuery<ActivityResponse["data"]>(url, fetcher, LEGACY_ACTIVITY_QUERY, {limit, after}, timeoutMs);
+    });
   if (page.errors?.length || !page.data?.activitys) {
     throw new Error(page.errors?.[0]?.message ?? "Shapes indexer returned an invalid activity response");
   }
@@ -394,6 +313,7 @@ export async function fetchActivityPage(
     counterparty: row.counterparty,
     amountWei: row.amountWei === null ? null : BigInt(row.amountWei),
     auctionId: row.auctionId === null ? null : BigInt(row.auctionId),
+    packId: row.packId == null ? null : BigInt(row.packId),
     units: row.units === null ? null : BigInt(row.units),
   }));
 
@@ -525,28 +445,21 @@ function Thumb({thumb, onOpenToken}: {thumb: ActivityThumb; onOpenToken: (id: bi
 
 function ActivityRow({
   row,
-  index,
   chainId,
   nowSeconds,
   onOpenToken,
   isNew,
 }: {
-  row: ActivityGroupRowModel;
-  index: number;
+  row: ActivityRowModel;
   chainId: number;
   nowSeconds: bigint;
   onOpenToken: (id: bigint) => void;
-  /** Just prepended by a live poll: rises on its own, independent of the page cascade below. */
+  /** Just prepended by a live poll. */
   isNew: boolean;
 }) {
   const {event} = row;
-  // Rows rise in sequence once the list scrolls into view; the delay restarts every page so a
-  // "Show more" batch cascades from its own first row.
   return (
-    <li
-      className={`activity-row${isNew ? " is-new" : ""}`}
-      style={{animationDelay: `${(index % ACTIVITY_PAGE_SIZE) * 45}ms`}}
-    >
+    <li className={`activity-row${isNew ? " is-new" : ""}`}>
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
         <span className="activity-meta">
@@ -574,23 +487,18 @@ function ActivityRow({
           href={txUrl(event.txHash, chainId)}
           target="_blank"
           rel="noreferrer"
-          title={
-            row.txCount > 1
-              ? `${row.txCount} transactions, newest ${event.txHash} on evm.now`
-              : `Transaction ${event.txHash} on evm.now`
-          }
+          title={`Transaction ${event.txHash} on evm.now`}
         >
           {relativeTime(event.timestamp, nowSeconds)}
         </a>
-        {row.txCount > 1 && <span className="activity-tx-count">{row.txCount} txs</span>}
       </div>
     </li>
   );
 }
 
 /**
- * Every protocol event, newest first, drawn from the indexer's own token rows so a burned Shape
- * still appears. Renders nothing without an indexer: the chain equivalent is a full log scan.
+ * One row per indexed action, newest first. Pack transactions use their lifecycle event instead
+ * of each constituent Shape event. Renders nothing without an indexer.
  */
 export function ActivityFeed({
   indexerUrl,
@@ -657,8 +565,7 @@ export function ActivityFeed({
     };
   }, [indexerUrl, request, absorb]);
 
-  // Live polling reads through the same ref rather than the `events` closure so a tick started
-  // before a "Show more" append still merges against the rows loaded since.
+  // Keep the current rows available to identify which polled events are new for animation.
   const eventsRef = React.useRef(events);
   React.useEffect(() => {
     eventsRef.current = events;
@@ -673,7 +580,9 @@ export function ActivityFeed({
         ([page, s]) => {
           const merged = mergeLivePage(eventsRef.current, page);
           if (merged.addedIds.length > 0) {
-            setEvents(merged.events);
+            // A "Show more" request can finish after the poll starts. Merge against the latest
+            // state when React applies this update so the appended page stays in the feed.
+            setEvents((previous) => mergeLivePage(previous, page).events);
             setTokens((previous) => {
               const next = new Map(previous);
               for (const row of page.tokens) next.set(row.id.toString(), row);
@@ -709,34 +618,8 @@ export function ActivityFeed({
       .finally(() => setBusy(false));
   };
 
-  // Grouping is recomputed from the merged event list on every render, so a live-polled event that
-  // extends an existing group joins it without re-animating the older members; only when the
-  // group's newest member changes does its key change and the row rise as new.
-  const rows = groupActivityEvents(events, {windowSeconds: ACTIVITY_GROUP_WINDOW_SECONDS}).map((group) =>
-    activityGroupRowModel(group, tokens),
-  );
-
-  // The cascade runs once, when the list first enters the viewport. Until then the rows stay
-  // hidden by the `.activity-list` rule only after this effect arms it, so a render without
-  // JavaScript or without IntersectionObserver shows the rows plainly.
-  const listRef = React.useRef<HTMLUListElement>(null);
-  const [revealed, setRevealed] = React.useState(false);
-  React.useEffect(() => {
-    const list = listRef.current;
-    if (!list || revealed || typeof IntersectionObserver === "undefined") return;
-    list.classList.add("is-armed");
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setRevealed(true);
-          observer.disconnect();
-        }
-      },
-      {rootMargin: "0px 0px -10% 0px"},
-    );
-    observer.observe(list);
-    return () => observer.disconnect();
-  }, [revealed, rows.length > 0]);
+  // Pagination counts events, so every fetched event needs its own visible row.
+  const rows = events.map((event) => activityRowModel(event, tokens));
 
   return (
     <section className="launch-section launch-activity" id="activity" aria-labelledby="activity-title">
@@ -772,16 +655,15 @@ export function ActivityFeed({
       {status === "ready" && rows.length === 0 && <p className="activity-note">Nothing has happened yet.</p>}
 
       {rows.length > 0 && (
-        <ul ref={listRef} className={`activity-list${revealed ? " is-revealed" : ""}`}>
-          {rows.map((row, index) => (
+        <ul className="activity-list">
+          {rows.map((row) => (
             <ActivityRow
               key={row.event.id}
               row={row}
-              index={index}
               chainId={chainId}
               nowSeconds={nowSeconds}
               onOpenToken={onOpenToken}
-              isNew={row.events.some((e) => newIds.has(e.id))}
+              isNew={newIds.has(row.event.id)}
             />
           ))}
         </ul>

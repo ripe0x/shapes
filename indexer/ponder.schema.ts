@@ -111,6 +111,7 @@ export const lineageEdge = onchainTable(
 //   ownerTokenMoved  the id ownership left, then the id it moved to. Either is absent: the first
 //                    at the genesis assignment, the second when ownership ends.
 //   auction kinds    the lot, when the lot is a Shape. Empty for a lot from another collection.
+//   pack kinds       the Shapes created, added, or claimed; empty for merge and unseal.
 export const activity = onchainTable(
   "activity",
   (t) => ({
@@ -127,6 +128,9 @@ export const activity = onchainTable(
     txHash: t.hex().notNull(),
     // "mint" | "compose" | "decompose" | "split" | "redeem" | "burnBacking" | "ownerTokenMoved"
     // | "transfer" | "auctionCreated" | "bid" | "auctionSettled" | "lotClaimed"
+    // | "packCreated" | "packExtended" | "packMerged" | "packUnsealed"
+    // | "packOpened" | "packRedeemed" | "packShapesClaimed" | "packEthClaimed"
+    // | "packTransferred"
     kind: t.text().notNull(),
     tokenIds: t.bigint().array().notNull(),
     // The address the event credits: the recipient on a mint, the redeemer on a redeem, the
@@ -138,6 +142,7 @@ export const activity = onchainTable(
     // Backing minted, backing returned on redemption, or backing burned. Null on every other kind.
     amountWei: t.bigint(),
     auctionId: t.bigint(),
+    packId: t.bigint(),
     // The bidder's whole escrowed total on a bid and the winning total on a settlement, in
     // 0.01 ETH units. Null on every other kind.
     units: t.bigint(),

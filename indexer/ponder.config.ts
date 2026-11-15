@@ -1,7 +1,9 @@
 import { createConfig } from "ponder";
+import {zeroAddress} from "viem";
 
 import { shapesAbi } from "./abis/Shapes";
 import { shapeAuctionHouseAbi } from "./abis/ShapeAuctionHouse";
+import { shapePacksAbi } from "./abis/ShapePacks";
 
 // All chain-specific values are env-configurable so the same config runs against the dev chain
 // (see preview/public/deployment.json for current values) and, once deployed, mainnet. No
@@ -20,6 +22,10 @@ const AUCTION_HOUSE_ADDRESS = process.env.AUCTION_HOUSE_ADDRESS as `0x${string}`
 const AUCTION_HOUSE_START_BLOCK = process.env.AUCTION_HOUSE_START_BLOCK
   ? Number(process.env.AUCTION_HOUSE_START_BLOCK)
   : START_BLOCK;
+const PACKS_ADDRESS = process.env.SHAPE_PACKS_ADDRESS as `0x${string}` | undefined;
+const PACKS_START_BLOCK = process.env.SHAPE_PACKS_START_BLOCK
+  ? Number(process.env.SHAPE_PACKS_START_BLOCK)
+  : undefined;
 const database = process.env.DATABASE_URL
   ? ({ kind: "postgres", connectionString: process.env.DATABASE_URL } as const)
   : ({
@@ -31,7 +37,7 @@ if (!SHAPES_ADDRESS) {
   throw new Error(
     "SHAPES_ADDRESS is not set. Copy .env.example to .env.local and set SHAPES_ADDRESS to the " +
       "deployed Shapes contract address, and SHAPES_START_BLOCK to its deployment block. For the " +
-      "dev chain, the address is in preview/public/deployment.json; mainnet is not deployed yet.",
+      "dev chain, the address is in preview/public/deployment.json.",
   );
 }
 
@@ -46,6 +52,11 @@ if (!AUCTION_HOUSE_ADDRESS) {
 
 /** The auction house's custody marks a Shape as a bid card; see the Transfer handler. */
 export const AUCTION_HOUSE = AUCTION_HOUSE_ADDRESS.toLowerCase();
+export const SHAPE_PACKS = PACKS_ADDRESS?.toLowerCase() ?? null;
+
+if (PACKS_ADDRESS && PACKS_START_BLOCK === undefined) {
+  throw new Error("SHAPE_PACKS_START_BLOCK is required when SHAPE_PACKS_ADDRESS is set.");
+}
 
 export default createConfig({
   database,
@@ -68,6 +79,13 @@ export default createConfig({
       chain: "chain",
       address: AUCTION_HOUSE_ADDRESS,
       startBlock: AUCTION_HOUSE_START_BLOCK,
+    },
+    ShapePacks: {
+      abi: shapePacksAbi,
+      chain: "chain",
+      // Local Shapes deployments without Packs listen at the zero address (which emits no logs).
+      address: PACKS_ADDRESS ?? zeroAddress,
+      startBlock: PACKS_START_BLOCK ?? START_BLOCK,
     },
   },
 });
