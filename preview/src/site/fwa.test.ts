@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {encodeEventTopics, encodeAbiParameters, parseAbiParameters, parseEther, type Address, type TransactionReceipt} from "viem";
-import {suggestFwaPlan, buildFwaContribution, parseFwaAmount, fwaPackRequirement, buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, type FwaSettings} from "./fwa";
+import {suggestFwaPlan, buildFwaContribution, parseFwaAmount, fwaPackRequirement, buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, sessionKey, type FwaSettings} from "./fwa";
 const E = parseEther;
 const settings: FwaSettings = {
   denominations: ["0.01","0.05","0.1","0.5","1","5","10","50","100"].map(v => E(v)),
@@ -10,6 +10,10 @@ const settings: FwaSettings = {
   tokenCashoutBps: 9150n, poolWeight: 10n ** 20n, activeListings: 100n, cashoutBps: 9000n, settlementFeeBps: 100n, block: 1n,
 };
 const account: Address = "0x1000000000000000000000000000000000000123";
+test("local fork progress uses a separate session key from mainnet", () => {
+  assert.notEqual(sessionKey(account, 31337), sessionKey(account));
+  assert.match(sessionKey(account, 31337), /:31337:/);
+});
 test("admission and oracle exemptions are separate, and no invalid deposit is enabled", () => {
   const rows=[{backing:E("0.25")}];
   assert.match(depositBlocker({...settings,admitted:false},rows)!,/admission/);

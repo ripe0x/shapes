@@ -40,8 +40,9 @@ export type FwaSettings = {
 };
 
 /** Read internal configuration through its canonical ConfigSet history. Never substitute a source default. */
-export async function loadFwaSettings(client: PublicClient): Promise<FwaSettings> {
-  if (await client.getChainId() !== 1) throw new Error("FWA requires Ethereum mainnet.");
+export async function loadFwaSettings(client: PublicClient, localFork = false): Promise<FwaSettings> {
+  const chainId = await client.getChainId();
+  if (chainId !== 1 && !(localFork && chainId === 31337)) throw new Error("FWA requires Ethereum mainnet or an explicitly configured local fork.");
   const block = await client.getBlock();
   const blockNumber = block.number;
   const [packCode, poolCode, shapesCode] = await Promise.all([PACKS, FWA_POOL, SHAPES].map(address => client.getCode({address, blockNumber})));
@@ -68,7 +69,7 @@ export async function loadFwaSettings(client: PublicClient): Promise<FwaSettings
     ({address: SHAPES, abi: packsShapesAbi, functionName: "denominationAt", args: [i]} as const))});
   const event = parseAbiItem("event ConfigSet(uint256 indexed key,uint256 value)");
   // A local cache is only a checkpoint: all subsequent events are fetched before using it.
-  const cacheKey = `shapes:fwa:config:${FWA_POOL}`;
+  const cacheKey = chainId === 1 ? `shapes:fwa:config:${FWA_POOL}` : `shapes:fwa:config:${chainId}:${FWA_POOL}`;
   let start = FWA_START_BLOCK;
   let minimumBacking: bigint | null = null;
   let withdrawOnly = false;
@@ -219,7 +220,7 @@ export function depositBlocker(settings: FwaSettings, rows: readonly {backing: b
 
 export type FwaRow = {counts: number[]; value: string; backing: string; fee: string; packId?: string; mintHash?: Hash; depositHash?: Hash; listingId?: string; staged?: boolean};
 export type FwaSession = {version: 1; account: Address; rows: FwaRow[]; draft?: {budget: string; quantity: number; ratio: string; spread: boolean}; approvalHash?: Hash; approvalReceipt?: Hash};
-export const sessionKey = (account: Address) => `shapes:fwa:1:${FWA_POOL}:${account.toLowerCase()}`;
+export const sessionKey = (account: Address, chainId = 1) => `shapes:fwa:${chainId}:${FWA_POOL}:${account.toLowerCase()}`;
 export function parseFwaSession(raw: string, account: Address): FwaSession | null {
   try {
     const s = JSON.parse(raw) as FwaSession;

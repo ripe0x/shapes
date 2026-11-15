@@ -1,4 +1,5 @@
 .fwa-page {color:var(--ink);background:var(--page);font-family:Arial,Helvetica,sans-serif;}
+.fwa-fork-banner {padding:10px 3.1%;border-bottom:1px solid var(--ink);background:#ece9d7;font:11px/1.5 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.06em;}
 .fwa-page * {box-sizing:border-box;}
 .fwa-page h1,.fwa-page h2,.fwa-page h3,.fwa-page p,.fwa-explain h2,.fwa-explain h3,.fwa-explain p {margin:0;}
 .fwa-eyebrow,.fwa-field-label,.fwa-auto-tag,.fwa-page .site-section-label {font:10px/1.5 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.11em;color:var(--muted);}
@@ -111,6 +112,7 @@
 .fwa-progress-details {margin-top:20px;border-top:1px solid var(--rule);font:11px/1.8 "IBM Plex Mono",ui-monospace,monospace;}
 .fwa-progress-details>div {display:flex;gap:16px;padding:7px 0;border-bottom:1px solid var(--rule);}
 .fwa-progress-details>div>span {margin-right:auto;}
+.fwa-fork-tx {overflow-wrap:anywhere;font:10px/1.5 "IBM Plex Mono",ui-monospace,monospace;}
 .fwa-action-message,.fwa-action-error,.fwa-action-link,.fwa-manage-link {margin-top:15px!important;font-size:12px;line-height:1.6;}
 .fwa-action-error {color:#8b3b27;}
 .fwa-manage-link a {color:var(--muted);}

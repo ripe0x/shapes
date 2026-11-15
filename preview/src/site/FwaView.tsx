@@ -1,6 +1,6 @@
 import React from "react";
 import "./FwaView.css";
-import {createPublicClient, formatEther, http, type Abi, type Address, type Hash} from "viem";
+import {createPublicClient, defineChain, formatEther, http, type Abi, type Address, type Hash} from "viem";
 import {mainnet} from "viem/chains";
 import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
 import {renderPack, type PackCard} from "shapes-render/pack";
@@ -17,9 +17,15 @@ import {
   parseFwaSession, reconcileFwaSession, sessionKey, type FwaSession, type FwaSettings, type Plan,
 } from "./fwa";
 
-const client = createPublicClient({chain: mainnet, transport: http("https://mainnet.gateway.tenderly.co", {retryCount: 3, retryDelay: 1_000})});
+const mainnetClient = createPublicClient({chain: mainnet, transport: http("https://mainnet.gateway.tenderly.co", {retryCount: 3, retryDelay: 1_000})});
 const eth = (v: bigint | string) => formatEther(BigInt(v));
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const isLocalFork = (dep: Deployment) => {
+  try {
+    const url = new URL(dep.rpc);
+    return dep.chainId === 31337 && url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {return false;}
+};
 type Choice = {id: string; value: string; quantity: number};
 type DraftPack = {key: string; value: bigint};
 const choicesFor = (rows: readonly {value: bigint}[]): Choice[] => {
@@ -34,7 +40,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const {writeContractAsync} = useWriteContract();
   const [budget, setBudget] = React.useState("1");
   const [customChoices, setChoices] = React.useState<Choice[] | null>(null);
-  const [suggestionMode, setSuggestionMode] = React.useState<FwaSuggestionMode>("most");
+  const [suggestionMode, setSuggestionMode] = React.useState<FwaSuggestionMode>("balanced");
   const ratio = 10_000n;
   const [backings, setBackings] = React.useState<Record<string, string>>({});
   const [perPackExpanded, setPerPackExpanded] = React.useState(false);
@@ -73,25 +79,30 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const running = React.useRef(false);
   const mounted = React.useRef(true);
   React.useEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
-  const supported = dep.chainId === 1 && same(dep.shapes, SHAPES);
+  const forkMode = isLocalFork(dep);
+  const client = React.useMemo(() => forkMode ? createPublicClient({
+    chain: defineChain({id: 31337, name: "Shapes FWA local fork", nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18}, rpcUrls: {default: {http: [dep.rpc]}}, contracts: {multicall3: {address: "0xcA11bde05977b3631167028862bE2a173976CA11"}}}),
+    transport: http(dep.rpc, {retryCount: 0}),
+  }) : mainnetClient, [dep.rpc, forkMode]);
+  const supported = (dep.chainId === 1 || forkMode) && same(dep.shapes, SHAPES);
   const refreshBalance = React.useCallback(async () => {
     const account = wallet.current.address;
     if (!account) return;
     try {const balance = await client.getBalance({address: account}); if (mounted.current && same(wallet.current.address ?? "", account)) setWalletBalance(balance);}
     catch {if (mounted.current && same(wallet.current.address ?? "", account)) setWalletBalance(null);}
-  }, []);
+  }, [client]);
   const refresh = React.useCallback(async (fresh = false) => {
     if (settingsRead.current) {
       if (!fresh) return settingsRead.current;
       await settingsRead.current.catch(() => {});
     }
     setChecking(true); setSettingsError("");
-    const read = loadFwaSettings(client);
+    const read = loadFwaSettings(client, forkMode);
     settingsRead.current = read;
     try {const value = await read; if (mounted.current) setSettings(value); return value;}
     catch (e) {if (mounted.current) {setSettings(null); setSettingsError(describeTxError(e));} throw e;}
     finally {settingsRead.current = null; if (mounted.current) setChecking(false);}
-  }, []);
+  }, [client, forkMode]);
   React.useEffect(() => {
     if (!supported) return;
     void refresh().catch(() => {});
@@ -106,7 +117,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     const restore = async () => {
       if (!address) return;
       let raw: string | null = null;
-      try {raw = localStorage.getItem(sessionKey(address));} catch {setStorageWarning(true);}
+      try {raw = localStorage.getItem(sessionKey(address, dep.chainId));} catch {setStorageWarning(true);}
       if (!raw) return;
       const saved = parseFwaSession(raw, address);
       if (!saved) {if (active) {setRecoveryFailed(true); setError("Saved progress could not be read. Check your transaction history before starting a new plan.");} return;}
@@ -120,15 +131,15 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
       try {
         const recovered = await reconcileFwaSession(client, saved);
         if (!active) return;
-        try {localStorage.setItem(sessionKey(address), JSON.stringify(recovered));} catch {setStorageWarning(true);}
+        try {localStorage.setItem(sessionKey(address, dep.chainId), JSON.stringify(recovered));} catch {setStorageWarning(true);}
         sessionRef.current = recovered; setSession(recovered);
       } catch (e) {if (active) {setRecoveryFailed(true); setError(`Could not check saved transactions. ${describeTxError(e)}`);}}
     };
     void restore().finally(() => {if (active) setReady(true);});
     return () => {active = false;};
-  }, [address, refreshBalance]);
+  }, [address, client, dep.chainId, refreshBalance]);
   const save = (next: FwaSession) => {
-    try {localStorage.setItem(sessionKey(next.account), JSON.stringify(next));} catch {if (mounted.current) setStorageWarning(true);}
+    try {localStorage.setItem(sessionKey(next.account, dep.chainId), JSON.stringify(next));} catch {if (mounted.current) setStorageWarning(true);}
     if (same(wallet.current.address ?? "", next.account)) {sessionRef.current = next; if (mounted.current) setSession({...next, rows: [...next.rows]});}
   };
   const suggestion = React.useMemo(() => {
@@ -150,8 +161,12 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   });
   const choiceError = parsedChoices.find(r => r.inputError)?.inputError;
   const draftPacks: DraftPack[] = parsedChoices.filter(r => r.quantity > 0 && r.valueWei !== null).sort((a, b) => a.valueWei! > b.valueWei! ? -1 : 1).flatMap(r => Array.from({length: r.quantity}, (_, i) => ({key: `${r.id}:${i}`, value: r.valueWei!})));
+  const defaultBacking = (value: bigint) => {
+    const target = settings && value < settings.minimumBacking ? settings.minimumBacking : value;
+    return settings && !settings.exempt && settings.cap !== null && target > settings.cap ? settings.cap : target;
+  };
   const backingFor = (r: DraftPack) => backings[r.key] ?? eth(customChoices
-    ? (settings?.minimumBacking ?? r.value * ratio / 10_000n)
+    ? defaultBacking(r.value)
     : (suggestion.plan?.rows.find(row => row.value === r.value)?.backing ?? 0n));
   const startCustomEdit = () => {
     setChoices(choices);
@@ -201,9 +216,9 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const balanceShortfall = walletBalance !== null && remainingPayment > walletBalance ? remainingPayment - walletBalance : 0n;
   const packIssues = settings ? visibleRows.map((row, i) => {const issue = session?.rows[i]?.listingId === undefined ? fwaPackRequirement(row, settings) : null; return issue ? `Pack ${i + 1}: ${issue}` : null;}).filter((v): v is string => !!v) : [];
   const poolBlocker = settings && !complete ? depositBlocker(settings, visibleRows.filter((_, i) => session?.rows[i]?.listingId === undefined)) : null;
-  const requirement = !supported ? "This page requires the Ethereum mainnet shapes site." : recoveryFailed ? "Saved transactions must be checked before continuing." : choiceError || settingsError || (!settings ? "Reading current requirements…" : planError || (!visibleRows.length ? "Choose at least one pack." : packIssues[0] || poolBlocker || (overage ? `This plan is ${eth(overage)} eth over budget.` : balanceShortfall ? `This plan is ${eth(balanceShortfall)} eth above your wallet balance.` : address && walletBalance === null ? "Reading wallet balance…" : null)));
+  const requirement = !supported ? "This page requires the Ethereum mainnet Shapes deployment or its local Anvil fork." : recoveryFailed ? "Saved transactions must be checked before continuing." : choiceError || settingsError || (!settings ? "Reading current requirements…" : planError || (!visibleRows.length ? "Choose at least one pack." : packIssues[0] || poolBlocker || (overage ? `This plan is ${eth(overage)} eth over budget.` : balanceShortfall ? `This plan is ${eth(balanceShortfall)} eth above your wallet balance.` : address && walletBalance === null ? "Reading wallet balance…" : null)));
   const walletReady = (account: Address) => {
-    if (!mounted.current || !same(wallet.current.address ?? "", account) || wallet.current.chainId !== 1) throw new Error("Your wallet or network changed. Reconnect to Ethereum to continue.");
+    if (!mounted.current || !same(wallet.current.address ?? "", account) || wallet.current.chainId !== dep.chainId) throw new Error(`Your wallet or network changed. Reconnect to ${forkMode ? "the local fork" : "Ethereum"} to continue.`);
   };
   const run = async () => {
     if (running.current || !ready || !address || !supported) return;
@@ -225,7 +240,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         if (blocked) throw new Error(blocked);
         if (fresh.total > await client.getBalance({address: account})) throw new Error("This plan exceeds your wallet balance.");
         work = {version: 1, account, draft: {budget, quantity: fresh.rows.length, ratio: String(ratio), spread: false}, rows: fresh.rows.map(r => ({counts: r.counts, value: String(r.value), backing: String(r.backing), fee: String(r.fee)}))};
-        try {localStorage.setItem(sessionKey(account), JSON.stringify(work));} catch {setStorageWarning(true); throw new Error("Enable browser storage before minting so your transaction progress can be recovered.");}
+        try {localStorage.setItem(sessionKey(account, dep.chainId), JSON.stringify(work));} catch {setStorageWarning(true); throw new Error("Enable browser storage before minting so your transaction progress can be recovered.");}
         save(work);
       }
       const current = work;
@@ -242,7 +257,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         const balance = await client.getBalance({address: account});
         if (balance < (value ?? 0n) + gas * await client.getGasPrice()) throw new Error("Your wallet needs more eth for this transaction and network gas.");
         walletReady(account);
-        const hash = await writeContractAsync({...call, gas, chainId: 1});
+        const hash = await writeContractAsync({...call, gas, chainId: dep.chainId});
         record(hash); save(current);
         if (mounted.current && same(wallet.current.address ?? "", account)) setActiveHash(hash);
         return hash;
@@ -322,7 +337,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const reset = () => {
     if (busy || !address) return;
     if (!resetConfirm && (session || recoveryFailed) && !complete) {setResetConfirm(true); return;}
-    try {localStorage.removeItem(sessionKey(address));} catch {setStorageWarning(true);}
+    try {localStorage.removeItem(sessionKey(address, dep.chainId));} catch {setStorageWarning(true);}
     sessionRef.current = null; setSession(null); setRecoveryFailed(false); setMessage(""); setError(""); setResetConfirm(false); setReviewOpen(false);
   };
   const addValue = () => {startCustomEdit(); const id = `new-${++nextGroup.current}`; setChoices(rows => [...(rows ?? choices), {id, value: "", quantity: 1}]);};
@@ -365,6 +380,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     : 0;
   return <>
     <main className="fwa-page">
+      {forkMode && <div className="fwa-fork-banner" role="status">LOCAL ANVIL FORK · CHAIN 31337 · TEST TRANSACTIONS ONLY</div>}
       <section className="fwa-hero">
         <div>
           <p className="fwa-eyebrow">SHAPES / FWA MAIN V2 POOL</p>
@@ -433,7 +449,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
               <div className="fwa-strategy-grid" role="group" aria-label="Position strategy">
                 {strategies.map(({mode, count, backing}) => <button type="button" className="fwa-strategy" key={mode} aria-pressed={!customChoices && suggestionMode === mode} disabled={busy || !!session || backing === null} onClick={() => useSuggestion(mode)}>
                   <span className="fwa-strategy-head"><span>{mode === "most" ? "Most positions" : mode === "balanced" ? "Balanced" : "Lower draw exposure"}</span><span aria-hidden="true">{!customChoices && suggestionMode === mode ? "●" : ""}</span></span>
-                  <span className="fwa-strategy-copy">{mode === "most" ? "Uses minimum eligible backing to fit more fee sharing positions." : mode === "balanced" ? "Targets backing near each pack’s value." : "Uses more backing to reduce each position’s draw weight."}</span>
+                  <span className="fwa-strategy-copy">{mode === "most" ? "Uses minimum eligible backing to fit more fee sharing positions." : mode === "balanced" ? "Matches backing to each pack’s value where live limits allow." : "Uses more backing to reduce each position’s draw weight."}</span>
                   <span className="fwa-strategy-stat">{backing === null ? "Unavailable" : String(count) + " positions · " + eth(backing) + " ETH backing each"}</span>
                 </button>)}
               </div>
@@ -466,12 +482,12 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
               <div><span>03</span> DEPOSIT {session && <small>{deposited} of {session.rows.length} confirmed</small>}</div>
             </div>
             {session && <div className="fwa-progress-details">
-              {session.rows.map((row, index) => <div key={index}><span>Pack {index + 1}</span>{row.mintHash && <a href={txUrl(row.mintHash, 1)} target="_blank" rel="noreferrer">Mint {row.packId ? "confirmed" : "pending"} ↗</a>}{row.depositHash && <a href={txUrl(row.depositHash, 1)} target="_blank" rel="noreferrer">{row.listingId ? row.staged ? "Staged at deposit" : "Deposited" : "Deposit pending"} ↗</a>}</div>)}
-              {(session.approvalHash || session.approvalReceipt) && <a href={txUrl((session.approvalHash || session.approvalReceipt)!, 1)} target="_blank" rel="noreferrer">Approval transaction ↗</a>}
+              {session.rows.map((row, index) => <div key={index}><span>Pack {index + 1}</span>{row.mintHash && <FwaTransaction hash={row.mintHash} chainId={dep.chainId} label={"Mint " + (row.packId ? "confirmed" : "pending")}/>}{row.depositHash && <FwaTransaction hash={row.depositHash} chainId={dep.chainId} label={row.listingId ? row.staged ? "Staged at deposit" : "Deposited" : "Deposit pending"}/>}</div>)}
+              {(session.approvalHash || session.approvalReceipt) && <FwaTransaction hash={(session.approvalHash || session.approvalReceipt)!} chainId={dep.chainId} label="Approval transaction"/>}
             </div>}
             {message && <p className="fwa-action-message" role="status">{message}</p>}
             {error && <p className="fwa-action-error" role="alert">{error}</p>}
-            {activeHash && <a className="fwa-action-link" href={txUrl(activeHash, 1)} target="_blank" rel="noreferrer">View current transaction ↗</a>}
+            {activeHash && <p className="fwa-action-link"><FwaTransaction hash={activeHash} chainId={dep.chainId} label="Current transaction"/></p>}
             {storageWarning && <p className="fwa-action-error">Progress could not be saved. Keep this page open.</p>}
             <p className="fwa-manage-link"><a href="https://www.fwa.fun/manage" target="_blank" rel="noreferrer">View your positions on FWA ↗</a></p>
           </Section>
@@ -524,9 +540,13 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
       </div>
       <p>{visibleRows.length} pack mint {visibleRows.length === 1 ? "transaction" : "transactions"}, one approval if needed, and {visibleRows.length} separate FWA deposit {visibleRows.length === 1 ? "transaction" : "transactions"}. Each wallet transaction needs confirmation. Gas is extra.</p>
       <p className="fwa-review-risk">Approval, if needed, lets FWA transfer any Shapes pack in your wallet. A deposit can be staged and begins earning fees only when active. Withdrawals wait for unresolved purchases to clear; withdrawing the crown during its first 12 hours can cost 1% of its backing.</p>
-      <button type="button" className="btn-filled fwa-review-confirm" disabled={actionDisabled} onClick={() => {setReviewOpen(false); if (!address) onConnect(); else if (chainId !== 1) void switchChainAsync({chainId: 1}).catch(e => setError(describeTxError(e))); else void run();}}>{!address ? "CONNECT WALLET" : chainId !== 1 ? "SWITCH TO ETHEREUM" : "MINT, APPROVE & DEPOSIT"}</button>
+      <button type="button" className="btn-filled fwa-review-confirm" disabled={actionDisabled} onClick={() => {setReviewOpen(false); if (!address) onConnect(); else if (chainId !== dep.chainId) void switchChainAsync({chainId: dep.chainId}).catch(e => setError(describeTxError(e))); else void run();}}>{!address ? "CONNECT WALLET" : chainId !== dep.chainId ? forkMode ? "SWITCH TO LOCAL FORK" : "SWITCH TO ETHEREUM" : "MINT, APPROVE & DEPOSIT"}</button>
     </dialog>
   </>;
+}
+function FwaTransaction({hash, chainId, label}: {hash: Hash; chainId: number; label: string}) {
+  return chainId === 31337 ? <code className="fwa-fork-tx">{label} · {hash}</code>
+    : <a href={txUrl(hash, chainId)} target="_blank" rel="noreferrer">{label} ↗</a>;
 }
 function PackArt({value, settings, salt, nonce = 0}: {value: bigint; settings: FwaSettings | null; salt: bigint | null; nonce?: number}) {
   const denominations = settings?.denominations;
