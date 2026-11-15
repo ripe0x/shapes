@@ -267,7 +267,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
           const activeConnector = wallet.current.connector;
           const provider = await activeConnector?.getProvider();
           if (!provider || typeof provider !== "object" || !("request" in provider)) throw new Error("Connect a wallet to Anvil before sending.");
-          await assertSameFwaFork(client, createPublicClient({transport: custom(provider as EIP1193Provider)}), dep.rpc);
+          await assertSameFwaFork(client, createPublicClient({transport: custom(provider as EIP1193Provider)}), dep.rpc, dep.fwaForkMarker);
           walletReady(account);
           if (wallet.current.connector?.uid !== activeConnector?.uid) throw new Error("Your wallet connection changed. Reconnect before continuing.");
         }

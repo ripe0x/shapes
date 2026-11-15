@@ -1,5 +1,6 @@
 /** Run only against an isolated mainnet fork. No mocks and no mainnet broadcasts. */
 import assert from "node:assert/strict";
+import {randomBytes} from "node:crypto";
 import {createPublicClient,createWalletClient,http,parseAbi,parseEther} from "viem";
 import {mainnet} from "viem/chains";
 import {FWA_POOL,PACKS,SHAPES,fwaAbi,packTransferAbi,assertSameFwaFork,buildFwaContribution,loadFwaSettings,mintedPackId,depositedListing,reconcileFwaSession} from "../../preview/src/site/fwa.ts";
@@ -9,13 +10,24 @@ const url = new URL(rpc);
 assert.ok(['127.0.0.1','localhost','[::1]'].includes(url.hostname),'This script only runs against a loopback fork');
 const client=createPublicClient({chain:mainnet,transport:http(rpc,{timeout:30000,retryCount:0})});
 const wallet=createWalletClient({chain:mainnet,transport:http(rpc,{timeout:30000,retryCount:0})});
+const peer=createPublicClient({chain:mainnet,transport:http(process.env.FWA_PEER_RPC ?? 'http://127.0.0.1:18547',{timeout:30000,retryCount:0})});
 await client.request({method:'anvil_nodeInfo'}); // Fail before any write on a real Ethereum node.
 assert.equal(await client.getChainId(),1);
+await peer.request({method:'anvil_nodeInfo'});
+assert.equal(await peer.getChainId(),1);
 const account='0x1000000000000000000000000000000000000123';
 const owner=await client.readContract({address:FWA_POOL,abi:parseAbi(['function owner() view returns(address)']),functionName:'owner'});
 const snapshot=await client.request({method:'evm_snapshot'});
 let completedSession;
 try {
+ const marker={address:`0x${randomBytes(20).toString('hex')}`,balanceWei:'1'};
+ assert.equal(await client.getBalance({address:marker.address}),0n);
+ assert.equal(await peer.getBalance({address:marker.address}),0n);
+ assert.deepEqual(await client.getBlock(),await peer.getBlock());
+ await client.request({method:'anvil_setBalance',params:[marker.address,'0x1']});
+ await assertSameFwaFork(client,client,rpc,marker);
+ await assert.rejects(()=>assertSameFwaFork(client,peer,rpc,marker),/different Anvil fork/);
+ console.log('PASS marker distinguishes two untouched forks with identical block heads');
  await client.request({method:'anvil_impersonateAccount',params:[account]});
  await client.request({method:'anvil_impersonateAccount',params:[owner]});
  for(const a of [account,owner]) await client.request({method:'anvil_setBalance',params:[a,'0x56bc75e2d63100000']});
@@ -69,9 +81,9 @@ try {
   console.log('PASS direct wallet deposit and reload recovery',listing,'depositor',l[1]);
  }
  completedSession={version:1,account,rows:savedRows};
- await assertSameFwaFork(client,client,rpc);
+ await assertSameFwaFork(client,client,rpc,marker);
  const liveMainnet=createPublicClient({chain:mainnet,transport:http('https://mainnet.gateway.tenderly.co')});
- await assert.rejects(()=>assertSameFwaFork(client,liveMainnet,rpc),/different Anvil fork/);
+ await assert.rejects(()=>assertSameFwaFork(client,liveMainnet,rpc,marker),/different Anvil fork/);
  console.log('PASS matching wallet fork; reject a different real chain head');
  assert.deepEqual((await reconcileFwaSession(client,completedSession,true)).rows,savedRows);
  console.log('PASS completed fork session matches its mined receipts');

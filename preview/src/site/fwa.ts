@@ -247,7 +247,15 @@ export function depositedListing(receipt: TransactionReceipt, account: Address, 
 }
 
 /** Chain ID alone does not distinguish two Anvil forks that both use 31337. */
-export async function assertSameFwaFork(client: PublicClient, walletClient: PublicClient, rpc: string): Promise<void> {
+export async function assertSameFwaFork(client: PublicClient, walletClient: PublicClient, rpc: string, marker?: {address: Address; balanceWei: string}): Promise<void> {
+  if (!marker || !/^0x[\da-f]{40}$/i.test(marker.address) || !/^\d+$/.test(marker.balanceWei) || BigInt(marker.balanceWei) === 0n)
+    throw new Error("This local Anvil fork has no identity marker. Restart its test setup before sending.");
+  let balances;
+  try {balances = await Promise.all([client.getBalance({address: marker.address}), walletClient.getBalance({address: marker.address})]);}
+  catch {throw new Error(`Could not verify your wallet's Anvil RPC. Check that chain 31337 uses ${rpc}.`);}
+  const expected = BigInt(marker.balanceWei);
+  if (balances[0] !== expected) throw new Error("The local Anvil fork identity marker is missing. Restart its test setup before sending.");
+  if (balances[1] !== expected) throw new Error(`Your wallet is connected to a different Anvil fork. Set chain 31337's RPC to ${rpc} and try again.`);
   const readHeads = () => Promise.all([client.getBlock(), walletClient.getBlock()]);
   let heads;
   try {
