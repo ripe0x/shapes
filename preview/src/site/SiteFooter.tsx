@@ -7,9 +7,8 @@ import type React from "react";
  * footer. `reserve` is the contract reserve line (e.g. "The contract holds X ETH backing N
  * Shapes."), rendered under the attribution when given; omitted wherever the caller has no loaded
  * chain data. `onContracts` navigates within a mounted SiteApp's own view state; omitted where no
- * SiteApp is mounted (the standalone marketing landing page), where the link falls back to a plain
- * `/contracts` href. The docs link is always a plain `/docs` href: it is a real route on every
- * host, not a SiteApp view.
+ * SiteApp is mounted (the standalone marketing landing page). The docs link is always a plain
+ * `/docs` href: it is a real route on every host, not a SiteApp view.
  */
 export function SiteFooter({
   topRule = false,
@@ -37,11 +36,11 @@ export function SiteFooter({
         </span>
         <span className="site-footer-links">
           <a href="/docs">Docs</a>
-          {onContracts ? (
-            <button type="button" className="btn-ghost" onClick={onContracts}>Contracts</button>
-          ) : (
-            <a href="/contracts">Contracts</a>
-          )}
+          <a href="/contracts" onClick={onContracts ? (event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            onContracts();
+          } : undefined}>Contracts</a>
           <a href="#top">Back to top</a>
         </span>
       </div>
