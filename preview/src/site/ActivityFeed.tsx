@@ -167,7 +167,7 @@ export function activityRowModel(
 ): ActivityRowModel {
   const resolved: ActivityToken[] = [];
   let missing = 0;
-  for (const id of event.tokenIds) {
+  for (const id of event.packId === null ? event.tokenIds : []) {
     const row = tokensById.get(id.toString());
     if (row) resolved.push(row);
     else missing++;
@@ -337,7 +337,7 @@ export async function fetchActivityPage(
     units: row.units === null ? null : BigInt(row.units),
   }));
 
-  const ids = [...new Set(events.flatMap((event) => event.tokenIds.map((id) => id.toString())))];
+  const ids = [...new Set(events.flatMap((event) => event.packId === null ? event.tokenIds.map((id) => id.toString()) : []))];
   let tokens: ActivityToken[] = [];
   if (ids.length > 0) {
     const rows = await indexerQuery<ActivityTokensResponse["data"]>(
@@ -478,12 +478,17 @@ function ActivityRow({
   isNew: boolean;
 }) {
   const {event} = row;
+  const packArtBlock = event.kind === "packUnsealed" || event.kind === "packOpened" || event.kind === "packRedeemed"
+    ? (event.blockNumber - 1n).toString()
+    : event.kind === "packShapesClaimed" || event.kind === "packEthClaimed" ? "exit" : event.blockNumber.toString();
   return (
     <li className={`activity-row${isNew ? " is-new" : ""}`}>
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
         <span className="activity-meta">
-          {row.detail && <span className="activity-detail">{row.detail}</span>}
+          {row.detail && (event.packId === null
+            ? <span className="activity-detail">{row.detail}</span>
+            : <a className="activity-detail" href={`/packs/${event.packId}`}>{row.detail}</a>)}
           <span className="activity-actor">
             <AddressName address={event.actor} />
           </span>
@@ -491,11 +496,18 @@ function ActivityRow({
       </div>
 
       <div className="activity-thumbs">
-        {row.thumbs.map((thumb) => (
+        {event.packId !== null ? (
+          <a className="activity-thumb activity-pack-thumb" href={`/packs/${event.packId}`} title={`Pack #${event.packId}`}>
+            <span className="activity-thumb-art" style={{backgroundColor: C.art}}>
+              <img src={`/api/pack-art/${event.packId}/${packArtBlock}`} alt={`Pack #${event.packId} artwork`} loading="lazy" />
+            </span>
+            <span className="activity-thumb-id">Pack #{event.packId.toString()}</span>
+          </a>
+        ) : row.thumbs.map((thumb) => (
           <Thumb key={thumb.id.toString()} thumb={thumb} onOpenToken={onOpenToken} />
         ))}
-        {row.hidden > 0 && <span className="activity-more">+{row.hidden} more</span>}
-        {row.missing > 0 && (
+        {event.packId === null && row.hidden > 0 && <span className="activity-more">+{row.hidden} more</span>}
+        {event.packId === null && row.missing > 0 && (
           <span className="activity-more">
             {row.missing} not indexed
           </span>

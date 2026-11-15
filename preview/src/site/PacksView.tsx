@@ -460,6 +460,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
           )}
           {selectedPack && <div className="packs-selected-detail">
           <p className="launch-kicker">SELECTED PACK</p>
+          <p><a href={`/packs/${selectedPack.id}`}>View Pack #{selectedPack.id} details →</a></p>
           <div className="packs-detail-heading">
             <span className="packs-art">{selectedPack.image ? <img src={selectedPack.image} alt={`${selectedPack.name} artwork`} /> : <span>{selectedPack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
             <div><p className="launch-kicker">{selectedPack.kind === "live" ? "Shape Pack token" : "Unsealed claim"}</p>

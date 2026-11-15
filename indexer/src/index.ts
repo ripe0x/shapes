@@ -384,11 +384,21 @@ ponder.on("ShapePacks:PackExtended", async ({ event, context }) => {
 
 // mergePacks emits one event per source. One call is one user operation in the feed.
 ponder.on("ShapePacks:PackMerged", async ({ event, context }) => {
-  const {targetPackId, by, addedValueWei} = event.args;
+  const {targetPackId, sourcePackId, by, shapeIds, addedValueWei} = event.args;
   await context.db.insert(activity).values({
-    ...activityRow(at(event), "packMerged", [], by, {packId: targetPackId, amountWei: addedValueWei}),
+    ...activityRow(at(event), "packMerged", [...shapeIds], by, {packId: targetPackId, amountWei: addedValueWei}),
     id: packOperationId(event.transaction.hash, "merge", targetPackId),
-  }).onConflictDoUpdate((row) => ({amountWei: (row.amountWei ?? 0n) + addedValueWei}));
+  }).onConflictDoUpdate((row) => ({
+    tokenIds: [...row.tokenIds, ...shapeIds],
+    amountWei: (row.amountWei ?? 0n) + addedValueWei,
+  }));
+  // The target row represents the user operation on the homepage. A separate source row keeps
+  // merged-away Packs findable by their own id on their detail pages.
+  await context.db.insert(activity).values(
+    activityRow(at(event), "packMergedAway", [...shapeIds], by, {
+      packId: sourcePackId, relatedPackId: targetPackId, amountWei: addedValueWei,
+    }),
+  );
 });
 
 ponder.on("ShapePacks:PackUnsealed", async ({ event, context }) => {

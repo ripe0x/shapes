@@ -19,6 +19,7 @@ export type ActivityKind =
   | "packCreated"
   | "packExtended"
   | "packMerged"
+  | "packMergedAway"
   | "packUnsealed"
   | "packOpened"
   | "packRedeemed"
@@ -40,6 +41,7 @@ export interface ActivityDetails {
   amountWei?: bigint;
   auctionId?: bigint;
   packId?: bigint;
+  relatedPackId?: bigint;
   units?: bigint;
 }
 
@@ -57,6 +59,7 @@ export interface ActivityRow {
   amountWei: bigint | null;
   auctionId: bigint | null;
   packId: bigint | null;
+  relatedPackId: bigint | null;
   units: bigint | null;
 }
 
@@ -97,6 +100,7 @@ export function activityRow(
     amountWei: details.amountWei ?? null,
     auctionId: details.auctionId ?? null,
     packId: details.packId ?? null,
+    relatedPackId: details.relatedPackId ?? null,
     units: details.units ?? null,
   };
 }

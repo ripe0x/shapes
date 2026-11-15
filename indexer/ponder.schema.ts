@@ -111,7 +111,7 @@ export const lineageEdge = onchainTable(
 //   ownerTokenMoved  the id ownership left, then the id it moved to. Either is absent: the first
 //                    at the genesis assignment, the second when ownership ends.
 //   auction kinds    the lot, when the lot is a Shape. Empty for a lot from another collection.
-//   pack kinds       the Shapes created, added, or claimed; empty for merge and unseal.
+//   pack kinds       the Shapes created, added, merged, or claimed; empty for unseal.
 export const activity = onchainTable(
   "activity",
   (t) => ({
@@ -128,7 +128,7 @@ export const activity = onchainTable(
     txHash: t.hex().notNull(),
     // "mint" | "compose" | "decompose" | "split" | "redeem" | "burnBacking" | "ownerTokenMoved"
     // | "transfer" | "auctionCreated" | "bid" | "auctionSettled" | "lotClaimed"
-    // | "packCreated" | "packExtended" | "packMerged" | "packUnsealed"
+    // | "packCreated" | "packExtended" | "packMerged" | "packMergedAway" | "packUnsealed"
     // | "packOpened" | "packRedeemed" | "packShapesClaimed" | "packEthClaimed"
     // | "packTransferred"
     kind: t.text().notNull(),
@@ -143,13 +143,16 @@ export const activity = onchainTable(
     amountWei: t.bigint(),
     auctionId: t.bigint(),
     packId: t.bigint(),
+    // The destination Pack on a source Pack's merge history row. Null elsewhere.
+    relatedPackId: t.bigint(),
     // The bidder's whole escrowed total on a bid and the winning total on a settlement, in
     // 0.01 ETH units. Null on every other kind.
     units: t.bigint(),
   }),
   (table) => ({
-    // The feed's only query: newest first, cursor-paginated.
+    // Feed pages order by chain position; Pack pages select by Pack id, newest first.
     orderKeyIdx: index("activity_order_key_idx").on(table.orderKey),
+    packHistoryIdx: index("activity_pack_history_idx").on(table.packId, table.orderKey),
   }),
 );
 
