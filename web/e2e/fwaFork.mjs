@@ -14,6 +14,7 @@ assert.equal(await client.getChainId(),1);
 const account='0x1000000000000000000000000000000000000123';
 const owner=await client.readContract({address:FWA_POOL,abi:parseAbi(['function owner() view returns(address)']),functionName:'owner'});
 const snapshot=await client.request({method:'evm_snapshot'});
+let completedSession;
 try {
  await client.request({method:'anvil_impersonateAccount',params:[account]});
  await client.request({method:'anvil_impersonateAccount',params:[owner]});
@@ -32,11 +33,13 @@ try {
  assert.equal(plan.total,parseEther('0.327'));
  assert.equal(plan.remainder,-parseEther('0.227')); // A cap never resizes the chosen packs.
  const ids=[];
+ const savedRows=[];
  for(const row of plan.rows){
   const quote=await client.readContract({address:PACKS,abi:packsAbi,functionName:'quoteMint',args:[row.counts]});
   assert.equal(quote[0],row.value);assert.equal(quote[1],row.fee);assert.equal(quote[2],row.payment);
   const receipt=await send(PACKS,packsAbi,'createPack',[[],row.counts],quote[2]);
   const id=mintedPackId(receipt,account);ids.push(id);
+  savedRows.push({value:String(row.value),backing:String(row.backing),fee:String(row.fee),counts:row.counts,packId:String(id),mintHash:receipt.transactionHash});
   assert.equal((await client.readContract({address:PACKS,abi:packsAbi,functionName:'ownerOf',args:[id]})).toLowerCase(),account.toLowerCase());
   const recovered=await reconcileFwaSession(client,{version:1,account,rows:[{value:String(row.value),backing:String(row.backing),fee:String(row.fee),counts:row.counts,mintHash:receipt.transactionHash}]});
   assert.equal(recovered.rows[0].packId,String(id));
@@ -56,6 +59,7 @@ try {
  for(let i=0;i<ids.length;i++){
   const receipt=await send(FWA_POOL,fwaAbi,'listNFT',[PACKS,ids[i]],plan.rows[i].backing);
   const listing=depositedListing(receipt,account,ids[i]);
+  Object.assign(savedRows[i],{depositHash:receipt.transactionHash,listingId:listing.listingId,staged:listing.staged});
   const l=await client.readContract({address:FWA_POOL,abi:parseAbi(['function listings(uint256) view returns(address collection,address depositor,address purchaser,uint256 tokenId,uint256 weight,uint256 value,uint256 feeShare,uint256 feeDebt,uint256 slot,uint64 allocatedAt,uint8 status)']),functionName:'listings',args:[BigInt(listing.listingId)]});
   assert.equal(l[0].toLowerCase(),PACKS);assert.equal(l[1].toLowerCase(),account.toLowerCase());assert.equal(l[3],ids[i]);assert.equal(l[5],plan.rows[i].backing);
   assert.equal(l[4],10n**36n/plan.rows[i].backing);
@@ -64,5 +68,11 @@ try {
   assert.equal(recovered.rows[0].listingId,listing.listingId);
   console.log('PASS direct wallet deposit and reload recovery',listing,'depositor',l[1]);
  }
+ completedSession={version:1,account,rows:savedRows};
+ assert.deepEqual((await reconcileFwaSession(client,completedSession,true)).rows,savedRows);
+ console.log('PASS completed fork session matches its mined receipts');
  console.log('PASS deployed shapes',SHAPES,'and packs plus FWA on a real mainnet fork');
 } finally { await client.request({method:'evm_revert',params:[snapshot]}); }
+assert.ok(completedSession);
+await assert.rejects(()=>reconcileFwaSession(client,completedSession,true),/does not match this fork/);
+console.log('PASS reset fork rejects stale completed browser progress');

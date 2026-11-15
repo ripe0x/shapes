@@ -121,23 +121,24 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
       if (!raw) return;
       const saved = parseFwaSession(raw, address);
       if (!saved) {if (active) {setRecoveryFailed(true); setError("Saved progress could not be read. Check your transaction history before starting a new plan.");} return;}
-      if (active) {
-        sessionRef.current = saved; setSession(saved);
+      const showSaved = (value: FwaSession) => {
+        sessionRef.current = value; setSession(value);
         const grouped = new Map<string, Choice>();
-        for (const row of saved.rows) {const value = eth(row.value); const group = grouped.get(value) ?? {id: value, value, quantity: 0}; group.quantity++; grouped.set(value, group);}
+        for (const row of value.rows) {const packValue = eth(row.value); const group = grouped.get(packValue) ?? {id: packValue, value: packValue, quantity: 0}; group.quantity++; grouped.set(packValue, group);}
         setChoices([...grouped.values()]);
-        setBudget(saved.draft?.budget || eth(saved.rows.reduce((s, r) => s + BigInt(r.value) + BigInt(r.backing) + BigInt(r.fee), 0n)));
-      }
+        setBudget(value.draft?.budget || eth(value.rows.reduce((s, r) => s + BigInt(r.value) + BigInt(r.backing) + BigInt(r.fee), 0n)));
+      };
+      if (active && !forkMode) showSaved(saved);
       try {
-        const recovered = await reconcileFwaSession(client, saved);
+        const recovered = await reconcileFwaSession(client, saved, forkMode);
         if (!active) return;
         try {localStorage.setItem(sessionKey(address, dep.chainId), JSON.stringify(recovered));} catch {setStorageWarning(true);}
-        sessionRef.current = recovered; setSession(recovered);
+        showSaved(recovered);
       } catch (e) {if (active) {setRecoveryFailed(true); setError(`Could not check saved transactions. ${describeTxError(e)}`);}}
     };
     void restore().finally(() => {if (active) setReady(true);});
     return () => {active = false;};
-  }, [address, client, dep.chainId, refreshBalance]);
+  }, [address, client, dep.chainId, forkMode, refreshBalance]);
   const save = (next: FwaSession) => {
     try {localStorage.setItem(sessionKey(next.account, dep.chainId), JSON.stringify(next));} catch {if (mounted.current) setStorageWarning(true);}
     if (same(wallet.current.address ?? "", next.account)) {sessionRef.current = next; if (mounted.current) setSession({...next, rows: [...next.rows]});}
@@ -507,7 +508,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
               <div className="is-total"><span>Total commitment</span><strong>{eth(total)} ETH</strong></div>
             </div>
             <button type="button" className="btn-filled fwa-submit" disabled={actionDisabled} onClick={() => session ? void run() : setReviewOpen(true)}>{actionLabel}</button>
-            <p className={requirement && !checking ? "fwa-requirement is-error" : "fwa-requirement"} role={requirement && !checking ? "alert" : "status"}>{complete ? completionMessage : requirement || "This plan meets current requirements."}</p>
+            <p className={requirement && !checking ? "fwa-requirement is-error" : "fwa-requirement"} role={requirement && !checking ? "alert" : "status"}>{recoveryFailed ? requirement : complete ? completionMessage : requirement || "This plan meets current requirements."}</p>
             {settingsError && <button type="button" className="fwa-retry" disabled={checking} onClick={() => void refresh().catch(() => {})}>Retry pool check</button>}
             {(session || recoveryFailed) && <button type="button" className="fwa-retry" disabled={busy} onClick={reset}>{resetConfirm ? "Confirm new plan" : "Start a new plan"}</button>}
             {resetConfirm && <button type="button" className="fwa-retry" onClick={() => setResetConfirm(false)}>Keep this plan</button>}

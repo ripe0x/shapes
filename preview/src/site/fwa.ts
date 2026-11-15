@@ -247,7 +247,7 @@ export function depositedListing(receipt: TransactionReceipt, account: Address, 
 }
 
 /** Recover mined writes before enabling another signature after a reload. Pending hashes stay put. */
-export async function reconcileFwaSession(client: PublicClient, saved: FwaSession): Promise<FwaSession> {
+export async function reconcileFwaSession(client: PublicClient, saved: FwaSession, verifyLocalFork = false): Promise<FwaSession> {
   const next = structuredClone(saved);
   const receiptFor = async (hash: Hash) => {
     try { return await client.getTransactionReceipt({hash}); }
@@ -256,6 +256,36 @@ export async function reconcileFwaSession(client: PublicClient, saved: FwaSessio
       throw e;
     }
   };
+  if (verifyLocalFork) {
+    const stale = () => new Error("Saved local fork progress does not match this fork. Start a new plan.");
+    const hashes = [...new Set([...next.rows.flatMap(row => [row.mintHash, row.depositHash]), next.approvalHash, next.approvalReceipt].filter((hash): hash is Hash => hash !== undefined))];
+    await Promise.all(hashes.map(async hash => {
+      try {await client.getTransaction({hash});}
+      catch (e) {
+        if (e instanceof Error && e.name === "TransactionNotFoundError") throw stale();
+        throw e;
+      }
+    }));
+    for (const row of next.rows) {
+      if (row.packId !== undefined) {
+        if (!row.mintHash) throw stale();
+        const receipt = await receiptFor(row.mintHash);
+        if (receipt?.status !== "success") throw stale();
+        try {if (mintedPackId(receipt, next.account) !== BigInt(row.packId)) throw stale();}
+        catch {throw stale();}
+      }
+      if (row.listingId !== undefined) {
+        if (!row.depositHash || row.packId === undefined) throw stale();
+        const receipt = await receiptFor(row.depositHash);
+        if (receipt?.status !== "success") throw stale();
+        try {
+          const listing = depositedListing(receipt, next.account, BigInt(row.packId));
+          if (BigInt(listing.listingId) !== BigInt(row.listingId) || listing.staged !== (row.staged === true)) throw stale();
+        } catch {throw stale();}
+      }
+    }
+    if (next.approvalReceipt && (await receiptFor(next.approvalReceipt))?.status !== "success") throw stale();
+  }
   for (const row of next.rows) {
     if (row.mintHash && row.packId === undefined) {
       const receipt = await receiptFor(row.mintHash);
