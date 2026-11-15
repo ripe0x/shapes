@@ -944,6 +944,26 @@ button {
   font-size: 10px;
 }
 
+.activity-pack-thumb {
+  color: inherit;
+  text-decoration: none;
+}
+
+.activity-pack-thumb .activity-thumb-art {
+  width: 160px;
+  aspect-ratio: 1;
+  background: transparent;
+}
+
+.activity-pack-thumb .activity-thumb-art img {
+  object-fit: contain;
+}
+
+.activity-pack-thumb:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
 .activity-row-foot {
   flex: 0 0 auto;
   text-align: right;
@@ -2098,8 +2118,6 @@ button {
 .pack-page-history { list-style: none; padding: 0; margin: 0; }
 .pack-page-history li { display: flex; flex-wrap: wrap; gap: 16px; border-top: 1px solid var(--rule); padding: 14px 0; }
 .pack-page-history li a:last-child { margin-left: auto; }
-.activity-pack-thumb { text-decoration: none; }
-.activity-pack-thumb .activity-thumb-art { aspect-ratio: 1; }
 @media (max-width: 640px) { .pack-page-heading { grid-template-columns: 1fr; } .pack-page-art { max-width: 320px; } }
 .packs-detail-heading { display: flex; align-items: center; gap: 24px; margin: 18px 0 24px; }
 .packs-detail-heading .packs-art { flex: 0 0 min(34%, 240px); }

@@ -91,6 +91,7 @@ export function formatStatCount(n: bigint | null): string {
 /** The one line of detail a kind carries beyond its label: the value moved, the counterparty, or
  *  the tokens involved. Empty when the label already says everything. */
 export function activityDetail(event: ActivityEvent): string {
+  if (event.kind.startsWith("pack")) return event.amountWei === null ? "" : eth(event.amountWei);
   const lead = event.tokenIds[0];
   switch (event.kind) {
     case "mint": {
@@ -119,22 +120,6 @@ export function activityDetail(event: ActivityEvent): string {
     case "auctionCreated":
     case "lotClaimed":
       return `Auction ${event.auctionId ?? "?"}`;
-    case "packCreated":
-      return `Pack #${event.packId ?? "?"} · ${event.tokenIds.length} Shapes${event.amountWei === null ? "" : ` · ${eth(event.amountWei)}`}`;
-    case "packExtended":
-      return `Pack #${event.packId ?? "?"} · ${event.tokenIds.length} Shapes added${event.amountWei === null ? "" : ` · +${eth(event.amountWei)}`}`;
-    case "packMerged":
-      return `Into pack #${event.packId ?? "?"}${event.amountWei === null ? "" : ` · +${eth(event.amountWei)}`}`;
-    case "packUnsealed":
-      return `Pack #${event.packId ?? "?"}`;
-    case "packOpened":
-    case "packShapesClaimed":
-      return `Pack #${event.packId ?? "?"} · ${event.tokenIds.length} Shapes`;
-    case "packRedeemed":
-    case "packEthClaimed":
-      return `Pack #${event.packId ?? "?"}${event.amountWei === null ? "" : ` · ${eth(event.amountWei)} returned`}`;
-    case "packTransferred":
-      return `Pack #${event.packId ?? "?"}${event.counterparty === null ? "" : ` · to ${addressLabel(event.counterparty)}`}`;
     default:
       return "";
   }
@@ -486,9 +471,7 @@ function ActivityRow({
       <div className="activity-row-head">
         <span className="activity-kind">{row.label}</span>
         <span className="activity-meta">
-          {row.detail && (event.packId === null
-            ? <span className="activity-detail">{row.detail}</span>
-            : <a className="activity-detail" href={`/packs/${event.packId}`}>{row.detail}</a>)}
+          {row.detail && <span className="activity-detail">{row.detail}</span>}
           <span className="activity-actor">
             <AddressName address={event.actor} />
           </span>
@@ -498,7 +481,7 @@ function ActivityRow({
       <div className="activity-thumbs">
         {event.packId !== null ? (
           <a className="activity-thumb activity-pack-thumb" href={`/packs/${event.packId}`} title={`Pack #${event.packId}`}>
-            <span className="activity-thumb-art" style={{backgroundColor: C.art}}>
+            <span className="activity-thumb-art">
               <img src={`/api/pack-art/${event.packId}/${packArtBlock}`} alt={`Pack #${event.packId} artwork`} loading="lazy" />
             </span>
             <span className="activity-thumb-id">Pack #{event.packId.toString()}</span>

@@ -94,12 +94,13 @@ test("detail states the value or counterparty each kind carries", () => {
   );
   assert.equal(
     activityDetail(event({kind: "packCreated", packId: 12n, tokenIds: [1n, 2n], amountWei: 2n * 10n ** 16n})),
-    "Pack #12 · 2 Shapes · 0.02 ETH",
+    "0.02 ETH",
   );
   assert.equal(
     activityDetail(event({kind: "packRedeemed", packId: 12n, tokenIds: [1n, 2n], amountWei: 2n * 10n ** 16n})),
-    "Pack #12 · 0.02 ETH returned",
+    "0.02 ETH",
   );
+  assert.equal(activityDetail(event({kind: "packOpened", packId: 12n, tokenIds: [1n, 2n]})), "");
 });
 
 test("a row draws every Shape the indexer keeps a row for, live or not", () => {
@@ -118,7 +119,7 @@ test("a Pack row represents the Pack instead of its constituent Shapes", () => {
   assert.deepEqual(row.thumbs, []);
   assert.equal(row.hidden, 0);
   assert.equal(row.missing, 0);
-  assert.equal(row.detail, "Pack #12 · 2 Shapes");
+  assert.equal(row.detail, "");
 });
 
 test("ids with no token row are counted rather than drawn", () => {
