@@ -65,7 +65,7 @@ A mint transaction is one row keyed `<txHash>-mint` listing every id it minted. 
     pageInfo { hasNextPage endCursor } } }
 ```
 
-The homepage's Proof of work feed filters out `transfer`, `packTransferred`, and `ownerTokenMoved`. Those rows remain queryable for ownership history.
+The homepage's Proof of work feed selects Shape creation, transformation, backing burn and redemption, plus Pack creation, expansion, merge and exit outcomes. All, Shapes and Packs use the same filtered cursor pagination. Ownership transfers and auction events remain indexed, but are not homepage work rows.
 
 ### `collection_owner`
 

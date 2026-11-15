@@ -829,7 +829,34 @@ button {
   }
 }
 
-/* Activity feed (site/ActivityFeed.tsx): one row per onchain event, under the section rhythm
+.activity-filters {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.activity-filters button {
+  padding: 8px 12px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.activity-filters button[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--page);
+}
+
+.activity-filters button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* Activity feed (site/ActivityFeed.tsx): one row per selected work outcome, under the section rhythm
    above. Rows are a rule-separated list; each row's thumbnails scroll sideways rather than
    wrapping, so a wide compose keeps its line. */
 .activity-list {
