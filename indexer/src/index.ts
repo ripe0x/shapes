@@ -315,7 +315,9 @@ ponder.on("Shapes:OwnerTokenMoved", async ({ event, context }) => {
     .onConflictDoUpdate({ ownerTokenId, ownerAddress, updatedAtBlock: event.block.number });
 
   const moved = [fromTokenId, toTokenId].filter((id) => id !== NO_OWNER_TOKEN);
-  if (!isPackCustody(event.transaction.to)) {
+  const packOwnsMovedToken = (await Promise.all(moved.map((id) => context.db.find(token, {id}))))
+    .some((row) => row !== null && isPackCustody(row.owner));
+  if (!packOwnsMovedToken) {
     await context.db
       .insert(activity)
       .values(activityRow(at(event), "ownerTokenMoved", moved, event.transaction.from));
