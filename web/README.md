@@ -254,9 +254,11 @@ For a browser-connected FWA fork, use Anvil on the default `127.0.0.1:8545`
 with chain ID `31337` and `https://mainnet.gateway.tenderly.co` as its pinned
 mainnet source. Set `SHAPES_DEPLOYMENT_FILE` to a values-only deployment record
 with that loopback RPC and chain ID, then run
-`node web/scripts/mark-fwa-fork.mjs`. The script adds a public 1-wei marker at a
-random unused address and records it in the deployment file. Re-run it after
-resetting or replacing Anvil, then rebuild or reload the frontend. FWA writes
+`node web/scripts/mark-fwa-fork.mjs`. The script installs or reuses a public
+1-wei fork marker, resolves `ripe0x.eth` through Tenderly mainnet RPC, and
+ensures that wallet has at least 1,000 test ETH on Anvil. It records the public
+addresses in the deployment file. Re-run it after resetting or replacing Anvil,
+then rebuild or reload the frontend. FWA writes
 check the marker through both the page RPC and wallet provider before signing;
 a missing or mismatched marker blocks the transaction.
 
