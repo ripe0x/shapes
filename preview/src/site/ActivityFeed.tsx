@@ -487,7 +487,6 @@ function ActivityRow({
             <span className="activity-thumb-art">
               <img src={`/api/pack-art/${event.packId}/${packArtBlock}`} alt={`Pack #${event.packId} artwork`} loading="lazy" />
             </span>
-            <span className="activity-thumb-id">Pack #{event.packId.toString()}</span>
           </a>
         ) : row.thumbs.map((thumb) => (
           <Thumb key={thumb.id.toString()} thumb={thumb} onOpenToken={onOpenToken} />

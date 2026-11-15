@@ -964,11 +964,12 @@ button {
   text-decoration: none;
 }
 
+/* The Pack SVG's cards sit inside the middle 76% of its square viewBox; this trims only
+   transparent margin so the whole fan fits at the original row height. */
 .activity-pack-thumb .activity-thumb-art {
   width: 100px;
-  height: 56px;
+  height: 76px;
   aspect-ratio: auto;
-  background: transparent;
   overflow: hidden;
 }
 
@@ -2126,7 +2127,7 @@ button {
 .packs-selected-detail { margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--rule); }
 .pack-page-heading { display: grid; grid-template-columns: minmax(180px, 320px) 1fr; gap: clamp(20px, 4vw, 64px); align-items: start; margin: 30px 0 48px; }
 .pack-page-heading h1 { font-size: clamp(32px, 5vw, 64px); font-weight: 500; letter-spacing: -.04em; }
-.pack-page-art { aspect-ratio: 1; background: var(--art, #eee); }
+.pack-page-art { aspect-ratio: 1; }
 .pack-page-art img { width: 100%; height: 100%; object-fit: contain; }
 .pack-page-section { border-top: 1px solid var(--rule); padding: 24px 0; }
 .pack-page-section h2 { font-size: 20px; margin: 0 0 18px; }
