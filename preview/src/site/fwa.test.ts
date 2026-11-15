@@ -91,52 +91,77 @@ test("decimal inputs preserve wei exactly and reject excess precision", () => {
   for (const v of ["", "-1", "1e3", "0.0000000000000000001", "NaN"]) assert.throws(()=>parseFwaAmount(v),/18 decimal/);
 });
 
-test("equal suggestions derive single shape packs from budget and live prices", () => {
-  const p = suggestFwaPlan(E("0.75"),10000n,settings,"equal");
-  assert.equal(p.rows.length,7); assert.ok(p.rows.every(r=>r.value===E("0.05")));
-  assert.equal(p.total,E("0.707")); assert.equal(p.remainder,E("0.043"));
-  const higherFee=suggestFwaPlan(E("0.75"),10000n,{...settings,mintFee:E("0.01")},"equal");
-  assert.equal(higherFee.rows.length,6);
+const live = {...settings, exempt: false, cap: E("0.0363")};
+test("one eth presets use live minimum and oracle ceiling with distinct draw weights", () => {
+  const most = suggestFwaPlan(E("1"), live);
+  const balanced = suggestFwaPlan(E("1"), live, "balanced");
+  const lower = suggestFwaPlan(E("1"), live, "lower");
+  assert.deepEqual([most.rows.length, balanced.rows.length, lower.rows.length], [17, 15, 14]);
+  assert.ok(most.rows.every(r => r.value === E("0.03") && r.backing === E("0.025")));
+  assert.ok(balanced.rows.every(r => r.value === E("0.03") && r.backing === E("0.03")));
+  assert.ok(lower.rows.every(r => r.value === E("0.03") && r.backing === E("0.0363")));
+  assert.deepEqual([most.packValue, most.backing, most.fees, most.total, most.remainder],
+    [E("0.51"), E("0.425"), E("0.051"), E("0.986"), E("0.014")]);
+  assert.deepEqual([balanced.total, balanced.remainder, lower.total, lower.remainder],
+    [E("0.945"), E("0.055"), E("0.9702"), E("0.0298")]);
+  assert.ok(fwaExposure(most.rows, live).weights[0] > fwaExposure(balanced.rows, live).weights[0]);
+  assert.ok(fwaExposure(balanced.rows, live).weights[0] > fwaExposure(lower.rows, live).weights[0]);
 });
-test("fewer positions fills with the next affordable denomination and the base size", () => {
-  const p=suggestFwaPlan(E("0.75"),10000n,settings,"fewer");
-  assert.deepEqual(p.rows.map(r=>r.value),[E("0.1"),E("0.1"),E("0.1"),E("0.05")]);
-  assert.equal(p.total,E("0.704")); assert.equal(p.fees,E("0.004"));
-});
-test("suggestions respect ratio, current minimums, oracle caps and transaction count", () => {
-  for(const budget of ["0.1","0.75","2.6","10","100"]) for(const ratio of [5000n,10000n,15000n,20000n]) {
-    try {const p=suggestFwaPlan(E(budget),ratio,settings); assert.ok(p.rows.length<=24); assert.ok(p.total<=E(budget));
-      for(const r of p.rows) {assert.equal(r.backing,r.value*ratio/10000n); assert.equal(fwaPackRequirement(r,settings),null);}}
-    catch(e) {assert.match((e as Error).message,/cannot fund/);}
+test("all presets fit varied budgets, live limits, and the 24-position workflow cap", () => {
+  for (const budget of ["0.06", "0.1", "0.75", "1", "2.6", "10", "100"]) for (const mode of ["most", "balanced", "lower"] as const) {
+    const p = suggestFwaPlan(E(budget), live, mode);
+    assert.ok(p.rows.length >= 1 && p.rows.length <= 24);
+    assert.ok(p.total <= E(budget));
+    assert.equal(p.total, p.packValue + p.backing + p.fees);
+    assert.equal(depositBlocker(live, p.rows), null);
+    for (const r of p.rows) assert.equal(fwaPackRequirement(r, live), null);
   }
-  assert.equal(suggestFwaPlan(E("1"),10000n,{...settings,minimumPack:E("0.1"),minimumBacking:E("0.1")}).rows[0].value,E("0.1"));
-  const capped={...settings,exempt:false,cap:E("0.04")};
-  const p=suggestFwaPlan(E("0.75"),10000n,capped); assert.ok(p.rows.every(r=>r.backing<=E("0.04")));
+  assert.equal(suggestFwaPlan(E("10"), live).rows.length, 24);
+  assert.equal(suggestFwaPlan(E("1"), {...live, minimumPack: E("0.1"), cap: E("0.12")}).rows[0].value, E("0.1"));
 });
-test("small budgets disclose compound shape costs and never suggest an unaffordable clean pack", () => {
-  const p=suggestFwaPlan(E("0.1"),10000n,settings,"equal");
-  assert.equal(p.rows.length,1); assert.equal(p.rows[0].value,E("0.04")); assert.equal(p.fees,E("0.004")); assert.equal(p.total,E("0.084"));
-  assert.throws(()=>suggestFwaPlan(E("0.05"),10000n,settings),/cannot fund/);
+test("small budgets still fund a position by reducing preset backing to what fits", () => {
+  assert.throws(() => suggestFwaPlan(E("0.057"), live), /cannot fund/);
+  for (const mode of ["most", "balanced", "lower"] as const) {
+    const p = suggestFwaPlan(E("0.06"), live, mode);
+    assert.equal(p.rows.length, 1);
+    assert.equal(p.rows[0].value, E("0.03"));
+    assert.equal(p.rows[0].backing, mode === "most" ? E("0.025") : E("0.027"));
+    assert.ok(p.total <= E("0.06"));
+  }
 });
-
-test("most positions is the default and fits fifteen minimum packs into one eth", () => {
-  const p=suggestFwaPlan(E("1"),10000n,settings);
-  assert.equal(p.rows.length,15); assert.ok(p.rows.every(r=>r.value===E("0.03")));
-  assert.equal(p.fees,E("0.045")); assert.equal(p.total,E("0.945")); assert.equal(p.remainder,E("0.055"));
+test("suggestions fail closed on admission, oracle, and withdrawal restrictions", () => {
+  assert.throws(() => suggestFwaPlan(E("1"), {...live, admitted: false}), /admission/);
+  assert.throws(() => suggestFwaPlan(E("1"), {...live, withdrawOnly: true}), /withdrawals/);
+  assert.throws(() => suggestFwaPlan(E("1"), {...live, oracleError: "stale quote"}), /stale quote/);
+  assert.throws(() => suggestFwaPlan(E("1"), {...live, cap: null}), /oracle ceiling/);
+  assert.throws(() => suggestFwaPlan(E("1"), {...live, cap: E("0.024")}), /cannot fund/);
 });
-test("most positions accounts for fee cliffs, backing minimums and the batch limit", () => {
-  const expensive=suggestFwaPlan(E("1"),10000n,{...settings,mintFee:E("0.1")},"most");
-  assert.ok(expensive.rows.every(r=>r.value===E("0.05"))); assert.equal(expensive.rows.length,5);
-  const half=suggestFwaPlan(E("1"),5000n,settings,"most"); assert.equal(half.rows[0].value,E("0.05")); assert.equal(half.rows.length,13);
-  const capped=suggestFwaPlan(E("10"),10000n,settings,"most"); assert.equal(capped.rows.length,24); assert.ok(capped.total<=E("10"));
+test("fee cliffs can make a single-shape pack cheaper than a smaller compound pack", () => {
+  const expensive = suggestFwaPlan(E("1"), {...live, mintFee: E("0.1")});
+  assert.equal(expensive.rows[0].value, E("0.05"));
+  assert.equal(expensive.rows[0].backing, E("0.025"));
+  assert.equal(expensive.rows.length, 5);
+  assert.equal(expensive.total, E("0.875"));
+});
+test("oracle-exempt lower exposure uses twice the pack value instead of an absent cap", () => {
+  const p = suggestFwaPlan(E("1"), settings, "lower");
+  assert.equal(p.rows.length, 10);
+  assert.equal(p.rows[0].value, E("0.03"));
+  assert.equal(p.rows[0].backing, E("0.06"));
+  assert.equal(p.total, E("0.93"));
 });
 test("most positions matches an exhaustive cost search across denomination carries", () => {
-  for (const min of ["0.03","0.06","0.16","0.51"]) for(const fee of ["0.001","0.1"]) {
-    const live={...settings,minimumPack:E(min),mintFee:E(fee)};
-    const p=suggestFwaPlan(E("10"),10000n,live,"most");
-    let cheapest=E("100");
-    for(let i=1n;i<=100n;i++) {const value=i*E("0.01"); if(value<live.minimumPack || value<live.minimumBacking)continue;
-      const candidate=buildFwaContribution([{value,backing:value}],live,E("10")); if(candidate.total<cheapest)cheapest=candidate.total;}
-    assert.equal(p.rows[0].payment+p.rows[0].backing,cheapest);
+  for (const min of ["0.03", "0.06", "0.16", "0.51"]) for (const fee of ["0.001", "0.1"]) {
+    const current = {...settings, minimumPack: E(min), mintFee: E(fee)};
+    const p = suggestFwaPlan(E("10"), current);
+    let cheapest = E("100");
+    for (let i = 1n; i <= 100n; i++) {
+      const value = i * E("0.01");
+      if (value < current.minimumPack) continue;
+      const candidate = buildFwaContribution([{value, backing: current.minimumBacking}], current, E("10"));
+      if (candidate.total < cheapest) cheapest = candidate.total;
+    }
+    assert.equal(p.rows[0].payment + p.rows[0].backing, cheapest);
+    assert.equal(p.rows.length, Math.min(24, Number(E("10") / cheapest)));
   }
 });
