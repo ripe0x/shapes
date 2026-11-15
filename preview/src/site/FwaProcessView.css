@@ -42,7 +42,6 @@ body:has(.fwa-run) .site-footer-outer {display:none;}
 .fwa-run-lines>div.is-total {border-top:1px solid var(--fwa-run-ink);}
 .fwa-run-lines span {color:var(--fwa-run-muted);}
 .fwa-run-lines strong {font-weight:400;text-align:right;overflow-wrap:anywhere;}
-.fwa-run-gas {margin:-12px 0 18px;font:10px/1.4 "IBM Plex Mono",ui-monospace,monospace;color:var(--fwa-run-muted);}
 .fwa-run-primary {display:block;width:100%;padding:13px 14px;border:1px solid var(--fwa-run-ink);background:var(--fwa-run-ink);color:var(--fwa-run-paper);font:12px/1.4 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.08em;text-align:center;text-decoration:none;cursor:pointer;}
 .fwa-run-primary:hover:not(:disabled) {background:var(--fwa-run-paper);color:var(--fwa-run-ink);}
 .fwa-run-primary:disabled {border-color:var(--fwa-run-rule);background:var(--fwa-run-inner);color:var(--fwa-run-muted);cursor:default;}
@@ -91,7 +90,6 @@ body:has(.fwa-run) .site-footer-outer {display:none;}
   .fwa-run-focus.is-summary h2 {margin:0 0 8px;}
   .fwa-run-lines {margin:12px 0;}
   .fwa-run-lines>div {padding:7px 0;}
-  .fwa-run-gas {margin:-5px 0 10px;}
   .fwa-run-primary {padding:14px;}
   .fwa-run-note,.fwa-run-status-link {font-size:13px;line-height:1.45;}
 }

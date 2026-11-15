@@ -143,7 +143,6 @@ export function FwaProcessView({packs, steps, chainId, actionLabel, actionDisabl
           <h2>{complete ? `${packs.length} ${packs.length === 1 ? "position" : "positions"} in FWA` : current ? stepLabel(current) : "Preparing contribution"}</h2>
         </div>
         {lineItems.length > 0 && <div className="fwa-run-lines">{lineItems.map(([label, value], index) => <div className={index === lineItems.length - 1 ? "is-total" : ""} key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>}
-        {lineItems.length > 0 && <p className="fwa-run-gas">Network gas is extra.</p>}
         {complete ? <a className="fwa-run-primary" href={chainId === 31337 ? "#fwa-deposited" : "https://www.fwa.fun/manage"} target={chainId === 31337 ? undefined : "_blank"} rel={chainId === 31337 ? undefined : "noreferrer"}>{chainId === 31337 ? "VIEW DEPOSITED POSITIONS ↓" : "VIEW YOUR FWA DEPOSITS ↗"}</a>
           : <button type="button" className="fwa-run-primary" disabled={actionDisabled} onClick={onAction}>{actionLabel}</button>}
         {!complete && <label className="fwa-run-auto"><input type="checkbox" checked={autoContinue} onChange={event => onAutoContinueChange(event.target.checked)}/><span>Continue after each confirmation</span></label>}
