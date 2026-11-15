@@ -46,7 +46,16 @@ test("mint rows key on the transaction so a batch folds into one row", () => {
   // Every detail the kind does not carry stays null.
   assert.equal(row.counterparty, null);
   assert.equal(row.auctionId, null);
+  assert.equal(row.packId, null);
   assert.equal(row.units, null);
+});
+
+test("pack activity retains its pack id without treating it as a Shape id", () => {
+  const row = activityRow(at(21n, 8), "packMerged", [], ALICE, {packId: 42n, amountWei: 2n * 10n ** 16n});
+  assert.equal(row.packId, 42n);
+  assert.deepEqual(row.tokenIds, []);
+  assert.equal(row.amountWei, 2n * 10n ** 16n);
+  assert.equal(row.auctionId, null);
 });
 
 test("compose rows lead with the survivor and key on the log", () => {
