@@ -44,19 +44,20 @@ Each edge carries `childSeed`, `parentDenomIndex`, `childMintDenomIndex`, `block
 
 ### `activity`
 
-One row per protocol event, plus the auction house events that move a Shape. `orderKey` is `blockNumber << 32 | logIndex`, so one sort on it reproduces chain order.
+Activity rows represent user-visible protocol, Pack lifecycle, and auction events. A mint transaction has one row for all its Shapes. Shape events caused by Pack custody still update token state, but do not add separate feed rows. `orderKey` is `blockNumber << 32 | logIndex`, so one sort on it reproduces chain order.
 
 | Field | Meaning |
 | --- | --- |
-| `kind` | `mint`, `compose`, `decompose`, `split`, `redeem`, `burnBacking`, `ownerTokenMoved`, `transfer`, `auctionCreated`, `bid`, `auctionSettled`, `lotClaimed` |
+| `kind` | `mint`, `compose`, `decompose`, `split`, `redeem`, `burnBacking`, `ownerTokenMoved`, `transfer`, `auctionCreated`, `bid`, `auctionSettled`, `lotClaimed`, `packCreated`, `packExtended`, `packMerged`, `packUnsealed`, `packOpened`, `packRedeemed`, `packShapesClaimed`, `packEthClaimed`, `packTransferred` |
 | `tokenIds` | Every Shape the event touched, in a per-kind order: the survivor then inputs for compose and decompose, the burned input then children for split, every minted id for a mint |
 | `actor` | Recipient of a mint, redeemer of a redeem, sender of a transfer, bidder or seller or winner on an auction event, transaction sender otherwise |
 | `counterparty` | Transfer recipient, else null |
 | `amountWei` | Backing minted, redeemed or burned, else null |
 | `auctionId`, `units` | Auction facts, `units` in 0.01 ETH |
+| `packId` | Pack involved in a Pack action, else null |
 | `blockNumber`, `logIndex`, `orderKey`, `timestamp`, `txHash` | Position on chain |
 
-A mint transaction is one row keyed `<txHash>-mint` listing every id it minted; every other row is keyed `<txHash>-<logIndex>`.
+A mint transaction is one row keyed `<txHash>-mint` listing every id it minted. Pack merge and exit actions have one row per affected Pack; other rows are keyed `<txHash>-<logIndex>`.
 
 ```graphql
 { activitys(orderBy: "orderKey", orderDirection: "desc", limit: 50) {
