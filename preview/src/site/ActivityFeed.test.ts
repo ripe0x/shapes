@@ -162,6 +162,18 @@ test("a gap past the window starts a new group", () => {
   assert.equal(groupActivityEvents(atEdge, {windowSeconds: 1_800}).length, 1);
 });
 
+test("an appended page starts a visible row even when its events match the previous page", () => {
+  const events = [
+    event({id: "c", kind: "mint", timestamp: 5_000n}),
+    event({id: "b", kind: "mint", timestamp: 5_000n}),
+    event({id: "a", kind: "mint", timestamp: 5_000n}),
+  ];
+
+  const groups = groupActivityEvents(events, {breakBefore: new Set(["b"])});
+
+  assert.deepEqual(groups.map((group) => group.events.map((row) => row.id)), [["c"], ["b", "a"]]);
+});
+
 test("compose, split, decompose, owner-token moves and auction events never group", () => {
   const neverGroupKinds = [
     "compose",

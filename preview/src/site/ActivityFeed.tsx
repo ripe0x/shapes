@@ -134,7 +134,7 @@ export interface ActivityGroup {
  *  how already-loaded events are bucketed into rows. */
 export function groupActivityEvents(
   events: ActivityEvent[],
-  opts: {windowSeconds?: number} = {},
+  opts: {windowSeconds?: number; breakBefore?: ReadonlySet<string>} = {},
 ): ActivityGroup[] {
   const windowSeconds = BigInt(opts.windowSeconds ?? ACTIVITY_GROUP_WINDOW_SECONDS);
   const groups: ActivityGroup[] = [];
@@ -144,6 +144,7 @@ export function groupActivityEvents(
     const gap = prev ? prev.timestamp - event.timestamp : 0n;
     const joins =
       prev !== undefined &&
+      !opts.breakBefore?.has(event.id) &&
       GROUPABLE_KINDS.has(event.kind) &&
       event.kind === prev.kind &&
       event.actor === prev.actor &&
@@ -613,6 +614,7 @@ export function ActivityFeed({
   redeemableBacking: bigint | null;
 }) {
   const [events, setEvents] = React.useState<ActivityEvent[]>([]);
+  const [pageStarts, setPageStarts] = React.useState<ReadonlySet<string>>(() => new Set());
   const [tokens, setTokens] = React.useState<Map<string, ActivityToken>>(() => new Map());
   const [cursor, setCursor] = React.useState<string | null>(null);
   const [hasNextPage, setHasNextPage] = React.useState(false);
@@ -626,6 +628,11 @@ export function ActivityFeed({
 
   const absorb = React.useCallback((page: ActivityPage, append: boolean) => {
     setEvents((previous) => (append ? [...previous, ...page.events] : page.events));
+    setPageStarts((previous) => {
+      if (!append) return new Set();
+      const first = page.events[0];
+      return first ? new Set([...previous, first.id]) : previous;
+    });
     setTokens((previous) => {
       const next = append ? new Map(previous) : new Map<string, ActivityToken>();
       for (const row of page.tokens) next.set(row.id.toString(), row);
@@ -657,8 +664,7 @@ export function ActivityFeed({
     };
   }, [indexerUrl, request, absorb]);
 
-  // Live polling reads through the same ref rather than the `events` closure so a tick started
-  // before a "Show more" append still merges against the rows loaded since.
+  // Keep the current rows available to identify which polled events are new for animation.
   const eventsRef = React.useRef(events);
   React.useEffect(() => {
     eventsRef.current = events;
@@ -673,7 +679,9 @@ export function ActivityFeed({
         ([page, s]) => {
           const merged = mergeLivePage(eventsRef.current, page);
           if (merged.addedIds.length > 0) {
-            setEvents(merged.events);
+            // A "Show more" request can finish after the poll starts. Merge against the latest
+            // state when React applies this update so the appended page stays in the feed.
+            setEvents((previous) => mergeLivePage(previous, page).events);
             setTokens((previous) => {
               const next = new Map(previous);
               for (const row of page.tokens) next.set(row.id.toString(), row);
@@ -709,10 +717,9 @@ export function ActivityFeed({
       .finally(() => setBusy(false));
   };
 
-  // Grouping is recomputed from the merged event list on every render, so a live-polled event that
-  // extends an existing group joins it without re-animating the older members; only when the
-  // group's newest member changes does its key change and the row rise as new.
-  const rows = groupActivityEvents(events, {windowSeconds: ACTIVITY_GROUP_WINDOW_SECONDS}).map((group) =>
+  // A fetched page starts a new row even when its first event matches the previous page's last
+  // group. Live-polled events can still join the top group.
+  const rows = groupActivityEvents(events, {windowSeconds: ACTIVITY_GROUP_WINDOW_SECONDS, breakBefore: pageStarts}).map((group) =>
     activityGroupRowModel(group, tokens),
   );
 
