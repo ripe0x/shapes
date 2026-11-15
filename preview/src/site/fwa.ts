@@ -1,4 +1,4 @@
-import {formatEther, parseAbi, parseAbiItem, parseEventLogs, type Address, type Hash, type PublicClient, type TransactionReceipt} from "viem";
+import {encodeFunctionData, formatEther, parseAbi, parseAbiItem, parseEventLogs, type Address, type Hash, type PublicClient, type TransactionReceipt} from "viem";
 import {PACKS_DEPLOYMENTS, packsAbi, packsShapesAbi} from "./packs";
 
 export const FWA_POOL = "0x958C41181182e76F221331b2755b77D9e1426A98" as const;
@@ -218,17 +218,34 @@ export function depositBlocker(settings: FwaSettings, rows: readonly {backing: b
   return null;
 }
 
-export type FwaRow = {counts: number[]; value: string; backing: string; fee: string; packId?: string; mintHash?: Hash; depositHash?: Hash; listingId?: string; staged?: boolean};
-export type FwaSession = {version: 1; account: Address; rows: FwaRow[]; draft?: {budget: string; quantity: number; ratio: string; spread: boolean}; approvalHash?: Hash; approvalReceipt?: Hash};
+export type FwaRow = {counts: number[]; value: string; backing: string; fee: string; packId?: string; mintHash?: Hash; mintFailedHash?: Hash; depositHash?: Hash; depositFailedHash?: Hash; listingId?: string; staged?: boolean};
+export type FwaSession = {version: 1; account: Address; rows: FwaRow[]; draft?: {budget: string; quantity: number; ratio: string; spread: boolean}; approvalHash?: Hash; approvalReceipt?: Hash; approvalFailedHash?: Hash; approvalNeeded?: boolean; order?: "paired"; pendingNonces?: Record<string, number>; pendingStartBlocks?: Record<string, string>};
+export type FwaAction = {key: string; kind: "approve" | "mint" | "deposit"; packIndex?: number; hash?: Hash; failedHash?: Hash; status: "queued" | "ready" | "pending" | "confirmed" | "failed"};
+export const fwaActionKey = (kind: FwaAction["kind"], packIndex?: number) => kind === "approve" ? "approve" : `${kind}:${packIndex}`;
+/** New runs pair each mint with its deposit; sessions saved by the earlier flow keep their original order. */
+export function fwaActions(session: FwaSession): FwaAction[] {
+  const completedWithoutApprovalTx = session.order !== "paired" && !session.approvalReceipt && session.rows.every(row => row.listingId !== undefined);
+  const approval: FwaAction[] = session.approvalNeeded === false || completedWithoutApprovalTx ? [] : [{key: "approve", kind: "approve", hash: session.approvalHash ?? session.approvalReceipt, failedHash: session.approvalFailedHash, status: session.approvalReceipt ? "confirmed" : session.approvalHash ? "pending" : session.approvalFailedHash ? "failed" : "queued"}];
+  const mint = (row: FwaRow, packIndex: number): FwaAction => ({key: fwaActionKey("mint", packIndex), kind: "mint", packIndex, hash: row.mintHash, failedHash: row.mintFailedHash, status: row.packId !== undefined ? "confirmed" : row.mintHash ? "pending" : row.mintFailedHash ? "failed" : "queued"});
+  const deposit = (row: FwaRow, packIndex: number): FwaAction => ({key: fwaActionKey("deposit", packIndex), kind: "deposit", packIndex, hash: row.depositHash, failedHash: row.depositFailedHash, status: row.listingId !== undefined ? "confirmed" : row.depositHash ? "pending" : row.depositFailedHash ? "failed" : "queued"});
+  const actions = session.order === "paired"
+    ? [...approval, ...session.rows.flatMap((row, index) => [mint(row, index), deposit(row, index)])]
+    : [...session.rows.map(mint), ...approval, ...session.rows.map(deposit)];
+  const first = actions.find(action => action.status !== "confirmed");
+  if (first?.status === "queued") first.status = "ready";
+  return actions;
+}
 export const sessionKey = (account: Address, chainId = 1) => `shapes:fwa:${chainId}:${FWA_POOL}:${account.toLowerCase()}`;
 export function parseFwaSession(raw: string, account: Address): FwaSession | null {
   try {
     const s = JSON.parse(raw) as FwaSession;
-    if (s.version !== 1 || s.account.toLowerCase() !== account.toLowerCase() || !Array.isArray(s.rows) || s.rows.length < 1 || s.rows.length > 24) return null;
+    if (s.version !== 1 || s.account.toLowerCase() !== account.toLowerCase() || !Array.isArray(s.rows) || s.rows.length < 1 || s.rows.length > 24 || (s.order !== undefined && s.order !== "paired") || (s.approvalNeeded !== undefined && typeof s.approvalNeeded !== "boolean")) return null;
+    for (const nonce of Object.values(s.pendingNonces ?? {})) if (!Number.isSafeInteger(nonce) || nonce < 0) return null;
+    for (const block of Object.values(s.pendingStartBlocks ?? {})) if (!/^\d+$/.test(block)) return null;
     for (const r of s.rows) {
       if (!Array.isArray(r.counts) || r.counts.length !== 9 || r.counts.some(n => !Number.isInteger(n) || n < 0 || n > 0xffffffff) || BigInt(r.value) <= 0n || BigInt(r.backing) <= 0n || BigInt(r.fee) < 0n) return null;
       for (const id of [r.packId, r.listingId]) if (id !== undefined && !/^\d+$/.test(id)) return null;
-      for (const hash of [r.mintHash, r.depositHash, s.approvalHash, s.approvalReceipt]) if (hash !== undefined && !/^0x[\da-f]{64}$/i.test(hash)) return null;
+      for (const hash of [r.mintHash, r.mintFailedHash, r.depositHash, r.depositFailedHash, s.approvalHash, s.approvalReceipt, s.approvalFailedHash]) if (hash !== undefined && !/^0x[\da-f]{64}$/i.test(hash)) return null;
     }
     return s;
   } catch { return null; }
@@ -278,9 +295,37 @@ export async function reconcileFwaSession(client: PublicClient, saved: FwaSessio
       throw e;
     }
   };
+  const replacementFor = async (key: string, oldHash: Hash, expected: {to: Address; input: Hash; value: bigint}) => {
+    let nonce = next.pendingNonces?.[key];
+    if (nonce === undefined) {
+      try {
+        nonce = (await client.getTransaction({hash: oldHash})).nonce;
+        next.pendingNonces ??= {};
+        next.pendingNonces[key] = nonce;
+      }
+      catch (e) {if (!(e instanceof Error && e.name === "TransactionNotFoundError")) throw e;}
+    }
+    if (nonce === undefined) throw new Error("The pending transaction is no longer visible and its nonce was not saved. Check its status in your wallet before starting another plan; this page will not send a duplicate.");
+    if (await client.getTransactionCount({address: next.account}) <= nonce) return null;
+    const head = await client.getBlockNumber();
+    let low = BigInt(next.pendingStartBlocks?.[key] ?? "0");
+    if (low > head || await client.getTransactionCount({address: next.account, blockNumber: low}) > nonce) low = 0n;
+    let high = head;
+    while (low < high) {
+      const mid = (low + high) / 2n;
+      if (await client.getTransactionCount({address: next.account, blockNumber: mid}) > nonce) high = mid;
+      else low = mid + 1n;
+    }
+    const block = await client.getBlock({blockNumber: low, includeTransactions: true});
+    const transaction = block.transactions.find(tx => tx.from.toLowerCase() === next.account.toLowerCase() && tx.nonce === nonce);
+    if (!transaction) throw new Error(`A pending FWA transaction was replaced at nonce ${nonce}, but its receipt could not be found. Check your wallet before continuing.`);
+    const receipt = await receiptFor(transaction.hash);
+    if (!receipt) return null;
+    return {transaction, receipt, sameCall: transaction.to?.toLowerCase() === expected.to.toLowerCase() && transaction.input === expected.input && transaction.value === expected.value};
+  };
   if (verifyLocalFork) {
     const stale = () => new Error("Saved local fork progress does not match this fork. Start a new plan.");
-    const hashes = [...new Set([...next.rows.flatMap(row => [row.mintHash, row.depositHash]), next.approvalHash, next.approvalReceipt].filter((hash): hash is Hash => hash !== undefined))];
+    const hashes = [...new Set([...next.rows.flatMap(row => [row.packId !== undefined ? row.mintHash : undefined, row.listingId !== undefined ? row.depositHash : undefined]), next.approvalReceipt].filter((hash): hash is Hash => hash !== undefined))];
     await Promise.all(hashes.map(async hash => {
       try {await client.getTransaction({hash});}
       catch (e) {
@@ -308,22 +353,46 @@ export async function reconcileFwaSession(client: PublicClient, saved: FwaSessio
     }
     if (next.approvalReceipt && (await receiptFor(next.approvalReceipt))?.status !== "success") throw stale();
   }
-  for (const row of next.rows) {
+  const pendingReceipt = async (key: string, hash: Hash, expected: {to: Address; input: Hash; value: bigint}) => {
+    const receipt = await receiptFor(hash);
+    if (receipt) {
+      const transaction = await client.getTransaction({hash});
+      return {receipt, hash, sameCall: transaction.to?.toLowerCase() === expected.to.toLowerCase() && transaction.input === expected.input && transaction.value === expected.value};
+    }
+    const replacement = await replacementFor(key, hash, expected);
+    if (replacement) return {receipt: replacement.receipt, hash: replacement.transaction.hash, sameCall: replacement.sameCall};
+    if (verifyLocalFork) {
+      try {await client.getTransaction({hash});}
+      catch (e) {if (e instanceof Error && e.name === "TransactionNotFoundError") throw new Error("Saved local fork progress does not match this fork. Start a new plan."); throw e;}
+    }
+    return null;
+  };
+  for (const [index, row] of next.rows.entries()) {
     if (row.mintHash && row.packId === undefined) {
-      const receipt = await receiptFor(row.mintHash);
-      if (receipt?.status === "success") row.packId = String(mintedPackId(receipt, next.account));
-      if (receipt?.status === "reverted") delete row.mintHash;
+      const expected = {to: PACKS, input: encodeFunctionData({abi: packsAbi, functionName: "createPack", args: [[], row.counts]}), value: BigInt(row.value) + BigInt(row.fee)};
+      const result = await pendingReceipt(fwaActionKey("mint", index), row.mintHash, expected);
+      if (result) {
+        if (result.sameCall && result.receipt.status === "success") {row.mintHash = result.hash; row.packId = String(mintedPackId(result.receipt, next.account));}
+        else {row.mintFailedHash = result.hash; delete row.mintHash;}
+      }
     }
     if (row.depositHash && row.listingId === undefined && row.packId !== undefined) {
-      const receipt = await receiptFor(row.depositHash);
-      if (receipt?.status === "success") Object.assign(row, depositedListing(receipt, next.account, BigInt(row.packId)));
-      if (receipt?.status === "reverted") delete row.depositHash;
+      const expected = {to: FWA_POOL, input: encodeFunctionData({abi: fwaAbi, functionName: "listNFT", args: [PACKS, BigInt(row.packId)]}), value: BigInt(row.backing)};
+      const result = await pendingReceipt(fwaActionKey("deposit", index), row.depositHash, expected);
+      if (result) {
+        if (result.sameCall && result.receipt.status === "success") {row.depositHash = result.hash; Object.assign(row, depositedListing(result.receipt, next.account, BigInt(row.packId)));}
+        else {row.depositFailedHash = result.hash; delete row.depositHash;}
+      }
     }
   }
   if (next.approvalHash) {
-    const receipt = await receiptFor(next.approvalHash);
-    if (receipt?.status === "success") next.approvalReceipt = receipt.transactionHash;
-    if (receipt) delete next.approvalHash;
+    const expected = {to: PACKS, input: encodeFunctionData({abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]}), value: 0n};
+    const result = await pendingReceipt("approve", next.approvalHash, expected);
+    if (result) {
+      if (result.sameCall && result.receipt.status === "success") next.approvalReceipt = result.hash;
+      else next.approvalFailedHash = result.hash;
+      delete next.approvalHash;
+    }
   }
   return next;
 }

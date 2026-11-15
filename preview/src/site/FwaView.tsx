@@ -1,6 +1,6 @@
 import React from "react";
 import "./FwaView.css";
-import {createPublicClient, custom, defineChain, formatEther, http, type Abi, type Address, type EIP1193Provider, type Hash} from "viem";
+import {createPublicClient, custom, defineChain, encodeFunctionData, formatEther, http, type Abi, type Address, type EIP1193Provider, type Hash} from "viem";
 import {mainnet} from "viem/chains";
 import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
 import {renderPack, type PackCard} from "shapes-render/pack";
@@ -10,10 +10,11 @@ import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import {describeTxError} from "./errors";
 import {Section, txUrl} from "./ui";
 import {sampleSeed} from "./art";
+import {FwaProcessView, type FwaProcessAction} from "./FwaProcessView";
 import {mintGene} from "../previewGene";
 import {
   FWA_POOL, PACKS, SHAPES, assertSameFwaFork, suggestFwaPlan, type FwaSuggestionMode, buildFwaContribution, parseFwaAmount, fwaPackRequirement, packMakeup,
-  depositBlocker, depositedListing, fwaAbi, loadFwaSettings, mintedPackId, packTransferAbi,
+  depositBlocker, depositedListing, fwaAbi, fwaActions, loadFwaSettings, mintedPackId, packTransferAbi,
   parseFwaSession, reconcileFwaSession, sessionKey, type FwaSession, type FwaSettings, type Plan,
 } from "./fwa";
 
@@ -34,6 +35,25 @@ const choicesFor = (rows: readonly {value: bigint}[]): Choice[] => {
   for (const row of rows) {const value = eth(row.value); const group = groups.get(value) ?? {id: value, value, quantity: 0}; group.quantity++; groups.set(value, group);}
   return [...groups.values()].sort((a, b) => parseFwaAmount(a.value) < parseFwaAmount(b.value) ? -1 : 1);
 };
+async function withWalletPendingNonces(saved: FwaSession, connector: ReturnType<typeof useAccount>["connector"]): Promise<FwaSession> {
+  const missing = fwaActions(saved).filter(action => action.status === "pending" && action.hash && saved.pendingNonces?.[action.key] === undefined);
+  if (!missing.length || !connector) return saved;
+  let provider: EIP1193Provider;
+  try {const source = await connector.getProvider(); if (!source || typeof source !== "object" || !("request" in source)) return saved; provider = source as EIP1193Provider;}
+  catch {return saved;}
+  const next = structuredClone(saved);
+  for (const action of missing) {
+    try {
+      const transaction = await provider.request({method: "eth_getTransactionByHash", params: [action.hash!]}) as {from?: string; nonce?: string} | null;
+      if (!transaction?.from || !same(transaction.from, saved.account) || !transaction.nonce || !/^0x[\da-f]+$/i.test(transaction.nonce)) continue;
+      const nonce = BigInt(transaction.nonce);
+      if (nonce > BigInt(Number.MAX_SAFE_INTEGER)) continue;
+      next.pendingNonces ??= {};
+      next.pendingNonces[action.key] = Number(nonce);
+    } catch {/* The page RPC may still be able to recover this hash. */}
+  }
+  return next;
+}
 
 export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => void}) {
   const {address, chainId, connector} = useAccount();
@@ -49,7 +69,6 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const [galleryExpanded, setGalleryExpanded] = React.useState(true);
   const [reviewOpen, setReviewOpen] = React.useState(false);
   const reviewDialog = React.useRef<HTMLDialogElement>(null);
-  const processSection = React.useRef<HTMLElement>(null);
   const forkTxDialog = React.useRef<HTMLDialogElement>(null);
   const [forkTxHash, setForkTxHash] = React.useState<Hash | null>(null);
   const [forkTxDetail, setForkTxDetail] = React.useState<ForkTxDetail | null>(null);
@@ -72,19 +91,28 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const settingsRead = React.useRef<Promise<FwaSettings> | null>(null);
   const [walletBalance, setWalletBalance] = React.useState<bigint | null>(null);
   const [session, setSession] = React.useState<FwaSession | null>(null);
+  const [processActive, setProcessActive] = React.useState(true);
+  const [autoContinue, setAutoContinue] = React.useState(true);
+  const autoContinueRef = React.useRef(true);
+  React.useEffect(() => {
+    try {if (localStorage.getItem("shapes:fwa:autoContinue") === "false") {autoContinueRef.current = false; setAutoContinue(false);}}
+    catch {/* The in-memory setting still works when storage is unavailable. */}
+  }, []);
+  const changeAutoContinue = (enabled: boolean) => {
+    autoContinueRef.current = enabled; setAutoContinue(enabled);
+    try {localStorage.setItem("shapes:fwa:autoContinue", String(enabled));} catch {/* The in-memory setting still works. */}
+  };
+  React.useEffect(() => {if (processActive && session) window.scrollTo(0, 0);}, [processActive, !!session]);
   const [ready, setReady] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => {
-    if (busy) requestAnimationFrame(() => processSection.current?.scrollIntoView({behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start"}));
-  }, [busy, !!session]);
-  const [step, setStep] = React.useState<"mint" | "approve" | "deposit">("mint");
   const [phase, setPhase] = React.useState<"checking" | "wallet" | "confirming" | null>(null);
-  const [approvalReady, setApprovalReady] = React.useState(false);
   const [message, setMessage] = React.useState("");
   const [error, setError] = React.useState("");
   const [storageWarning, setStorageWarning] = React.useState(false);
-  const [activeHash, setActiveHash] = React.useState<Hash | null>(null);
+  const [activeActionKey, setActiveActionKey] = React.useState<string | null>(null);
+  const [failureKind, setFailureKind] = React.useState<"rejected" | "failed" | null>(null);
   const [recoveryFailed, setRecoveryFailed] = React.useState(false);
+  const [recoveryRefresh, setRecoveryRefresh] = React.useState(0);
   const [resetConfirm, setResetConfirm] = React.useState(false);
   const wallet = React.useRef({address, chainId, connector});
   wallet.current = {address, chainId, connector};
@@ -156,8 +184,12 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   React.useEffect(() => {
     let active = true;
     setWalletBalance(null); void refreshBalance();
+    if (sessionRef.current && (!address || !same(sessionRef.current.account, address))) {
+      setReady(true); setError(`Reconnect ${sessionRef.current.account} to continue this contribution.`);
+      return () => {active = false;};
+    }
     setReady(false); setRecoveryFailed(false); setSession(null); sessionRef.current = null;
-    setError(""); setMessage(""); setActiveHash(null); setResetConfirm(false); setPhase(null); setApprovalReady(false);
+    setError(""); setMessage(""); setResetConfirm(false); setPhase(null);
     const restore = async () => {
       if (!address) return;
       let raw: string | null = null;
@@ -166,15 +198,15 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
       const saved = parseFwaSession(raw, address);
       if (!saved) {if (active) {setRecoveryFailed(true); setError("Saved progress could not be read. Check your transaction history before starting a new plan.");} return;}
       const showSaved = (value: FwaSession) => {
-        sessionRef.current = value; setSession(value);
+        sessionRef.current = value; setSession(value); setProcessActive(true);
         const grouped = new Map<string, Choice>();
         for (const row of value.rows) {const packValue = eth(row.value); const group = grouped.get(packValue) ?? {id: packValue, value: packValue, quantity: 0}; group.quantity++; grouped.set(packValue, group);}
         setChoices([...grouped.values()]);
         setBudget(value.draft?.budget || eth(value.rows.reduce((s, r) => s + BigInt(r.value) + BigInt(r.backing) + BigInt(r.fee), 0n)));
       };
-      if (active && !forkMode) showSaved(saved);
+      if (active) showSaved(saved);
       try {
-        const recovered = await reconcileFwaSession(client, saved, forkMode);
+        const recovered = await reconcileFwaSession(client, await withWalletPendingNonces(saved, connector), forkMode);
         if (!active) return;
         try {localStorage.setItem(sessionKey(address, dep.chainId), JSON.stringify(recovered));} catch {setStorageWarning(true);}
         showSaved(recovered);
@@ -182,11 +214,31 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     };
     void restore().finally(() => {if (active) setReady(true);});
     return () => {active = false;};
-  }, [address, client, dep.chainId, forkMode, refreshBalance]);
+  }, [address, client, connector, dep.chainId, forkMode, recoveryRefresh, refreshBalance]);
   const save = (next: FwaSession) => {
     try {localStorage.setItem(sessionKey(next.account, dep.chainId), JSON.stringify(next));} catch {if (mounted.current) setStorageWarning(true);}
     if (same(wallet.current.address ?? "", next.account)) {sessionRef.current = next; if (mounted.current) setSession({...next, rows: [...next.rows]});}
   };
+  React.useEffect(() => {
+    if (!session || !ready || running.current || !fwaActions(session).some(action => action.status === "pending")) return;
+    let active = true;
+    const check = async () => {
+      const current = sessionRef.current;
+      if (!current || running.current) return;
+      try {
+        const recovered = await reconcileFwaSession(client, await withWalletPendingNonces(current, connector), forkMode);
+        if (!active) return;
+        setRecoveryFailed(false);
+        if (JSON.stringify(recovered) === JSON.stringify(current)) {setError(""); return;}
+        save(recovered);
+        if (fwaActions(recovered).some(action => action.status === "failed")) setError("The transaction reverted. Review its receipt and try again.");
+        else setError("");
+      } catch (e) {if (active) {setRecoveryFailed(true); setError(`Could not check the pending transaction. ${describeTxError(e)}`);}}
+    };
+    void check();
+    const timer = window.setInterval(() => {void check();}, 5_000);
+    return () => {active = false; window.clearInterval(timer);};
+  }, [client, connector, forkMode, ready, session]);
   const suggestion = React.useMemo(() => {
     if (!settings) return {plan: null, error: ""};
     try {return {plan: suggestFwaPlan(parseFwaAmount(budget), settings, suggestionMode), error: ""};}
@@ -249,15 +301,8 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const totalBacking = visibleRows.reduce((s, r) => s + r.backing, 0n);
   const feeEstimate = visibleRows.reduce((s, r) => s + r.fee, 0n);
   const total = totalPackValue + totalBacking + feeEstimate;
-  const minted = session?.rows.filter(r => r.packId !== undefined).length ?? 0;
   const deposited = session?.rows.filter(r => r.listingId !== undefined).length ?? 0;
   const complete = !!session && deposited === session.rows.length;
-  const approved = complete || approvalReady || !!session?.approvalReceipt;
-  const progressDone = minted + deposited + (approved ? 1 : 0);
-  const progressTotal = session ? session.rows.length * 2 + 1 : 0;
-  const latestMintHash = session?.rows.reduce<Hash | undefined>((found, row) => row.mintHash ?? found, undefined);
-  const latestDepositHash = session?.rows.reduce<Hash | undefined>((found, row) => row.depositHash ?? found, undefined);
-  const currentStage = busy ? step : session && minted < session.rows.length ? "mint" : !approved ? "approve" : "deposit";
   const stagedAtDeposit = session?.rows.filter(r => r.staged).length ?? 0;
   const completionMessage = stagedAtDeposit ? "All packs deposited. Some were staged; check FWA for current activation status." : "All packs deposited.";
   let budgetWei = 0n;
@@ -271,35 +316,44 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const walletReady = (account: Address) => {
     if (!mounted.current || !same(wallet.current.address ?? "", account) || wallet.current.chainId !== dep.chainId) throw new Error(`Your wallet or network changed. Reconnect to ${forkMode ? "the local fork" : "Ethereum"} to continue.`);
   };
-  const run = async () => {
-    if (running.current || !ready || !address || !supported) return;
+  const runOne = async (): Promise<boolean> => {
+    if (running.current || !ready || !address || !supported) return false;
     const account = address;
-    running.current = true; setBusy(true); setError(""); setActiveHash(null);
-    setStep(sessionRef.current?.rows.every(row => row.packId !== undefined) ? "approve" : "mint");
+    running.current = true; setBusy(true); setError(""); setFailureKind(null); setProcessActive(true);
     setMessage("Checking current pool requirements."); setPhase("checking");
-    let work: FwaSession | null = null;
     try {
       walletReady(account);
       const live = await refresh(true);
       walletReady(account);
-      work = sessionRef.current ? structuredClone(sessionRef.current) : null;
-      if (!work) {
+      let current = sessionRef.current ? structuredClone(sessionRef.current) : null;
+      if (!current) {
         if (requirement) throw new Error(requirement);
         if (!plan) throw new Error(planError || "Review the pack configuration first.");
-        // Recompute using freshly read prices; never silently accept a changed plan.
+        // Never silently accept a changed mint quote or backing limit after review.
         const fresh = buildFwaContribution(draftPacks.map(r => ({value: r.value, backing: parseFwaAmount(backingFor(r))})), live, parseFwaAmount(budget));
         if (fresh.total !== plan.total || fresh.rows.some((r, i) => r.value !== plan!.rows[i].value || r.fee !== plan!.rows[i].fee || r.backing !== plan!.rows[i].backing)) throw new Error("The mint quote changed. Review the updated plan and try again.");
         const blocked = depositBlocker(live, fresh.rows) || fresh.rows.map(r => fwaPackRequirement(r, live)).find(Boolean);
         if (blocked) throw new Error(blocked);
         if (fresh.total > await client.getBalance({address: account})) throw new Error("This plan exceeds your wallet balance.");
-        work = {version: 1, account, draft: {budget, quantity: fresh.rows.length, ratio: String(ratio), spread: false}, rows: fresh.rows.map(r => ({counts: r.counts, value: String(r.value), backing: String(r.backing), fee: String(r.fee)}))};
-        try {localStorage.setItem(sessionKey(account, dep.chainId), JSON.stringify(work));} catch {setStorageWarning(true); throw new Error("Enable browser storage before minting so your transaction progress can be recovered.");}
-        save(work);
+        const approved = await client.readContract({address: PACKS, abi: packTransferAbi, functionName: "isApprovedForAll", args: [account, FWA_POOL]});
+        current = {version: 1, account, order: "paired", approvalNeeded: !approved,
+          draft: {budget, quantity: fresh.rows.length, ratio: String(ratio), spread: false},
+          rows: fresh.rows.map(r => ({counts: r.counts, value: String(r.value), backing: String(r.backing), fee: String(r.fee)}))};
+        try {localStorage.setItem(sessionKey(account, dep.chainId), JSON.stringify(current));}
+        catch {setStorageWarning(true); throw new Error("Enable browser storage before minting so your transaction progress can be recovered.");}
+        save(current);
       }
-      const current = work;
-      const unlisted = current.rows.filter(r => r.listingId === undefined).map(r => ({value: BigInt(r.value), backing: BigInt(r.backing)}));
-      const blockedAtStart = depositBlocker(live, unlisted) || unlisted.map(r => fwaPackRequirement(r, live)).find(Boolean);
-      if (blockedAtStart) throw new Error(blockedAtStart);
+      const next = fwaActions(current).find(action => action.status !== "confirmed");
+      if (!next) {setMessage("All packs deposited."); return false;}
+      const unlisted = current.rows.filter(row => row.listingId === undefined).map(row => ({value: BigInt(row.value), backing: BigInt(row.backing)}));
+      const blocked = depositBlocker(live, unlisted) || unlisted.map(row => fwaPackRequirement(row, live)).find(Boolean);
+      if (blocked) throw new Error(`Pool requirements changed: ${blocked}`);
+      setActiveActionKey(next.key);
+      const recordFailure = (hash: Hash) => {
+        if (next.kind === "approve") current.approvalFailedHash = hash;
+        else if (next.kind === "mint") current.rows[next.packIndex!].mintFailedHash = hash;
+        else current.rows[next.packIndex!].depositFailedHash = hash;
+      };
       const send = async (target: Address, abi: Abi, functionName: string, args: readonly unknown[], value: bigint | undefined, record: (hash: Hash) => void) => {
         walletReady(account);
         setPhase("checking");
@@ -319,106 +373,127 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
           walletReady(account);
           if (wallet.current.connector?.uid !== activeConnector?.uid) throw new Error("Your wallet connection changed. Reconnect before continuing.");
         }
+        current.pendingStartBlocks ??= {};
+        current.pendingStartBlocks[next.key] = String(block.number);
+        save(current);
         setPhase("wallet");
         const hash = await writeContractAsync({...call, gas, chainId: dep.chainId});
         record(hash); save(current);
         setPhase("confirming");
-        if (mounted.current && same(wallet.current.address ?? "", account)) setActiveHash(hash);
+        let walletProvider: EIP1193Provider | null = null;
+        try {const provider = await wallet.current.connector?.getProvider(); if (provider && typeof provider === "object" && "request" in provider) walletProvider = provider as EIP1193Provider;}
+        catch {/* The page RPC can still provide the nonce. */}
+        for (let attempt = 0; attempt < 5; attempt++) {
+          let nonce: number | undefined;
+          try {
+            const transaction = await client.getTransaction({hash});
+            if (same(transaction.from, account)) nonce = transaction.nonce;
+          } catch {/* A private wallet RPC may know the transaction first. */}
+          if (nonce === undefined && walletProvider) try {
+            const transaction = await walletProvider.request({method: "eth_getTransactionByHash", params: [hash]}) as {from?: string; nonce?: string} | null;
+            if (transaction?.from && same(transaction.from, account) && transaction.nonce && /^0x[\da-f]+$/i.test(transaction.nonce)) {
+              const parsed = BigInt(transaction.nonce);
+              if (parsed <= BigInt(Number.MAX_SAFE_INTEGER)) nonce = Number(parsed);
+            }
+          } catch {/* Keep the hash; a later receipt can still recover it. */}
+          if (nonce !== undefined) {
+            current.pendingNonces ??= {};
+            current.pendingNonces[next.key] = nonce;
+            save(current);
+            break;
+          }
+          await new Promise(resolve => window.setTimeout(resolve, 200));
+        }
         return hash;
       };
       const wait = async (hash: Hash, call: {address: Address; abi: Abi; functionName: string; args: readonly unknown[]; value?: bigint}, clear: () => void) => {
-        // A network timeout preserves the hash. Only a confirmed revert permits resubmission.
         setPhase("confirming");
         let cancelled = false;
+        let trackedHash = hash;
+        const expectedInput = encodeFunctionData({abi: call.abi, functionName: call.functionName, args: call.args});
         const receipt = await client.waitForTransactionReceipt({hash, onReplaced: ({reason, transaction}) => {
-          if (reason === "cancelled") cancelled = true;
+          if (reason === "cancelled" || transaction.to?.toLowerCase() !== call.address.toLowerCase() || transaction.input !== expectedInput || transaction.value !== (call.value ?? 0n)) cancelled = true;
           for (const row of current.rows) {
-            if (row.mintHash === hash) row.mintHash = transaction.hash;
-            if (row.depositHash === hash) row.depositHash = transaction.hash;
+            if (row.mintHash === trackedHash) row.mintHash = transaction.hash;
+            if (row.depositHash === trackedHash) row.depositHash = transaction.hash;
           }
-          if (current.approvalHash === hash) current.approvalHash = transaction.hash;
+          if (current.approvalHash === trackedHash) current.approvalHash = transaction.hash;
+          trackedHash = transaction.hash;
           save(current);
         }});
-        if (cancelled) {clear(); save(current); throw new Error("The transaction was cancelled in your wallet. Continue when you are ready to retry.");}
-        if (receipt.status === "reverted") {clear(); save(current); await awaitSuccessfulReceipt(client, receipt.transactionHash, call);}
+        if (cancelled || receipt.status === "reverted") {
+          recordFailure(receipt.transactionHash); clear(); save(current);
+          if (cancelled) throw new Error("The transaction was cancelled or replaced by a different wallet action. Try this FWA action again when ready.");
+          await awaitSuccessfulReceipt(client, receipt.transactionHash, call);
+        }
         return receipt;
       };
-      for (let i = 0; i < current.rows.length; i++) {
-        const row = current.rows[i];
-        if (row.packId !== undefined) continue;
-        walletReady(account);
-        setStep("mint"); setMessage(`Minting pack ${i + 1} of ${current.rows.length}.`);
+      if (next.kind === "approve") {
+        setMessage("Checking FWA pack approval.");
+        const alreadyApproved = await client.readContract({address: PACKS, abi: packTransferAbi, functionName: "isApprovedForAll", args: [account, FWA_POOL]});
+        if (alreadyApproved && !current.approvalHash) {
+          current.approvalNeeded = false; save(current); setMessage("FWA is already approved."); return true;
+        }
+        setMessage("Approve FWA to transfer your shape packs for deposits.");
+        const call = {address: PACKS, abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]} as const;
+        const hash = current.approvalHash ?? await send(PACKS, packTransferAbi, "setApprovalForAll", call.args, undefined, h => {current.approvalHash = h;});
+        const receipt = await wait(hash, call, () => {delete current.approvalHash;});
+        current.approvalReceipt = receipt.transactionHash; delete current.approvalHash; save(current);
+        setMessage("FWA approval confirmed.");
+      } else if (next.kind === "mint") {
+        const index = next.packIndex!; const row = current.rows[index];
+        setMessage(`Checking mint quote for pack ${index + 1}.`);
         const quote = await client.readContract({address: PACKS, abi: packsAbi, functionName: "quoteMint", args: [row.counts]});
         if (quote[0] !== BigInt(row.value)) throw new Error("The saved pack makeup does not match its value.");
-        const plannedFee = BigInt(row.fee);
-        if (!row.mintHash && quote[1] !== plannedFee) throw new Error("Mint fees changed. Refresh and review before continuing.");
-        // Reserve all remaining pack payments and FWA backing before the next mint.
-        const remaining = current.rows.reduce((s, r) => s + (r.listingId === undefined ? BigInt(r.backing) : 0n) +
-          (r.packId === undefined ? BigInt(r.value) + r.counts.reduce((v, n) => v + BigInt(n) * live.mintFee, 0n) : 0n), 0n);
+        if (!row.mintHash && quote[1] !== BigInt(row.fee)) throw new Error("Mint fees changed. Refresh and review before continuing.");
+        const remaining = current.rows.reduce((sum, saved) => sum + (saved.listingId === undefined ? BigInt(saved.backing) : 0n) +
+          (saved.packId === undefined ? BigInt(saved.value) + saved.counts.reduce((fee, n) => fee + BigInt(n) * live.mintFee, 0n) : 0n), 0n);
         if (!row.mintHash && await client.getBalance({address: account}) <= remaining) throw new Error("Your wallet needs enough eth for the remaining packs, FWA backing, and network gas.");
         const call = {address: PACKS, abi: packsAbi, functionName: "createPack", args: [[], row.counts], value: quote[2]} as const;
-        const hash = row.mintHash ?? await send(PACKS, packsAbi, "createPack", [[], row.counts], quote[2], h => {row.mintHash = h;});
+        const hash = row.mintHash ?? await send(PACKS, packsAbi, "createPack", call.args, call.value, h => {row.mintHash = h;});
         const receipt = await wait(hash, call, () => {delete row.mintHash;});
-        row.packId = String(mintedPackId(receipt, account)); save(current);
-        setPhase(null); setActiveHash(null);
-      }
-      walletReady(account);
-      const depositSettings = await refresh(true);
-      walletReady(account);
-      const blocked = depositBlocker(depositSettings, current.rows.filter(r => r.listingId === undefined).map(r => ({backing: BigInt(r.backing)})));
-      if (blocked) throw new Error(blocked);
-      setStep("approve");
-      setMessage("Checking FWA pack approval.");
-      if (current.approvalHash) {
-        setMessage("Checking your FWA approval transaction…");
-        const receipt = await wait(current.approvalHash, {address: PACKS, abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]}, () => {delete current.approvalHash;});
-        current.approvalReceipt = receipt.transactionHash; delete current.approvalHash; save(current);
-        setApprovalReady(true); setPhase(null); setActiveHash(null);
-      }
-      const approved = await client.readContract({address: PACKS, abi: packTransferAbi, functionName: "isApprovedForAll", args: [account, FWA_POOL]});
-      if (!approved) {
-        setMessage("Approving FWA.");
-        const hash = await send(PACKS, packTransferAbi, "setApprovalForAll", [FWA_POOL, true], undefined, h => {current.approvalHash = h;});
-        const receipt = await wait(hash, {address: PACKS, abi: packTransferAbi, functionName: "setApprovalForAll", args: [FWA_POOL, true]}, () => {delete current.approvalHash;});
-        current.approvalReceipt = receipt.transactionHash; delete current.approvalHash; save(current);
-        setPhase(null); setActiveHash(null);
-      }
-      setApprovalReady(true);
-      setStep("deposit");
-      for (let i = 0; i < current.rows.length; i++) {
-        const row = current.rows[i];
-        if (row.listingId !== undefined) continue;
-        walletReady(account);
-        setMessage(`Depositing pack ${i + 1} of ${current.rows.length}.`);
-        const call = {address: FWA_POOL, abi: fwaAbi, functionName: "listNFT", args: [PACKS, BigInt(row.packId!)], value: BigInt(row.backing)} as const;
+        row.packId = String(mintedPackId(receipt, account)); save(current); setMessage(`Pack ${index + 1} minted.`);
+      } else {
+        const index = next.packIndex!; const row = current.rows[index];
+        if (row.packId === undefined) throw new Error(`Mint pack ${index + 1} before depositing it.`);
+        setMessage(`Checking FWA deposit for pack ${index + 1}.`);
+        const depositSettings = await refresh(true); walletReady(account);
+        const blocked = depositBlocker(depositSettings, [{backing: BigInt(row.backing)}]) || fwaPackRequirement({value: BigInt(row.value), backing: BigInt(row.backing)}, depositSettings);
+        if (blocked) throw new Error(blocked);
         if (!row.depositHash) {
-          const owner = await client.readContract({address: PACKS, abi: packsAbi, functionName: "ownerOf", args: [BigInt(row.packId!)]});
+          const owner = await client.readContract({address: PACKS, abi: packsAbi, functionName: "ownerOf", args: [BigInt(row.packId)]});
           if (!same(owner, account)) throw new Error(`Your wallet no longer owns pack #${row.packId}. Check FWA before continuing.`);
+          const approved = await client.readContract({address: PACKS, abi: packTransferAbi, functionName: "isApprovedForAll", args: [account, FWA_POOL]});
+          if (!approved) {current.approvalNeeded = true; delete current.approvalReceipt; save(current); setMessage("FWA approval changed. Approve again before depositing this pack."); return true;}
         }
+        const call = {address: FWA_POOL, abi: fwaAbi, functionName: "listNFT", args: [PACKS, BigInt(row.packId)], value: BigInt(row.backing)} as const;
         const hash = row.depositHash ?? await send(FWA_POOL, fwaAbi, "listNFT", call.args, call.value, h => {row.depositHash = h;});
         const receipt = await wait(hash, call, () => {delete row.depositHash;});
-        Object.assign(row, depositedListing(receipt, account, BigInt(row.packId!))); save(current);
-        setPhase(null); setActiveHash(null);
+        Object.assign(row, depositedListing(receipt, account, BigInt(row.packId))); save(current);
+        setMessage(row.staged ? `Pack ${index + 1} deposited and staged.` : `Pack ${index + 1} deposited.`);
       }
-      setMessage(current.rows.some(row => row.staged) ? "All packs deposited. Some were staged; check FWA for current activation status." : "All packs deposited.");
+      setPhase(null);
+      return fwaActions(current).some(action => action.status !== "confirmed");
     } catch (e) {
-      if (mounted.current && same(wallet.current.address ?? "", account)) setError(describeTxError(e));
-    } finally {running.current = false; if (mounted.current) {setBusy(false); setPhase(null); setActiveHash(null); void refreshBalance();}}
+      if (mounted.current && same(wallet.current.address ?? "", account)) {
+        const description = describeTxError(e);
+        setError(description); setFailureKind(/rejected in the wallet|cancelled in your wallet/i.test(description) ? "rejected" : "failed");
+      }
+      return false;
+    } finally {running.current = false; if (mounted.current) {setBusy(false); setPhase(null); setActiveActionKey(null); void refreshBalance();}}
+  };
+  const run = async () => {
+    let more = await runOne();
+    while (more && autoContinueRef.current) more = await runOne();
   };
   const reset = () => {
     if (busy || !address) return;
     if (!resetConfirm && (session || recoveryFailed) && !complete) {setResetConfirm(true); return;}
     try {localStorage.removeItem(sessionKey(address, dep.chainId));} catch {setStorageWarning(true);}
-    sessionRef.current = null; setSession(null); setRecoveryFailed(false); setMessage(""); setError(""); setResetConfirm(false); setReviewOpen(false); setApprovalReady(false); setPhase(null);
+    sessionRef.current = null; setSession(null); setProcessActive(false); setRecoveryFailed(false); setMessage(""); setError(""); setFailureKind(null); setResetConfirm(false); setReviewOpen(false); setPhase(null);
   };
   const addValue = () => {startCustomEdit(); const id = `new-${++nextGroup.current}`; setChoices(rows => [...(rows ?? choices), {id, value: "", quantity: 1}]);};
-  const actionLabel = complete ? "DEPOSITED" : busy ? step === "mint" ? "MINTING" : step === "approve" ? "APPROVING" : "DEPOSITING" : session ? "CONTINUE" : "REVIEW CONTRIBUTION";
-  const processTitle = complete ? "All positions deposited." : error ? "Process paused." : busy
-    ? step === "mint" ? `Minting position ${Math.min(minted + 1, session?.rows.length ?? 1)} of ${session?.rows.length ?? 1}.`
-      : step === "approve" ? "Approving FWA." : `Depositing position ${Math.min(deposited + 1, session?.rows.length ?? 1)} of ${session?.rows.length ?? 1}.`
-    : "Ready to continue.";
-  const phaseMessage = phase === "checking" ? "Checking requirements and gas…" : phase === "wallet" ? `Confirm in your wallet on ${forkMode ? "Anvil (31337)" : "Ethereum mainnet"}.`
-    : phase === "confirming" ? "Submitted. Waiting for network confirmation…" : "Preparing next transaction…";
+  const actionLabel = "REVIEW CONTRIBUTION";
   const actionDisabled = busy || checking || !ready || complete || !!requirement;
   const groups = parsedChoices.map(choice => {
     const value = choice.valueWei ?? 0n;
@@ -455,6 +530,57 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const affordableExtra = lastCost && lastCost > 0n && total <= budgetWei
     ? Number((budgetWei - total) / lastCost < BigInt(24 - visibleRows.length) ? (budgetWei - total) / lastCost : BigInt(24 - visibleRows.length))
     : 0;
+  const actionList = session ? fwaActions(session) : [];
+  const pendingResetHash = actionList.find(action => action.status === "pending")?.hash;
+  const currentAction = actionList.find(action => action.status !== "confirmed");
+  const processSteps: FwaProcessAction[] = actionList.map(action => {
+    let status: FwaProcessAction["status"] = action.status;
+    if (busy && action.key === activeActionKey && status !== "confirmed") status = phase === "wallet" ? "wallet" : phase === "confirming" ? "pending" : "checking";
+    else if (!busy && error && action.key === currentAction?.key && status === "ready") status = failureKind === "rejected" ? "rejected" : "failed";
+    return {...action, status, failedHashes: action.failedHash ? [action.failedHash] : []};
+  });
+  const processPending = actionList.some(action => action.status === "pending");
+  const processWrongAccount = !!session && (!address || !same(address, session.account));
+  const processActionLabel = !address ? "CONNECT WALLET" : processWrongAccount ? "CONNECT ORIGINAL WALLET" : wrongChain ? forkMode ? "SWITCH TO LOCAL FORK" : "SWITCH TO ETHEREUM"
+    : busy ? phase === "wallet" ? "CONFIRM IN WALLET" : phase === "confirming" ? "PENDING" : "CHECKING"
+      : processPending ? "PENDING" : error || currentAction?.status === "failed" ? "TRY AGAIN"
+        : currentAction?.kind === "approve" ? "APPROVE FWA" : currentAction?.kind === "mint" ? `MINT PACK ${currentAction.packIndex! + 1}` : currentAction?.kind === "deposit" ? `DEPOSIT PACK ${currentAction.packIndex! + 1}` : "COMPLETE";
+  const processActionDisabled = busy || !ready || recoveryFailed || processPending || (!currentAction && !!session);
+  const forkReceipt = (
+    <dialog ref={forkTxDialog} className="fwa-review-dialog fwa-tx-dialog" aria-labelledby="fwa-tx-title" onClose={() => setForkTxHash(null)}>
+      <div className="fwa-review-top"><span>ANVIL · CHAIN 31337</span><button type="button" aria-label="Close transaction" onClick={() => setForkTxHash(null)}>×</button></div>
+      <h2 id="fwa-tx-title">Local transaction.</h2>
+      {forkTxHash && <p className="fwa-tx-hash">{forkTxHash}</p>}
+      {forkTxLoading && <p role="status">Reading transaction from the local fork…</p>}
+      {forkTxError && <p className="fwa-action-error" role="alert">{forkTxError}</p>}
+      {forkTxDetail && <div className="fwa-review-totals fwa-tx-fields">
+        <div><span>Status</span><strong>{forkTxDetail.status}</strong></div>
+        <div><span>Block</span><strong>{forkTxDetail.block?.toString() ?? "Pending"}</strong></div>
+        <div><span>From</span><strong>{forkTxDetail.from}</strong></div>
+        <div><span>To</span><strong>{forkTxDetail.to ?? "Contract creation"}</strong></div>
+        <div><span>ETH value</span><strong>{eth(forkTxDetail.value)} ETH</strong></div>
+        <div><span>Gas used</span><strong>{forkTxDetail.gasUsed?.toString() ?? "Pending"}</strong></div>
+        <div><span>Call</span><strong>{forkTxDetail.selector}</strong></div>
+      </div>}
+      <button type="button" className="fwa-retry" onClick={() => setForkTxRefresh(value => value + 1)}>Refresh receipt</button>
+    </dialog>
+  );
+  if (session && processActive) return <>
+    {forkMode ? <div className="fwa-fork-banner" role={wrongChain ? "alert" : "status"}>LOCAL ANVIL FORK · CHAIN 31337 · RPC {new URL(dep.rpc).host} · TEST TRANSACTIONS ONLY</div>
+      : <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">ETHEREUM MAINNET · REAL TRANSACTIONS</div>}
+    <FwaProcessView
+      packs={session.rows.map(row => ({value: BigInt(row.value), backing: BigInt(row.backing), fee: BigInt(row.fee), packId: row.packId, listingId: row.listingId, staged: row.staged}))}
+      steps={processSteps} chainId={dep.chainId} actionLabel={processActionLabel} actionDisabled={processActionDisabled}
+      onAction={() => {if (processWrongAccount) onConnect(); else if (wrongChain) switchNetwork(); else void run();}}
+      autoContinue={autoContinue} onAutoContinueChange={changeAutoContinue}
+      onRetryCheck={() => setRecoveryRefresh(value => value + 1)}
+      canBack={!busy && (!processPending || recoveryFailed)} onBack={() => setProcessActive(false)} onNewPlan={reset}
+      renderPackArt={index => <PackArt value={BigInt(session.rows[index].value)} settings={settings} salt={artSalt} nonce={index}/>}
+      error={processWrongAccount ? `Reconnect ${session.account} to continue this contribution.` : wrongChain ? `Switch your wallet to ${forkMode ? "Anvil (31337)" : "Ethereum mainnet"} to continue.` : error}
+      statusMessage={message}
+    />
+    {forkReceipt}
+  </>;
   return <>
     <main className="fwa-page">
       {forkMode && <div className="fwa-fork-banner" role={wrongChain ? "alert" : "status"}>
@@ -557,26 +683,9 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
 
           <Section title="03 NEXT" pad="31px 46px 35px" last>
             <h2>{complete ? "Contribution complete." : session ? "Your contribution is underway." : "Ready to deposit?"}</h2>
-            <p className="fwa-sub">{session ? complete ? "Every pack in this plan has a confirmed FWA deposit." : "Confirmed transactions are saved as you mint, approve and deposit each position." : "Review the individual positions and costs. Then mint, approve and deposit them into FWA."}</p>
-            {!session && <div className="fwa-steps"><div><span>01</span> MINT</div><div><span>02</span> APPROVE</div><div><span>03</span> DEPOSIT</div></div>}
-            {session && <section ref={processSection} className={`fwa-process${error ? " is-paused" : ""}`} id="fwa-process" aria-labelledby="fwa-process-title">
-              <div className="fwa-process-header">
-                <div><span className="fwa-process-eyebrow">CONTRIBUTION PROCESS</span><h3 id="fwa-process-title">{processTitle}</h3></div>
-                <span className="fwa-process-network">{forkMode ? "ANVIL · 31337" : "ETHEREUM · 1"}</span>
-              </div>
-              <div className="fwa-process-total"><span>{progressDone} / {progressTotal} actions complete</span><span>{Math.round(progressDone * 100 / progressTotal)}%</span></div>
-              <div className="fwa-process-bar" role="progressbar" aria-label="Contribution progress" aria-valuenow={progressDone} aria-valuemin={0} aria-valuemax={progressTotal}><span style={{width: `${progressDone * 100 / progressTotal}%`}}/></div>
-              <ol className="fwa-process-stages">
-                <li className={!complete && currentStage === "mint" ? "is-current" : minted === session.rows.length ? "is-done" : ""} aria-current={!complete && currentStage === "mint" ? "step" : undefined}><span className="fwa-stage-number">01</span><div><strong>Mint packs</strong><small>{minted} of {session.rows.length} confirmed</small>{latestMintHash && <FwaTransaction hash={latestMintHash} chainId={dep.chainId} label="Latest mint transaction"/>}</div><span className="fwa-stage-track"><span style={{width: `${minted * 100 / session.rows.length}%`}}/></span></li>
-                <li className={!complete && currentStage === "approve" ? "is-current" : approved ? "is-done" : ""} aria-current={!complete && currentStage === "approve" ? "step" : undefined}><span className="fwa-stage-number">02</span><div><strong>Approve FWA</strong><small>{approved ? session.approvalReceipt ? "Confirmed" : "Already approved" : session.approvalHash ? "Confirmation pending" : "Waiting"}</small>{(session.approvalHash || session.approvalReceipt) && <FwaTransaction hash={(session.approvalHash || session.approvalReceipt)!} chainId={dep.chainId} label="Approval transaction"/>}</div><span className="fwa-stage-track"><span style={{width: approved ? "100%" : "0%"}}/></span></li>
-                <li className={!complete && currentStage === "deposit" ? "is-current" : complete ? "is-done" : ""} aria-current={!complete && currentStage === "deposit" ? "step" : undefined}><span className="fwa-stage-number">03</span><div><strong>Deposit positions</strong><small>{deposited} of {session.rows.length} confirmed</small>{latestDepositHash && <FwaTransaction hash={latestDepositHash} chainId={dep.chainId} label="Latest deposit transaction"/>}</div><span className="fwa-stage-track"><span style={{width: `${deposited * 100 / session.rows.length}%`}}/></span></li>
-              </ol>
-              <div className="fwa-process-current" role="status"><span>{complete ? "COMPLETE" : error ? "NEEDS ATTENTION" : busy ? "CURRENT ACTION" : "NEXT ACTION"}</span><p>{complete ? completionMessage : error ? "Review the error below. Confirmed transactions are saved." : busy ? <>{message} <strong>{phaseMessage}</strong></> : "Confirmed transactions are saved. Continue when ready."}</p>{activeHash && <FwaTransaction hash={activeHash} chainId={dep.chainId} label="Current transaction"/>}</div>
-              <details className="fwa-progress-details"><summary>View individual transactions</summary>
-                {session.rows.map((row, index) => <div key={index}><span>Pack {index + 1} · {row.listingId ? row.staged ? "Staged" : "Deposited" : row.depositHash ? "Deposit pending" : row.packId ? "Minted" : row.mintHash ? "Mint pending" : "Waiting"}</span>{row.mintHash && <FwaTransaction hash={row.mintHash} chainId={dep.chainId} label={"Mint " + (row.packId ? "confirmed" : "pending")}/>}{row.depositHash && <FwaTransaction hash={row.depositHash} chainId={dep.chainId} label={row.listingId ? row.staged ? "Staged at deposit" : "Deposited" : "Deposit pending"}/>}{row.listingId && !forkMode && <a href="https://www.fwa.fun/manage" target="_blank" rel="noreferrer">View on FWA ↗</a>}</div>)}
-                {(session.approvalHash || session.approvalReceipt) && <div><span>FWA approval</span><FwaTransaction hash={(session.approvalHash || session.approvalReceipt)!} chainId={dep.chainId} label={session.approvalReceipt ? "Confirmed" : "Pending"}/></div>}
-              </details>
-            </section>}
+            <p className="fwa-sub">{session ? complete ? "Every pack in this plan has a confirmed FWA deposit." : "Confirmed transactions are saved as you approve, mint and deposit each position." : "Review the individual positions and costs. Then approve FWA, mint each pack, and deposit it."}</p>
+            {!session && <div className="fwa-steps"><div><span>01</span> APPROVE</div><div><span>02</span> MINT</div><div><span>03</span> DEPOSIT</div></div>}
+            {session && <button type="button" className="fwa-retry" onClick={() => setProcessActive(true)}>View contribution process →</button>}
             {!session && message && <p className="fwa-action-message" role="status">{message}</p>}
             {error && <p className="fwa-action-error" role="alert">{error}</p>}
             {storageWarning && <p className="fwa-action-error">Progress could not be saved. Keep this page open.</p>}
@@ -597,11 +706,12 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
               <div><span>Mint fees</span><strong>{eth(feeEstimate)} ETH</strong></div>
               <div className="is-total"><span>Total commitment</span><strong>{eth(total)} ETH</strong></div>
             </div>
-            <button type="button" className="btn-filled fwa-submit" disabled={actionDisabled} onClick={() => session ? void run() : setReviewOpen(true)}>{actionLabel}</button>
-            {session && !complete && <div className="fwa-sidebar-process"><div><strong>{error ? "PROCESS PAUSED" : busy ? step === "mint" ? "MINTING PACKS" : step === "approve" ? "APPROVING FWA" : "DEPOSITING PACKS" : "READY TO CONTINUE"}</strong><span>{progressDone}/{progressTotal}</span></div><span className="fwa-sidebar-process-bar"><span style={{width: `${progressDone * 100 / progressTotal}%`}}/></span><p>{busy ? phase === "wallet" ? `Confirm on ${forkMode ? "Anvil" : "Ethereum"} in your wallet.` : phase === "confirming" ? "Waiting for network confirmation…" : message : error ? "Review the error below." : "Confirmed transactions are saved."}</p><a href="#fwa-process">View process details ↓</a></div>}
+            <button type="button" className="btn-filled fwa-submit" disabled={session ? busy : actionDisabled} onClick={() => session ? setProcessActive(true) : setReviewOpen(true)}>{session ? "VIEW CONTRIBUTION PROCESS" : actionLabel}</button>
             <p className={requirement && !checking ? "fwa-requirement is-error" : "fwa-requirement"} role={requirement && !checking ? "alert" : "status"}>{recoveryFailed ? requirement : complete ? completionMessage : requirement || "This plan meets current requirements."}</p>
             {settingsError && <button type="button" className="fwa-retry" disabled={checking} onClick={() => void refresh().catch(() => {})}>Retry pool check</button>}
-            {(session || recoveryFailed) && <button type="button" className="fwa-retry" disabled={busy} onClick={reset}>{resetConfirm ? "Confirm new plan" : "Start a new plan"}</button>}
+            {resetConfirm && pendingResetHash && <p className="fwa-action-error" role="alert">This transaction may still confirm. Check <a href={forkMode ? `?tx=${pendingResetHash}` : txUrl(pendingResetHash, dep.chainId)} target="_blank" rel="noreferrer">its receipt ↗</a> and your wallet before discarding progress; a new plan could duplicate the contribution.</p>}
+            {recoveryFailed && session && <button type="button" className="fwa-retry" onClick={() => setRecoveryRefresh(value => value + 1)}>Retry saved transaction check</button>}
+            {(session || recoveryFailed) && <button type="button" className="fwa-retry" disabled={busy} onClick={reset}>{resetConfirm ? pendingResetHash ? "I checked my wallet · discard saved progress" : "Confirm new plan" : "Start a new plan"}</button>}
             {resetConfirm && <button type="button" className="fwa-retry" onClick={() => setResetConfirm(false)}>Keep this plan</button>}
             <p className="fwa-summary-note">Positions can be drawn and end fee participation. The buyer’s settlement choice determines whether you lose the pack or its separate backing. <a href="https://www.fwa.fun/docs/v2" target="_blank" rel="noreferrer">FWA documentation</a></p>
           </div>
@@ -630,33 +740,13 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         <div><span>Mint fees</span><strong>{eth(feeEstimate)} ETH</strong></div>
         <div className="is-total"><span>Total</span><strong>{eth(total)} ETH</strong></div>
       </div>
-      <p>{visibleRows.length} pack mint {visibleRows.length === 1 ? "transaction" : "transactions"}, one approval if needed, and {visibleRows.length} separate FWA deposit {visibleRows.length === 1 ? "transaction" : "transactions"}. The FWA main V2 pool accepts one pack per deposit transaction. Gas is extra.</p>
+      <p>Approval if needed, then one mint and one FWA deposit transaction for each of the {visibleRows.length} packs. You will confirm each transaction separately. The FWA main V2 pool accepts one pack per deposit transaction. Gas is extra.</p>
       <p className="fwa-review-network">Transaction network: <strong>{forkMode ? "Local Anvil fork · chain 31337" : "Ethereum mainnet · chain 1"}</strong></p>
       <p className="fwa-review-risk">Approval, if needed, lets FWA transfer any Shapes pack in your wallet. A deposit can be staged and begins earning fees only when active. Withdrawals wait for unresolved purchases to clear; withdrawing the crown during its first 12 hours can cost 1% of its backing.</p>
-      <button type="button" className="btn-filled fwa-review-confirm" disabled={busy || (actionDisabled && !wrongChain)} onClick={() => {setReviewOpen(false); if (!address) onConnect(); else if (wrongChain) switchNetwork(); else void run();}}>{!address ? "CONNECT WALLET" : wrongChain ? forkMode ? "SWITCH TO LOCAL FORK" : "SWITCH TO ETHEREUM" : "MINT, APPROVE & DEPOSIT"}</button>
+      <button type="button" className="btn-filled fwa-review-confirm" disabled={busy || (actionDisabled && !wrongChain)} onClick={() => {setReviewOpen(false); if (!address) onConnect(); else if (wrongChain) switchNetwork(); else void run();}}>{!address ? "CONNECT WALLET" : wrongChain ? forkMode ? "SWITCH TO LOCAL FORK" : "SWITCH TO ETHEREUM" : "START CONTRIBUTION"}</button>
     </dialog>
-    <dialog ref={forkTxDialog} className="fwa-review-dialog fwa-tx-dialog" aria-labelledby="fwa-tx-title" onClose={() => setForkTxHash(null)}>
-      <div className="fwa-review-top"><span>ANVIL · CHAIN 31337</span><button type="button" aria-label="Close transaction" onClick={() => setForkTxHash(null)}>×</button></div>
-      <h2 id="fwa-tx-title">Local transaction.</h2>
-      {forkTxHash && <p className="fwa-tx-hash">{forkTxHash}</p>}
-      {forkTxLoading && <p role="status">Reading transaction from the local fork…</p>}
-      {forkTxError && <p className="fwa-action-error" role="alert">{forkTxError}</p>}
-      {forkTxDetail && <div className="fwa-review-totals fwa-tx-fields">
-        <div><span>Status</span><strong>{forkTxDetail.status}</strong></div>
-        <div><span>Block</span><strong>{forkTxDetail.block?.toString() ?? "Pending"}</strong></div>
-        <div><span>From</span><strong>{forkTxDetail.from}</strong></div>
-        <div><span>To</span><strong>{forkTxDetail.to ?? "Contract creation"}</strong></div>
-        <div><span>ETH value</span><strong>{eth(forkTxDetail.value)} ETH</strong></div>
-        <div><span>Gas used</span><strong>{forkTxDetail.gasUsed?.toString() ?? "Pending"}</strong></div>
-        <div><span>Call</span><strong>{forkTxDetail.selector}</strong></div>
-      </div>}
-      <button type="button" className="fwa-retry" onClick={() => setForkTxRefresh(value => value + 1)}>Refresh receipt</button>
-    </dialog>
+    {forkReceipt}
   </>;
-}
-function FwaTransaction({hash, chainId, label}: {hash: Hash; chainId: number; label: string}) {
-  return chainId === 31337 ? <a className="fwa-fork-tx" href={`?tx=${hash}`} target="_blank" rel="noreferrer" title={hash}>{label} ↗</a>
-    : <a href={txUrl(hash, chainId)} target="_blank" rel="noreferrer">{label} ↗</a>;
 }
 function PackArt({value, settings, salt, nonce = 0}: {value: bigint; settings: FwaSettings | null; salt: bigint | null; nonce?: number}) {
   const denominations = settings?.denominations;

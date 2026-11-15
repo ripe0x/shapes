@@ -1,7 +1,7 @@
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {encodeEventTopics, encodeAbiParameters, parseAbiParameters, parseEther, type Address, type TransactionReceipt} from "viem";
-import {suggestFwaPlan, buildFwaContribution, parseFwaAmount, fwaPackRequirement, buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, sessionKey, type FwaSettings} from "./fwa";
+import {suggestFwaPlan, buildFwaContribution, parseFwaAmount, fwaPackRequirement, buildExplicitFwaPlan, fwaExposure, fwaSettlement, depositBlocker, depositedListing, fwaAbi, fwaActions, mintedPackId, PACKS, FWA_POOL, packTransferAbi, parseFwaSession, sessionKey, type FwaSession, type FwaSettings} from "./fwa";
 const E = parseEther;
 const settings: FwaSettings = {
   denominations: ["0.01","0.05","0.1","0.5","1","5","10","50","100"].map(v => E(v)),
@@ -29,6 +29,29 @@ test("saved sessions are scoped to the wallet and validate transaction hashes an
   assert.equal(parseFwaSession(JSON.stringify(s),FWA_POOL),null);
   assert.equal(parseFwaSession(JSON.stringify({...s,rows:[{...s.rows[0],counts:[-1]}]}),account),null);
   assert.equal(parseFwaSession(JSON.stringify({...s,rows:[{...s.rows[0],mintHash:"invalid"}]}),account),null);
+  assert.equal(parseFwaSession(JSON.stringify({...s,pendingNonces:{"mint:0":-1}}),account),null);
+  assert.equal(parseFwaSession(JSON.stringify({...s,pendingStartBlocks:{"mint:0":"not-a-block"}}),account),null);
+});
+test("a new contribution pairs each mint with its deposit and skips existing approval", () => {
+  const row = {counts:[3,0,0,0,0,0,0,0,0],value:String(E("0.03")),backing:String(E("0.03")),fee:String(E("0.003"))};
+  const session: FwaSession = {version:1,account,order:"paired",approvalNeeded:true,rows:[{...row},{...row}]};
+  assert.deepEqual(fwaActions(session).map(a => a.key),["approve","mint:0","deposit:0","mint:1","deposit:1"]);
+  assert.deepEqual(fwaActions({...session,approvalNeeded:false}).map(a => a.key),["mint:0","deposit:0","mint:1","deposit:1"]);
+  assert.equal(fwaActions({...session,approvalNeeded:false})[0].status,"ready");
+  const progressed = {...session, approvalNeeded:false, rows:[{...row,packId:"41",mintHash:`0x${"ab".repeat(32)}` as const},{...row}]};
+  assert.deepEqual(fwaActions(progressed).map(a=>a.status),["confirmed","ready","queued","queued"]);
+  assert.equal(fwaActions(progressed).length,4);
+  assert.deepEqual(fwaActions({...session,order:undefined}).map(a=>a.key),["mint:0","mint:1","approve","deposit:0","deposit:1"]);
+  const legacyComplete = {...session, order:undefined, approvalNeeded:undefined, rows:session.rows.map((saved, index) => ({...saved, packId:String(index + 1), listingId:String(index + 101)}))};
+  assert.deepEqual(fwaActions(legacyComplete).map(a=>a.status),["confirmed","confirmed","confirmed","confirmed"]);
+});
+test("a reverted transaction remains linkable while its action is retryable", () => {
+  const failedHash = `0x${"cd".repeat(32)}` as const;
+  const session: FwaSession = {version:1,account,order:"paired",approvalNeeded:false,rows:[{counts:[3,0,0,0,0,0,0,0,0],value:String(E("0.03")),backing:String(E("0.03")),fee:String(E("0.003")),mintFailedHash:failedHash}]};
+  assert.equal(fwaActions(session)[0].status,"failed");
+  assert.equal(fwaActions(session)[0].failedHash,failedHash);
+  assert.deepEqual(parseFwaSession(JSON.stringify(session),account),session);
+  assert.equal(parseFwaSession(JSON.stringify({...session,rows:[{...session.rows[0],mintFailedHash:"bad"}]}),account),null);
 });
 const receipt = (address: Address, topics: readonly string[], data: `0x${string}`) => ({logs:[{address,topics,data}]} as unknown as TransactionReceipt);
 test("decode mint IDs from the confirmed pack receipt, never from a predicted counter", () => {
