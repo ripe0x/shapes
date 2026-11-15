@@ -6,7 +6,7 @@ const probe=createPublicClient({transport:http(rpc,{timeout:1000,retryCount:0})}
 let occupied=false;
 try {await probe.getChainId();occupied=true;} catch {}
 if(occupied) throw new Error('Port 18546 is already in use. Stop the existing node before running this test.');
-const child=spawn(process.env.ANVIL_BIN ?? 'anvil',['--fork-url',process.env.FWA_FORK_SOURCE ?? 'https://gateway.tenderly.co/public/mainnet','--chain-id','1','--port','18546','--silent'],{stdio:['ignore','ignore','pipe']});
+const child=spawn(process.env.ANVIL_BIN ?? 'anvil',['--fork-url',process.env.FWA_FORK_SOURCE ?? 'https://mainnet.gateway.tenderly.co','--chain-id','1','--port','18546','--silent'],{stdio:['ignore','ignore','pipe']});
 let startupError='';
 child.stderr.on('data',d=>{startupError+=d.toString().slice(0,2000)});
 child.on('error',e=>{startupError=e.message});

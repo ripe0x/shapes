@@ -246,6 +246,20 @@ export function depositedListing(receipt: TransactionReceipt, account: Address, 
   return {listingId: String(event.args.listingId), staged: event.eventName === "ListingStaged"};
 }
 
+/** Chain ID alone does not distinguish two Anvil forks that both use 31337. */
+export async function assertSameFwaFork(client: PublicClient, walletClient: PublicClient, rpc: string): Promise<void> {
+  const readHeads = () => Promise.all([client.getBlock(), walletClient.getBlock()]);
+  let heads;
+  try {
+    heads = await readHeads();
+    if (heads[0].number !== heads[1].number || heads[0].hash !== heads[1].hash) heads = await readHeads();
+  }
+  catch {throw new Error(`Could not verify your wallet's Anvil RPC. Check that chain 31337 uses ${rpc}.`);}
+  const [pageBlock, walletBlock] = heads;
+  if (pageBlock.number !== walletBlock.number || pageBlock.hash !== walletBlock.hash)
+    throw new Error(`Your wallet is connected to a different Anvil fork. Set chain 31337's RPC to ${rpc} and try again.`);
+}
+
 /** Recover mined writes before enabling another signature after a reload. Pending hashes stay put. */
 export async function reconcileFwaSession(client: PublicClient, saved: FwaSession, verifyLocalFork = false): Promise<FwaSession> {
   const next = structuredClone(saved);

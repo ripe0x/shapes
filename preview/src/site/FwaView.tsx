@@ -1,6 +1,6 @@
 import React from "react";
 import "./FwaView.css";
-import {createPublicClient, defineChain, formatEther, http, type Abi, type Address, type Hash} from "viem";
+import {createPublicClient, custom, defineChain, formatEther, http, type Abi, type Address, type EIP1193Provider, type Hash} from "viem";
 import {mainnet} from "viem/chains";
 import {useAccount, useSwitchChain, useWriteContract} from "wagmi";
 import {renderPack, type PackCard} from "shapes-render/pack";
@@ -12,7 +12,7 @@ import {Section, txUrl} from "./ui";
 import {sampleSeed} from "./art";
 import {mintGene} from "../previewGene";
 import {
-  FWA_POOL, PACKS, SHAPES, suggestFwaPlan, type FwaSuggestionMode, buildFwaContribution, parseFwaAmount, fwaPackRequirement, packMakeup,
+  FWA_POOL, PACKS, SHAPES, assertSameFwaFork, suggestFwaPlan, type FwaSuggestionMode, buildFwaContribution, parseFwaAmount, fwaPackRequirement, packMakeup,
   depositBlocker, depositedListing, fwaAbi, loadFwaSettings, mintedPackId, packTransferAbi,
   parseFwaSession, reconcileFwaSession, sessionKey, type FwaSession, type FwaSettings, type Plan,
 } from "./fwa";
@@ -35,7 +35,7 @@ const choicesFor = (rows: readonly {value: bigint}[]): Choice[] => {
 };
 
 export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => void}) {
-  const {address, chainId} = useAccount();
+  const {address, chainId, connector} = useAccount();
   const {switchChainAsync} = useSwitchChain();
   const {writeContractAsync} = useWriteContract();
   const [budget, setBudget] = React.useState("1");
@@ -73,8 +73,8 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const [activeHash, setActiveHash] = React.useState<Hash | null>(null);
   const [recoveryFailed, setRecoveryFailed] = React.useState(false);
   const [resetConfirm, setResetConfirm] = React.useState(false);
-  const wallet = React.useRef({address, chainId});
-  wallet.current = {address, chainId};
+  const wallet = React.useRef({address, chainId, connector});
+  wallet.current = {address, chainId, connector};
   const sessionRef = React.useRef(session);
   const running = React.useRef(false);
   const mounted = React.useRef(true);
@@ -263,6 +263,14 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         const balance = await client.getBalance({address: account});
         if (balance < (value ?? 0n) + gas * await client.getGasPrice()) throw new Error("Your wallet needs more eth for this transaction and network gas.");
         walletReady(account);
+        if (forkMode) {
+          const activeConnector = wallet.current.connector;
+          const provider = await activeConnector?.getProvider();
+          if (!provider || typeof provider !== "object" || !("request" in provider)) throw new Error("Connect a wallet to Anvil before sending.");
+          await assertSameFwaFork(client, createPublicClient({transport: custom(provider as EIP1193Provider)}), dep.rpc);
+          walletReady(account);
+          if (wallet.current.connector?.uid !== activeConnector?.uid) throw new Error("Your wallet connection changed. Reconnect before continuing.");
+        }
         const hash = await writeContractAsync({...call, gas, chainId: dep.chainId});
         record(hash); save(current);
         if (mounted.current && same(wallet.current.address ?? "", account)) setActiveHash(hash);

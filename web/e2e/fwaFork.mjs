@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {createPublicClient,createWalletClient,http,parseAbi,parseEther} from "viem";
 import {mainnet} from "viem/chains";
-import {FWA_POOL,PACKS,SHAPES,fwaAbi,packTransferAbi,buildFwaContribution,loadFwaSettings,mintedPackId,depositedListing,reconcileFwaSession} from "../../preview/src/site/fwa.ts";
+import {FWA_POOL,PACKS,SHAPES,fwaAbi,packTransferAbi,assertSameFwaFork,buildFwaContribution,loadFwaSettings,mintedPackId,depositedListing,reconcileFwaSession} from "../../preview/src/site/fwa.ts";
 import {packsAbi} from "../../preview/src/site/packs.ts";
 const rpc = process.env.FWA_FORK_RPC ?? 'http://127.0.0.1:18546';
 const url = new URL(rpc);
@@ -69,6 +69,10 @@ try {
   console.log('PASS direct wallet deposit and reload recovery',listing,'depositor',l[1]);
  }
  completedSession={version:1,account,rows:savedRows};
+ await assertSameFwaFork(client,client,rpc);
+ const liveMainnet=createPublicClient({chain:mainnet,transport:http('https://mainnet.gateway.tenderly.co')});
+ await assert.rejects(()=>assertSameFwaFork(client,liveMainnet,rpc),/different Anvil fork/);
+ console.log('PASS matching wallet fork; reject a different real chain head');
  assert.deepEqual((await reconcileFwaSession(client,completedSession,true)).rows,savedRows);
  console.log('PASS completed fork session matches its mined receipts');
  console.log('PASS deployed shapes',SHAPES,'and packs plus FWA on a real mainnet fork');
