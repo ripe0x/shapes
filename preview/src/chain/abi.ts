@@ -184,6 +184,8 @@ export interface Deployment {
   rpc: string;
   chainId: number;
   shapes: `0x${string}`;
+  /** Public balance marker that identifies one local FWA fork to the connected wallet. */
+  fwaForkMarker?: {address: `0x${string}`; balanceWei: string};
   /** Optional Ponder GraphQL origin. When healthy and within the site's freshness budget,
    *  gallery rows come from this indexer while chain reads remain the correctness fallback. */
   indexerUrl?: string;

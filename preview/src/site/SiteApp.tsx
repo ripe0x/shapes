@@ -26,6 +26,7 @@ import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
 import {PacksView} from "./PacksView";
 import {PackDetailView} from "./PackDetailView";
+const FwaView = React.lazy(() => import("./FwaView").then(m => ({default: m.FwaView})));
 
 // The generated contract documentation is large and only this view reads it, so it loads on
 // demand rather than riding in the main bundle.
@@ -41,7 +42,8 @@ export type View =
   | "manage"
   | "contracts"
   | "packs"
-  | "pack";
+  | "pack"
+  | "fwa";
 
 export interface MintState {
   status: "idle" | "pending" | "done" | "failed";
@@ -211,8 +213,8 @@ export function SiteApp({
   }, [publicClient, dep]);
 
   React.useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (view !== "fwa") void refresh();
+  }, [refresh, view]);
 
   // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
   // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
@@ -475,8 +477,8 @@ export function SiteApp({
   }, [publicClient, dep, address]);
 
   React.useEffect(() => {
-    void refreshAuction();
-  }, [refreshAuction]);
+    if (view !== "fwa") void refreshAuction();
+  }, [refreshAuction, view]);
 
   const runHouse = async (op: string, fn: string, args: readonly unknown[], value?: bigint) => {
     if (!publicClient || !dep.auctionHouse) return;
@@ -656,6 +658,7 @@ export function SiteApp({
           <ContractsView dep={dep} />
         </React.Suspense>
       )}
+      {view === "fwa" && <React.Suspense fallback={<div style={{padding: 48}}>Loading FWA…</div>}><FwaView dep={dep} onConnect={() => openConnectModal?.()} /></React.Suspense>}
       {view === "packs" && (
         <PacksView
           dep={dep}

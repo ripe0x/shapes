@@ -21,3 +21,16 @@
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Keep PR #149 and branch previews on the actual mainnet app. Both Netlify projects
+# use this repository, so scope these overrides to the FWA feature branch only.
+[context."feat/fwa-packs"]
+  command = "npm ci --prefix .. --no-audit --no-fund && NEXT_PUBLIC_SITE_URL=\"$DEPLOY_PRIME_URL\" npm run build:netlify"
+  # Rebuild this preview on every branch update, including docs and review fixes.
+  # Netlify's ignore command uses exit 1 to build and exit 0 to skip.
+  ignore = "/bin/false"
+
+[context."feat/fwa-packs".environment]
+  SHAPES_SITE_MODE = "app"
+  SHAPES_LADDER = "mainnet"
+  NEXT_PUBLIC_SHAPES_DEPLOYMENT = "deployment"

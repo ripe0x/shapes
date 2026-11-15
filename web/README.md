@@ -182,3 +182,86 @@ control instead of being reconnected on load.
 
 Playwright is already a devDependency of `preview/`; a fresh checkout needs
 `npx playwright install chromium` once.
+
+## FWA contribution page
+
+`/fwa` starts with a 1 ETH budget and the Balanced strategy, matching each pack's
+FWA backing to its value where current limits allow. Most positions and Lower draw
+exposure are available under Customize. Recommendations use live denominations,
+mint fees, FWA minimums, and the oracle ceiling, with a 24-position workflow limit.
+The current fork's 1 ETH example recommends fifteen 0.03 ETH packs for 0.945 ETH
+including separate backing and mint fees. The remaining budget stays in the wallet.
+Manual edits preserve pack values, backing, and quantities when the budget changes;
+the budget section offers an explicit recalculation action. All position artwork is
+shown by default through the canonical `shapes-render` pack renderer, without
+cropping. Pack construction and per-position backing remain editable.
+
+All amounts use bigint wei. Pack composition uses the fewest shapes from the
+live denomination ladder, with one live mint fee per underlying shape. The total
+includes redeemable pack value, FWA backing, and mint fees. Budget and wallet
+shortfalls leave every chosen amount unchanged and disable the primary action.
+Pack minimums, FWA backing minimums, admission, oracle policy, and withdrawal
+status are checked against deployed contracts. Unmet requirements identify the
+pack in the editor and contribution summary. The workflow is blocked while the
+collection is awaiting admission.
+
+After the cost review, a separate checklist presents one transaction at a time:
+approve FWA if necessary, then mint and deposit each pack in plan order. The next
+transaction starts after the previous confirmation by default; a saved toggle
+pauses between transactions. Each write still needs wallet confirmation. Every write is quoted, simulated,
+estimated with the existing gas buffer, and checked against the connected wallet
+and chain. The main V2 pool accepts one pack per deposit transaction. The
+checklist shows exact pack and FWA backing payments, confirmation progress,
+rejected and reverted actions, staged deposits, and transaction links. Mainnet
+links open evm.now and FWA Manage; local-fork links open an in-app Anvil receipt.
+
+A wallet-scoped local checklist stores the frozen plan and each broadcast hash
+before awaiting confirmation. Reload recovery reads receipts, extracts the actual
+pack/listing IDs, detects nonce replacements, and distinguishes staged deposits. The original wallet remains
+the FWA depositor. Do not clear browser storage during a workflow; packs and
+positions themselves remain onchain regardless of this checklist. Plans do not
+include gas. Sessions created by the earlier mint-all workflow retain their
+original transaction order when resumed.
+
+Validation:
+
+```sh
+node --import tsx --test preview/src/site/fwa.test.ts
+# Install Anvil through Foundry, then run against a disposable mainnet fork:
+node web/e2e/runFwaFork.mjs
+# Optional: ANVIL_BIN=/absolute/path/to/anvil FWA_FORK_SOURCE=https://your.rpc
+SHAPES_LADDER=mainnet npm run build --workspace web
+```
+
+The fork check uses the real deployed contracts, funds a disposable test wallet,
+mints packs, checks actual admission rejection when applicable, and enables the
+announced collection admission/exemption using owner impersonation **on the local
+fork only**. It verifies direct wallet depositor rights and reload recovery from
+actual receipts. The script refuses non-loopback RPCs and requires Anvil before
+any write. Its state is reverted and its node stopped after the run. No test
+transaction is submitted to Ethereum mainnet.
+
+For a browser-connected FWA fork, use Anvil on the default `127.0.0.1:8545`
+with chain ID `31337` and `https://mainnet.gateway.tenderly.co` as its pinned
+mainnet source. Set `SHAPES_DEPLOYMENT_FILE` to a values-only deployment record
+with that loopback RPC and chain ID, then run
+`node web/scripts/mark-fwa-fork.mjs`. The script installs or reuses a public
+1-wei fork marker, resolves `ripe0x.eth` through Tenderly mainnet RPC, and
+ensures that wallet has at least 1,000 test ETH on Anvil. It records the public
+addresses in the deployment file. Re-run it after resetting or replacing Anvil,
+then rebuild or reload the frontend. FWA writes
+check the marker through both the page RPC and wallet provider before signing;
+a missing or mismatched marker blocks the transaction.
+
+### FWA preview branch
+
+`feat/fwa-packs` has a branch specific Netlify context in `netlify.toml`. It
+builds the real mainnet app on every update and uses `DEPLOY_PRIME_URL` for the
+preview's metadata origin. Production configuration is unchanged.
+
+In the mainnet Netlify project's **Branches and deploy contexts** settings,
+enable Deploy Previews for pull requests and add `feat/fwa-packs` to the specific
+branches allowed for branch deploys. Netlify then rebuilds its stable preview URL
+on pushes to this branch. PR #149 sets `@netlify /fwa` as its preview entry page.
+These account settings must be enabled in Netlify; the TOML context supplies build
+configuration but does not enable Git integration or branch deploys by itself.
