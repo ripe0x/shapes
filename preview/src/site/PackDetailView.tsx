@@ -105,7 +105,7 @@ export function PackDetailView({dep, packId}: {dep: Deployment; packId: bigint})
       <div>
         <p className="launch-kicker">SHAPE PACK · {status.toUpperCase()}</p>
         <h1>Pack #{packId.toString()}</h1>
-        {detail.state && <p>{formatEther(detail.state.valueWei)} ETH backing · {shapeIds.length} Shapes</p>}
+        {detail.state && <p>{formatEther(detail.state.valueWei)} ETH {detail.owner ? "backing" : "at exit"} · {shapeIds.length} Shapes</p>}
         {detail.owner && <p>Owner <AddressName address={detail.owner} /></p>}
         {detail.claimant && <p>Claimant <AddressName address={detail.claimant} /></p>}
         {detail.state?.creator && <p>Created by <AddressName address={detail.state.creator} /></p>}
