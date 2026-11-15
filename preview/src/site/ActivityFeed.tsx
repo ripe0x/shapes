@@ -193,8 +193,9 @@ export function relativeTime(timestampSeconds: bigint, nowSeconds: bigint): stri
   return `${age / 86_400n}d ago`;
 }
 
+// Ownership moves stay indexed for asset history, but they are not work on the homepage.
 const ACTIVITY_QUERY = `query Activity($limit: Int!, $after: String) {
-  activitys(orderBy: "orderKey", orderDirection: "desc", limit: $limit, after: $after) {
+  activitys(where: {kind_not_in: ["transfer", "packTransferred", "ownerTokenMoved"]}, orderBy: "orderKey", orderDirection: "desc", limit: $limit, after: $after) {
     items {
       id
       blockNumber

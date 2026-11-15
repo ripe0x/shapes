@@ -65,6 +65,8 @@ A mint transaction is one row keyed `<txHash>-mint` listing every id it minted. 
     pageInfo { hasNextPage endCursor } } }
 ```
 
+The homepage's Proof of work feed filters out `transfer`, `packTransferred`, and `ownerTokenMoved`. Those rows remain queryable for ownership history.
+
 ### `collection_owner`
 
 A single row: `ownerTokenId` and `ownerAddress`, both null once the owner token is gone.
