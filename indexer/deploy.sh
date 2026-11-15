@@ -17,7 +17,8 @@
 #   2. Refuses if the toml's DATABASE_SCHEMA was already used, per
 #      indexer/deployments.json, for a different Shapes address. A schema holds one
 #      contract's history; bump DATABASE_SCHEMA in the toml for a new deployment
-#      instead of overwriting another one's data.
+#      instead of overwriting another one's data. Ponder also binds a production
+#      schema to one build ID, so bump it for indexing code, ABI, or schema changes.
 #   3. Runs `fly deploy --config indexer/fly.<name>.toml -a <app> -e SHAPES_ADDRESS=...
 #      -e SHAPES_START_BLOCK=... -e AUCTION_HOUSE_START_BLOCK=...`. The `-e` overrides
 #      are release-scoped env vars, not secrets, so they never touch the toml file
