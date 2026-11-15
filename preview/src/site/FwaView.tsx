@@ -567,7 +567,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   );
   if (session && processActive) return <>
     {forkMode ? <div className="fwa-fork-banner" role={wrongChain ? "alert" : "status"}>LOCAL ANVIL FORK · CHAIN 31337 · RPC {new URL(dep.rpc).host} · TEST TRANSACTIONS ONLY</div>
-      : <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">ETHEREUM MAINNET · REAL TRANSACTIONS</div>}
+      : wrongChain && <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">WALLET ON {chainId ? `CHAIN ${chainId}` : "UNKNOWN NETWORK"} · SWITCH TO ETHEREUM MAINNET</div>}
     <FwaProcessView
       packs={session.rows.map(row => ({value: BigInt(row.value), backing: BigInt(row.backing), fee: BigInt(row.fee), packId: row.packId, listingId: row.listingId, staged: row.staged}))}
       steps={processSteps} chainId={dep.chainId} actionLabel={processActionLabel} actionDisabled={processActionDisabled}
@@ -588,10 +588,10 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         {(!address || wrongChain) && <button type="button" disabled={busy} onClick={() => address ? switchNetwork() : onConnect()}>{address ? "SWITCH WALLET TO ANVIL" : "CONNECT WALLET TO ANVIL"}</button>}
         {wrongChain && error && <small>{error}</small>}
       </div>}
-      {!forkMode && dep.chainId === 1 && <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">
-        <span>ETHEREUM MAINNET · REAL TRANSACTIONS{wrongChain && ` · WALLET ON ${chainId ? `CHAIN ${chainId}` : "UNKNOWN NETWORK"}`}</span>
-        {wrongChain && <button type="button" disabled={busy} onClick={switchNetwork}>SWITCH WALLET TO ETHEREUM</button>}
-        {wrongChain && error && <small>{error}</small>}
+      {!forkMode && dep.chainId === 1 && wrongChain && <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">
+        <span>WALLET ON {chainId ? `CHAIN ${chainId}` : "UNKNOWN NETWORK"} · SWITCH TO ETHEREUM MAINNET</span>
+        <button type="button" disabled={busy} onClick={switchNetwork}>SWITCH WALLET TO ETHEREUM</button>
+        {error && <small>{error}</small>}
       </div>}
       <section className="fwa-hero">
         <div>
@@ -718,16 +718,6 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         </aside>
       </div>
     </main>
-
-    <section className="fwa-explain">
-      <p className="fwa-eyebrow">BEFORE YOU DEPOSIT</p>
-      <h2>What should you know before depositing?</h2>
-      <div className="fwa-explain-grid">
-        <article><span>WHILE ACTIVE</span><h3>Earn a share of acquisition fees.</h3><p>Every active position receives an equal share of distributable ETH acquisition fees. FWA token rewards follow separate backing based rules. Returns depend on activity and time in the pool.</p></article>
-        <article><span>IF A POSITION IS DRAWN</span><h3>The buyer chooses what happens.</h3><p>If they keep your pack, you receive its separate FWA backing less the settlement fee. If they accept FWA’s bid, your pack returns and its backing is consumed.</p></article>
-        <article><span>TO BEGIN</span><h3>Made for FWA deposits.</h3><p>Shapes are assembled automatically at the required values. Live eligibility and backing limits are checked before minting and depositing. Gas costs are extra.</p></article>
-      </div>
-    </section>
 
     <dialog ref={reviewDialog} className="fwa-review-dialog" aria-labelledby="fwa-review-title" onClose={() => setReviewOpen(false)}>
       <div className="fwa-review-top"><span>CONTRIBUTION REVIEW</span><button type="button" aria-label="Close review" onClick={() => setReviewOpen(false)}>×</button></div>
