@@ -5,7 +5,7 @@ import {tokenArt, type ArtToken} from "./art";
 import {AddressName} from "./AddressName";
 import {INDEXER_TIMEOUT_MS, indexerQuery} from "./indexerClient";
 import {C} from "./theme";
-import {short, txUrl} from "./ui";
+import {addrUrl, short, txUrl} from "./ui";
 
 /** Rows per page, and per "Show more". */
 export const ACTIVITY_PAGE_SIZE = 20;
@@ -473,7 +473,10 @@ function ActivityRow({
         <span className="activity-meta">
           {row.detail && <span className="activity-detail">{row.detail}</span>}
           <span className="activity-actor">
-            <AddressName address={event.actor} />
+            <a href={addrUrl(event.actor, chainId)} target="_blank" rel="noreferrer"
+              aria-label={`View ${event.actor} on evm.now`}>
+              <AddressName address={event.actor} />
+            </a>
           </span>
         </span>
       </div>
