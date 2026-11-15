@@ -28,7 +28,7 @@ cp .env.example .env.local   # then fill in the values below
 | `PONDER_RPC_URL` | `http://127.0.0.1:8547` (from `preview/public/deployment.json`) | an archive-capable mainnet RPC |
 | `PONDER_CHAIN_ID` | `31347` (from `preview/public/deployment.json`, currently) | `1` |
 | `SHAPES_LADDER` | `mainnet` locally unless running the testnet profile | `mainnet` |
-| `SHAPES_ADDRESS` | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` (from `preview/public/deployment.json`, currently) | not deployed yet — placeholder in `.env.example` |
+| `SHAPES_ADDRESS` | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` (from `preview/public/deployment.json`, currently) | the deployed Shapes address in `deployments/1.json` |
 | `AUCTION_HOUSE_ADDRESS` | the deployment record's `auctionHouse` | the deployed auction house |
 | `SHAPES_START_BLOCK` | `0` is fine for a fresh local anvil chain | the Shapes deployment block |
 | `AUCTION_HOUSE_START_BLOCK` | optional; defaults to `SHAPES_START_BLOCK` | the deployment record's `auctionHouseFromBlock` (falls back to `fromBlock`) |
@@ -382,8 +382,8 @@ favor of its raw-RPC path, so the single-machine availability tradeoff is bounde
 One Fly app per chain, each pinned to a `fly.<env>.toml` with a 12-second poll, one indexing
 thread, a 1 GB shared-CPU Machine, and `/data/pglite` on its own volume:
 `fly.sepolia.toml` (app `shapes-indexer`, `testnet` ladder) and `fly.mainnet.toml` (app
-`shapes-indexer-mainnet`, `mainnet` ladder). Both leave the primary RPC public and archive-capable
-with two more public RPCs as `PONDER_RPC_FALLBACKS`; neither toml is deployed directly.
+`shapes-indexer-mainnet`, `mainnet` ladder). Mainnet uses the Tenderly public RPC; Sepolia has
+a public fallback. Neither toml is deployed directly.
 
 ### Environments
 
@@ -397,7 +397,7 @@ never pointed at a stale or wrong contract by hand.
 indexer/bootstrap.sh sepolia   # or mainnet — prints the fly apps/volumes create commands
 # <run the printed commands yourself>
 
-# every time the contracts redeploy to that chain
+# for a new indexer build or contract deployment
 indexer/deploy.sh sepolia      # or mainnet — reads deployments/<chainId>.json, deploys, records
 ```
 
@@ -406,7 +406,9 @@ and prints the `fly deploy` command without calling Fly. A real run reads back `
 `/graphql` after deploying and records `{DATABASE_SCHEMA: shapesAddress}` in
 `indexer/deployments.json`, refusing a schema reused for a different address on a later run — bump
 `DATABASE_SCHEMA` in the toml for a new deployment on the same chain rather than mixing two
-contracts' history into one schema. A replaced auction house needs the same bump: the schema
+contracts' history into one schema. Ponder also rejects a changed indexing build in an existing
+production schema, so bump `DATABASE_SCHEMA` for indexing code, ABI, or table changes. The old
+schema remains on the volume for rollback. A replaced auction house needs the same bump: the schema
 ledger keys on the Shapes address alone, but a new house is a new event source, and its retired
 predecessor's events are not re-indexed into the new schema. Then read back `/health`, `/ready`,
 `/status`, and the gallery GraphQL query before adding the app's URL as `indexerUrl` in

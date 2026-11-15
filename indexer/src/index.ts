@@ -2,7 +2,7 @@ import { zeroAddress } from "viem";
 
 import { ponder } from "ponder:registry";
 
-import { AUCTION_HOUSE } from "../ponder.config";
+import { AUCTION_HOUSE, SHAPE_PACKS } from "../ponder.config";
 import { activity, auctionLot, collectionOwner, escrowedCard, lineageEdge, token } from "../ponder.schema";
 import { activityRow, mintActivityId, type ActivityAt } from "./lib/activity";
 import { backingForDenomIndex, denomIndexOfWei } from "./lib/denominations";
@@ -32,6 +32,16 @@ function at(event: {
 const OWNER_SINGLETON_ID = "singleton";
 // The contract's "no owner token" sentinel: type(uint256).max.
 const NO_OWNER_TOKEN = 2n ** 256n - 1n;
+
+// Pack custody emits Shapes events for each contained token. The Pack lifecycle event is the
+// user action; keep token ownership/liveness indexed but omit those constituent feed rows.
+function isPackCustody(address: `0x${string}` | null): boolean {
+  return SHAPE_PACKS !== null && address?.toLowerCase() === SHAPE_PACKS;
+}
+
+function packOperationId(txHash: `0x${string}`, operation: "merge" | "exit", packId: bigint): string {
+  return `${txHash}-pack-${operation}-${packId}`;
+}
 
 // A token is born. originCount is always 1 on this event; the contract emits it only from a
 // direct mint, never from recomposition.
@@ -63,16 +73,18 @@ ponder.on("Shapes:ShapeMinted", async ({ event, context }) => {
   // One activity row per transaction, however many Shapes it minted. `actor` and `logIndex` come
   // from the first mint in the transaction; a transaction minting to more than one recipient is
   // credited to that first recipient.
-  await context.db
-    .insert(activity)
-    .values({
-      ...activityRow(at(event), "mint", [tokenId], to, { amountWei }),
-      id: mintActivityId(event.transaction.hash),
-    })
-    .onConflictDoUpdate((row) => ({
-      tokenIds: [...row.tokenIds, tokenId],
-      amountWei: (row.amountWei ?? 0n) + amountWei,
-    }));
+  if (!isPackCustody(to)) {
+    await context.db
+      .insert(activity)
+      .values({
+        ...activityRow(at(event), "mint", [tokenId], to, { amountWei }),
+        id: mintActivityId(event.transaction.hash),
+      })
+      .onConflictDoUpdate((row) => ({
+        tokenIds: [...row.tokenIds, tokenId],
+        amountWei: (row.amountWei ?? 0n) + amountWei,
+      }));
+  }
 });
 
 // A token's ink gene is assigned or reassigned. Emitted once per mint (right after ShapeMinted),
@@ -274,11 +286,13 @@ ponder.on("Shapes:BlackShapeCreated", async ({ event, context }) => {
 ponder.on("Shapes:ShapeRedeemed", async ({ event, context }) => {
   const { tokenId, to, amountWei } = event.args;
 
-  await context.db.update(token, { id: tokenId }).set({ live: false });
+  const redeemed = await context.db.update(token, { id: tokenId }).set({ live: false });
 
-  await context.db
-    .insert(activity)
-    .values(activityRow(at(event), "redeem", [tokenId], to, { amountWei }));
+  if (!isPackCustody(redeemed.owner)) {
+    await context.db
+      .insert(activity)
+      .values(activityRow(at(event), "redeem", [tokenId], to, { amountWei }));
+  }
 });
 
 // The collection owner token moves: constructor genesis (max -> 0), compose (donor ->
@@ -301,9 +315,13 @@ ponder.on("Shapes:OwnerTokenMoved", async ({ event, context }) => {
     .onConflictDoUpdate({ ownerTokenId, ownerAddress, updatedAtBlock: event.block.number });
 
   const moved = [fromTokenId, toTokenId].filter((id) => id !== NO_OWNER_TOKEN);
-  await context.db
-    .insert(activity)
-    .values(activityRow(at(event), "ownerTokenMoved", moved, event.transaction.from));
+  const packOwnsMovedToken = (await Promise.all(moved.map((id) => context.db.find(token, {id}))))
+    .some((row) => row !== null && isPackCustody(row.owner));
+  if (!packOwnsMovedToken) {
+    await context.db
+      .insert(activity)
+      .values(activityRow(at(event), "ownerTokenMoved", moved, event.transaction.from));
+  }
 });
 
 // Every non-burn transfer establishes the canonical owner. This deliberately includes mint
@@ -343,10 +361,80 @@ ponder.on("Shapes:Transfer", async ({ event, context }) => {
 
   // Only a holder-to-holder move is its own activity. A mint transfer is already the mint row,
   // and the burn transfers are the redeem, compose and split rows.
-  if (from !== zeroAddress) {
+  if (from !== zeroAddress && !isPackCustody(from) && !isPackCustody(to)) {
     await context.db
       .insert(activity)
       .values(activityRow(at(event), "transfer", [tokenId], from, { counterparty: to }));
+  }
+});
+
+ponder.on("ShapePacks:PackCreated", async ({ event, context }) => {
+  const {packId, creator, shapeIds, valueWei} = event.args;
+  await context.db.insert(activity).values(
+    activityRow(at(event), "packCreated", [...shapeIds], creator, {packId, amountWei: valueWei}),
+  );
+});
+
+ponder.on("ShapePacks:PackExtended", async ({ event, context }) => {
+  const {packId, by, shapeIds, addedValueWei} = event.args;
+  await context.db.insert(activity).values(
+    activityRow(at(event), "packExtended", [...shapeIds], by, {packId, amountWei: addedValueWei}),
+  );
+});
+
+// mergePacks emits one event per source. One call is one user operation in the feed.
+ponder.on("ShapePacks:PackMerged", async ({ event, context }) => {
+  const {targetPackId, sourcePackId, by, shapeIds, addedValueWei} = event.args;
+  await context.db.insert(activity).values({
+    ...activityRow(at(event), "packMerged", [...shapeIds], by, {packId: targetPackId, amountWei: addedValueWei}),
+    id: packOperationId(event.transaction.hash, "merge", targetPackId),
+  }).onConflictDoUpdate((row) => ({
+    tokenIds: [...row.tokenIds, ...shapeIds],
+    amountWei: (row.amountWei ?? 0n) + addedValueWei,
+  }));
+  // The target row represents the user operation on the homepage. A separate source row keeps
+  // merged-away Packs findable by their own id on their detail pages.
+  await context.db.insert(activity).values(
+    activityRow(at(event), "packMergedAway", [...shapeIds], by, {
+      packId: sourcePackId, relatedPackId: targetPackId, amountWei: addedValueWei,
+    }),
+  );
+});
+
+ponder.on("ShapePacks:PackUnsealed", async ({ event, context }) => {
+  const {packId, owner} = event.args;
+  await context.db.insert(activity).values({
+    ...activityRow(at(event), "packUnsealed", [], owner, {packId}),
+    id: packOperationId(event.transaction.hash, "exit", packId),
+  });
+});
+
+ponder.on("ShapePacks:ShapesClaimed", async ({ event, context }) => {
+  const {packId, shapeIds} = event.args;
+  const id = packOperationId(event.transaction.hash, "exit", packId);
+  const opened = await context.db.find(activity, {id});
+  const kind = opened ? "packOpened" : "packShapesClaimed";
+  await context.db.insert(activity).values({
+    ...activityRow(at(event), kind, [...shapeIds], event.transaction.from, {packId}), id,
+  }).onConflictDoUpdate({kind, tokenIds: [...shapeIds]});
+});
+
+ponder.on("ShapePacks:EthClaimed", async ({ event, context }) => {
+  const {packId, shapeIds, valueWei} = event.args;
+  const id = packOperationId(event.transaction.hash, "exit", packId);
+  const redeemed = await context.db.find(activity, {id});
+  const kind = redeemed ? "packRedeemed" : "packEthClaimed";
+  await context.db.insert(activity).values({
+    ...activityRow(at(event), kind, [...shapeIds], event.transaction.from, {packId, amountWei: valueWei}), id,
+  }).onConflictDoUpdate({kind, tokenIds: [...shapeIds], amountWei: valueWei});
+});
+
+ponder.on("ShapePacks:Transfer", async ({ event, context }) => {
+  const {from, to, tokenId} = event.args;
+  if (from !== zeroAddress && to !== zeroAddress) {
+    await context.db.insert(activity).values(
+      activityRow(at(event), "packTransferred", [], from, {packId: tokenId, counterparty: to}),
+    );
   }
 });
 

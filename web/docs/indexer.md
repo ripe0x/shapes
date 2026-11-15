@@ -44,25 +44,29 @@ Each edge carries `childSeed`, `parentDenomIndex`, `childMintDenomIndex`, `block
 
 ### `activity`
 
-One row per protocol event, plus the auction house events that move a Shape. `orderKey` is `blockNumber << 32 | logIndex`, so one sort on it reproduces chain order.
+Activity rows represent user-visible protocol, Pack lifecycle, and auction events. A mint transaction has one row for all its Shapes. Shape events caused by Pack custody still update token state, but do not add separate feed rows. `orderKey` is `blockNumber << 32 | logIndex`, so one sort on it reproduces chain order.
 
 | Field | Meaning |
 | --- | --- |
-| `kind` | `mint`, `compose`, `decompose`, `split`, `redeem`, `burnBacking`, `ownerTokenMoved`, `transfer`, `auctionCreated`, `bid`, `auctionSettled`, `lotClaimed` |
+| `kind` | `mint`, `compose`, `decompose`, `split`, `redeem`, `burnBacking`, `ownerTokenMoved`, `transfer`, `auctionCreated`, `bid`, `auctionSettled`, `lotClaimed`, `packCreated`, `packExtended`, `packMerged`, `packMergedAway`, `packUnsealed`, `packOpened`, `packRedeemed`, `packShapesClaimed`, `packEthClaimed`, `packTransferred` |
 | `tokenIds` | Every Shape the event touched, in a per-kind order: the survivor then inputs for compose and decompose, the burned input then children for split, every minted id for a mint |
 | `actor` | Recipient of a mint, redeemer of a redeem, sender of a transfer, bidder or seller or winner on an auction event, transaction sender otherwise |
 | `counterparty` | Transfer recipient, else null |
 | `amountWei` | Backing minted, redeemed or burned, else null |
 | `auctionId`, `units` | Auction facts, `units` in 0.01 ETH |
+| `packId` | Pack involved in a Pack action, else null |
+| `relatedPackId` | Target Pack on a source Pack's `packMergedAway` history row, else null |
 | `blockNumber`, `logIndex`, `orderKey`, `timestamp`, `txHash` | Position on chain |
 
-A mint transaction is one row keyed `<txHash>-mint` listing every id it minted; every other row is keyed `<txHash>-<logIndex>`.
+A mint transaction is one row keyed `<txHash>-mint` listing every id it minted. A Pack merge has one homepage row for the target and a `packMergedAway` history row for each burned source Pack. Exit actions have one row per affected Pack; other rows are keyed `<txHash>-<logIndex>`.
 
 ```graphql
 { activitys(orderBy: "orderKey", orderDirection: "desc", limit: 50) {
     items { kind tokenIds actor amountWei blockNumber txHash timestamp }
     pageInfo { hasNextPage endCursor } } }
 ```
+
+The homepage's Proof of work feed selects Shape creation, transformation, backing burn and redemption, plus Pack creation, expansion, merge and exit outcomes. All, Shapes and Packs use the same filtered cursor pagination. Ownership transfers and auction events remain indexed, but are not homepage work rows.
 
 ### `collection_owner`
 

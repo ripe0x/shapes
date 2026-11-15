@@ -90,7 +90,7 @@ upstream server and returns its JSON. `ShapesProviders` sets `dep.indexerUrl` to
 upstream origin is not part of any client bundle or fetched record.
 
 - `SHAPES_INDEXER_URL` — the upstream Ponder GraphQL endpoint, including `/graphql`
-  (currently `https://shapes-indexer-mainnet-b.fly.dev/graphql` in production Netlify).
+  (currently `https://shapes-indexer-mainnet.fly.dev/graphql` in production Netlify).
   Server-only, never `NEXT_PUBLIC_`.
 - `SHAPES_INDEXER_TOKEN` — the bearer token the proxy presents, matching the indexer's
   `INDEXER_TOKEN` secret. Optional while the indexer is open.

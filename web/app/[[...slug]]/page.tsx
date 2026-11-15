@@ -54,6 +54,9 @@ function resolve(slug: string[] | undefined): { view: View; tokenId: bigint | nu
   if (parts.length === 1 && parts[0] === "gallery") return { view: "gallery", tokenId: null };
   if (parts.length === 1 && parts[0] === "fwa") return { view: "fwa", tokenId: null };
   if (parts.length === 1 && parts[0] === "packs") return { view: "packs", tokenId: null };
+  if (parts.length === 2 && parts[0] === "packs" && /^\d+$/.test(parts[1])) {
+    return { view: "pack", tokenId: BigInt(parts[1]) };
+  }
   if (parts.length === 1 && parts[0] === "contracts") return { view: "contracts", tokenId: null };
   if (parts.length === 1 && parts[0] === "my-shapes") return { view: "collection", tokenId: null };
   if (parts.length === 2 && parts[0] === "shape" && /^\d+$/.test(parts[1])) {
@@ -138,6 +141,15 @@ export async function generateMetadata({
       title: "Shape Packs",
       description: "Bundle Shapes in packs, then open for Shapes or redeem for ETH.",
       openGraph: { title: "Shape Packs · Shapes", url: "/packs" },
+    };
+  }
+  if (r.view === "pack" && r.tokenId !== null) {
+    return {
+      title: `Pack ${r.tokenId}`,
+      description: `Shape Pack #${r.tokenId}, its contents and onchain history.`,
+      openGraph: {title: `Pack ${r.tokenId} · Shapes`, url: `/packs/${r.tokenId}`,
+        images: [{url: `/og/pack/${r.tokenId}`, width: 1200, height: 630}]},
+      twitter: {card: "summary_large_image", images: [`/og/pack/${r.tokenId}`]},
     };
   }
   if (r.view === "contracts") {

@@ -25,6 +25,7 @@ import {useDisplayName} from "./useDisplayName";
 import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
 import {PacksView} from "./PacksView";
+import {PackDetailView} from "./PackDetailView";
 const FwaView = React.lazy(() => import("./FwaView").then(m => ({default: m.FwaView})));
 
 // The generated contract documentation is large and only this view reads it, so it loads on
@@ -41,6 +42,7 @@ export type View =
   | "manage"
   | "contracts"
   | "packs"
+  | "pack"
   | "fwa";
 
 export interface MintState {
@@ -665,6 +667,7 @@ export function SiteApp({
           onShapesChanged={refresh}
         />
       )}
+      {view === "pack" && tokenId !== null && <PackDetailView dep={dep} packId={tokenId} />}
       {view === "collection" && !composeMode && (
         <MyShapesView
           data={data}

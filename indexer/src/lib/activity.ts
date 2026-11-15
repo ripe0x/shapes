@@ -15,7 +15,17 @@ export type ActivityKind =
   | "auctionCreated"
   | "bid"
   | "auctionSettled"
-  | "lotClaimed";
+  | "lotClaimed"
+  | "packCreated"
+  | "packExtended"
+  | "packMerged"
+  | "packMergedAway"
+  | "packUnsealed"
+  | "packOpened"
+  | "packRedeemed"
+  | "packShapesClaimed"
+  | "packEthClaimed"
+  | "packTransferred";
 
 /** Where in the chain an event sits, taken from a Ponder event's log, block and transaction. */
 export interface ActivityAt {
@@ -30,6 +40,8 @@ export interface ActivityDetails {
   counterparty?: `0x${string}`;
   amountWei?: bigint;
   auctionId?: bigint;
+  packId?: bigint;
+  relatedPackId?: bigint;
   units?: bigint;
 }
 
@@ -46,6 +58,8 @@ export interface ActivityRow {
   counterparty: `0x${string}` | null;
   amountWei: bigint | null;
   auctionId: bigint | null;
+  packId: bigint | null;
+  relatedPackId: bigint | null;
   units: bigint | null;
 }
 
@@ -85,6 +99,8 @@ export function activityRow(
     counterparty: details.counterparty ?? null,
     amountWei: details.amountWei ?? null,
     auctionId: details.auctionId ?? null,
+    packId: details.packId ?? null,
+    relatedPackId: details.relatedPackId ?? null,
     units: details.units ?? null,
   };
 }
