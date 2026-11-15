@@ -113,13 +113,26 @@
 .fwa-steps>div:last-child {border:0;}
 .fwa-steps span {color:var(--muted);}
 .fwa-steps small {display:block;margin-top:7px;font-size:10px;color:var(--muted);}
-.fwa-progress-details {margin-top:20px;border-top:1px solid var(--rule);font:11px/1.8 "IBM Plex Mono",ui-monospace,monospace;}
-.fwa-progress-details>div {display:flex;gap:16px;padding:7px 0;border-bottom:1px solid var(--rule);}
+.fwa-steps .is-active {font-weight:600;}
+.fwa-steps .is-active span,.fwa-steps .is-complete span {color:var(--ink);}
+.fwa-execution {margin-top:22px;padding:18px 20px;border:1px solid var(--ink);}
+.fwa-execution-head {display:flex;justify-content:space-between;gap:12px;align-items:baseline;font:11px "IBM Plex Mono",ui-monospace,monospace;}
+.fwa-execution-head strong {font-weight:600;text-transform:uppercase;}
+.fwa-execution-head span {color:var(--muted);text-align:right;}
+.fwa-execution-bar {height:4px;margin:14px 0;background:var(--rule);}
+.fwa-execution-bar span {display:block;height:100%;background:var(--ink);transition:width .2s ease;}
+.fwa-execution-current {font:12px/1.6 "IBM Plex Mono",ui-monospace,monospace;color:var(--muted);}
+.fwa-execution-current strong {display:block;margin-top:3px;color:var(--ink);font-weight:500;}
+.fwa-progress-details {margin-top:16px;border-top:1px solid var(--rule);font:11px/1.8 "IBM Plex Mono",ui-monospace,monospace;}
+.fwa-progress-details summary {padding:9px 0;cursor:pointer;}
+.fwa-progress-details>div {display:flex;flex-wrap:wrap;gap:4px 16px;padding:7px 0;border-top:1px solid var(--rule);}
 .fwa-progress-details>div>span {margin-right:auto;}
 .fwa-fork-tx {overflow-wrap:anywhere;font:10px/1.5 "IBM Plex Mono",ui-monospace,monospace;}
 .fwa-action-message,.fwa-action-error,.fwa-action-link,.fwa-manage-link {margin-top:15px!important;font-size:12px;line-height:1.6;}
 .fwa-action-error {color:#8b3b27;}
 .fwa-manage-link a {color:var(--muted);}
+.fwa-review-network {font:12px/1.6 "IBM Plex Mono",ui-monospace,monospace;}
+.fwa-review-network strong {font-weight:600;}
 .fwa-summary-column {min-width:0;padding:39px 28px 35px 30px;}
 .fwa-summary-sticky {position:sticky;top:0;max-height:100vh;overflow:auto;scrollbar-width:thin;}
 .fwa-contribution-total {display:flex;align-items:baseline;gap:7px;margin-top:21px;}
@@ -216,6 +229,8 @@
   .fwa-remove {grid-column:2;justify-self:end;}
   .fwa-steps>div {padding-right:3px;font-size:10px;}
   .fwa-steps>div+div {padding-left:7px;}
+  .fwa-execution {padding:15px;}
+  .fwa-execution-head {align-items:start;flex-direction:column;gap:5px;}
   .fwa-explain-grid {grid-template-columns:1fr;}
   .fwa-explain-grid article {min-height:0;}
   .fwa-advanced-head {display:block;}
