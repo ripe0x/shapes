@@ -113,3 +113,7 @@
 .fwa-page .fwa-contents summary {cursor:pointer;text-decoration:underline;text-underline-offset:3px;}
 .fwa-page .fwa-contents p {margin-top:12px;}
 @media(max-width:699px) {.fwa-page .fwa-edit-row {grid-template-columns:40px minmax(0,1fr) 100px 20px;gap:10px;}.fwa-page .fwa-edit-art {width:40px;height:40px;}.fwa-page .fwa-edit-value>div {padding:10px 8px;font-size:17px;}}
+
+.fwa-page .fwa-summary-art {max-height:360px;overflow-y:auto;}
+
+.fwa-page .fwa-suggestions .shape-mode-toggle {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-width:100%;width:fit-content;}

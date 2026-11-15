@@ -163,15 +163,26 @@ export function fwaPackRequirement(row: {value: bigint; backing: bigint}, settin
   if (settings.admitted && !settings.exempt && settings.cap !== null && row.backing > settings.cap) return `FWA backing exceeds the ${formatEther(settings.cap)} eth oracle ceiling.`;
   return null;
 }
-export type FwaSuggestionMode = "equal" | "fewer";
+export type FwaSuggestionMode = "most" | "equal" | "fewer";
 /** Prefer single-shape packs; promote the size only when the 24-pack workflow limit requires it. */
-export function suggestFwaPlan(budget: bigint, ratioBps: bigint, settings: FwaSettings, mode: FwaSuggestionMode = "equal"): Plan {
+export function suggestFwaPlan(budget: bigint, ratioBps: bigint, settings: FwaSettings, mode: FwaSuggestionMode = "most"): Plan {
   if (budget <= 0n) throw new Error("Enter a budget above 0 eth.");
   if (ratioBps <= 0n || ratioBps > 100_000n) throw new Error("Choose a backing ratio above zero and up to 10×.");
   const backing = (value: bigint) => value * ratioBps / 10_000n;
   const eligible = (value: bigint) => value >= settings.minimumPack && backing(value) > 0n && backing(value) >= settings.minimumBacking &&
     (!settings.admitted || settings.exempt || settings.cap === null || backing(value) <= settings.cap);
   const cost = (value: bigint) => value + backing(value) + packMakeup(value, settings.denominations).reduce((sum, n) => sum + BigInt(n) * settings.mintFee, 0n);
+  if (mode === "most") {
+    // Cost rises between denomination carries. The minimum and the first next
+    // multiple of each denomination include every possible cheapest carry point.
+    const backingMinimum = (settings.minimumBacking * 10_000n + ratioBps - 1n) / ratioBps;
+    const minimum = settings.minimumPack > backingMinimum ? settings.minimumPack : backingMinimum;
+    const candidates = [...new Set(settings.denominations.map(d => (minimum + d - 1n) / d * d))].filter(eligible);
+    const value = candidates.reduce<bigint | undefined>((best, v) => best === undefined || cost(v) < cost(best) || (cost(v) === cost(best) && v < best) ? v : best, undefined);
+    if (value === undefined || cost(value) > budget) throw new Error("This budget cannot fund an eligible pack at this backing ratio.");
+    const count = Number(budget / cost(value) < 24n ? budget / cost(value) : 24n);
+    return buildFwaContribution(Array.from({length: count}, () => ({value, backing: backing(value)})), settings, budget);
+  }
   const clean = settings.denominations.filter(eligible);
   const affordable = clean.filter(value => cost(value) <= budget);
   let base = affordable.find(value => budget / cost(value) <= 24n) ?? affordable.at(-1);
