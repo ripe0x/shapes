@@ -28,11 +28,10 @@ test("SiteFooter: with no onContracts, the contracts link is a plain /contracts 
   assert.ok(link, "expected an <a href=\"/contracts\">");
 });
 
-test("SiteFooter: with onContracts, the contracts link drives it instead of a raw href", () => {
+test("SiteFooter: with onContracts, the contracts anchor keeps its href and in-app click handler", () => {
   const onContracts = () => {};
   const el = SiteFooter({onContracts});
   const anchor = find(el, (p) => p.href === "/contracts");
-  assert.equal(anchor, null, "should not fall back to a raw href when onContracts is given");
-  const button = find(el, (p) => p.onClick === onContracts);
-  assert.ok(button, "expected a button wired to onContracts");
+  assert.ok(anchor, "expected a real /contracts link");
+  assert.equal(typeof anchor.props.onClick, "function");
 });
