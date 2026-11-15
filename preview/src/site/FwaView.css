@@ -48,7 +48,7 @@
 .fwa-gallery-heading button,.fwa-edit-tools button,.fwa-advanced-head button,.fwa-per-pack-toggle,.fwa-retry {padding:0;border:0;background:transparent;color:var(--ink);text-decoration:underline;text-underline-offset:3px;font:11px "IBM Plex Mono",ui-monospace,monospace;white-space:nowrap;}
 .fwa-gallery-grid {display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:17px 10px;}
 .fwa-gallery-grid figure {margin:0;min-width:0;text-align:center;}
-.fwa-pack-art {display:block;width:100%;height:auto;aspect-ratio:5/7;object-fit:cover;}
+.fwa-pack-art {display:block;width:100%;height:auto;aspect-ratio:1;object-fit:contain;}
 .fwa-gallery-grid .fwa-pack-art {width:min(100%,54px);margin:auto;}
 .fwa-gallery-grid figcaption {margin-top:5px;font:9px/1.4 "IBM Plex Mono",ui-monospace,monospace;color:var(--muted);}
 .fwa-gallery-list {max-height:360px;overflow:auto;border-top:1px solid var(--rule);}
