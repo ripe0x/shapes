@@ -40,7 +40,7 @@ export type FwaProcessViewProps = {
 
 const eth = (amount: bigint) => `${formatEther(amount)} eth`;
 const stepLabel = (step: FwaProcessAction) => step.kind === "approve" ? "Approve FWA"
-  : `${step.kind === "mint" ? "Mint" : "Deposit"} pack ${(step.packIndex ?? 0) + 1}`;
+  : step.kind === "mint" ? `Mint pack ${(step.packIndex ?? 0) + 1}` : `Deposit pack ${(step.packIndex ?? 0) + 1} in FWA`;
 const txHref = (hash: Hash, chainId: number) => chainId === 31337 ? `?tx=${hash}` : txUrl(hash, chainId);
 
 function TxLink({hash, chainId, children}: {hash: Hash; chainId: number; children: React.ReactNode}) {
