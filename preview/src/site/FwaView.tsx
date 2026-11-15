@@ -74,8 +74,11 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     try {const balance = await client.getBalance({address: account}); if (mounted.current && same(wallet.current.address ?? "", account)) setWalletBalance(balance);}
     catch {if (mounted.current && same(wallet.current.address ?? "", account)) setWalletBalance(null);}
   }, []);
-  const refresh = React.useCallback(async () => {
-    if (settingsRead.current) return settingsRead.current;
+  const refresh = React.useCallback(async (fresh = false) => {
+    if (settingsRead.current) {
+      if (!fresh) return settingsRead.current;
+      await settingsRead.current.catch(() => {});
+    }
     setChecking(true); setSettingsError("");
     const read = loadFwaSettings(client);
     settingsRead.current = read;
@@ -187,7 +190,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     let work: FwaSession | null = null;
     try {
       walletReady(account);
-      const live = await refresh();
+      const live = await refresh(true);
       walletReady(account);
       work = sessionRef.current ? structuredClone(sessionRef.current) : null;
       if (!work) {
@@ -257,7 +260,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
         row.packId = String(mintedPackId(receipt, account)); save(current);
       }
       walletReady(account);
-      const depositSettings = await refresh();
+      const depositSettings = await refresh(true);
       walletReady(account);
       const blocked = depositBlocker(depositSettings, current.rows.filter(r => r.listingId === undefined).map(r => ({backing: BigInt(r.backing)})));
       if (blocked) throw new Error(blocked);
