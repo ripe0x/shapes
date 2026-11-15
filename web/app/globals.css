@@ -965,13 +965,15 @@ button {
 }
 
 .activity-pack-thumb .activity-thumb-art {
-  width: 160px;
-  aspect-ratio: 1;
+  width: 100px;
+  height: 56px;
+  aspect-ratio: auto;
   background: transparent;
+  overflow: hidden;
 }
 
 .activity-pack-thumb .activity-thumb-art img {
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .activity-pack-thumb:focus-visible {
