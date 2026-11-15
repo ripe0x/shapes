@@ -80,11 +80,16 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const mounted = React.useRef(true);
   React.useEffect(() => {mounted.current = true; return () => {mounted.current = false;};}, []);
   const forkMode = isLocalFork(dep);
+  const wrongChain = !!address && chainId !== dep.chainId;
   const client = React.useMemo(() => forkMode ? createPublicClient({
     chain: defineChain({id: 31337, name: "Shapes FWA local fork", nativeCurrency: {name: "Ether", symbol: "ETH", decimals: 18}, rpcUrls: {default: {http: [dep.rpc]}}, contracts: {multicall3: {address: "0xcA11bde05977b3631167028862bE2a173976CA11"}}}),
     transport: http(dep.rpc, {retryCount: 0}),
   }) : mainnetClient, [dep.rpc, forkMode]);
   const supported = (dep.chainId === 1 || forkMode) && same(dep.shapes, SHAPES);
+  const switchNetwork = () => {
+    setError("");
+    void switchChainAsync({chainId: dep.chainId}).catch(e => setError(describeTxError(e)));
+  };
   const refreshBalance = React.useCallback(async () => {
     const account = wallet.current.address;
     if (!account) return;
@@ -217,7 +222,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const balanceShortfall = walletBalance !== null && remainingPayment > walletBalance ? remainingPayment - walletBalance : 0n;
   const packIssues = settings ? visibleRows.map((row, i) => {const issue = session?.rows[i]?.listingId === undefined ? fwaPackRequirement(row, settings) : null; return issue ? `Pack ${i + 1}: ${issue}` : null;}).filter((v): v is string => !!v) : [];
   const poolBlocker = settings && !complete ? depositBlocker(settings, visibleRows.filter((_, i) => session?.rows[i]?.listingId === undefined)) : null;
-  const requirement = !supported ? "This page requires the Ethereum mainnet Shapes deployment or its local Anvil fork." : recoveryFailed ? "Saved transactions must be checked before continuing." : choiceError || settingsError || (!settings ? "Reading current requirements…" : planError || (!visibleRows.length ? "Choose at least one pack." : packIssues[0] || poolBlocker || (overage ? `This plan is ${eth(overage)} eth over budget.` : balanceShortfall ? `This plan is ${eth(balanceShortfall)} eth above your wallet balance.` : address && walletBalance === null ? "Reading wallet balance…" : null)));
+  const requirement = !supported ? "This page requires the Ethereum mainnet Shapes deployment or its local Anvil fork." : wrongChain ? `Switch your wallet to ${forkMode ? "Anvil (31337)" : "Ethereum mainnet"} to continue.` : recoveryFailed ? "Saved transactions must be checked before continuing." : choiceError || settingsError || (!settings ? "Reading current requirements…" : planError || (!visibleRows.length ? "Choose at least one pack." : packIssues[0] || poolBlocker || (overage ? `This plan is ${eth(overage)} eth over budget.` : balanceShortfall ? `This plan is ${eth(balanceShortfall)} eth above your wallet balance.` : address && walletBalance === null ? "Reading wallet balance…" : null)));
   const walletReady = (account: Address) => {
     if (!mounted.current || !same(wallet.current.address ?? "", account) || wallet.current.chainId !== dep.chainId) throw new Error(`Your wallet or network changed. Reconnect to ${forkMode ? "the local fork" : "Ethereum"} to continue.`);
   };
@@ -381,7 +386,12 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
     : 0;
   return <>
     <main className="fwa-page">
-      {forkMode && <div className="fwa-fork-banner" role="status">LOCAL ANVIL FORK · CHAIN 31337 · TEST TRANSACTIONS ONLY</div>}
+      {forkMode && <div className="fwa-fork-banner" role={wrongChain ? "alert" : "status"}>
+        <span>LOCAL ANVIL FORK · CHAIN 31337 · TEST TRANSACTIONS ONLY{wrongChain && ` · WALLET ON ${chainId === 1 ? "ETHEREUM MAINNET" : chainId ? `CHAIN ${chainId}` : "UNKNOWN NETWORK"}`}</span>
+        {(!address || wrongChain) && <button type="button" disabled={busy} onClick={() => address ? switchNetwork() : onConnect()}>{address ? "SWITCH WALLET TO ANVIL" : "CONNECT WALLET TO ANVIL"}</button>}
+        {wrongChain && error && <small>{error}</small>}
+      </div>}
+      {!forkMode && dep.chainId === 1 && process.env.NODE_ENV === "development" && <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">ETHEREUM MAINNET · REAL TRANSACTIONS</div>}
       <section className="fwa-hero">
         <div>
           <p className="fwa-eyebrow">SHAPES / FWA MAIN V2 POOL</p>
@@ -406,7 +416,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
                   <span>ETH</span>
                 </span>
               </label>
-              <div className="fwa-balance"><span>Wallet balance</span><strong>{walletBalance !== null ? eth(walletBalance) + " ETH" : address ? "Reading…" : "Connect wallet to check"}</strong></div>
+              <div className="fwa-balance"><span>Wallet balance {forkMode ? "on Anvil" : "on Ethereum"}</span><strong>{walletBalance !== null ? eth(walletBalance) + " ETH" : address ? "Reading…" : "Connect wallet to check"}</strong></div>
             </div>
           </Section>
 
@@ -541,7 +551,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
       </div>
       <p>{visibleRows.length} pack mint {visibleRows.length === 1 ? "transaction" : "transactions"}, one approval if needed, and {visibleRows.length} separate FWA deposit {visibleRows.length === 1 ? "transaction" : "transactions"}. Each wallet transaction needs confirmation. Gas is extra.</p>
       <p className="fwa-review-risk">Approval, if needed, lets FWA transfer any Shapes pack in your wallet. A deposit can be staged and begins earning fees only when active. Withdrawals wait for unresolved purchases to clear; withdrawing the crown during its first 12 hours can cost 1% of its backing.</p>
-      <button type="button" className="btn-filled fwa-review-confirm" disabled={actionDisabled} onClick={() => {setReviewOpen(false); if (!address) onConnect(); else if (chainId !== dep.chainId) void switchChainAsync({chainId: dep.chainId}).catch(e => setError(describeTxError(e))); else void run();}}>{!address ? "CONNECT WALLET" : chainId !== dep.chainId ? forkMode ? "SWITCH TO LOCAL FORK" : "SWITCH TO ETHEREUM" : "MINT, APPROVE & DEPOSIT"}</button>
+      <button type="button" className="btn-filled fwa-review-confirm" disabled={busy || (actionDisabled && !wrongChain)} onClick={() => {setReviewOpen(false); if (!address) onConnect(); else if (wrongChain) switchNetwork(); else void run();}}>{!address ? "CONNECT WALLET" : wrongChain ? forkMode ? "SWITCH TO LOCAL FORK" : "SWITCH TO ETHEREUM" : "MINT, APPROVE & DEPOSIT"}</button>
     </dialog>
   </>;
 }

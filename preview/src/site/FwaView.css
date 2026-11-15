@@ -1,5 +1,9 @@
 .fwa-page {color:var(--ink);background:var(--page);font-family:Arial,Helvetica,sans-serif;}
-.fwa-fork-banner {padding:10px 3.1%;border-bottom:1px solid var(--ink);background:#ece9d7;font:11px/1.5 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.06em;}
+.fwa-fork-banner {display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 3.1%;border-bottom:1px solid var(--ink);background:#ece9d7;font:11px/1.5 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.06em;}
+.fwa-fork-banner button {padding:6px 10px;border:1px solid var(--ink);background:transparent;color:var(--ink);font:inherit;letter-spacing:inherit;}
+.fwa-fork-banner button:hover:not(:disabled) {background:var(--ink);color:var(--page);}
+.fwa-fork-banner small {flex-basis:100%;color:#8b3b27;font:inherit;}
+.fwa-mainnet-banner {background:#f4dfd4;}
 .fwa-page * {box-sizing:border-box;}
 .fwa-page h1,.fwa-page h2,.fwa-page h3,.fwa-page p,.fwa-explain h2,.fwa-explain h3,.fwa-explain p {margin:0;}
 .fwa-eyebrow,.fwa-field-label,.fwa-auto-tag,.fwa-page .site-section-label {font:10px/1.5 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.11em;color:var(--muted);}
