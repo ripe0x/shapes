@@ -46,7 +46,7 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   const [backings, setBackings] = React.useState<Record<string, string>>({});
   const [perPackExpanded, setPerPackExpanded] = React.useState(false);
   const [customizeOpen, setCustomizeOpen] = React.useState(false);
-  const [galleryExpanded, setGalleryExpanded] = React.useState(false);
+  const [galleryExpanded, setGalleryExpanded] = React.useState(true);
   const [reviewOpen, setReviewOpen] = React.useState(false);
   const reviewDialog = React.useRef<HTMLDialogElement>(null);
   const processSection = React.useRef<HTMLElement>(null);
@@ -493,6 +493,8 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
               </label>
               <div className="fwa-balance"><span>Wallet balance {forkMode ? "on Anvil" : "on Ethereum"}</span><strong>{walletBalance !== null ? eth(walletBalance) + " ETH" : address ? "Reading…" : "Connect wallet to check"}</strong></div>
             </div>
+            {!session && customChoices && <div className="fwa-budget-hint" role="status"><span>Custom plan: changing the budget keeps your pack values, backing, and quantities.</span><button type="button" onClick={() => useSuggestion(suggestionMode)}>Recalculate plan for this budget ↗</button></div>}
+            {!session && !customChoices && suggestion.plan?.rows.length === 24 && <p className="fwa-budget-hint">This plan uses the 24-position workflow limit. Any remaining budget stays in your wallet.</p>}
           </Section>
 
           <Section title="02 YOUR PLAN" pad="40px 46px 40px">
@@ -509,18 +511,12 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
             <div className="fwa-plan-gallery" aria-label="Artwork previews of the positions in your plan">
               <div className="fwa-gallery-heading">
                 <div><h3>YOUR INDIVIDUAL POSITIONS</h3><p>Each artwork represents one FWA position.</p></div>
-                {visibleRows.length > 8 && <button type="button" aria-expanded={galleryExpanded} onClick={() => setGalleryExpanded(value => !value)}>{galleryExpanded ? "Show artwork preview" : "View all " + visibleRows.length + " packs"}</button>}
+                {visibleRows.length > 8 && <button type="button" aria-expanded={galleryExpanded} onClick={() => setGalleryExpanded(value => !value)}>{galleryExpanded ? "Show first 8 packs" : "View all " + visibleRows.length + " packs"}</button>}
               </div>
-              {galleryExpanded
-                ? <div className="fwa-gallery-list">{visibleRows.map((row, index) => <div className="fwa-gallery-row" key={index}>
+              <div className={`fwa-gallery-grid${galleryExpanded ? " is-expanded" : ""}`}>{(galleryExpanded ? visibleRows : visibleRows.slice(0, 8)).map((row, index) => <figure key={index}>
                     <PackArt value={row.value} settings={settings} salt={artSalt} nonce={index}/>
-                    <span>Pack {String(index + 1).padStart(2, "0")}<small>{eth(row.backing)} ETH FWA backing</small></span>
-                    <strong>{eth(row.value)} ETH</strong>
-                  </div>)}</div>
-                : <div className="fwa-gallery-grid">{visibleRows.slice(0, 8).map((row, index) => <figure key={index}>
-                    <PackArt value={row.value} settings={settings} salt={artSalt} nonce={index}/>
-                    <figcaption>#{String(index + 1).padStart(2, "0")}</figcaption>
-                  </figure>)}</div>}
+                    <figcaption>#{String(index + 1).padStart(2, "0")}{galleryExpanded && <><span>{eth(row.value)} ETH pack</span><span>{eth(row.backing)} ETH backing</span></>}</figcaption>
+                  </figure>)}</div>
               {!visibleRows.length && <p className="fwa-gallery-empty">Enter a budget that can fund an eligible position.</p>}
               <p className="fwa-gallery-caption">Representative artwork. Final minted packs will vary.</p>
             </div>
