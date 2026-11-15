@@ -387,11 +387,15 @@ export function FwaView({dep, onConnect}: {dep: Deployment; onConnect: () => voi
   return <>
     <main className="fwa-page">
       {forkMode && <div className="fwa-fork-banner" role={wrongChain ? "alert" : "status"}>
-        <span>LOCAL ANVIL FORK · CHAIN 31337 · TEST TRANSACTIONS ONLY{wrongChain && ` · WALLET ON ${chainId === 1 ? "ETHEREUM MAINNET" : chainId ? `CHAIN ${chainId}` : "UNKNOWN NETWORK"}`}</span>
+        <span>LOCAL ANVIL FORK · CHAIN 31337 · RPC {new URL(dep.rpc).host} · TEST TRANSACTIONS ONLY{wrongChain && ` · WALLET ON ${chainId === 1 ? "ETHEREUM MAINNET" : chainId ? `CHAIN ${chainId}` : "UNKNOWN NETWORK"}`}</span>
         {(!address || wrongChain) && <button type="button" disabled={busy} onClick={() => address ? switchNetwork() : onConnect()}>{address ? "SWITCH WALLET TO ANVIL" : "CONNECT WALLET TO ANVIL"}</button>}
         {wrongChain && error && <small>{error}</small>}
       </div>}
-      {!forkMode && dep.chainId === 1 && process.env.NODE_ENV === "development" && <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">ETHEREUM MAINNET · REAL TRANSACTIONS</div>}
+      {!forkMode && dep.chainId === 1 && <div className="fwa-fork-banner fwa-mainnet-banner" role="alert">
+        <span>ETHEREUM MAINNET · REAL TRANSACTIONS{wrongChain && ` · WALLET ON ${chainId ? `CHAIN ${chainId}` : "UNKNOWN NETWORK"}`}</span>
+        {wrongChain && <button type="button" disabled={busy} onClick={switchNetwork}>SWITCH WALLET TO ETHEREUM</button>}
+        {wrongChain && error && <small>{error}</small>}
+      </div>}
       <section className="fwa-hero">
         <div>
           <p className="fwa-eyebrow">SHAPES / FWA MAIN V2 POOL</p>
