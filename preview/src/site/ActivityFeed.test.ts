@@ -112,6 +112,15 @@ test("a row draws every Shape the indexer keeps a row for, live or not", () => {
   assert.equal(row.hidden, 0);
 });
 
+test("a Pack row represents the Pack instead of its constituent Shapes", () => {
+  const row = activityRowModel(event({kind: "packCreated", packId: 12n, tokenIds: [7n, 8n]}),
+    indexOf([token(7n), token(8n)]));
+  assert.deepEqual(row.thumbs, []);
+  assert.equal(row.hidden, 0);
+  assert.equal(row.missing, 0);
+  assert.equal(row.detail, "Pack #12 · 2 Shapes");
+});
+
 test("ids with no token row are counted rather than drawn", () => {
   const row = activityRowModel(event(), indexOf([token(7n)]));
 
