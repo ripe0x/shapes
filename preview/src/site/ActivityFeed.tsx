@@ -193,8 +193,26 @@ export function relativeTime(timestampSeconds: bigint, nowSeconds: bigint): stri
   return `${age / 86_400n}d ago`;
 }
 
-const ACTIVITY_QUERY = `query Activity($limit: Int!, $after: String) {
-  activitys(orderBy: "orderKey", orderDirection: "desc", limit: $limit, after: $after) {
+const SHAPE_WORK_KINDS = ["mint", "compose", "split", "decompose", "redeem", "burnBacking"];
+const PACK_WORK_KINDS = [
+  "packCreated", "packExtended", "packMerged", "packUnsealed", "packOpened",
+  "packRedeemed", "packShapesClaimed", "packEthClaimed",
+];
+const WORK_KINDS = {
+  all: [...SHAPE_WORK_KINDS, ...PACK_WORK_KINDS],
+  shapes: SHAPE_WORK_KINDS,
+  packs: PACK_WORK_KINDS,
+};
+const WORK_FILTERS = [
+  {key: "all", label: "All"},
+  {key: "shapes", label: "Shapes"},
+  {key: "packs", label: "Packs"},
+] as const;
+type WorkFilter = keyof typeof WORK_KINDS;
+
+// Select outcomes before pagination. Custody, ownership and market rows remain in the index.
+const ACTIVITY_QUERY = `query Activity($limit: Int!, $after: String, $kinds: [String!]!) {
+  activitys(where: {kind_in: $kinds}, orderBy: "orderKey", orderDirection: "desc", limit: $limit, after: $after) {
     items {
       id
       blockNumber
@@ -289,14 +307,16 @@ export async function fetchActivityPage(
   url: string,
   fetcher: typeof fetch,
   after: string | null,
+  filter: WorkFilter = "all",
   limit = ACTIVITY_PAGE_SIZE,
   timeoutMs = INDEXER_TIMEOUT_MS,
 ): Promise<ActivityPage> {
-  const page = await indexerQuery<ActivityResponse["data"]>(url, fetcher, ACTIVITY_QUERY, {limit, after}, timeoutMs)
+  const variables = {limit, after, kinds: WORK_KINDS[filter]};
+  const page = await indexerQuery<ActivityResponse["data"]>(url, fetcher, ACTIVITY_QUERY, variables, timeoutMs)
     .catch((error: unknown) => {
       // During the indexer rollout, the old schema lacks packId. Keep the existing feed readable.
       if (!(error instanceof Error) || !error.message.includes("packId")) throw error;
-      return indexerQuery<ActivityResponse["data"]>(url, fetcher, LEGACY_ACTIVITY_QUERY, {limit, after}, timeoutMs);
+      return indexerQuery<ActivityResponse["data"]>(url, fetcher, LEGACY_ACTIVITY_QUERY, variables, timeoutMs);
     });
   if (page.errors?.length || !page.data?.activitys) {
     throw new Error(page.errors?.[0]?.message ?? "Shapes indexer returned an invalid activity response");
@@ -520,6 +540,9 @@ export function ActivityFeed({
    *  behavior as `totalSupply`. */
   redeemableBacking: bigint | null;
 }) {
+  const [filter, setFilter] = React.useState<WorkFilter>("all");
+  const filterRef = React.useRef(filter);
+  const filterEpochRef = React.useRef(0);
   const [events, setEvents] = React.useState<ActivityEvent[]>([]);
   const [tokens, setTokens] = React.useState<Map<string, ActivityToken>>(() => new Map());
   const [cursor, setCursor] = React.useState<string | null>(null);
@@ -549,21 +572,21 @@ export function ActivityFeed({
     setStatus("loading");
     // The stats row rides the feed's first-page load: one round trip on mount, refreshed again by
     // every live poll below.
-    Promise.all([fetchActivityPage(indexerUrl, request, null), fetchActivityStats(indexerUrl, request)]).then(
+    Promise.all([fetchActivityPage(indexerUrl, request, null, filter), fetchActivityStats(indexerUrl, request)]).then(
       ([page, s]) => {
-        if (cancelled) return;
+        if (cancelled || filterRef.current !== filter) return;
         absorb(page, false);
         setStats(s);
         setStatus("ready");
       },
       () => {
-        if (!cancelled) setStatus("failed");
+        if (!cancelled && filterRef.current === filter) setStatus("failed");
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [indexerUrl, request, absorb]);
+  }, [indexerUrl, request, absorb, filter]);
 
   // Keep the current rows available to identify which polled events are new for animation.
   const eventsRef = React.useRef(events);
@@ -575,9 +598,11 @@ export function ActivityFeed({
   React.useEffect(() => {
     // Starts only once the first page has loaded; an indexer that never comes up never polls.
     if (!indexerUrl || !request || status !== "ready") return;
+    let cancelled = false;
     const tick = (): Promise<boolean> =>
-      Promise.all([fetchActivityPage(indexerUrl, request, null), fetchActivityStats(indexerUrl, request)]).then(
+      Promise.all([fetchActivityPage(indexerUrl, request, null, filter), fetchActivityStats(indexerUrl, request)]).then(
         ([page, s]) => {
+          if (cancelled || filterRef.current !== filter) return true;
           const merged = mergeLivePage(eventsRef.current, page);
           if (merged.addedIds.length > 0) {
             // A "Show more" request can finish after the poll starts. Merge against the latest
@@ -602,20 +627,36 @@ export function ActivityFeed({
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
+      cancelled = true;
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [indexerUrl, request, status]);
+  }, [indexerUrl, request, status, filter]);
 
   if (!indexerUrl || !request) return null;
 
+  const selectFilter = (next: WorkFilter) => {
+    if (next === filterRef.current) return;
+    filterRef.current = next;
+    filterEpochRef.current++;
+    setFilter(next);
+    setEvents([]);
+    setTokens(new Map());
+    setCursor(null);
+    setHasNextPage(false);
+    setNewIds(new Set());
+    setBusy(false);
+    setStatus("loading");
+  };
+
   const showMore = () => {
     if (busy || !cursor) return;
+    const filterEpoch = filterEpochRef.current;
     setBusy(true);
-    fetchActivityPage(indexerUrl, request, cursor)
-      .then((page) => absorb(page, true))
-      .catch(() => setStatus("failed"))
-      .finally(() => setBusy(false));
+    fetchActivityPage(indexerUrl, request, cursor, filter)
+      .then((page) => { if (filterEpochRef.current === filterEpoch) absorb(page, true); })
+      .catch(() => { if (filterEpochRef.current === filterEpoch) setStatus("failed"); })
+      .finally(() => { if (filterEpochRef.current === filterEpoch) setBusy(false); });
   };
 
   // Pagination counts events, so every fetched event needs its own visible row.
@@ -648,11 +689,19 @@ export function ActivityFeed({
 
       </div>
 
+      <div className="activity-filters" role="group" aria-label="Proof of work filter">
+        {WORK_FILTERS.map(({key, label}) => (
+          <button key={key} type="button" aria-pressed={filter === key} onClick={() => selectFilter(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
       {status === "loading" && rows.length === 0 && <p className="activity-note">Reading the index…</p>}
       {status === "failed" && rows.length === 0 && (
         <p className="activity-note">The activity index is unavailable right now.</p>
       )}
-      {status === "ready" && rows.length === 0 && <p className="activity-note">Nothing has happened yet.</p>}
+      {status === "ready" && rows.length === 0 && <p className="activity-note">No work to show.</p>}
 
       {rows.length > 0 && (
         <ul className="activity-list">
