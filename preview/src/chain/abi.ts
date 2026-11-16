@@ -50,6 +50,7 @@ export const shapesAbi = parseAbi([
   "function transferAdmin(address newAdmin)",
   "function renounceAdmin()",
   "function feeRecipient() view returns (address)",
+  "function presentationLocked() view returns (bool)",
   "function setFeeRecipient(address newRecipient)",
   "function setMintFee(uint256 newFee)",
   "function pendingFees() view returns (uint256)",
@@ -93,6 +94,7 @@ export const shapesAbi = parseAbi([
   "event AdminTransferred(address indexed previousAdmin, address indexed newAdmin)",
   "event OwnerTokenMoved(uint256 indexed fromTokenId, uint256 indexed toTokenId)",
   "event FeeRecipientUpdated(address indexed previousRecipient, address indexed newRecipient)",
+  "event FeesWithdrawn(address indexed recipient, uint256 amountWei)",
   "event ArtistAttested(address indexed artist, bytes32 indexed releaseHash, bytes signature)",
   "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
   // Custom errors from IShapes.sol, so a revert decodes to a named error instead of raw bytes.
