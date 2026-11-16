@@ -206,7 +206,7 @@ export function AdminDashboard() {
             ? <p>No fees available.</p>
             : snapshot.balances.filter((row) => row.amountWei > 0n).map((row) => <div className={styles.balanceRow} key={row.recipient}>
                 <div><span className={styles.rowLabel}>{row.current ? "Current recipient" : "Previous recipient"}</span><strong>{eth(row.amountWei)}</strong><AddressLink address={row.recipient} /></div>
-                <button className={styles.primary} onClick={() => void reviewWithdrawal(row)} disabled={busy}>Review withdrawal</button>
+                <button className={styles.primary} onClick={() => void reviewWithdrawal(row)} disabled={busy}>Withdraw to recipient</button>
               </div>)}
         </section>
         {review && <section className={styles.review} aria-label="Withdrawal review">
@@ -214,7 +214,7 @@ export function AdminDashboard() {
           <p>Amount: <strong>{eth(review.amountWei)}</strong></p>
           <p>Payout destination: <AddressLink address={review.recipient} /></p>
           <p>The contract sends all fees owed to this address. Your connected wallet pays network gas.</p>
-          <div className={styles.actions}><button className={styles.primary} onClick={() => void withdraw()} disabled={busy}>{busy ? "Waiting…" : chainId === 1 ? "Confirm in wallet" : "Switch to mainnet and confirm"}</button><button onClick={() => setReview(null)} disabled={busy}>Cancel</button></div>
+          <div className={styles.actions}><button className={styles.primary} onClick={() => void withdraw()} disabled={busy}>{busy ? "Waiting…" : chainId === 1 ? "Confirm withdrawal in wallet" : "Switch to mainnet and withdraw"}</button><button onClick={() => setReview(null)} disabled={busy}>Cancel</button></div>
         </section>}
         {txHash && <p className={styles.tx}>Transaction: <a href={`https://etherscan.io/tx/${txHash}`} target="_blank" rel="noreferrer">{txHash}</a></p>}
         {error && <p className={styles.error} role="alert">{error}</p>}
