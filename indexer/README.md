@@ -1,9 +1,9 @@
 # shapes-indexer
 
 A [Ponder](https://ponder.sh) indexer for the standalone Shapes ERC721
-(`src/Shapes.sol`) and its auction house. Turns the consumed onchain events into five Postgres
-tables — `token`, `lineage_edge`, `activity`, `auction_lot`, and the `collection_owner`
-singleton — queryable over GraphQL
+(`src/Shapes.sol`), its auction house, and ShapePacks. Turns the consumed onchain events into
+Postgres tables including `token`, `lineage_edge`, `activity`, `auction_lot`, `pack_holding`, and
+the `collection_owner` singleton, queryable over GraphQL
 or `@ponder/client` SQL-over-HTTP, so a frontend never has to scan chain logs directly. Log
 scanning is fatal on mainnet and for any token with a deep composition /
 decomposition history, since a single Shape can have thousands of ancestor
@@ -32,6 +32,8 @@ cp .env.example .env.local   # then fill in the values below
 | `AUCTION_HOUSE_ADDRESS` | the deployment record's `auctionHouse` | the deployed auction house |
 | `SHAPES_START_BLOCK` | `0` is fine for a fresh local anvil chain | the Shapes deployment block |
 | `AUCTION_HOUSE_START_BLOCK` | optional; defaults to `SHAPES_START_BLOCK` | the deployment record's `auctionHouseFromBlock` (falls back to `fromBlock`) |
+| `SHAPE_PACKS_ADDRESS` | optional if no Packs contract is deployed | deployed ShapePacks address |
+| `SHAPE_PACKS_START_BLOCK` | required with `SHAPE_PACKS_ADDRESS` | ShapePacks deployment block |
 
 The dev chain's address/chainId/rpc drift as the local chain is redeployed —
 re-check `preview/public/deployment.json` if indexing comes up empty.
@@ -53,9 +55,10 @@ GraphiQL in the browser) and the `@ponder/client` SQL endpoint at
 `.ponder/pglite`. Set `DATABASE_URL` to point at Postgres instead (see
 `.env.example`).
 
-Verified end to end against a running dev chain seeded by `npm run simulate`
-(see the repo root): all nine event handlers below fired with zero indexing
-errors. A representative run indexed 10k+ mints and their `InkGene`
+An earlier Shapes-only run was verified end to end against a running dev chain seeded by
+`npm run simulate` (see the repo root): the Shapes event handlers fired with zero indexing
+errors. That run did not cover the later Pack ownership table. A representative run indexed 10k+
+mints and their `InkGene`
 assignments, 50 composes, 2 decomposes (11 `"split"` edges), 1 backing burn, and
 20k+ transfers — every `token` row carried its assigned `inkGene` and every
 `lineage_edge` its derived `childSeed`, queryable over GraphQL.
@@ -121,6 +124,28 @@ on raw history until its full dated-event presentation is mapped to indexed even
 gallery rollout does not silently downgrade that display.
 
 ## Data model
+
+### `pack_holding`
+
+One row per Pack ever minted. The `ShapePacks:Transfer` handler records the actual ERC721
+recipient, including `createPackTo` mints where the recipient differs from the creator. A burn
+sets `owner` to null. `PackUnsealed` sets the claimant and remaining Shape count; each
+`ShapesClaimed` or `EthClaimed` event decrements the count, clearing the claimant at zero. Both
+addresses are stored lowercase for exact GraphQL equality filters. The site queries
+`packHoldings(where: {owner: $wallet})` and `packHoldings(where: {claimant: $wallet})`, checks
+the indexer's chain checkpoint, Packs contract address, and minted-row count, then verifies returned IDs onchain. It
+falls back to the complete ID scan when the index is unavailable or inconsistent.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `bigint` (PK) | Pack token id |
+| `contractAddress` | `hex` | Packs contract that emitted the mint |
+| `owner` | `hex?` | current live ERC721 owner, null after burn |
+| `claimant` | `hex?` | address with an unfinished unsealed claim |
+| `remainingCount` | `bigint` | Shapes still in custody for the claim |
+| `updatedAtBlock` | `bigint` | latest Pack ownership or claim event block |
+
+Indexes: `owner` and `claimant` for wallet lookups.
 
 ### `token`
 
@@ -417,6 +442,13 @@ deployment metadata (mainnet:
 and written into `deployments/1.json` by `script/deploy.sh`). Do not scale either app beyond one
 Machine while using PGlite; a future multi-Machine or sustained-load requirement is the trigger to
 migrate to Postgres.
+
+The `pack_holding` table is a new indexing build. Roll it out under a new `DATABASE_SCHEMA` and
+backfill ShapePacks events from `SHAPE_PACKS_START_BLOCK`; the existing schema cannot acquire the
+old mint and transfer recipients by processing only new blocks. Keep the site's full onchain Pack
+scan active until `/ready`, the chain checkpoint, the new GraphQL query, and the count of indexed
+Pack rows against `totalMinted()` all pass. The site falls back to that scan whenever any check
+fails, including during the backfill. This code change alone does not deploy the new schema.
 
 ### Dependency security
 

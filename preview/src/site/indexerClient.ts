@@ -62,21 +62,22 @@ async function readJsonBounded<T>(response: Response): Promise<IndexerEnvelope<T
  *  error, an oversized body, or a response that outlives `timeoutMs`.
  *
  *  `url` is either a same-origin path, which is the site's own `/api/indexer` proxy, or a Ponder
- *  origin, whose GraphQL endpoint is `/graphql`. The proxy is queried with GET so its responses
- *  are cacheable at the CDN edge; a Ponder origin takes the POST the GraphQL server expects. */
+ *  origin, whose GraphQL endpoint is `/graphql`. Proxy GETs are cacheable at the CDN edge;
+ *  wallet-rights queries use an uncached POST so checkpoint checks see the latest response. */
 export async function indexerQuery<T>(
   url: string,
   fetcher: typeof fetch,
   query: string,
   variables: Record<string, unknown>,
   timeoutMs: number = INDEXER_TIMEOUT_MS,
+  uncached = false,
 ): Promise<IndexerEnvelope<T>> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("Shapes indexer timeout must be positive");
   }
   const proxied = url.startsWith("/");
   const endpoint = proxied
-    ? `${url}?query=${encodeURIComponent(query)}&variables=${encodeURIComponent(JSON.stringify(variables))}`
+    ? uncached ? url : `${url}?query=${encodeURIComponent(query)}&variables=${encodeURIComponent(JSON.stringify(variables))}`
     : `${url.replace(/\/$/, "")}/graphql`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -84,12 +85,13 @@ export async function indexerQuery<T>(
   try {
     const response = await fetcher(
       endpoint,
-      proxied
+      proxied && !uncached
         ? {method: "GET", headers: {accept: "application/json"}, signal: controller.signal}
         : {
             method: "POST",
             headers: {"content-type": "application/json"},
             body: JSON.stringify({query, variables}),
+            cache: "no-store",
             signal: controller.signal,
           },
     );

@@ -3,9 +3,10 @@ import { zeroAddress } from "viem";
 import { ponder } from "ponder:registry";
 
 import { AUCTION_HOUSE, SHAPE_PACKS } from "../ponder.config";
-import { activity, auctionLot, collectionOwner, escrowedCard, lineageEdge, token } from "../ponder.schema";
+import { activity, auctionLot, collectionOwner, escrowedCard, lineageEdge, packHolding, token } from "../ponder.schema";
 import { activityRow, mintActivityId, type ActivityAt } from "./lib/activity";
 import { backingForDenomIndex, denomIndexOfWei } from "./lib/denominations";
+import { afterPackClaim } from "./lib/packHolding";
 import { childSeedOf } from "./lib/seed";
 
 // Unique id for one edge within one event: a compose/decompose call loops over an id
@@ -402,7 +403,16 @@ ponder.on("ShapePacks:PackMerged", async ({ event, context }) => {
 });
 
 ponder.on("ShapePacks:PackUnsealed", async ({ event, context }) => {
-  const {packId, owner} = event.args;
+  const {packId, owner, claimant, count} = event.args;
+  const holding = await context.db.find(packHolding, {id: packId});
+  if (!holding || holding.owner !== null || count === 0n) {
+    throw new Error(`Shapes indexer: Pack ${packId} unsealed without a minted, burned token and contents`);
+  }
+  await context.db.update(packHolding, {id: packId}).set({
+    claimant: claimant.toLowerCase() as `0x${string}`,
+    remainingCount: count,
+    updatedAtBlock: event.block.number,
+  });
   await context.db.insert(activity).values({
     ...activityRow(at(event), "packUnsealed", [], owner, {packId}),
     id: packOperationId(event.transaction.hash, "exit", packId),
@@ -411,6 +421,15 @@ ponder.on("ShapePacks:PackUnsealed", async ({ event, context }) => {
 
 ponder.on("ShapePacks:ShapesClaimed", async ({ event, context }) => {
   const {packId, shapeIds} = event.args;
+  const holding = await context.db.find(packHolding, {id: packId});
+  if (!holding || holding.claimant === null) {
+    throw new Error(`Shapes indexer: Pack ${packId} Shapes claimed without an active claim`);
+  }
+  const next = afterPackClaim(packId, holding.claimant, holding.remainingCount, shapeIds.length);
+  await context.db.update(packHolding, {id: packId}).set({
+    ...next,
+    updatedAtBlock: event.block.number,
+  });
   const id = packOperationId(event.transaction.hash, "exit", packId);
   const opened = await context.db.find(activity, {id});
   const kind = opened ? "packOpened" : "packShapesClaimed";
@@ -421,6 +440,15 @@ ponder.on("ShapePacks:ShapesClaimed", async ({ event, context }) => {
 
 ponder.on("ShapePacks:EthClaimed", async ({ event, context }) => {
   const {packId, shapeIds, valueWei} = event.args;
+  const holding = await context.db.find(packHolding, {id: packId});
+  if (!holding || holding.claimant === null) {
+    throw new Error(`Shapes indexer: Pack ${packId} ETH claimed without an active claim`);
+  }
+  const next = afterPackClaim(packId, holding.claimant, holding.remainingCount, shapeIds.length);
+  await context.db.update(packHolding, {id: packId}).set({
+    ...next,
+    updatedAtBlock: event.block.number,
+  });
   const id = packOperationId(event.transaction.hash, "exit", packId);
   const redeemed = await context.db.find(activity, {id});
   const kind = redeemed ? "packRedeemed" : "packEthClaimed";
@@ -431,6 +459,24 @@ ponder.on("ShapePacks:EthClaimed", async ({ event, context }) => {
 
 ponder.on("ShapePacks:Transfer", async ({ event, context }) => {
   const {from, to, tokenId} = event.args;
+  const owner = to === zeroAddress ? null : to.toLowerCase() as `0x${string}`;
+  if (from === zeroAddress) {
+    await context.db.insert(packHolding).values({
+      id: tokenId, contractAddress: event.log.address.toLowerCase() as `0x${string}`,
+      owner, claimant: null, remainingCount: 0n,
+      updatedAtBlock: event.block.number,
+    });
+  } else {
+    const holding = await context.db.find(packHolding, {id: tokenId});
+    if (!holding) throw new Error(`Shapes indexer: Pack ${tokenId} transferred without a mint`);
+    await context.db.update(packHolding, {id: tokenId}).set({
+      owner,
+      // A burn precedes PackUnsealed. Other burns (merges) have no claimant.
+      claimant: to === zeroAddress ? holding.claimant : null,
+      remainingCount: to === zeroAddress ? holding.remainingCount : 0n,
+      updatedAtBlock: event.block.number,
+    });
+  }
   if (from !== zeroAddress && to !== zeroAddress) {
     await context.db.insert(activity).values(
       activityRow(at(event), "packTransferred", [], from, {packId: tokenId, counterparty: to}),

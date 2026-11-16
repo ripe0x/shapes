@@ -2,6 +2,7 @@ import {createPublicClient, formatEther, http, parseAbi, type Address, type Publ
 import {mainnet, sepolia} from "viem/chains";
 import {shapesTransport} from "../chain/rpc";
 import {safeMetadataFromTokenURI} from "./ogArtwork";
+import {INDEXER_TIMEOUT_MS, checkpointOf, indexerQuery, requireFreshCheckpoint, type IndexerEnvelope, type IndexerMeta} from "./indexerClient";
 
 export const PACKS_DEPLOYMENTS = {
   1: {
@@ -111,19 +112,91 @@ export type OwnedPack = {
   creator: Address | null;
   backings: readonly bigint[];
 };
+export type PackRef = {id: bigint; kind: "live" | "claim"};
 type ChainPackState = {shapeIds: readonly bigint[]; counts: readonly number[]; valueWei: bigint; mintedCount: bigint; creator: Address};
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const PACK_INDEXER_PAGE_SIZE = 500;
+type IndexedHolding = {id: string; owner: Address | null; claimant: Address | null};
+type IndexedPage = {items: IndexedHolding[]; pageInfo: {hasNextPage: boolean; endCursor: string | null}};
+type IndexedPackResponse = {_meta?: IndexerMeta; all?: {totalCount: number; items: {contractAddress: Address}[]}; holdings?: IndexedPage};
 
-/** Scan every minted Pack ID so a missing index or incomplete event response cannot hide an
- * owned Pack or an unsealed claim. Read large dynamic states in small batches below. */
-export async function loadOwnedPacks(client: PublicClient, account: Address, totalMinted: bigint,
-  packsAddress: Address, shapesAddress: Address): Promise<OwnedPack[]> {
-  const ids: bigint[] = [];
-  for (let id = 1n; id <= totalMinted; id++) ids.push(id);
-  const found: {id: bigint; kind: "live" | "claim"}[] = [];
-  for (let offset = 0; offset < ids.length; offset += 100) {
-    const page = ids.slice(offset, offset + 100);
+async function indexedPackRefs(
+  client: PublicClient, account: Address, totalMinted: bigint, packsAddress: Address, indexerUrl: string, chainId: number,
+): Promise<PackRef[]> {
+  const queryFor = (field: "owner" | "claimant") => `query WalletPacks($wallet: String!, $limit: Int!, $after: String) {
+    _meta { status }
+    all: packHoldings(limit: 1) { totalCount items { contractAddress } }
+    holdings: packHoldings(where: {${field}: $wallet}, orderBy: "id", orderDirection: "desc", limit: $limit, after: $after) {
+      items { id owner claimant }
+      pageInfo { hasNextPage endCursor }
+    }
+  }`;
+  const read = async (field: "owner" | "claimant") => {
+    const rows: IndexedHolding[] = [];
+    const seenCursors = new Set<string>();
+    let checkpoint: bigint | null = null;
+    let after: string | null = null;
+    let pages = 0n;
+    do {
+      pages++;
+      if (pages > (totalMinted + BigInt(PACK_INDEXER_PAGE_SIZE - 1)) / BigInt(PACK_INDEXER_PAGE_SIZE) + 1n) {
+        throw new Error("Packs indexer returned too many pages");
+      }
+      const result: IndexerEnvelope<IndexedPackResponse> = await indexerQuery<IndexedPackResponse>(indexerUrl, fetch, queryFor(field), {
+        wallet: account.toLowerCase(), limit: PACK_INDEXER_PAGE_SIZE, after,
+      }, INDEXER_TIMEOUT_MS, true);
+      const data: IndexedPackResponse | undefined = result.data;
+      if (!data?.all || !data.holdings || !Number.isSafeInteger(data.all.totalCount) ||
+        BigInt(data.all.totalCount) !== totalMinted) throw new Error("Packs indexer mint count disagrees with chain");
+      if (totalMinted > 0n && (!data.all.items[0]?.contractAddress ||
+        !same(data.all.items[0].contractAddress, packsAddress))) {
+        throw new Error("Packs indexer targets a different contract");
+      }
+      const pageBlock = checkpointOf(data._meta, chainId);
+      if (checkpoint !== null && checkpoint !== pageBlock) throw new Error("Packs indexer advanced during pagination");
+      checkpoint = pageBlock;
+      const {items, pageInfo}: IndexedPage = data.holdings;
+      if (items.length > PACK_INDEXER_PAGE_SIZE || (pageInfo.hasNextPage && items.length !== PACK_INDEXER_PAGE_SIZE)) {
+        throw new Error("Packs indexer returned an invalid page");
+      }
+      rows.push(...items);
+      after = pageInfo.hasNextPage ? pageInfo.endCursor : null;
+      if (pageInfo.hasNextPage && !after) throw new Error("Packs indexer omitted a page cursor");
+      if (after !== null && seenCursors.has(after)) throw new Error("Packs indexer repeated a page cursor");
+      if (after !== null) seenCursors.add(after);
+    } while (after !== null);
+    if (checkpoint === null) throw new Error("Packs indexer omitted its checkpoint");
+    return {rows, checkpoint};
+  };
+  const [owned, claims] = await Promise.all([read("owner"), read("claimant")]);
+  if (owned.checkpoint !== claims.checkpoint) throw new Error("Packs indexer advanced between wallet queries");
+  requireFreshCheckpoint(owned.checkpoint, await client.getBlockNumber(), 0n);
+  const refs = new Map<bigint, PackRef>();
+  for (const row of owned.rows) {
+    const id = BigInt(row.id);
+    if (id < 1n || id > totalMinted || !row.owner || !same(row.owner, account) || refs.has(id)) {
+      throw new Error("Packs indexer returned invalid ownership");
+    }
+    refs.set(id, {id, kind: "live"});
+  }
+  for (const row of claims.rows) {
+    const id = BigInt(row.id);
+    if (id < 1n || id > totalMinted || !row.claimant || !same(row.claimant, account) || refs.has(id)) {
+      throw new Error("Packs indexer returned invalid claim rights");
+    }
+    refs.set(id, {id, kind: "claim"});
+  }
+  return [...refs.values()].sort((a, b) => a.id > b.id ? -1 : a.id < b.id ? 1 : 0);
+}
+
+async function chainPackRefs(
+  client: PublicClient, account: Address, totalMinted: bigint, packsAddress: Address,
+): Promise<PackRef[]> {
+  const found: PackRef[] = [];
+  for (let from = 1n; from <= totalMinted; from += 100n) {
+    const page: bigint[] = [];
+    for (let id = from; id <= totalMinted && id < from + 100n; id++) page.push(id);
     const results = await client.multicall({contracts: page.flatMap((id) => [
       {address: packsAddress, abi: packsAbi, functionName: "ownerOf", args: [id]} as const,
       {address: packsAddress, abi: packsAbi, functionName: "claimantOf", args: [id]} as const,
@@ -131,11 +204,44 @@ export async function loadOwnedPacks(client: PublicClient, account: Address, tot
     page.forEach((id, i) => {
       const owner = results[i * 2];
       const claimant = results[i * 2 + 1];
+      if (claimant.status !== "success") throw new Error(`Cannot verify Pack #${id} claimant`);
       if (owner.status === "success" && same(owner.result as string, account)) found.push({id, kind: "live"});
-      else if (claimant.status === "success" && same(claimant.result as string, account)) found.push({id, kind: "claim"});
+      else if (same(claimant.result as string, account)) found.push({id, kind: "claim"});
     });
   }
-  found.reverse();
+  return found.reverse();
+}
+
+/** Indexer discovery is useful only at the chain head. Missing schema, lag, or incomplete mint
+ * coverage takes the complete chain scan, which remains authoritative for wallet rights. */
+export async function discoverOwnedPackRefs(
+  client: PublicClient, account: Address, totalMinted: bigint, packsAddress: Address,
+  options: {indexerUrl?: string; chainId: number; forceChain?: boolean},
+): Promise<{refs: PackRef[]; source: "indexer" | "chain"}> {
+  if (options.indexerUrl && !options.forceChain) {
+    try {
+      const refs = await indexedPackRefs(client, account, totalMinted, packsAddress, options.indexerUrl, options.chainId);
+      return {refs, source: "indexer"};
+    } catch { /* The complete onchain scan is the fallback for every indexer uncertainty. */ }
+  }
+  return {refs: await chainPackRefs(client, account, totalMinted, packsAddress), source: "chain"};
+}
+
+/** Load only requested Packs. Onchain owner/claimant checks reject stale indexed candidates. */
+export async function loadPackPage(client: PublicClient, account: Address, found: readonly PackRef[],
+  packsAddress: Address, shapesAddress: Address): Promise<OwnedPack[]> {
+  if (found.length === 0) return [];
+  const holders = await client.multicall({contracts: found.flatMap(({id}) => [
+    {address: packsAddress, abi: packsAbi, functionName: "ownerOf", args: [id]} as const,
+    {address: packsAddress, abi: packsAbi, functionName: "claimantOf", args: [id]} as const,
+  ]), allowFailure: true});
+  found.forEach(({id, kind}, i) => {
+    const owner = holders[i * 2];
+    const claimant = holders[i * 2 + 1];
+    const valid = kind === "live" ? owner.status === "success" && same(owner.result as string, account)
+      : claimant.status === "success" && same(claimant.result as string, account);
+    if (!valid) throw new Error(`Pack #${id} wallet rights changed`);
+  });
   const liveIds = found.filter((pack) => pack.kind === "live").map((pack) => pack.id);
   const claimIds = found.filter((pack) => pack.kind === "claim").map((pack) => pack.id);
   const liveStates: ChainPackState[] = [];
@@ -145,12 +251,20 @@ export async function loadOwnedPacks(client: PublicClient, account: Address, tot
     } as const)), allowFailure: false}) as unknown as readonly ChainPackState[];
     liveStates.push(...batch);
   }
-  const liveMetadata = liveIds.length ? await client.multicall({contracts: liveIds.map((id) => ({
-    address: packsAddress, abi: packsAbi, functionName: "tokenURI", args: [id],
-  } as const)), allowFailure: true}) : [];
-  const claimContents = claimIds.length ? await client.multicall({contracts: claimIds.map((id) => ({
-    address: packsAddress, abi: packsAbi, functionName: "contentsOf", args: [id],
-  } as const)), allowFailure: false}) as unknown as readonly (readonly bigint[])[] : [];
+  const liveMetadata: ({status: "success"; result: string} | {status: "failure"})[] = [];
+  for (let offset = 0; offset < liveIds.length; offset += 5) {
+    const batch = await client.multicall({contracts: liveIds.slice(offset, offset + 5).map((id) => ({
+      address: packsAddress, abi: packsAbi, functionName: "tokenURI", args: [id],
+    } as const)), allowFailure: true});
+    liveMetadata.push(...batch);
+  }
+  const claimContents: (readonly bigint[])[] = [];
+  for (let offset = 0; offset < claimIds.length; offset += 5) {
+    const batch = await client.multicall({contracts: claimIds.slice(offset, offset + 5).map((id) => ({
+      address: packsAddress, abi: packsAbi, functionName: "contentsOf", args: [id],
+    } as const)), allowFailure: false}) as unknown as readonly (readonly bigint[])[];
+    claimContents.push(...batch);
+  }
   const rows = found.map(({id, kind}) => {
     const state = kind === "live" ? liveStates[liveIds.indexOf(id)] : null;
     const metadataResult = kind === "live" ? liveMetadata[liveIds.indexOf(id)] : null;

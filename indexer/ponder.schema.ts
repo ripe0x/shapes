@@ -50,6 +50,25 @@ export const token = onchainTable(
   }),
 );
 
+// One row per Pack ever minted. ERC721 Transfer is the ownership source, including mints made
+// to someone other than the creator. An unsealed Pack has no ERC721 owner but may leave a claim
+// over Shapes in custody until its remaining count reaches zero.
+export const packHolding = onchainTable(
+  "pack_holding",
+  (t) => ({
+    id: t.bigint().primaryKey(),
+    contractAddress: t.hex().notNull(),
+    owner: t.hex(),
+    claimant: t.hex(),
+    remainingCount: t.bigint().notNull().default(0n),
+    updatedAtBlock: t.bigint().notNull(),
+  }),
+  (table) => ({
+    ownerIdx: index("pack_holding_owner_idx").on(table.owner),
+    claimantIdx: index("pack_holding_claimant_idx").on(table.claimant),
+  }),
+);
+
 // Single row tracking the collection owner token (issue #56): exactly one live Shape can be the
 // owner token at a time, moved by compose, decompose, split, and ended by redeem/burn. Keyed by
 // a constant id since there is never more than one row. `ownerTokenId`/`ownerAddress` are both
