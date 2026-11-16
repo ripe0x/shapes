@@ -129,6 +129,7 @@ export interface ActivityThumb {
   id: bigint;
   image: string;
   live: boolean;
+  primary: boolean;
 }
 
 /** What one feed row draws: the Shapes it can render, how many it could not, and how many it
@@ -163,7 +164,8 @@ export function activityRowModel(
     event,
     label: activityLabel(event.kind),
     detail: activityDetail(event),
-    thumbs: drawn.map((row) => ({id: row.id, image: tokenArt(row), live: row.live})),
+    thumbs: drawn.map((row) => ({id: row.id, image: tokenArt(row), live: row.live,
+      primary: event.kind === "compose" && row.id === event.tokenIds[0]})),
     missing,
     hidden: resolved.length - drawn.length,
   };
@@ -436,14 +438,14 @@ function Thumb({thumb, onOpenToken}: {thumb: ActivityThumb; onOpenToken: (id: bi
   return (
     <button
       type="button"
-      className="btn-ghost activity-thumb"
+      className={`btn-ghost activity-thumb${thumb.primary ? " activity-thumb--primary" : ""}`}
       onClick={() => onOpenToken(thumb.id)}
-      title={thumb.live ? `Shape ${thumb.id}` : `Shape ${thumb.id}, no longer live`}
+      title={thumb.primary ? `Composed Shape ${thumb.id}` : thumb.live ? `Shape ${thumb.id}` : `Shape ${thumb.id}, no longer live`}
     >
       <span className="activity-thumb-art" style={{backgroundColor: C.art}}>
         <img src={thumb.image} alt={`Shape ${thumb.id}`} />
       </span>
-      <span className="activity-thumb-id">#{thumb.id.toString()}</span>
+      <span className="activity-thumb-id">{thumb.primary && "RESULT · "}#{thumb.id.toString()}</span>
     </button>
   );
 }

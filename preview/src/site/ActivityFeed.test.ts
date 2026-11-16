@@ -113,6 +113,15 @@ test("a row draws every Shape the indexer keeps a row for, live or not", () => {
   assert.equal(row.hidden, 0);
 });
 
+test("a composition marks the surviving result as primary, never a consumed input", () => {
+  const complete = activityRowModel(event(), indexOf([token(7n), token(8n), token(9n)]));
+  assert.deepEqual(complete.thumbs.map((thumb) => thumb.primary), [true, false, false]);
+
+  const missingResult = activityRowModel(event(), indexOf([token(8n), token(9n)]));
+  assert.deepEqual(missingResult.thumbs.map((thumb) => thumb.primary), [false, false]);
+  assert.equal(missingResult.missing, 1);
+});
+
 test("a Pack row represents the Pack instead of its constituent Shapes", () => {
   const row = activityRowModel(event({kind: "packCreated", packId: 12n, tokenIds: [7n, 8n]}),
     indexOf([token(7n), token(8n)]));

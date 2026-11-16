@@ -953,6 +953,15 @@ button {
   object-fit: cover;
 }
 
+/* The surviving Shape is the result of a composition; consumed inputs stay secondary. */
+.activity-thumb--primary .activity-thumb-art {
+  width: 80px;
+}
+
+.activity-thumb--primary .activity-thumb-id {
+  color: var(--ink);
+}
+
 .activity-thumb-id {
   color: var(--muted);
   font-family: "IBM Plex Mono", ui-monospace, monospace;
