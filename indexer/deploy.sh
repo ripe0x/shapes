@@ -42,6 +42,14 @@ case "$ENV_NAME" in
     ;;
 esac
 
+# The live Sepolia app is an API-enabled build with a stable views schema. This GraphQL-only
+# build cannot replace it without removing its public /v1 routes. Reconcile the API build and
+# replay gap recovery first, then remove this guard and use a fresh build schema.
+if [[ "$ENV_NAME" == "sepolia" ]]; then
+  echo "refusing: Sepolia runs the API-enabled indexer; reconcile its /v1 routes and backfill recovery before deploying this build" >&2
+  exit 1
+fi
+
 TOML="indexer/fly.${ENV_NAME}.toml"
 [[ -f "$TOML" ]] || { echo "missing $TOML" >&2; exit 1; }
 
@@ -129,14 +137,21 @@ mv "$SCHEMA_LEDGER.tmp" "$SCHEMA_LEDGER"
 
 APP_URL="https://${APP}.fly.dev"
 echo "app url: $APP_URL"
-curl -sf "$APP_URL/health" >/dev/null && echo "/health: ok" || echo "/health: FAILED"
+PROBE_FAILED=0
+if curl -sf --max-time 15 "$APP_URL/health" >/dev/null; then
+  echo "/health: ok"
+else
+  echo "/health: FAILED" >&2
+  PROBE_FAILED=1
+fi
 # 401 is the expected answer once the app carries an INDEXER_TOKEN secret
 # (`fly secrets set INDEXER_TOKEN=... -a $APP`); both statuses mean the route is live. The token
 # is a Fly secret only, never read from or written to a file here.
-GRAPHQL_STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$APP_URL/graphql" \
-  -H 'content-type: application/json' --data '{"query":"{ _meta { status } }"}')
+GRAPHQL_STATUS=$(curl -s --max-time 15 -o /dev/null -w '%{http_code}' -X POST "$APP_URL/graphql" \
+  -H 'content-type: application/json' --data '{"query":"{ _meta { status } }"}') || GRAPHQL_STATUS="transport failure"
 case "$GRAPHQL_STATUS" in
   200) echo "/graphql: ok" ;;
   401) echo "/graphql: ok, token-gated (HTTP 401)" ;;
-  *) echo "/graphql: FAILED (HTTP $GRAPHQL_STATUS)" ;;
+  *) echo "/graphql: FAILED ($GRAPHQL_STATUS)" >&2; PROBE_FAILED=1 ;;
 esac
+exit "$PROBE_FAILED"

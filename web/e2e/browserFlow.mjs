@@ -109,6 +109,8 @@ async function step(page, name, body) {
  *  only once that snapshot exists, and the mint and manage actions need it. */
 async function gotoApp(page, path) {
   await page.goto(`${BASE_URL}${path}`, {waitUntil: "domcontentloaded"});
+  // Contracts loads its own function list; it does not request the mint reserve snapshot.
+  if (path === "/contracts") return;
   await page.getByText(/The contract holds .* ETH backing/i).first().waitFor({timeout: 60_000});
 }
 

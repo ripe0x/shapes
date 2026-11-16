@@ -443,12 +443,19 @@ and written into `deployments/1.json` by `script/deploy.sh`). Do not scale eithe
 Machine while using PGlite; a future multi-Machine or sustained-load requirement is the trigger to
 migrate to Postgres.
 
-The `pack_holding` table is a new indexing build. Roll it out under a new `DATABASE_SCHEMA` and
-backfill ShapePacks events from `SHAPE_PACKS_START_BLOCK`; the existing schema cannot acquire the
-old mint and transfer recipients by processing only new blocks. Keep the site's full onchain Pack
-scan active until `/ready`, the chain checkpoint, the new GraphQL query, and the count of indexed
-Pack rows against `totalMinted()` all pass. The site falls back to that scan whenever any check
-fails, including during the backfill. This code change alone does not deploy the new schema.
+The `pack_holding` table is a new indexing build. On mainnet, roll it out under a new
+`DATABASE_SCHEMA` and backfill ShapePacks events from `SHAPE_PACKS_START_BLOCK`; the existing
+schema cannot acquire old mint and transfer recipients by processing only new blocks. Keep the
+site's full onchain Pack scan active until `/ready`, the chain checkpoint, the new GraphQL query,
+and the count of indexed Pack rows against `totalMinted()` all pass. The site falls back to that
+scan whenever any check fails, including during the backfill.
+
+Sepolia's live Fly app is a different API-enabled build based on `2796acf`. It serves public
+`/v1` routes and uses a build-specific writer schema plus stable views schema. The GraphQL-only
+build here cannot replace it. A November 16 attempt with `shapes_sepolia_v12` failed during
+backfill when a Shape transfer reached the handler without its earlier mint row; the prior image
+and `shapes_sepolia_2796acf` schema were restored and `/ready` returned 200. `deploy.sh sepolia`
+is blocked until the API and backfill recovery are reconciled into one build under a fresh schema.
 
 ### Dependency security
 
