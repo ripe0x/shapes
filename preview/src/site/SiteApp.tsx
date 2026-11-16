@@ -1,4 +1,5 @@
 import React from "react";
+import {useQueryClient} from "@tanstack/react-query";
 import {formatEther, parseEventLogs} from "viem";
 import {useAccount, useDisconnect, usePublicClient, useSwitchChain, useWriteContract} from "wagmi";
 import {useConnectModal} from "@rainbow-me/rainbowkit";
@@ -6,7 +7,7 @@ import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../cha
 import {C, FONT} from "./theme";
 import {txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
-import {loadSite, type SiteData, type SiteToken} from "./data";
+import {loadMintFees, loadSite, loadSiteHeader, loadSiteToken, seedFee, type SiteData, type SiteHeaderData, type SiteToken} from "./data";
 import {logRequestCounts} from "./indexerClient";
 import {rpcRequestCounter} from "../chain/rpc";
 import {mintRequest} from "./mint";
@@ -16,7 +17,7 @@ import {MintView} from "./MintView";
 import {MintPanel} from "./MintPanel";
 import {GalleryView} from "./GalleryView";
 import {MyShapesView} from "./MyShapesView";
-import {TokenView} from "./TokenView";
+import {TokenView, type DirectTokenState} from "./TokenView";
 import {ManageShapeView} from "./ManageShapeView";
 import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
 import {AuctionView} from "./AuctionView";
@@ -73,13 +74,13 @@ export function SiteApp({
   onNavigate?: (view: View, tokenId: bigint | null) => void;
   /** When the view is "home", renders the mint panel and footer inside the host's own page shell
    *  (the landing page) instead of SiteApp's header/footer/mint view. Without it, "home" falls
-   *  back to the mint view. The fourth argument is the current site load (null until it
+   *  back to the mint view. The fourth argument is the header read (null until it
    *  resolves), for a host that needs a loaded total such as supply or reserve. */
   renderHome?: (
     mint: React.ReactNode,
     footer: React.ReactNode,
     header: React.ReactNode,
-    data: SiteData | null,
+    data: SiteHeaderData | null,
   ) => React.ReactNode;
 }) {
   const {address, isConnected, chainId: walletChainId} = useAccount();
@@ -94,11 +95,29 @@ export function SiteApp({
   const {disconnect} = useDisconnect();
   const {openConnectModal} = useConnectModal();
   const publicClient = usePublicClient({chainId: dep.chainId});
+  const queryClient = useQueryClient();
   const {writeContractAsync} = useWriteContract();
+
+  const siteQueryKey = React.useMemo(
+    () => ["site", dep.chainId, dep.shapes.toLowerCase(), dep.fromBlock ?? 0] as const,
+    [dep.chainId, dep.shapes, dep.fromBlock],
+  );
+  const headerQueryKey = React.useMemo(
+    () => ["site-header", dep.chainId, dep.shapes.toLowerCase()] as const,
+    [dep.chainId, dep.shapes],
+  );
 
   const [view, setView] = React.useState<View>(initialView ?? "mint");
   const [tokenId, setTokenId] = React.useState<bigint | null>(initialTokenId ?? null);
-  const [data, setData] = React.useState<SiteData | null>(null);
+  const [data, setData] = React.useState<SiteData | null>(() =>
+    queryClient.getQueryData<SiteData>(siteQueryKey) ?? null,
+  );
+  const [siteHeader, setSiteHeader] = React.useState<SiteHeaderData | null>(() =>
+    queryClient.getQueryData<SiteHeaderData>(headerQueryKey) ?? null,
+  );
+  const [directTokenResult, setDirectTokenResult] = React.useState<{
+    id: bigint; chainId: number; shapes: string; state: DirectTokenState; updatedAt: number;
+  } | null>(null);
   const [sel, setSel] = React.useState(0); // smallest denomination
   const [qty, setQty] = React.useState(1);
   const [filter, setFilter] = React.useState(-1);
@@ -188,33 +207,111 @@ export function SiteApp({
   dataRef.current = data;
   const lastDirtyIds = React.useRef<readonly bigint[]>([]);
 
+  React.useEffect(() => {
+    setData(queryClient.getQueryData<SiteData>(siteQueryKey) ?? null);
+    setSiteHeader(queryClient.getQueryData<SiteHeaderData>(headerQueryKey) ?? null);
+  }, [queryClient, siteQueryKey, headerQueryKey]);
+
+  const refreshHeader = React.useCallback(async () => {
+    if (!publicClient) return;
+    setRefreshing(true);
+    try {
+      const head = await queryClient.fetchQuery({
+        queryKey: headerQueryKey,
+        queryFn: () => loadSiteHeader(publicClient, dep),
+        staleTime: 15_000,
+      });
+      setSiteHeader(head);
+      setRefreshFailed(false);
+    } catch {
+      setRefreshFailed(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [publicClient, dep, queryClient, headerQueryKey]);
+
   const refresh = React.useCallback(async (dirtyIds?: readonly bigint[]) => {
     if (!publicClient) return;
     if (dirtyIds) lastDirtyIds.current = dirtyIds;
+    const force = dirtyIds !== undefined || lastDirtyIds.current.length > 0;
+    const cached = queryClient.getQueryState<SiteData>(siteQueryKey);
+    if (!force && cached?.data && !cached.isInvalidated &&
+        Date.now() - cached.dataUpdatedAt < 15_000) {
+      setData(cached.data);
+      return;
+    }
     setRefreshing(true);
     try {
       // Incremental against the previous snapshot on the chain fallback: only ids new since the
       // last scan, or a live id whose owner changed, or one the caller just acted on
       // (`lastDirtyIds`) get reread. See loadSiteFromChain in data.ts.
-      const site = await loadSite(publicClient, dep, {
-        previous: dataRef.current,
+      const load = () => loadSite(publicClient, dep, {
+        previous: queryClient.getQueryData<SiteData>(siteQueryKey) ?? null,
         dirtyIds: lastDirtyIds.current,
         onMetrics: (metrics) => logRequestCounts(metrics.source, rpcRequestCounter()),
       });
+      let site: SiteData;
+      if (force) {
+        // A write must not join an older navigation read that lacks its dirty token ids.
+        if (queryClient.getQueryState(siteQueryKey)?.fetchStatus === "fetching") {
+          await queryClient.invalidateQueries({queryKey: siteQueryKey, exact: true, refetchType: "none"});
+          try {
+            await queryClient.fetchQuery({queryKey: siteQueryKey, queryFn: load, staleTime: 0});
+          } catch {
+            // The pre-write navigation read may fail; the post-write read still needs to run.
+          }
+        }
+        site = await load();
+        queryClient.setQueryData(siteQueryKey, site);
+      } else {
+        site = await queryClient.fetchQuery({queryKey: siteQueryKey, queryFn: load, staleTime: 15_000});
+      }
       setData(site);
+      const {tokens: _tokens, ...head} = site;
+      queryClient.setQueryData(headerQueryKey, head);
+      setSiteHeader(head);
       setRefreshFailed(false);
       lastDirtyIds.current = [];
     } catch {
+      if (force) {
+        void queryClient.invalidateQueries({queryKey: siteQueryKey, exact: true, refetchType: "none"});
+      }
       // Leave data as-is; the header surfaces the failure with a retry action.
       setRefreshFailed(true);
     } finally {
       setRefreshing(false);
     }
-  }, [publicClient, dep]);
+  }, [publicClient, dep, queryClient, siteQueryKey, headerQueryKey]);
 
   React.useEffect(() => {
-    if (view !== "fwa") void refresh();
-  }, [refresh, view]);
+    if (view === "home" || view === "mint") void refreshHeader();
+    else if (view === "auction" || view === "gallery" || view === "collection" ||
+             view === "token" || view === "manage" || view === "packs") void refresh();
+  }, [refresh, refreshHeader, view]);
+
+  // A direct Shape URL can show its card before the collection-wide snapshot finishes.
+  React.useEffect(() => {
+    if (view !== "token" || tokenId === null || !publicClient) return;
+    if (dataRef.current?.tokens.some((token) => token.id === tokenId)) return;
+    let cancelled = false;
+    const currentId = tokenId;
+    const setCurrent = (state: DirectTokenState) => {
+      if (!cancelled) setDirectTokenResult({id: currentId, chainId: dep.chainId, shapes: dep.shapes, state, updatedAt: Date.now()});
+    };
+    setCurrent({kind: "loading"});
+    void loadSiteToken(publicClient, dep, currentId)
+      .then((token) => setCurrent(token ? {kind: "live", token} : {kind: "absent"}))
+      .catch(() => setCurrent({kind: "error"}));
+    return () => { cancelled = true; };
+  }, [view, tokenId, publicClient, dep]);
+
+  const directToken = directTokenResult?.id === tokenId &&
+    directTokenResult.chainId === dep.chainId && directTokenResult.shapes === dep.shapes
+    ? data === null || directTokenResult.updatedAt >= (queryClient.getQueryState(siteQueryKey)?.dataUpdatedAt ?? 0)
+      ? directTokenResult.state : undefined
+    : {kind: "loading"} as const;
+
+  const mintData = siteHeader ?? data;
 
   // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
   // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
@@ -275,11 +372,18 @@ export function SiteApp({
   };
 
   const doMint = async () => {
-    if (!address || !publicClient || !data) return;
+    if (!address || !publicClient) return;
     setMint({status: "pending"});
     try {
+      const liveFees = await loadMintFees(publicClient, dep);
+      const quotedFee = seedFee(dep, mintData, sel);
+      if (quotedFee === null || liveFees[sel] !== quotedFee) {
+        await queryClient.invalidateQueries({queryKey: headerQueryKey, exact: true, refetchType: "none"});
+        await refreshHeader();
+        throw new Error("The mint fee changed. Review the updated amount and mint again.");
+      }
       const wei = DENOMINATIONS[sel].wei;
-      const req = mintRequest(dep, {amountWei: wei, quantity: qty, fee: data.fees[sel]});
+      const req = mintRequest(dep, {amountWei: wei, quantity: qty, fee: liveFees[sel]});
       const gas = await estimateGas(req.address, req.abi, req.functionName, req.args, req.value);
       const hash = await writeContractAsync({...req, gas} as unknown as Parameters<typeof writeContractAsync>[0]);
       const receipt = await awaitSuccessfulReceipt(publicClient, hash, req);
@@ -477,7 +581,7 @@ export function SiteApp({
   }, [publicClient, dep, address]);
 
   React.useEffect(() => {
-    if (view !== "fwa") void refreshAuction();
+    if (view === "auction") void refreshAuction();
   }, [refreshAuction, view]);
 
   const runHouse = async (op: string, fn: string, args: readonly unknown[], value?: bigint) => {
@@ -485,13 +589,28 @@ export function SiteApp({
     setBusy(op);
     setTxErr(null);
     try {
+      if (fn === "bid" && value !== undefined) {
+        const liveFees = await loadMintFees(publicClient, dep);
+        const items = breakdown(value);
+        const quotedFee = items.reduce((sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n), 0n);
+        const liveFee = items.reduce((sum, item) => sum + BigInt(item.count) * liveFees[item.di], 0n);
+        if (data === null || liveFee !== quotedFee) {
+          await queryClient.invalidateQueries({queryKey: siteQueryKey, exact: true, refetchType: "none"});
+          await refresh();
+          throw new Error("The mint fee changed. Review the updated bid amount and bid again.");
+        }
+        value += liveFee;
+      }
       // A bid that mints its own cards lands exactly on the edge where the estimate is too tight
       // and the mint's reentrancy guard runs out of gas re-executing (ReentrancySentryOOG).
       // `writeHouse` estimates and buffers gas itself; the block gas limit still caps it.
       const hash = await writeHouse(op, fn, args, value);
-      await awaitSuccessfulReceipt(publicClient, hash, {address: dep.auctionHouse, abi: auctionHouseAbi, functionName: fn, args, value});
+      const receipt = await awaitSuccessfulReceipt(publicClient, hash, {address: dep.auctionHouse, abi: auctionHouseAbi, functionName: fn, args, value});
       setTxHash(hash);
-      await Promise.all([refresh(), refreshAuction()]);
+      const changedIds = parseEventLogs({abi: shapesAbi, eventName: "Transfer", logs: receipt.logs})
+        .filter((log) => log.address.toLowerCase() === dep.shapes.toLowerCase())
+        .map((log) => log.args.tokenId);
+      await Promise.all([refresh(changedIds), refreshAuction()]);
     } catch (e) {
       setTxErr({op, text: describeTxError(e)});
     } finally {
@@ -507,11 +626,7 @@ export function SiteApp({
   const doBid = (cardIds: bigint[], ethBackingWei: bigint) => {
     if (auctionId === null) return;
     const sorted = [...cardIds].sort((a, b) => (a < b ? -1 : 1));
-    const fee = breakdown(ethBackingWei).reduce(
-      (sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n),
-      0n,
-    );
-    void runHouse("bid", "bid", [auctionId, sorted, ethBackingWei], ethBackingWei + fee);
+    void runHouse("bid", "bid", [auctionId, sorted, ethBackingWei], ethBackingWei);
   };
 
   const openToken = (id: bigint) => {
@@ -562,12 +677,12 @@ export function SiteApp({
       onDisconnect={disconnect}
       refreshing={refreshing}
       refreshFailed={refreshFailed}
-      onRetryRefresh={() => void refresh()}
+      onRetryRefresh={() => void (view === "home" || view === "mint" ? refreshHeader() : refresh())}
     />
   );
 
-  const reserveLine = data
-    ? `The contract holds ${formatEther(data.reserve)} ETH backing ${data.supply.toString()} Shapes.`
+  const reserveLine = mintData
+    ? `The contract holds ${formatEther(mintData.reserve)} ETH backing ${mintData.supply.toString()} Shapes.`
     : null;
 
   // The home view hosts the mint panel inside the host's own landing page shell, with no action
@@ -576,7 +691,7 @@ export function SiteApp({
   if (view === "home" && renderHome) {
     return renderHome(
       <MintPanel
-        data={data}
+        data={mintData}
         dep={dep}
         chainId={dep.chainId}
         connected={isConnected}
@@ -594,7 +709,7 @@ export function SiteApp({
       />,
       <SiteFooter reserve={reserveLine} onContracts={() => go("contracts")} />,
       header(null),
-      data,
+      mintData,
     );
   }
 
@@ -604,7 +719,8 @@ export function SiteApp({
 
       {shownView === "mint" && (
         <MintView
-          data={data}
+          data={mintData}
+          dep={dep}
           chainId={dep.chainId}
           connected={isConnected}
           sel={sel}
@@ -665,9 +781,17 @@ export function SiteApp({
           data={data}
           onConnect={() => openConnectModal?.()}
           onShapesChanged={refresh}
+          onOpenPack={(id) => { setTokenId(id); go("pack"); }}
+          onOpenShape={openToken}
         />
       )}
-      {view === "pack" && tokenId !== null && <PackDetailView dep={dep} packId={tokenId} />}
+      {view === "pack" && tokenId !== null && <PackDetailView
+        dep={dep}
+        packId={tokenId}
+        onBack={() => go("packs")}
+        onOpenPack={(id) => { setTokenId(id); go("pack"); }}
+        onOpenShape={openToken}
+      />}
       {view === "collection" && !composeMode && (
         <MyShapesView
           data={data}
@@ -698,6 +822,7 @@ export function SiteApp({
       {view === "token" && tokenId !== null && (
         <TokenView
           data={data}
+          directToken={directToken}
           dep={dep}
           publicClient={publicClient}
           address={address}

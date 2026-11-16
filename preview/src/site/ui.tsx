@@ -33,12 +33,15 @@ export function Section({
 }
 
 /** Artwork on its pure-black ground at the exact 2.5:3.5 card proportion. */
-export function Art({src, alt = "", width}: {src: string; alt?: string; width?: number | string}) {
+export function Art({src, alt = "", width, loading = "eager"}: {
+  src: string; alt?: string; width?: number | string; loading?: "lazy" | "eager";
+}) {
   return (
     <div className="shape-art" style={{width: width ?? "100%", maxWidth: "100%", aspectRatio: "250 / 350", backgroundColor: C.art}}>
       <img
         src={src}
         alt={alt}
+        loading={loading}
         style={{
           display: "block",
           width: "100%",
@@ -104,28 +107,38 @@ export function Modal({
   maxWidth?: number | string;
   children: React.ReactNode;
 }) {
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+  const dialogRef = React.useRef<HTMLDialogElement>(null);
+  React.useLayoutEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialog.showModal();
+    dialog.focus();
+    return () => {
+      if (dialog.open) dialog.close();
+      previousFocus?.focus();
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
+  }, []);
 
   return (
-    <div className="modal-overlay" onClick={onCancel} role="presentation">
+    <dialog
+      ref={dialogRef}
+      className="modal-overlay"
+      aria-label={title}
+      tabIndex={-1}
+      onCancel={(event) => { event.preventDefault(); onCancel(); }}
+      onClick={(event) => { if (event.target === event.currentTarget) onCancel(); }}
+      style={{width: "100vw", height: "100vh", maxWidth: "none", maxHeight: "none", margin: 0, border: 0, boxSizing: "border-box"}}
+    >
       <div
         className="modal-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
         onClick={(e) => e.stopPropagation()}
         style={maxWidth != null ? {maxWidth, maxHeight: "calc(100vh - 48px)", overflowY: "auto"} : undefined}
       >
         <div style={{...label, marginBottom: 18}}>{title}</div>
         {children}
       </div>
-    </div>
+    </dialog>
   );
 }
 

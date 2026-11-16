@@ -1,25 +1,13 @@
 import {strict as assert} from "node:assert";
 import {test} from "node:test";
+import React from "react";
+import {renderToStaticMarkup} from "react-dom/server";
 import {filterGallery, GalleryView} from "./GalleryView";
 
-// No jsdom/react-dom is wired into this suite (see wagmi.test.ts's plain node:test pattern), so
-// GalleryView is exercised as a plain function returning a React element tree, and the tree is
-// searched directly instead of rendering it to a DOM.
+// Server rendering executes GalleryView's hooks without needing a browser DOM.
 
 const OWNER = "0x1111111111111111111111111111111111111111" as `0x${string}`;
 const OTHER = "0x2222222222222222222222222222222222222222" as `0x${string}`;
-
-/** Depth-first search of a React element tree (as returned by calling a function component
- *  directly) for a node whose children include `text` verbatim. */
-function findByText(node: unknown, text: string): boolean {
-  if (node == null || typeof node === "boolean" || typeof node === "number") return false;
-  if (typeof node === "string") return node === text;
-  if (Array.isArray(node)) return node.some((n) => findByText(n, text));
-  if (typeof node === "object" && "props" in node) {
-    return findByText((node as {props: {children?: unknown}}).props.children, text);
-  }
-  return false;
-}
 
 test("filterGallery composes the denomination filter with the owner filter", () => {
   const tokens = [
@@ -46,6 +34,6 @@ test("GalleryView shows the My Shapes chip only when a wallet is connected", () 
     setOwnerOnly: () => {},
     onOpenToken: () => {},
   };
-  assert.equal(findByText(GalleryView({...base, address: undefined}), "My Shapes"), false);
-  assert.equal(findByText(GalleryView({...base, address: OWNER}), "My Shapes"), true);
+  assert.equal(renderToStaticMarkup(React.createElement(GalleryView, {...base, address: undefined})).includes("My Shapes"), false);
+  assert.equal(renderToStaticMarkup(React.createElement(GalleryView, {...base, address: OWNER})).includes("My Shapes"), true);
 });

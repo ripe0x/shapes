@@ -99,6 +99,8 @@ export interface SiteData {
   mintStart: bigint;
 }
 
+export type SiteHeaderData = Omit<SiteData, "tokens">;
+
 /** Fee for denomination `sel`: `SiteData.fees` once `loadSite` completes (chain is authoritative),
  *  seeded from the deployment record's flat fee before that so the mint button need not wait on
  *  the full site load. Null only when neither source has a value yet. */
@@ -173,7 +175,7 @@ interface IndexerPage {
 
 /** Reads the flat fee from the current ABI. The fallback keeps the site usable against the
  *  superseded Sepolia deployment until the fresh flat-fee release is live. */
-async function loadMintFees(publicClient: PublicClient, dep: Deployment): Promise<bigint[]> {
+export async function loadMintFees(publicClient: PublicClient, dep: Deployment): Promise<bigint[]> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
   try {
     const fee = await publicClient.readContract({...shapes, functionName: "mintFee"});
@@ -472,7 +474,7 @@ async function fetchIndexedTokens(
   return {tokens, indexedBlock, requests};
 }
 
-async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Promise<Omit<SiteData, "tokens">> {
+export async function loadSiteHeader(publicClient: PublicClient, dep: Deployment): Promise<SiteHeaderData> {
   const shapes = {address: dep.shapes, abi: shapesAbi} as const;
   const [reserve, supply, artist, artistReleaseHash, fees, ownerToken, mintStart] = await Promise.all([
     publicClient.readContract({...shapes, functionName: "redeemableBacking"}),
@@ -561,6 +563,23 @@ async function readTokensFromChain(
     });
   }
   return tokens;
+}
+
+/** One Shape for a cold detail route. `exists` distinguishes a burned or never-issued id from
+ * an RPC failure; the gallery scan remains the source for shared collection state. */
+export async function loadSiteToken(
+  publicClient: PublicClient,
+  dep: Deployment,
+  id: bigint,
+): Promise<SiteToken | null> {
+  const exists = () => publicClient.readContract({
+    address: dep.shapes, abi: shapesAbi, functionName: "exists", args: [id],
+  });
+  if (!(await exists())) return null;
+  const token = (await readTokensFromChain(publicClient, dep, [id], 0))[0];
+  if (token) return token;
+  if (!(await exists())) return null; // Burned between the first existence check and the field reads.
+  throw new Error(`Shape ${id} could not be read from the chain`);
 }
 
 /**

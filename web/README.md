@@ -47,8 +47,8 @@ Chain target comes from `web/public/deployment.json`, with env overrides `SHAPES
 `app/lib/deployment.ts`).
 
 `SHAPES_DEPLOYMENT_FILE` names a deployment record anywhere on disk and points the whole site at
-it: the browser receives it as a prop from the root layout (`ShapesProviders`) instead of fetching
-`/deployment.local.json`, the server routes read it through `serverDeployment()`, and
+it: the browser receives it as a prop from the root layout (`ShapesProviders`), the server routes
+read it through `serverDeployment()`, and
 `next.config.ts` picks the denomination ladder from its chain id. It wins over both
 `public/deployment.local.json` and the bundled `public/deployment.json`, so a run can target a
 chain without writing either file. This is how `npm run e2e:browser` points the site at the chain
@@ -57,7 +57,7 @@ it deploys.
 ### Per-site deployment record
 
 Two Netlify sites build this same `web/` from `main`: a Sepolia app and the mainnet launch app.
-Both read a bundled `public/<name>.json` record, selected at build time by
+Both use a bundled `public/<name>.json` record, selected at build time by
 `NEXT_PUBLIC_SHAPES_DEPLOYMENT` (default `deployment`, i.e. `public/deployment.json`, the mainnet
 record). The Sepolia site sets `NEXT_PUBLIC_SHAPES_DEPLOYMENT=deployment.sepolia` to read
 `public/deployment.sepolia.json` instead, so writing the mainnet record into `deployment.json`
@@ -87,7 +87,7 @@ visible.
 The browser never queries the Ponder indexer directly. Every indexer read goes to `/api/indexer`
 on the site's own origin (`app/api/indexer/route.ts`), which forwards the GraphQL query to the
 upstream server and returns its JSON. `ShapesProviders` sets `dep.indexerUrl` to that path, so the
-upstream origin is not part of any client bundle or fetched record.
+upstream origin is not part of any client bundle or deployment record.
 
 - `SHAPES_INDEXER_URL` — the upstream Ponder GraphQL endpoint, including `/graphql`
   (currently `https://shapes-indexer-mainnet.fly.dev/graphql` in production Netlify).

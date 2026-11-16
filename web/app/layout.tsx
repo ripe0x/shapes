@@ -4,7 +4,7 @@ import Script from "next/script";
 import { initialWalletState } from "@shared/chain/wagmi";
 import { ShapesProviders } from "./ShapesProviders";
 import { appOnly } from "./lib/siteMode";
-import { indexerUpstream, overrideDeployment } from "./lib/deployment";
+import { clientDeployment, indexerUpstream } from "./lib/deployment";
 import "./globals.css";
 
 // Canonical origin for absolute OG/Twitter URLs. Env-overridable so a preview deploy can stamp its
@@ -59,7 +59,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           chainOnIndex={appOnly()}
           indexerConfigured={indexerUpstream() !== null}
           walletInitialState={walletInitialState}
-          deployment={overrideDeployment()}
+          deployment={clientDeployment()}
         >
           {children}
         </ShapesProviders>

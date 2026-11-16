@@ -22,8 +22,8 @@ const BUNDLED_RECORDS: Record<string, { chainId?: number }> = {
 /** Deployment record this build actually targets: SHAPES_DEPLOYMENT_FILE when set (see
  *  app/lib/deployment.ts), else public/deployment.local.json when present (written by
  *  script/lived-in.sh for a local anvil chain, which deploys with the default mainnet profile),
- *  else the bundled record NEXT_PUBLIC_SHAPES_DEPLOYMENT names (default `deployment.json`, the
- *  record `app/ShapesProviders.tsx` fetches on the client). */
+ *  else the bundled record NEXT_PUBLIC_SHAPES_DEPLOYMENT names (default `deployment.json`, passed
+ *  to `app/ShapesProviders.tsx` by the root layout). */
 function targetDeployment(): { chainId?: number } {
   const overridePath =
     process.env.SHAPES_DEPLOYMENT_FILE || resolve(__dirname, "public/deployment.local.json");

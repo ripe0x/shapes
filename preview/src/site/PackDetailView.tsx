@@ -1,5 +1,5 @@
 import React from "react";
-import {formatEther, zeroAddress, type Address} from "viem";
+import {BaseError, ContractFunctionRevertedError, formatEther, zeroAddress, type Address} from "viem";
 import type {Deployment} from "../chain/abi";
 import {packsAbi, packsClientFor, packsDeploymentFor} from "./packs";
 import {checkpointOf, indexerQuery, requireFreshCheckpoint, type IndexerMeta} from "./indexerClient";
@@ -44,10 +44,20 @@ async function historyFor(url: string | undefined, chainId: number, id: bigint):
 
 type Detail = {
   exists: boolean; owner: Address | null; claimant: Address | null; state: PackState | null;
-  contents: readonly bigint[]; history: PackEvent[] | null; artBlock: bigint | "latest";
+  contents: readonly bigint[]; history: PackEvent[] | null | "loading"; artBlock: bigint | "latest" | "exit" | null;
 };
 
-export function PackDetailView({dep, packId}: {dep: Deployment; packId: bigint}) {
+export function PackDetailView({dep, packId, onBack, onOpenPack, onOpenShape}: {
+  dep: Deployment; packId: bigint;
+  onBack: () => void;
+  onOpenPack: (id: bigint) => void;
+  onOpenShape: (id: bigint) => void;
+}) {
+  const navigate = (action: () => void) => (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    action();
+  };
   const [detail, setDetail] = React.useState<Detail | null>(null);
   const [error, setError] = React.useState(false);
   React.useEffect(() => {
@@ -64,23 +74,34 @@ export function PackDetailView({dep, packId}: {dep: Deployment; packId: bigint})
       try {
         return await client.readContract({address: deployment.packs, abi: packsAbi, functionName, args: [packId],
           ...(blockNumber === undefined ? {} : {blockNumber})}) as T;
-      } catch { return null; }
+      } catch (error) {
+        // A burned pack can revert ownerOf and historical getters. A transport failure does not
+        // establish that the pack exited, so it must surface as unavailable instead.
+        if (error instanceof BaseError && error.walk((cause) => cause instanceof ContractFunctionRevertedError)) return null;
+        throw error;
+      }
     };
     void (async () => {
-      const [totalMinted, history] = await Promise.all([
-        client.readContract({address: deployment.packs, abi: packsAbi, functionName: "totalMinted"}),
-        historyFor(dep.indexerUrl, dep.chainId, packId),
-      ]);
+      const totalMinted = await client.readContract({address: deployment.packs, abi: packsAbi, functionName: "totalMinted"});
       if (packId === 0n || packId > totalMinted) {
-        if (!cancelled) setDetail({exists: false, owner: null, claimant: null, state: null, contents: [], history, artBlock: "latest"});
+        if (!cancelled) setDetail({exists: false, owner: null, claimant: null, state: null, contents: [], history: null, artBlock: "latest"});
         return;
       }
+      const historyPromise = historyFor(dep.indexerUrl, dep.chainId, packId);
       const [owner, claimant, currentState, contents] = await Promise.all([
         read<Address>("ownerOf"), read<Address>("claimantOf"), read<PackState>("packState"), read<readonly bigint[]>("contentsOf"),
       ]);
+      if (!cancelled) setDetail({exists: true, owner, claimant: claimant === zeroAddress ? null : claimant,
+        state: currentState, contents: contents ?? [], history: dep.indexerUrl ? "loading" : null,
+        artBlock: owner ? "latest" : null});
+
+      const history = await historyPromise;
       const terminal = history?.find((event) => TERMINAL_KINDS.has(event.kind));
-      const artBlock = owner ? "latest" : terminal && BigInt(terminal.blockNumber) > 0n ? BigInt(terminal.blockNumber) - 1n : "latest";
-      const state = currentState ?? (artBlock !== "latest" ? await read<PackState>("packState", artBlock) : null);
+      const artBlock = owner ? "latest" : terminal && BigInt(terminal.blockNumber) > 0n ? BigInt(terminal.blockNumber) - 1n : "exit";
+      let state = currentState;
+      if (!owner && !state && typeof artBlock === "bigint") {
+        try { state = await read<PackState>("packState", artBlock); } catch { /* Core pack data remains available. */ }
+      }
       if (!cancelled) setDetail({exists: true, owner, claimant: claimant === zeroAddress ? null : claimant,
         state, contents: contents ?? [], history, artBlock});
     })().catch(() => { if (!cancelled) setError(true); });
@@ -91,17 +112,17 @@ export function PackDetailView({dep, packId}: {dep: Deployment; packId: bigint})
   if (!detail) return <Section title={`PACK #${packId}`}><p>Loading Pack…</p></Section>;
   if (!detail.exists) return <Section title={`PACK #${packId}`}><p>This Pack does not exist.</p></Section>;
 
-  const terminal = detail.history?.find((event) => TERMINAL_KINDS.has(event.kind));
+  const terminal = Array.isArray(detail.history) ? detail.history.find((event) => TERMINAL_KINDS.has(event.kind)) : undefined;
   const status = detail.owner ? "Live" : terminal?.kind === "packMergedAway" ? "Merged"
     : terminal?.kind === "packRedeemed" ? "Redeemed" : terminal?.kind === "packOpened" ? "Opened"
-      : terminal?.kind === "packUnsealed" ? "Unsealed" : "No longer live";
+      : terminal?.kind === "packUnsealed" ? "Unsealed" : detail.history === "loading" ? "Checking exit" : "No longer live";
   const shapeIds = detail.owner ? (detail.state?.shapeIds ?? [])
     : detail.contents.length ? detail.contents : (detail.state?.shapeIds ?? terminal?.tokenIds.map(BigInt) ?? []);
-  const art = `/api/pack-art/${packId}/${detail.artBlock}`;
+  const art = detail.artBlock === null ? null : `/api/pack-art/${packId}/${detail.artBlock}`;
   return <Section title={`PACK #${packId}`}>
-    <p><a href="/packs">← Packs</a></p>
+    <p><a href="/packs" onClick={navigate(onBack)}>← Packs</a></p>
     <div className="pack-page-heading">
-      <div className="pack-page-art"><img src={art} alt={`Pack #${packId} artwork`} /></div>
+      <div className="pack-page-art">{art && <img src={art} alt={`Pack #${packId} artwork`} />}</div>
       <div>
         <p className="launch-kicker">SHAPE PACK · {status.toUpperCase()}</p>
         <h1>Pack #{packId.toString()}</h1>
@@ -110,24 +131,25 @@ export function PackDetailView({dep, packId}: {dep: Deployment; packId: bigint})
         {detail.claimant && <p>Claimant <AddressName address={detail.claimant} /></p>}
         {detail.state?.creator && <p>Created by <AddressName address={detail.state.creator} /></p>}
         {!detail.owner && terminal?.kind === "packMergedAway" && terminal.relatedPackId &&
-          <p>Contents moved to <a href={`/packs/${terminal.relatedPackId}`}>Pack #{terminal.relatedPackId}</a></p>}
+          <p>Contents moved to <a href={`/packs/${terminal.relatedPackId}`} onClick={navigate(() => onOpenPack(BigInt(terminal.relatedPackId!)))}>Pack #{terminal.relatedPackId}</a></p>}
       </div>
     </div>
     {shapeIds.length > 0 && <div className="pack-page-section">
       <h2>{detail.owner ? "Current contents" : "Contents at exit"}</h2>
-      <div className="pack-page-shapes">{shapeIds.map((id) => <a key={id.toString()} href={`/shape/${id}`}>Shape #{id}</a>)}</div>
+      <div className="pack-page-shapes">{shapeIds.map((id) => <a key={id.toString()} href={`/shape/${id}`} onClick={navigate(() => onOpenShape(id))}>Shape #{id}</a>)}</div>
     </div>}
-    {detail.history && <div className="pack-page-section">
+    {Array.isArray(detail.history) && <div className="pack-page-section">
       <h2>History</h2>
       {detail.history.length === 0 ? <p>No indexed events yet.</p> : <ol className="pack-page-history">{detail.history.map((event) =>
         <li key={event.id}><span>{LABELS[event.kind] ?? event.kind}</span>
-          {event.kind === "packMergedAway" && event.relatedPackId && <a href={`/packs/${event.relatedPackId}`}>Pack #{event.relatedPackId}</a>}
+          {event.kind === "packMergedAway" && event.relatedPackId && <a href={`/packs/${event.relatedPackId}`} onClick={navigate(() => onOpenPack(BigInt(event.relatedPackId!)))}>Pack #{event.relatedPackId}</a>}
           {event.kind === "packTransferred" && event.counterparty &&
             <span><AddressName address={event.actor} /> → <AddressName address={event.counterparty} /></span>}
           {event.amountWei && <span>{formatEther(BigInt(event.amountWei))} ETH</span>}
           <a href={txUrl(event.txHash, dep.chainId)} target="_blank" rel="noreferrer">{new Date(Number(event.timestamp) * 1000).toLocaleDateString()}</a>
         </li>)}</ol>}
     </div>}
-    {!detail.history && <p className="packs-small">Pack history is temporarily unavailable.</p>}
+    {detail.history === "loading" && <p className="packs-small">Loading pack history…</p>}
+    {detail.history === null && <p className="packs-small">Pack history is temporarily unavailable.</p>}
   </Section>;
 }

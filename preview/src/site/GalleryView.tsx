@@ -12,6 +12,7 @@ export const BLACK_FILTER = -2;
  *  wraps at so a long grid's last row does not wait on its position. */
 export const GALLERY_CASCADE_STEP_MS = 26;
 export const GALLERY_CASCADE_CAP = 24;
+const PAGE_SIZE = 48;
 
 /** Kept pure so the gallery's Black-Shape visibility is regression-testable without a DOM. */
 export function filterGalleryTokens<T extends {di: number}>(tokens: T[], filter: number): T[] {
@@ -60,6 +61,8 @@ export function GalleryView({
 }) {
   const tokens = data?.tokens ?? [];
   const filtered = filterGallery(tokens, filter, ownerOnly, address);
+  const [visible, setVisible] = React.useState(PAGE_SIZE);
+  React.useEffect(() => setVisible(PAGE_SIZE), [filter, ownerOnly, address]);
   const chips = [
     {label: "All", i: -1},
     ...DENOMINATIONS.map((d, i) => ({label: d.label, i})),
@@ -79,6 +82,7 @@ export function GalleryView({
               <button
                 key={f.label}
                 type="button"
+                aria-pressed={on}
                 onClick={() => setFilter(f.i)}
                 style={{
                   border: `1px solid ${on ? C.ink : C.border}`,
@@ -113,7 +117,15 @@ export function GalleryView({
         </div>
       </Section>
 
-      <ShapeGrid tokens={filtered} ownerTokenId={data?.ownerToken ?? null} onOpenToken={onOpenToken} />
+      <ShapeGrid tokens={filtered.slice(0, visible)} ownerTokenId={data?.ownerToken ?? null} onOpenToken={onOpenToken} />
+      {filtered.length > visible && (
+        <div style={{padding: "0 48px 48px"}}>
+          <button type="button" className="btn-outline" onClick={() => setVisible((count) => count + PAGE_SIZE)}
+            style={{padding: "10px 18px"}}>
+            Show more ({Math.min(visible, filtered.length)} of {filtered.length})
+          </button>
+        </div>
+      )}
     </main>
   );
 }
@@ -165,7 +177,7 @@ export function ShapeGrid({
             animationDelay: `${(index % GALLERY_CASCADE_CAP) * GALLERY_CASCADE_STEP_MS}ms`,
           }}
         >
-          <Art src={t.image} alt={`Shape ${t.id}`} />
+          <Art src={t.image} alt={`Shape ${t.id}`} loading="lazy" />
           <div
             className="gallery-card-meta"
             style={{

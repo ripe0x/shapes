@@ -26,7 +26,7 @@ export function SiteHeader({
   /** View to mark as current, or null when no nav item corresponds to the page. */
   active: View | null;
   go: (view: View) => void;
-  /** True when the host serves real routes, which makes the wordmark and /play plain anchors. */
+  /** True when the host serves real routes, so the wordmark has a shareable home URL. */
   routed: boolean;
   isConnected: boolean;
   wrongChain: boolean;
@@ -46,11 +46,13 @@ export function SiteHeader({
   return (
     <header className="site-header" style={{fontFamily: FONT}}>
       <div className="site-header-inner">
-        {/* The Next host navigates "/" as a real route outside SiteApp's view state, so the
-            wordmark links there directly; the Vite preview has no such route and falls back to
-            the mint view, mirroring the /play link below. */}
+        {/* The Next host serves "/" as a real route; the Vite preview falls back to mint. */}
         {routed ? (
-          <a href="/" className="site-nav-link">SHAPES</a>
+          <a href="/" className="site-nav-link" onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            go("home");
+          }}>SHAPES</a>
         ) : (
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")}>SHAPES</button>
         )}
