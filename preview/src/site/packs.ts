@@ -115,7 +115,8 @@ type ChainPackState = {shapeIds: readonly bigint[]; counts: readonly number[]; v
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-/** Scan pack ids in bounded Multicall batches. Burned ids can still belong to this claimant. */
+/** Scan every minted Pack ID so a missing index or incomplete event response cannot hide an
+ * owned Pack or an unsealed claim. Read large dynamic states in small batches below. */
 export async function loadOwnedPacks(client: PublicClient, account: Address, totalMinted: bigint,
   packsAddress: Address, shapesAddress: Address): Promise<OwnedPack[]> {
   const ids: bigint[] = [];
@@ -137,9 +138,13 @@ export async function loadOwnedPacks(client: PublicClient, account: Address, tot
   found.reverse();
   const liveIds = found.filter((pack) => pack.kind === "live").map((pack) => pack.id);
   const claimIds = found.filter((pack) => pack.kind === "claim").map((pack) => pack.id);
-  const liveStates = liveIds.length ? await client.multicall({contracts: liveIds.map((id) => ({
-    address: packsAddress, abi: packsAbi, functionName: "packState", args: [id],
-  } as const)), allowFailure: false}) as unknown as readonly ChainPackState[] : [];
+  const liveStates: ChainPackState[] = [];
+  for (let offset = 0; offset < liveIds.length; offset += 5) {
+    const batch = await client.multicall({contracts: liveIds.slice(offset, offset + 5).map((id) => ({
+      address: packsAddress, abi: packsAbi, functionName: "packState", args: [id],
+    } as const)), allowFailure: false}) as unknown as readonly ChainPackState[];
+    liveStates.push(...batch);
+  }
   const liveMetadata = liveIds.length ? await client.multicall({contracts: liveIds.map((id) => ({
     address: packsAddress, abi: packsAbi, functionName: "tokenURI", args: [id],
   } as const)), allowFailure: true}) : [];

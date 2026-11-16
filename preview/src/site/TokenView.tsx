@@ -50,6 +50,12 @@ interface DatedEvent extends HistEvent {
   dateTime: string;
 }
 
+export type DirectTokenState =
+  | {kind: "loading"}
+  | {kind: "live"; token: SiteToken}
+  | {kind: "absent"}
+  | {kind: "error"};
+
 const DATE_TIME = new Intl.DateTimeFormat(undefined, {
   year: "numeric",
   month: "short",
@@ -69,6 +75,7 @@ export function TokenView({
   onBack,
   onManage,
   onOpenToken,
+  directToken,
 }: {
   data: SiteData | null;
   dep: Deployment;
@@ -80,6 +87,7 @@ export function TokenView({
   onBack: () => void;
   onManage: () => void;
   onOpenToken: (id: bigint) => void;
+  directToken?: DirectTokenState;
 }) {
   const [history, setHistory] = React.useState<DatedEvent[] | null>(null);
   const [prov, setProv] = React.useState<ProvNode | null>(null);
@@ -89,12 +97,24 @@ export function TokenView({
   // contributing donor (or split parent) card. Empty means the modal is closed. Loaded lazily and
   // cached in place, so navigating back up never refetches.
   const [drillStack, setDrillStack] = React.useState<DnaDrillLevel[]>([]);
+  const token = data?.tokens.find((candidate) => candidate.id === tokenId) ??
+    (directToken?.kind === "live" ? directToken.token : null);
+  // Without a direct read, history remains independent of the collection snapshot.
+  const dataReady = data !== null || directToken === undefined || directToken.kind === "live" || directToken.kind === "absent";
+  const isOwnerToken = !!token && (data
+    ? data.ownerToken === token.id
+    : token.meta.attributes.some((attribute) => attribute.trait_type === undefined && attribute.value === "Contract Owner"));
+  // A new collection snapshot often recreates every token object. Detail reads only need to
+  // restart when this token's chain state changes, including owner-only transfers and owner-token moves.
+  const tokenVersion = token
+    ? `${token.owner}:${token.backing}:${token.seed}:${token.di}:${token.inkGene}:${token.originCount}:${token.composeDepth}:${isOwnerToken}`
+    : "absent";
 
   // Ancestry tree from the indexer; shown only when the token has one beyond its own mint.
   React.useEffect(() => {
-    if (!publicClient) return;
-    let cancelled = false;
     setProv(null);
+    if (!publicClient || !dataReady) return;
+    let cancelled = false;
     void loadProvenance(publicClient, dep, tokenId)
       .then((p) => {
         if (!cancelled) setProv(p);
@@ -105,7 +125,7 @@ export function TokenView({
     return () => {
       cancelled = true;
     };
-  }, [publicClient, dep, tokenId, data]);
+  }, [publicClient, dep, tokenId, dataReady, tokenVersion]);
 
   // The provenance tree, plus a lookup from tree key to the live token id it represents (only
   // live nodes navigate; everything else focuses in place). Rebuilt whenever the ancestry or the
@@ -113,18 +133,21 @@ export function TokenView({
   const provTree = React.useMemo(() => {
     if (!prov) return null;
     const liveIds = new Map<string, bigint>();
-    const root = provNodeToTree(prov, data?.tokens ?? [], "root", liveIds);
+    const root = provNodeToTree(prov, data?.tokens ?? (token ? [token] : []), "root", liveIds);
     return {root, liveIds};
-  }, [prov, data?.tokens]);
+  }, [prov, data?.tokens, token]);
 
   // No node is highlighted until the viewer picks one; the root only draws its selection ring
   // after a click.
   const [focusedKey, setFocusedKey] = React.useState<string | null>(null);
   const [expandedKeys, setExpandedKeys] = React.useState<ReadonlySet<string>>(new Set());
+  const lastExpandedProvenance = React.useRef<ProvNode | null>(null);
   React.useEffect(() => {
+    if (lastExpandedProvenance.current === prov) return;
+    lastExpandedProvenance.current = prov;
     setFocusedKey(null);
     setExpandedKeys(provTree ? initialExpandedKeys(provTree.root) : new Set());
-  }, [provTree]);
+  }, [prov, provTree]);
 
   const handleSelectProvNode = (key: string) => {
     const liveId = provTree?.liveIds.get(key);
@@ -141,9 +164,9 @@ export function TokenView({
   // Token history from the indexer. Null means no indexer answered within its freshness guard, and
   // the section is not rendered at all.
   React.useEffect(() => {
-    if (!publicClient) return;
-    let cancelled = false;
     setHistory(null);
+    if (!publicClient || !dataReady) return;
+    let cancelled = false;
     void loadTokenHistory(publicClient, dep, tokenId)
       .then((events) => {
         if (cancelled) return;
@@ -161,7 +184,7 @@ export function TokenView({
     return () => {
       cancelled = true;
     };
-  }, [publicClient, dep, tokenId, data]);
+  }, [publicClient, dep, tokenId, dataReady, tokenVersion]);
 
   // Per-cell provenance (DNA section): reconstructed from composeRecordAt/splitOriginOf, or
   // straight from the seed when the token has never been sampled. One read per token view.
@@ -169,8 +192,7 @@ export function TokenView({
     setDna(null);
     setDrillStack([]);
     if (!dnaExpanded || !publicClient) return;
-    const t = data?.tokens.find((x) => x.id === tokenId);
-    if (!t) return;
+    if (tokenVersion === "absent") return;
     let cancelled = false;
     void loadDna(publicClient, dep, tokenId)
       .then((r) => {
@@ -182,7 +204,7 @@ export function TokenView({
     return () => {
       cancelled = true;
     };
-  }, [dnaExpanded, publicClient, dep, tokenId, data]);
+  }, [dnaExpanded, publicClient, dep, tokenId, tokenVersion]);
 
   React.useEffect(() => {
     setDnaExpanded(false);
@@ -223,10 +245,8 @@ export function TokenView({
     };
   }, [publicClient, dep, drillStack]);
 
-  const token = data?.tokens.find((t) => t.id === tokenId) ?? null;
   const snap = redeem.status === "done" && redeem.snap?.id === tokenId ? redeem.snap : null;
   const owned = !!token && !!address && token.owner.toLowerCase() === address.toLowerCase();
-  const isOwnerToken = !!token && data?.ownerToken === token.id;
 
   const back = (
     <div className="token-detail-back">
@@ -277,8 +297,8 @@ export function TokenView({
     );
   }
 
-  // `data` is null while the site data is (re)loading; only a loaded set that lacks the id means
-  // the token is gone.
+  // An absent direct read or a loaded collection that lacks the id confirms it is no longer live.
+  // RPC failures stay separate so a temporary outage cannot be mistaken for a burned Shape.
   if (!token) {
     return (
       <main className="token-detail-page">
@@ -287,7 +307,11 @@ export function TokenView({
           {/* Not live: never the current owner token. */}
           <div style={{fontSize: 40, lineHeight: 1, marginBottom: 20}}>{shapeTitle(tokenId, false)}</div>
           <div style={{fontFamily: SANS, fontSize: 14, lineHeight: 1.6, color: C.bodyDim, maxWidth: "60ch"}}>
-            {data
+            {directToken?.kind === "error"
+              ? "Shape data is temporarily unavailable. Retry the page shortly."
+              : directToken?.kind === "loading" && data && !data.tokens.some((candidate) => candidate.id === tokenId)
+                ? "Reading the chain…"
+                : data || directToken?.kind === "absent"
               ? `Shape ${tokenId.toString()} is no longer live. It was redeemed or recomposed. Its history is below.`
               : "Reading the chain…"}
           </div>

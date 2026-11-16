@@ -110,7 +110,7 @@ export function MintPanel({
   onOpenToken,
   onConnect,
 }: {
-  data: SiteData | null;
+  data: Pick<SiteData, "fees" | "mintStart"> | null;
   /** The deployment record, used only to seed the fee and mint-gate before `data` loads; see
    *  `seedFee`/`seedMintStart`. Omitted where the caller has no record handy, in which case the
    *  panel waits on `data` exactly as it did before seeding existed. */

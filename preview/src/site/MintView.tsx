@@ -1,9 +1,11 @@
 import {MintPanel} from "./MintPanel";
 import type {SiteData} from "./data";
+import type {Deployment} from "../chain/abi";
 import type {MintState} from "./SiteApp";
 
 export function MintView({
   data,
+  dep,
   chainId,
   connected,
   sel,
@@ -15,7 +17,8 @@ export function MintView({
   onOpenToken,
   onConnect,
 }: {
-  data: SiteData | null;
+  data: Pick<SiteData, "fees" | "mintStart"> | null;
+  dep: Deployment;
   chainId: number;
   connected: boolean;
   sel: number;
@@ -33,6 +36,7 @@ export function MintView({
         <p className="launch-kicker">Mint</p>
         <MintPanel
           data={data}
+          dep={dep}
           chainId={chainId}
           connected={connected}
           sel={sel}

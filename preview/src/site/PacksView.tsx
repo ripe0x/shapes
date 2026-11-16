@@ -28,12 +28,19 @@ const packSampleArtwork = (nonce: bigint, di: number, epoch: number, serial: num
   return localArt(seed, amount, mintGene(seed, amount));
 };
 
-export function PacksView({dep, data, onConnect, onShapesChanged}: {
+export function PacksView({dep, data, onConnect, onShapesChanged, onOpenPack, onOpenShape}: {
   dep: Deployment;
   data: SiteData | null;
   onConnect: () => void;
   onShapesChanged: (ids: readonly bigint[]) => Promise<void>;
+  onOpenPack: (id: bigint) => void;
+  onOpenShape: (id: bigint) => void;
 }) {
+  const navigate = (action: () => void) => (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    action();
+  };
   const deployment = packsDeploymentFor(dep.chainId);
   const packConfig = deployment ?? PACKS_DEPLOYMENTS[11155111];
   const {chainId: PACKS_CHAIN_ID, shapes: PACKS_SHAPES, packs: PACKS_ADDRESS, renderer: PACKS_RENDERER} = packConfig;
@@ -44,6 +51,8 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   const {writeContractAsync} = useWriteContract();
   const [settings, setSettings] = React.useState<Settings | null>(null);
   const [packs, setPacks] = React.useState<OwnedPack[]>([]);
+  const [visiblePacks, setVisiblePacks] = React.useState(48);
+  const [visibleMerge, setVisibleMerge] = React.useState(48);
   const [selectedPackId, setSelectedPackId] = React.useState<bigint | null>(null);
   const [mergeSourceIds, setMergeSourceIds] = React.useState<bigint[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -134,6 +143,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
   // Account and chain changes invalidate selections and messages from the previous wallet.
   React.useEffect(() => {
     setPacks([]);
+    setVisiblePacks(48);
     setSelectedShapes([]);
     setSelectedPackId(null);
     setMergeSourceIds([]);
@@ -146,6 +156,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
 
   React.useEffect(() => {
     if (selectedPack) setChunkSize(Math.min(10, selectedPack.shapeIds.length));
+    setVisibleMerge(48);
   }, [selectedPackId, selectedPack?.shapeIds.length]);
 
   React.useEffect(() => {
@@ -239,15 +250,22 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
     const packId = addTarget?.id;
     setStatus({kind: "working", message: "Checking Shapes, approval, and the exact payment…"});
     try {
-      const liveQuote = await packsClient.readContract({address: PACKS_ADDRESS, abi: packsAbi, functionName: "quoteMint", args: [mintCounts]});
+      const [liveQuote, shapeChecks] = await Promise.all([
+        packsClient.readContract({address: PACKS_ADDRESS, abi: packsAbi, functionName: "quoteMint", args: [mintCounts]}),
+        ids.length ? packsClient.multicall({contracts: ids.flatMap((id) => [
+          {address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "ownerOf", args: [id]} as const,
+          {address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "backingOf", args: [id]} as const,
+        ]), allowFailure: true}) : Promise.resolve([]),
+      ]);
       let liveBacking = 0n;
-      for (const id of ids) {
-        const [owner, backing] = await Promise.all([
-          packsClient.readContract({address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "ownerOf", args: [id]}),
-          packsClient.readContract({address: PACKS_SHAPES, abi: packsShapesAbi, functionName: "backingOf", args: [id]}),
-        ]);
-        if (!same(owner, address) || backing === 0n) throw new Error(`Shape #${id} is no longer an eligible Shape in this wallet.`);
-        liveBacking += backing;
+      for (let i = 0; i < ids.length; i++) {
+        const owner = shapeChecks[i * 2];
+        const backing = shapeChecks[i * 2 + 1];
+        if (owner?.status !== "success" || backing?.status !== "success" ||
+          !same(owner.result as string, address) || (backing.result as bigint) === 0n) {
+          throw new Error(`Shape #${ids[i]} is no longer an eligible Shape in this wallet.`);
+        }
+        liveBacking += backing.result as bigint;
       }
       if (willCreate && liveBacking + liveQuote[0] < settings.minimum) {
         throw new Error(`A new pack needs at least ${eth(settings.minimum)} of backing.`);
@@ -374,12 +392,14 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             <button type="button" aria-pressed={mode === "add"} onClick={() => setMode("add")}>ADD TO PACK</button>
           </div>
           {mode === "add" && <div className="packs-destinations" role="group" aria-label="Pack destination">
-            <p className="packs-small">Choose where the selected Shapes go.</p>
-            <div className="packs-destination-options">
-              <button type="button" className="btn-outline" aria-pressed={addTargetId === null} onClick={() => setAddTargetId(null)}>NEW PACK</button>
-              {packs.filter((pack) => pack.kind === "live").map((pack) => <button key={pack.id.toString()} type="button"
-                className="btn-outline" aria-pressed={addTargetId === pack.id} onClick={() => setAddTargetId(pack.id)}>{pack.name}</button>)}
-            </div>
+            <label className="packs-small" htmlFor="packs-destination">Choose where the selected Shapes go.</label>
+            <select id="packs-destination" value={addTargetId?.toString() ?? ""}
+              onChange={(event) => setAddTargetId(event.target.value ? BigInt(event.target.value) : null)}
+              style={{display: "block", maxWidth: "100%", padding: "10px 12px", marginTop: 8}}>
+              <option value="">NEW PACK</option>
+              {packs.filter((pack) => pack.kind === "live").map((pack) =>
+                <option key={pack.id.toString()} value={pack.id.toString()}>{pack.name}</option>)}
+            </select>
           </div>}
           <div className="packs-builder-grid">
             <div className="packs-preview-panel">
@@ -449,18 +469,21 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
 
         <Section title="YOUR PACKS">
           {packs.length === 0 ? <p>This wallet has no live packs or unfinished pack claims.</p> : (
-            <div className="packs-list">{packs.map((pack) => <button key={pack.id.toString()} type="button"
+            <div className="packs-list">{packs.slice(0, visiblePacks).map((pack) => <button key={pack.id.toString()} type="button"
               className={selectedPackId === pack.id ? "packs-card is-selected" : "packs-card"}
               aria-pressed={selectedPackId === pack.id}
               onClick={() => {setSelectedPackId(pack.id); setMergeSourceIds([]); setUnavailableExit(null); setStatus(idle);}}>
-              <span className="packs-art">{pack.image ? <img src={pack.image} alt="" /> : <span>{pack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
+              <span className="packs-art">{pack.image ? <img src={pack.image} alt="" loading="lazy" /> : <span>{pack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
               <span className="packs-card-title"><strong>{pack.name}</strong></span>
               <span>{pack.kind === "live" ? "LIVE" : "UNSEALED CLAIM"} · {pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? pack.backings.reduce((a, b) => a + b, 0n))}</span>
             </button>)}</div>
           )}
+          {packs.length > visiblePacks && <button type="button" className="btn-outline" onClick={() => setVisiblePacks((count) => count + 48)}>
+            Show more Packs ({visiblePacks} of {packs.length})
+          </button>}
           {selectedPack && <div className="packs-selected-detail">
           <p className="launch-kicker">SELECTED PACK</p>
-          <p><a href={`/packs/${selectedPack.id}`}>View Pack #{selectedPack.id} details →</a></p>
+          <p><a href={`/packs/${selectedPack.id}`} onClick={navigate(() => onOpenPack(selectedPack.id))}>View Pack #{selectedPack.id} details →</a></p>
           <div className="packs-detail-heading">
             <span className="packs-art">{selectedPack.image ? <img src={selectedPack.image} alt={`${selectedPack.name} artwork`} /> : <span>{selectedPack.kind === "claim" ? "UNSEALED" : "ARTWORK UNAVAILABLE"}</span>}</span>
             <div><p className="launch-kicker">{selectedPack.kind === "live" ? "Shape Pack token" : "Unsealed claim"}</p>
@@ -474,7 +497,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
           {selectedPack.creator && <p className="packs-small">Created by {selectedPack.creator}</p>}
           <div className="packs-contents">{selectedPack.shapeIds.map((id, i) => {
             const shape = shapesById.get(id);
-            return <a href={`/shape/${id}`} key={id.toString()}>
+            return <a href={`/shape/${id}`} key={id.toString()} onClick={navigate(() => onOpenShape(id))}>
               {shape && <Art src={shape.image} alt="" width={52} />}
               <span className="packs-shape-name"><strong>{shape?.meta.name ?? `Shape #${id}`}</strong></span>
               <span className="packs-shape-backing">{eth(selectedPack.backings[i] ?? 0n)}</span>
@@ -484,16 +507,19 @@ export function PacksView({dep, data, onConnect, onShapesChanged}: {
             <h2>Merge packs</h2>
             <p className="packs-small">Select packs to merge into {selectedPack.name}. This pack keeps its token; each selected source pack token is burned. Their Shapes and backing join this pack without leaving Packs custody.</p>
             <div className="packs-merge-sources" role="group" aria-label="Source packs to merge">
-              {mergeCandidates.map((pack) => {
+              {mergeCandidates.slice(0, visibleMerge).map((pack) => {
                 const selected = mergeSourceIds.includes(pack.id);
                 return <button key={pack.id.toString()} type="button" aria-pressed={selected}
                   className={`compose-select-card packs-merge-source${selected ? " selected" : ""}`}
                   onClick={() => setMergeSourceIds((ids) => selected ? ids.filter((id) => id !== pack.id) : [...ids, pack.id])}>
-                  <span className="packs-merge-art">{pack.image ? <img src={pack.image} alt="" /> : "ARTWORK UNAVAILABLE"}</span>
+                  <span className="packs-merge-art">{pack.image ? <img src={pack.image} alt="" loading="lazy" /> : "ARTWORK UNAVAILABLE"}</span>
                   <span className="packs-merge-meta"><strong>{pack.name}</strong><small>{pack.shapeIds.length} Shapes · {eth(pack.valueWei ?? 0n)}</small></span>
                 </button>;
               })}
             </div>
+            {mergeCandidates.length > visibleMerge && <button type="button" className="btn-outline" onClick={() => setVisibleMerge((count) => count + 48)}>
+              Show more merge options ({visibleMerge} of {mergeCandidates.length})
+            </button>}
             {mergeSources.length > 0 && <p className="packs-small">After merge: {selectedPack.shapeIds.length + mergeSources.reduce((count, pack) => count + pack.shapeIds.length, 0)} Shapes · {eth((selectedPack.valueWei ?? 0n) + mergeSources.reduce((value, pack) => value + (pack.valueWei ?? 0n), 0n))} backing. {mergeSources.length} source pack token{mergeSources.length === 1 ? "" : "s"} will be burned.</p>}
             <button type="button" className="btn-filled packs-action" disabled={!canMerge} onClick={() => void merge()}>MERGE PACKS</button>
           </div>}

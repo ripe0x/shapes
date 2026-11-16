@@ -53,23 +53,17 @@ function readDeploymentFile(path: string): DeploymentFile | null {
   }
 }
 
-/** The record the whole site targets when `SHAPES_DEPLOYMENT_FILE` names one, ahead of the bundled
- *  `public/deployment.json` and of `public/deployment.local.json`. The browser receives it as a
- *  prop from the root layout (see `ShapesProviders`), so one variable points the server routes and
- *  the client at the same chain. `web/e2e/run.sh` sets it to a copy of `deployments/<chainId>.json`
- *  it owns, which keeps a run off both tracked files and `public/deployment.local.json`, the target
- *  `script/lived-in.sh` writes for a developer. */
-export function overrideDeployment(): Deployment | null {
-  const path = process.env.SHAPES_DEPLOYMENT_FILE;
-  return path ? (readDeploymentFile(path) as Deployment | null) : null;
-}
-
 /** `SHAPES_DEPLOYMENT_FILE`, else `web/public/deployment.local.json` (gitignored, written by
  *  `script/lived-in.sh`) if present. */
 function localDeployment(): DeploymentFile | null {
   return readDeploymentFile(
     process.env.SHAPES_DEPLOYMENT_FILE || join(process.cwd(), "public", "deployment.local.json"),
   );
+}
+
+/** Give the client the same selected record as server routes without another browser fetch. */
+export function clientDeployment(): Deployment {
+  return (localDeployment() ?? bundledDeployment()) as Deployment;
 }
 
 /** The Ponder GraphQL endpoint `/api/indexer` forwards to, and the bearer token it presents.
