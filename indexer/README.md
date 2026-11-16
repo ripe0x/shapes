@@ -443,12 +443,14 @@ and written into `deployments/1.json` by `script/deploy.sh`). Do not scale eithe
 Machine while using PGlite; a future multi-Machine or sustained-load requirement is the trigger to
 migrate to Postgres.
 
-The `pack_holding` table is a new indexing build. On mainnet, roll it out under a new
-`DATABASE_SCHEMA` and backfill ShapePacks events from `SHAPE_PACKS_START_BLOCK`; the existing
-schema cannot acquire old mint and transfer recipients by processing only new blocks. Keep the
-site's full onchain Pack scan active until `/ready`, the chain checkpoint, the new GraphQL query,
-and the count of indexed Pack rows against `totalMinted()` all pass. The site falls back to that
-scan whenever any check fails, including during the backfill.
+The `pack_holding` table was deployed to mainnet on November 16 under
+`shapes_mainnet_v7`, backfilled from `SHAPE_PACKS_START_BLOCK`. `/health` and `/ready` returned
+200. At indexed block 26,428,944, its 260 unique Pack rows equaled onchain `totalMinted()`;
+every indexed owner and claimant matched direct contract reads at that same block. The largest
+wallet held 254 Packs, returned by one owner-filtered GraphQL page through the production site
+proxy. The site still falls back to the full onchain Pack scan whenever the index fails its
+freshness, count, address, or returned-rights checks. The prior `shapes_mainnet_v6` schema remains
+on the volume for rollback.
 
 Sepolia's live Fly app is a different API-enabled build based on `2796acf`. It serves public
 `/v1` routes and uses a build-specific writer schema plus stable views schema. The GraphQL-only
