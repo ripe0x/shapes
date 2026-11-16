@@ -18,6 +18,7 @@ import {
 type Settings = {minimum: bigint; denominations: bigint[]; mintFee: bigint; totalMinted: bigint; previewCardLimit: bigint};
 type Status = {kind: "idle" | "working" | "done" | "error"; message: string; hash?: Hash};
 const idle: Status = {kind: "idle", message: ""};
+const PACK_INITIAL_PAGE_SIZE = 8;
 const PACK_PAGE_SIZE = 32;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const eth = (value: bigint) => `${formatEther(value)} ETH`;
@@ -54,7 +55,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged, onOpenPack, on
   const [packRefs, setPackRefs] = React.useState<PackRef[]>([]);
   const [packs, setPacks] = React.useState<OwnedPack[]>([]);
   const [packSource, setPackSource] = React.useState<"indexer" | "chain">("chain");
-  const [visiblePacks, setVisiblePacks] = React.useState(PACK_PAGE_SIZE);
+  const [visiblePacks, setVisiblePacks] = React.useState(PACK_INITIAL_PAGE_SIZE);
   const [visibleMerge, setVisibleMerge] = React.useState(PACK_PAGE_SIZE);
   const [loadingMore, setLoadingMore] = React.useState(false);
   const [forceChain, setForceChain] = React.useState(false);
@@ -162,7 +163,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged, onOpenPack, on
     setPackRefs([]);
     setPacks([]);
     setPackSource("chain");
-    setVisiblePacks(PACK_PAGE_SIZE);
+    setVisiblePacks(PACK_INITIAL_PAGE_SIZE);
     setForceChain(false);
     setSelectedShapes([]);
     setSelectedPackId(null);
@@ -186,7 +187,7 @@ export function PacksView({dep, data, onConnect, onShapesChanged, onOpenPack, on
     pendingDetails.current.clear();
     loadedWalletKey.current = null;
     loadingMoreLock.current = false;
-    setLoading(true);
+    setLoading(!!address);
     setLoadError(null);
     setLoadingMore(false);
     (async () => {
@@ -217,18 +218,18 @@ export function PacksView({dep, data, onConnect, onShapesChanged, onOpenPack, on
       let result = await discover(forceChain);
       let firstPage: OwnedPack[];
       try {
-        firstPage = address ? await loadPackPage(packsClient, address, result.refs.slice(0, PACK_PAGE_SIZE), PACKS_ADDRESS, PACKS_SHAPES) : [];
+        firstPage = address ? await loadPackPage(packsClient, address, result.refs.slice(0, PACK_INITIAL_PAGE_SIZE), PACKS_ADDRESS, PACKS_SHAPES) : [];
       } catch (error) {
         if (result.source !== "indexer") throw error;
         result = await discover(true);
-        firstPage = address ? await loadPackPage(packsClient, address, result.refs.slice(0, PACK_PAGE_SIZE), PACKS_ADDRESS, PACKS_SHAPES) : [];
+        firstPage = address ? await loadPackPage(packsClient, address, result.refs.slice(0, PACK_INITIAL_PAGE_SIZE), PACKS_ADDRESS, PACKS_SHAPES) : [];
       }
       if (!active || generation !== loadGeneration.current) return;
       loadedWalletKey.current = walletKey;
       setPackRefs(result.refs);
       setPackSource(result.source);
       setPacks(firstPage);
-      setVisiblePacks(PACK_PAGE_SIZE);
+      setVisiblePacks(PACK_INITIAL_PAGE_SIZE);
       setMergeSourceIds([]);
       setSelectedPackId((current) => result.refs.some((pack) => pack.id === current) ? current : result.refs[0]?.id ?? null);
       setAddTargetId((current) => result.refs.some((pack) => pack.id === current && pack.kind === "live") ? current : result.refs.find((pack) => pack.kind === "live")?.id ?? null);

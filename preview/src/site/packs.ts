@@ -1,4 +1,4 @@
-import {createPublicClient, formatEther, http, parseAbi, type Address, type PublicClient} from "viem";
+import {createPublicClient, decodeEventLog, formatEther, http, parseAbi, zeroAddress, type Address, type PublicClient} from "viem";
 import {mainnet, sepolia} from "viem/chains";
 import {shapesTransport} from "../chain/rpc";
 import {safeMetadataFromTokenURI} from "./ogArtwork";
@@ -117,6 +117,18 @@ type ChainPackState = {shapeIds: readonly bigint[]; counts: readonly number[]; v
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const PACK_INDEXER_PAGE_SIZE = 500;
+const PACK_INDEXER_MAX_LAG = 2n;
+const packEventsAbi = parseAbi([
+  "event PackCreated(uint256 indexed packId, address indexed creator, address indexed to, uint256[] shapeIds, uint256 pulledCount, uint256 valueWei)",
+  "event PackExtended(uint256 indexed packId, address indexed by, uint256[] shapeIds, uint256 pulledCount, uint256 addedValueWei, uint256 valueWei)",
+  "event PackMerged(uint256 indexed targetPackId, uint256 indexed sourcePackId, address indexed by, uint256[] shapeIds, uint256 addedValueWei, uint256 valueWei)",
+  "event PackUnsealed(uint256 indexed packId, address indexed owner, address indexed claimant, uint256 count)",
+  "event ShapesClaimed(uint256 indexed packId, address indexed to, uint256[] shapeIds)",
+  "event EthClaimed(uint256 indexed packId, address indexed recipient, uint256[] shapeIds, uint256 valueWei)",
+  "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)",
+  "event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId)",
+  "event ApprovalForAll(address indexed owner, address indexed operator, bool approved)",
+]);
 type IndexedHolding = {id: string; owner: Address | null; claimant: Address | null};
 type IndexedPage = {items: IndexedHolding[]; pageInfo: {hasNextPage: boolean; endCursor: string | null}};
 type IndexedPackResponse = {_meta?: IndexerMeta; all?: {totalCount: number; items: {contractAddress: Address}[]}; holdings?: IndexedPage};
@@ -136,6 +148,7 @@ async function indexedPackRefs(
     const rows: IndexedHolding[] = [];
     const seenCursors = new Set<string>();
     let checkpoint: bigint | null = null;
+    let mintedCount: bigint | null = null;
     let after: string | null = null;
     let pages = 0n;
     do {
@@ -148,14 +161,19 @@ async function indexedPackRefs(
       }, INDEXER_TIMEOUT_MS, true);
       const data: IndexedPackResponse | undefined = result.data;
       if (!data?.all || !data.holdings || !Number.isSafeInteger(data.all.totalCount) ||
-        BigInt(data.all.totalCount) !== totalMinted) throw new Error("Packs indexer mint count disagrees with chain");
-      if (totalMinted > 0n && (!data.all.items[0]?.contractAddress ||
+        data.all.totalCount < 0) {
+        throw new Error("Packs indexer mint count disagrees with chain");
+      }
+      if (data.all.totalCount > 0 && (!data.all.items[0]?.contractAddress ||
         !same(data.all.items[0].contractAddress, packsAddress))) {
         throw new Error("Packs indexer targets a different contract");
       }
       const pageBlock = checkpointOf(data._meta, chainId);
       if (checkpoint !== null && checkpoint !== pageBlock) throw new Error("Packs indexer advanced during pagination");
       checkpoint = pageBlock;
+      const pageMintedCount = BigInt(data.all.totalCount);
+      if (mintedCount !== null && mintedCount !== pageMintedCount) throw new Error("Packs indexer mint count changed during pagination");
+      mintedCount = pageMintedCount;
       const {items, pageInfo}: IndexedPage = data.holdings;
       if (items.length > PACK_INDEXER_PAGE_SIZE || (pageInfo.hasNextPage && items.length !== PACK_INDEXER_PAGE_SIZE)) {
         throw new Error("Packs indexer returned an invalid page");
@@ -166,26 +184,95 @@ async function indexedPackRefs(
       if (after !== null && seenCursors.has(after)) throw new Error("Packs indexer repeated a page cursor");
       if (after !== null) seenCursors.add(after);
     } while (after !== null);
-    if (checkpoint === null) throw new Error("Packs indexer omitted its checkpoint");
-    return {rows, checkpoint};
+    if (checkpoint === null || mintedCount === null) throw new Error("Packs indexer omitted its checkpoint");
+    return {rows, checkpoint, mintedCount};
   };
-  const [owned, claims] = await Promise.all([read("owner"), read("claimant")]);
+  let [owned, claims] = await Promise.all([read("owner"), read("claimant")]);
+  // A block can finish between the two POSTs. Refresh the earlier result before treating a
+  // normal checkpoint transition as an indexer failure and scanning every Pack.
+  for (let retry = 0; retry < 2 && owned.checkpoint !== claims.checkpoint; retry++) {
+    if (owned.checkpoint < claims.checkpoint) owned = await read("owner");
+    else claims = await read("claimant");
+  }
   if (owned.checkpoint !== claims.checkpoint) throw new Error("Packs indexer advanced between wallet queries");
-  requireFreshCheckpoint(owned.checkpoint, await client.getBlockNumber(), 0n);
+  if (owned.mintedCount !== claims.mintedCount) throw new Error("Packs indexer mint count changed between wallet queries");
+  const head = await client.getBlockNumber();
+  requireFreshCheckpoint(owned.checkpoint, head, PACK_INDEXER_MAX_LAG);
+  const headTotalMinted = await client.readContract({address: packsAddress, abi: packsAbi,
+    functionName: "totalMinted", blockNumber: head});
+  if (owned.mintedCount > headTotalMinted) throw new Error("Packs indexer mint count is ahead of chain");
   const refs = new Map<bigint, PackRef>();
   for (const row of owned.rows) {
     const id = BigInt(row.id);
-    if (id < 1n || id > totalMinted || !row.owner || !same(row.owner, account) || refs.has(id)) {
+    if (id < 1n || id > headTotalMinted || !row.owner || !same(row.owner, account) || refs.has(id)) {
       throw new Error("Packs indexer returned invalid ownership");
     }
     refs.set(id, {id, kind: "live"});
   }
   for (const row of claims.rows) {
     const id = BigInt(row.id);
-    if (id < 1n || id > totalMinted || !row.claimant || !same(row.claimant, account) || refs.has(id)) {
+    if (id < 1n || id > headTotalMinted || !row.claimant || !same(row.claimant, account) || refs.has(id)) {
       throw new Error("Packs indexer returned invalid claim rights");
     }
     refs.set(id, {id, kind: "claim"});
+  }
+  // Receipts contain every Pack event in the short gap, including incoming transfers and new
+  // claims that the indexer has not seen. An unsupported or incomplete receipt read falls back
+  // to the full onchain scan instead of silently omitting a wallet right.
+  const touched = new Set<bigint>();
+  const minted = new Set<bigint>();
+  if (head > owned.checkpoint) {
+    const blocks = Array.from({length: Number(head - owned.checkpoint)}, (_, i) => owned.checkpoint + BigInt(i + 1));
+    const receipts = await Promise.all(blocks.map(async (blockNumber) => {
+      const [rows, count] = await Promise.all([
+        client.getBlockReceipts({blockNumber}), client.getBlockTransactionCount({blockNumber}),
+      ]);
+      if (rows.length !== count || new Set(rows.map((row) => row.transactionHash)).size !== count ||
+        rows.some((row) => row.blockNumber !== blockNumber)) {
+        throw new Error(`Incomplete receipts at block ${blockNumber}`);
+      }
+      return rows;
+    }));
+    for (const block of receipts) for (const receipt of block) for (const log of receipt.logs) {
+      if (!same(log.address, packsAddress)) continue;
+      const event = decodeEventLog({abi: packEventsAbi, data: log.data, topics: log.topics});
+      switch (event.eventName) {
+        case "Transfer":
+          touched.add(event.args.tokenId);
+          if (same(event.args.from, zeroAddress)) minted.add(event.args.tokenId);
+          break;
+        case "PackMerged":
+          touched.add(event.args.targetPackId);
+          touched.add(event.args.sourcePackId);
+          break;
+        case "Approval":
+        case "ApprovalForAll":
+          break;
+        default:
+          touched.add(event.args.packId);
+      }
+    }
+  }
+  if (BigInt(minted.size) !== headTotalMinted - owned.mintedCount ||
+    [...minted].some((id) => id <= owned.mintedCount || id > headTotalMinted)) {
+    throw new Error("Packs indexer mint gap disagrees with chain receipts");
+  }
+  if (touched.size > 0) {
+    const ids = [...touched];
+    const rights = await client.multicall({contracts: ids.flatMap((id) => [
+      {address: packsAddress, abi: packsAbi, functionName: "ownerOf", args: [id]} as const,
+      {address: packsAddress, abi: packsAbi, functionName: "claimantOf", args: [id]} as const,
+    ]), allowFailure: true, blockNumber: head});
+    ids.forEach((id, i) => {
+      const owner = rights[i * 2];
+      const claimant = rights[i * 2 + 1];
+      if (id < 1n || id > headTotalMinted || claimant.status !== "success") {
+        throw new Error(`Cannot reconcile Pack #${id} wallet rights`);
+      }
+      refs.delete(id);
+      if (owner.status === "success" && same(owner.result as string, account)) refs.set(id, {id, kind: "live"});
+      else if (same(claimant.result as string, account)) refs.set(id, {id, kind: "claim"});
+    });
   }
   return [...refs.values()].sort((a, b) => a.id > b.id ? -1 : a.id < b.id ? 1 : 0);
 }
@@ -212,8 +299,8 @@ async function chainPackRefs(
   return found.reverse();
 }
 
-/** Indexer discovery is useful only at the chain head. Missing schema, lag, or incomplete mint
- * coverage takes the complete chain scan, which remains authoritative for wallet rights. */
+/** Short indexer lag is reconciled from chain receipts. Missing schema, older lag, or incomplete
+ * receipts take the complete chain scan, which remains authoritative for wallet rights. */
 export async function discoverOwnedPackRefs(
   client: PublicClient, account: Address, totalMinted: bigint, packsAddress: Address,
   options: {indexerUrl?: string; chainId: number; forceChain?: boolean},
@@ -224,7 +311,8 @@ export async function discoverOwnedPackRefs(
       return {refs, source: "indexer"};
     } catch { /* The complete onchain scan is the fallback for every indexer uncertainty. */ }
   }
-  return {refs: await chainPackRefs(client, account, totalMinted, packsAddress), source: "chain"};
+  const headTotalMinted = await client.readContract({address: packsAddress, abi: packsAbi, functionName: "totalMinted"});
+  return {refs: await chainPackRefs(client, account, headTotalMinted, packsAddress), source: "chain"};
 }
 
 /** Load only requested Packs. Onchain owner/claimant checks reject stale indexed candidates. */
