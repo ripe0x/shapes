@@ -445,7 +445,7 @@ function Thumb({thumb, onOpenToken}: {thumb: ActivityThumb; onOpenToken: (id: bi
       <span className="activity-thumb-art" style={{backgroundColor: C.art}}>
         <img src={thumb.image} alt={`Shape ${thumb.id}`} />
       </span>
-      <span className="activity-thumb-id">{thumb.primary && "RESULT · "}#{thumb.id.toString()}</span>
+      <span className="activity-thumb-id">#{thumb.id.toString()}</span>
     </button>
   );
 }
