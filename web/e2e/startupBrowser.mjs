@@ -31,7 +31,11 @@ async function connected(page, address) {
       button.textContent.toLowerCase().includes(prefix);
   }, address.slice(0, 6).toLowerCase(), {timeout: 30_000});
 }
+async function walletReady(page) {
+  await page.locator('.site-header[data-wallet-ready="true"]').waitFor({timeout: 30_000});
+}
 async function disconnected(page) {
+  await walletReady(page);
   await page.waitForFunction(() => {
     const button = document.querySelector(".site-account .site-connect-btn");
     return button && !button.disabled && button.textContent.trim() === "CONNECT WALLET";
@@ -56,6 +60,113 @@ try {
     await navigate(page, "GALLERY", "/gallery");
     assert.equal(await page.locator(".site-header").count(), 1);
     await context.close();
+  });
+
+  await check("Early mint input and one Connect request survive wallet initialization", async () => {
+    const early = await browser.newContext({viewport: {width: 1440, height: 1000}});
+    const earlyPage = await early.newPage();
+    observe(earlyPage);
+    const earlyWallet = await installTestWallet(earlyPage, {rpcUrl, chainId: 1});
+    const cdp = await early.newCDPSession(earlyPage);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.setCacheDisabled", {cacheDisabled: true});
+    await cdp.send("Network.emulateNetworkConditions", {offline: false, latency: 100, downloadThroughput: 200000, uploadThroughput: 100000});
+    await cdp.send("Emulation.setCPUThrottlingRate", {rate: 4});
+    const deployment = JSON.parse(readFileSync(new URL("../public/deployment.json", import.meta.url), "utf8"));
+    const abi = parseAbi(["function unit() view returns (uint256)", "function mintFee() view returns (uint256)"]);
+    const blockNumber = await client.getBlockNumber();
+    const [unit, fee] = await Promise.all(["unit", "mintFee"].map((functionName) =>
+      client.readContract({address: deployment.shapes, abi, functionName, blockNumber})));
+    assert.equal(unit, parseEther("0.01"));
+    await earlyPage.goto(baseUrl, {waitUntil: "domcontentloaded"});
+    await earlyPage.locator(".mint-panel").waitFor({timeout: 30_000});
+    assert.equal(await earlyPage.locator('.site-header[data-wallet-ready="true"]').count(), 0,
+      "The test must reach the actual form before wallet initialization completes");
+    await earlyPage.locator(".mint-panel .row-denom").nth(1).click();
+    const quantity = earlyPage.locator(".mint-panel .qty-input");
+    await quantity.fill("2");
+    await quantity.blur();
+    const expected = {backing: 10n * unit, "mint fee": 2n * fee, total: 10n * unit + 2n * fee};
+    const checkEarlyQuote = async () => {
+      await earlyPage.waitForFunction((amounts) => Object.entries(amounts).every(([label, amount]) => {
+        const element = [...document.querySelectorAll(".mint-panel div")].find((node) => node.textContent === label);
+        return element?.nextElementSibling?.textContent.trim().startsWith(`${amount} ETH`);
+      }), Object.fromEntries(Object.entries(expected).map(([label, amount]) => [label, formatEther(amount)])));
+      assert.equal(await quantity.inputValue(), "2");
+      assert.equal(await earlyPage.locator(".mint-panel .row-denom").nth(1).getAttribute("aria-pressed"), "true");
+    };
+    await checkEarlyQuote();
+    assert.equal(await earlyPage.locator('.site-header[data-wallet-ready="true"]').count(), 0,
+      "Connect must be requested before wallet initialization completes");
+    await earlyPage.locator(".mint-panel").getByRole("button", {name: "Connect wallet", exact: true}).click();
+    // A single early click must open the normal modal after its real implementation loads.
+    await earlyPage.getByRole("button", {name: new RegExp(`${TEST_WALLET_NAME}|Injected`, "i")}).first().click({timeout: 30_000});
+    await connected(earlyPage, earlyWallet.address);
+    await checkEarlyQuote();
+    assert.equal(earlyWallet.sent.length, 0, "Early form/connection must not submit transactions");
+    console.log(`Early quote verified at fork block ${blockNumber}: backing ${formatEther(expected.backing)} ETH, fee ${formatEther(expected["mint fee"])} ETH, total ${formatEther(expected.total)} ETH`);
+    await early.close();
+  });
+
+  await check("An unfinished quantity edit keeps its text and focus through wallet handoff", async () => {
+    const typing = await browser.newContext({viewport: {width: 1440, height: 1000}});
+    const typingPage = await typing.newPage();
+    observe(typingPage);
+    const cdp = await typing.newCDPSession(typingPage);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.setCacheDisabled", {cacheDisabled: true});
+    await cdp.send("Network.emulateNetworkConditions", {offline: false, latency: 100, downloadThroughput: 200000, uploadThroughput: 100000});
+    await cdp.send("Emulation.setCPUThrottlingRate", {rate: 4});
+    const deployment = JSON.parse(readFileSync(new URL("../public/deployment.json", import.meta.url), "utf8"));
+    const abi = parseAbi(["function unit() view returns (uint256)", "function mintFee() view returns (uint256)"]);
+    const blockNumber = await client.getBlockNumber();
+    const [unit, fee] = await Promise.all(["unit", "mintFee"].map((functionName) =>
+      client.readContract({address: deployment.shapes, abi, functionName, blockNumber})));
+    assert.equal(unit, parseEther("0.01"));
+    await typingPage.goto(baseUrl, {waitUntil: "domcontentloaded"});
+    const quantity = typingPage.locator(".mint-panel .qty-input");
+    await quantity.waitFor({timeout: 30_000});
+    assert.equal(await typingPage.locator('.site-header[data-wallet-ready="true"]').count(), 0,
+      "The test must start typing before wallet initialization completes");
+    await quantity.fill("");
+    assert.equal(await quantity.inputValue(), "");
+    assert.equal(await quantity.evaluate((element) => document.activeElement === element), true);
+    // Observe readiness without clicking, blurring or moving focus during the replacement.
+    await typingPage.waitForFunction(() => document.querySelector('.site-header[data-wallet-ready="true"]'), undefined, {timeout: 30_000});
+    assert.equal(await quantity.inputValue(), "", "Wallet handoff overwrote the unfinished quantity text");
+    assert.equal(await quantity.evaluate((element) => document.activeElement === element), true,
+      "Wallet handoff moved focus away from the quantity input");
+    await quantity.fill("2");
+    await quantity.blur();
+    const expected = {backing: 2n * unit, "mint fee": 2n * fee, total: 2n * (unit + fee)};
+    await typingPage.waitForFunction((amounts) => Object.entries(amounts).every(([label, amount]) => {
+      const element = [...document.querySelectorAll(".mint-panel div")].find((node) => node.textContent === label);
+      return element?.nextElementSibling?.textContent.trim().startsWith(`${amount} ETH`);
+    }), Object.fromEntries(Object.entries(expected).map(([label, amount]) => [label, formatEther(amount)])));
+    console.log(`Typing handoff quote verified at fork block ${blockNumber}: backing ${formatEther(expected.backing)} ETH, fee ${formatEther(expected["mint fee"])} ETH, total ${formatEther(expected.total)} ETH`);
+    await typing.close();
+  });
+
+  await check("One early admin Connect request opens the normal wallet modal", async () => {
+    const admin = await browser.newContext({viewport: {width: 1440, height: 1000}});
+    const adminPage = await admin.newPage();
+    observe(adminPage);
+    const adminWallet = await installTestWallet(adminPage, {rpcUrl, chainId: 1});
+    const cdp = await admin.newCDPSession(adminPage);
+    await cdp.send("Network.enable");
+    await cdp.send("Network.setCacheDisabled", {cacheDisabled: true});
+    await cdp.send("Network.emulateNetworkConditions", {offline: false, latency: 100, downloadThroughput: 200000, uploadThroughput: 100000});
+    await cdp.send("Emulation.setCPUThrottlingRate", {rate: 4});
+    await adminPage.goto(`${baseUrl}/admin`, {waitUntil: "domcontentloaded"});
+    await adminPage.locator(".site-account .site-connect-btn:not([disabled])").waitFor({timeout: 30_000});
+    assert.equal(await adminPage.locator('.site-header[data-wallet-ready="true"]').count(), 0);
+    await accountButton(adminPage).click();
+    await adminPage.getByRole("button", {name: new RegExp(`${TEST_WALLET_NAME}|Injected`, "i")}).first().click({timeout: 30_000});
+    await adminPage.locator('[data-testid="rk-account-button"]').waitFor({timeout: 30_000});
+    assert.ok((await admin.cookies()).some((cookie) => cookie.name === "wagmi.store" &&
+      cookie.value.toLowerCase().includes(adminWallet.address.toLowerCase())));
+    assert.equal(adminWallet.sent.length, 0, "Admin connection must not submit transactions");
+    await admin.close();
   });
 
   const context = await browser.newContext({viewport: {width: 1280, height: 800}});

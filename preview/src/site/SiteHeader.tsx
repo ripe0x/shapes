@@ -24,6 +24,7 @@ export function SiteHeader({
   onRetryRefresh,
   initializing = false,
   onIntent,
+  walletReady = true,
 }: {
   /** View to mark as current, or null when no nav item corresponds to the page. */
   active: View | null;
@@ -43,6 +44,7 @@ export function SiteHeader({
   refreshFailed: boolean;
   onRetryRefresh: () => void;
   initializing?: boolean;
+  walletReady?: boolean;
   onIntent?: (view: View) => void;
 }) {
   const navColor = (v: View) => (active === v ? C.ink : C.muted);
@@ -61,7 +63,7 @@ export function SiteHeader({
   );
 
   return (
-    <header className="site-header" style={{fontFamily: FONT}}>
+    <header data-wallet-ready={walletReady || undefined} className="site-header" style={{fontFamily: FONT}}>
       <div className="site-header-inner">
         {/* The Next host serves "/" as a real route; the Vite preview falls back to mint. */}
         {routed ? (

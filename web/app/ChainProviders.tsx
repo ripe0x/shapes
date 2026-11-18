@@ -2,18 +2,32 @@
 
 import React from "react";
 import "@rainbow-me/rainbowkit/styles.css";
-import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
+import { RainbowKitProvider, lightTheme, useConnectModal } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider } from "wagmi";
+import { WagmiProvider, useAccount } from "wagmi";
 import type { Deployment } from "@shared/chain/abi";
 import { buildConfig, initialWalletState } from "@shared/chain/wagmi";
-import { DeploymentContext } from "./deploymentContext";
+import { useMintDraft } from "@shared/site/MintDraft";
+import { DeploymentContext, SiteRuntimeContext } from "./deploymentContext";
 
 const queryClient = new QueryClient();
 
-export function ChainProviders({ children, deployment }: {
+function PendingConnection() {
+  const { connectRequested, consumeConnect } = useMintDraft();
+  const { isConnected } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  React.useEffect(() => {
+    if (!connectRequested) return;
+    if (isConnected) { consumeConnect(); return; }
+    if (openConnectModal) { openConnectModal(); consumeConnect(); }
+  }, [connectRequested, consumeConnect, isConnected, openConnectModal]);
+  return null;
+}
+
+export function ChainProviders({ children, deployment, siteRuntime }: {
   children: React.ReactNode;
   deployment: Deployment;
+  siteRuntime: typeof import("./SiteRuntime").SiteRuntime;
 }) {
   const [wallet] = React.useState(() => {
     // This component first mounts in the browser. Restore the cookie before Wagmi mounts,
@@ -31,7 +45,10 @@ export function ChainProviders({ children, deployment }: {
     <WagmiProvider config={wallet.config} initialState={wallet.initialState} reconnectOnMount>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider theme={lightTheme()}>
-          <DeploymentContext.Provider value={deployment}>{children}</DeploymentContext.Provider>
+          <PendingConnection />
+          <DeploymentContext.Provider value={deployment}>
+            <SiteRuntimeContext.Provider value={siteRuntime}>{children}</SiteRuntimeContext.Provider>
+          </DeploymentContext.Provider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

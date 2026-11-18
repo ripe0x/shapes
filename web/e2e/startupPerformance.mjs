@@ -28,19 +28,26 @@ try {
     await page.addInitScript(() => {
       window.__startup = {};
       const observe = () => {
-        for (const [name, selector] of [["header", ".site-header"], ["mint", ".mint-panel"]]) {
+        for (const [name, selector] of [["header", ".site-header"], ["walletReady", '.site-header[data-wallet-ready="true"]']]) {
           if (window.__startup[name] === undefined && document.querySelector(selector)) window.__startup[name] = performance.now();
         }
+        const panel = document.querySelector(".mint-panel");
+        const input = panel?.querySelector(".qty-input");
+        const connect = panel && [...panel.querySelectorAll("button")].find((button) => button.textContent.trim() === "Connect wallet");
+        if (window.__startup.mint === undefined && panel?.getBoundingClientRect().width > 0 &&
+            input && !input.disabled && connect && !connect.disabled &&
+            panel.querySelectorAll(".row-denom").length === 9) window.__startup.mint = performance.now();
       };
-      new MutationObserver(observe).observe(document, {childList: true, subtree: true});
+      new MutationObserver(observe).observe(document, {childList: true, subtree: true, attributes: true});
     });
     await page.goto(url, {waitUntil: "domcontentloaded", timeout: 60000});
-    await page.locator(".mint-panel").waitFor({timeout: 30000});
+    await page.waitForFunction(() => window.__startup.mint !== undefined, undefined, {timeout: 30000});
+    if (target === "candidate") await page.locator('.site-header[data-wallet-ready="true"]').waitFor({timeout: 30000});
     // Keep a fixed observation window so background connector downloads count equally.
     await page.waitForFunction(() => performance.now() >= 8000);
     const timings = await page.evaluate(() => {
       const resources = performance.getEntriesByType("resource");
-      const scripts = resources.filter((entry) => new URL(entry.name).pathname.endsWith(".js"));
+      const scripts = resources.filter((entry) => new URL(entry.name).pathname.endsWith(".js") && entry.responseEnd <= 8000);
       const nav = performance.getEntriesByType("navigation")[0];
       return { ...window.__startup, ttfb: nav.responseStart, fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime,
         jsFiles: scripts.length, jsBytes: scripts.reduce((sum, entry) => sum + entry.encodedBodySize, 0),
@@ -56,8 +63,14 @@ try {
   for (const profile of ["desktop", "constrained"]) for (const target of Object.keys(targets)) {
     const rows = results.filter((row) => row.profile === profile && row.target === target);
     const median = (key) => rows.map((row) => row[key]).sort((a, b) => a - b)[Math.floor(rows.length / 2)];
-    summary.push({target, profile, samples: rows.length, headerMs: median("header"), mintMs: median("mint"), fcpMs: median("fcp"), ttfbMs: median("ttfb"), jsFiles: median("jsFiles"), jsBytes: median("jsBytes"), jsBeforeHeaderBytes: median("jsBeforeHeaderBytes")});
+    summary.push({target, profile, samples: rows.length, headerMs: median("header"), mintMs: median("mint"), walletReadyMs: median("walletReady") ?? null, fcpMs: median("fcp"), ttfbMs: median("ttfb"), jsFiles: median("jsFiles"), jsBytes: median("jsBytes"), jsBeforeHeaderBytes: median("jsBeforeHeaderBytes")});
   }
   writeFileSync(process.env.PERF_OUTPUT ?? "/tmp/shapes-startup-performance.json", JSON.stringify({conditions: {cache: "disabled; fresh browser context per sample", constrained: {latencyMs: 100, bytesPerSecond: 200000, cpuSlowdown: 4}, observationMs: 8000}, results, summary}, null, 2));
   console.log(JSON.stringify({summary}, null, 2));
+  for (const row of results.filter((row) => row.target === "candidate" && row.profile === "constrained")) {
+    assert.ok(row.mint < 2000, `Constrained mint sample ${row.sample} exceeded 2 seconds: ${row.mint.toFixed(1)}ms`);
+  }
+  for (const row of summary.filter((row) => row.target === "candidate" && row.profile === "constrained")) {
+    assert.ok(row.mintMs < 2000, `Constrained mint median exceeded 2 seconds: ${row.mintMs.toFixed(1)}ms`);
+  }
 } finally { await browser.close(); }

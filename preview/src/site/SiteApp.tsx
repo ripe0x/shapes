@@ -14,6 +14,7 @@ import {mintRequest} from "./mint";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import {clearStoredActionNotice, storeActionNotice, takeStoredActionNotice, type ActionNotice} from "./actionNotice";
 import {MintPanel} from "./MintPanel";
+import {useMintDraft} from "./MintDraft";
 import type {DirectTokenState} from "./TokenView";
 import type {ComposeDraft} from "./ComposeWorkspace";
 import type {AuctionSlot, AuctionState} from "./auction";
@@ -136,8 +137,8 @@ export function SiteApp({
   const [directTokenResult, setDirectTokenResult] = React.useState<{
     id: bigint; chainId: number; shapes: string; state: DirectTokenState; updatedAt: number;
   } | null>(null);
-  const [sel, setSel] = React.useState(0); // smallest denomination
-  const [qty, setQty] = React.useState(1);
+  const mintDraft = useMintDraft();
+  const {sel, setSel, qty, setQty} = mintDraft;
   const [filter, setFilter] = React.useState(-1);
   const [ownerOnly, setOwnerOnly] = React.useState(false);
   const [tokenBackView, setTokenBackView] = React.useState<"gallery" | "collection">("gallery");
@@ -329,7 +330,8 @@ export function SiteApp({
       ? directTokenResult.state : undefined
     : {kind: "loading"} as const;
 
-  const mintData = siteHeader ?? data;
+  const mintHeader = siteHeader ?? data;
+  const mintData = mintHeader ?? mintDraft.bootstrap;
 
   // `op` is the same string passed to `setBusy` for this action; the returned hash is recorded
   // as `pendingTx` as soon as the wallet hands it back, so a view can tell "confirm in wallet"
@@ -703,8 +705,8 @@ export function SiteApp({
     />
   );
 
-  const reserveLine = mintData
-    ? `The contract holds ${formatEther(mintData.reserve)} ETH backing ${mintData.supply.toString()} Shapes.`
+  const reserveLine = mintHeader
+    ? `The contract holds ${formatEther(mintHeader.reserve)} ETH backing ${mintHeader.supply.toString()} Shapes.`
     : null;
 
   // The home view hosts the mint panel inside the host's own landing page shell, with no action
@@ -731,7 +733,7 @@ export function SiteApp({
       />,
       <SiteFooter reserve={reserveLine} onContracts={() => go("contracts")} />,
       header(null),
-      mintData,
+      mintHeader,
     );
   }
 

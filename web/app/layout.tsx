@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { ShapesProviders } from "./ShapesProviders";
 import { appOnly } from "./lib/siteMode";
 import { clientDeployment, hasLocalDeployment, indexerUpstream } from "./lib/deployment";
+import { mintReadCalls } from "./mintReadAbi";
 import "./globals.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
@@ -56,6 +57,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           chainOnIndex={appOnly()}
           indexerConfigured={indexerUpstream() !== null}
           deployment={clientDeployment()}
+          mintCalls={mintReadCalls()}
         >
           {children}
         </ShapesProviders>
