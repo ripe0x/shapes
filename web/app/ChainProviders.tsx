@@ -14,13 +14,13 @@ const queryClient = new QueryClient();
 
 function PendingConnection() {
   const { connectRequested, consumeConnect } = useMintDraft();
-  const { isConnected } = useAccount();
+  const { status } = useAccount();
   const { openConnectModal } = useConnectModal();
   React.useEffect(() => {
-    if (!connectRequested) return;
-    if (isConnected) { consumeConnect(); return; }
+    if (!connectRequested || status === "reconnecting" || status === "connecting") return;
+    if (status === "connected") { consumeConnect(); return; }
     if (openConnectModal) { openConnectModal(); consumeConnect(); }
-  }, [connectRequested, consumeConnect, isConnected, openConnectModal]);
+  }, [connectRequested, consumeConnect, status, openConnectModal]);
   return null;
 }
 
@@ -32,13 +32,14 @@ export function ChainProviders({ children, deployment, siteRuntime }: {
   const [wallet] = React.useState(() => {
     // This component first mounts in the browser. Restore the cookie before Wagmi mounts,
     // without putting a visitor's wallet state into the server's cacheable public HTML.
+    // Config creation persists an empty store, so capture the saved state first.
+    let initialState;
+    try { initialState = initialWalletState(document.cookie); } catch { /* Ignore a damaged cookie. */ }
     const config = buildConfig(deployment, {
       primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
       walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
       ssr: true,
     });
-    let initialState;
-    try { initialState = initialWalletState(document.cookie); } catch { /* Ignore a damaged cookie. */ }
     return { config, initialState };
   });
   return (

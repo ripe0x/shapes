@@ -5,7 +5,7 @@ import {useAccount, useDisconnect, usePublicClient, useSwitchChain, useWriteCont
 import {useConnectModal} from "@rainbow-me/rainbowkit";
 import {shapesAbi, auctionHouseAbi, DENOMINATIONS, type Deployment} from "../chain/abi";
 import {C, FONT} from "./theme";
-import {txUrl, type PendingTx} from "./ui";
+import {PreviewBoundary, txUrl, type PendingTx} from "./ui";
 import {describeTxError} from "./errors";
 import {loadMintFees, loadSite, loadSiteHeader, loadSiteToken, seedFee, type SiteData, type SiteHeaderData, type SiteToken} from "./data";
 import {logRequestCounts} from "./indexerClient";
@@ -741,6 +741,12 @@ export function SiteApp({
     <div id="top" style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
       {header(shownView)}
 
+      <PreviewBoundary resetKey={`${shownView}:${tokenId}:${composeMode}`} fallback={
+        <div role="alert" style={{padding: 48, minHeight: 240, fontSize: 13, color: C.muted}}>
+          <p>This page couldn’t load.</p>
+          <button type="button" className="site-connect-btn" onClick={() => window.location.reload()}>Reload</button>
+        </div>
+      }>
       <React.Suspense fallback={
         <div role="status" style={{padding: 48, minHeight: 240, fontSize: 13, color: C.muted}}>Loading…</div>
       }>
@@ -877,6 +883,7 @@ export function SiteApp({
       )}
 
       </React.Suspense>
+      </PreviewBoundary>
 
       {actionNotice && (
         <div

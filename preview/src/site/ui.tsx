@@ -62,7 +62,7 @@ export function Art({src, alt = "", width, loading = "eager"}: {
  * stale error instead of pinning the boundary closed.
  */
 export class PreviewBoundary extends React.Component<
-  {resetKey: unknown; children: React.ReactNode},
+  {resetKey: unknown; children: React.ReactNode; fallback?: React.ReactNode},
   {error: Error | null}
 > {
   state: {error: Error | null} = {error: null};
@@ -79,6 +79,7 @@ export class PreviewBoundary extends React.Component<
 
   render() {
     if (this.state.error) {
+      if (this.props.fallback !== undefined) return this.props.fallback;
       return (
         <div style={{padding: "28px 30px", border: `1px solid ${C.rule}`, color: C.muted, fontSize: 12, lineHeight: 1.7}}>
           This preview could not be rendered. {this.state.error.message}
