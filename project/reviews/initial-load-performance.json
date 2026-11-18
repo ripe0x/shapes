@@ -1,0 +1,160 @@
+{
+  "baseRevision": "e82f697bf4e359d163cda05f8bda87577edab5f8",
+  "candidateBuildId": "2tsdFY4-CF__-QUPtvoPH",
+  "scope": "Public startup rendering, wallet-cookie restoration, route code loading and navigation; no contract or transaction construction changes.",
+  "environment": {
+    "site": "Local Next production builds; standard production WalletConnect inventory enabled on both",
+    "browser": "Installed Google Chrome through Playwright",
+    "rpc": "Local Anvil mainnet fork of https://mainnet.gateway.tenderly.co",
+    "forkBlock": 26442939,
+    "indexer": "Read-only production indexer proxy",
+    "samplesPerBuildAndProfile": 3,
+    "observationWindowMs": 8000,
+    "throttled": {
+      "latencyMs": 100,
+      "downloadBytesPerSecond": 200000,
+      "cpuSlowdown": 4
+    }
+  },
+  "metricsNote": "headerMs and mintMs measure first DOM availability, not paint or transaction readiness. fcpMs measures first contentful paint. Cached local document delivery does not establish hosted CDN latency.",
+  "baseline": [
+    {
+      "target": "baseline",
+      "profile": "desktop",
+      "samples": 3,
+      "headerMs": 128.80000001192093,
+      "mintMs": 146,
+      "fcpMs": 44,
+      "ttfbMs": 7.800000011920929,
+      "jsFiles": 34,
+      "jsBytes": 882832,
+      "jsBeforeHeaderBytes": 520067
+    },
+    {
+      "target": "baseline",
+      "profile": "constrained",
+      "samples": 3,
+      "headerMs": 3222.199999988079,
+      "mintMs": 3296.800000011921,
+      "fcpMs": 440,
+      "ttfbMs": 100.59999996423721,
+      "jsFiles": 34,
+      "jsBytes": 882832,
+      "jsBeforeHeaderBytes": 480284
+    }
+  ],
+  "candidate": [
+    {
+      "target": "candidate",
+      "profile": "desktop",
+      "samples": 3,
+      "headerMs": 9.900000035762787,
+      "mintMs": 135.20000004768372,
+      "fcpMs": 40,
+      "ttfbMs": 3.200000047683716,
+      "jsFiles": 38,
+      "jsBytes": 849159,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "constrained",
+      "samples": 3,
+      "headerMs": 131.89999997615814,
+      "mintMs": 3296.5,
+      "fcpMs": 452,
+      "ttfbMs": 100.60000002384186,
+      "jsFiles": 38,
+      "jsBytes": 849159,
+      "jsBeforeHeaderBytes": 0
+    }
+  ],
+  "acceptance": {
+    "publicNavigationInInitialHtml": "pass, also exercised with JavaScript disabled",
+    "coldDesktopMintUnder1s": "pass",
+    "throttledMintUnder2s": "not met: median 3296.5ms; essentially unchanged from baseline 3296.8ms",
+    "walletAndNavigation": "10 focused browser checks passed",
+    "unusedPanelsAbsentFromHomepageScripts": "pass for packs, management, FWA and contract-doc UI markers",
+    "publicHtmlIndependentOfWalletCookie": "pass; identical HTML with invalid wallet cookie and without cookie",
+    "localProductionCache": "x-nextjs-cache HIT; s-maxage=3600; baseline private/no-store"
+  },
+  "economicChecks": {
+    "quantity1": {
+      "backingEth": "0.01",
+      "feeEth": "0.001",
+      "totalEth": "0.011"
+    },
+    "quantity2": {
+      "backingEth": "0.02",
+      "feeEth": "0.002",
+      "totalEth": "0.022"
+    },
+    "method": "Independent minimal ABI reads unit and mintFee at the fork block; actual UI quantity changes; zero submitted transactions."
+  },
+  "checks": [
+    {
+      "command": "CANDIDATE_RUN=1 SHAPES_LADDER=mainnet NEXT_PUBLIC_SHAPES_RPC_URL=http://127.0.0.1:8597 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<same public production ID> SHAPES_INDEXER_URL=https://shapes.ripe.wtf/api/indexer npm run build --workspace web",
+      "exit": 0,
+      "result": "Production build and TypeScript pass; bundled public routes prerendered."
+    },
+    {
+      "command": "node --import tsx --test preview/src/chain/wagmi.test.ts preview/src/site/mintOpensIn.test.ts preview/src/site/deploymentRecord.test.ts",
+      "exit": 0,
+      "result": "14 focused tests passed."
+    },
+    {
+      "command": "node ../node_modules/eslint/bin/eslint.js <changed app TypeScript files>",
+      "cwd": "web",
+      "exit": 0
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=<installed Chrome> E2E_BASE_URL=http://127.0.0.1:3200 E2E_RPC_URL=http://127.0.0.1:8597 node web/e2e/startupBrowser.mjs",
+      "exit": 0,
+      "result": "10 checks passed; no page errors or transactions."
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=<installed Chrome> PERF_TARGET=candidate E2E_BASE_URL=http://127.0.0.1:3200 PERF_OUTPUT=/tmp/shapes-startup-preload-performance.json node web/e2e/startupPerformance.mjs",
+      "exit": 0,
+      "result": "Three fresh contexts each for desktop and throttled profiles; matching unchanged baseline samples reused."
+    },
+    {
+      "command": "node /tmp/shapes-lazy-route-smoke.cjs",
+      "exit": 0,
+      "result": "Gallery, packs, token, manage, auction, contracts and FWA panels rendered without page errors; live data completion was not required."
+    },
+    {
+      "command": "node /tmp/shapes-startup-artifact-check.cjs",
+      "exit": 0,
+      "result": "Cookie-independent cached HTML and no unused-panel script markers."
+    }
+  ],
+  "review": "Independent review found and verified repairs for static /admin conflict, deployment/config pairing, optional mint-start parsing, scheduled error visibility, and local override rendering. Final simplified provider path has no remaining actionable review finding.",
+  "priorFailures": [
+    "Dependency reuse initially raced a copy, then a broad copy ignore omitted Next server/web; builds stopped before compilation. Dependencies restored without clearing existing caches. Logs retained in /tmp/shapes-*-build*.log.",
+    "Initial lint invocation used repository root instead of web; corrected cwd passed.",
+    "An initial deferred runtime added a measurable mint reveal/download delay; removed it and rechecked the affected build, browser checks and candidate performance."
+  ],
+  "limitations": [
+    "The 2-second throttled mint target was not reached. Standard wallet stack remains preloaded to avoid delaying the mint panel; unused view panels are lazy.",
+    "Cross-device WalletConnect/Coinbase sessions and physical browser extensions were not exercised; actual local Viem wallet connection/reconnection was exercised with the full wallet inventory configured.",
+    "No mainnet transaction, deployment, push or merge. Hosted CDN behavior remains unverified.",
+    "Local deployment override must be supplied at build and start; a bundled static artifact must be rebuilt to retarget. Conditional local-override rendering was source-reviewed; final performance used bundled mainnet metadata.",
+    "Broad contract suites and production asset lifecycles were not run for this frontend-only change."
+  ],
+  "sourceSha256": {
+    "preview/src/chain/wagmi.ts": "55b942e33c1989435e0150cd35b73c1f8726f2be8359b0c52a0dbc03018ebf35",
+    "preview/src/site/SiteApp.tsx": "e09b87fb1d2a6c5ace13c0619286ce971a0a2942f0d4614871232d4ecac8d038",
+    "preview/src/site/SiteHeader.tsx": "c45f290e422f1c76a5bee4be2fbfbaae8e703b556c5b7f25d743c61fded057a6",
+    "web/app/ShapesProviders.tsx": "68ea22d070fcd1d0ffda8605512cb74d18b2f2e02126349e07026d73a78429d8",
+    "web/app/SiteRoot.tsx": "1216c491cb5cd07fcfe78115e9ba3d6e445eadde912bf30a5392028e2ba10299",
+    "web/app/[[...slug]]/page.tsx": "2922b677c2c30bc2fe3e4b1765c5a9fca39b0afb686b59e7987058fb0d0147e0",
+    "web/app/globals.css": "21d8b8829f0b8ec18143c14f8d3c012c180b8f17dd768b1862eb6cd1d7762998",
+    "web/app/layout.tsx": "484a2ee5fab5236695e49a35cc63dbe2836f8943ee560b5dee08742c3cc1b942",
+    "web/app/lib/deployment.ts": "ce91f730da45b3120812ed01e0090c46dfe1d50a7e0af6d66fd458cc06b87858",
+    "web/app/BootShell.tsx": "a082b6e4ea2a922b0ec1f0ab11f39ec4967b38350b4a12eed32d3673b6fc765f",
+    "web/app/ChainProviders.tsx": "fa5225edb388b3da850673c36926973d5ef95fbde3354becfcb0ec147d02d4b8",
+    "web/app/deploymentContext.ts": "7c74d7f2812abe701f0ff498111e6b6c484a0dcbaa2cdd19a9ba253ffae0bfee",
+    "web/app/verifyDeployment.ts": "4bc2a95873a38666ba1c57a90c1dfcdf44a408f4b0a5695e78d2685397d058ae"
+  },
+  "thingsThatDoNotMakeSense": []
+}

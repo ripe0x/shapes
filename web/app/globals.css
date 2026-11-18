@@ -2228,3 +2228,11 @@ button {
   .packs-preview-unminted small { font-size: 8px; }
   .packs-preview-unminted strong { font-size: 10px; }
 }
+
+/* Keep the public shell stable while contract validation and wallet code load. */
+.site-startup-status {
+  min-height: 280px;
+  padding: 32px 48px;
+  color: #71716b;
+  font-size: 13px;
+}

@@ -22,6 +22,8 @@ export function SiteHeader({
   refreshing,
   refreshFailed,
   onRetryRefresh,
+  initializing = false,
+  onIntent,
 }: {
   /** View to mark as current, or null when no nav item corresponds to the page. */
   active: View | null;
@@ -40,8 +42,23 @@ export function SiteHeader({
   refreshing: boolean;
   refreshFailed: boolean;
   onRetryRefresh: () => void;
+  initializing?: boolean;
+  onIntent?: (view: View) => void;
 }) {
   const navColor = (v: View) => (active === v ? C.ink : C.muted);
+  const paths = {home: "/", mint: "/mint", gallery: "/gallery", packs: "/packs", fwa: "/fwa"} as const;
+  const navLink = (view: "mint" | "gallery" | "packs" | "fwa", text: string) => routed ? (
+    <a href={paths[view]} className="site-nav-link" style={{color: navColor(view)}}
+      onMouseEnter={() => onIntent?.(view)} onFocus={() => onIntent?.(view)}
+      onClick={(event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        go(view);
+      }}>{text}</a>
+  ) : (
+    <button type="button" className="btn-ghost site-nav-link" style={{color: navColor(view)}}
+      onMouseEnter={() => onIntent?.(view)} onFocus={() => onIntent?.(view)} onClick={() => go(view)}>{text}</button>
+  );
 
   return (
     <header className="site-header" style={{fontFamily: FONT}}>
@@ -57,16 +74,10 @@ export function SiteHeader({
           <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")}>SHAPES</button>
         )}
         <nav className="site-nav">
-          <button type="button" className="btn-ghost site-nav-link" onClick={() => go("mint")} style={{color: navColor("mint")}}>
-            MINT
-          </button>
-          <button type="button" className="btn-ghost site-nav-link" onClick={() => go("gallery")} style={{color: navColor("gallery")}}>
-            GALLERY
-          </button>
-          <button type="button" className="btn-ghost site-nav-link" onClick={() => go("packs")} style={{color: navColor("packs")}}>
-            PACKS
-          </button>
-          <button type="button" className="btn-ghost site-nav-link" onClick={() => go("fwa")} style={{color: navColor("fwa")}}>FWA</button>
+          {navLink("mint", "MINT")}
+          {navLink("gallery", "GALLERY")}
+          {navLink("packs", "PACKS")}
+          {navLink("fwa", "FWA")}
         </nav>
         <SyncStatus refreshing={refreshing} failed={refreshFailed} onRetry={onRetryRefresh} />
         {/* Wraps both the desktop account control and the mobile nav's account row so the
@@ -77,6 +88,8 @@ export function SiteHeader({
             <button
               type="button"
               className="site-connect-btn"
+              disabled={initializing}
+              aria-busy={initializing || undefined}
               aria-haspopup={isConnected ? "menu" : undefined}
               aria-expanded={isConnected ? accountMenuOpen : undefined}
               onClick={() =>
@@ -147,6 +160,7 @@ export function SiteHeader({
                 <button
                   type="button"
                   className="btn-ghost site-mobile-nav-row"
+                  disabled={initializing}
                   aria-haspopup={isConnected ? "menu" : undefined}
                   aria-expanded={isConnected ? accountMenuOpen : undefined}
                   onClick={() => {

@@ -13,25 +13,43 @@ import {rpcRequestCounter} from "../chain/rpc";
 import {mintRequest} from "./mint";
 import {awaitSuccessfulReceipt, bufferGas} from "./tx";
 import {clearStoredActionNotice, storeActionNotice, takeStoredActionNotice, type ActionNotice} from "./actionNotice";
-import {MintView} from "./MintView";
 import {MintPanel} from "./MintPanel";
-import {GalleryView} from "./GalleryView";
-import {MyShapesView} from "./MyShapesView";
-import {TokenView, type DirectTokenState} from "./TokenView";
-import {ManageShapeView} from "./ManageShapeView";
-import {ComposeWorkspace, type ComposeDraft} from "./ComposeWorkspace";
-import {AuctionView} from "./AuctionView";
-import {breakdown, loadAuctionFor, loadLotImage, type AuctionSlot} from "./auction";
+import type {DirectTokenState} from "./TokenView";
+import type {ComposeDraft} from "./ComposeWorkspace";
+import type {AuctionSlot, AuctionState} from "./auction";
 import {useDisplayName} from "./useDisplayName";
 import {SiteFooter} from "./SiteFooter";
 import {SiteHeader} from "./SiteHeader";
-import {PacksView} from "./PacksView";
-import {PackDetailView} from "./PackDetailView";
-const FwaView = React.lazy(() => import("./FwaView").then(m => ({default: m.FwaView})));
 
-// The generated contract documentation is large and only this view reads it, so it loads on
-// demand rather than riding in the main bundle.
-const ContractsView = React.lazy(() => import("./ContractsView"));
+// Only the current view loads its panel; the home mint panel stays in the initial bundle.
+const viewLoaders = {
+  mint: () => import("./MintView").then(m => ({default: m.MintView})),
+  gallery: () => import("./GalleryView").then(m => ({default: m.GalleryView})),
+  collection: () => import("./MyShapesView").then(m => ({default: m.MyShapesView})),
+  token: () => import("./TokenView").then(m => ({default: m.TokenView})),
+  manage: () => import("./ManageShapeView").then(m => ({default: m.ManageShapeView})),
+  auction: () => import("./AuctionView").then(m => ({default: m.AuctionView})),
+  packs: () => import("./PacksView").then(m => ({default: m.PacksView})),
+  pack: () => import("./PackDetailView").then(m => ({default: m.PackDetailView})),
+  fwa: () => import("./FwaView").then(m => ({default: m.FwaView})),
+  contracts: () => import("./ContractsView"),
+};
+const MintView = React.lazy(viewLoaders.mint);
+const GalleryView = React.lazy(viewLoaders.gallery);
+const MyShapesView = React.lazy(viewLoaders.collection);
+const TokenView = React.lazy(viewLoaders.token);
+const ManageShapeView = React.lazy(viewLoaders.manage);
+const AuctionView = React.lazy(viewLoaders.auction);
+const PacksView = React.lazy(viewLoaders.packs);
+const PackDetailView = React.lazy(viewLoaders.pack);
+const FwaView = React.lazy(viewLoaders.fwa);
+const ContractsView = React.lazy(viewLoaders.contracts);
+const ComposeWorkspace = React.lazy(() => import("./ComposeWorkspace").then(m => ({default: m.ComposeWorkspace})));
+
+function preloadView(view: View) {
+  // Hover/focus is advisory; rendering owns any import error.
+  if (view !== "home") void viewLoaders[view]().catch(() => {});
+}
 
 export type View =
   | "home"
@@ -565,9 +583,11 @@ export function SiteApp({
     if (!publicClient) return;
     // A failed read (dead RPC, mid-redeploy chain, malformed response) degrades to the empty
     // state instead of surfacing an unhandled rejection.
-    let a: Awaited<ReturnType<typeof loadAuctionFor>> = null;
+    let a: AuctionState | null = null;
+    let auctionReads: typeof import("./auction");
     try {
-      a = await loadAuctionFor(publicClient, dep, 0n, address);
+      auctionReads = await import("./auction");
+      a = await auctionReads.loadAuctionFor(publicClient, dep, 0n, address);
     } catch {
       setAuction("error");
       setLotImage(null);
@@ -577,7 +597,7 @@ export function SiteApp({
     // The lot is held in escrow and so is still live: its artwork is already in the loaded site
     // data. Only a lot the gallery has not supplied costs a tokenURI read.
     const loaded = a ? dataRef.current?.tokens.find((t) => t.id === a.tokenId) : undefined;
-    setLotImage(a ? (loaded?.image ?? (await loadLotImage(publicClient, dep, a))) : null);
+    setLotImage(a ? (loaded?.image ?? (await auctionReads.loadLotImage(publicClient, dep, a))) : null);
   }, [publicClient, dep, address]);
 
   React.useEffect(() => {
@@ -591,6 +611,7 @@ export function SiteApp({
     try {
       if (fn === "bid" && value !== undefined) {
         const liveFees = await loadMintFees(publicClient, dep);
+        const {breakdown} = await import("./auction");
         const items = breakdown(value);
         const quotedFee = items.reduce((sum, item) => sum + BigInt(item.count) * (data?.fees[item.di] ?? 0n), 0n);
         const liveFee = items.reduce((sum, item) => sum + BigInt(item.count) * liveFees[item.di], 0n);
@@ -665,6 +686,7 @@ export function SiteApp({
     <SiteHeader
       active={active}
       go={go}
+      onIntent={preloadView}
       routed={onNavigate !== undefined}
       isConnected={isConnected}
       wrongChain={wrongChain}
@@ -717,6 +739,9 @@ export function SiteApp({
     <div id="top" style={{minHeight: "100vh", background: C.page, color: C.ink, fontFamily: FONT}}>
       {header(shownView)}
 
+      <React.Suspense fallback={
+        <div role="status" style={{padding: 48, minHeight: 240, fontSize: 13, color: C.muted}}>Loading…</div>
+      }>
       {shownView === "mint" && (
         <MintView
           data={mintData}
@@ -769,12 +794,8 @@ export function SiteApp({
           onOpenToken={openToken}
         />
       )}
-      {view === "contracts" && (
-        <React.Suspense fallback={<div style={{padding: 48, fontSize: 13, color: C.muted}}>Loading contracts…</div>}>
-          <ContractsView dep={dep} />
-        </React.Suspense>
-      )}
-      {view === "fwa" && <React.Suspense fallback={<div style={{padding: 48}}>Loading FWA…</div>}><FwaView dep={dep} onConnect={() => openConnectModal?.()} /></React.Suspense>}
+      {view === "contracts" && <ContractsView dep={dep} />}
+      {view === "fwa" && <FwaView dep={dep} onConnect={() => openConnectModal?.()} />}
       {view === "packs" && (
         <PacksView
           dep={dep}
@@ -852,6 +873,8 @@ export function SiteApp({
           onBurnBacking={(t) => void doBurnBacking(t)}
         />
       )}
+
+      </React.Suspense>
 
       {actionNotice && (
         <div

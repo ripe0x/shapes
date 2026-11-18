@@ -1,8 +1,6 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import "@fontsource/ibm-plex-mono/400.css";
-import "@fontsource/ibm-plex-mono/500.css";
 import { SiteApp, type View } from "@shared/site/SiteApp";
 import { ActivityFeed } from "@shared/site/ActivityFeed";
 import { mintStartOf } from "@shared/chain/abi";

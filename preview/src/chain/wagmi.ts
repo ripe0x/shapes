@@ -20,18 +20,12 @@ export interface WalletOptions {
   ssr?: boolean;
 }
 
-/**
- * Connection storage for the server-rendered app. wagmi's default (localStorage) is invisible to
- * the server, so a fresh SSR render — and the client render that must match it — always starts
- * disconnected; only after the post-mount reconnect resolves does the wallet reappear, and any
- * remount before that (a route change that drops `WagmiProvider` from the tree, a hard refresh
- * racing a slow RPC) loses it again. Cookie storage is readable server-side via
- * `initialWalletState`, so the initial render already reflects the connection.
- */
+/** Cookie persistence survives route changes and reloads. The Next host decodes the cookie in
+ * the browser before its deferred wallet provider first mounts, keeping public HTML cacheable. */
 export const ssrStorage = createStorage({storage: cookieStorage});
 
 /**
- * Decodes the persisted wagmi connection state from a request's `Cookie` header, for use as
+ * Decodes persisted wagmi connection state from a cookie string, for use as
  * `WagmiProvider`'s `initialState`. Only `storage.key` (the "wagmi" prefix, shared by every
  * deployment's config) is consulted, so this needs no chain-specific config of its own.
  */

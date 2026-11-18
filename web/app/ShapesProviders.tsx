@@ -2,133 +2,49 @@
 
 import React from "react";
 import { usePathname } from "next/navigation";
-import "@rainbow-me/rainbowkit/styles.css";
-import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { WagmiProvider, type State } from "wagmi";
-import { getPublicClient } from "@wagmi/core";
-import { shapesAbi, type Deployment } from "@shared/chain/abi";
-import { buildConfig } from "@shared/chain/wagmi";
-import { LADDER_NAME, UNIT } from "shapes-render/denominations";
-import { LaunchLanding } from "./LaunchLanding";
+import type { Deployment } from "@shared/chain/abi";
+import { BootShell } from "./BootShell";
+import { ChainProviders } from "./ChainProviders";
+import { verifyDeployment } from "./verifyDeployment";
+export { useShapesDeployment } from "./deploymentContext";
 
-// Every indexer read from the browser goes through the site's own origin. `app/api/indexer`
-// holds the upstream Ponder URL and its bearer token server-side, so the record's own
-// `indexerUrl` is the proxy's upstream fallback and never a browser target. The path is set only
-// when the server has an upstream (`indexerConfigured`); otherwise the site skips the indexer
-// instead of collecting 503s from its own proxy.
-const INDEXER_PROXY_PATH = "/api/indexer";
-
-type WalletState = {
-  dep: Deployment;
-  config: ReturnType<typeof buildConfig>;
-};
-
-const DeploymentContext = React.createContext<Deployment | null>(null);
-const queryClient = new QueryClient();
-
-const centered: React.CSSProperties = {
-  color: "#71716b",
-  padding: 48,
-  textAlign: "center",
-  fontFamily: "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace",
-  fontSize: 13,
-};
-
-/**
- * Keeps the wallet stack above routed pages so client navigation cannot replace it. The playground
- * and the docs are wallet-free and do not wait for deployment metadata or an RPC. "/" needs
- * no chain either, except in app mode (`chainOnIndex`), where it hosts the mint panel inline and
- * so waits for the same deployment load as every other routed page.
- */
-export function ShapesProviders({
-  children,
-  chainOnIndex,
-  indexerConfigured,
-  walletInitialState,
-  deployment,
-}: {
+/** Public HTML does not depend on a wallet cookie or a live RPC. The persistent wallet stack
+ * mounts after hydration and the denomination check, before any amounts/actions appear. */
+export function ShapesProviders({ children, chainOnIndex, indexerConfigured, deployment }: {
   children: React.ReactNode;
   chainOnIndex: boolean;
-  /** Whether `app/api/indexer` has an upstream to forward to (see `indexerUpstream`). */
   indexerConfigured: boolean;
-  /** Connection state decoded server-side from the request's cookies (see layout.tsx), so the
-   *  first client render already reflects a previously connected wallet. */
-  walletInitialState?: State;
-  /** Public deployment record selected by the server for this build or local run. */
   deployment: Deployment;
 }) {
   const pathname = usePathname();
-  const isIndex = pathname === "/";
-  const isDocs = pathname === "/docs" || pathname.startsWith("/docs/");
-  const skipsChain = pathname === "/play" || isDocs || (isIndex && !chainOnIndex);
-  const [state, setState] = React.useState<WalletState | null>(null);
-  const [err, setErr] = React.useState<string | null>(null);
+  const skipsChain = pathname === "/play" || pathname === "/docs" || pathname.startsWith("/docs/") ||
+    (pathname === "/" && !chainOnIndex);
+  const [runtime, setRuntime] = React.useState<{
+    Provider: typeof ChainProviders;
+    deployment: Deployment;
+  } | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [attempt, setAttempt] = React.useState(0);
+  const dep = React.useMemo(() => ({
+    ...deployment, indexerUrl: indexerConfigured ? "/api/indexer" : undefined,
+  }), [deployment, indexerConfigured]);
 
   React.useEffect(() => {
-    if (skipsChain || state || err) return;
-
+    if (skipsChain || runtime) return;
     let active = true;
-    Promise.resolve()
-      .then(async () => {
-        const dep: Deployment = {...deployment, indexerUrl: indexerConfigured ? INDEXER_PROXY_PATH : undefined};
-        const config = buildConfig(dep, {
-          primaryRpcUrl: process.env.NEXT_PUBLIC_SHAPES_RPC_URL,
-          walletConnectProjectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
-          ssr: true,
-        });
-        // The denomination ladder is compiled in (SHAPES_LADDER at build time) while the contract
-        // comes from deployment.json, so the two can disagree. One unit() read at load catches
-        // that before any amount is shown. Uses the config's own fallback-wired transport.
-        const client = getPublicClient(config);
-        const unit = client
-          ? await client.readContract({address: dep.shapes, abi: shapesAbi, functionName: "unit"})
-          : UNIT;
-        if (!active) return;
-        if (unit !== UNIT) {
-          setErr(
-            `This build uses the ${LADDER_NAME} denomination ladder but the contract at ${dep.shapes} uses a different one. Rebuild with the matching SHAPES_LADDER.`,
-          );
-          return;
-        }
-        setState({dep, config});
-      })
-      .catch(() => {
-        if (active) setErr("The Shapes contract is not connected here yet.");
-      });
+    verifyDeployment(dep).then(() => {
+      if (active) setRuntime({ Provider: ChainProviders, deployment: dep });
+    }).catch((err: unknown) => {
+      if (active) setError(err instanceof Error ? err.message : "The Shapes contract is not connected here yet.");
+    });
+    return () => { active = false; };
+  }, [dep, skipsChain, runtime, attempt]);
 
-    return () => {
-      active = false;
-    };
-  }, [deployment, err, indexerConfigured, skipsChain, state]);
-
+  // Once mounted, retain the wallet and query cache even when visiting wallet-free routes.
+  if (runtime) return <runtime.Provider deployment={runtime.deployment}>{children}</runtime.Provider>;
   if (skipsChain) return children;
-  // The index route in app mode hosts the mint panel inline: the hero renders immediately
-  // rather than sitting behind "Connecting…", and a load failure surfaces inside the mint
-  // section rather than replacing the whole page.
-  if (isIndex && chainOnIndex) {
-    // mintStartSeconds={0n} shows this transient placeholder as open immediately; the real gate
-    // (dep.mintStart, once state resolves) takes over on the very next render.
-    if (err) return <LaunchLanding mintStartSeconds={0n} mintSlot={<p className="launch-mint-unavailable">{err}</p>} />;
-    if (!state) return <LaunchLanding mintStartSeconds={0n} />;
-  } else {
-    if (err) return <div style={centered}>{err}</div>;
-    if (!state) return <div style={centered}>Connecting…</div>;
-  }
-
-  return (
-    <WagmiProvider config={state.config} initialState={walletInitialState} reconnectOnMount>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={lightTheme()}>
-          <DeploymentContext.Provider value={state.dep}>{children}</DeploymentContext.Provider>
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
-  );
-}
-
-export function useShapesDeployment(): Deployment {
-  const deployment = React.useContext(DeploymentContext);
-  if (!deployment) throw new Error("useShapesDeployment must be used inside ShapesProviders");
-  return deployment;
+  return <BootShell pathname={pathname} deployment={dep} error={error} onRetry={() => {
+    setError(null);
+    setAttempt((value) => value + 1);
+  }} />;
 }

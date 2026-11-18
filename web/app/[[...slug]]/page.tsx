@@ -19,6 +19,13 @@ const MAX_OG_STATE_LENGTH = 6000;
 // after ownership moves is an acceptable tradeoff against reading the chain on every request.
 export const revalidate = 3600;
 
+// Only public shells are prerendered. Wallet state is restored in the browser; token metadata
+// and the playground's query-dependent metadata keep their existing request-time behavior.
+export function generateStaticParams(): Params[] {
+  const paths = landingOnly() ? [] : ["mint", "gallery", "packs", "auction", "my-shapes", "contracts", "fwa"];
+  return [{ slug: [] }, ...paths.map((path) => ({ slug: [path] }))];
+}
+
 function shapeTitle(tokenId: bigint, isOwnerToken: boolean): string {
   const base = `Shape ${tokenId.toString()}`;
   return isOwnerToken ? `${base}, Contract Owner` : base;
