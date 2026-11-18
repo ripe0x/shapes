@@ -61,6 +61,11 @@ function localDeployment(): DeploymentFile | null {
   );
 }
 
+/** Local records may change while a preview is running, unlike a bundled production record. */
+export function hasLocalDeployment(): boolean {
+  return localDeployment() !== null;
+}
+
 /** Give the client the same selected record as server routes without another browser fetch. */
 export function clientDeployment(): Deployment {
   return (localDeployment() ?? bundledDeployment()) as Deployment;

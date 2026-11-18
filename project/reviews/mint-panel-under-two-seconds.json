@@ -1,0 +1,278 @@
+{
+  "baseRevision": "9df3976ab6697bae6bea084cf4739d9ae8c7f249",
+  "candidateBuildId": "V1Z0N46g_D76JQA2FmEqe",
+  "scope": "Interactive, live-validated mint form before normal wallet initialization; same transaction construction and wallet inventory; no deployment.",
+  "cause": {
+    "beforeMintMs": 3296.5,
+    "profiledFirstContractReadMs": 3113.3,
+    "profiledContractReadDurationMs": 130.9,
+    "profiledJsBytesBeforeMint": 443237,
+    "mechanism": "Initial wallet/application JavaScript delayed the first unit read. The early form now reads the unit, fees and schedule through a small transport; server-encoded read calls keep the ABI codec out of the early browser path."
+  },
+  "conditions": {
+    "cache": "disabled; fresh browser context per sample",
+    "constrained": {
+      "latencyMs": 100,
+      "bytesPerSecond": 200000,
+      "cpuSlowdown": 4
+    },
+    "observationMs": 8000
+  },
+  "browser": "Installed Google Chrome via Playwright; same public WalletConnect project configuration and local mainnet fork as baseline.",
+  "fork": {
+    "rpc": "http://127.0.0.1:8597",
+    "source": "https://mainnet.gateway.tenderly.co",
+    "block": 26442939
+  },
+  "baseline": [
+    {
+      "target": "candidate",
+      "profile": "desktop",
+      "samples": 3,
+      "headerMs": 9.900000035762787,
+      "mintMs": 135.20000004768372,
+      "fcpMs": 40,
+      "ttfbMs": 3.200000047683716,
+      "jsFiles": 38,
+      "jsBytes": 849159,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "constrained",
+      "samples": 3,
+      "headerMs": 131.89999997615814,
+      "mintMs": 3296.5,
+      "fcpMs": 452,
+      "ttfbMs": 100.60000002384186,
+      "jsFiles": 38,
+      "jsBytes": 849159,
+      "jsBeforeHeaderBytes": 0
+    }
+  ],
+  "results": [
+    {
+      "target": "candidate",
+      "profile": "desktop",
+      "sample": 0,
+      "header": 39.10000002384186,
+      "mint": 126.10000002384186,
+      "walletReady": 205.10000002384186,
+      "ttfb": 32.89999997615814,
+      "fcp": 80,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "desktop",
+      "sample": 1,
+      "header": 11.300000011920929,
+      "mint": 90.90000003576279,
+      "walletReady": 167.20000004768372,
+      "ttfb": 5.100000023841858,
+      "fcp": 40,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "desktop",
+      "sample": 2,
+      "header": 9.099999964237213,
+      "mint": 90.5,
+      "walletReady": 172.19999998807907,
+      "ttfb": 3.5,
+      "fcp": 44,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "constrained",
+      "sample": 0,
+      "header": 131.5,
+      "mint": 1949.9000000357628,
+      "walletReady": 3741,
+      "ttfb": 100.60000002384186,
+      "fcp": 460,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "constrained",
+      "sample": 1,
+      "header": 130.80000001192093,
+      "mint": 1932.7000000476837,
+      "walletReady": 3739.800000011921,
+      "ttfb": 100.5,
+      "fcp": 456,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "constrained",
+      "sample": 2,
+      "header": 130,
+      "mint": 1933.199999988079,
+      "walletReady": 3727.800000011921,
+      "ttfb": 100.69999998807907,
+      "fcp": 456,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    }
+  ],
+  "summary": [
+    {
+      "target": "candidate",
+      "profile": "desktop",
+      "samples": 3,
+      "headerMs": 11.300000011920929,
+      "mintMs": 90.90000003576279,
+      "walletReadyMs": 172.19999998807907,
+      "fcpMs": 44,
+      "ttfbMs": 5.100000023841858,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    },
+    {
+      "target": "candidate",
+      "profile": "constrained",
+      "samples": 3,
+      "headerMs": 130.80000001192093,
+      "mintMs": 1933.199999988079,
+      "walletReadyMs": 3739.800000011921,
+      "fcpMs": 456,
+      "ttfbMs": 100.60000002384186,
+      "jsFiles": 42,
+      "jsBytes": 892557,
+      "jsBeforeHeaderBytes": 0
+    }
+  ],
+  "acceptance": {
+    "everyConstrainedFormSampleUnder2000ms": true,
+    "definition": "Visible mint form with all nine selectable tiers, enabled quantity input and enabled Connect control; actual selection, quoting and queued connection exercised separately. Full wallet initialization is measured separately.",
+    "constrainedMintSamplesMs": [
+      1949.9000000357628,
+      1932.7000000476837,
+      1933.199999988079
+    ],
+    "walletReadyMedianMs": 3739.800000011921,
+    "walletHandoff": "13 browser checks passed, including one early Connect click on mint/admin, tier/quantity preservation, unfinished text/focus preservation, normal connection, reload restoration, history, mobile navigation, context isolation, disconnect, and RPC failure/retry."
+  },
+  "economics": {
+    "assetDestinationsOrRightsChanged": false,
+    "smallestOne": {
+      "backingEth": "0.01",
+      "feeEth": "0.001",
+      "totalEth": "0.011"
+    },
+    "smallestTwo": {
+      "backingEth": "0.02",
+      "feeEth": "0.002",
+      "totalEth": "0.022"
+    },
+    "secondTierTwo": {
+      "backingEth": "0.1",
+      "feeEth": "0.002",
+      "totalEth": "0.102"
+    },
+    "verification": "Independent minimal ABI unit/mintFee reads at the fork block and real UI input; zero submitted transactions. Early form cannot mint. Full mint still rereads live fees and rejects changed quotes."
+  },
+  "checks": [
+    {
+      "command": "CANDIDATE_RUN=1 SHAPES_LADDER=mainnet NEXT_PUBLIC_SHAPES_RPC_URL=http://127.0.0.1:8597 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<same public production ID> SHAPES_INDEXER_URL=https://shapes.ripe.wtf/api/indexer npm run build --workspace web",
+      "exit": 0,
+      "result": "Production build/TypeScript passed."
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=<installed Chrome> PERF_TARGET=candidate PERF_SAMPLES=3 E2E_BASE_URL=http://127.0.0.1:3204 PERF_OUTPUT=/tmp/shapes-mint-codec-performance.json node web/e2e/startupPerformance.mjs",
+      "exit": 0,
+      "result": "Every constrained sample and median passed the under-2-second assertion; wallet readiness recorded independently."
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=<installed Chrome> E2E_BASE_URL=http://127.0.0.1:3204 E2E_RPC_URL=http://127.0.0.1:8597 node web/e2e/startupBrowser.mjs",
+      "exit": 0,
+      "result": "13 checks passed, no page errors or transactions."
+    },
+    {
+      "command": "node --import tsx --test preview/src/chain/wagmi.test.ts preview/src/site/mintOpensIn.test.ts preview/src/site/deploymentRecord.test.ts",
+      "exit": 0,
+      "result": "14 tests passed."
+    },
+    {
+      "command": "node --import tsx --test --test-name-pattern='seedFee|seedMintStart' preview/src/site/data.test.ts",
+      "exit": 0,
+      "result": "5 pure fee/schedule tests passed; successful service mocks were not run."
+    },
+    {
+      "command": "node --import tsx --test --test-name-pattern='Sepolia provider list' preview/src/site/rpc.test.ts",
+      "exit": 0,
+      "result": "Pure provider-order test passed; synthetic successful RPC tests were not run."
+    },
+    {
+      "command": "node ../node_modules/eslint/bin/eslint.js <changed app TS/TSX files>",
+      "cwd": "web",
+      "exit": 0
+    },
+    {
+      "command": "node node_modules/eslint/bin/eslint.js --config web/eslint.config.mjs preview/src/site/MintDraft.tsx preview/src/site/mintValues.ts preview/src/site/mintArt.ts preview/src/chain/rpcTransport.ts",
+      "exit": 0,
+      "result": "New shared helpers passed; existing monorepo pages-path warning."
+    },
+    {
+      "command": "Transport and artwork-helper source equivalence assertions against base revision",
+      "exit": 0,
+      "result": "Moved implementations are verbatim; existing exports preserved."
+    }
+  ],
+  "review": "Independent source review found and verified repairs for global queued Connect, focus/raw text preservation, live schedule continuity and duplicate error output. Final read-only call encoding/decoding and fee revalidation reviewed without remaining actionable findings.",
+  "preservedFailures": [
+    "Initial early form probes and three-sample runs failed the bound at approximately 2.05 seconds. Their results remain in /tmp/shapes-mint-early-probe*, /tmp/shapes-mint-final-performance*, and /tmp/shapes-mint-acceptance-performance*.",
+    "An initial RPC-failure browser case exposed duplicate alert/Retry markup; fixed and final full browser run passed.",
+    "Expanded preview-wide lint exposed pre-existing hook purity/ref/effect violations, confirmed in the original MintPanel. The new draft synchronization issue was repaired; existing unrelated violations remain.",
+    "An initial pure RPC-list test invocation used the wrong working directory; corrected invocation passed.",
+    "Precomputed provenance artwork did not improve the measured critical path; that experiment and its generated assets/build changes were removed."
+  ],
+  "limits": [
+    "The 2-second bound is established for the stated local production preview and throttle, not all devices or hosted network conditions.",
+    "The normal wallet stack finishes later (approximately 3.74 seconds under this throttle); a single early Connect click is queued and completes through the normal modal.",
+    "Physical browser extensions and cross-device WalletConnect sessions were not exercised; the standard inventory/config and reconnection path remain unchanged, and a real local Viem wallet was exercised.",
+    "No mainnet transaction, deployment, push or merge; no broad contract lifecycle suite for this frontend-only change.",
+    "Existing preview-wide lint violations remain; changed app files and new shared helper lint checks pass."
+  ],
+  "sourceSha256": {
+    "preview/src/chain/abi.ts": "c99303a397df5eac68a32e52838e44d94c59c99eb16e7085785d03018e05e54a",
+    "preview/src/chain/rpc.ts": "1707eecb84d46f01189ed89c57fae213843b80c069e4288dacc8ed12f2209d18",
+    "preview/src/site/MintPanel.tsx": "629d235796b1831e8d6c737d9ed6d82b57b0b077faec0f4df0d989a290bb8aed",
+    "preview/src/site/SiteApp.tsx": "0b87ed2060d20f2c12214c33db65fe8367ca177083d4d202f4b955c48de208e6",
+    "preview/src/site/SiteHeader.tsx": "917aec7b58f3dfca7e16549495d1665a7a3d68c7fc9e29803f09483c9fa0ba3a",
+    "preview/src/site/art.ts": "29c3e26f366ebec689124723a6ecb89d40fa3cfafd6cd3bd2546d170c7cca9d3",
+    "preview/src/site/data.ts": "5c126c4ad074abbf6f65d22405d4d910c465617c00bd0b43b488242496e5e48d",
+    "web/app/BootShell.tsx": "014a27e38d7ff6780fb34d40d28d1b229a6c0e9e276edc6046d6d32113ccc42f",
+    "web/app/ChainProviders.tsx": "771d645718c797168a2733dd777466cf6f1f84a89deb927f4ad11646151968cd",
+    "web/app/ShapesProviders.tsx": "0525577ef308371d0dba9db70f1958adedad41f84115a7b86538f155d0d7c4bd",
+    "web/app/SiteRoot.tsx": "43d72b518a69d3793c4cd74c26352a47a41805c81394436149de4af31680a9e9",
+    "web/app/deploymentContext.ts": "3a88ee91bd0d6884d28e4be79efeddd32f8460d8949433cc945d1be5edc37212",
+    "web/app/layout.tsx": "f01723941d91dcbd8e433c6e2d1c242abb6dde1b8cdce1ca573f5cbcdafd0d03",
+    "web/app/verifyDeployment.ts": "aa63b04c50a382d72c9d1a0a2eab20d5710d17c72ebc90e792269dc887842ae3",
+    "preview/src/chain/rpcTransport.ts": "320162e2a5dd22cb5a74d75fa189c21b84035335f398da8462d7a2e2fa5f9817",
+    "preview/src/site/MintDraft.tsx": "0cb79d9ff1090b460eb2e4a7619df15418f82af068e6a93dfc164c1c58ad295b",
+    "preview/src/site/MintPanelContent.tsx": "bbfd9fbb7ab721bea87023591b274aaab3bd84236ae652e4e31ab5e1ecec17ae",
+    "preview/src/site/mintArt.ts": "39adb90e29411b1ec330a18c6591692ca0fe0b5c313470f2caa849930c6d4f19",
+    "preview/src/site/mintValues.ts": "72c2bddb5081187e9ab898d613ce8ff08470fc2099d1f830e63d474f094ae118",
+    "web/app/SiteRuntime.tsx": "c0580076c8d9be609c745a85ee30df7718eb9f02fbdb5fa0d5de73909c9df814",
+    "web/app/mintReadAbi.ts": "2f237aabf0d9af4b8c8a894ecd9d21b6b0f81e4497303be3d8df6abba1ec09bc"
+  },
+  "thingsThatDoNotMakeSense": [],
+  "sourceNote": "Only trailing blank-line cleanup followed the production/browser runs; no executable code changed."
+}

@@ -265,3 +265,34 @@ branches allowed for branch deploys. Netlify then rebuilds its stable preview UR
 on pushes to this branch. PR #149 sets `@netlify /fwa` as its preview entry page.
 These account settings must be enabled in Netlify; the TOML context supplies build
 configuration but does not enable Git integration or branch deploys by itself.
+
+## Initial load
+
+Bundled production routes prerender a public header and loading shell. A small browser bootstrap
+validates `unit()` and reads live mint fees and the mint schedule before displaying the interactive
+mint form. The standard wallet stack and application controller load in the background after
+that form paints; other route panels remain on demand. Tier/quantity edits, unfinished quantity text, keyboard focus and a queued
+Connect request survive the transition. Transaction controls remain behind the normal wallet and
+live quote checks. Wallet cookies are decoded before the persistent wallet provider first mounts,
+so public HTML never contains an account connection.
+
+Set deployment/indexer configuration before building. For local records, supply
+`SHAPES_DEPLOYMENT_FILE` at both build and start (as `e2e/run.sh` does); those builds retain dynamic
+rendering so changes to the local record are read at request time. A bundled static build needs a
+rebuild when its deployment or indexer configuration changes. Never retarget a production static
+artifact by supplying a different deployment file only at start.
+
+Focused local production checks (real local mainnet fork; no mainnet transactions):
+
+```sh
+E2E_BASE_URL=http://127.0.0.1:3197 E2E_RPC_URL=http://127.0.0.1:8597 node web/e2e/startupBrowser.mjs
+BASELINE_URL=http://127.0.0.1:3196 E2E_BASE_URL=http://127.0.0.1:3197 node web/e2e/startupPerformance.mjs
+```
+
+Both performance builds must use the same deployment, RPC and public WalletConnect project
+configuration. The performance check measures the interactive form and full wallet readiness separately,
+requires every throttled candidate form sample to finish in under two seconds, and uses three
+fresh contexts per profile/build, an eight-second
+observation window, and a second profile with 100 ms latency, 200,000 bytes/s download and 4x CPU
+slowdown. Set `PLAYWRIGHT_CHROME_PATH` when using an installed Chrome. Hosted CDN cache behavior
+still needs a post-deployment readback.

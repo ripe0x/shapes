@@ -3,8 +3,6 @@ import {
   shapesAbi,
   DENOMINATIONS,
   denomIndexOf,
-  mintFeeOf,
-  mintStartOf,
   type Deployment,
 } from "../chain/abi";
 import {
@@ -101,29 +99,7 @@ export interface SiteData {
 
 export type SiteHeaderData = Omit<SiteData, "tokens">;
 
-/** Fee for denomination `sel`: `SiteData.fees` once `loadSite` completes (chain is authoritative),
- *  seeded from the deployment record's flat fee before that so the mint button need not wait on
- *  the full site load. Null only when neither source has a value yet. */
-export function seedFee(
-  dep: Pick<Deployment, "mintFeeWei"> | undefined,
-  data: Pick<SiteData, "fees"> | null,
-  sel: number,
-): bigint | null {
-  if (data) return data.fees[sel] ?? null;
-  return dep ? mintFeeOf(dep) : null;
-}
-
-/** Mint-gate start time: `SiteData.mintStart` once loaded, seeded from the deployment record's
- *  readback before that. Matches `seedFee`'s precedence so the gate and the fee flip to chain
- *  truth together. */
-export function seedMintStart(
-  dep: Pick<Deployment, "mintStart"> | undefined,
-  data: Pick<SiteData, "mintStart"> | null,
-): bigint {
-  if (data) return data.mintStart;
-  return dep ? mintStartOf(dep) : 0n;
-}
-
+export {seedFee, seedMintStart} from "./mintValues";
 
 export interface SiteLoadMetrics {
   source: "chain" | "indexer";

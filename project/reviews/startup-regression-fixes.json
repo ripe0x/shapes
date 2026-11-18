@@ -1,0 +1,310 @@
+{
+  "baseRevision": "b2a5353895556fb93084cf9d33e86575490ef724",
+  "revisionNote": "This record identifies the repaired source by SHA-256 below; included in the same commit as those sources.",
+  "scope": "Fix saved-wallet initialization order and contain rejected lazy views without changing mint/payment behavior. No merge or deployment.",
+  "buildId": "aV2XQ_j5dOoA3VCzzmHCJ",
+  "fixes": [
+    "Capture persisted wallet state before config creation can synchronously overwrite the cookie.",
+    "Wait for connecting/reconnecting to finish before consuming a queued Connect request.",
+    "Reuse the existing local error boundary around deferred views, preserving shell/providers; navigation clears the boundary and Reload clears a cached lazy rejection."
+  ],
+  "environment": {
+    "site": "http://127.0.0.1:3205",
+    "buildDirectory": "/private/tmp/shapes-startup-fix-verification",
+    "browser": "Installed Google Chrome via Playwright, headless",
+    "forkRpc": "http://127.0.0.1:8597",
+    "forkSource": "https://mainnet.gateway.tenderly.co",
+    "forkBlock": 26442939,
+    "chainId": 1,
+    "publicWalletConfig": "Same public WalletConnect project ID as earlier baseline/candidate runs"
+  },
+  "performance": {
+    "conditions": {
+      "cache": "disabled; fresh browser context per sample",
+      "constrained": {
+        "latencyMs": 100,
+        "bytesPerSecond": 200000,
+        "cpuSlowdown": 4
+      },
+      "observationMs": 8000
+    },
+    "results": [
+      {
+        "target": "candidate",
+        "profile": "desktop",
+        "sample": 0,
+        "header": 9.100000023841858,
+        "mint": 87.60000002384186,
+        "walletReady": 152.20000004768372,
+        "ttfb": 2.900000035762787,
+        "fcp": 44,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      },
+      {
+        "target": "candidate",
+        "profile": "desktop",
+        "sample": 1,
+        "header": 10.199999988079071,
+        "mint": 93.69999998807907,
+        "walletReady": 184.39999997615814,
+        "ttfb": 4.199999988079071,
+        "fcp": 64,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      },
+      {
+        "target": "candidate",
+        "profile": "desktop",
+        "sample": 2,
+        "header": 8.900000035762787,
+        "mint": 89.80000001192093,
+        "walletReady": 162.4000000357628,
+        "ttfb": 3.100000023841858,
+        "fcp": 64,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      },
+      {
+        "target": "candidate",
+        "profile": "constrained",
+        "sample": 0,
+        "header": 131.69999998807907,
+        "mint": 1949.3999999761581,
+        "walletReady": 3755.699999988079,
+        "ttfb": 100.5,
+        "fcp": 468,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      },
+      {
+        "target": "candidate",
+        "profile": "constrained",
+        "sample": 1,
+        "header": 131,
+        "mint": 1929.6000000238419,
+        "walletReady": 3732,
+        "ttfb": 100.60000002384186,
+        "fcp": 452,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      },
+      {
+        "target": "candidate",
+        "profile": "constrained",
+        "sample": 2,
+        "header": 128.30000001192093,
+        "mint": 1915.699999988079,
+        "walletReady": 3693.899999976158,
+        "ttfb": 100.5,
+        "fcp": 444,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      }
+    ],
+    "summary": [
+      {
+        "target": "candidate",
+        "profile": "desktop",
+        "samples": 3,
+        "headerMs": 9.100000023841858,
+        "mintMs": 89.80000001192093,
+        "walletReadyMs": 162.4000000357628,
+        "fcpMs": 64,
+        "ttfbMs": 3.100000023841858,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      },
+      {
+        "target": "candidate",
+        "profile": "constrained",
+        "samples": 3,
+        "headerMs": 131,
+        "mintMs": 1929.6000000238419,
+        "walletReadyMs": 3732,
+        "fcpMs": 452,
+        "ttfbMs": 100.5,
+        "jsFiles": 42,
+        "jsBytes": 892697,
+        "jsBeforeHeaderBytes": 0
+      }
+    ]
+  },
+  "acceptance": {
+    "everyConstrainedMintSampleUnder2000ms": true,
+    "constrainedMintMs": [
+      1949.3999999761581,
+      1929.6000000238419,
+      1915.699999988079
+    ],
+    "definition": "Visible live-validated mint form with nine selectable tiers, enabled quantity input and Connect control. Full wallet readiness is separate."
+  },
+  "regressions": {
+    "ok": true,
+    "results": [
+      "Saved wallet renders immediately and early Connect waits for successful reconnection",
+      "One early Connect survives unsuccessful saved-wallet reconnection",
+      "Rejected Gallery download preserves wallet/navigation and Reload recovers"
+    ],
+    "transactions": 0,
+    "errors": []
+  },
+  "existingBrowserChecks": {
+    "ok": true,
+    "results": [
+      {
+        "name": "Public HTML has working navigation without JavaScript",
+        "ms": 221
+      },
+      {
+        "name": "Early mint input and one Connect request survive wallet initialization",
+        "ms": 4430
+      },
+      {
+        "name": "An unfinished quantity edit keeps its text and focus through wallet handoff",
+        "ms": 3880
+      },
+      {
+        "name": "One early admin Connect request opens the normal wallet modal",
+        "ms": 3889
+      },
+      {
+        "name": "Actual wallet modal connects the real local wallet",
+        "ms": 692
+      },
+      {
+        "name": "Mint quotes preserve actual backing and fees for quantities one and two",
+        "ms": 219
+      },
+      {
+        "name": "Wallet persists through header navigation and browser history",
+        "ms": 234
+      },
+      {
+        "name": "Reload restores the connection cookie before the app mounts",
+        "ms": 77
+      },
+      {
+        "name": "Docs round trip keeps the wallet connected",
+        "ms": 186
+      },
+      {
+        "name": "Mobile menu navigates and releases its scroll lock",
+        "ms": 325
+      },
+      {
+        "name": "Another browser context receives no wallet state",
+        "ms": 257
+      },
+      {
+        "name": "Disconnect remains disconnected after reload",
+        "ms": 177
+      },
+      {
+        "name": "RPC failure retains public navigation and retry recovers against the real RPC",
+        "ms": 536
+      }
+    ]
+  },
+  "economics": {
+    "assetDestinationsRightsOrPaymentConstructionChanged": false,
+    "transactionsSubmitted": 0,
+    "quotesEth": [
+      {
+        "backing": "0.01",
+        "fee": "0.001",
+        "total": "0.011"
+      },
+      {
+        "backing": "0.02",
+        "fee": "0.002",
+        "total": "0.022"
+      },
+      {
+        "backing": "0.1",
+        "fee": "0.002",
+        "total": "0.102"
+      }
+    ],
+    "limits": "Real-fork UI quote checks only; no asset lifecycle or blockchain broadcasts. Live fee revalidation before payment remains unchanged."
+  },
+  "checks": [
+    {
+      "command": "CANDIDATE_RUN=1 SHAPES_LADDER=mainnet NEXT_PUBLIC_SHAPES_RPC_URL=http://127.0.0.1:8597 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<same public production ID> SHAPES_INDEXER_URL=https://shapes.ripe.wtf/api/indexer npm run build --workspace web",
+      "cwd": "/private/tmp/shapes-startup-fix-verification",
+      "exit": 0,
+      "result": "Production build and TypeScript passed."
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=<installed Chrome> E2E_BASE_URL=http://127.0.0.1:3205 E2E_RPC_URL=http://127.0.0.1:8597 REGRESSION_OUTPUT=/tmp/shapes-startup-regressions-after.json node web/e2e/startupRegressions.mjs",
+      "cwd": "/private/tmp/shapes-startup-fix-verification",
+      "exit": 0,
+      "result": "All 3 new regression checks passed; real provider replies delayed, no synthetic successful service answers."
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=<installed Chrome> E2E_BASE_URL=http://127.0.0.1:3205 E2E_RPC_URL=http://127.0.0.1:8597 node web/e2e/startupBrowser.mjs",
+      "cwd": "/private/tmp/shapes-startup-fix-verification",
+      "exit": 0,
+      "result": "All 13 existing browser checks passed."
+    },
+    {
+      "command": "PLAYWRIGHT_CHROME_PATH=<installed Chrome> PERF_TARGET=candidate PERF_SAMPLES=3 E2E_BASE_URL=http://127.0.0.1:3205 PERF_OUTPUT=/tmp/shapes-startup-fixes-performance.json node web/e2e/startupPerformance.mjs",
+      "cwd": "/private/tmp/shapes-startup-fix-verification",
+      "exit": 0,
+      "result": "3 desktop and 3 constrained samples; every constrained mint panel sample below 2 seconds."
+    },
+    {
+      "command": "node --import tsx --test preview/src/chain/wagmi.test.ts preview/src/site/mintOpensIn.test.ts preview/src/site/deploymentRecord.test.ts",
+      "exit": 0,
+      "result": "14 tests passed."
+    },
+    {
+      "command": "node ../node_modules/eslint/bin/eslint.js app/ChainProviders.tsx e2e/startupRegressions.mjs",
+      "cwd": "web",
+      "exit": 0
+    },
+    {
+      "command": "node --check web/e2e/startupRegressions.mjs; git diff --check",
+      "exit": 0
+    }
+  ],
+  "review": "Independent affected-caller/Wagmi/RainbowKit/boundary source review found no remaining actionable issue. Added and executed the suggested early Connect during successful reconnect case.",
+  "preservedFailures": [
+    {
+      "command": "Initial new regression script against the previous unchanged preview at port 3204",
+      "exit": 1,
+      "result": "Expected first full-app saved-account assertion failed (false instead of true). Log: /tmp/shapes-startup-regressions-before-real.log. This preceded adding the successful-reconnect gate to that check."
+    },
+    {
+      "command": "Initial sandboxed regression execution",
+      "exit": 1,
+      "result": "Sandbox EPERM for local fork network access, not a product result. Reran with approved local-network access; /tmp/shapes-startup-regressions-before.log."
+    },
+    {
+      "command": "Initial isolated snapshot build with symlinked node_modules",
+      "exit": 1,
+      "result": "Turbopack disallowed node_modules symlink outside its root. Reused dependencies through a local filesystem clone and rebuilt successfully, without changing product configuration or deleting caches. Log: /tmp/shapes-startup-fixes-build.log."
+    }
+  ],
+  "limits": [
+    "Local preview/throttle bounds do not guarantee every hosted device/network.",
+    "Physical wallet extensions, cross-device WalletConnect and hosted CDN behavior remain unverified.",
+    "Existing preview-wide hook lint violations remain; focused changed web-file lint passed.",
+    "Focused browser checks do not cover every direct token/manage/pack URL or /play metadata.",
+    "Existing running previews and caches were preserved. No transactions, merge or deployment."
+  ],
+  "sourceSha256": {
+    "preview/src/site/SiteApp.tsx": "08e887c9f6a36a71c05eb7c9ddb8f42953b7c8b3aef8231f2ebdadfbcd793705",
+    "preview/src/site/ui.tsx": "2e01ca884314b460f10867ac95cfe0a88ecb3ae523d85a34a1f008631afdc292",
+    "web/app/ChainProviders.tsx": "0612f6f87c282bade1b3fef432c0497c213176390a4851ec38d80524f6ab8b46",
+    "web/e2e/startupRegressions.mjs": "f2ec524b87023d645d790484b2e3acce4e11f33735d40815432839d1f1d06eb8"
+  },
+  "thingsThatDoNotMakeSense": []
+}

@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import Script from "next/script";
-import { initialWalletState } from "@shared/chain/wagmi";
+import { connection } from "next/server";
 import { ShapesProviders } from "./ShapesProviders";
 import { appOnly } from "./lib/siteMode";
-import { clientDeployment, indexerUpstream } from "./lib/deployment";
+import { clientDeployment, hasLocalDeployment, indexerUpstream } from "./lib/deployment";
+import { mintReadCalls } from "./mintReadAbi";
 import "./globals.css";
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 
 // Canonical origin for absolute OG/Twitter URLs. Env-overridable so a preview deploy can stamp its
 // own origin; defaults to the production custom domain.
@@ -36,12 +38,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Decodes the wallet's last-known connection from the request's cookies (see
-  // preview/src/chain/wagmi.ts's ssrStorage) so the very first render already reflects it,
-  // instead of starting disconnected and waiting on a post-mount reconnect.
-  const cookieHeader = (await headers()).get("cookie");
-  const walletInitialState = initialWalletState(cookieHeader);
-
+  // Rehearsals can replace their local record while running; bundled public shells are static.
+  if (hasLocalDeployment()) await connection();
   return (
     <html lang="en">
       {/* suppressHydrationWarning: browser extensions (e.g. screen recorders) inject body
@@ -58,8 +56,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ShapesProviders
           chainOnIndex={appOnly()}
           indexerConfigured={indexerUpstream() !== null}
-          walletInitialState={walletInitialState}
           deployment={clientDeployment()}
+          mintCalls={mintReadCalls()}
         >
           {children}
         </ShapesProviders>
