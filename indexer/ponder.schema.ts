@@ -200,3 +200,37 @@ export const escrowedCard = onchainTable(
     txIdx: index("escrowed_card_tx_idx").on(table.txHash),
   }),
 );
+
+// Shapes Pool Balancer: one row per Balancer the factory created. `creator` is the current
+// creator: set at creation and replaced by every CreatorTransferred, so the latest one wins.
+export const balancer = onchainTable(
+  "balancer",
+  (t) => ({
+    id: t.hex().primaryKey(),
+    pool: t.hex().notNull(),
+    creator: t.hex().notNull(),
+    createdAtBlock: t.bigint().notNull(),
+    creatorUpdatedAtBlock: t.bigint().notNull(),
+  }),
+  (table) => ({
+    creatorIdx: index("balancer_creator_idx").on(table.creator),
+  }),
+);
+
+// Every indexed BalancerFactory and PoolBalancer log, keyed by transaction hash and log index.
+// `args` is the decoded event with uint values as decimal strings, since JSON has no bigint.
+export const balancerLog = onchainTable(
+  "balancer_log",
+  (t) => ({
+    id: t.text().primaryKey(),
+    address: t.hex().notNull(),
+    eventName: t.text().notNull(),
+    blockNumber: t.bigint().notNull(),
+    logIndex: t.integer().notNull(),
+    txHash: t.hex().notNull(),
+    args: t.json().notNull(),
+  }),
+  (table) => ({
+    addressBlockIdx: index("balancer_log_address_block_idx").on(table.address, table.blockNumber, table.logIndex),
+  }),
+);

@@ -1,10 +1,11 @@
-import { createConfig } from "ponder";
-import {zeroAddress} from "viem";
+import { createConfig, factory } from "ponder";
+import { getAbiItem, zeroAddress } from "viem";
 import {boundedRpcTransport} from "./rpcTransport";
 
 import { shapesAbi } from "./abis/Shapes";
 import { shapeAuctionHouseAbi } from "./abis/ShapeAuctionHouse";
 import { shapePacksAbi } from "./abis/ShapePacks";
+import { balancerFactoryAbi, poolBalancerAbi } from "./abis/PoolBalancer";
 
 // All chain-specific values are env-configurable so the same config runs against the dev chain
 // (see preview/public/deployment.json for current values) and, once deployed, mainnet. No
@@ -26,6 +27,11 @@ const AUCTION_HOUSE_START_BLOCK = process.env.AUCTION_HOUSE_START_BLOCK
 const PACKS_ADDRESS = process.env.SHAPE_PACKS_ADDRESS as `0x${string}` | undefined;
 const PACKS_START_BLOCK = process.env.SHAPE_PACKS_START_BLOCK
   ? Number(process.env.SHAPE_PACKS_START_BLOCK)
+  : undefined;
+// Shapes Pool Balancer (separate project, same chain). Unset means no factory, as for Packs.
+const BALANCER_FACTORY_ADDRESS = process.env.BALANCER_FACTORY_ADDRESS as `0x${string}` | undefined;
+const BALANCER_FACTORY_START_BLOCK = process.env.BALANCER_FACTORY_START_BLOCK
+  ? Number(process.env.BALANCER_FACTORY_START_BLOCK)
   : undefined;
 const database = process.env.DATABASE_URL
   ? ({ kind: "postgres", connectionString: process.env.DATABASE_URL } as const)
@@ -59,6 +65,12 @@ if (PACKS_ADDRESS && PACKS_START_BLOCK === undefined) {
   throw new Error("SHAPE_PACKS_START_BLOCK is required when SHAPE_PACKS_ADDRESS is set.");
 }
 
+if (BALANCER_FACTORY_ADDRESS && BALANCER_FACTORY_START_BLOCK === undefined) {
+  throw new Error("BALANCER_FACTORY_START_BLOCK is required when BALANCER_FACTORY_ADDRESS is set.");
+}
+const balancerFactoryAddress = BALANCER_FACTORY_ADDRESS ?? zeroAddress;
+const balancerStartBlock = BALANCER_FACTORY_START_BLOCK ?? START_BLOCK;
+
 export default createConfig({
   database,
   chains: {
@@ -87,6 +99,25 @@ export default createConfig({
       // Local Shapes deployments without Packs listen at the zero address (which emits no logs).
       address: PACKS_ADDRESS ?? zeroAddress,
       startBlock: PACKS_START_BLOCK ?? START_BLOCK,
+    },
+    BalancerFactory: {
+      abi: balancerFactoryAbi,
+      chain: "chain",
+      address: balancerFactoryAddress,
+      startBlock: balancerStartBlock,
+    },
+    // Every Balancer clone the factory creates, from its creation block. Ponder matches child logs
+    // by block number, so the Deposited and CuratedListed events `initialize` emits earlier in the
+    // creating transaction are included.
+    PoolBalancer: {
+      abi: poolBalancerAbi,
+      chain: "chain",
+      address: factory({
+        address: balancerFactoryAddress,
+        event: getAbiItem({ abi: balancerFactoryAbi, name: "BalancerCreated" }),
+        parameter: "balancer",
+      }),
+      startBlock: balancerStartBlock,
     },
   },
 });
