@@ -8,6 +8,7 @@
     "codegen": "ponder codegen",
     "typecheck": "tsc --noEmit",
     "test": "node --test src/**/*.test.ts",
+    "test:rpc": "node --test rpcTransport.test.ts",
     "db": "ponder db"
   },
   "dependencies": {
