@@ -565,28 +565,6 @@ export function ActivityFeed({
     setHasNextPage(page.hasNextPage);
   }, []);
 
-  React.useEffect(() => {
-    if (!indexerUrl || !request) return;
-    let cancelled = false;
-    setStatus("loading");
-    // The stats row rides the feed's first-page load: one round trip on mount, refreshed again by
-    // every live poll below.
-    Promise.all([fetchActivityPage(indexerUrl, request, null, filter), fetchActivityStats(indexerUrl, request)]).then(
-      ([page, s]) => {
-        if (cancelled || filterRef.current !== filter) return;
-        absorb(page, false);
-        setStats(s);
-        setStatus("ready");
-      },
-      () => {
-        if (!cancelled && filterRef.current === filter) setStatus("failed");
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [indexerUrl, request, absorb, filter]);
-
   // Keep the current rows available to identify which polled events are new for animation.
   const eventsRef = React.useRef(events);
   React.useEffect(() => {
@@ -595,32 +573,44 @@ export function ActivityFeed({
   const [newIds, setNewIds] = React.useState<ReadonlySet<string>>(() => new Set());
 
   React.useEffect(() => {
-    // Starts only once the first page has loaded; an indexer that never comes up never polls.
-    if (!indexerUrl || !request || status !== "ready") return;
+    if (!indexerUrl || !request) return;
     let cancelled = false;
+    let loaded = false;
+    setStatus("loading");
     const tick = (): Promise<boolean> =>
       Promise.all([fetchActivityPage(indexerUrl, request, null, filter), fetchActivityStats(indexerUrl, request)]).then(
         ([page, s]) => {
           if (cancelled || filterRef.current !== filter) return true;
-          const merged = mergeLivePage(eventsRef.current, page);
-          if (merged.addedIds.length > 0) {
-            // A "Show more" request can finish after the poll starts. Merge against the latest
-            // state when React applies this update so the appended page stays in the feed.
-            setEvents((previous) => mergeLivePage(previous, page).events);
-            setTokens((previous) => {
-              const next = new Map(previous);
-              for (const row of page.tokens) next.set(row.id.toString(), row);
-              return next;
-            });
-            setNewIds(new Set(merged.addedIds));
+          if (!loaded) {
+            absorb(page, false);
+            loaded = true;
+          } else {
+            const merged = mergeLivePage(eventsRef.current, page);
+            if (merged.addedIds.length > 0) {
+              // A "Show more" request can finish after the poll starts. Merge against the latest
+              // state when React applies this update so the appended page stays in the feed.
+              setEvents((previous) => mergeLivePage(previous, page).events);
+              setTokens((previous) => {
+                const next = new Map(previous);
+                for (const row of page.tokens) next.set(row.id.toString(), row);
+                return next;
+              });
+              setNewIds(new Set(merged.addedIds));
+            }
           }
           setStats(s);
+          setStatus("ready");
           return true;
         },
-        () => false,
+        () => {
+          if (!cancelled && filterRef.current === filter) setStatus("failed");
+          return false;
+        },
       );
     const isHidden = () => typeof document !== "undefined" && document.hidden;
     const {stop, wake} = scheduleLivePoll(tick, isHidden);
+    // Initial reads and retries share one lifecycle, so failures never disable the next poll.
+    wake();
     const onVisibility = () => {
       if (!isHidden()) wake();
     };
@@ -630,7 +620,7 @@ export function ActivityFeed({
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [indexerUrl, request, status, filter]);
+  }, [indexerUrl, request, absorb, filter]);
 
   if (!indexerUrl || !request) return null;
 

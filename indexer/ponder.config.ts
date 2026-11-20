@@ -1,5 +1,6 @@
 import { createConfig } from "ponder";
 import {zeroAddress} from "viem";
+import {boundedRpcTransport} from "./rpcTransport";
 
 import { shapesAbi } from "./abis/Shapes";
 import { shapeAuctionHouseAbi } from "./abis/ShapeAuctionHouse";
@@ -63,7 +64,7 @@ export default createConfig({
   chains: {
     chain: {
       id: CHAIN_ID,
-      rpc: [RPC_URL, ...RPC_FALLBACKS],
+      rpc: boundedRpcTransport([RPC_URL, ...RPC_FALLBACKS], CHAIN_ID),
       pollingInterval: POLLING_INTERVAL,
     },
   },

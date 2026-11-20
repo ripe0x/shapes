@@ -407,8 +407,32 @@ favor of its raw-RPC path, so the single-machine availability tradeoff is bounde
 One Fly app per chain, each pinned to a `fly.<env>.toml` with a 12-second poll, one indexing
 thread, a 1 GB shared-CPU Machine, and `/data/pglite` on its own volume:
 `fly.sepolia.toml` (app `shapes-indexer`, `testnet` ladder) and `fly.mainnet.toml` (app
-`shapes-indexer-mainnet`, `mainnet` ladder). Mainnet uses the Tenderly public RPC; Sepolia has
-a public fallback. Neither toml is deployed directly.
+`shapes-indexer-mainnet`, `mainnet` ladder). Mainnet uses the Tenderly public RPC first and
+PublicNode as a free fallback. Neither toml is deployed directly.
+
+PublicNode is verified for live block logs and recent catch-up, including matching Shapes, auction,
+and Packs logs over 2,000 blocks. Its unauthenticated endpoint rejects deployment-era log queries
+with an archive-access error. A cold historical rebuild still needs Tenderly; this release reuses
+the existing database and RPC cache.
+
+The RPC transport limits each provider to five request starts per second and two requests in
+flight. Temporary network errors and throttling put that provider on a 30-second cooldown,
+doubling up to five minutes on repeated failures. When every provider is temporarily unavailable,
+the transport waits and retries without discarding the checkpoint or failing Ponder's startup
+diagnostic. Permanent configuration errors still fail. Mainnet's Fly restart policy is `always`,
+so an exited process does not exhaust ten retries and leave the Machine stopped.
+
+`rpcTransport.ts` stays outside `src/`: Ponder hashes all non-test indexing files under `src/`
+into the database build identity, while RPC-only chain configuration is excluded. Transport-only
+changes therefore preserve the production schema and cached chain history. Handler, contract,
+ABI, and table changes still require the existing fresh-schema release procedure below.
+
+`npm run test:rpc` exercises the transport against an ephemeral real Anvil node, with passthrough
+proxies injecting only service failures. It requires `anvil` on `PATH` and is a release check in
+addition to the existing Node-only `npm test` suite.
+
+The site's Proof of work feed retries initial loads, filter loads, and refreshes with its existing
+15-second cadence and failure backoff. A failed pagination request does not disable polling.
 
 ### Environments
 
