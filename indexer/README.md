@@ -79,6 +79,23 @@ fly secrets set INDEXER_TOKEN=<token> -a shapes-indexer-mainnet
 The site holds the same value as `SHAPES_INDEXER_TOKEN` and presents it from its own
 `/api/indexer` proxy, so a browser never carries the token (see `web/README.md`).
 
+## Pool Balancer routes
+
+The indexer also follows the Shapes Pool Balancer factory (`BALANCER_FACTORY_ADDRESS`) and every
+Balancer it creates, for the pool dashboard. These GET routes are public (no bearer gate, any
+CORS origin), since they serve only chain data to a static site:
+
+- `/balancer/pools?creator=0x…` → `{throughBlock, pools: [{balancer, pool, creator, createdAtBlock, creatorUpdatedAtBlock}]}`.
+  `creator` is the current creator: the latest `CreatorTransferred` wins. Without `creator`, every pool.
+- `/balancer/logs?address=0x…&fromBlock=N` → `{throughBlock, logs: [{address, eventName, blockNumber, logIndex, txHash, args}]}`
+  in chain order, for one Balancer or the factory. `args` holds uints as decimal strings and
+  addresses lowercase.
+
+`throughBlock` is the last block the indexer has processed; every row returned is at or below it,
+and a caller reads newer events from RPC starting at `throughBlock + 1`.
+`BALANCER_E2E_INDEXER=http://localhost:42069 node --test src/api/balancer.e2e.test.ts` compares
+both routes with `eth_getLogs` on mainnet.
+
 ## Site data path and freshness
 
 The shared site loader (`preview/src/site/data.ts`) treats this service as an optional,
